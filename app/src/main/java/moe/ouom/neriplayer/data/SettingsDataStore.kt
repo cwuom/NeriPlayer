@@ -33,7 +33,6 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.onStart
 
 private val Context.dataStore by preferencesDataStore("settings")
 
@@ -41,7 +40,7 @@ object SettingsKeys {
     val DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
     val FORCE_DARK = booleanPreferencesKey("force_dark")
     val FOLLOW_SYSTEM_DARK = booleanPreferencesKey("follow_system_dark")
-    val DISCLAIMER_ACCEPTED_V1 = booleanPreferencesKey("disclaimer_accepted_v1")
+    val DISCLAIMER_ACCEPTED_V1 = booleanPreferencesKey("disclaimer_accepted_v2")
 }
 
 class SettingsRepository(private val context: Context) {
