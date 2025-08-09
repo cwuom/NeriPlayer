@@ -24,13 +24,24 @@ package moe.ouom.neriplayer.ui.screens
  */
 
 import android.content.Intent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.outlined.Brightness4
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Info
@@ -48,7 +59,12 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
@@ -71,6 +87,8 @@ fun SettingsScreen(
 ) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     val context = LocalContext.current
+    var loginExpanded by remember { mutableStateOf(false) }
+    val arrowRotation by animateFloatAsState(targetValue = if (loginExpanded) 180f else 0f, label = "arrow")
 
     Scaffold(
         modifier = Modifier
@@ -98,6 +116,7 @@ fun SettingsScreen(
                 .padding(innerPadding),
             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
         ) {
+            // 动态取色
             item {
                 ListItem(
                     leadingContent = {
@@ -115,6 +134,8 @@ fun SettingsScreen(
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
             }
+
+            // 强制深色
             item {
                 ListItem(
                     leadingContent = {
@@ -141,6 +162,113 @@ fun SettingsScreen(
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
             }
+
+            // 登录三方平台
+            item {
+                ListItem(
+                    leadingContent = {
+                        Icon(
+                            imageVector = Icons.Filled.AccountCircle,
+                            contentDescription = "登录三方平台",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    headlineContent = { Text("登录三方平台") },
+                    supportingContent = { Text(if (loginExpanded) "收起" else "展开以选择登录平台") },
+                    trailingContent = {
+                        Icon(
+                            imageVector = Icons.Filled.ExpandMore,
+                            contentDescription = if (loginExpanded) "收起" else "展开",
+                            modifier = Modifier.rotate(arrowRotation),
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    modifier = Modifier.clickable { loginExpanded = !loginExpanded },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                )
+            }
+
+            // 展开区域
+            item {
+                AnimatedVisibility(
+                    visible = loginExpanded,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.Transparent)
+                            .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
+                    ) {
+                        // 哔哩哔哩
+                        ListItem(
+                            leadingContent = {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_bilibili),
+                                    contentDescription = "哔哩哔哩",
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = { Text("哔哩哔哩") },
+                            supportingContent = { Text("跳转至哔哩哔哩登录页") },
+                            modifier = Modifier.clickable { },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+
+                        // YouTube
+                        ListItem(
+                            leadingContent = {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_youtube),
+                                    contentDescription = "YouTube",
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = { Text("YouTube") },
+                            supportingContent = { Text("暂未实现") },
+                            modifier = Modifier.clickable { },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+
+                        // 网易云音乐
+                        ListItem(
+                            leadingContent = {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_netease_cloud_music),
+                                    contentDescription = "网易云音乐",
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = { Text("网易云音乐") },
+                            supportingContent = { Text("仅支持验证码登录") },
+                            modifier = Modifier.clickable { },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+
+                        // QQ 音乐
+                        ListItem(
+                            leadingContent = {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_qq_music),
+                                    contentDescription = "QQ 音乐",
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = { Text("QQ 音乐") },
+                            supportingContent = { Text("咕咕咕，先观望一会") },
+                            modifier = Modifier.clickable { },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+                    }
+                }
+            }
+
+            // 关于
             item {
                 ListItem(
                     leadingContent = {
@@ -155,6 +283,8 @@ fun SettingsScreen(
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
             }
+
+            // Build UUID
             item {
                 ListItem(
                     leadingContent = {
@@ -169,6 +299,8 @@ fun SettingsScreen(
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
             }
+
+            // 版本
             item {
                 ListItem(
                     leadingContent = {
@@ -183,6 +315,8 @@ fun SettingsScreen(
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
             }
+
+            // 编译时间
             item {
                 ListItem(
                     leadingContent = {
@@ -197,6 +331,8 @@ fun SettingsScreen(
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
             }
+
+            // GitHub
             item {
                 ListItem(
                     leadingContent = {
