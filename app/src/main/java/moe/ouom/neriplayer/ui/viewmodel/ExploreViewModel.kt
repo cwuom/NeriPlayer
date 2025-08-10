@@ -41,7 +41,8 @@ data class ExploreUiState(
     val expanded: Boolean = false,
     val loading: Boolean = false,
     val error: String? = null,
-    val playlists: List<NeteasePlaylist> = emptyList()
+    val playlists: List<NeteasePlaylist> = emptyList(),
+    val selectedTag: String = "全部",
 )
 
 class ExploreViewModel(application: Application) : AndroidViewModel(application) {
@@ -55,18 +56,34 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         _uiState.value = _uiState.value.copy(expanded = !_uiState.value.expanded)
     }
 
-    fun loadHighQuality(cat: String = "全部") {
+
+    /** 设置当前选中标签
+     * （仅更新状态，不发请求）
+     */
+    fun setSelectedTag(tag: String) {
+        if (tag == _uiState.value.selectedTag) return
+        _uiState.value = _uiState.value.copy(selectedTag = tag)
+    }
+
+
+    fun loadHighQuality(cat: String? = null) {
+        val realCat = cat ?: _uiState.value.selectedTag      // ★ 用 VM 中的标签
         _uiState.value = _uiState.value.copy(loading = true, error = null)
         viewModelScope.launch {
             try {
                 val cookies = withContext(Dispatchers.IO) { repo.getCookiesOnce() }
                 client.setPersistedCookies(cookies)
 
-                val raw = withContext(Dispatchers.IO) { client.getHighQualityPlaylists(cat, 50, 0) }
+                val raw = withContext(Dispatchers.IO) {
+                    client.getHighQualityPlaylists(realCat, 50, 0L)
+                }
                 val mapped = parsePlaylists(raw)
+
                 _uiState.value = _uiState.value.copy(
                     loading = false,
-                    playlists = mapped
+                    error = null,
+                    playlists = mapped,
+                    selectedTag = realCat
                 )
             } catch (e: IOException) {
                 _uiState.value = _uiState.value.copy(

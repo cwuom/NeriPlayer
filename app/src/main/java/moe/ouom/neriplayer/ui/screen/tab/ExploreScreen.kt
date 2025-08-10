@@ -81,13 +81,10 @@ fun ExploreScreen(
     )
     val ui by vm.uiState.collectAsState()
 
-    // 本地记忆选中标签
-    val selectedTagState = rememberSaveable { mutableStateOf("全部") }
-
-    // 进入页面默认加载 “全部”
     LaunchedEffect(Unit) {
-        if (ui.playlists.isEmpty()) vm.loadHighQuality(selectedTagState.value)
+        if (ui.playlists.isEmpty()) vm.loadHighQuality()
     }
+
 
     val query = remember { mutableStateOf("") }
     val tags = listOf(
@@ -143,18 +140,19 @@ fun ExploreScreen(
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Column(Modifier.fillMaxWidth()) {
                     val display = if (ui.expanded) tags else tags.take(12)
+
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         display.forEach { tag ->
-                            val selected = (selectedTagState.value == tag)
+                            val selected = (ui.selectedTag == tag)
                             FilterChip(
                                 selected = selected,
                                 onClick = {
-                                    if (selectedTagState.value != tag) {
-                                        selectedTagState.value = tag
+                                    if (!selected) {
+                                        vm.setSelectedTag(tag)
                                         vm.loadHighQuality(tag)
                                     }
                                 },
@@ -164,19 +162,17 @@ fun ExploreScreen(
                     }
 
                     Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 4.dp),
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         TextButton(onClick = { vm.toggleExpanded() }) {
                             Text(if (ui.expanded) "收起标签" else "展开更多")
                         }
                     }
-
                     Spacer(modifier = Modifier.padding(top = 4.dp))
                 }
             }
+
 
             // 状态区
             if (ui.loading) {
