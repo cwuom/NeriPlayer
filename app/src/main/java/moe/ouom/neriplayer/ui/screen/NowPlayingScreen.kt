@@ -89,6 +89,7 @@ import androidx.media3.common.Player
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.ui.component.WaveformSlider
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -215,20 +216,17 @@ fun NowPlayingScreen(
             }
 
             Spacer(Modifier.height(12.dp))
-            Slider(
+            WaveformSlider(
                 value = if (durationMs > 0) sliderPosition / durationMs else 0f,
                 onValueChange = { newPercentage ->
                     isUserDraggingSlider = true
-                    sliderPosition = (newPercentage * durationMs).toFloat()
+                    sliderPosition = (newPercentage * durationMs)
                 },
                 onValueChangeFinished = {
                     PlayerManager.seekTo(sliderPosition.toLong())
                     isUserDraggingSlider = false
                 },
-                colors = androidx.compose.material3.SliderDefaults.colors(
-                    thumbColor = MaterialTheme.colorScheme.primary,
-                    activeTrackColor = MaterialTheme.colorScheme.primary
-                )
+                isPlaying = isPlaying
             )
 
             Spacer(Modifier.height(8.dp))
