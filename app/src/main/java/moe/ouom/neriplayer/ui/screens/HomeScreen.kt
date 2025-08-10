@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -74,7 +75,8 @@ import moe.ouom.neriplayer.util.formatPlayCount
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
-    onItemClick: (NeteasePlaylist) -> Unit = {}
+    onItemClick: (NeteasePlaylist) -> Unit = {},
+    gridState: LazyGridState
 ) {
     val context = LocalContext.current
     val vm: HomeViewModel = viewModel(
@@ -155,13 +157,18 @@ fun HomeScreen(
                 }
                 else -> {
                     LazyVerticalGrid(
+                        // 关键：把外部保存下来的 gridState 用上
+                        state = gridState,
                         columns = GridCells.Adaptive(150.dp),
                         contentPadding = PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
-                        items(ui.playlists) { item ->
+                        items(
+                            items = ui.playlists,
+                            key = { it.id } // 稳定 key，帮助恢复与过渡
+                        ) { item ->
                             PlaylistCard(item) { onItemClick(item) }
                         }
                     }

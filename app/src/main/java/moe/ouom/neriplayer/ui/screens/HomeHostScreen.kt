@@ -32,11 +32,13 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import moe.ouom.neriplayer.ui.viewmodel.NeteasePlaylist
@@ -51,6 +53,11 @@ fun HomeHostScreen(
 ) {
     var selected by rememberSaveable { mutableStateOf<NeteasePlaylist?>(null) }
     BackHandler(enabled = selected != null) { selected = null }
+
+    val gridStateSaver: Saver<LazyGridState, *> = LazyGridState.Saver
+    val gridState = rememberSaveable(saver = gridStateSaver) {
+        LazyGridState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
+    }
 
     Surface(color = MaterialTheme.colorScheme.background) {
         AnimatedContent(
@@ -67,7 +74,10 @@ fun HomeHostScreen(
             }
         ) { current ->
             if (current == null) {
-                HomeScreen(onItemClick = { pl -> selected = pl })
+                HomeScreen(
+                    onItemClick = { pl -> selected = pl },
+                    gridState = gridState
+                )
             } else {
                 PlaylistDetailScreen(
                     playlist = current,
