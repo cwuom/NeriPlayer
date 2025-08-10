@@ -23,13 +23,10 @@ package moe.ouom.neriplayer.activity
  * Created: 2025/8/8
  */
 
+
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.view.LayoutInflater
-import android.view.View
 import android.view.ViewGroup
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -44,40 +41,12 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.Typography
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.material3.lightColorScheme
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -93,32 +62,11 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.SettingsRepository
 import moe.ouom.neriplayer.ui.NeriApp
-import moe.ouom.neriplayer.ui.view.BgEffectPainter
 
 private enum class AppStage { Loading, Disclaimer, Main }
 
 class MainActivity : ComponentActivity() {
-    private val mHandler = Handler(Looper.getMainLooper())
-    private lateinit var mBgEffectView: View
-    private lateinit var mBgEffectPainter: BgEffectPainter
-    private val startTime = System.nanoTime().toFloat()
     private val settingsRepository by lazy { SettingsRepository(applicationContext) }
-
-    private val runnableBgEffect = object : Runnable {
-        override fun run() {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                if (::mBgEffectPainter.isInitialized && ::mBgEffectView.isInitialized) {
-                    mBgEffectPainter.setAnimTime(((System.nanoTime() - startTime) / 1.0E9f) % 62.831852f)
-                    mBgEffectPainter.setResolution(
-                        floatArrayOf(mBgEffectView.width.toFloat(), mBgEffectView.height.toFloat())
-                    )
-                    mBgEffectPainter.updateMaterials()
-                    mBgEffectView.setRenderEffect(mBgEffectPainter.renderEffect)
-                }
-                mHandler.postDelayed(this, 16L)
-            }
-        }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -194,50 +142,14 @@ class MainActivity : ComponentActivity() {
                         AppStage.Main -> {
                             NeriApp(
                                 onIsDarkChanged = { isDark ->
+                                    // 仅调整窗口底色 & 系统栏外观
                                     applyWindowBackground(isDark)
-                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                        if (::mBgEffectPainter.isInitialized && ::mBgEffectView.isInitialized) {
-                                            mBgEffectPainter.showRuntimeShader(applicationContext, mBgEffectView, null, isDark)
-                                        }
-                                    }
                                 }
                             )
                         }
                     }
                 }
             }
-        }
-
-        setHyperBackground()
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        mHandler.removeCallbacksAndMessages(null)
-    }
-
-    private fun setHyperBackground() {
-        val contentView = findViewById<ViewGroup>(android.R.id.content)
-        contentView.setBackgroundColor(Color.TRANSPARENT)
-
-        mBgEffectView = LayoutInflater.from(this).inflate(R.layout.layout_effect_bg, contentView, false)
-        contentView.addView(mBgEffectView, 0)
-        mBgEffectView = contentView.findViewById(R.id.bgEffectView)
-
-        mBgEffectView.post {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                mBgEffectPainter = BgEffectPainter(applicationContext)
-                mBgEffectPainter.showRuntimeShader(
-                    applicationContext,
-                    mBgEffectView,
-                    null,
-                    resources.getBoolean(R.bool.is_night_mode)
-                )
-                mBgEffectView.setWillNotDraw(false)
-                mBgEffectView.setBackgroundColor(Color.TRANSPARENT)
-                mBgEffectView.alpha = 1f
-            }
-            mHandler.post(runnableBgEffect)
         }
     }
 
@@ -273,7 +185,7 @@ fun NeriTheme(
     )
 }
 
-/* --------------------- 免责声明与隐私说明 --------------------- */
+/* --------------------- 免责声明与隐私说明（保持原样） --------------------- */
 
 @Composable
 fun DisclaimerScreen(onAgree: () -> Unit) {
@@ -379,14 +291,10 @@ fun DisclaimerScreen(onAgree: () -> Unit) {
                     BodyText("用户应确保自身使用与下载行为符合所在法域的法律规定。")
 
                     SectionTitle("8. 条款更新")
-                    BodyText(
-                        "开发者可不时更新本免责声明与隐私说明，继续使用即视为接受更新。"
-                    )
+                    BodyText("开发者可不时更新本免责声明与隐私说明，继续使用即视为接受更新。")
 
                     SectionTitle("9. 同意条款")
-                    EmphasisText(
-                        "使用本软件即表示您已阅读、理解并同意本页面全部内容，若不同意请卸载并停止使用。"
-                    )
+                    EmphasisText("使用本软件即表示您已阅读、理解并同意本页面全部内容，若不同意请卸载并停止使用。")
                 }
 
                 Spacer(Modifier.height(16.dp))
@@ -394,7 +302,7 @@ fun DisclaimerScreen(onAgree: () -> Unit) {
                 Button(
                     onClick = { onAgree() },
                     enabled = countdown == 0,
-                    shape = RoundedCornerShape(12.dp),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
@@ -408,24 +316,17 @@ fun DisclaimerScreen(onAgree: () -> Unit) {
     }
 }
 
-/* --------------------- UI 片段 --------------------- */
-
-@Composable
-private fun SectionTitle(text: String) {
+@Composable private fun SectionTitle(text: String) {
     Text(
         text = text,
         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
         modifier = Modifier.padding(top = 6.dp)
     )
 }
-
-@Composable
-private fun BodyText(text: String) {
+@Composable private fun BodyText(text: String) {
     Text(text = text, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Justify)
 }
-
-@Composable
-private fun EmphasisText(text: String) {
+@Composable private fun EmphasisText(text: String) {
     Text(
         text = text,
         style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
@@ -433,9 +334,7 @@ private fun EmphasisText(text: String) {
         textAlign = TextAlign.Justify
     )
 }
-
-@Composable
-private fun Bullets(items: List<String>) {
+@Composable private fun Bullets(items: List<String>) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         items.forEach { item ->
             Row(verticalAlignment = Alignment.Top, modifier = Modifier.fillMaxWidth()) {

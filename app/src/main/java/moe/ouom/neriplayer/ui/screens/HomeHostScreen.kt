@@ -37,7 +37,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import moe.ouom.neriplayer.ui.viewmodel.NeteasePlaylist
 import moe.ouom.neriplayer.ui.viewmodel.SongItem
@@ -49,7 +49,7 @@ import moe.ouom.neriplayer.ui.viewmodel.SongItem
 fun HomeHostScreen(
     onSongClick: (SongItem) -> Unit = {}
 ) {
-    var selected by remember { mutableStateOf<NeteasePlaylist?>(null) }
+    var selected by rememberSaveable { mutableStateOf<NeteasePlaylist?>(null) }
     BackHandler(enabled = selected != null) { selected = null }
 
     Surface(color = MaterialTheme.colorScheme.background) {
