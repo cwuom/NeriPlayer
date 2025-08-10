@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.ui.screens
+package moe.ouom.neriplayer.ui.screen.tab
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -24,6 +24,7 @@ package moe.ouom.neriplayer.ui.screens
  */
 
 
+import android.app.Application
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -82,7 +83,7 @@ fun HomeScreen(
     val vm: HomeViewModel = viewModel(
         factory = viewModelFactory {
             initializer {
-                val app = context.applicationContext as android.app.Application
+                val app = context.applicationContext as Application
                 HomeViewModel(app)
             }
         }

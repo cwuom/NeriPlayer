@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.ui.screens
+package moe.ouom.neriplayer.ui.screen.tab
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -101,6 +101,7 @@ import moe.ouom.neriplayer.util.NightModeHelper
 import moe.ouom.neriplayer.util.convertTimestampToDate
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.State
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -603,10 +604,10 @@ private fun InlineMessage(
 
 /** 兼容性：不用依赖 collectAsState / lifecycle-compose，手动收集 StateFlow */
 @Composable
-private fun <T> StateFlow<T>.collectAsStateWithLifecycleCompat(): androidx.compose.runtime.State<T> {
+private fun <T> StateFlow<T>.collectAsStateWithLifecycleCompat(): State<T> {
     val flow = this
-    val state = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(flow.value) }
-    androidx.compose.runtime.LaunchedEffect(flow) {
+    val state = remember { mutableStateOf(flow.value) }
+    LaunchedEffect(flow) {
         flow.collect { v -> state.value = v }
     }
     return state

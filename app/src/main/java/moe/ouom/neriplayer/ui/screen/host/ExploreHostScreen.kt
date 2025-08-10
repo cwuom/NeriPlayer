@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.ui.screens
+package moe.ouom.neriplayer.ui.screen.host
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -19,8 +19,8 @@ package moe.ouom.neriplayer.ui.screens
  * along with this software.
  * If not, see <https://www.gnu.org/licenses/>.
  *
- * File: moe.ouom.neriplayer.ui.screens/HomeHostScreen
- * Created: 2025/8/10
+ * File: moe.ouom.neriplayer.ui.screen.host/ExploreHostScreen
+ * Created: 2025/8/11
  */
 
 import androidx.activity.compose.BackHandler
@@ -41,14 +41,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import moe.ouom.neriplayer.ui.screen.PlaylistDetailScreen
+import moe.ouom.neriplayer.ui.screen.tab.ExploreScreen
 import moe.ouom.neriplayer.ui.viewmodel.NeteasePlaylist
 import moe.ouom.neriplayer.ui.viewmodel.SongItem
 
-/**
- * Home 容器页
- */
 @Composable
-fun HomeHostScreen(
+fun ExploreHostScreen(
     onSongClick: (SongItem) -> Unit = {}
 ) {
     var selected by rememberSaveable { mutableStateOf<NeteasePlaylist?>(null) }
@@ -62,7 +61,7 @@ fun HomeHostScreen(
     Surface(color = MaterialTheme.colorScheme.background) {
         AnimatedContent(
             targetState = selected,
-            label = "home_host_switch",
+            label = "explore_host_switch",
             transitionSpec = {
                 if (initialState == null && targetState != null) {
                     (slideInVertically(animationSpec = tween(220)) { it } + fadeIn()) togetherWith
@@ -74,9 +73,9 @@ fun HomeHostScreen(
             }
         ) { current ->
             if (current == null) {
-                HomeScreen(
-                    onItemClick = { pl -> selected = pl },
-                    gridState = gridState
+                ExploreScreen(
+                    gridState = gridState,
+                    onPlay = { pl -> selected = pl }
                 )
             } else {
                 PlaylistDetailScreen(

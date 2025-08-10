@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.ui.screens
+package moe.ouom.neriplayer.ui.screen.tab
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -27,6 +27,8 @@ import android.app.Application
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -34,14 +36,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -54,11 +54,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -70,7 +69,10 @@ import moe.ouom.neriplayer.ui.viewmodel.NeteasePlaylist
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun ExploreScreen(onPlay: (NeteasePlaylist) -> Unit) {
+fun ExploreScreen(
+    gridState: LazyGridState,
+    onPlay: (NeteasePlaylist) -> Unit
+) {
     val context = LocalContext.current
     val vm: ExploreViewModel = viewModel(
         factory = viewModelFactory {
@@ -99,7 +101,6 @@ fun ExploreScreen(onPlay: (NeteasePlaylist) -> Unit) {
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
-
     Scaffold(
         topBar = {
             LargeTopAppBar(
@@ -116,6 +117,7 @@ fun ExploreScreen(onPlay: (NeteasePlaylist) -> Unit) {
             .nestedScroll(scrollBehavior.nestedScrollConnection)
     ) { innerPadding ->
         LazyVerticalGrid(
+            state = gridState, // 用外部传进来的 gridState 保存滚动位置
             columns = GridCells.Adaptive(150.dp),
             contentPadding = PaddingValues(
                 start = 16.dp, end = 16.dp,
@@ -141,7 +143,6 @@ fun ExploreScreen(onPlay: (NeteasePlaylist) -> Unit) {
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Column(Modifier.fillMaxWidth()) {
                     val display = if (ui.expanded) tags else tags.take(12)
-
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -162,17 +163,22 @@ fun ExploreScreen(onPlay: (NeteasePlaylist) -> Unit) {
                         }
                     }
 
-                    TextButton(
-                        onClick = { vm.toggleExpanded() },
-                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Text(if (ui.expanded) "收起标签" else "展开更多")
+                        TextButton(onClick = { vm.toggleExpanded() }) {
+                            Text(if (ui.expanded) "收起标签" else "展开更多")
+                        }
                     }
 
                     Spacer(modifier = Modifier.padding(top = 4.dp))
                 }
             }
 
+            // 状态区
             if (ui.loading) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Box(
@@ -196,7 +202,6 @@ fun ExploreScreen(onPlay: (NeteasePlaylist) -> Unit) {
                     )
                 }
             } else {
-                // 歌单卡片
                 items(
                     ui.playlists,
                     key = { it.id }

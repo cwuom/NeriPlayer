@@ -42,9 +42,14 @@ import androidx.navigation.compose.*
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.data.SettingsRepository
 import moe.ouom.neriplayer.navigation.Destinations
-import moe.ouom.neriplayer.ui.components.NeriBottomBar
-import moe.ouom.neriplayer.ui.components.NeriMiniPlayer
-import moe.ouom.neriplayer.ui.screens.*
+import moe.ouom.neriplayer.ui.component.NeriBottomBar
+import moe.ouom.neriplayer.ui.component.NeriMiniPlayer
+import moe.ouom.neriplayer.ui.screen.*
+import moe.ouom.neriplayer.ui.screen.host.ExploreHostScreen
+import moe.ouom.neriplayer.ui.screen.host.HomeHostScreen
+import moe.ouom.neriplayer.ui.screen.tab.ExploreScreen
+import moe.ouom.neriplayer.ui.screen.tab.LibraryScreen
+import moe.ouom.neriplayer.ui.screen.tab.SettingsScreen
 import moe.ouom.neriplayer.ui.theme.NeriTheme
 import moe.ouom.neriplayer.ui.view.HyperBackground
 
@@ -154,7 +159,7 @@ fun NeriApp(
                                 HomeHostScreen(onSongClick = { /* TODO 播放 */ })
                             }
                             composable(Destinations.Explore.route) {
-                                ExploreScreen(onPlay = { showNowPlaying = true })
+                                ExploreHostScreen(onSongClick = { })
                             }
                             composable(Destinations.Library.route) {
                                 LibraryScreen(onPlay = { showNowPlaying = true })
@@ -178,7 +183,6 @@ fun NeriApp(
                 ) {
                     val avScope: AnimatedVisibilityScope = this
                     BackHandler { showNowPlaying = false }
-
                     Box(Modifier.fillMaxSize()) {
                         Box(
                             Modifier
