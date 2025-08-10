@@ -38,12 +38,38 @@ internal object JsonUtil {
         return sb.toString()
     }
 
-    private fun toJsonValue(v: Any?): String = when (v) {
+    fun toJsonValue(v: Any?): String = when (v) {
         null -> "null"
         is String -> "\"${v.replace("\"", "\\\"")}\""
         is Number, is Boolean -> v.toString()
         is Map<*, *> -> toJson(v as Map<String, Any>)
         is List<*> -> v.joinToString(prefix = "[", postfix = "]") { toJsonValue(it) }
         else -> "\"${v.toString().replace("\"", "\\\"")}\""
+    }
+
+    fun jsonQuote(s: String?): String {
+        if (s == null) return "null"
+        val sb = StringBuilder(s.length + 16)
+        sb.append('"')
+        for (ch in s) {
+            when (ch) {
+                '\\' -> sb.append("\\\\")
+                '"'  -> sb.append("\\\"")
+                '\b' -> sb.append("\\b")
+                '\u000C' -> sb.append("\\f")
+                '\n' -> sb.append("\\n")
+                '\r' -> sb.append("\\r")
+                '\t' -> sb.append("\\t")
+                else -> {
+                    if (ch < ' ') {
+                        sb.append(String.format("\\u%04x", ch.code))
+                    } else {
+                        sb.append(ch)
+                    }
+                }
+            }
+        }
+        sb.append('"')
+        return sb.toString()
     }
 }

@@ -179,7 +179,7 @@ fun HomeScreen(
 }
 
 @Composable
-private fun PlaylistCard(
+fun PlaylistCard(
     playlist: NeteasePlaylist,
     onClick: () -> Unit
 ) {

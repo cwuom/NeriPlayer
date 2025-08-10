@@ -23,6 +23,8 @@ package moe.ouom.neriplayer.core.api.netease
  * Created: 2025/8/10
  */
 
+import android.util.Log
+import moe.ouom.neriplayer.util.JsonUtil.jsonQuote
 import moe.ouom.neriplayer.util.readBytesCompat
 import okhttp3.Cookie
 import okhttp3.CookieJar
@@ -331,5 +333,103 @@ class NeteaseClient {
             "s" to s.toString()
         )
         return request(url, params, CryptoMode.API, "POST", usePersistedCookies = true)
+    }
+
+    @Throws(IOException::class)
+    fun getRelatedPlaylists(playlistId: Long): String {
+        return try {
+            val html = request(
+                url = "https://music.163.com/playlist",
+                params = mapOf("id" to playlistId.toString()),
+                mode = CryptoMode.API,
+                method = "GET",
+                usePersistedCookies = true
+            )
+
+            val regex = Regex(
+                pattern = """<div class="cver u-cover u-cover-3">[\s\S]*?<img src="([^"]+)">[\s\S]*?<a class="sname f-fs1 s-fc0" href="([^"]+)"[^>]*>([^<]+?)</a>[\s\S]*?<a class="nm nm f-thide s-fc3" href="([^"]+)"[^>]*>([^<]+?)</a>""",
+                options = setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
+            )
+
+            val items = mutableListOf<String>()
+
+            for (m in regex.findAll(html)) {
+                val coverRaw = m.groupValues[1]
+                val cover = coverRaw.replace(Regex("""\?param=\d+y\d+$"""), "")
+                val playlistHref = m.groupValues[2]
+                val playlistName = m.groupValues[3]
+                val userHref = m.groupValues[4]
+                val nickname = m.groupValues[5]
+
+                val playlistIdStr = playlistHref.removePrefix("/playlist?id=")
+                val userIdStr = userHref.removePrefix("/user/home?id=")
+
+                val itemJson = """
+                    {
+                      "creator": {
+                        "userId": ${jsonQuote(userIdStr)},
+                        "nickname": ${jsonQuote(nickname)}
+                      },
+                      "coverImgUrl": ${jsonQuote(cover)},
+                      "name": ${jsonQuote(playlistName)},
+                      "id": ${jsonQuote(playlistIdStr)}
+                    }
+                """.trimIndent()
+                items.add(itemJson)
+            }
+
+            val body = """
+                {
+                  "code": 200,
+                  "playlists": [${items.joinToString(",")}]
+                }
+            """.trimIndent()
+
+            body
+        } catch (e: Exception) {
+            """
+            {
+              "code": 500,
+              "msg": ${jsonQuote(e.stackTraceToString())}
+            }
+            """.trimIndent()
+        }
+    }
+
+    /**
+     * 获取精品歌单标签
+     */
+    @Throws(IOException::class)
+    fun getHighQualityTags(): String {
+        val url = "https://music.163.com/api/playlist/highquality/tags"
+        val params = emptyMap<String, Any>()
+        Log.d("NERI-Netease", "getHighQualityTags calling")
+        return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
+    }
+
+    /**
+     * 获取精品歌单
+     *
+     * @param cat     分类，如 "全部", "华语", "欧美", ...
+     * @param limit   数量
+     * @param before  上一页最后一个歌单的 updateTime，用于分页
+     */
+    @Throws(IOException::class)
+    fun getHighQualityPlaylists(
+        cat: String = "全部",
+        limit: Int = 50,
+        before: Long = 0L
+    ): String {
+        val params = mapOf<String, Any>(
+            "cat" to cat,
+            "limit" to limit,
+            "lasttime" to before,
+            "total" to true
+        )
+        return callWeApi(
+            path = "/playlist/highquality/list",
+            params = params,
+            usePersistedCookies = true
+        )
     }
 }
