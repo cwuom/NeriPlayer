@@ -25,22 +25,29 @@ package moe.ouom.neriplayer.ui.screens
 
 import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.outlined.Brightness4
 import androidx.compose.material.icons.outlined.DarkMode
@@ -48,17 +55,27 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Update
 import androidx.compose.material.icons.outlined.Verified
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -67,14 +84,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
+import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.flow.StateFlow
 import moe.ouom.neriplayer.BuildConfig
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.ui.viewmodel.NeteaseAuthEvent
+import moe.ouom.neriplayer.ui.viewmodel.NeteaseAuthViewModel
 import moe.ouom.neriplayer.util.NightModeHelper
 import moe.ouom.neriplayer.util.convertTimestampToDate
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -89,6 +115,43 @@ fun SettingsScreen(
     val context = LocalContext.current
     var loginExpanded by remember { mutableStateOf(false) }
     val arrowRotation by animateFloatAsState(targetValue = if (loginExpanded) 180f else 0f, label = "arrow")
+
+    // 网易云登录弹窗显隐
+    var showNeteaseSheet by remember { mutableStateOf(false) }
+    val neteaseVm: NeteaseAuthViewModel = viewModel()
+
+    // 弹窗内提示信息
+    var inlineMsg by remember { mutableStateOf<String?>(null) }
+
+    // 网易云 “发送验证码” 确认弹窗
+    var confirmPhoneMasked by remember { mutableStateOf<String?>(null) }
+    var showConfirmDialog by remember { mutableStateOf(false) }
+
+    // Cookies 展示对话框
+    var showCookieDialog by remember { mutableStateOf(false) }
+    var cookieText by remember { mutableStateOf("") }
+
+    LaunchedEffect(neteaseVm) {
+        neteaseVm.events.collect { e ->
+            when (e) {
+                is NeteaseAuthEvent.ShowSnack -> {
+                    inlineMsg = e.message
+                }
+                is NeteaseAuthEvent.AskConfirmSend -> {
+                    confirmPhoneMasked = e.masked
+                    showConfirmDialog = true
+                }
+                NeteaseAuthEvent.LoginSuccess -> {
+                    inlineMsg = null
+                    showNeteaseSheet = false
+                }
+                is NeteaseAuthEvent.ShowCookies -> {
+                    cookieText = e.cookies.entries.joinToString("\n") { (k, v) -> "$k=$v" }
+                    showCookieDialog = true
+                }
+            }
+        }
+    }
 
     Scaffold(
         modifier = Modifier
@@ -244,8 +307,11 @@ fun SettingsScreen(
                                 )
                             },
                             headlineContent = { Text("网易云音乐") },
-                            supportingContent = { Text("仅支持验证码登录") },
-                            modifier = Modifier.clickable { },
+                            supportingContent = { Text("验证码登录") },
+                            modifier = Modifier.clickable {
+                                inlineMsg = null
+                                showNeteaseSheet = true
+                            },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
 
@@ -356,4 +422,192 @@ fun SettingsScreen(
             }
         }
     }
+
+    // 网易云登录窗
+    if (showNeteaseSheet) {
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+        val conf = LocalConfiguration.current
+        val sheetHeight = (conf.screenHeightDp * 0.75f).dp
+
+        // “发送验证码” 确认对话框
+        if (showConfirmDialog) {
+            AlertDialog(
+                onDismissRequest = { showConfirmDialog = false },
+                title = { Text("确认发送验证码？") },
+                text = { Text("将发送验证码到 >${confirmPhoneMasked ?: ""}<") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showConfirmDialog = false
+                        neteaseVm.sendCaptcha(ctcode = "86")
+                    }) { Text("发送") }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        showConfirmDialog = false
+                        inlineMsg = "已取消发送"
+                    }) { Text("取消") }
+                }
+            )
+        }
+
+        ModalBottomSheet(
+            onDismissRequest = { showNeteaseSheet = false },
+            sheetState = sheetState,
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            Box(
+                modifier = Modifier
+                    .height(sheetHeight)
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+            ) {
+                NeteaseLoginContent(
+                    message = inlineMsg,
+                    onDismissMessage = { inlineMsg = null },
+                    vm = neteaseVm
+                )
+            }
+        }
+    }
+
+    // Cookies 展示对话框
+    if (showCookieDialog) {
+        AlertDialog(
+            onDismissRequest = { showCookieDialog = false },
+            title = { Text("登录成功") },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        text = cookieText.ifBlank { "(空)" },
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showCookieDialog = false }) { Text("好的") }
+            }
+        )
+    }
+}
+
+@Composable
+private fun NeteaseLoginContent(
+    message: String?,
+    onDismissMessage: () -> Unit,
+    vm: NeteaseAuthViewModel
+) {
+    val state by vm.uiState.collectAsStateWithLifecycleCompat()
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        Text(text = "网易云音乐登录", style = MaterialTheme.typography.titleLarge)
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // 内嵌提示条
+        AnimatedVisibility(visible = message != null, enter = fadeIn(), exit = fadeOut()) {
+            InlineMessage(
+                text = message ?: "",
+                onClose = onDismissMessage
+            )
+        }
+
+        OutlinedTextField(
+            value = state.phone,
+            onValueChange = vm::onPhoneChange,
+            label = { Text("+86 手机号") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        OutlinedTextField(
+            value = state.captcha,
+            onValueChange = vm::onCaptchaChange,
+            label = { Text("短信验证码") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // 发送验证码
+        Button(
+            enabled = !state.sending && state.countdownSec <= 0,
+            onClick = { vm.askConfirmSendCaptcha() }
+        ) {
+            if (state.sending) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                Spacer(modifier = Modifier.size(8.dp))
+                Text("发送中...")
+            } else {
+                Text(if (state.countdownSec > 0) "重新获取（${state.countdownSec}s）" else "发送验证码")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // 登录
+        Button(
+            enabled = state.captcha.isNotEmpty() && !state.loggingIn,
+            onClick = { vm.loginByCaptcha(countryCode = "86") }
+        ) {
+            if (state.loggingIn) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                Spacer(modifier = Modifier.size(8.dp))
+                Text("登录中...")
+            } else {
+                Text("登录")
+            }
+        }
+    }
+}
+
+/** 内嵌提示条*/
+@Composable
+private fun InlineMessage(
+    text: String,
+    onClose: () -> Unit
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        shape = RoundedCornerShape(12.dp),
+        tonalElevation = 2.dp,
+        shadowElevation = 0.dp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 12.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+        ) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(onClick = onClose) {
+                Icon(imageVector = Icons.Filled.Close, contentDescription = "关闭")
+            }
+        }
+    }
+}
+
+/** 兼容性：不用依赖 collectAsState / lifecycle-compose，手动收集 StateFlow */
+@Composable
+private fun <T> StateFlow<T>.collectAsStateWithLifecycleCompat(): androidx.compose.runtime.State<T> {
+    val flow = this
+    val state = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(flow.value) }
+    androidx.compose.runtime.LaunchedEffect(flow) {
+        flow.collect { v -> state.value = v }
+    }
+    return state
 }

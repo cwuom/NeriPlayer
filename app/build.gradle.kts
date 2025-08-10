@@ -121,4 +121,7 @@ dependencies {
     implementation(libs.androidx.animation)
     implementation(libs.accompanist.navigation.animation)
     implementation(libs.androidx.datastore.preferences)
+
+    implementation(libs.dec)
+    implementation(libs.okhttp)
 }
