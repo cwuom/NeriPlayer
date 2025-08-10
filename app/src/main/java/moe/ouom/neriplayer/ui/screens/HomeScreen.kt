@@ -24,7 +24,6 @@ package moe.ouom.neriplayer.ui.screens
  */
 
 
-import android.annotation.SuppressLint
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -38,6 +37,8 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -66,10 +67,9 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
 import moe.ouom.neriplayer.ui.viewmodel.HomeViewModel
 import moe.ouom.neriplayer.ui.viewmodel.NeteasePlaylist
+import moe.ouom.neriplayer.util.formatPlayCount
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -89,7 +89,6 @@ fun HomeScreen(
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
 
-    // 标题候选
     val titleOptions = listOf(
         "音理音理音?", "音理音理!", "音理音理!!", "音理音理~", "喵~", "音理!", "NeriPlayer"
     )
@@ -110,7 +109,6 @@ fun HomeScreen(
             )
         )
 
-        // 内容卡片容器
         Card(
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(
@@ -132,7 +130,7 @@ fun HomeScreen(
                     ) {
                         CircularProgressIndicator()
                         Text(
-                            text = "  正在为你加载首页推荐…",
+                            text = "  正在为你加载首页推荐...",
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
@@ -156,7 +154,6 @@ fun HomeScreen(
                     }
                 }
                 else -> {
-                    // 展示推荐歌单
                     LazyVerticalGrid(
                         columns = GridCells.Adaptive(150.dp),
                         contentPadding = PaddingValues(16.dp),
@@ -211,14 +208,5 @@ private fun PlaylistCard(
                 overflow = TextOverflow.Clip
             )
         }
-    }
-}
-
-@SuppressLint("DefaultLocale")
-private fun formatPlayCount(count: Long): String {
-    return when {
-        count >= 100_000_000L -> String.format("%.1f亿", count / 100_000_000f)
-        count >= 10_000L -> String.format("%.1f万", count / 10_000f)
-        else -> count.toString()
     }
 }

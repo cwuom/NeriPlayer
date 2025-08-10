@@ -24,6 +24,7 @@ package moe.ouom.neriplayer.ui.viewmodel
  */
 
 import android.app.Application
+import android.os.Parcelable
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -32,6 +33,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.parcelize.Parcelize
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
 import moe.ouom.neriplayer.data.NeteaseCookieRepository
 import org.json.JSONObject
@@ -46,14 +48,14 @@ data class HomeUiState(
 )
 
 /** UI 使用的精简数据模型 */
+@Parcelize
 data class NeteasePlaylist(
     val id: Long,
     val name: String,
     val picUrl: String,
     val playCount: Long,
     val trackCount: Int
-)
-
+) : Parcelable
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repo = NeteaseCookieRepository(application)

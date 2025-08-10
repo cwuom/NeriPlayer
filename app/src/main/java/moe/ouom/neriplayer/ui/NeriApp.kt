@@ -35,12 +35,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryMusic
@@ -60,7 +55,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -72,7 +66,7 @@ import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.ui.components.NeriBottomBar
 import moe.ouom.neriplayer.ui.components.NeriMiniPlayer
 import moe.ouom.neriplayer.ui.screens.ExploreScreen
-import moe.ouom.neriplayer.ui.screens.HomeScreen
+import moe.ouom.neriplayer.ui.screens.HomeHostScreen
 import moe.ouom.neriplayer.ui.screens.LibraryScreen
 import moe.ouom.neriplayer.ui.screens.NowPlayingScreen
 import moe.ouom.neriplayer.ui.screens.SettingsScreen
@@ -97,8 +91,9 @@ fun NeriApp(
         followSystemDark -> isSystemInDarkTheme()
         else -> false
     }
-
     LaunchedEffect(isDark) { onIsDarkChanged(isDark) }
+
+    val scope = rememberCoroutineScope()
 
     NeriTheme(
         followSystemDark = followSystemDark,
@@ -128,7 +123,7 @@ fun NeriApp(
                 val avScope: AnimatedVisibilityScope = this
 
                 Scaffold(
-                    containerColor = Color.Transparent,
+                    containerColor = MaterialTheme.colorScheme.background,
                     contentColor = MaterialTheme.colorScheme.onSurface,
                     snackbarHost = { SnackbarHost(snackbarHostState) },
                     bottomBar = {
@@ -168,9 +163,7 @@ fun NeriApp(
                     NavHost(
                         navController = navController,
                         startDestination = Destinations.Home.route,
-                        modifier = Modifier
-                            .padding(innerPadding)
-                            .windowInsetsPadding(WindowInsets.statusBars.only(WindowInsetsSides.Top))
+                        modifier = Modifier.padding(innerPadding)
                     ) {
                         composable(
                             route = Destinations.Home.route,
@@ -178,40 +171,23 @@ fun NeriApp(
                             exitTransition = { fadeOut(animationSpec = tween(200)) },
                             popEnterTransition = { fadeIn(animationSpec = tween(200)) },
                             popExitTransition = { fadeOut(animationSpec = tween(200)) }
-                        ) { HomeScreen(onItemClick = { showNowPlaying = true }) }
-
-                        composable(
-                            route = Destinations.Explore.route,
-                            enterTransition = { fadeIn(animationSpec = tween(200)) },
-                            exitTransition = { fadeOut(animationSpec = tween(200)) },
-                            popEnterTransition = { fadeIn(animationSpec = tween(200)) },
-                            popExitTransition = { fadeOut(animationSpec = tween(200)) }
-                        ) { ExploreScreen(onPlay = { showNowPlaying = true }) }
-
-                        composable(
-                            route = Destinations.Library.route,
-                            enterTransition = { fadeIn(animationSpec = tween(200)) },
-                            exitTransition = { fadeOut(animationSpec = tween(200)) },
-                            popEnterTransition = { fadeIn(animationSpec = tween(200)) },
-                            popExitTransition = { fadeOut(animationSpec = tween(200)) }
-                        ) { LibraryScreen(onPlay = { showNowPlaying = true }) }
-                        composable(Destinations.Settings.route,
-                            enterTransition = { fadeIn(animationSpec = tween(200)) },
-                            exitTransition = { fadeOut(animationSpec = tween(200)) },
-                            popEnterTransition = { fadeIn(animationSpec = tween(200)) },
-                            popExitTransition = { fadeOut(animationSpec = tween(200)) }
                         ) {
-                            val scope = rememberCoroutineScope()
+                            HomeHostScreen(onSongClick = { /* TODO 播放 */ })
+                        }
+
+                        composable(Destinations.Explore.route) {
+                            ExploreScreen(onPlay = { showNowPlaying = true })
+                        }
+                        composable(Destinations.Library.route) {
+                            LibraryScreen(onPlay = { showNowPlaying = true })
+                        }
+                        composable(Destinations.Settings.route) {
                             SettingsScreen(
                                 dynamicColor = dynamicColorEnabled,
-                                onDynamicColorChange = {
-                                    scope.launch { repo.setDynamicColor(it) }
-                                },
+                                onDynamicColorChange = { scope.launch { repo.setDynamicColor(it) } },
                                 followSystemDark = followSystemDark,
                                 forceDark = forceDark,
-                                onForceDarkChange = {
-                                    scope.launch { repo.setForceDark(it) }
-                                }
+                                onForceDarkChange = { scope.launch { repo.setForceDark(it) } }
                             )
                         }
                     }

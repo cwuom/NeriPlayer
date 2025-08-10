@@ -24,12 +24,18 @@ package moe.ouom.neriplayer.core.api.netease
  */
 
 import moe.ouom.neriplayer.util.readBytesCompat
-import okhttp3.*
+import okhttp3.Cookie
+import okhttp3.CookieJar
+import okhttp3.FormBody
+import okhttp3.HttpUrl
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.brotli.dec.BrotliInputStream
 import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.util.Locale
+import java.util.zip.GZIPInputStream
 
 /**
  * 网易云音乐客户端
@@ -51,6 +57,7 @@ class NeteaseClient {
                     list.removeAll { c -> cookies.any { it.name == c.name } }
                     list.addAll(cookies)
                 }
+
                 override fun loadForRequest(url: HttpUrl): List<Cookie> {
                     return cookieStore[url.host] ?: emptyList()
                 }
@@ -60,10 +67,28 @@ class NeteaseClient {
 
     /** 设置/更新 持久化 Cookie，供非登录接口统一携带 */
     fun setPersistedCookies(cookies: Map<String, String>) {
-        persistedCookies = cookies.toMap()
+        // 始终补齐关键标识，很多接口（尤其歌单详情）需要它们才会返回全量 tracks
+        val m = cookies.toMutableMap()
+        m.putIfAbsent("os", "pc")
+        m.putIfAbsent("appver", "8.10.35")
+        persistedCookies = m.toMap()
     }
 
-    /** 根据名称获取 Cookie 值 */
+    /** 获取当前运行时 CookieJar 中的所有 Cookie */
+    fun getCookies(): Map<String, String> {
+        val result = mutableMapOf<String, String>()
+        cookieStore.values.forEach { list ->
+            list.forEach { cookie -> result[cookie.name] = cookie.value }
+        }
+        return result
+    }
+
+    /** 清空运行期 Cookie */
+    fun logout() {
+        cookieStore.clear()
+    }
+
+    /** 根据名称获取运行期 Cookie 值 */
     private fun getCookie(name: String): String? {
         cookieStore.values.forEach { list ->
             list.firstOrNull { it.name == name }?.let { return it.value }
@@ -71,9 +96,17 @@ class NeteaseClient {
         return null
     }
 
-    /** 构建 Cookie 头 */
+    /** 构建最终要发送的 Cookie 头 */
     private fun buildPersistedCookieHeader(): String? {
-        val map = persistedCookies
+        val map = persistedCookies.toMutableMap()
+        if (map.isEmpty()) {
+            // 即便外部未注入，也补上最关键的两项，提升接口成功率
+            map["os"] = "pc"
+            map["appver"] = "8.10.35"
+        } else {
+            map.putIfAbsent("os", "pc")
+            map.putIfAbsent("appver", "8.10.35")
+        }
         if (map.isEmpty()) return null
         return map.entries.joinToString("; ") { (k, v) -> "$k=$v" }
     }
@@ -83,11 +116,9 @@ class NeteaseClient {
      *
      * @param url 完整请求地址
      * @param params 未加密的请求参数
-     * @param mode 加密模式，默认为 CryptoMode.WEAPI
+     * @param mode 加密模式
      * @param method "POST" / "GET"
-     * @param usePersistedCookies 是否携带 DataStore 中保存过的 Cookies
-     * @return 服务端返回的原始文本字符串
-     * @throws IOException 网络异常或服务器异常
+     * @param usePersistedCookies 是否携带持久化 Cookie
      */
     @Throws(IOException::class)
     fun request(
@@ -98,33 +129,36 @@ class NeteaseClient {
         usePersistedCookies: Boolean = true
     ): String {
         val requestUrl = url.toHttpUrl()
-        // 按模式加密参数
+
+        // 按模式加/不加密
         val bodyParams: Map<String, String> = when (mode) {
-            CryptoMode.WEAPI -> NeteaseCrypto.weApiEncrypt(params)
-            CryptoMode.EAPI -> NeteaseCrypto.eApiEncrypt(requestUrl.encodedPath, params)
-            CryptoMode.LINUX -> NeteaseCrypto.linuxApiEncrypt(params)
-            CryptoMode.API -> params.mapValues { it.value.toString() }
+            CryptoMode.WEAPI -> NeteaseCrypto.weApiEncrypt(params)              // /weapi
+            CryptoMode.EAPI  -> NeteaseCrypto.eApiEncrypt(requestUrl.encodedPath, params) // /eapi
+            CryptoMode.LINUX -> NeteaseCrypto.linuxApiEncrypt(params)           // /api (linux)
+            CryptoMode.API   -> params.mapValues { it.value.toString() }        // 直传
         }
 
         var reqUrl = requestUrl
         val builder = Request.Builder()
-        // 公共头部
-        builder.header("Accept", "*/*")
-        builder.header("Accept-Language", "zh-CN,zh-Hans;q=0.9")
-        builder.header("Connection", "keep-alive")
-        builder.header("Referer", "https://music.163.com")
-        builder.header("Host", requestUrl.host)
-        builder.header("User-Agent", "Mozilla/5.0 (Linux; Android 10; Kotlin) NeteaseClient/1.0")
+            .header("Accept", "*/*")
+            .header("Accept-Language", "zh-CN,zh-Hans;q=0.9")
+            .header("Connection", "keep-alive")
+            .header("Referer", "https://music.163.com")
+            .header("Host", requestUrl.host)
+            .header("User-Agent", "Mozilla/5.0 (Linux; Android 10; NeriPlayer) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36")
 
         if (usePersistedCookies) {
             buildPersistedCookieHeader()?.let { builder.header("Cookie", it) }
         }
 
-        // WeAPI 模式需要 csrf_token
+        // WeAPI 需要 csrf_token
         if (mode == CryptoMode.WEAPI) {
             val csrf = getCookie("__csrf") ?: ""
-            reqUrl = requestUrl.newBuilder().setQueryParameter("csrf_token", csrf).build()
+            reqUrl = requestUrl.newBuilder()
+                .setQueryParameter("csrf_token", csrf)
+                .build()
         }
+
         builder.url(reqUrl)
 
         when (method.uppercase(Locale.getDefault())) {
@@ -142,18 +176,18 @@ class NeteaseClient {
         }
 
         okHttpClient.newCall(builder.build()).execute().use { resp ->
-            val bytes = resp.body?.let { responseBody ->
-                when (resp.header("Content-Encoding")?.lowercase()) {
-                    "br" -> BrotliInputStream(responseBody.byteStream()).use { it.readBytesCompat() }
-                    "gzip" -> java.util.zip.GZIPInputStream(responseBody.byteStream()).use { it.readBytesCompat() }
-                    else -> responseBody.bytes()
-                }
-            } ?: ByteArray(0)
+            val responseBody = resp.body ?: return ""
+            val encoding = resp.header("Content-Encoding")?.lowercase(Locale.getDefault())
+            val bytes = when (encoding) {
+                "br"   -> BrotliInputStream(responseBody.byteStream()).use { it.readBytesCompat() }
+                "gzip" -> GZIPInputStream(responseBody.byteStream()).use { it.readBytesCompat() }
+                else   -> responseBody.bytes()
+            }
             return String(bytes, StandardCharsets.UTF_8)
         }
     }
 
-    /** 调用 WeAPI 接口（默认使用持久化 Cookie） */
+    /** 调用 WeAPI 接口 */
     @Throws(IOException::class)
     fun callWeApi(path: String, params: Map<String, Any>, usePersistedCookies: Boolean = true): String {
         val p = if (path.startsWith("/")) path else "/$path"
@@ -161,7 +195,7 @@ class NeteaseClient {
         return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies)
     }
 
-    /** 调用 EAPI 接口（默认使用持久化 Cookie） */
+    /** 调用 EAPI 接口 */
     @Throws(IOException::class)
     fun callEApi(path: String, params: Map<String, Any>, usePersistedCookies: Boolean = true): String {
         val p = if (path.startsWith("/")) path else "/$path"
@@ -169,7 +203,7 @@ class NeteaseClient {
         return request(url, params, CryptoMode.EAPI, "POST", usePersistedCookies)
     }
 
-    /** 调用 LinuxAPI 接口（默认使用持久化 Cookie） */
+    /** 调用 LinuxAPI 接口 */
     @Throws(IOException::class)
     fun callLinuxApi(path: String, params: Map<String, Any>, usePersistedCookies: Boolean = true): String {
         val p = if (path.startsWith("/")) path else "/$path"
@@ -177,9 +211,11 @@ class NeteaseClient {
         return request(url, params, CryptoMode.LINUX, "POST", usePersistedCookies)
     }
 
-    /**
-     * 手机号 + 密码登录（不携带持久化 Cookie）
-     */
+    // -------------------------
+    // 认证相关
+    // -------------------------
+
+    /** 手机号 + 密码登录（不携带持久化 Cookie） */
     @Throws(IOException::class)
     fun loginByPhone(phone: String, password: String, countryCode: Int = 86, remember: Boolean = true): String {
         val params = mutableMapOf<String, Any>(
@@ -192,9 +228,7 @@ class NeteaseClient {
         return callEApi("/w/login/cellphone", params, usePersistedCookies = false)
     }
 
-    /**
-     * 发送短信验证码（不携带持久化 Cookie）
-     */
+    /** 发送短信验证码（不携带持久化 Cookie） */
     @Throws(IOException::class)
     fun sendCaptcha(phone: String, ctcode: Int = 86): String {
         val url = "https://interface.music.163.com/weapi/sms/captcha/sent"
@@ -202,9 +236,7 @@ class NeteaseClient {
         return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = false)
     }
 
-    /**
-     * 校验短信验证码（不携带持久化 Cookie）
-     */
+    /** 校验短信验证码（不携带持久化 Cookie） */
     @Throws(IOException::class)
     fun verifyCaptcha(phone: String, captcha: String, ctcode: Int = 86): String {
         val url = "https://interface.music.163.com/weapi/sms/captcha/verify"
@@ -212,9 +244,7 @@ class NeteaseClient {
         return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = false)
     }
 
-    /**
-     * 使用短信验证码登录（不携带持久化 Cookie）
-     */
+    /** 短信验证码登录（不携带持久化 Cookie） */
     @Throws(IOException::class)
     fun loginByCaptcha(phone: String, captcha: String, ctcode: Int = 86, remember: Boolean = true): String {
         val params = mutableMapOf<String, Any>(
@@ -227,20 +257,19 @@ class NeteaseClient {
         return callEApi("/w/login/cellphone", params, usePersistedCookies = false)
     }
 
-    /**
-     * 获取网友精选碟
-     */
+    // -------------------------
+    // 业务接口
+    // -------------------------
+
+    /** 获取首页推荐歌单 */
     @Throws(IOException::class)
     fun getRecommendedPlaylists(limit: Int = 30): String {
         val url = "https://music.163.com/weapi/personalized/playlist"
         val params = mapOf("limit" to limit.toString())
-        // 推荐歌单使用 WEAPI 加密，通过 POST 提交
         return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
     }
 
-    /**
-     * 搜索音乐资源
-     */
+    /** 搜索歌曲 */
     @Throws(IOException::class)
     fun searchSongs(keyword: String, limit: Int = 30, offset: Int = 0, type: Int = 1): String {
         val url = "https://music.163.com/weapi/cloudsearch/get/web"
@@ -254,9 +283,7 @@ class NeteaseClient {
         return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
     }
 
-    /**
-     * 获取歌曲播放链接
-     */
+    /** 获取歌曲播放链接 */
     @Throws(IOException::class)
     fun getSongUrl(songId: Long, bitrate: Int = 320000): String {
         val url = "https://music.163.com/weapi/song/enhance/player/url"
@@ -267,9 +294,7 @@ class NeteaseClient {
         return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
     }
 
-    /**
-     * 获取歌曲下载链接
-     */
+    /** 获取歌曲下载链接 */
     @Throws(IOException::class)
     fun getSongDownloadUrl(songId: Long, bitrate: Int = 320000, level: String = "lossless"): String {
         val url = "https://music.163.com/weapi/song/enhance/download/url"
@@ -281,9 +306,7 @@ class NeteaseClient {
         return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
     }
 
-    /**
-     * 获取歌单列表
-     */
+    /** 获取用户歌单列表 */
     @Throws(IOException::class)
     fun getUserPlaylists(userId: Long, offset: Int = 0, limit: Int = 30): String {
         val url = "https://music.163.com/weapi/user/playlist"
@@ -297,35 +320,16 @@ class NeteaseClient {
     }
 
     /**
-     * 获取歌单详情
+     * 获取歌单详情（/api/v6/playlist/detail）
      */
     @Throws(IOException::class)
-    fun getPlaylistDetail(playlistId: Long, trackCount: Int = 1000): String {
-        val url = "https://music.163.com/weapi/v3/playlist/detail"
+    fun getPlaylistDetail(playlistId: Long, n: Int = 100000, s: Int = 8): String {
+        val url = "https://music.163.com/api/v6/playlist/detail"
         val params = mutableMapOf<String, Any>(
             "id" to playlistId.toString(),
-            "total" to "true",
-            "limit" to trackCount.toString(),
-            "n" to trackCount.toString(),
-            // Note: 官方实现中参数名写成 offest（手误），但此处沿用以保证兼容性
-            "offest" to "0"
+            "n" to n.toString(),
+            "s" to s.toString()
         )
-        return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
-    }
-
-    /**
-     * 获取当前运行期 CookieJar 中的所有 Cookie
-     */
-    fun getCookies(): Map<String, String> {
-        val result = mutableMapOf<String, String>()
-        cookieStore.values.forEach { list ->
-            list.forEach { cookie -> result[cookie.name] = cookie.value }
-        }
-        return result
-    }
-
-    /** 清空运行期 Cookie */
-    fun logout() {
-        cookieStore.clear()
+        return request(url, params, CryptoMode.API, "POST", usePersistedCookies = true)
     }
 }
