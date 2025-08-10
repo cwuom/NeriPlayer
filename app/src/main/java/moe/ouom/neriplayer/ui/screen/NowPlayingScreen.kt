@@ -104,8 +104,11 @@ fun NowPlayingScreen(
     val durationMs = currentSong?.durationMs ?: 0L
     val currentPosition by PlayerManager.playbackPositionFlow.collectAsState()
 
-    var sliderPosition by remember { mutableFloatStateOf(0f) }
     var isUserDraggingSlider by remember { mutableStateOf(false) }
+
+    var sliderPosition by remember(currentSong?.id) {
+        mutableFloatStateOf(PlayerManager.playbackPositionFlow.value.toFloat())
+    }
 
     var contentVisible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
@@ -116,9 +119,6 @@ fun NowPlayingScreen(
         if (!isUserDraggingSlider) {
             sliderPosition = currentPosition.toFloat()
         }
-    }
-    LaunchedEffect(currentSong?.id) {
-        sliderPosition = 0f
     }
 
     CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
