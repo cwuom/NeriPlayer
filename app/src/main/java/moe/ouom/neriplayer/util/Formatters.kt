@@ -24,6 +24,7 @@ package moe.ouom.neriplayer.util
  */
 
 import android.annotation.SuppressLint
+import java.util.concurrent.TimeUnit
 
 @SuppressLint("DefaultLocale")
 fun formatPlayCount(count: Long): String {
@@ -34,9 +35,10 @@ fun formatPlayCount(count: Long): String {
     }
 }
 
-fun formatDuration(ms: Long): String {
-    val totalSec = (ms / 1000).toInt()
-    val m = totalSec / 60
-    val s = totalSec % 60
-    return "%d:%02d".format(m, s)
+@SuppressLint("DefaultLocale")
+fun formatDuration(millis: Long): String {
+    val minutes = TimeUnit.MILLISECONDS.toMinutes(millis)
+    val seconds = TimeUnit.MILLISECONDS.toSeconds(millis) -
+            TimeUnit.MINUTES.toSeconds(minutes)
+    return String.format("%02d:%02d", minutes, seconds)
 }

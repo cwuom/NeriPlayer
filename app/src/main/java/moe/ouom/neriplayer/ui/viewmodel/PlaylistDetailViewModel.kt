@@ -24,6 +24,7 @@ package moe.ouom.neriplayer.ui.viewmodel
  */
 
 import android.app.Application
+import android.os.Parcelable
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -32,6 +33,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.parcelize.Parcelize
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
 import moe.ouom.neriplayer.data.NeteaseCookieRepository
 import org.json.JSONObject
@@ -47,6 +49,7 @@ data class PlaylistHeader(
     val trackCount: Int
 )
 
+@Parcelize
 data class SongItem(
     val id: Long,
     val name: String,
@@ -54,7 +57,7 @@ data class SongItem(
     val album: String,
     val durationMs: Long,
     val coverUrl: String?
-)
+) : Parcelable
 
 data class PlaylistDetailUiState(
     val loading: Boolean = true,

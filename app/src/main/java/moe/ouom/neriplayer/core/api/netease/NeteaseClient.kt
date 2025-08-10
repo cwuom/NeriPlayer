@@ -132,6 +132,7 @@ class NeteaseClient {
     ): String {
         val requestUrl = url.toHttpUrl()
 
+        Log.d("NERI-NeteaseClient", "call ${url}, ${method}, $mode")
         // 按模式加/不加密
         val bodyParams: Map<String, String> = when (mode) {
             CryptoMode.WEAPI -> NeteaseCrypto.weApiEncrypt(params)              // /weapi
@@ -305,6 +306,7 @@ class NeteaseClient {
             "br" to bitrate.toString(),
             "level" to level
         )
+
         return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
     }
 

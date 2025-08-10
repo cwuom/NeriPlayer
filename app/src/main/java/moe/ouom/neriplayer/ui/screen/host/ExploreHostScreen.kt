@@ -48,7 +48,7 @@ import moe.ouom.neriplayer.ui.viewmodel.SongItem
 
 @Composable
 fun ExploreHostScreen(
-    onSongClick: (SongItem) -> Unit = {}
+    onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> }
 ) {
     var selected by rememberSaveable { mutableStateOf<NeteasePlaylist?>(null) }
     BackHandler(enabled = selected != null) { selected = null }

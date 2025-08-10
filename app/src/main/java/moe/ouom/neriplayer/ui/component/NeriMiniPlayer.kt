@@ -23,19 +23,17 @@ package moe.ouom.neriplayer.ui.component
  * Created: 2025/8/8
  */
 
-import androidx.compose.animation.AnimatedVisibilityScope
-import androidx.compose.animation.EnterExitState
-import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.SharedTransitionScope
-import androidx.compose.animation.SharedTransitionScope.SharedContentState
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -50,41 +48,26 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 
-@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun NeriMiniPlayer(
     title: String,
     artist: String,
+    coverUrl: String?,
+    isPlaying: Boolean,
+    onPlayPause: () -> Unit,
     onExpand: () -> Unit,
-    sharedScope: SharedTransitionScope,
-    animatedScope: AnimatedVisibilityScope,
-    coverSharedState: SharedContentState,
-    titleSharedState: SharedContentState
 ) {
-    var isPlaying by remember { mutableStateOf(true) }
-
-    // 迷你标题淡出
-    val miniTitleAlpha by with(animatedScope) {
-        transition.animateFloat(
-            label = "miniTitleAlpha",
-            transitionSpec = { tween(durationMillis = 90, easing = FastOutSlowInEasing) }
-        ) { state: EnterExitState ->
-            if (state == EnterExitState.Visible) 1f else 0f
-        }
-    }
-
     Card(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.secondaryContainer
@@ -99,59 +82,57 @@ fun NeriMiniPlayer(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
         ) {
-            with(sharedScope) {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.primaryContainer)
-                        .graphicsLayer { transformOrigin = TransformOrigin(0f, 1f) }
-                        .sharedElement(
-                            coverSharedState,
-                            animatedScope,
-                            boundsTransform = { _, _ ->
-                                spring(stiffness = 1400f, dampingRatio = 0.72f)
-                            }
-                        )
-                )
-            }
-
-            with(sharedScope) {
-                androidx.compose.foundation.layout.Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .graphicsLayer { alpha = miniTitleAlpha }
-                        .sharedElement(
-                            titleSharedState,
-                            animatedScope,
-                            boundsTransform = { _, _ ->
-                                tween(140, easing = FastOutSlowInEasing)
-                            }
-                        )
-                ) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(
+                        color = if (coverUrl != null) Color.Transparent else MaterialTheme.colorScheme.primaryContainer,
+                        shape = RoundedCornerShape(8.dp)
                     )
-                    Text(
-                        text = artist,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+            ) {
+                if (coverUrl != null) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current).data(coverUrl).build(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .matchParentSize()
+                            .clip(RoundedCornerShape(8.dp))
                     )
                 }
             }
 
-            IconButton(onClick = { isPlaying = !isPlaying }) {
-                Icon(
-                    imageVector = if (isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                    contentDescription = if (isPlaying) "暂停" else "播放",
-                    tint = MaterialTheme.colorScheme.onSecondaryContainer
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
+                Text(
+                    text = artist,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            IconButton(onClick = { onPlayPause() }) {
+                AnimatedContent(
+                    targetState = isPlaying,
+                    label = "mini_play_pause_icon",
+                    transitionSpec = {
+                        (scaleIn() + fadeIn()) togetherWith (scaleOut() + fadeOut())
+                    }
+                ) { currentlyPlaying ->
+                    Icon(
+                        imageVector = if (currentlyPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
+                        contentDescription = if (currentlyPlaying) "暂停" else "播放",
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
             }
         }
     }

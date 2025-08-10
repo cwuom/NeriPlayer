@@ -27,6 +27,7 @@ package moe.ouom.neriplayer.data
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
@@ -41,6 +42,7 @@ object SettingsKeys {
     val FORCE_DARK = booleanPreferencesKey("force_dark")
     val FOLLOW_SYSTEM_DARK = booleanPreferencesKey("follow_system_dark")
     val DISCLAIMER_ACCEPTED_V1 = booleanPreferencesKey("disclaimer_accepted_v2")
+    val AUDIO_QUALITY = stringPreferencesKey("audio_quality")
 }
 
 class SettingsRepository(private val context: Context) {
@@ -53,6 +55,8 @@ class SettingsRepository(private val context: Context) {
     val followSystemDarkFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.FOLLOW_SYSTEM_DARK] ?: true }
 
+    val audioQualityFlow: Flow<String> =
+        context.dataStore.data.map { it[SettingsKeys.AUDIO_QUALITY] ?: "exhigh" }
     val disclaimerAcceptedFlow: Flow<Boolean?> =
         flow {
             emit(null) // 加载态
@@ -76,6 +80,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setDisclaimerAccepted(accepted: Boolean) {
         context.dataStore.edit { it[SettingsKeys.DISCLAIMER_ACCEPTED_V1] = accepted }
+    }
+
+    suspend fun setAudioQuality(value: String) {
+        context.dataStore.edit { it[SettingsKeys.AUDIO_QUALITY] = value }
     }
 
     /** 备用：一次性读取（非 Compose 场景） */

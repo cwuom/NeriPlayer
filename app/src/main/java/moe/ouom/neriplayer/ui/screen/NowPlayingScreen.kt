@@ -23,15 +23,13 @@ package moe.ouom.neriplayer.ui.screen
  * Created: 2025/8/8
  */
 
-import androidx.compose.animation.AnimatedVisibilityScope
-import androidx.compose.animation.EnterExitState
-import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.SharedTransitionScope
-import androidx.compose.animation.SharedTransitionScope.SharedContentState
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -49,6 +47,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Pause
@@ -69,7 +68,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -77,32 +79,39 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.media3.common.Player
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import moe.ouom.neriplayer.core.player.PlayerManager
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NowPlayingScreen(
     onNavigateUp: () -> Unit,
-    sharedScope: SharedTransitionScope,
-    animatedScope: AnimatedVisibilityScope,
-    coverSharedState: SharedContentState,
-    titleSharedState: SharedContentState
 ) {
-    var progress by remember { mutableStateOf(0.3f) }
-    var isPlaying by remember { mutableStateOf(true) }
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
-    // 标题淡入动画
-    val fullTitleAlpha by with(animatedScope) {
-        transition.animateFloat(
-            label = "fullTitleAlpha",
-            transitionSpec = { tween(durationMillis = 110, easing = FastOutSlowInEasing) }
-        ) { state: EnterExitState ->
-            if (state == EnterExitState.Visible) 1f else 0f
+    val currentSong by PlayerManager.currentSongFlow.collectAsState()
+    val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
+    val shuffleEnabled by PlayerManager.shuffleModeFlow.collectAsState()
+    val repeatMode by PlayerManager.repeatModeFlow.collectAsState()
+    val durationMs = currentSong?.durationMs ?: 0L
+    val currentPosition by PlayerManager.playbackPositionFlow.collectAsState()
+
+    var sliderPosition by remember { mutableFloatStateOf(0f) }
+    var isUserDraggingSlider by remember { mutableStateOf(false) }
+
+    LaunchedEffect(currentPosition) {
+        if (!isUserDraggingSlider) {
+            sliderPosition = currentPosition.toFloat()
         }
+    }
+    LaunchedEffect(currentSong?.id) {
+        sliderPosition = 0f
     }
 
     CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
@@ -112,10 +121,9 @@ fun NowPlayingScreen(
                 .windowInsetsPadding(WindowInsets.statusBars)
                 .windowInsetsPadding(WindowInsets.navigationBars)
                 .padding(horizontal = 20.dp, vertical = 12.dp)
-                // 手势下拉关闭
                 .pointerInput(Unit) {
                     detectVerticalDragGestures { _, dragAmount ->
-                        if (dragAmount > 60) { // 下拉超过 60px 就关闭
+                        if (dragAmount > 60) {
                             onNavigateUp()
                         }
                     }
@@ -151,56 +159,49 @@ fun NowPlayingScreen(
 
             Spacer(Modifier.height(8.dp))
 
-            with(sharedScope) {
-                Box(
-                    modifier = Modifier
-                        .size(280.dp)
-                        .clip(RoundedCornerShape(24.dp))
-                        .background(MaterialTheme.colorScheme.primaryContainer)
-                        .graphicsLayer { transformOrigin = TransformOrigin(0f, 1f) }
-                        .sharedElement(
-                            coverSharedState,
-                            animatedScope,
-                            boundsTransform = { _, _ ->
-                                spring(stiffness = 1400f, dampingRatio = 0.72f)
-                            }
-                        )
-                        .align(Alignment.CenterHorizontally)
-                )
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            with(sharedScope) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier
-                        .graphicsLayer { alpha = fullTitleAlpha }
-                        .sharedElement(
-                            titleSharedState,
-                            animatedScope,
-                            boundsTransform = { _, _ ->
-                                tween(140, easing = FastOutSlowInEasing)
-                            }
-                        )
-                        .align(Alignment.CenterHorizontally)
-                ) {
-                    Text(
-                        "Chill Vibes",
-                        style = MaterialTheme.typography.headlineSmall
+            Box(
+                modifier = Modifier
+                    .size(280.dp)
+                    .align(Alignment.CenterHorizontally)
+                    .background(
+                        color = if (currentSong?.coverUrl != null) Color.Transparent else MaterialTheme.colorScheme.primaryContainer,
+                        shape = RoundedCornerShape(24.dp)
                     )
-                    Text(
-                        "Neri · Demo",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+            ) {
+                currentSong?.coverUrl?.let { cover ->
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current).data(cover).build(),
+                        contentDescription = currentSong!!.name,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .matchParentSize()
+                            .clip(RoundedCornerShape(24.dp))
                     )
                 }
             }
 
+            Spacer(Modifier.height(16.dp))
+
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            ) {
+                Text(currentSong?.name ?: "", style = MaterialTheme.typography.headlineSmall)
+                Text(currentSong?.artist ?: "", style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+
             Spacer(Modifier.height(12.dp))
             Slider(
-                value = progress,
-                onValueChange = { progress = it },
+                value = if (durationMs > 0) sliderPosition / durationMs else 0f,
+                onValueChange = { newPercentage ->
+                    isUserDraggingSlider = true
+                    sliderPosition = (newPercentage * durationMs).toFloat()
+                },
+                onValueChangeFinished = {
+                    PlayerManager.seekTo(sliderPosition.toLong())
+                    isUserDraggingSlider = false
+                },
                 colors = androidx.compose.material3.SliderDefaults.colors(
                     thumbColor = MaterialTheme.colorScheme.primary,
                     activeTrackColor = MaterialTheme.colorScheme.primary
@@ -208,31 +209,43 @@ fun NowPlayingScreen(
             )
 
             Spacer(Modifier.height(8.dp))
-
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxSize()
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(20.dp),
+                modifier = Modifier.align(Alignment.CenterHorizontally)
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                    IconButton(onClick = { /* shuffle */ }) {
-                        Icon(Icons.Outlined.Shuffle, contentDescription = "随机")
-                    }
-                    IconButton(onClick = { /* previous */ }) {
-                        Icon(Icons.Outlined.SkipPrevious, contentDescription = "上一首")
-                    }
-                    FilledIconButton(onClick = { isPlaying = !isPlaying }) {
+                IconButton(onClick = { PlayerManager.setShuffle(!shuffleEnabled) }) {
+                    Icon(
+                        Icons.Outlined.Shuffle,
+                        contentDescription = "随机",
+                        tint = if (shuffleEnabled) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                    )
+                }
+                IconButton(onClick = { PlayerManager.previous() }) {
+                    Icon(Icons.Outlined.SkipPrevious, contentDescription = "上一首")
+                }
+                FilledIconButton(onClick = { PlayerManager.togglePlayPause() }) {
+                    AnimatedContent(
+                        targetState = isPlaying,
+                        label = "play_pause_icon",
+                        transitionSpec = {
+                            (scaleIn() + fadeIn()) togetherWith (scaleOut() + fadeOut())
+                        }
+                    ) { currentlyPlaying ->
                         Icon(
-                            imageVector = if (isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                            contentDescription = if (isPlaying) "暂停" else "播放"
+                            imageVector = if (currentlyPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
+                            contentDescription = if (currentlyPlaying) "暂停" else "播放"
                         )
                     }
-                    IconButton(onClick = { /* next */ }) {
-                        Icon(Icons.Outlined.SkipNext, contentDescription = "下一首")
-                    }
-                    IconButton(onClick = { /* repeat */ }) {
-                        Icon(Icons.Outlined.Repeat, contentDescription = "循环")
-                    }
+                }
+                IconButton(onClick = { PlayerManager.next() }) {
+                    Icon(Icons.Outlined.SkipNext, contentDescription = "下一首")
+                }
+                IconButton(onClick = { PlayerManager.cycleRepeatMode() }) {
+                    Icon(
+                        imageVector = if (repeatMode == Player.REPEAT_MODE_ONE) Icons.Filled.RepeatOne else Icons.Outlined.Repeat,
+                        contentDescription = "循环",
+                        tint = if (repeatMode != Player.REPEAT_MODE_OFF) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                    )
                 }
             }
         }

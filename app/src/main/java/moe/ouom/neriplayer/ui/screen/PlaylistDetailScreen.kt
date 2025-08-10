@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.screen
  * Created: 2025/8/10
  */
 
+import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -49,6 +50,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.outlined.Equalizer
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -83,6 +85,7 @@ import coil.request.ImageRequest
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.ui.viewmodel.NeteasePlaylist
 import moe.ouom.neriplayer.ui.viewmodel.PlaylistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.SongItem
@@ -94,7 +97,7 @@ import moe.ouom.neriplayer.util.formatPlayCount
 fun PlaylistDetailScreen(
     playlist: NeteasePlaylist,
     onBack: () -> Unit = {},
-    onSongClick: (SongItem) -> Unit = {}
+    onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
     val vm: PlaylistDetailViewModel = viewModel(
@@ -237,14 +240,14 @@ fun PlaylistDetailScreen(
                             }
                         }
                         else -> {
-                            itemsIndexed(
-                                items = ui.tracks,
-                                key = { _, it -> it.id }
-                            ) { index, item ->
+                            itemsIndexed(ui.tracks, key = { _, it -> it.id }) { index, item ->
                                 SongRow(
                                     index = index + 1,
                                     song = item,
-                                    onClick = { onSongClick(item) }
+                                    onClick = {
+                                        Log.d("NERI-UI", "tap song index=$index id=${item.id}")
+                                        onSongClick(ui.tracks, index)
+                                    }
                                 )
                             }
                         }
@@ -278,6 +281,9 @@ private fun SongRow(
     onClick: () -> Unit,
     indexWidth: Dp = 48.dp
 ) {
+    val current by PlayerManager.currentSongFlow.collectAsState()
+    val isPlayingSong = current?.id == song.id
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -311,13 +317,7 @@ private fun SongRow(
                     )
             ) {
                 AsyncImage(
-                    model = ImageRequest.Builder(LocalContext.current)
-                        .data(song.coverUrl)
-                        .crossfade(true)
-                        .diskCachePolicy(CachePolicy.ENABLED)
-                        .memoryCachePolicy(CachePolicy.ENABLED)
-                        .networkCachePolicy(CachePolicy.ENABLED)
-                        .build(),
+                    model = ImageRequest.Builder(LocalContext.current).data(song.coverUrl).build(),
                     contentDescription = song.name,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.matchParentSize()
@@ -345,10 +345,18 @@ private fun SongRow(
             )
         }
 
-        Text(
-            text = formatDuration(song.durationMs),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        if (isPlayingSong) {
+            Icon(
+                imageVector = Icons.Outlined.Equalizer,
+                contentDescription = "正在播放",
+                tint = MaterialTheme.colorScheme.primary
+            )
+        } else {
+            Text(
+                text = formatDuration(song.durationMs),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }

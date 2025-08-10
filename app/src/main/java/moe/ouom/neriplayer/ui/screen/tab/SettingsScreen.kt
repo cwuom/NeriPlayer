@@ -101,6 +101,8 @@ import moe.ouom.neriplayer.util.NightModeHelper
 import moe.ouom.neriplayer.util.convertTimestampToDate
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.filled.Audiotrack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.runtime.State
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -110,12 +112,17 @@ fun SettingsScreen(
     onDynamicColorChange: (Boolean) -> Unit,
     followSystemDark: Boolean,
     forceDark: Boolean,
-    onForceDarkChange: (Boolean) -> Unit
+    onForceDarkChange: (Boolean) -> Unit,
+    preferredQuality: String,
+    onQualityChange: (String) -> Unit
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val context = LocalContext.current
     var loginExpanded by remember { mutableStateOf(false) }
     val arrowRotation by animateFloatAsState(targetValue = if (loginExpanded) 180f else 0f, label = "arrow")
+
+    // 音质设置对话框显隐状态
+    var showQualityDialog by remember { mutableStateOf(false) }
 
     // 网易云登录弹窗显隐
     var showNeteaseSheet by remember { mutableStateOf(false) }
@@ -132,6 +139,21 @@ fun SettingsScreen(
     var showCookieDialog by remember { mutableStateOf(false) }
     var cookieText by remember { mutableStateOf("") }
 
+
+    // 当前所选音质对应的中文标签
+    val qualityLabel = remember(preferredQuality) {
+        when (preferredQuality) {
+            "standard" -> "标准"
+            "higher" -> "较高"
+            "exhigh" -> "极高"
+            "lossless" -> "无损"
+            "hires" -> "Hi-Res"
+            "jyeffect" -> "高清环绕声"
+            "sky" -> "沉浸环绕声"
+            "jymaster" -> "超清母带"
+            else -> preferredQuality
+        }
+    }
     LaunchedEffect(neteaseVm) {
         neteaseVm.events.collect { e ->
             when (e) {
@@ -153,6 +175,7 @@ fun SettingsScreen(
             }
         }
     }
+
 
     Scaffold(
         modifier = Modifier
@@ -335,6 +358,23 @@ fun SettingsScreen(
                 }
             }
 
+            item {
+                ListItem(
+                    leadingContent = {
+                        Icon(
+                            imageVector = Icons.Filled.Audiotrack,
+                            contentDescription = "默认音质",
+                            modifier = Modifier.size(24.dp),
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    headlineContent = { Text("默认音质", style = MaterialTheme.typography.titleMedium) },
+                    supportingContent = { Text("当前：$qualityLabel") },
+                    modifier = Modifier.clickable { showQualityDialog = true },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                )
+            }
+
             // 关于
             item {
                 ListItem(
@@ -469,6 +509,52 @@ fun SettingsScreen(
                 )
             }
         }
+    }
+
+    // 音质选择对话框
+    if (showQualityDialog) {
+        AlertDialog(
+            onDismissRequest = { showQualityDialog = false },
+            title = { Text("选择默认音质") },
+            text = {
+                Column {
+                    val qualityOptions = listOf(
+                        "standard" to "标准",
+                        "higher" to "较高",
+                        "exhigh" to "极高",
+                        "lossless" to "无损",
+                        "hires" to "Hi-Res",
+                        "jyeffect" to "高清环绕声",
+                        "sky" to "沉浸环绕声",
+                        "jymaster" to "超清母带"
+                    )
+                    qualityOptions.forEach { (level, label) ->
+                        ListItem(
+                            headlineContent = { Text(label) },
+                            trailingContent = {
+                                if (level == preferredQuality) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Check,
+                                        contentDescription = "Selected",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            },
+                            modifier = Modifier.clickable {
+                                onQualityChange(level)
+                                showQualityDialog = false
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showQualityDialog = false }) {
+                    Text("关闭")
+                }
+            }
+        )
     }
 
     // Cookies 展示对话框

@@ -163,7 +163,6 @@ fun HomeScreen(
                 }
                 else -> {
                     LazyVerticalGrid(
-                        // 关键：把外部保存下来的 gridState 用上
                         state = gridState,
                         columns = GridCells.Adaptive(150.dp),
                         contentPadding = PaddingValues(16.dp),
