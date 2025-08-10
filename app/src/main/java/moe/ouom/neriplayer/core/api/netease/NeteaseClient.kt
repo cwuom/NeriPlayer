@@ -232,9 +232,10 @@ class NeteaseClient {
      */
     @Throws(IOException::class)
     fun getRecommendedPlaylists(limit: Int = 30): String {
-        val url = "https://music.163.com/api/personalized"
+        val url = "https://music.163.com/weapi/personalized/playlist"
         val params = mapOf("limit" to limit.toString())
-        return request(url, params, CryptoMode.API, "GET", usePersistedCookies = true)
+        // 推荐歌单使用 WEAPI 加密，通过 POST 提交
+        return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
     }
 
     /**
@@ -285,7 +286,7 @@ class NeteaseClient {
      */
     @Throws(IOException::class)
     fun getUserPlaylists(userId: Long, offset: Int = 0, limit: Int = 30): String {
-        val url = "https://music.163.com/weapi/user/playlist/"
+        val url = "https://music.163.com/weapi/user/playlist"
         val params = mutableMapOf<String, Any>(
             "uid" to userId.toString(),
             "offset" to offset.toString(),
@@ -303,8 +304,11 @@ class NeteaseClient {
         val url = "https://music.163.com/weapi/v3/playlist/detail"
         val params = mutableMapOf<String, Any>(
             "id" to playlistId.toString(),
+            "total" to "true",
+            "limit" to trackCount.toString(),
             "n" to trackCount.toString(),
-            "s" to "0"
+            // Note: 官方实现中参数名写成 offest（手误），但此处沿用以保证兼容性
+            "offest" to "0"
         )
         return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
     }

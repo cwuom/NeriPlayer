@@ -23,83 +23,202 @@ package moe.ouom.neriplayer.ui.screens
  * Created: 2025/8/8
  */
 
+
+import android.annotation.SuppressLint
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.ElevatedCard
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
+import moe.ouom.neriplayer.ui.viewmodel.HomeViewModel
+import moe.ouom.neriplayer.ui.viewmodel.NeteasePlaylist
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
-    onItemClick: () -> Unit
+    onItemClick: (NeteasePlaylist) -> Unit = {}
 ) {
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val context = LocalContext.current
+    val vm: HomeViewModel = viewModel(
+        factory = viewModelFactory {
+            initializer {
+                val app = context.applicationContext as android.app.Application
+                HomeViewModel(app)
+            }
+        }
+    )
+    val ui by vm.uiState.collectAsState()
+
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
 
     // 标题候选
     val titleOptions = listOf(
-        "音理音理音?",
-        "音理音理!",
-        "音理音理!!",
-        "音理音理~",
-        "喵~",
-        "音理!",
-        "NeriPlayer"
+        "音理音理音?", "音理音理!", "音理音理!!", "音理音理~", "喵~", "音理!", "NeriPlayer"
     )
     val appBarTitle = rememberSaveable { titleOptions.random() }
 
-    Column {
+    Column(Modifier.fillMaxSize()) {
         LargeTopAppBar(
             title = { Text(appBarTitle) },
+            actions = {
+                IconButton(onClick = { vm.refreshRecommend() }) {
+                    Icon(imageVector = Icons.Filled.Refresh, contentDescription = "刷新推荐")
+                }
+            },
             scrollBehavior = scrollBehavior,
             colors = TopAppBarDefaults.largeTopAppBarColors(
                 containerColor = Color.Transparent,
                 scrolledContainerColor = Color.Transparent
             )
         )
-        val recommendations = listOf(
-            "For Focus" to "Lo-fi, Ambient, Piano",
-            "Daily Mix 1" to "Indie · Rock · Pop",
-            "Sleep" to "Calm waves and pads",
-            "Workout" to "EDM · Bass · High BPM",
-        )
-        LazyColumn(
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+
+        // 内容卡片容器
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
             modifier = Modifier
+                .padding(horizontal = 16.dp, vertical = 12.dp)
                 .fillMaxSize()
-                .padding(top = 0.dp)
         ) {
-            items(recommendations) { (title, desc) ->
-                ElevatedCard(
-                    onClick = onItemClick
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(text = title, style = MaterialTheme.typography.titleLarge)
+            when {
+                ui.loading -> {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        CircularProgressIndicator()
                         Text(
-                            text = desc,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            text = "  正在为你加载首页推荐…",
+                            style = MaterialTheme.typography.bodyMedium
                         )
+                    }
+                }
+                ui.error != null -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "加载失败：${ui.error}",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = "点右上角刷新重试~",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+                else -> {
+                    // 展示推荐歌单
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(150.dp),
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(ui.playlists) { item ->
+                            PlaylistCard(item) { onItemClick(item) }
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun PlaylistCard(
+    playlist: NeteasePlaylist,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(16.dp))
+            .clickable { onClick() }
+    ) {
+        AsyncImage(
+            model = ImageRequest.Builder(LocalContext.current)
+                .data(playlist.picUrl)
+                .crossfade(true)
+                .build(),
+            contentDescription = playlist.name,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .clip(RoundedCornerShape(16.dp))
+        )
+        Column(modifier = Modifier.padding(top = 8.dp, start = 4.dp, end = 4.dp, bottom = 4.dp)) {
+            Text(
+                text = playlist.name,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.titleSmall
+            )
+            Text(
+                text = "${formatPlayCount(playlist.playCount)} · ${playlist.trackCount}首",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Clip
+            )
+        }
+    }
+}
+
+@SuppressLint("DefaultLocale")
+private fun formatPlayCount(count: Long): String {
+    return when {
+        count >= 100_000_000L -> String.format("%.1f亿", count / 100_000_000f)
+        count >= 10_000L -> String.format("%.1f万", count / 10_000f)
+        else -> count.toString()
     }
 }

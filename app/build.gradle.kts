@@ -124,4 +124,7 @@ dependencies {
 
     implementation(libs.dec)
     implementation(libs.okhttp)
+
+    implementation(libs.kotlinx.serialization.json)
+    implementation(libs.coil.compose)
 }
