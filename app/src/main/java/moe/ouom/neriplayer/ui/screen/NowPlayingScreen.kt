@@ -24,11 +24,13 @@ package moe.ouom.neriplayer.ui.screen
  */
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -105,6 +107,11 @@ fun NowPlayingScreen(
     var sliderPosition by remember { mutableFloatStateOf(0f) }
     var isUserDraggingSlider by remember { mutableStateOf(false) }
 
+    var contentVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        contentVisible = true
+    }
+
     LaunchedEffect(currentPosition) {
         if (!isUserDraggingSlider) {
             sliderPosition = currentPosition.toFloat()
@@ -159,36 +166,52 @@ fun NowPlayingScreen(
 
             Spacer(Modifier.height(8.dp))
 
-            Box(
-                modifier = Modifier
-                    .size(280.dp)
-                    .align(Alignment.CenterHorizontally)
-                    .background(
-                        color = if (currentSong?.coverUrl != null) Color.Transparent else MaterialTheme.colorScheme.primaryContainer,
-                        shape = RoundedCornerShape(24.dp)
-                    )
+            AnimatedVisibility(
+                visible = contentVisible,
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+                enter = slideInVertically(
+                    animationSpec = tween(durationMillis = 400, delayMillis = 100),
+                    initialOffsetY = { it / 5 }
+                ) + fadeIn(animationSpec = tween(durationMillis = 400, delayMillis = 100))
             ) {
-                currentSong?.coverUrl?.let { cover ->
-                    AsyncImage(
-                        model = ImageRequest.Builder(LocalContext.current).data(cover).build(),
-                        contentDescription = currentSong!!.name,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .matchParentSize()
-                            .clip(RoundedCornerShape(24.dp))
-                    )
+                Box(
+                    modifier = Modifier
+                        .size(280.dp)
+                        .background(
+                            color = if (currentSong?.coverUrl != null) Color.Transparent else MaterialTheme.colorScheme.primaryContainer,
+                            shape = RoundedCornerShape(24.dp)
+                        )
+                ) {
+                    currentSong?.coverUrl?.let { cover ->
+                        AsyncImage(
+                            model = ImageRequest.Builder(LocalContext.current).data(cover).build(),
+                            contentDescription = currentSong!!.name,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .matchParentSize()
+                                .clip(RoundedCornerShape(24.dp))
+                        )
+                    }
                 }
             }
 
             Spacer(Modifier.height(16.dp))
 
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.align(Alignment.CenterHorizontally)
+            AnimatedVisibility(
+                visible = contentVisible,
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+                enter = slideInVertically(
+                    animationSpec = tween(durationMillis = 400, delayMillis = 150),
+                    initialOffsetY = { it / 4 }
+                ) + fadeIn(animationSpec = tween(durationMillis = 400, delayMillis = 150))
             ) {
-                Text(currentSong?.name ?: "", style = MaterialTheme.typography.headlineSmall)
-                Text(currentSong?.artist ?: "", style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(currentSong?.name ?: "", style = MaterialTheme.typography.headlineSmall)
+                    Text(currentSong?.artist ?: "", style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
 
             Spacer(Modifier.height(12.dp))
