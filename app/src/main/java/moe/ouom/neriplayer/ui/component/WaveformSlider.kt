@@ -37,7 +37,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -76,13 +76,15 @@ fun WaveformSlider(
         label = "wave_phase_animation"
     )
 
+    var isDragging by remember { mutableStateOf(false) }
+
     val animatedAmplitude by animateFloatAsState(
-        targetValue = if (isPlaying) WAVE_AMPLITUDE else 0f,
+        targetValue = if (isPlaying && !isDragging) WAVE_AMPLITUDE else 0f,
         animationSpec = tween(durationMillis = 500, easing = LinearEasing),
         label = "amplitude_animation"
     )
 
-    var canvasWidth by remember { mutableFloatStateOf(0f) }
+    var canvasWidth by remember { mutableStateOf(0f) }
 
     Canvas(
         modifier = modifier
@@ -90,8 +92,11 @@ fun WaveformSlider(
             .height(48.dp)
             .pointerInput(onValueChange, onValueChangeFinished) {
                 detectDragGestures(
-                    onDragStart = { },
-                    onDragEnd = { onValueChangeFinished() },
+                    onDragStart = { isDragging = true },
+                    onDragEnd = {
+                        isDragging = false
+                        onValueChangeFinished()
+                    },
                     onDrag = { change, _ ->
                         if (canvasWidth > 0) {
                             val newValue = (change.position.x / canvasWidth).coerceIn(0f, 1f)

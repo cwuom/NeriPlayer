@@ -23,6 +23,10 @@ package moe.ouom.neriplayer.ui.screen
  * Created: 2025/8/8
  */
 
+import android.content.Context
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -47,10 +51,14 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
+import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.RepeatOne
+import androidx.compose.material.icons.filled.SpeakerGroup
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Pause
@@ -66,15 +74,20 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -82,6 +95,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -107,13 +121,20 @@ fun NowPlayingScreen(
     val durationMs = currentSong?.durationMs ?: 0L
     val currentPosition by PlayerManager.playbackPositionFlow.collectAsState()
 
+    // 是否拖拽进度条
     var isUserDraggingSlider by remember(currentSong?.id) { mutableStateOf(false) }
 
     var sliderPosition by remember(currentSong?.id) {
         mutableFloatStateOf(PlayerManager.playbackPositionFlow.value.toFloat())
     }
 
+    // 内容的进入动画
     var contentVisible by remember { mutableStateOf(false) }
+
+    // 控制音量弹窗的显示
+    var showVolumeSheet by remember { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState()
+
     LaunchedEffect(Unit) {
         contentVisible = true
     }
@@ -291,6 +312,130 @@ fun NowPlayingScreen(
                     )
                 }
             }
+
+            // 将下面的内容推到底部
+            Spacer(modifier = Modifier.weight(1f))
+
+            // 播放设备
+            TextButton(
+                onClick = { showVolumeSheet = true },
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            ) {
+                AudioDeviceHandler()
+            }
         }
+
+        // 音量控制弹窗
+        if (showVolumeSheet) {
+            ModalBottomSheet(
+                onDismissRequest = { showVolumeSheet = false },
+                sheetState = sheetState
+            ) {
+                VolumeControlSheetContent()
+            }
+        }
+    }
+}
+
+@Composable
+private fun AudioDeviceHandler() {
+    val context = LocalContext.current
+    val audioManager = remember {
+        context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    }
+
+    var deviceInfo by remember { mutableStateOf(getCurrentAudioDevice(audioManager)) }
+
+    DisposableEffect(Unit) {
+        val deviceCallback = object : AudioDeviceCallback() {
+            override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>?) {
+                deviceInfo = getCurrentAudioDevice(audioManager)
+            }
+
+            override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>?) {
+                deviceInfo = getCurrentAudioDevice(audioManager)
+            }
+        }
+
+        // 注册回调
+        audioManager.registerAudioDeviceCallback(deviceCallback, null)
+
+        onDispose {
+            // 防止内存泄漏
+            audioManager.unregisterAudioDeviceCallback(deviceCallback)
+        }
+    }
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            imageVector = deviceInfo.second,
+            contentDescription = "播放设备",
+            modifier = Modifier.size(16.dp),
+            tint = MaterialTheme.colorScheme.onSurface
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = deviceInfo.first,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+    }
+}
+
+private fun getCurrentAudioDevice(audioManager: AudioManager): Pair<String, ImageVector> {
+    val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+
+    val bluetoothDevice = devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP }
+    if (bluetoothDevice != null) {
+        return try {
+            Pair(bluetoothDevice.productName.toString().ifBlank { "蓝牙设备" }, Icons.Default.Headset)
+        } catch (_: SecurityException) {
+            Pair("蓝牙设备", Icons.Default.Headset)
+        }
+    }
+
+    val wiredHeadset = devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET || it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES }
+    if (wiredHeadset != null) {
+        return Pair("有线耳机", Icons.Default.Headset)
+    }
+
+    return Pair("手机扬声器", Icons.Default.SpeakerGroup)
+}
+
+@Composable
+private fun VolumeControlSheetContent() {
+    val context = LocalContext.current
+    val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+
+    val maxVolume = remember { audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) }
+    var currentVolume by remember {
+        mutableIntStateOf(audioManager.getStreamVolume(AudioManager.STREAM_MUSIC))
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 16.dp)
+            .windowInsetsPadding(WindowInsets.navigationBars),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text("音量", style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(16.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Icon(imageVector = Icons.AutoMirrored.Outlined.VolumeUp, contentDescription = "音量")
+            Slider(
+                value = currentVolume.toFloat(),
+                onValueChange = {
+                    currentVolume = it.toInt()
+                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, currentVolume, 0)
+                },
+                valueRange = 0f..maxVolume.toFloat(),
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Spacer(modifier = Modifier.height(16.dp))
     }
 }
