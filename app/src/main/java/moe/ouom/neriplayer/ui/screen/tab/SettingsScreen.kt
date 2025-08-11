@@ -369,7 +369,7 @@ fun SettingsScreen(
                         )
                     },
                     headlineContent = { Text("默认音质", style = MaterialTheme.typography.titleMedium) },
-                    supportingContent = { Text("当前：$qualityLabel") },
+                    supportingContent = { Text("$qualityLabel - $preferredQuality") },
                     modifier = Modifier.clickable { showQualityDialog = true },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )

@@ -41,6 +41,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
@@ -90,6 +91,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.ui.component.WaveformSlider
+import moe.ouom.neriplayer.util.formatDuration
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -105,7 +107,7 @@ fun NowPlayingScreen(
     val durationMs = currentSong?.durationMs ?: 0L
     val currentPosition by PlayerManager.playbackPositionFlow.collectAsState()
 
-    var isUserDraggingSlider by remember { mutableStateOf(false) }
+    var isUserDraggingSlider by remember(currentSong?.id) { mutableStateOf(false) }
 
     var sliderPosition by remember(currentSong?.id) {
         mutableFloatStateOf(PlayerManager.playbackPositionFlow.value.toFloat())
@@ -216,18 +218,38 @@ fun NowPlayingScreen(
             }
 
             Spacer(Modifier.height(12.dp))
-            WaveformSlider(
-                value = if (durationMs > 0) sliderPosition / durationMs else 0f,
-                onValueChange = { newPercentage ->
-                    isUserDraggingSlider = true
-                    sliderPosition = (newPercentage * durationMs)
-                },
-                onValueChangeFinished = {
-                    PlayerManager.seekTo(sliderPosition.toLong())
-                    isUserDraggingSlider = false
-                },
-                isPlaying = isPlaying
-            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = formatDuration(sliderPosition.toLong()),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                WaveformSlider(
+                    modifier = Modifier.weight(1f),
+                    value = if (durationMs > 0) sliderPosition / durationMs else 0f,
+                    onValueChange = { newPercentage ->
+                        isUserDraggingSlider = true
+                        sliderPosition = (newPercentage * durationMs)
+                    },
+                    onValueChangeFinished = {
+                        PlayerManager.seekTo(sliderPosition.toLong())
+                        isUserDraggingSlider = false
+                    },
+                    isPlaying = isPlaying
+                )
+
+                Text(
+                    text = formatDuration(durationMs),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
 
             Spacer(Modifier.height(8.dp))
             Row(
