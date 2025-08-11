@@ -78,7 +78,11 @@ object NPLogger {
     }
 
     private fun log(level: Int, tag: String?, message: Any?, tr: Throwable? = null) {
-        val finalTag = tag ?: appTag
+        val finalTag = if (tag != null && tag != appTag) {
+            "$appTag: $tag"
+        } else {
+            appTag
+        }
         val finalMessage = formatMessage(message)
 
         when (level) {
@@ -135,7 +139,7 @@ object NPLogger {
                         Log.INFO -> "I"
                         Log.WARN -> "W"
                         Log.ERROR -> "E"
-                        else -> "U" // Unknown
+                        else -> "U" // Unknownfeat(util): Refactor logger to be self-contained and modern
                     }
                     val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(Date())
 
