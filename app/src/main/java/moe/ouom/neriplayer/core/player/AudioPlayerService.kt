@@ -29,13 +29,18 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.media.AudioManager
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.MainActivity
 import moe.ouom.neriplayer.ui.viewmodel.SongItem
+import moe.ouom.neriplayer.util.NPLogger
 
 class AudioPlayerService : Service() {
     companion object {
@@ -48,6 +53,8 @@ class AudioPlayerService : Service() {
         private const val CHANNEL_ID = "neriplayer_playback_channel"
     }
 
+    private lateinit var becomingNoisyReceiver: BroadcastReceiver
+
     override fun onCreate() {
         super.onCreate()
         PlayerManager.initialize(application as Application)
@@ -58,10 +65,14 @@ class AudioPlayerService : Service() {
             NotificationManager.IMPORTANCE_LOW
         )
         manager.createNotificationChannel(channel)
+
+        becomingNoisyReceiver = BecomingNoisyReceiver()
+        val intentFilter = IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
+        registerReceiver(becomingNoisyReceiver, intentFilter)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d("NERI-APS", "onStartCommand action=${intent?.action}")
+        NPLogger.d("NERI-APS", "onStartCommand action=${intent?.action}")
 
         startForeground(NOTIFICATION_ID, buildNotification())
 
@@ -69,7 +80,7 @@ class AudioPlayerService : Service() {
             ACTION_PLAY -> {
                 val songList = intent.getParcelableArrayListExtra<SongItem>("playlist")
                 val startIndex = intent.getIntExtra("index", 0)
-                Log.d("NERI-APS", "PLAY size=${songList?.size} index=$startIndex")
+                NPLogger.d("NERI-APS", "PLAY size=${songList?.size} index=$startIndex")
 
                 if (!songList.isNullOrEmpty()) {
                     PlayerManager.playPlaylist(songList, startIndex)
@@ -126,7 +137,18 @@ class AudioPlayerService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        unregisterReceiver(becomingNoisyReceiver)
         PlayerManager.release()
         super.onDestroy()
+    }
+
+    private inner class BecomingNoisyReceiver : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
+                NPLogger.d("NERI-APS", "Audio becoming noisy, pausing playback.")
+                PlayerManager.pause()
+                updateNotification()
+            }
+        }
     }
 }

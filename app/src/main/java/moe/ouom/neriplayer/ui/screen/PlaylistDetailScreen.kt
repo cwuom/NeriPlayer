@@ -89,6 +89,7 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.ui.viewmodel.NeteasePlaylist
 import moe.ouom.neriplayer.ui.viewmodel.PlaylistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.SongItem
+import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.formatDuration
 import moe.ouom.neriplayer.util.formatPlayCount
 
@@ -245,7 +246,7 @@ fun PlaylistDetailScreen(
                                     index = index + 1,
                                     song = item,
                                     onClick = {
-                                        Log.d("NERI-UI", "tap song index=$index id=${item.id}")
+                                        NPLogger.d("NERI-UI", "tap song index=$index id=${item.id}")
                                         onSongClick(ui.tracks, index)
                                     }
                                 )

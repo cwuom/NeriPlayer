@@ -36,6 +36,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.parcelize.Parcelize
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
 import moe.ouom.neriplayer.data.NeteaseCookieRepository
+import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
 import java.io.IOException
 
@@ -75,13 +76,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 // 注入持久化 Cookie
                 val cookies = withContext(Dispatchers.IO) { repo.getCookiesOnce() }
-                Log.d(TAG, "Inject cookies keys=${cookies.keys.joinToString()}")
+                NPLogger.d(TAG, "Inject cookies keys=${cookies.keys.joinToString()}")
                 client.setPersistedCookies(cookies)
 
                 // 拉取推荐
                 val raw = withContext(Dispatchers.IO) { client.getRecommendedPlaylists(limit = 30) }
-                Log.d(TAG, "Recommend response length=${raw.length}")
-                Log.d(TAG, "Recommend response head=${raw.take(500)}")
+                NPLogger.d(TAG, "Recommend response length=${raw.length}")
+                NPLogger.d(TAG, "Recommend response head=${raw.take(500)}")
 
                 val mapped = parseRecommend(raw)
 
@@ -90,15 +91,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     error = null,
                     playlists = mapped
                 )
-                Log.d(TAG, "Mapped playlists size=${mapped.size}")
+                NPLogger.d(TAG, "Mapped playlists size=${mapped.size}")
             } catch (e: IOException) {
-                Log.e(TAG, "Network/Server error", e)
+                NPLogger.e(TAG, "Network/Server error", e)
                 _uiState.value = HomeUiState(
                     loading = false,
                     error = "网络异常或服务器异常：${e.message ?: e.javaClass.simpleName}"
                 )
             } catch (e: Exception) {
-                Log.e(TAG, "Unexpected error", e)
+                NPLogger.e(TAG, "Unexpected error", e)
                 _uiState.value = HomeUiState(
                     loading = false,
                     error = "解析/未知错误：${e.message ?: e.javaClass.simpleName}"

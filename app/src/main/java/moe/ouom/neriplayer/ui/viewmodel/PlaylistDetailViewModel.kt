@@ -36,6 +36,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.parcelize.Parcelize
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
 import moe.ouom.neriplayer.data.NeteaseCookieRepository
+import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
 import java.io.IOException
 
@@ -101,7 +102,7 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
 
                 // 一次性取全量：/api/v6/playlist/detail （n=100000）
                 val raw = withContext(Dispatchers.IO) { client.getPlaylistDetail(playlistId) }
-                Log.d(TAG_PD, "detail head=${raw.take(500)}")
+                NPLogger.d(TAG_PD, "detail head=${raw.take(500)}")
 
                 val (header, tracks) = parseDetail(raw)
 

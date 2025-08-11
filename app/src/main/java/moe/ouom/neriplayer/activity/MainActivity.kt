@@ -88,8 +88,10 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.BuildConfig
 import moe.ouom.neriplayer.data.SettingsRepository
 import moe.ouom.neriplayer.ui.NeriApp
+import moe.ouom.neriplayer.util.NPLogger
 
 private enum class AppStage { Loading, Disclaimer, Main }
 
@@ -101,6 +103,11 @@ class MainActivity : ComponentActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
         setContent {
+            NPLogger.init(
+                context = this,
+                enableFileLogging = BuildConfig.DEBUG
+            )
+
             val dynamicColor by settingsRepository.dynamicColorFlow.collectAsState(initial = true)
             val forceDark by settingsRepository.forceDarkFlow.collectAsState(initial = false)
             val followSystemDark by settingsRepository.followSystemDarkFlow.collectAsState(initial = true)

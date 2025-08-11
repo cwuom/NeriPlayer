@@ -11,6 +11,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
 import moe.ouom.neriplayer.data.NeteaseCookieRepository
+import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
 import java.io.IOException
 
@@ -102,7 +103,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     private fun parsePlaylists(raw: String): List<NeteasePlaylist> {
         val result = mutableListOf<NeteasePlaylist>()
         val root = JSONObject(raw)
-        Log.d("NERI-ParsePlaylists", raw)
+        NPLogger.d("NERI-ParsePlaylists", raw)
         if (root.optInt("code") != 200) return emptyList()
         val arr = root.optJSONArray("playlists") ?: return emptyList()
         for (i in 0 until arr.length()) {

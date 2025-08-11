@@ -88,6 +88,7 @@ import moe.ouom.neriplayer.ui.screen.tab.SettingsScreen
 import moe.ouom.neriplayer.ui.theme.NeriTheme
 import moe.ouom.neriplayer.ui.view.HyperBackground
 import moe.ouom.neriplayer.ui.viewmodel.NeteasePlaylist
+import moe.ouom.neriplayer.util.NPLogger
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
@@ -112,7 +113,7 @@ fun NeriApp(
     }
     LaunchedEffect(Unit) {
         PlayerManager.initialize(context.applicationContext as Application)
-        Log.d("NERI-App","PlayerManager.initialize called")
+        NPLogger.d("NERI-App","PlayerManager.initialize called")
     }
 
     LaunchedEffect(isDark) { onIsDarkChanged(isDark) }

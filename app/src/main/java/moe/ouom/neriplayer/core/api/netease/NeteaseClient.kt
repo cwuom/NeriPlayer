@@ -25,6 +25,7 @@ package moe.ouom.neriplayer.core.api.netease
 
 import android.util.Log
 import moe.ouom.neriplayer.util.JsonUtil.jsonQuote
+import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.readBytesCompat
 import okhttp3.Cookie
 import okhttp3.CookieJar
@@ -132,7 +133,7 @@ class NeteaseClient {
     ): String {
         val requestUrl = url.toHttpUrl()
 
-        Log.d("NERI-NeteaseClient", "call ${url}, ${method}, $mode")
+        NPLogger.d("NERI-NeteaseClient", "call ${url}, ${method}, $mode")
         // 按模式加/不加密
         val bodyParams: Map<String, String> = when (mode) {
             CryptoMode.WEAPI -> NeteaseCrypto.weApiEncrypt(params)              // /weapi
@@ -405,7 +406,7 @@ class NeteaseClient {
     fun getHighQualityTags(): String {
         val url = "https://music.163.com/api/playlist/highquality/tags"
         val params = emptyMap<String, Any>()
-        Log.d("NERI-Netease", "getHighQualityTags calling")
+        NPLogger.d("NERI-Netease", "getHighQualityTags calling")
         return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
     }
 

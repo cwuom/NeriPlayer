@@ -26,8 +26,17 @@ package moe.ouom.neriplayer.core.player
 
 
 import android.app.Application
+import android.content.Context
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.net.Uri
 import android.util.Log
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BluetoothAudio
+import androidx.compose.material.icons.filled.Headset
+import androidx.compose.material.icons.filled.SpeakerGroup
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -40,16 +49,30 @@ import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
 import moe.ouom.neriplayer.data.NeteaseCookieRepository
 import moe.ouom.neriplayer.data.SettingsRepository
 import moe.ouom.neriplayer.ui.viewmodel.SongItem
+import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
 import java.io.File
-import kotlin.math.max
+
+data class AudioDevice(
+    val name: String,
+    val type: Int, // e.g., AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+    val icon: ImageVector
+)
 
 object PlayerManager {
     private var initialized = false
@@ -65,7 +88,7 @@ object PlayerManager {
 
     private var preferredQuality: String = "exhigh"
 
-    // --- 播放列表管理 ---
+    // 播放列表管理
     private var currentPlaylist: List<SongItem> = emptyList()
     private var currentIndex = -1
 
@@ -86,6 +109,10 @@ object PlayerManager {
 
     private val mainScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
+
+    // 暴露当前音频设备
+    private val _currentAudioDevice = MutableStateFlow<AudioDevice?>(null)
+    val currentAudioDeviceFlow: StateFlow<AudioDevice?> = _currentAudioDevice
 
 
     fun initialize(app: Application) {
@@ -145,10 +172,6 @@ object PlayerManager {
                 }
             }
 
-            // 这个 Listener 不再需要，因为我们一次只处理一个 MediaItem
-            // onMediaItemTransition 不会像以前那样在播放列表内部切换时触发
-            // override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {}
-
             override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
                 _shuffleModeFlow.value = shuffleModeEnabled
             }
@@ -168,10 +191,72 @@ object PlayerManager {
             val cookies = NeteaseCookieRepository(app).getCookiesOnce()
             neteaseClient.setPersistedCookies(cookies)
         }
+
+        setupAudioDeviceCallback()
+    }
+
+    private fun setupAudioDeviceCallback() {
+        val audioManager = application.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+
+        // 初始化当前设备状态
+        _currentAudioDevice.value = getCurrentAudioDevice(audioManager)
+
+        val deviceCallback = object : AudioDeviceCallback() {
+            override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>?) {
+                handleDeviceChange(audioManager)
+            }
+
+            override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>?) {
+                handleDeviceChange(audioManager)
+            }
+        }
+
+        audioManager.registerAudioDeviceCallback(deviceCallback, null)
+    }
+
+    private fun handleDeviceChange(audioManager: AudioManager) {
+        val previousDevice = _currentAudioDevice.value
+        val newDevice = getCurrentAudioDevice(audioManager)
+
+        // 更新设备信息 StateFlow
+        _currentAudioDevice.value = newDevice
+
+        // 如果从非扬声器切换到扬声器，并且正在播放，则暂停
+        if (player.isPlaying &&
+            previousDevice?.type != AudioDeviceInfo.TYPE_BUILTIN_SPEAKER &&
+            newDevice.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
+
+            NPLogger.d("NERI-PlayerManager", "Audio output changed to speaker, pausing playback.")
+            pause()
+        }
+    }
+
+    private fun getCurrentAudioDevice(audioManager: AudioManager): AudioDevice {
+        val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+
+        val bluetoothDevice = devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP }
+        if (bluetoothDevice != null) {
+            return try {
+                AudioDevice(
+                    name = bluetoothDevice.productName.toString().ifBlank { "蓝牙耳机" },
+                    type = AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+                    icon = Icons.Default.BluetoothAudio
+                )
+            } catch (_: SecurityException) {
+                AudioDevice("蓝牙耳机", AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, Icons.Default.BluetoothAudio)
+            }
+        }
+
+        val wiredHeadset = devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET || it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES }
+        if (wiredHeadset != null) {
+            return AudioDevice("有线耳机", AudioDeviceInfo.TYPE_WIRED_HEADSET, Icons.Default.Headset)
+        }
+
+        return AudioDevice("手机扬声器", AudioDeviceInfo.TYPE_BUILTIN_SPEAKER, Icons.Default.SpeakerGroup)
     }
 
     /**
-     * 播放一个新列表。
+     * 播放一个新列表
      */
     fun playPlaylist(songs: List<SongItem>, startIndex: Int) {
         check(initialized) { "Call PlayerManager.initialize(application) first." }
@@ -186,7 +271,7 @@ object PlayerManager {
     }
 
     /**
-     * 根据索引播放当前列表中的歌曲（核心懒加载逻辑）。
+     * 根据索引播放当前列表中的歌曲（核心懒加载逻辑）
      */
     private fun playAtIndex(index: Int) {
         if (currentPlaylist.isEmpty() || index !in currentPlaylist.indices) {
@@ -201,7 +286,6 @@ object PlayerManager {
             val url = getSongUrl(song.id)
             if (url == null) {
                 Log.e("NERI-PlayerManager", "获取播放 URL 失败, 跳过: id=${song.id}")
-                // 可以增加错误提示，或者直接跳到下一首
                 withContext(Dispatchers.Main) { next() }
                 return@launch
             }
@@ -222,16 +306,12 @@ object PlayerManager {
     private suspend fun getSongUrl(songId: Long): String? {
         return withContext(Dispatchers.IO) {
             try {
-                // 如果需要，可以刷新Cookie
-                // val cookies = NeteaseCookieRepository(application).getCookiesOnce()
-                // neteaseClient.setPersistedCookies(cookies)
-
                 val resp = neteaseClient.getSongDownloadUrl(
                     songId,
                     bitrate = 320000,
                     level = preferredQuality
                 )
-                Log.d("NERI-PlayerManager", "id=$songId, resp=$resp")
+                NPLogger.d("NERI-PlayerManager", "id=$songId, resp=$resp")
 
                 val root = JSONObject(resp)
                 val url = when (val dataObj = root.opt("data")) {
@@ -287,7 +367,7 @@ object PlayerManager {
             } else if (force) {
                 currentIndex = 0
             } else {
-                Log.d("NERI-Player", "Already at the end of the playlist.")
+                NPLogger.d("NERI-Player", "Already at the end of the playlist.")
                 return // 到头了，不播了
             }
         }
@@ -303,7 +383,7 @@ object PlayerManager {
             if (currentIndex > 0) {
                 currentIndex--
             } else {
-                Log.d("NERI-Player", "Already at the start of the playlist.")
+                NPLogger.d("NERI-Player", "Already at the start of the playlist.")
                 return
             }
         }
@@ -343,6 +423,7 @@ object PlayerManager {
         progressJob?.cancel()
         progressJob = null
     }
+
 
     fun hasItems(): Boolean = player.currentMediaItem != null
 }
