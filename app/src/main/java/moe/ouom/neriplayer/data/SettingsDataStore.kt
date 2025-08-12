@@ -41,7 +41,7 @@ object SettingsKeys {
     val DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
     val FORCE_DARK = booleanPreferencesKey("force_dark")
     val FOLLOW_SYSTEM_DARK = booleanPreferencesKey("follow_system_dark")
-    val DISCLAIMER_ACCEPTED_V1 = booleanPreferencesKey("disclaimer_accepted_v2")
+    val DISCLAIMER_ACCEPTED_V2 = booleanPreferencesKey("disclaimer_accepted_v2")
     val AUDIO_QUALITY = stringPreferencesKey("audio_quality")
 }
 
@@ -62,7 +62,7 @@ class SettingsRepository(private val context: Context) {
             emit(null) // 加载态
             val realFlow: Flow<Boolean> =
                 context.dataStore.data.map { prefs ->
-                    prefs[SettingsKeys.DISCLAIMER_ACCEPTED_V1] ?: false
+                    prefs[SettingsKeys.DISCLAIMER_ACCEPTED_V2] ?: false
                 }
             emitAll(realFlow)
         }
@@ -79,7 +79,7 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setDisclaimerAccepted(accepted: Boolean) {
-        context.dataStore.edit { it[SettingsKeys.DISCLAIMER_ACCEPTED_V1] = accepted }
+        context.dataStore.edit { it[SettingsKeys.DISCLAIMER_ACCEPTED_V2] = accepted }
     }
 
     suspend fun setAudioQuality(value: String) {
@@ -89,6 +89,6 @@ class SettingsRepository(private val context: Context) {
     /** 备用：一次性读取（非 Compose 场景） */
     suspend fun isDisclaimerAcceptedFirst(): Boolean {
         val prefs = context.dataStore.data.first()
-        return prefs[SettingsKeys.DISCLAIMER_ACCEPTED_V1] ?: false
+        return prefs[SettingsKeys.DISCLAIMER_ACCEPTED_V2] ?: false
     }
 }
