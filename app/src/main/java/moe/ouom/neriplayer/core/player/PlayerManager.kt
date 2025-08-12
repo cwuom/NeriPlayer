@@ -73,6 +73,7 @@ import java.io.File
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import moe.ouom.neriplayer.data.LocalPlaylist
 
 data class AudioDevice(
     val name: String,
@@ -93,6 +94,8 @@ private sealed class SongUrlResult {
 }
 
 object PlayerManager {
+    private const val FAVORITES_NAME = "我喜欢的音乐"
+
     private var initialized = false
     private lateinit var application: Application
     private lateinit var player: ExoPlayer
@@ -120,6 +123,9 @@ object PlayerManager {
     private val _currentSongFlow = MutableStateFlow<SongItem?>(null)
     val currentSongFlow: StateFlow<SongItem?> = _currentSongFlow
 
+    private val _currentQueueFlow = MutableStateFlow<List<SongItem>>(emptyList())
+    val currentQueueFlow: StateFlow<List<SongItem>> = _currentQueueFlow
+
     private val _isPlayingFlow = MutableStateFlow(false)
     val isPlayingFlow: StateFlow<Boolean> = _isPlayingFlow
 
@@ -142,6 +148,9 @@ object PlayerManager {
     private val _currentMediaUrl = MutableStateFlow<String?>(null)
     val currentMediaUrlFlow: StateFlow<String?> = _currentMediaUrl
 
+    /** 我们维护给 UI 用的歌单流（避免直接暴露仓库内部可变结构） */
+    private val _playlistsFlow = MutableStateFlow<List<LocalPlaylist>>(emptyList())
+    val playlistsFlow: StateFlow<List<LocalPlaylist>> = _playlistsFlow
 
     private data class PersistedState(
         val playlist: List<SongItem>,
@@ -153,7 +162,7 @@ object PlayerManager {
         initialized = true
         application = app
 
-        localRepo = LocalPlaylistRepository(app)
+        localRepo = LocalPlaylistRepository.getInstance(app)
         stateFile = File(app.filesDir, "last_playlist.json")
 
         val cacheDir = File(app.cacheDir, "media_cache")
@@ -242,6 +251,13 @@ object PlayerManager {
             }
         }
 
+        // 同步仓库歌单 -> 做“深拷贝为新引用”的不可变视图，供 UI 使用
+        ioScope.launch {
+            localRepo.playlists.collect { repoLists ->
+                _playlistsFlow.value = deepCopyPlaylists(repoLists)
+            }
+        }
+
         setupAudioDeviceCallback()
         restoreState()
     }
@@ -301,6 +317,7 @@ object PlayerManager {
         }
         consecutivePlayFailures = 0
         currentPlaylist = songs
+        _currentQueueFlow.value = currentPlaylist
         currentIndex = startIndex
         playAtIndex(currentIndex)
         shuffleHistory.clear()
@@ -465,6 +482,7 @@ object PlayerManager {
         player.shuffleModeEnabled = enabled
         if (enabled) shuffleHistory.clear()
     }
+
     private fun startProgressUpdates() {
         stopProgressUpdates()
         progressJob = mainScope.launch {
@@ -485,6 +503,7 @@ object PlayerManager {
         _currentMediaUrl.value = null
         currentIndex = -1
         currentPlaylist = emptyList()
+        _currentQueueFlow.value = emptyList()
         consecutivePlayFailures = 0
         persistState()
     }
@@ -492,9 +511,86 @@ object PlayerManager {
     fun hasItems(): Boolean = player.currentMediaItem != null
 
 
+    /** 添加当前歌到“我喜欢的音乐” */
     fun addCurrentToFavorites() {
         val song = _currentSongFlow.value ?: return
-        ioScope.launch { localRepo.addToFavorites(song) }
+        val updatedLists = optimisticUpdateFavorites(add = true, song = song)
+        _playlistsFlow.value = deepCopyPlaylists(updatedLists)
+        ioScope.launch {
+            try {
+                // 确保收藏歌单存在
+                if (_playlistsFlow.value.none { it.name == FAVORITES_NAME }) {
+                    localRepo.createPlaylist(FAVORITES_NAME)
+                }
+                localRepo.addToFavorites(song)
+            } catch (e: Exception) {
+                NPLogger.e("NERI-PlayerManager", "addToFavorites failed: ${e.message}", e)
+            }
+        }
+    }
+
+    /** 从“我喜欢的音乐”移除当前歌 */
+    fun removeCurrentFromFavorites() {
+        val songId = _currentSongFlow.value?.id ?: return
+        val updatedLists = optimisticUpdateFavorites(add = false, songId = songId)
+        _playlistsFlow.value = deepCopyPlaylists(updatedLists)
+        ioScope.launch {
+            try {
+                localRepo.removeFromFavorites(songId)
+            } catch (e: Exception) {
+                NPLogger.e("NERI-PlayerManager", "removeFromFavorites failed: ${e.message}", e)
+            }
+        }
+    }
+
+    /** 切换收藏状态 */
+    fun toggleCurrentFavorite() {
+        val song = _currentSongFlow.value ?: return
+        val fav = _playlistsFlow.value.firstOrNull { it.name == FAVORITES_NAME }
+        val isFav = fav?.songs?.any { it.id == song.id } == true
+        if (isFav) removeCurrentFromFavorites() else addCurrentToFavorites()
+    }
+
+    /** 本地乐观修改收藏歌单 */
+    private fun optimisticUpdateFavorites(
+        add: Boolean,
+        song: SongItem? = null,
+        songId: Long? = null
+    ): List<LocalPlaylist> {
+        val lists = _playlistsFlow.value
+        val favIdx = lists.indexOfFirst { it.name == FAVORITES_NAME }
+        val base = lists.map { LocalPlaylist(it.id, it.name, it.songs.toMutableList()) }.toMutableList()
+
+        if (favIdx >= 0) {
+            val fav = base[favIdx]
+            if (add && song != null) {
+                if (fav.songs.none { it.id == song.id }) fav.songs.add(song)
+            } else if (!add && songId != null) {
+                fav.songs.removeAll { it.id == songId }
+            }
+        } else {
+            if (add && song != null) {
+                base += LocalPlaylist(
+                    id = System.currentTimeMillis(),
+                    name = FAVORITES_NAME,
+                    songs = mutableListOf(song)
+                )
+            }
+        }
+        return base
+    }
+
+    /** 深拷贝列表（包含 songs 的 MutableList 拷贝），
+     * 确保每次发出新引用，稳定触发 Compose 重组
+     */
+    private fun deepCopyPlaylists(src: List<LocalPlaylist>): List<LocalPlaylist> {
+        return src.map { pl ->
+            LocalPlaylist(
+                id = pl.id,
+                name = pl.name,
+                songs = pl.songs.toMutableList()
+            )
+        }
     }
 
     private fun persistState() {
@@ -511,6 +607,24 @@ object PlayerManager {
         }
     }
 
+    fun addCurrentToPlaylist(playlistId: Long) {
+        val song = _currentSongFlow.value ?: return
+        ioScope.launch {
+            try {
+                localRepo.addSongToPlaylist(playlistId, song)
+            } catch (e: Exception) {
+                NPLogger.e("NERI-PlayerManager", "addCurrentToPlaylist failed: ${e.message}", e)
+            }
+        }
+    }
+
+    fun playFromQueue(index: Int) {
+        if (currentPlaylist.isEmpty()) return
+        if (index !in currentPlaylist.indices) return
+        currentIndex = index
+        playAtIndex(index)
+    }
+
     private fun restoreState() {
         try {
             if (!stateFile.exists()) return
@@ -518,6 +632,7 @@ object PlayerManager {
             val data: PersistedState = Gson().fromJson(stateFile.readText(), type)
             currentPlaylist = data.playlist
             currentIndex = data.index
+            _currentQueueFlow.value = currentPlaylist
             _currentSongFlow.value = currentPlaylist.getOrNull(currentIndex)
         } catch (e: Exception) {
             NPLogger.w("NERI-PlayerManager", "Failed to restore state: ${e.message}")

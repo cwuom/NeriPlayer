@@ -46,7 +46,7 @@ data class LibraryUiState(
 )
 
 class LibraryViewModel(application: Application) : AndroidViewModel(application) {
-    private val localRepo = LocalPlaylistRepository(application)
+    private val localRepo = LocalPlaylistRepository.getInstance(application)
     private val cookieRepo = NeteaseCookieRepository(application)
     private val client = NeteaseClient()
 

@@ -166,10 +166,10 @@ private fun LocalPlaylistList(
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surface
                 ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 modifier = Modifier
                     .padding(horizontal = 8.dp, vertical = 4.dp)
-                    .clickableNoRipple { onCreate() }
+                    .clickable { onCreate() }
             ) {
                 ListItem(headlineContent = { Text("＋ 新建歌单") })
             }
@@ -180,7 +180,7 @@ private fun LocalPlaylistList(
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surface
                 ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 modifier = Modifier
                     .padding(horizontal = 8.dp, vertical = 4.dp)
             ) {
@@ -225,16 +225,19 @@ private fun NeteasePlaylistList(
         verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = Modifier.fillMaxSize()
     ) {
-        items(playlists) { pl ->
+        items(
+            items = playlists,
+            key = { it.id }
+        ) { pl ->
             Card(
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surface
                 ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 modifier = Modifier
                     .padding(horizontal = 8.dp, vertical = 4.dp)
-                    .clickableNoRipple { onClick(pl) }
+                    .clickable { onClick(pl) }
             ) {
                 ListItem(
                     headlineContent = { Text(pl.name) },

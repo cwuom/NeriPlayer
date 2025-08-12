@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.data
  * Created: 2025/8/11
  */
 
+import android.annotation.SuppressLint
 import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -42,9 +43,9 @@ data class LocalPlaylist(
 
 /**
  * 管理本地歌单与收藏的简单仓库。
- * 所有数据持久化到应用 filesDir 下的 JSON 文件中。
+ * 所有数据持久化到应用 filesDir 下的 JSON 文件中
  */
-class LocalPlaylistRepository(private val context: Context) {
+class LocalPlaylistRepository private constructor(private val context: Context) {
     private val gson = Gson()
     private val file: File = File(context.filesDir, "local_playlists.json")
 
@@ -95,15 +96,54 @@ class LocalPlaylistRepository(private val context: Context) {
         addSongToPlaylist(fav.id, song)
     }
 
+    /** 从“我喜欢的音乐”移除歌曲 */
+    suspend fun removeFromFavorites(songId: Long) {
+        withContext(Dispatchers.IO) {
+            val updated = _playlists.value.map { pl ->
+                if (pl.name == "我喜欢的音乐")
+                    pl.copy(songs = pl.songs.filter { it.id != songId }.toMutableList())
+                else pl
+            }
+            _playlists.value = updated
+            saveToDisk()
+        }
+    }
+
     /** 将歌曲添加到指定歌单 */
     suspend fun addSongToPlaylist(playlistId: Long, song: SongItem) {
         withContext(Dispatchers.IO) {
+            val old = _playlists.value
+            val updated = old.map { pl ->
+                if (pl.id == playlistId) {
+                    if (pl.songs.any { it.id == song.id }) pl
+                    else pl.copy(songs = (pl.songs + song).toMutableList())
+                } else pl
+            }
+            _playlists.value = updated
+            saveToDisk()
+        }
+    }
+    /** 从指定歌单移除歌曲 */
+    suspend fun removeSongFromPlaylist(playlistId: Long, songId: Long) {
+        withContext(Dispatchers.IO) {
             val list = _playlists.value.toMutableList()
             val pl = list.find { it.id == playlistId } ?: return@withContext
-            if (pl.songs.none { it.id == song.id }) {
-                pl.songs.add(song)
+            val removed = pl.songs.removeAll { it.id == songId }
+            if (removed) {
                 _playlists.value = list
                 saveToDisk()
+            }
+        }
+    }
+
+    companion object {
+        @SuppressLint("StaticFieldLeak")
+        @Volatile
+        private var INSTANCE: LocalPlaylistRepository? = null
+
+        fun getInstance(context: Context): LocalPlaylistRepository {
+            return INSTANCE ?: synchronized(this) {
+                INSTANCE ?: LocalPlaylistRepository(context.applicationContext).also { INSTANCE = it }
             }
         }
     }

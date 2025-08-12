@@ -29,6 +29,9 @@ import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -37,6 +40,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -53,9 +57,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
+import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.SpeakerGroup
@@ -94,17 +104,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import kotlinx.coroutines.delay
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.ui.component.WaveformSlider
@@ -127,6 +140,38 @@ fun NowPlayingScreen(
     // 订阅当前播放链接
     val currentMediaUrl by PlayerManager.currentMediaUrlFlow.collectAsState()
 
+    // 歌单&收藏
+    val playlists by PlayerManager.playlistsFlow.collectAsState()
+
+    // 点击即切换，回流后撤销覆盖
+    var favOverride by remember(currentSong?.id) { mutableStateOf<Boolean?>(null) }
+    val isFavoriteComputed = remember(currentSong?.id, playlists) {
+        val songId = currentSong?.id
+        if (songId == null) false
+        else {
+            val fav = playlists.firstOrNull { it.name == "我喜欢的音乐" }
+            fav?.songs?.any { it.id == songId } == true
+        }
+    }
+    val isFavorite = favOverride ?: isFavoriteComputed
+
+    // 缩放动画
+    var bumpKey by remember(currentSong?.id) { mutableStateOf(0) }
+    val targetScale = if (isFavorite) 1.0f else 1.0f
+    val scale by animateFloatAsState(
+        targetValue = if (bumpKey == 0) 1.0f else 1.12f,
+        animationSpec = spring(stiffness = Spring.StiffnessMedium, dampingRatio = 0.42f),
+        label = "heart_bump_scale"
+    )
+
+    val queue by PlayerManager.currentQueueFlow.collectAsState()
+    val currentIndexInQueue = queue.indexOfFirst { it.id == currentSong?.id }
+
+    var showAddSheet by remember { mutableStateOf(false) }
+    var showQueueSheet by remember { mutableStateOf(false) }
+    val addSheetState = rememberModalBottomSheetState()
+    val queueSheetState = rememberModalBottomSheetState()
+
     // 是否拖拽进度条
     var isUserDraggingSlider by remember(currentSong?.id) { mutableStateOf(false) }
     var sliderPosition by remember(currentSong?.id) {
@@ -138,10 +183,13 @@ fun NowPlayingScreen(
 
     // 控制音量弹窗的显示
     var showVolumeSheet by remember { mutableStateOf(false) }
-    val sheetState = rememberModalBottomSheetState()
+    val volumeSheetState = rememberModalBottomSheetState()
 
     LaunchedEffect(Unit) { contentVisible = true }
     LaunchedEffect(currentPosition) { if (!isUserDraggingSlider) sliderPosition = currentPosition.toFloat() }
+
+    // 当仓库回流或歌曲切换时，撤销本地乐观覆盖，用真实状态对齐
+    LaunchedEffect(playlists, currentSong?.id) { favOverride = null }
 
     CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
         Column(
@@ -162,8 +210,40 @@ fun NowPlayingScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { /* 收藏 */ }) {
-                        Icon(Icons.Outlined.FavoriteBorder, contentDescription = "收藏")
+                    IconButton(onClick = {
+                        if (currentSong == null) return@IconButton
+                        // 切换收藏：UI 先乐观覆盖，Manager 后台真正落库
+                        val willFav = !isFavorite
+                        favOverride = willFav
+                        if (willFav) {
+                            PlayerManager.addCurrentToFavorites()
+                        } else {
+                            PlayerManager.removeCurrentFromFavorites()
+                        }
+                        // 触发一次弹跳
+                        bumpKey++
+                    }) {
+                        // 图标切换 + scale/fade 动画
+                        AnimatedContent(
+                            targetState = isFavorite,
+                            transitionSpec = {
+                                (scaleIn(animationSpec = tween(160), initialScale = 0.85f) + fadeIn()) togetherWith
+                                        (scaleOut(animationSpec = tween(140), targetScale = 0.85f) + fadeOut())
+                            },
+                            label = "favorite_icon_anim"
+                        ) { fav ->
+                            Icon(
+                                imageVector = if (fav) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                                contentDescription = if (fav) "已收藏" else "收藏",
+                                tint = if (fav) Color.Red else LocalContentColor.current,
+                                modifier = Modifier.graphicsLayer {
+                                    // 轻微弹跳缩放（与 AnimatedContent 的 scaleIn 叠加）
+                                    val s = if (bumpKey == 0) 1f else scale
+                                    scaleX = s
+                                    scaleY = s
+                                }
+                            )
+                        }
                     }
                 },
                 scrollBehavior = scrollBehavior,
@@ -197,7 +277,7 @@ fun NowPlayingScreen(
                     currentSong?.coverUrl?.let { cover ->
                         AsyncImage(
                             model = ImageRequest.Builder(LocalContext.current).data(cover).build(),
-                            contentDescription = currentSong!!.name,
+                            contentDescription = currentSong?.name ?: "",
                             contentScale = ContentScale.Crop,
                             modifier = Modifier
                                 .matchParentSize()
@@ -205,8 +285,7 @@ fun NowPlayingScreen(
                         )
                     }
 
-                    /* ⭐ 来源徽标：右下角覆盖显示
-                       规则：当 currentMediaUrl 包含 "music.126.net" 时，显示网易云图标与文案 */
+                    // 右下角覆盖显示
                     val isFromNetease = currentMediaUrl?.contains("music.126.net", ignoreCase = true) == true
                     if (isFromNetease) {
                         Row(
@@ -331,12 +410,21 @@ fun NowPlayingScreen(
             // 将下面的内容推到底部
             Spacer(modifier = Modifier.weight(1f))
 
-            // 播放设备
-            TextButton(
-                onClick = { showVolumeSheet = true },
-                modifier = Modifier.align(Alignment.CenterHorizontally)
+            // 底部操作栏
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                AudioDeviceHandler()
+                IconButton(onClick = { showQueueSheet = true }) {
+                    Icon(Icons.AutoMirrored.Outlined.QueueMusic, contentDescription = "播放列表")
+                }
+                TextButton(onClick = { showVolumeSheet = true }) {
+                    AudioDeviceHandler()
+                }
+                IconButton(onClick = { showAddSheet = true }) {
+                    Icon(Icons.AutoMirrored.Outlined.PlaylistAdd, contentDescription = "添加到歌单")
+                }
             }
         }
 
@@ -344,9 +432,94 @@ fun NowPlayingScreen(
         if (showVolumeSheet) {
             ModalBottomSheet(
                 onDismissRequest = { showVolumeSheet = false },
-                sheetState = sheetState
+                sheetState = volumeSheetState
             ) {
                 VolumeControlSheetContent()
+            }
+        }
+
+        // 播放队列弹窗
+        if (showQueueSheet) {
+            val initialIndex = (currentIndexInQueue - 4).coerceAtLeast(0)
+            val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialIndex)
+
+            LaunchedEffect(showQueueSheet, currentIndexInQueue) {
+                if (showQueueSheet && currentIndexInQueue >= 0) {
+                    delay(150)
+                    listState.animateScrollToItem(currentIndexInQueue)
+                }
+            }
+
+            ModalBottomSheet(
+                onDismissRequest = { showQueueSheet = false },
+                sheetState = queueSheetState
+            ) {
+                LazyColumn(state = listState) {
+                    itemsIndexed(queue) { index, song ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    PlayerManager.playFromQueue(index)
+                                    showQueueSheet = false
+                                }
+                                .padding(horizontal = 24.dp, vertical = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                (index + 1).toString(),
+                                modifier = Modifier.width(48.dp),
+                                textAlign = TextAlign.Start,
+                                fontFamily = FontFamily.Monospace
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(song.name, maxLines = 1)
+                                Text(
+                                    song.artist,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1
+                                )
+                            }
+                            if (index == currentIndexInQueue) {
+                                Icon(
+                                    Icons.Outlined.PlayArrow,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
+                }
+            }
+        }
+
+        if (showAddSheet) {
+            ModalBottomSheet(
+                onDismissRequest = { showAddSheet = false },
+                sheetState = addSheetState
+            ) {
+                LazyColumn {
+                    itemsIndexed(playlists) { _, pl ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    PlayerManager.addCurrentToPlaylist(pl.id)
+                                    showAddSheet = false
+                                }
+                                .padding(horizontal = 24.dp, vertical = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(pl.name, style = MaterialTheme.typography.bodyLarge)
+                            Spacer(modifier = Modifier.weight(1f))
+                            Text("${pl.songs.size} 首", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
             }
         }
     }
@@ -389,7 +562,6 @@ private fun AudioDeviceHandler() {
         }
     }
 }
-
 
 private fun getCurrentAudioDevice(audioManager: AudioManager): Pair<String, ImageVector> {
     val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
