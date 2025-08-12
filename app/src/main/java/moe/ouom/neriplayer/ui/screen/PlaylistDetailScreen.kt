@@ -23,8 +23,12 @@ package moe.ouom.neriplayer.ui.screen
  * Created: 2025/8/10
  */
 
-import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -47,14 +51,17 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Equalizer
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -66,6 +73,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -79,12 +87,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
-import coil.request.CachePolicy
-import coil.request.ImageRequest
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import coil.compose.AsyncImage
+import coil.request.CachePolicy
+import coil.request.ImageRequest
+import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.ui.viewmodel.NeteasePlaylist
 import moe.ouom.neriplayer.ui.viewmodel.PlaylistDetailViewModel
@@ -110,6 +119,11 @@ fun PlaylistDetailScreen(
         }
     )
     val ui by vm.uiState.collectAsState()
+
+    val currentSong by PlayerManager.currentSongFlow.collectAsState()
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val currentIndex = ui.tracks.indexOfFirst { it.id == currentSong?.id }
 
     LaunchedEffect(playlist.id) { vm.start(playlist) }
 
@@ -147,110 +161,136 @@ fun PlaylistDetailScreen(
                     )
                 )
 
-                LazyColumn(
-                    contentPadding = PaddingValues(bottom = 24.dp),
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    item {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(headerHeight)
-                        ) {
-                            AsyncImage(
-                                model = ImageRequest.Builder(LocalContext.current)
-                                    .data(ui.header?.coverUrl.takeUnless { it.isNullOrBlank() } ?: playlist.picUrl)
-                                    .crossfade(true)
-                                    .memoryCachePolicy(CachePolicy.ENABLED)
-                                    .diskCachePolicy(CachePolicy.ENABLED)
-                                    .networkCachePolicy(CachePolicy.ENABLED)
-                                    .build(),
-                                contentDescription = ui.header?.name ?: playlist.name,
-                                contentScale = ContentScale.Crop,
+                Box(modifier = Modifier.fillMaxSize()) {
+                    LazyColumn(
+                        state = listState,
+                        contentPadding = PaddingValues(bottom = 24.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        item {
+                            Box(
                                 modifier = Modifier
-                                    .fillMaxSize()
-                                    .drawWithContent {
-                                        drawContent()
-                                        drawRect(
-                                            brush = Brush.verticalGradient(
-                                                colors = listOf(
-                                                    Color.Black.copy(alpha = 0.10f),
-                                                    Color.Black.copy(alpha = 0.35f),
-                                                    Color.Transparent
-                                                ),
-                                                startY = 0f,
-                                                endY = size.height
-                                            )
-                                        )
-                                    }
-                            )
-
-                            Column(
-                                modifier = Modifier
-                                    .align(Alignment.BottomStart)
-                                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                                    .fillMaxWidth()
+                                    .height(headerHeight)
                             ) {
-                                Text(
-                                    text = ui.header?.name ?: playlist.name,
-                                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-                                    color = Color.White,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
+                                AsyncImage(
+                                    model = ImageRequest.Builder(LocalContext.current)
+                                        .data(ui.header?.coverUrl.takeUnless { it.isNullOrBlank() }
+                                            ?: playlist.picUrl)
+                                        .crossfade(true)
+                                        .memoryCachePolicy(CachePolicy.ENABLED)
+                                        .diskCachePolicy(CachePolicy.ENABLED)
+                                        .networkCachePolicy(CachePolicy.ENABLED)
+                                        .build(),
+                                    contentDescription = ui.header?.name ?: playlist.name,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .drawWithContent {
+                                            drawContent()
+                                            drawRect(
+                                                brush = Brush.verticalGradient(
+                                                    colors = listOf(
+                                                        Color.Black.copy(alpha = 0.10f),
+                                                        Color.Black.copy(alpha = 0.35f),
+                                                        Color.Transparent
+                                                    ),
+                                                    startY = 0f,
+                                                    endY = size.height
+                                                )
+                                            )
+                                        }
                                 )
-                                Spacer(Modifier.height(4.dp))
-                                Text(
-                                    text = "播放量 ${formatPlayCount(ui.header?.playCount ?: playlist.playCount)} · ${(ui.header?.trackCount ?: playlist.trackCount)} 首",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = Color.White.copy(alpha = 0.9f)
-                                )
+
+                                Column(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomStart)
+                                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                                ) {
+                                    Text(
+                                        text = ui.header?.name ?: playlist.name,
+                                        style = MaterialTheme.typography.headlineSmall.copy(
+                                            fontWeight = FontWeight.Bold
+                                        ),
+                                        color = Color.White,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        text = "播放量 ${formatPlayCount(ui.header?.playCount ?: playlist.playCount)} · ${(ui.header?.trackCount ?: playlist.trackCount)} 首",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color.White.copy(alpha = 0.9f)
+                                    )
+                                }
+                            }
+                        }
+
+                        // 状态块
+                        when {
+                            ui.loading && ui.tracks.isEmpty() -> {
+                                item {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(20.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center
+                                    ) {
+                                        CircularProgressIndicator()
+                                        Text("  正在拉取歌单曲目...")
+                                    }
+                                }
+                            }
+
+                            ui.error != null && ui.tracks.isEmpty() -> {
+                                item {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(20.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Text(
+                                            text = "加载失败：${ui.error}",
+                                            color = MaterialTheme.colorScheme.error
+                                        )
+                                        Spacer(Modifier.height(8.dp))
+                                        RetryChip { vm.retry() }
+                                    }
+                                }
+                            }
+
+                            else -> {
+                                itemsIndexed(ui.tracks, key = { _, it -> it.id }) { index, item ->
+                                    SongRow(
+                                        index = index + 1,
+                                        song = item,
+                                        onClick = {
+                                            NPLogger.d(
+                                                "NERI-UI",
+                                                "tap song index=$index id=${item.id}"
+                                            )
+                                            onSongClick(ui.tracks, index)
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
-
-                    // 状态块
-                    when {
-                        ui.loading && ui.tracks.isEmpty() -> {
-                            item {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(20.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center
-                                ) {
-                                    CircularProgressIndicator()
-                                    Text("  正在拉取歌单曲目...")
-                                }
-                            }
-                        }
-                        ui.error != null && ui.tracks.isEmpty() -> {
-                            item {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(20.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    Text(
-                                        text = "加载失败：${ui.error}",
-                                        color = MaterialTheme.colorScheme.error
-                                    )
-                                    Spacer(Modifier.height(8.dp))
-                                    RetryChip { vm.retry() }
-                                }
-                            }
-                        }
-                        else -> {
-                            itemsIndexed(ui.tracks, key = { _, it -> it.id }) { index, item ->
-                                SongRow(
-                                    index = index + 1,
-                                    song = item,
-                                    onClick = {
-                                        NPLogger.d("NERI-UI", "tap song index=$index id=${item.id}")
-                                        onSongClick(ui.tracks, index)
-                                    }
-                                )
-                            }
+                    if (currentIndex >= 0) {
+                        FloatingActionButton(
+                            onClick = {
+                                scope.launch { listState.animateScrollToItem(currentIndex) }
+                            },
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(16.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Outlined.PlaylistPlay,
+                                contentDescription = "定位到正在播放"
+                            )
                         }
                     }
                 }
@@ -347,16 +387,68 @@ private fun SongRow(
         }
 
         if (isPlayingSong) {
-            Icon(
-                imageVector = Icons.Outlined.Equalizer,
-                contentDescription = "正在播放",
-                tint = MaterialTheme.colorScheme.primary
-            )
+            PlayingIndicator(color = MaterialTheme.colorScheme.primary)
         } else {
             Text(
                 text = formatDuration(song.durationMs),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlayingIndicator(
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.primary
+) {
+    val transition = rememberInfiniteTransition(label = "playing")
+    val animValues = listOf(
+        transition.animateFloat(
+            initialValue = 0.3f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 300),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "bar1"
+        ),
+        transition.animateFloat(
+            initialValue = 0.5f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 350),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "bar2"
+        ),
+        transition.animateFloat(
+            initialValue = 0.4f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 400),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "bar3"
+        )
+    )
+
+    val barWidth = 3.dp
+    val barMaxHeight = 12.dp
+
+    Row(
+        modifier = modifier.height(barMaxHeight),
+        verticalAlignment = Alignment.Bottom,
+        horizontalArrangement = Arrangement.spacedBy(1.dp)
+    ) {
+        animValues.forEach { anim ->
+            Box(
+                Modifier
+                    .width(barWidth)
+                    .height(barMaxHeight * anim.value)
+                    .clip(RoundedCornerShape(50))
+                    .background(color)
             )
         }
     }
