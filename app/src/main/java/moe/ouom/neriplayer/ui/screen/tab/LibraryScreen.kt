@@ -23,8 +23,8 @@ package moe.ouom.neriplayer.ui.screen.tab
  * Created: 2025/8/8
  */
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -33,6 +33,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
@@ -52,21 +54,17 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.data.LocalPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.LibraryViewModel
 import moe.ouom.neriplayer.ui.viewmodel.NeteasePlaylist
@@ -78,7 +76,7 @@ enum class LibraryTab(val label: String) {
     QQMUSIC("QQ音乐")
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun LibraryScreen(
     onNeteasePlaylistClick: (NeteasePlaylist) -> Unit = {}
@@ -87,8 +85,12 @@ fun LibraryScreen(
     val ui by vm.uiState.collectAsState()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
-    var selectedTab by rememberSaveable { mutableStateOf(LibraryTab.LOCAL) }
-
+    // Pager 用于左右滑动，与 Tab 同步
+    val pagerState = rememberPagerState(
+        initialPage = LibraryTab.LOCAL.ordinal,
+        pageCount = { LibraryTab.entries.size }
+    )
+    val scope = rememberCoroutineScope()
 
     Column(
         Modifier
@@ -107,14 +109,13 @@ fun LibraryScreen(
 
         // 顶部 Tabs
         ScrollableTabRow(
-            selectedTabIndex = selectedTab.ordinal,
+            selectedTabIndex = pagerState.currentPage,
             edgePadding = 16.dp,
             containerColor = MaterialTheme.colorScheme.surface,
             contentColor = MaterialTheme.colorScheme.primary,
             indicator = { tabPositions ->
                 TabRowDefaults.SecondaryIndicator(
-                    Modifier
-                        .tabIndicatorOffset(tabPositions[selectedTab.ordinal]),
+                    Modifier.tabIndicatorOffset(tabPositions[pagerState.currentPage]),
                     color = MaterialTheme.colorScheme.primary
                 )
             },
@@ -122,8 +123,10 @@ fun LibraryScreen(
         ) {
             LibraryTab.entries.forEachIndexed { index, tab ->
                 Tab(
-                    selected = selectedTab.ordinal == index,
-                    onClick = { selectedTab = tab },
+                    selected = pagerState.currentPage == index,
+                    onClick = {
+                        scope.launch { pagerState.animateScrollToPage(index) }
+                    },
                     selectedContentColor = MaterialTheme.colorScheme.primary,
                     unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     text = { Text(tab.label) }
@@ -131,20 +134,23 @@ fun LibraryScreen(
             }
         }
 
-        when (selectedTab) {
-            LibraryTab.LOCAL -> LocalPlaylistList(
-                playlists = ui.localPlaylists,
-                onCreate = { vm.createLocalPlaylist("新建歌单") }
-            )
-
-            LibraryTab.NETEASE -> NeteasePlaylistList(
-                playlists = ui.neteasePlaylists,
-                onClick = onNeteasePlaylistClick
-            )
-
-            LibraryTab.QQMUSIC -> {
-                // TODO: QQ 音乐支持
-                LazyColumn { }
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize()
+        ) { page ->
+            when (LibraryTab.entries[page]) {
+                LibraryTab.LOCAL -> LocalPlaylistList(
+                    playlists = ui.localPlaylists,
+                    onCreate = { vm.createLocalPlaylist("新建歌单") }
+                )
+                LibraryTab.NETEASE -> NeteasePlaylistList(
+                    playlists = ui.neteasePlaylists,
+                    onClick = onNeteasePlaylistClick
+                )
+                LibraryTab.QQMUSIC -> {
+                    // TODO: QQ 音乐支持
+                    LazyColumn { }
+                }
             }
         }
     }
@@ -261,15 +267,4 @@ private fun NeteasePlaylistList(
             }
         }
     }
-}
-
-// 无水波点击
-fun Modifier.clickableNoRipple(onClick: () -> Unit): Modifier = composed {
-    val interaction = remember { MutableInteractionSource() }
-    this.clickable(
-        interactionSource = interaction,
-        indication = null,
-        role = Role.Button,
-        onClick = onClick
-    )
 }
