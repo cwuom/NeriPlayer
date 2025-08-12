@@ -370,12 +370,12 @@ fun SettingsScreen(
                     leadingContent = {
                         Icon(
                             imageVector = Icons.Filled.Audiotrack,
-                            contentDescription = "默认音质",
+                            contentDescription = "网易云默认音质",
                             modifier = Modifier.size(24.dp),
                             tint = MaterialTheme.colorScheme.onSurface
                         )
                     },
-                    headlineContent = { Text("默认音质", style = MaterialTheme.typography.titleMedium) },
+                    headlineContent = { Text("网易云默认音质", style = MaterialTheme.typography.titleMedium) },
                     supportingContent = { Text("$qualityLabel - $preferredQuality") },
                     modifier = Modifier.clickable { showQualityDialog = true },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)

@@ -94,15 +94,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.ui.component.WaveformSlider
 import moe.ouom.neriplayer.util.formatDuration
@@ -118,12 +121,14 @@ fun NowPlayingScreen(
     val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
     val shuffleEnabled by PlayerManager.shuffleModeFlow.collectAsState()
     val repeatMode by PlayerManager.repeatModeFlow.collectAsState()
-    val durationMs = currentSong?.durationMs ?: 0L
     val currentPosition by PlayerManager.playbackPositionFlow.collectAsState()
+    val durationMs = currentSong?.durationMs ?: 0L
+
+    // 订阅当前播放链接
+    val currentMediaUrl by PlayerManager.currentMediaUrlFlow.collectAsState()
 
     // 是否拖拽进度条
     var isUserDraggingSlider by remember(currentSong?.id) { mutableStateOf(false) }
-
     var sliderPosition by remember(currentSong?.id) {
         mutableFloatStateOf(PlayerManager.playbackPositionFlow.value.toFloat())
     }
@@ -135,15 +140,8 @@ fun NowPlayingScreen(
     var showVolumeSheet by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState()
 
-    LaunchedEffect(Unit) {
-        contentVisible = true
-    }
-
-    LaunchedEffect(currentPosition) {
-        if (!isUserDraggingSlider) {
-            sliderPosition = currentPosition.toFloat()
-        }
-    }
+    LaunchedEffect(Unit) { contentVisible = true }
+    LaunchedEffect(currentPosition) { if (!isUserDraggingSlider) sliderPosition = currentPosition.toFloat() }
 
     CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
         Column(
@@ -153,29 +151,19 @@ fun NowPlayingScreen(
                 .windowInsetsPadding(WindowInsets.navigationBars)
                 .padding(horizontal = 20.dp, vertical = 12.dp)
                 .pointerInput(Unit) {
-                    detectVerticalDragGestures { _, dragAmount ->
-                        if (dragAmount > 60) {
-                            onNavigateUp()
-                        }
-                    }
+                    detectVerticalDragGestures { _, dragAmount -> if (dragAmount > 60) onNavigateUp() }
                 }
         ) {
             CenterAlignedTopAppBar(
                 title = { Text("正在播放") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateUp) {
-                        Icon(
-                            Icons.Outlined.KeyboardArrowDown,
-                            contentDescription = "返回"
-                        )
+                        Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = "返回")
                     }
                 },
                 actions = {
                     IconButton(onClick = { /* 收藏 */ }) {
-                        Icon(
-                            Icons.Outlined.FavoriteBorder,
-                            contentDescription = "收藏"
-                        )
+                        Icon(Icons.Outlined.FavoriteBorder, contentDescription = "收藏")
                     }
                 },
                 scrollBehavior = scrollBehavior,
@@ -216,6 +204,34 @@ fun NowPlayingScreen(
                                 .clip(RoundedCornerShape(24.dp))
                         )
                     }
+
+                    /* ⭐ 来源徽标：右下角覆盖显示
+                       规则：当 currentMediaUrl 包含 "music.126.net" 时，显示网易云图标与文案 */
+                    val isFromNetease = currentMediaUrl?.contains("music.126.net", ignoreCase = true) == true
+                    if (isFromNetease) {
+                        Row(
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(10.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_netease_cloud_music),
+                                contentDescription = "网易云音乐",
+                                tint = LocalContentColor.current,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "网易云",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
                 }
             }
 
@@ -229,12 +245,13 @@ fun NowPlayingScreen(
                     initialOffsetY = { it / 4 }
                 ) + fadeIn(animationSpec = tween(durationMillis = 400, delayMillis = 150))
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(currentSong?.name ?: "", style = MaterialTheme.typography.headlineSmall)
-                    Text(currentSong?.artist ?: "", style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        currentSong?.artist ?: "",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
 
@@ -291,9 +308,7 @@ fun NowPlayingScreen(
                     AnimatedContent(
                         targetState = isPlaying,
                         label = "play_pause_icon",
-                        transitionSpec = {
-                            (scaleIn() + fadeIn()) togetherWith (scaleOut() + fadeOut())
-                        }
+                        transitionSpec = { (scaleIn() + fadeIn()) togetherWith (scaleOut() + fadeOut()) }
                     ) { currentlyPlaying ->
                         Icon(
                             imageVector = if (currentlyPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
@@ -340,9 +355,7 @@ fun NowPlayingScreen(
 @Composable
 private fun AudioDeviceHandler() {
     val context = LocalContext.current
-    val audioManager = remember {
-        context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-    }
+    val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
 
     var deviceInfo by remember { mutableStateOf(getCurrentAudioDevice(audioManager)) }
 
@@ -351,40 +364,35 @@ private fun AudioDeviceHandler() {
             override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>?) {
                 deviceInfo = getCurrentAudioDevice(audioManager)
             }
-
             override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>?) {
                 deviceInfo = getCurrentAudioDevice(audioManager)
             }
         }
-
-        // 注册回调
         audioManager.registerAudioDeviceCallback(deviceCallback, null)
-
-        onDispose {
-            // 防止内存泄漏
-            audioManager.unregisterAudioDeviceCallback(deviceCallback)
-        }
+        onDispose { audioManager.unregisterAudioDeviceCallback(deviceCallback) }
     }
 
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(
-            imageVector = deviceInfo.second,
-            contentDescription = "播放设备",
-            modifier = Modifier.size(16.dp),
-            tint = MaterialTheme.colorScheme.onSurface
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(
-            text = deviceInfo.first,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface
-        )
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = deviceInfo.second,
+                contentDescription = "播放设备",
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = deviceInfo.first,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
     }
 }
 
+
 private fun getCurrentAudioDevice(audioManager: AudioManager): Pair<String, ImageVector> {
     val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-
     val bluetoothDevice = devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP }
     if (bluetoothDevice != null) {
         return try {
@@ -393,12 +401,8 @@ private fun getCurrentAudioDevice(audioManager: AudioManager): Pair<String, Imag
             Pair("蓝牙设备", Icons.Default.Headset)
         }
     }
-
     val wiredHeadset = devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET || it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES }
-    if (wiredHeadset != null) {
-        return Pair("有线耳机", Icons.Default.Headset)
-    }
-
+    if (wiredHeadset != null) return Pair("有线耳机", Icons.Default.Headset)
     return Pair("手机扬声器", Icons.Default.SpeakerGroup)
 }
 
@@ -408,9 +412,7 @@ private fun VolumeControlSheetContent() {
     val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
     val maxVolume = remember { audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) }
-    var currentVolume by remember {
-        mutableIntStateOf(audioManager.getStreamVolume(AudioManager.STREAM_MUSIC))
-    }
+    var currentVolume by remember { mutableIntStateOf(audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)) }
 
     Column(
         modifier = Modifier

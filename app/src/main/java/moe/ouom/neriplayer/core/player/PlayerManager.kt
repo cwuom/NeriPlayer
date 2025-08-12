@@ -1,4 +1,5 @@
 @file:OptIn(UnstableApi::class)
+
 package moe.ouom.neriplayer.core.player
 
 /*
@@ -72,7 +73,7 @@ import java.io.File
 
 data class AudioDevice(
     val name: String,
-    val type: Int, // e.g., AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+    val type: Int,
     val icon: ImageVector
 )
 
@@ -96,6 +97,7 @@ object PlayerManager {
     private lateinit var cache: Cache
 
     private val ioScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val mainScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var progressJob: Job? = null
 
     private val neteaseClient = NeteaseClient()
@@ -122,13 +124,15 @@ object PlayerManager {
     private val _repeatModeFlow = MutableStateFlow(Player.REPEAT_MODE_OFF)
     val repeatModeFlow: StateFlow<Int> = _repeatModeFlow
 
-    private val mainScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-
     private val _currentAudioDevice = MutableStateFlow<AudioDevice?>(null)
     val currentAudioDeviceFlow: StateFlow<AudioDevice?> = _currentAudioDevice
 
     private val _playerEventFlow = MutableSharedFlow<PlayerEvent>()
     val playerEventFlow: SharedFlow<PlayerEvent> = _playerEventFlow.asSharedFlow()
+
+    /** 向 UI 暴露当前实际播放链接，用于来源展示 */
+    private val _currentMediaUrl = MutableStateFlow<String?>(null)
+    val currentMediaUrlFlow: StateFlow<String?> = _currentMediaUrl
 
     fun initialize(app: Application) {
         if (initialized) return
@@ -162,7 +166,7 @@ object PlayerManager {
                 val cause = error.cause
                 val msg = when {
                     cause?.message?.contains("no protocol: null", ignoreCase = true) == true ->
-                        "播放地址无效。请尝试登录"
+                        "播放地址无效\n请尝试登录或切换音质\n或检查你是否对此歌曲有访问权限"
                     error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ->
                         "网络连接失败，请检查网络后重试"
                     else ->
@@ -192,11 +196,7 @@ object PlayerManager {
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 _isPlayingFlow.value = isPlaying
-                if (isPlaying) {
-                    startProgressUpdates()
-                } else {
-                    stopProgressUpdates()
-                }
+                if (isPlaying) startProgressUpdates() else stopProgressUpdates()
             }
 
             override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
@@ -222,9 +222,6 @@ object PlayerManager {
                 if (!cookies.containsKey("os")) cookies["os"] = "pc"
                 neteaseClient.setPersistedCookies(cookies)
                 NPLogger.d("NERI-PlayerManager", "Cookies updated in PlayerManager: keys=${cookies.keys.joinToString()}")
-                if (!cookies["MUSIC_U"].isNullOrBlank()) {
-                    NPLogger.d("NERI-PlayerManager", "Detected login cookie, applied new cookie for playback")
-                }
             }
         }
 
@@ -298,9 +295,7 @@ object PlayerManager {
 
         if (consecutivePlayFailures >= MAX_CONSECUTIVE_FAILURES) {
             NPLogger.e("NERI-PlayerManager", "已连续失败 $consecutivePlayFailures 次，停止播放。")
-            mainScope.launch {
-                Toast.makeText(application, "多首歌曲无法播放，已停止", Toast.LENGTH_SHORT).show()
-            }
+            mainScope.launch { Toast.makeText(application, "多首歌曲无法播放，已停止", Toast.LENGTH_SHORT).show() }
             stopAndClearPlaylist()
             return
         }
@@ -317,6 +312,9 @@ object PlayerManager {
                         .setUri(Uri.parse(result.url))
                         .build()
 
+                    // 记录当前播放链接，供 UI 展示来源
+                    _currentMediaUrl.value = result.url
+
                     withContext(Dispatchers.Main) {
                         player.setMediaItem(mediaItem)
                         player.prepare()
@@ -326,9 +324,7 @@ object PlayerManager {
                 is SongUrlResult.RequiresLogin -> {
                     NPLogger.w("NERI-PlayerManager", "需要登录才能播放: id=${song.id}")
                     _playerEventFlow.emit(PlayerEvent.ShowLoginPrompt("播放失败，请尝试登录"))
-                    withContext(Dispatchers.Main) {
-                        stopAndClearPlaylist()
-                    }
+                    withContext(Dispatchers.Main) { stopAndClearPlaylist() }
                 }
                 is SongUrlResult.Failure -> {
                     NPLogger.e("NERI-PlayerManager", "获取播放 URL 失败, 跳过: id=${song.id}")
@@ -339,49 +335,40 @@ object PlayerManager {
         }
     }
 
-    private suspend fun getSongUrl(songId: Long): SongUrlResult {
-        return withContext(Dispatchers.IO) {
-            try {
-                val resp = neteaseClient.getSongDownloadUrl(
-                    songId,
-                    bitrate = 320000,
-                    level = preferredQuality
-                )
-                NPLogger.d("NERI-PlayerManager", "id=$songId, resp=$resp")
+    private suspend fun getSongUrl(songId: Long): SongUrlResult = withContext(Dispatchers.IO) {
+        try {
+            val resp = neteaseClient.getSongDownloadUrl(
+                songId,
+                bitrate = 320000,
+                level = preferredQuality
+            )
+            NPLogger.d("NERI-PlayerManager", "id=$songId, resp=$resp")
 
-                val root = JSONObject(resp)
-                when (root.optInt("code")) {
-                    301 -> return@withContext SongUrlResult.RequiresLogin
-                    200 -> {
-                        val url = when (val dataObj = root.opt("data")) {
-                            is JSONObject -> dataObj.optString("url", "")
-                            is org.json.JSONArray -> dataObj.optJSONObject(0)?.optString("url", "")
-                            else -> ""
-                        }
-
-                        if (url.isNullOrBlank()) {
-                            ioScope.launch {
-                                _playerEventFlow.emit(
-                                    PlayerEvent.ShowError("该歌曲暂无可用播放地址（可能需要登录或版权限制）")
-                                )
-                            }
-                            return@withContext SongUrlResult.Failure
-                        } else {
-                            val finalUrl = if (url.startsWith("http://")) url.replaceFirst("http://", "https://") else url
-                            return@withContext SongUrlResult.Success(finalUrl)
-                        }
+            val root = JSONObject(resp)
+            when (root.optInt("code")) {
+                301 -> SongUrlResult.RequiresLogin
+                200 -> {
+                    val url = when (val dataObj = root.opt("data")) {
+                        is JSONObject -> dataObj.optString("url", "")
+                        is org.json.JSONArray -> dataObj.optJSONObject(0)?.optString("url", "")
+                        else -> ""
                     }
-                    else -> {
-                        ioScope.launch {
-                            _playerEventFlow.emit(PlayerEvent.ShowError("获取播放地址失败（${root.optInt("code")}）。"))
-                        }
-                        return@withContext SongUrlResult.Failure
+                    if (url.isNullOrBlank()) {
+                        ioScope.launch { _playerEventFlow.emit(PlayerEvent.ShowError("该歌曲暂无可用播放地址（可能需要登录或版权限制）")) }
+                        SongUrlResult.Failure
+                    } else {
+                        val finalUrl = if (url.startsWith("http://")) url.replaceFirst("http://", "https://") else url
+                        SongUrlResult.Success(finalUrl)
                     }
                 }
-            } catch (e: Exception) {
-                NPLogger.e("NERI-PlayerManager", "获取URL时出错", e)
-                return@withContext SongUrlResult.Failure
+                else -> {
+                    ioScope.launch { _playerEventFlow.emit(PlayerEvent.ShowError("获取播放地址失败（${root.optInt("code")}）。")) }
+                    SongUrlResult.Failure
+                }
             }
+        } catch (e: Exception) {
+            NPLogger.e("NERI-PlayerManager", "获取URL时出错", e)
+            SongUrlResult.Failure
         }
     }
 
@@ -393,13 +380,8 @@ object PlayerManager {
         }
     }
 
-    fun pause() {
-        player.pause()
-    }
-
-    fun togglePlayPause() {
-        if (player.isPlaying) pause() else play()
-    }
+    fun pause() { player.pause() }
+    fun togglePlayPause() { if (player.isPlaying) pause() else play() }
 
     fun seekTo(positionMs: Long) {
         player.seekTo(positionMs)
@@ -430,12 +412,7 @@ object PlayerManager {
         if (player.shuffleModeEnabled) {
             currentIndex = (0 until currentPlaylist.size).random()
         } else {
-            if (currentIndex > 0) {
-                currentIndex--
-            } else {
-                NPLogger.d("NERI-Player", "Already at the start of the playlist.")
-                return
-            }
+            if (currentIndex > 0) currentIndex-- else { NPLogger.d("NERI-Player", "Already at the start of the playlist."); return }
         }
         playAtIndex(currentIndex)
     }
@@ -450,7 +427,6 @@ object PlayerManager {
         player.repeatMode = newMode
     }
 
-    @androidx.annotation.OptIn(UnstableApi::class)
     fun release() {
         player.release()
         cache.release()
@@ -458,9 +434,7 @@ object PlayerManager {
         ioScope.cancel()
     }
 
-    fun setShuffle(enabled: Boolean) {
-        player.shuffleModeEnabled = enabled
-    }
+    fun setShuffle(enabled: Boolean) { player.shuffleModeEnabled = enabled }
 
     private fun startProgressUpdates() {
         stopProgressUpdates()
@@ -472,16 +446,14 @@ object PlayerManager {
         }
     }
 
-    private fun stopProgressUpdates() {
-        progressJob?.cancel()
-        progressJob = null
-    }
+    private fun stopProgressUpdates() { progressJob?.cancel(); progressJob = null }
 
     private fun stopAndClearPlaylist() {
         player.stop()
         player.clearMediaItems()
         _isPlayingFlow.value = false
         _currentSongFlow.value = null
+        _currentMediaUrl.value = null
         currentIndex = -1
         currentPlaylist = emptyList()
         consecutivePlayFailures = 0
