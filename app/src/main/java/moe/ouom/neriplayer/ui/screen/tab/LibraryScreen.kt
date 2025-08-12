@@ -35,37 +35,95 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRowDefaults
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.composed
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 
 data class Track(val title: String, val artist: String, val duration: String)
+
+enum class LibraryTab(val label: String) {
+    LOCAL("本地"),
+    NETEASE("网易云"),
+    QQMUSIC("QQ音乐")
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryScreen(onPlay: () -> Unit) {
-    val tracks = List(20) { i ->
-        Track("Song #$i", "Neri", "3:${(i % 60).toString().padStart(2, '0')}")
-    }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
+    var selectedTab by rememberSaveable { mutableStateOf(LibraryTab.LOCAL) }
+
+    fun tracksFor(tab: LibraryTab): List<Track> = when (tab) {
+        LibraryTab.LOCAL -> List(12) { i ->
+            Track("本地歌曲 #$i", "Local Artist", "4:${(30 + i) % 60}".padStart(2, '0'))
+        }
+        LibraryTab.NETEASE -> List(16) { i ->
+            Track("云村单曲 #$i", "Netease · Neri", "3:${(i % 60).toString().padStart(2, '0')}")
+        }
+        LibraryTab.QQMUSIC -> List(10) { i ->
+            Track("QQ 音乐曲目 #$i", "QQMusic · Neri", "2:${(45 + i) % 60}".padStart(2, '0'))
+        }
+    }
+
+    val tracks = tracksFor(selectedTab)
 
     Column(
         Modifier
             .fillMaxSize()
             .nestedScroll(scrollBehavior.nestedScrollConnection)
     ) {
-        LargeTopAppBar(title = { Text("媒体库") }, scrollBehavior = scrollBehavior,
+        // 大标题 AppBar
+        LargeTopAppBar(
+            title = { Text("媒体库") },
+            scrollBehavior = scrollBehavior,
             colors = TopAppBarDefaults.largeTopAppBarColors(
                 containerColor = MaterialTheme.colorScheme.surface,
                 scrolledContainerColor = MaterialTheme.colorScheme.surface
-            ))
+            )
+        )
+
+        // 顶部 Tabs
+        ScrollableTabRow(
+            selectedTabIndex = selectedTab.ordinal,
+            edgePadding = 16.dp,
+            containerColor = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.primary,
+            indicator = { tabPositions ->
+                TabRowDefaults.SecondaryIndicator(
+                    Modifier
+                        .tabIndicatorOffset(tabPositions[selectedTab.ordinal]),
+                    color = MaterialTheme.colorScheme.primary
+                )
+            },
+            divider = {}
+        ) {
+            LibraryTab.entries.forEachIndexed { index, tab ->
+                Tab(
+                    selected = selectedTab.ordinal == index,
+                    onClick = { selectedTab = tab },
+                    selectedContentColor = MaterialTheme.colorScheme.primary,
+                    unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = { Text(tab.label) }
+                )
+            }
+        }
+
+        // 列表内容
         LazyColumn(
             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -92,7 +150,7 @@ fun LibraryScreen(onPlay: () -> Unit) {
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         },
-                        leadingContent = { /* 封面占位 */ },
+                        leadingContent = { /* TODO: 放封面 */ },
                         trailingContent = { Text("▶") }
                     )
                 }
@@ -101,6 +159,7 @@ fun LibraryScreen(onPlay: () -> Unit) {
     }
 }
 
+// 无水波点击
 fun Modifier.clickableNoRipple(onClick: () -> Unit): Modifier = composed {
     val interaction = remember { MutableInteractionSource() }
     this.clickable(
