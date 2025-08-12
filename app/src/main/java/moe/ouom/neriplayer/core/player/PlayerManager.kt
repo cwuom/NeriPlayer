@@ -115,6 +115,7 @@ object PlayerManager {
     private var currentIndex = -1
     private var consecutivePlayFailures = 0
     private const val MAX_CONSECUTIVE_FAILURES = 10
+    private val shuffleHistory = mutableListOf<Int>()
 
     private val _currentSongFlow = MutableStateFlow<SongItem?>(null)
     val currentSongFlow: StateFlow<SongItem?> = _currentSongFlow
@@ -302,6 +303,7 @@ object PlayerManager {
         currentPlaylist = songs
         currentIndex = startIndex
         playAtIndex(currentIndex)
+        shuffleHistory.clear()
 
         persistState()
     }
@@ -412,7 +414,7 @@ object PlayerManager {
         if (currentPlaylist.isEmpty()) return
 
         if (player.shuffleModeEnabled) {
-            currentIndex = (0 until currentPlaylist.size).random()
+            if (currentIndex != -1) shuffleHistory.add(currentIndex)
         } else {
             if (currentIndex < currentPlaylist.size - 1) {
                 currentIndex++
@@ -430,7 +432,12 @@ object PlayerManager {
         if (currentPlaylist.isEmpty()) return
 
         if (player.shuffleModeEnabled) {
-            currentIndex = (0 until currentPlaylist.size).random()
+            if (shuffleHistory.isNotEmpty()) {
+                currentIndex = shuffleHistory.removeLast()
+            } else {
+                NPLogger.d("NERI-Player", "No previous track in history.")
+                return
+            }
         } else {
             if (currentIndex > 0) currentIndex-- else { NPLogger.d("NERI-Player", "Already at the start of the playlist."); return }
         }
@@ -454,8 +461,10 @@ object PlayerManager {
         ioScope.cancel()
     }
 
-    fun setShuffle(enabled: Boolean) { player.shuffleModeEnabled = enabled }
-
+    fun setShuffle(enabled: Boolean) {
+        player.shuffleModeEnabled = enabled
+        if (enabled) shuffleHistory.clear()
+    }
     private fun startProgressUpdates() {
         stopProgressUpdates()
         progressJob = mainScope.launch {
