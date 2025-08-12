@@ -24,8 +24,6 @@ package moe.ouom.neriplayer.ui.viewmodel
  */
 
 import android.app.Application
-import android.os.Parcelable
-import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -34,6 +32,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.parcelize.Parcelize
+import android.os.Parcelable
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
 import moe.ouom.neriplayer.data.NeteaseCookieRepository
 import moe.ouom.neriplayer.util.NPLogger
@@ -57,6 +56,7 @@ data class NeteasePlaylist(
     val playCount: Long,
     val trackCount: Int
 ) : Parcelable
+
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repo = NeteaseCookieRepository(application)
@@ -66,6 +66,20 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val uiState: StateFlow<HomeUiState> = _uiState
 
     init {
+        // 登录后自动刷新
+        viewModelScope.launch {
+            repo.cookieFlow.collect { raw ->
+                val cookies = raw.toMutableMap()
+                if (!cookies.containsKey("os")) cookies["os"] = "pc"
+                client.setPersistedCookies(cookies)
+
+                if (!cookies["MUSIC_U"].isNullOrBlank()) {
+                    NPLogger.d(TAG, "Detected login cookie, refreshing recommend")
+                    refreshRecommend()
+                }
+            }
+        }
+        // 首次进入也拉一次
         refreshRecommend()
     }
 
@@ -74,16 +88,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.value = _uiState.value.copy(loading = true, error = null)
         viewModelScope.launch {
             try {
-                // 注入持久化 Cookie
-                val cookies = withContext(Dispatchers.IO) { repo.getCookiesOnce() }
-                NPLogger.d(TAG, "Inject cookies keys=${cookies.keys.joinToString()}")
+                val cookies = withContext(Dispatchers.IO) { repo.getCookiesOnce() }.toMutableMap()
+                if (!cookies.containsKey("os")) cookies["os"] = "pc"
                 client.setPersistedCookies(cookies)
 
-                // 拉取推荐
                 val raw = withContext(Dispatchers.IO) { client.getRecommendedPlaylists(limit = 30) }
-                NPLogger.d(TAG, "Recommend response length=${raw.length}")
-                NPLogger.d(TAG, "Recommend response head=${raw.take(500)}")
-
                 val mapped = parseRecommend(raw)
 
                 _uiState.value = HomeUiState(
@@ -91,15 +100,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     error = null,
                     playlists = mapped
                 )
-                NPLogger.d(TAG, "Mapped playlists size=${mapped.size}")
             } catch (e: IOException) {
-                NPLogger.e(TAG, "Network/Server error", e)
                 _uiState.value = HomeUiState(
                     loading = false,
                     error = "网络异常或服务器异常：${e.message ?: e.javaClass.simpleName}"
                 )
             } catch (e: Exception) {
-                NPLogger.e(TAG, "Unexpected error", e)
                 _uiState.value = HomeUiState(
                     loading = false,
                     error = "解析/未知错误：${e.message ?: e.javaClass.simpleName}"

@@ -1,20 +1,5 @@
 package moe.ouom.neriplayer.ui.viewmodel
 
-import android.app.Application
-import android.util.Log
-import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.core.api.netease.NeteaseClient
-import moe.ouom.neriplayer.data.NeteaseCookieRepository
-import moe.ouom.neriplayer.util.NPLogger
-import org.json.JSONObject
-import java.io.IOException
-
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
  * Copyright (C) 2025-2025 NeriPlayer developers
@@ -38,6 +23,20 @@ import java.io.IOException
  * Created: 2025/8/11
  */
 
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.core.api.netease.NeteaseClient
+import moe.ouom.neriplayer.data.NeteaseCookieRepository
+import moe.ouom.neriplayer.util.NPLogger
+import org.json.JSONObject
+import java.io.IOException
+
 data class ExploreUiState(
     val expanded: Boolean = false,
     val loading: Boolean = false,
@@ -53,26 +52,37 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     private val _uiState = MutableStateFlow(ExploreUiState())
     val uiState: StateFlow<ExploreUiState> = _uiState
 
-    fun toggleExpanded() {
-        _uiState.value = _uiState.value.copy(expanded = !_uiState.value.expanded)
+    init {
+        // 登录后自动注入 Cookie 并可选触发刷新
+        viewModelScope.launch {
+            repo.cookieFlow.collect { raw ->
+                val cookies = raw.toMutableMap()
+                if (!cookies.containsKey("os")) cookies["os"] = "pc"
+                client.setPersistedCookies(cookies)
+                if (!cookies["MUSIC_U"].isNullOrBlank()) {
+                    loadHighQuality() // 自动按当前选中标签刷新
+                }
+            }
+        }
     }
 
-
-    /** 设置当前选中标签
-     * （仅更新状态，不发请求）
-     */
+    /** 设置当前选中标签（仅更新状态，不发请求） */
     fun setSelectedTag(tag: String) {
         if (tag == _uiState.value.selectedTag) return
         _uiState.value = _uiState.value.copy(selectedTag = tag)
     }
 
+    fun toggleExpanded() {
+        _uiState.value = _uiState.value.copy(expanded = !_uiState.value.expanded)
+    }
 
     fun loadHighQuality(cat: String? = null) {
-        val realCat = cat ?: _uiState.value.selectedTag      // ★ 用 VM 中的标签
+        val realCat = cat ?: _uiState.value.selectedTag
         _uiState.value = _uiState.value.copy(loading = true, error = null)
         viewModelScope.launch {
             try {
-                val cookies = withContext(Dispatchers.IO) { repo.getCookiesOnce() }
+                val cookies = withContext(Dispatchers.IO) { repo.getCookiesOnce() }.toMutableMap()
+                if (!cookies.containsKey("os")) cookies["os"] = "pc"
                 client.setPersistedCookies(cookies)
 
                 val raw = withContext(Dispatchers.IO) {

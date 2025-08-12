@@ -55,7 +55,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -85,7 +84,6 @@ fun ExploreScreen(
         if (ui.playlists.isEmpty()) vm.loadHighQuality()
     }
 
-
     val query = remember { mutableStateOf("") }
     val tags = listOf(
         "全部",
@@ -114,7 +112,7 @@ fun ExploreScreen(
             .nestedScroll(scrollBehavior.nestedScrollConnection)
     ) { innerPadding ->
         LazyVerticalGrid(
-            state = gridState, // 用外部传进来的 gridState 保存滚动位置
+            state = gridState,
             columns = GridCells.Adaptive(150.dp),
             contentPadding = PaddingValues(
                 start = 16.dp, end = 16.dp,
@@ -172,7 +170,6 @@ fun ExploreScreen(
                     Spacer(modifier = Modifier.padding(top = 4.dp))
                 }
             }
-
 
             // 状态区
             if (ui.loading) {

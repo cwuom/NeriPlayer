@@ -34,6 +34,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
 import moe.ouom.neriplayer.data.NeteaseCookieRepository
+import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
 
 data class NeteaseAuthUiState(
@@ -56,9 +57,7 @@ sealed interface NeteaseAuthEvent {
 class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
 
     private val cookieRepo = NeteaseCookieRepository(app)
-
     private val cookieStore: MutableMap<String, String> = mutableMapOf()
-
     private val api = NeteaseClient()
 
     private val _uiState = MutableStateFlow(NeteaseAuthUiState())
@@ -125,9 +124,7 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /**
-     * 验证码一键登录
-     */
+    /** 验证码一键登录 */
     fun loginByCaptcha(countryCode: String = "86") {
         val phone = _uiState.value.phone.trim()
         val captcha = _uiState.value.captcha.trim()
@@ -163,13 +160,20 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
                 val obj = JSONObject(loginResp)
                 val code = obj.optInt("code", -1)
                 if (code == 200) {
-                    // 拿到本次会话的服务端 Set-Cookie，保存到 DataStore
                     val latest = api.getCookies()
+
                     cookieStore.clear()
                     cookieStore.putAll(latest)
 
-                    cookieRepo.saveCookies(cookieStore)
+                    api.setPersistedCookies(cookieStore)
+                    try {
+                        api.ensureWeapiSession()
+                        val withCsrf = api.getCookies()
+                        cookieStore.clear()
+                        cookieStore.putAll(withCsrf)
+                    } catch (_: Exception) { }
 
+                    cookieRepo.saveCookies(cookieStore)
                     api.setPersistedCookies(cookieStore)
 
                     _uiState.value = _uiState.value.copy(isLoggedIn = true)
@@ -177,7 +181,7 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
                     _events.tryEmit(NeteaseAuthEvent.ShowCookies(cookieStore.toMap()))
                     _events.tryEmit(NeteaseAuthEvent.LoginSuccess)
                 } else {
-                    val msg = obj.optString("msg", "登录失败")
+                    val msg = obj.optString("msg", "登录失败，请选择其它登录方式")
                     emitSnack("登录失败：$msg")
                 }
             } catch (e: Exception) {

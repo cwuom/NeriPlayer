@@ -56,10 +56,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
@@ -79,6 +81,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -86,9 +89,13 @@ import androidx.core.graphics.drawable.toDrawable
 import androidx.core.graphics.toColorInt
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.BuildConfig
+import moe.ouom.neriplayer.core.player.PlayerEvent
+import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.SettingsRepository
 import moe.ouom.neriplayer.ui.NeriApp
 import moe.ouom.neriplayer.util.NPLogger
@@ -184,6 +191,43 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                         AppStage.Main -> {
+                            // 弹窗状态管理和事件监听
+                            var showDialog by remember { mutableStateOf(false) }
+                            var dialogMessage by remember { mutableStateOf("") }
+                            val lifecycleOwner = LocalLifecycleOwner.current
+
+
+                            LaunchedEffect(lifecycleOwner.lifecycle) {
+                                lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                                    PlayerManager.playerEventFlow.collect { event ->
+                                        when (event) {
+                                            is PlayerEvent.ShowLoginPrompt -> {
+                                                dialogMessage = event.message
+                                                showDialog = true
+                                            }
+
+                                            is PlayerEvent.ShowError -> {
+                                                dialogMessage = event.message
+                                                showDialog = true
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (showDialog) {
+                                AlertDialog(
+                                    onDismissRequest = { showDialog = false },
+                                    title = { Text("提示") },
+                                    text = { Text(dialogMessage) },
+                                    confirmButton = {
+                                        TextButton(onClick = { showDialog = false }) {
+                                            Text("确定")
+                                        }
+                                    }
+                                )
+                            }
+
                             NeriApp(
                                 onIsDarkChanged = { isDark ->
                                     // 仅调整窗口底色 & 系统栏外观
@@ -229,7 +273,7 @@ fun NeriTheme(
     )
 }
 
-/* --------------------- 免责声明与隐私说明（保持原样） --------------------- */
+/* --------------------- 免责声明与隐私说明 --------------------- */
 
 @Composable
 fun DisclaimerScreen(onAgree: () -> Unit) {

@@ -24,14 +24,13 @@ package moe.ouom.neriplayer.core.player
  * Created: 2025/8/11
  */
 
-
 import android.app.Application
 import android.content.Context
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.net.Uri
-import android.util.Log
+import android.widget.Toast
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BluetoothAudio
 import androidx.compose.material.icons.filled.Headset
@@ -41,7 +40,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.database.ExoDatabaseProvider
+import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.CacheDataSource
@@ -55,8 +54,11 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -74,6 +76,18 @@ data class AudioDevice(
     val icon: ImageVector
 )
 
+/** 用于封装播放器需要通知UI的事件 */
+sealed class PlayerEvent {
+    data class ShowLoginPrompt(val message: String) : PlayerEvent()
+    data class ShowError(val message: String) : PlayerEvent()
+}
+
+private sealed class SongUrlResult {
+    data class Success(val url: String) : SongUrlResult()
+    object RequiresLogin : SongUrlResult()
+    object Failure : SongUrlResult()
+}
+
 object PlayerManager {
     private var initialized = false
     private lateinit var application: Application
@@ -88,9 +102,10 @@ object PlayerManager {
 
     private var preferredQuality: String = "exhigh"
 
-    // 播放列表管理
     private var currentPlaylist: List<SongItem> = emptyList()
     private var currentIndex = -1
+    private var consecutivePlayFailures = 0
+    private const val MAX_CONSECUTIVE_FAILURES = 10
 
     private val _currentSongFlow = MutableStateFlow<SongItem?>(null)
     val currentSongFlow: StateFlow<SongItem?> = _currentSongFlow
@@ -109,21 +124,25 @@ object PlayerManager {
 
     private val mainScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
-
-    // 暴露当前音频设备
     private val _currentAudioDevice = MutableStateFlow<AudioDevice?>(null)
     val currentAudioDeviceFlow: StateFlow<AudioDevice?> = _currentAudioDevice
 
+    private val _playerEventFlow = MutableSharedFlow<PlayerEvent>()
+    val playerEventFlow: SharedFlow<PlayerEvent> = _playerEventFlow.asSharedFlow()
 
     fun initialize(app: Application) {
         if (initialized) return
         initialized = true
         application = app
 
-        // 10GB LRU 缓存
+        // 使用新的 StandaloneDatabaseProvider
         val cacheDir = File(app.cacheDir, "media_cache")
-        val db = ExoDatabaseProvider(app)
-        cache = SimpleCache(cacheDir, LeastRecentlyUsedCacheEvictor(10L * 1024 * 1024 * 1024), db)
+        val dbProvider = StandaloneDatabaseProvider(app)
+        cache = SimpleCache(
+            cacheDir,
+            LeastRecentlyUsedCacheEvictor(10L * 1024 * 1024 * 1024),
+            dbProvider
+        )
 
         val httpFactory = DefaultHttpDataSource.Factory()
         val cacheDsFactory = CacheDataSource.Factory()
@@ -138,27 +157,36 @@ object PlayerManager {
 
         player.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
-                Log.e("NERI-Player", "onPlayerError: ${error.errorCodeName}", error)
+                NPLogger.e("NERI-Player", "onPlayerError: ${error.errorCodeName}", error)
+                consecutivePlayFailures++
+
+                val cause = error.cause
+                val msg = when {
+                    cause?.message?.contains("no protocol: null", ignoreCase = true) == true ->
+                        "播放地址无效。请尝试登录"
+                    error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ->
+                        "网络连接失败，请检查网络后重试"
+                    else ->
+                        "播放失败：${error.errorCodeName}"
+                }
+                ioScope.launch { _playerEventFlow.emit(PlayerEvent.ShowError(msg)) }
+
+                pause()
             }
 
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_ENDED) {
                     _playbackPositionMs.value = 0L
-                    // 自动播放下一首
                     when (player.repeatMode) {
                         Player.REPEAT_MODE_OFF -> {
                             if (currentIndex < currentPlaylist.size - 1) {
                                 next()
                             } else {
-                                // 列表播完，重置状态
-                                _isPlayingFlow.value = false
-                                _currentSongFlow.value = null
-                                currentIndex = -1
-                                currentPlaylist = emptyList()
+                                stopAndClearPlaylist()
                             }
                         }
-                        Player.REPEAT_MODE_ALL -> next(force = true) // 强制循环到下一首
-                        Player.REPEAT_MODE_ONE -> playAtIndex(currentIndex) // 重新播放当前
+                        Player.REPEAT_MODE_ALL -> next(force = true)
+                        Player.REPEAT_MODE_ONE -> playAtIndex(currentIndex)
                     }
                 }
             }
@@ -183,13 +211,19 @@ object PlayerManager {
 
         player.playWhenReady = false
 
+        // 订阅音质
         ioScope.launch {
             SettingsRepository(app).audioQualityFlow.collect { q -> preferredQuality = q }
         }
 
+        // 订阅 CookieFlow，登录后立刻注入最新 Cookie
         ioScope.launch {
-            val cookies = NeteaseCookieRepository(app).getCookiesOnce()
-            neteaseClient.setPersistedCookies(cookies)
+            NeteaseCookieRepository(app).cookieFlow.collect { raw ->
+                val cookies = raw.toMutableMap()
+                if (!cookies.containsKey("os")) cookies["os"] = "pc"
+                neteaseClient.setPersistedCookies(cookies)
+                NPLogger.d("NERI-PlayerManager", "Cookies updated in PlayerManager: keys=${cookies.keys.joinToString()}")
+            }
         }
 
         setupAudioDeviceCallback()
@@ -197,35 +231,25 @@ object PlayerManager {
 
     private fun setupAudioDeviceCallback() {
         val audioManager = application.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-
-        // 初始化当前设备状态
         _currentAudioDevice.value = getCurrentAudioDevice(audioManager)
-
         val deviceCallback = object : AudioDeviceCallback() {
             override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>?) {
                 handleDeviceChange(audioManager)
             }
-
             override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>?) {
                 handleDeviceChange(audioManager)
             }
         }
-
         audioManager.registerAudioDeviceCallback(deviceCallback, null)
     }
 
     private fun handleDeviceChange(audioManager: AudioManager) {
         val previousDevice = _currentAudioDevice.value
         val newDevice = getCurrentAudioDevice(audioManager)
-
-        // 更新设备信息 StateFlow
         _currentAudioDevice.value = newDevice
-
-        // 如果从非扬声器切换到扬声器，并且正在播放，则暂停
         if (player.isPlaying &&
             previousDevice?.type != AudioDeviceInfo.TYPE_BUILTIN_SPEAKER &&
             newDevice.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
-
             NPLogger.d("NERI-PlayerManager", "Audio output changed to speaker, pausing playback.")
             pause()
         }
@@ -233,7 +257,6 @@ object PlayerManager {
 
     private fun getCurrentAudioDevice(audioManager: AudioManager): AudioDevice {
         val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-
         val bluetoothDevice = devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP }
         if (bluetoothDevice != null) {
             return try {
@@ -246,64 +269,75 @@ object PlayerManager {
                 AudioDevice("蓝牙耳机", AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, Icons.Default.BluetoothAudio)
             }
         }
-
         val wiredHeadset = devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET || it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES }
         if (wiredHeadset != null) {
             return AudioDevice("有线耳机", AudioDeviceInfo.TYPE_WIRED_HEADSET, Icons.Default.Headset)
         }
-
         return AudioDevice("手机扬声器", AudioDeviceInfo.TYPE_BUILTIN_SPEAKER, Icons.Default.SpeakerGroup)
     }
 
-    /**
-     * 播放一个新列表
-     */
     fun playPlaylist(songs: List<SongItem>, startIndex: Int) {
         check(initialized) { "Call PlayerManager.initialize(application) first." }
         if (songs.isEmpty()) {
-            Log.w("NERI-Player", "playPlaylist called with EMPTY list")
+            NPLogger.w("NERI-Player", "playPlaylist called with EMPTY list")
             return
         }
-
+        consecutivePlayFailures = 0
         currentPlaylist = songs
         currentIndex = startIndex
         playAtIndex(currentIndex)
     }
 
-    /**
-     * 根据索引播放当前列表中的歌曲（核心懒加载逻辑）
-     */
     private fun playAtIndex(index: Int) {
         if (currentPlaylist.isEmpty() || index !in currentPlaylist.indices) {
-            Log.w("NERI-Player", "playAtIndex called with invalid index: $index")
+            NPLogger.w("NERI-Player", "playAtIndex called with invalid index: $index")
+            return
+        }
+
+        if (consecutivePlayFailures >= MAX_CONSECUTIVE_FAILURES) {
+            NPLogger.e("NERI-PlayerManager", "已连续失败 $consecutivePlayFailures 次，停止播放。")
+            mainScope.launch {
+                Toast.makeText(application, "多首歌曲无法播放，已停止", Toast.LENGTH_SHORT).show()
+            }
+            stopAndClearPlaylist()
             return
         }
 
         val song = currentPlaylist[index]
-        _currentSongFlow.value = song // 立即更新UI上的歌曲信息
+        _currentSongFlow.value = song
 
         ioScope.launch {
-            val url = getSongUrl(song.id)
-            if (url == null) {
-                Log.e("NERI-PlayerManager", "获取播放 URL 失败, 跳过: id=${song.id}")
-                withContext(Dispatchers.Main) { next() }
-                return@launch
-            }
+            when (val result = getSongUrl(song.id)) {
+                is SongUrlResult.Success -> {
+                    consecutivePlayFailures = 0
+                    val mediaItem = MediaItem.Builder()
+                        .setMediaId(song.id.toString())
+                        .setUri(Uri.parse(result.url))
+                        .build()
 
-            val mediaItem = MediaItem.Builder()
-                .setMediaId(song.id.toString())
-                .setUri(Uri.parse(url))
-                .build()
-
-            withContext(Dispatchers.Main) {
-                player.setMediaItem(mediaItem)
-                player.prepare()
-                player.play()
+                    withContext(Dispatchers.Main) {
+                        player.setMediaItem(mediaItem)
+                        player.prepare()
+                        player.play()
+                    }
+                }
+                is SongUrlResult.RequiresLogin -> {
+                    NPLogger.w("NERI-PlayerManager", "需要登录才能播放: id=${song.id}")
+                    _playerEventFlow.emit(PlayerEvent.ShowLoginPrompt("播放失败，请尝试登录"))
+                    withContext(Dispatchers.Main) {
+                        stopAndClearPlaylist()
+                    }
+                }
+                is SongUrlResult.Failure -> {
+                    NPLogger.e("NERI-PlayerManager", "获取播放 URL 失败, 跳过: id=${song.id}")
+                    consecutivePlayFailures++
+                    withContext(Dispatchers.Main) { next() }
+                }
             }
         }
     }
 
-    private suspend fun getSongUrl(songId: Long): String? {
+    private suspend fun getSongUrl(songId: Long): SongUrlResult {
         return withContext(Dispatchers.IO) {
             try {
                 val resp = neteaseClient.getSongDownloadUrl(
@@ -314,21 +348,37 @@ object PlayerManager {
                 NPLogger.d("NERI-PlayerManager", "id=$songId, resp=$resp")
 
                 val root = JSONObject(resp)
-                val url = when (val dataObj = root.opt("data")) {
-                    is JSONObject -> dataObj.optString("url", "")
-                    is org.json.JSONArray -> dataObj.optJSONObject(0)?.optString("url", "")
-                    else -> ""
-                }
+                when (root.optInt("code")) {
+                    301 -> return@withContext SongUrlResult.RequiresLogin
+                    200 -> {
+                        val url = when (val dataObj = root.opt("data")) {
+                            is JSONObject -> dataObj.optString("url", "")
+                            is org.json.JSONArray -> dataObj.optJSONObject(0)?.optString("url", "")
+                            else -> ""
+                        }
 
-                if (url.isNullOrBlank()) {
-                    Log.e("NERI-PlayerManager", "获取播放 URL 失败: id=$songId, 返回=$resp")
-                    null
-                } else {
-                    if (url.startsWith("http://")) url.replaceFirst("http://", "https://") else url
+                        if (url.isNullOrBlank()) {
+                            ioScope.launch {
+                                _playerEventFlow.emit(
+                                    PlayerEvent.ShowError("该歌曲暂无可用播放地址（可能需要登录或版权限制）")
+                                )
+                            }
+                            return@withContext SongUrlResult.Failure
+                        } else {
+                            val finalUrl = if (url.startsWith("http://")) url.replaceFirst("http://", "https://") else url
+                            return@withContext SongUrlResult.Success(finalUrl)
+                        }
+                    }
+                    else -> {
+                        ioScope.launch {
+                            _playerEventFlow.emit(PlayerEvent.ShowError("获取播放地址失败（${root.optInt("code")}）。"))
+                        }
+                        return@withContext SongUrlResult.Failure
+                    }
                 }
             } catch (e: Exception) {
-                Log.e("NERI-PlayerManager", "获取URL时出错", e)
-                null
+                NPLogger.e("NERI-PlayerManager", "获取URL时出错", e)
+                return@withContext SongUrlResult.Failure
             }
         }
     }
@@ -337,7 +387,6 @@ object PlayerManager {
         if (hasItems()) {
             player.play()
         } else if (currentPlaylist.isNotEmpty() && currentIndex != -1) {
-            // 如果播放器是暂停后被系统回收了，但我们的管理器里还有状态，就恢复播放
             playAtIndex(currentIndex)
         }
     }
@@ -361,14 +410,13 @@ object PlayerManager {
         if (player.shuffleModeEnabled) {
             currentIndex = (0 until currentPlaylist.size).random()
         } else {
-            // force 用于 REPEAT_ALL 模式，即使是最后一首也要跳到第一首
             if (currentIndex < currentPlaylist.size - 1) {
                 currentIndex++
             } else if (force) {
                 currentIndex = 0
             } else {
                 NPLogger.d("NERI-Player", "Already at the end of the playlist.")
-                return // 到头了，不播了
+                return
             }
         }
         playAtIndex(currentIndex)
@@ -399,12 +447,15 @@ object PlayerManager {
         }
         player.repeatMode = newMode
     }
+
+    @androidx.annotation.OptIn(UnstableApi::class)
     fun release() {
         player.release()
         cache.release()
         mainScope.cancel()
         ioScope.cancel()
     }
+
     fun setShuffle(enabled: Boolean) {
         player.shuffleModeEnabled = enabled
     }
@@ -424,6 +475,15 @@ object PlayerManager {
         progressJob = null
     }
 
+    private fun stopAndClearPlaylist() {
+        player.stop()
+        player.clearMediaItems()
+        _isPlayingFlow.value = false
+        _currentSongFlow.value = null
+        currentIndex = -1
+        currentPlaylist = emptyList()
+        consecutivePlayFailures = 0
+    }
 
     fun hasItems(): Boolean = player.currentMediaItem != null
 }

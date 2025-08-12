@@ -76,11 +76,34 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
 
     private var playlistId: Long = 0L
 
+    init {
+        viewModelScope.launch {
+            cookieRepo.cookieFlow.collect { saved ->
+                val cookies = saved.toMutableMap()
+                cookies.putIfAbsent("os", "pc")
+                client.setPersistedCookies(cookies)
+
+                val loggedIn = !cookies["MUSIC_U"].isNullOrBlank()
+                val hasCsrf = !cookies["__csrf"].isNullOrBlank()
+                if (loggedIn && !hasCsrf) {
+                    withContext(Dispatchers.IO) {
+                        try {
+                            NPLogger.d(TAG_PD, "csrf missing after login, preheating weapi session…")
+                            client.ensureWeapiSession()
+                        } catch (e: Exception) {
+                            NPLogger.w(TAG_PD, "ensureWeapiSession failed: ${e.message}")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fun start(playlist: NeteasePlaylist) {
         if (playlistId == playlist.id && _uiState.value.header != null && _uiState.value.tracks.isNotEmpty()) return
         playlistId = playlist.id
 
-        // 先用入口数据把 header 预填（把 http 强制为 https）
+        // 先用入口数据把 header 预填
         _uiState.value = PlaylistDetailUiState(
             loading = true,
             header = PlaylistHeader(
@@ -95,12 +118,11 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
 
         viewModelScope.launch {
             try {
-                // 注入持久化 Cookie，并补 os=pc（不少接口对全量有影响）
+                // 再读一次当前持久化 Cookie，并注入
                 val cookies = withContext(Dispatchers.IO) { cookieRepo.getCookiesOnce() }.toMutableMap()
-                if (!cookies.containsKey("os")) cookies["os"] = "pc"
+                cookies.putIfAbsent("os", "pc")
                 client.setPersistedCookies(cookies)
 
-                // 一次性取全量：/api/v6/playlist/detail （n=100000）
                 val raw = withContext(Dispatchers.IO) { client.getPlaylistDetail(playlistId) }
                 NPLogger.d(TAG_PD, "detail head=${raw.take(500)}")
 
@@ -144,7 +166,6 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
     private fun toHttps(url: String?): String? =
         url?.replaceFirst(Regex("^http://"), "https://")
 
-    /** 解析 /api/v6/playlist/detail：返回 header + 全量 tracks */
     private fun parseDetail(raw: String): ParsedDetail {
         val root = JSONObject(raw)
         val code = root.optInt("code", -1)
