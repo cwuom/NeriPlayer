@@ -37,6 +37,8 @@ import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
 import java.io.IOException
 
+private const val TAG = "NERI-ExploreVM"
+
 data class ExploreUiState(
     val expanded: Boolean = false,
     val loading: Boolean = false,
@@ -53,13 +55,15 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     val uiState: StateFlow<ExploreUiState> = _uiState
 
     init {
-        // 登录后自动注入 Cookie 并可选触发刷新
+        // 登录后自动注入 Cookie 并触发刷新
         viewModelScope.launch {
             repo.cookieFlow.collect { raw ->
                 val cookies = raw.toMutableMap()
                 if (!cookies.containsKey("os")) cookies["os"] = "pc"
                 client.setPersistedCookies(cookies)
+                NPLogger.d(TAG, "cookieFlow updated: keys=${cookies.keys.joinToString()}")
                 if (!cookies["MUSIC_U"].isNullOrBlank()) {
+                    NPLogger.d(TAG, "Detected login cookie, refreshing high-quality playlists")
                     loadHighQuality() // 自动按当前选中标签刷新
                 }
             }

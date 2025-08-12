@@ -72,7 +72,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 val cookies = raw.toMutableMap()
                 if (!cookies.containsKey("os")) cookies["os"] = "pc"
                 client.setPersistedCookies(cookies)
-
+                NPLogger.d(TAG, "cookieFlow updated: keys=${cookies.keys.joinToString()}")
                 if (!cookies["MUSIC_U"].isNullOrBlank()) {
                     NPLogger.d(TAG, "Detected login cookie, refreshing recommend")
                     refreshRecommend()

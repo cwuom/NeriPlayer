@@ -135,7 +135,6 @@ object PlayerManager {
         initialized = true
         application = app
 
-        // 使用新的 StandaloneDatabaseProvider
         val cacheDir = File(app.cacheDir, "media_cache")
         val dbProvider = StandaloneDatabaseProvider(app)
         cache = SimpleCache(
@@ -223,6 +222,9 @@ object PlayerManager {
                 if (!cookies.containsKey("os")) cookies["os"] = "pc"
                 neteaseClient.setPersistedCookies(cookies)
                 NPLogger.d("NERI-PlayerManager", "Cookies updated in PlayerManager: keys=${cookies.keys.joinToString()}")
+                if (!cookies["MUSIC_U"].isNullOrBlank()) {
+                    NPLogger.d("NERI-PlayerManager", "Detected login cookie, applied new cookie for playback")
+                }
             }
         }
 

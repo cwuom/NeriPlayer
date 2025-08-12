@@ -30,6 +30,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
 
 private val Context.cookieDataStore by preferencesDataStore("auth_store")
@@ -56,9 +57,12 @@ class NeteaseCookieRepository(private val context: Context) {
 
     /** 保存 Cookie */
     suspend fun saveCookies(cookies: Map<String, String>) {
+        // 先清空旧 Cookie，避免重复 Cookie 无法触发 DataStore flow
+        clear()
         context.cookieDataStore.edit { prefs ->
             prefs[CookieKeys.NETEASE_COOKIE_JSON] = mapToJson(cookies)
         }
+        NPLogger.d("NERI-CookieRepo", "Saved cookies to DataStore: keys=${cookies.keys.joinToString()}")
     }
 
     /** 清空 Cookie */
@@ -66,6 +70,7 @@ class NeteaseCookieRepository(private val context: Context) {
         context.cookieDataStore.edit { prefs ->
             prefs[CookieKeys.NETEASE_COOKIE_JSON] = "{}"
         }
+        NPLogger.d("NERI-CookieRepo", "Cleared all saved cookies.")
     }
 
     private fun mapToJson(map: Map<String, String>): String {
