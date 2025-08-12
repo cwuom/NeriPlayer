@@ -112,7 +112,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             val obj = arr.optJSONObject(i) ?: continue
             val id = obj.optLong("id", 0L)
             val name = obj.optString("name", "")
-            val cover = obj.optString("coverImgUrl", "")
+            val cover = obj.optString("coverImgUrl", "").replaceFirst("http://", "https://")
             val playCount = obj.optLong("playCount", 0L)
             val trackCount = obj.optInt("trackCount", 0)
             if (id != 0L && name.isNotBlank()) {
