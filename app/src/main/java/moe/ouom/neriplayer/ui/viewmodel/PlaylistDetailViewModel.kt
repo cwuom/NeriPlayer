@@ -103,7 +103,7 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
         if (playlistId == playlist.id && _uiState.value.header != null && _uiState.value.tracks.isNotEmpty()) return
         playlistId = playlist.id
 
-        // 先用入口数据把 header 预填
+        // 用入口数据把 header 预填
         _uiState.value = PlaylistDetailUiState(
             loading = true,
             header = PlaylistHeader(

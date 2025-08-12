@@ -70,6 +70,9 @@ import moe.ouom.neriplayer.ui.viewmodel.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
 import java.io.File
+import moe.ouom.neriplayer.data.LocalPlaylistRepository
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 
 data class AudioDevice(
     val name: String,
@@ -101,6 +104,10 @@ object PlayerManager {
     private var progressJob: Job? = null
 
     private val neteaseClient = NeteaseClient()
+
+    private lateinit var localRepo: LocalPlaylistRepository
+
+    private lateinit var stateFile: File
 
     private var preferredQuality: String = "exhigh"
 
@@ -134,10 +141,19 @@ object PlayerManager {
     private val _currentMediaUrl = MutableStateFlow<String?>(null)
     val currentMediaUrlFlow: StateFlow<String?> = _currentMediaUrl
 
+
+    private data class PersistedState(
+        val playlist: List<SongItem>,
+        val index: Int
+    )
+
     fun initialize(app: Application) {
         if (initialized) return
         initialized = true
         application = app
+
+        localRepo = LocalPlaylistRepository(app)
+        stateFile = File(app.filesDir, "last_playlist.json")
 
         val cacheDir = File(app.cacheDir, "media_cache")
         val dbProvider = StandaloneDatabaseProvider(app)
@@ -226,6 +242,7 @@ object PlayerManager {
         }
 
         setupAudioDeviceCallback()
+        restoreState()
     }
 
     private fun setupAudioDeviceCallback() {
@@ -285,6 +302,8 @@ object PlayerManager {
         currentPlaylist = songs
         currentIndex = startIndex
         playAtIndex(currentIndex)
+
+        persistState()
     }
 
     private fun playAtIndex(index: Int) {
@@ -302,6 +321,7 @@ object PlayerManager {
 
         val song = currentPlaylist[index]
         _currentSongFlow.value = song
+        persistState()
 
         ioScope.launch {
             when (val result = getSongUrl(song.id)) {
@@ -457,7 +477,41 @@ object PlayerManager {
         currentIndex = -1
         currentPlaylist = emptyList()
         consecutivePlayFailures = 0
+        persistState()
     }
 
     fun hasItems(): Boolean = player.currentMediaItem != null
+
+
+    fun addCurrentToFavorites() {
+        val song = _currentSongFlow.value ?: return
+        ioScope.launch { localRepo.addToFavorites(song) }
+    }
+
+    private fun persistState() {
+        ioScope.launch {
+            try {
+                if (currentPlaylist.isEmpty()) {
+                    stateFile.delete()
+                } else {
+                    val data = PersistedState(currentPlaylist, currentIndex)
+                    stateFile.writeText(Gson().toJson(data))
+                }
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    private fun restoreState() {
+        try {
+            if (!stateFile.exists()) return
+            val type = object : TypeToken<PersistedState>() {}.type
+            val data: PersistedState = Gson().fromJson(stateFile.readText(), type)
+            currentPlaylist = data.playlist
+            currentIndex = data.index
+            _currentSongFlow.value = currentPlaylist.getOrNull(currentIndex)
+        } catch (e: Exception) {
+            NPLogger.w("NERI-PlayerManager", "Failed to restore state: ${e.message}")
+        }
+    }
 }

@@ -242,7 +242,15 @@ fun NeriApp(
                     }
 
                     composable(Destinations.Library.route) {
-                        LibraryScreen(onPlay = { showNowPlaying = true })
+                        LibraryScreen(
+                            onNeteasePlaylistClick = { playlist ->
+                                val playlistJson = URLEncoder.encode(
+                                    Gson().toJson(playlist),
+                                    StandardCharsets.UTF_8.name()
+                                )
+                                navController.navigate("playlist_detail/$playlistJson")
+                            }
+                        )
                     }
 
                     composable(Destinations.Settings.route) {

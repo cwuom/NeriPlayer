@@ -15,6 +15,10 @@ package moe.ouom.neriplayer.ui.screen.tab
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
  * See the GNU General Public License for more details.
  *
+ * You should have received a copy of the GNU General Public License
+ * along with this software.
+ * If not, see <https://www.gnu.org/licenses/>.
+ *
  * File: moe.ouom.neriplayer.ui.screens/LibraryScreen
  * Created: 2025/8/8
  */
@@ -52,8 +56,12 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
-
-data class Track(val title: String, val artist: String, val duration: String)
+import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.viewmodel.compose.viewModel
+import moe.ouom.neriplayer.data.LocalPlaylist
+import moe.ouom.neriplayer.ui.viewmodel.LibraryViewModel
+import moe.ouom.neriplayer.ui.viewmodel.NeteasePlaylist
+import moe.ouom.neriplayer.util.formatPlayCount
 
 enum class LibraryTab(val label: String) {
     LOCAL("本地"),
@@ -63,24 +71,15 @@ enum class LibraryTab(val label: String) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LibraryScreen(onPlay: () -> Unit) {
+fun LibraryScreen(
+    onNeteasePlaylistClick: (NeteasePlaylist) -> Unit = {}
+) {
+    val vm: LibraryViewModel = viewModel()
+    val ui by vm.uiState.collectAsState()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     var selectedTab by rememberSaveable { mutableStateOf(LibraryTab.LOCAL) }
 
-    fun tracksFor(tab: LibraryTab): List<Track> = when (tab) {
-        LibraryTab.LOCAL -> List(12) { i ->
-            Track("本地歌曲 #$i", "Local Artist", "4:${(30 + i) % 60}".padStart(2, '0'))
-        }
-        LibraryTab.NETEASE -> List(16) { i ->
-            Track("云村单曲 #$i", "Netease · Neri", "3:${(i % 60).toString().padStart(2, '0')}")
-        }
-        LibraryTab.QQMUSIC -> List(10) { i ->
-            Track("QQ 音乐曲目 #$i", "QQMusic · Neri", "2:${(45 + i) % 60}".padStart(2, '0'))
-        }
-    }
-
-    val tracks = tracksFor(selectedTab)
 
     Column(
         Modifier
@@ -123,37 +122,100 @@ fun LibraryScreen(onPlay: () -> Unit) {
             }
         }
 
-        // 列表内容
-        LazyColumn(
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(top = 0.dp)
-        ) {
-            items(tracks) { t ->
-                Card(
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                    modifier = Modifier
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                        .clickableNoRipple { onPlay() }
-                ) {
-                    ListItem(
-                        headlineContent = { Text(t.title) },
-                        supportingContent = {
-                            Text(
-                                "${t.artist} · ${t.duration}",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        },
-                        leadingContent = { /* TODO: 放封面 */ },
-                        trailingContent = { Text("▶") }
-                    )
-                }
+        when (selectedTab) {
+            LibraryTab.LOCAL -> LocalPlaylistList(
+                playlists = ui.localPlaylists,
+                onCreate = { vm.createLocalPlaylist("新建歌单") }
+            )
+
+            LibraryTab.NETEASE -> NeteasePlaylistList(
+                playlists = ui.neteasePlaylists,
+                onClick = onNeteasePlaylistClick
+            )
+
+            LibraryTab.QQMUSIC -> {
+                // TODO: QQ 音乐支持
+                LazyColumn { }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LocalPlaylistList(
+    playlists: List<LocalPlaylist>,
+    onCreate: () -> Unit
+) {
+    LazyColumn(
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        item {
+            Card(
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                modifier = Modifier
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                    .clickableNoRipple { onCreate() }
+            ) {
+                ListItem(headlineContent = { Text("＋ 新建歌单") })
+            }
+        }
+        items(playlists) { pl ->
+            Card(
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                modifier = Modifier
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                ListItem(
+                    headlineContent = { Text(pl.name) },
+                    supportingContent = {
+                        Text("${pl.songs.size} 首", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun NeteasePlaylistList(
+    playlists: List<NeteasePlaylist>,
+    onClick: (NeteasePlaylist) -> Unit
+) {
+    LazyColumn(
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        items(playlists) { pl ->
+            Card(
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                modifier = Modifier
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                    .clickableNoRipple { onClick(pl) }
+            ) {
+                ListItem(
+                    headlineContent = { Text(pl.name) },
+                    supportingContent = {
+                        Text(
+                            "${formatPlayCount(pl.playCount)} · ${pl.trackCount}首",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                )
             }
         }
     }

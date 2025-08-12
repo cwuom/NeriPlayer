@@ -81,14 +81,14 @@ class NeteaseApiProbeViewModel(app: Application) : AndroidViewModel(app) {
                 val subsRaw = withContext(Dispatchers.IO) { client.getUserSubscribedPlaylists(0) }
                 val likedPlIdRaw = withContext(Dispatchers.IO) { client.getLikedPlaylistId(0) }
 
-                // 组装聚合 JSON（均为“原样字符串”或数值，account/created/subscribed/likedPlaylistId 不裁剪）
+                // 组装聚合 JSON
                 val result = JSONObject().apply {
                     put("account", JSONObject(accountRaw))
                     put("userId", userId)
                     put("createdPlaylists", JSONObject(createdRaw))
                     put("subscribedPlaylists", JSONObject(subsRaw))
                     put("likedPlaylistId", JSONObject(likedPlIdRaw))
-                    // 不包含 liked songs list（按你的要求）
+                    // 不包含 liked songs list
                 }.toString()
 
                 copyToClipboard("netease_api_all", result)
