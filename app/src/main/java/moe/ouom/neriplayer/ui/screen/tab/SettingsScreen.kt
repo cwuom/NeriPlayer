@@ -24,6 +24,8 @@ package moe.ouom.neriplayer.ui.screen.tab
  */
 
 import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
@@ -43,10 +45,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Audiotrack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.outlined.Brightness4
@@ -70,13 +76,17 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -95,15 +105,11 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.flow.StateFlow
 import moe.ouom.neriplayer.BuildConfig
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.activity.NeteaseWebLoginActivity
 import moe.ouom.neriplayer.ui.viewmodel.NeteaseAuthEvent
 import moe.ouom.neriplayer.ui.viewmodel.NeteaseAuthViewModel
 import moe.ouom.neriplayer.util.NightModeHelper
 import moe.ouom.neriplayer.util.convertTimestampToDate
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.filled.Audiotrack
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.runtime.State
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -139,6 +145,7 @@ fun SettingsScreen(
     var showCookieDialog by remember { mutableStateOf(false) }
     var cookieText by remember { mutableStateOf("") }
 
+    val cookieScroll = rememberScrollState()
 
     // 当前所选音质对应的中文标签
     val qualityLabel = remember(preferredQuality) {
@@ -491,6 +498,32 @@ fun SettingsScreen(
             )
         }
 
+        // 0: 浏览器登录 1: 粘贴Cookie 2: 验证码登录
+        var selectedTab by remember { mutableIntStateOf(0) }
+        var rawCookie by remember { mutableStateOf("") }
+
+        // WebView 登录回调
+        val webLoginLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            if (result.resultCode == android.app.Activity.RESULT_OK) {
+                val json = result.data?.getStringExtra(NeteaseWebLoginActivity.RESULT_COOKIE) ?: "{}"
+                val map = org.json.JSONObject(json).let { obj ->
+                    val it = obj.keys()
+                    val m = linkedMapOf<String, String>()
+                    while (it.hasNext()) {
+                        val k = it.next()
+                        m[k] = obj.optString(k, "")
+                    }
+                    m
+                }
+                // 保存
+                neteaseVm.importCookiesFromMap(map)
+            } else {
+                inlineMsg = "已取消读取 Cookie"
+            }
+        }
+
         ModalBottomSheet(
             onDismissRequest = { showNeteaseSheet = false },
             sheetState = sheetState,
@@ -502,11 +535,75 @@ fun SettingsScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
-                NeteaseLoginContent(
-                    message = inlineMsg,
-                    onDismissMessage = { inlineMsg = null },
-                    vm = neteaseVm
-                )
+                Column(Modifier.fillMaxSize()) {
+                    Text(text = "网易云音乐登录", style = MaterialTheme.typography.titleLarge)
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // 内嵌提示条
+                    AnimatedVisibility(visible = inlineMsg != null, enter = fadeIn(), exit = fadeOut()) {
+                        InlineMessage(
+                            text = inlineMsg ?: "",
+                            onClose = { inlineMsg = null }
+                        )
+                    }
+
+                    TabRow(selectedTabIndex = selectedTab) {
+                        Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("浏览器登录") })
+                        Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("粘贴 Cookie") })
+                        Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }, text = { Text("验证码登录") })
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+
+                    when (selectedTab) {
+                        0 -> {
+                            Text(
+                                "将打开内置浏览器（桌面UA）访问 music.163.com，登录成功后点击右上角“读取 Cookie 并返回”。",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            Button(onClick = {
+                                inlineMsg = null
+                                webLoginLauncher.launch(
+                                    Intent(
+                                        context,
+                                        NeteaseWebLoginActivity::class.java
+                                    )
+                                )
+                            }) {
+                                Text("开始浏览器登录")
+                            }
+                        }
+
+                        1 -> {
+                            OutlinedTextField(
+                                value = rawCookie,
+                                onValueChange = { rawCookie = it },
+                                label = { Text("粘贴 Cookie（例如：MUSIC_U=...; __csrf=...）") },
+                                minLines = 6,
+                                maxLines = 10,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Button(onClick = {
+                                if (rawCookie.isBlank()) {
+                                    inlineMsg = "请输入 Cookie"
+                                } else {
+                                    neteaseVm.importCookiesFromRaw(rawCookie)
+                                }
+                            }) { Text("保存 Cookie 并登录") }
+                        }
+
+                        2 -> {
+                            NeteaseLoginContent(
+                                message = null,
+                                onDismissMessage = { },
+                                vm = neteaseVm
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -566,7 +663,7 @@ fun SettingsScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .verticalScroll(rememberScrollState())
+                        .verticalScroll(cookieScroll)
                 ) {
                     Text(
                         text = cookieText.ifBlank { "(空)" },
@@ -590,7 +687,6 @@ private fun NeteaseLoginContent(
     val state by vm.uiState.collectAsStateWithLifecycleCompat()
 
     Column(modifier = Modifier.fillMaxSize()) {
-        Text(text = "网易云音乐登录", style = MaterialTheme.typography.titleLarge)
         Spacer(modifier = Modifier.height(12.dp))
 
         // 内嵌提示条

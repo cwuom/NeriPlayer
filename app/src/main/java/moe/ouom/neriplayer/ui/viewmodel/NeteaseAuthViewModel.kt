@@ -34,7 +34,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
 import moe.ouom.neriplayer.data.NeteaseCookieRepository
-import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
 
 data class NeteaseAuthUiState(
@@ -201,6 +200,47 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
                 left--
             }
         }
+    }
+
+    fun importCookiesFromMap(map: Map<String, String>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            // 补齐关键字段
+            val m = map.toMutableMap()
+            m.putIfAbsent("os", "pc")
+            m.putIfAbsent("appver", "8.10.35")
+
+            cookieStore.clear()
+            cookieStore.putAll(m)
+
+            cookieRepo.saveCookies(cookieStore)
+            api.setPersistedCookies(cookieStore)
+
+            _uiState.value = _uiState.value.copy(isLoggedIn = cookieStore.containsKey("MUSIC_U"))
+            _events.tryEmit(NeteaseAuthEvent.ShowCookies(cookieStore.toMap()))
+            _events.tryEmit(NeteaseAuthEvent.LoginSuccess)
+            emitSnack("Cookie 已保存")
+        }
+    }
+
+    /** 接收原始 Cookie 字符串：MUSIC_U=...; __csrf=...; ... */
+    fun importCookiesFromRaw(raw: String) {
+        val parsed = linkedMapOf<String, String>()
+        raw.split(';')
+            .map { it.trim() }
+            .filter { it.isNotBlank() && it.contains('=') }
+            .forEach { s ->
+                val idx = s.indexOf('=')
+                if (idx > 0) {
+                    val k = s.substring(0, idx).trim()
+                    val v = s.substring(idx + 1).trim()
+                    if (k.isNotEmpty()) parsed[k] = v
+                }
+            }
+        if (parsed.isEmpty()) {
+            emitSnack("未解析到合法 Cookie 项")
+            return
+        }
+        importCookiesFromMap(parsed)
     }
 
     private fun isValidPhone(p: String): Boolean = p.length == 11 && p.all { it.isDigit() }

@@ -18,6 +18,7 @@
         android:roundIcon="@drawable/ic_neri_player_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.NeriPlayer">
+
         <activity
             android:name=".activity.MainActivity"
             android:exported="true">
@@ -27,6 +28,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".activity.NeteaseWebLoginActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Material3.DayNight.NoActionBar"
+        />
         <service
             android:name="moe.ouom.neriplayer.core.player.AudioPlayerService"
             android:exported="false"

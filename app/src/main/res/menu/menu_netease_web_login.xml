@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/action_refresh"
+        android:title="刷新"
+        app:showAsAction="always"
+        android:icon="@drawable/outline_refresh_24" />
+
+    <item
+        android:id="@+id/action_read_cookie"
+        android:title="完成"
+        app:showAsAction="always"
+        />
+</menu>
