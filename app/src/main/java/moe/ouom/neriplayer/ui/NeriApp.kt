@@ -25,7 +25,6 @@ package moe.ouom.neriplayer.ui
 
 import android.app.Application
 import android.content.Intent
-import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ExperimentalSharedTransitionApi
@@ -42,8 +41,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.LazyGridState
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Search
@@ -73,6 +72,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.google.gson.Gson
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.BuildConfig
 import moe.ouom.neriplayer.core.player.AudioPlayerService
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.SettingsRepository
@@ -81,6 +81,7 @@ import moe.ouom.neriplayer.ui.component.NeriBottomBar
 import moe.ouom.neriplayer.ui.component.NeriMiniPlayer
 import moe.ouom.neriplayer.ui.screen.NowPlayingScreen
 import moe.ouom.neriplayer.ui.screen.PlaylistDetailScreen
+import moe.ouom.neriplayer.ui.screen.debug.NeteaseApiProbeScreen
 import moe.ouom.neriplayer.ui.screen.host.ExploreHostScreen
 import moe.ouom.neriplayer.ui.screen.tab.HomeScreen
 import moe.ouom.neriplayer.ui.screen.tab.LibraryScreen
@@ -152,13 +153,20 @@ fun NeriApp(
                                 onPlayPause = { PlayerManager.togglePlayPause() },
                                 onExpand = { showNowPlaying = true }
                             )
+
+                            // Debug 构建才显示“调试”
+                            val items = buildList {
+                                add(Destinations.Home to Icons.Outlined.Home)
+                                add(Destinations.Explore to Icons.Outlined.Search)
+                                add(Destinations.Library to Icons.Outlined.LibraryMusic)
+                                add(Destinations.Settings to Icons.Outlined.Settings)
+                                if (BuildConfig.DEBUG) {
+                                    add(Destinations.Debug to Icons.Outlined.BugReport)
+                                }
+                            }
+
                             NeriBottomBar(
-                                items = listOf(
-                                    Destinations.Home to Icons.Outlined.Home,
-                                    Destinations.Explore to Icons.Outlined.Search,
-                                    Destinations.Library to Icons.Outlined.LibraryMusic,
-                                    Destinations.Settings to Icons.Outlined.Settings,
-                                ),
+                                items = items,
                                 currentDestination = backEntry?.destination,
                                 onItemSelected = { dest ->
                                     if (currentRoute != dest.route) {
@@ -179,14 +187,12 @@ fun NeriApp(
                     startDestination = Destinations.Home.route,
                     modifier = Modifier.padding(innerPadding)
                 ) {
-                    composable(Destinations.Home.route,
+                    composable(
+                        Destinations.Home.route,
                         exitTransition = { fadeOut(animationSpec = tween(160)) },
                         popEnterTransition = { slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn() }
                     ) {
-                        val gridState = rememberSaveable(saver = LazyGridState.Saver) {
-                            LazyGridState()
-                        }
-
+                        val gridState = rememberSaveable(saver = LazyGridState.Saver) { LazyGridState() }
                         HomeScreen(
                             gridState = gridState,
                             onItemClick = { playlist ->
@@ -204,7 +210,6 @@ fun NeriApp(
                     ) { backStackEntry ->
                         val playlistJson = backStackEntry.arguments?.getString("playlistJson")
                         val playlist = Gson().fromJson(playlistJson, NeteasePlaylist::class.java)
-
                         PlaylistDetailScreen(
                             playlist = playlist,
                             onBack = { navController.popBackStack() },
@@ -235,9 +240,11 @@ fun NeriApp(
                             showNowPlaying = true
                         })
                     }
+
                     composable(Destinations.Library.route) {
                         LibraryScreen(onPlay = { showNowPlaying = true })
                     }
+
                     composable(Destinations.Settings.route) {
                         SettingsScreen(
                             dynamicColor = dynamicColorEnabled,
@@ -248,6 +255,11 @@ fun NeriApp(
                             preferredQuality = preferredQuality,
                             onQualityChange = { scope.launch { repo.setAudioQuality(it) } }
                         )
+                    }
+
+                    // 调试页面路由
+                    composable(Destinations.Debug.route) {
+                        NeteaseApiProbeScreen()
                     }
                 }
             }
@@ -270,13 +282,8 @@ fun NeriApp(
                             .matchParentSize()
                             .background(if (isDark) Color(0xFF121212) else Color.White)
                     )
-                    HyperBackground(
-                        modifier = Modifier.matchParentSize(),
-                        isDark = isDark
-                    )
-                    NowPlayingScreen(
-                        onNavigateUp = { showNowPlaying = false }
-                    )
+                    HyperBackground(modifier = Modifier.matchParentSize(), isDark = isDark)
+                    NowPlayingScreen(onNavigateUp = { showNowPlaying = false })
                 }
             }
         }

@@ -34,6 +34,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.brotli.dec.BrotliInputStream
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.nio.charset.StandardCharsets
@@ -404,5 +405,150 @@ class NeteaseClient {
             "total" to true
         )
         return callWeApi("/playlist/highquality/list", params, usePersistedCookies = true)
+    }
+
+    /**
+     * 获取用户创建的歌单
+     * @param userId 用户 ID；传 0 时自动使用当前登录用户 ID
+     * @param offset 偏移量，分页用
+     * @param limit  每页返回数量
+     */
+    @Throws(IOException::class)
+    fun getUserCreatedPlaylists(userId: Long, offset: Int = 0, limit: Int = 1000): String {
+        val uid = if (userId == 0L) getCurrentUserId() else userId
+        val raw = getUserPlaylists(uid, offset, limit)
+        return try {
+            val root = JSONObject(raw)
+            val code = root.optInt("code", 200)
+            val list = root.optJSONArray("playlist") ?: JSONArray()
+            val created = JSONArray()
+            for (i in 0 until list.length()) {
+                val pl = list.optJSONObject(i) ?: continue
+                val subscribed = pl.optBoolean("subscribed", false)
+                val creatorId = pl.optJSONObject("creator")?.optLong("userId") ?: -1L
+                if (creatorId == uid || !subscribed) {
+                    created.put(pl)
+                }
+            }
+            JSONObject().apply {
+                put("code", code)
+                put("playlist", created)
+                put("count", created.length())
+            }.toString()
+        } catch (e: Exception) {
+            """{ "code": 500, "msg": ${jsonQuote(e.message ?: "parse error")} }"""
+        }
+    }
+
+    /**
+     * 获取用户收藏的歌单
+     * @param userId 用户 ID；传 0 时自动使用当前登录用户 ID
+     * @param offset 偏移量，分页用
+     * @param limit  每页返回数量
+     */
+    @Throws(IOException::class)
+    fun getUserSubscribedPlaylists(userId: Long, offset: Int = 0, limit: Int = 1000): String {
+        val uid = if (userId == 0L) getCurrentUserId() else userId
+        val raw = getUserPlaylists(uid, offset, limit)
+        return try {
+            val root = JSONObject(raw)
+            val code = root.optInt("code", 200)
+            val list = root.optJSONArray("playlist") ?: JSONArray()
+            val subs = JSONArray()
+            for (i in 0 until list.length()) {
+                val pl = list.optJSONObject(i) ?: continue
+                if (pl.optBoolean("subscribed", false)) subs.put(pl)
+            }
+            JSONObject().apply {
+                put("code", code)
+                put("playlist", subs)
+                put("count", subs.length())
+            }.toString()
+        } catch (e: Exception) {
+            """{ "code": 500, "msg": ${jsonQuote(e.message ?: "parse error")} }"""
+        }
+    }
+
+    /**
+     * 获取“我喜欢的音乐”歌单 ID
+     * @param userId 用户 ID；传 0 时自动使用当前登录用户 ID
+     */
+    @Throws(IOException::class)
+    fun getLikedPlaylistId(userId: Long): String {
+        val uid = if (userId == 0L) getCurrentUserId() else userId
+        val raw = getUserPlaylists(uid, 0, 1000)
+        return try {
+            val root = JSONObject(raw)
+            val list = root.optJSONArray("playlist") ?: JSONArray()
+            var likedId: Long? = null
+            for (i in 0 until list.length()) {
+                val pl = list.optJSONObject(i) ?: continue
+                val specialType = pl.optInt("specialType", 0)
+                val name = pl.optString("name", "")
+                val creatorId = pl.optJSONObject("creator")?.optLong("userId") ?: -1L
+                if (creatorId == uid && (specialType == 5 || name.contains("我喜欢的音乐"))) {
+                    likedId = pl.optLong("id")
+                    break
+                }
+            }
+            if (likedId != null) {
+                """{ "code": 200, "playlistId": $likedId }"""
+            } else {
+                """{ "code": 404, "msg": "liked playlist not found" }"""
+            }
+        } catch (e: Exception) {
+            """{ "code": 500, "msg": ${jsonQuote(e.message ?: "parse error")} }"""
+        }
+    }
+
+    /**
+     * 获取用户喜欢的所有歌曲 ID
+     * @param userId 用户 ID；传 0 时自动使用当前登录用户 ID
+     */
+    @Throws(IOException::class)
+    fun getUserLikedSongIds(userId: Long): String {
+        val uid = if (userId == 0L) getCurrentUserId() else userId
+        val url = "https://music.163.com/weapi/song/like/get"
+        val params = mapOf("uid" to uid.toString())
+        return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
+    }
+
+    /**
+     * 喜欢/取消喜欢一首歌
+     * @param songId 歌曲 ID
+     * @param like   是否喜欢（true=喜欢, false=取消喜欢）
+     * @param time   可选参数，时间戳
+     */
+    @Throws(IOException::class)
+    fun likeSong(songId: Long, like: Boolean = true, time: Long? = null): String {
+        val params = mutableMapOf<String, Any>(
+            "trackId" to songId.toString(),
+            "like" to like.toString()
+        )
+        time?.let { params["time"] = it.toString() }
+        return callWeApi("/song/like", params, usePersistedCookies = true)
+    }
+
+    /**
+     * 获取当前登录用户的账户信息（包含 userId）
+     */
+    @Throws(IOException::class)
+    fun getCurrentUserAccount(): String {
+        return callWeApi("/w/nuser/account/get", emptyMap(), usePersistedCookies = true)
+    }
+
+    /**
+     * 获取当前登录用户的 userId
+     */
+    @Throws(IOException::class)
+    fun getCurrentUserId(): Long {
+        val raw = getCurrentUserAccount()
+        val root = JSONObject(raw)
+        if (root.optInt("code", -1) != 200) {
+            throw IllegalStateException("获取用户信息失败: $raw")
+        }
+        val profile = root.optJSONObject("profile")
+        return profile?.optLong("userId")
+            ?: throw IllegalStateException("未找到 userId: $raw")
     }
 }

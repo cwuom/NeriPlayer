@@ -29,6 +29,8 @@ sealed class Destinations(val route: String, val label: String) {
     data object Library : Destinations("library", "媒体库")
     data object Settings : Destinations("settings", "设置")
 
+    data object Debug : Destinations("debug", "调试")
+
     // 带参数的歌单详情路由
     data object PlaylistDetail : Destinations("playlist_detail/{playlistId}", "歌单详情")
 }
