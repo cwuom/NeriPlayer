@@ -40,11 +40,11 @@ internal object JsonUtil {
 
     fun toJsonValue(v: Any?): String = when (v) {
         null -> "null"
-        is String -> "\"${v.replace("\"", "\\\"")}\""
+        is String -> jsonQuote(v)
         is Number, is Boolean -> v.toString()
         is Map<*, *> -> toJson(v as Map<String, Any>)
         is List<*> -> v.joinToString(prefix = "[", postfix = "]") { toJsonValue(it) }
-        else -> "\"${v.toString().replace("\"", "\\\"")}\""
+        else -> jsonQuote(v.toString())
     }
 
     fun jsonQuote(s: String?): String {
