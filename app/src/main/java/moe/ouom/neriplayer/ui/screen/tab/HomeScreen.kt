@@ -213,23 +213,11 @@ fun PlaylistCard(
                 text = playlist.name,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.titleSmall.copy(
-                    shadow = Shadow(
-                        color = Color.Black.copy(alpha = 0.6f),
-                        offset = Offset(2f, 2f),
-                        blurRadius = 4f
-                    )
-                )
+                style = MaterialTheme.typography.titleSmall
             )
             Text(
                 text = "${formatPlayCount(playlist.playCount)} · ${playlist.trackCount}首",
-                style = MaterialTheme.typography.bodySmall.copy(
-                    shadow = Shadow(
-                        color = Color.Black.copy(alpha = 0.6f),
-                        offset = Offset(2f, 2f),
-                        blurRadius = 4f
-                    )
-                ),
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Clip
