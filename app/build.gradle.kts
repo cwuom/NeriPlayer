@@ -141,4 +141,6 @@ dependencies {
     implementation(libs.gson)
 
     implementation(libs.androidx.media)
+
+    implementation(libs.androidx.ui.graphics)
 }

@@ -74,6 +74,8 @@ import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import moe.ouom.neriplayer.data.LocalPlaylist
+import moe.ouom.neriplayer.ui.component.LyricEntry
+import moe.ouom.neriplayer.ui.component.parseNeteaseLrc
 import kotlin.random.Random
 
 data class AudioDevice(
@@ -716,6 +718,20 @@ object PlayerManager {
                 localRepo.addSongToPlaylist(playlistId, song)
             } catch (e: Exception) {
                 NPLogger.e("NERI-PlayerManager", "addCurrentToPlaylist failed: ${e.message}", e)
+            }
+        }
+    }
+
+    /** 获取网易云歌词 */
+    suspend fun getNeteaseLyrics(songId: Long): List<LyricEntry> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val raw = neteaseClient.getLyricNew(songId)
+                val lrc = JSONObject(raw).optJSONObject("lrc")?.optString("lyric") ?: ""
+                parseNeteaseLrc(lrc)
+            } catch (e: Exception) {
+                NPLogger.e("NERI-PlayerManager", "getNeteaseLyrics failed: ${e.message}", e)
+                emptyList()
             }
         }
     }

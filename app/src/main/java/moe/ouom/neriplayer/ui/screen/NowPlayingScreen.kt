@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.screen
  * Created: 2025/8/8
  */
 
+import android.R.attr.textColor
 import android.content.Context
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
@@ -42,6 +43,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -79,15 +81,12 @@ import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -120,11 +119,15 @@ import coil.request.ImageRequest
 import kotlinx.coroutines.delay
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.ui.component.AppleMusicLyric
+import moe.ouom.neriplayer.ui.component.LyricEntry
+import moe.ouom.neriplayer.ui.component.LyricVisualSpec
 import moe.ouom.neriplayer.ui.component.WaveformSlider
 import moe.ouom.neriplayer.util.HapticFilledIconButton
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.formatDuration
+import kotlin.collections.isNotEmpty
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -142,6 +145,7 @@ fun NowPlayingScreen(
 
     // 订阅当前播放链接
     val currentMediaUrl by PlayerManager.currentMediaUrlFlow.collectAsState()
+    val isFromNetease = currentMediaUrl?.contains("music.126.net", ignoreCase = true) == true
 
     // 歌单&收藏
     val playlists by PlayerManager.playlistsFlow.collectAsState()
@@ -188,6 +192,16 @@ fun NowPlayingScreen(
     // 控制音量弹窗的显示
     var showVolumeSheet by remember { mutableStateOf(false) }
     val volumeSheetState = rememberModalBottomSheetState()
+
+    var lyrics by remember(currentSong?.id) { mutableStateOf<List<LyricEntry>>(emptyList()) }
+    LaunchedEffect(currentSong?.id, isFromNetease) {
+        val songId = currentSong?.id
+        if (songId != null && isFromNetease) {
+            lyrics = PlayerManager.getNeteaseLyrics(songId)
+        } else {
+            lyrics = emptyList()
+        }
+    }
 
     LaunchedEffect(Unit) { contentVisible = true }
     LaunchedEffect(currentPosition) { if (!isUserDraggingSlider) sliderPosition = currentPosition.toFloat() }
@@ -290,7 +304,6 @@ fun NowPlayingScreen(
                     }
 
                     // 右下角覆盖显示
-                    val isFromNetease = currentMediaUrl?.contains("music.126.net", ignoreCase = true) == true
                     if (isFromNetease) {
                         Row(
                             modifier = Modifier
@@ -411,6 +424,18 @@ fun NowPlayingScreen(
                     )
                 }
             }
+
+            if (isFromNetease && lyrics.isNotEmpty()) {
+                Spacer(Modifier.weight(1f))
+                AppleMusicLyric(
+                    lyrics = lyrics,
+                    currentTimeMs = currentPosition,
+                    modifier = Modifier.fillMaxWidth().weight(8f),
+                    textColor = if (isSystemInDarkTheme()) Color.White else Color.Black,
+                    visualSpec = LyricVisualSpec()
+                )
+            }
+
 
             // 将下面的内容推到底部
             Spacer(modifier = Modifier.weight(1f))
