@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.screen
  * Created: 2025/8/10
  */
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -33,8 +34,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -54,26 +56,39 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.outlined.Equalizer
+import androidx.compose.material.icons.filled.CheckBox
+import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DividerDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -95,6 +110,7 @@ import coil.request.CachePolicy
 import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.ui.viewmodel.NeteasePlaylist
 import moe.ouom.neriplayer.ui.viewmodel.PlaylistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.SongItem
@@ -102,7 +118,7 @@ import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.formatDuration
 import moe.ouom.neriplayer.util.formatPlayCount
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun PlaylistDetailScreen(
     playlist: NeteasePlaylist,
@@ -127,6 +143,21 @@ fun PlaylistDetailScreen(
 
     LaunchedEffect(playlist.id) { vm.start(playlist) }
 
+    // 多选 & 导出到本地歌单
+    val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
+    val allPlaylists by repo.playlists.collectAsState()
+    var selectionMode by remember { mutableStateOf(false) }
+    var selectedIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    fun toggleSelect(id: Long) {
+        selectedIds = if (selectedIds.contains(id)) selectedIds - id else selectedIds + id
+    }
+    fun clearSelection() { selectedIds = emptySet() }
+    fun selectAll() { selectedIds = ui.tracks.map { it.id }.toSet() }
+    fun exitSelection() { selectionMode = false; clearSelection() }
+
+    var showExportSheet by remember { mutableStateOf(false) }
+    val exportSheetState = rememberModalBottomSheetState()
+
     val headerHeight: Dp = 280.dp
 
     AnimatedVisibility(
@@ -139,27 +170,59 @@ fun PlaylistDetailScreen(
             color = MaterialTheme.colorScheme.background
         ) {
             Column {
-                TopAppBar(
-                    title = {
-                        Text(
-                            text = ui.header?.name ?: playlist.name,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                // 顶部栏：普通模式 / 多选模式
+                if (!selectionMode) {
+                    TopAppBar(
+                        title = {
+                            Text(
+                                text = ui.header?.name ?: playlist.name,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        },
+                        navigationIcon = {
+                            IconButton(onClick = onBack) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                            }
+                        },
+                        windowInsets = WindowInsets.statusBars,
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.surface,
+                            scrolledContainerColor = MaterialTheme.colorScheme.surface,
+                            titleContentColor = MaterialTheme.colorScheme.onSurface,
+                            navigationIconContentColor = MaterialTheme.colorScheme.onSurface
                         )
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.Filled.ArrowBack, contentDescription = "返回")
-                        }
-                    },
-                    windowInsets = WindowInsets.statusBars,
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface,
-                        scrolledContainerColor = MaterialTheme.colorScheme.surface,
-                        titleContentColor = MaterialTheme.colorScheme.onSurface,
-                        navigationIconContentColor = MaterialTheme.colorScheme.onSurface
                     )
-                )
+                } else {
+                    val allSelected = selectedIds.size == ui.tracks.size && ui.tracks.isNotEmpty()
+                    TopAppBar(
+                        title = { Text("已选 ${selectedIds.size} 项") },
+                        navigationIcon = {
+                            IconButton(onClick = { exitSelection() }) {
+                                Icon(Icons.Filled.Close, contentDescription = "退出多选")
+                            }
+                        },
+                        actions = {
+                            IconButton(onClick = { if (allSelected) clearSelection() else selectAll() }) {
+                                Icon(
+                                    imageVector = if (allSelected) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
+                                    contentDescription = if (allSelected) "取消全选" else "全选"
+                                )
+                            }
+                            IconButton(
+                                onClick = { if (selectedIds.isNotEmpty()) showExportSheet = true },
+                                enabled = selectedIds.isNotEmpty()
+                            ) {
+                                Icon(Icons.AutoMirrored.Outlined.PlaylistAdd, contentDescription = "导出到歌单")
+                            }
+                        },
+                        windowInsets = WindowInsets.statusBars,
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.surface,
+                            scrolledContainerColor = MaterialTheme.colorScheme.surface
+                        )
+                    )
+                }
 
                 Box(modifier = Modifier.fillMaxSize()) {
                     LazyColumn(
@@ -266,11 +329,19 @@ fun PlaylistDetailScreen(
                                     SongRow(
                                         index = index + 1,
                                         song = item,
+                                        selectionMode = selectionMode,
+                                        selected = selectedIds.contains(item.id),
+                                        onToggleSelect = { toggleSelect(item.id) },
+                                        onLongPress = {
+                                            if (!selectionMode) {
+                                                selectionMode = true
+                                                selectedIds = setOf(item.id)
+                                            } else {
+                                                toggleSelect(item.id)
+                                            }
+                                        },
                                         onClick = {
-                                            NPLogger.d(
-                                                "NERI-UI",
-                                                "tap song index=$index id=${item.id}"
-                                            )
+                                            NPLogger.d("NERI-UI", "tap song index=$index id=${item.id}")
                                             onSongClick(ui.tracks, index)
                                         }
                                     )
@@ -278,6 +349,7 @@ fun PlaylistDetailScreen(
                             }
                         }
                     }
+
                     if (currentIndex >= 0) {
                         FloatingActionButton(
                             onClick = {
@@ -295,6 +367,86 @@ fun PlaylistDetailScreen(
                     }
                 }
             }
+
+            // 导出面板 //
+            if (showExportSheet) {
+                ModalBottomSheet(
+                    onDismissRequest = { showExportSheet = false },
+                    sheetState = exportSheetState
+                ) {
+                    Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+                        Text("导出到本地歌单", style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.height(8.dp))
+
+                        LazyColumn {
+                            itemsIndexed(allPlaylists) { _, pl ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 10.dp)
+                                        .combinedClickable(onClick = {
+                                            // 倒序导出
+                                            val songs = ui.tracks
+                                                .asReversed()
+                                                .filter { selectedIds.contains(it.id) }
+                                            scope.launch {
+                                                repo.addSongsToPlaylist(pl.id, songs)
+                                                showExportSheet = false
+                                            }
+                                        }),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(pl.name, style = MaterialTheme.typography.bodyLarge)
+                                    Spacer(Modifier.weight(1f))
+                                    Text("${pl.songs.size} 首", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.height(12.dp))
+                        HorizontalDivider(
+                            Modifier,
+                            DividerDefaults.Thickness,
+                            DividerDefaults.color
+                        )
+                        Spacer(Modifier.height(12.dp))
+
+                        var newName by remember { mutableStateOf("") }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedTextField(
+                                value = newName,
+                                onValueChange = { newName = it },
+                                modifier = Modifier.weight(1f),
+                                placeholder = { Text("新建歌单名称") },
+                                singleLine = true
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            TextButton(
+                                enabled = newName.isNotBlank() && selectedIds.isNotEmpty(),
+                                onClick = {
+                                    val name = newName.trim()
+                                    if (name.isBlank()) return@TextButton
+                                    // 倒序导出
+                                    val songs = ui.tracks
+                                        .asReversed()
+                                        .filter { selectedIds.contains(it.id) }
+                                    scope.launch {
+                                        repo.createPlaylist(name)
+                                        val target = repo.playlists.value.lastOrNull { it.name == name }
+                                        if (target != null) {
+                                            repo.addSongsToPlaylist(target.id, songs)
+                                        }
+                                        showExportSheet = false
+                                    }
+                                }
+                            ) { Text("新建并导出") }
+                        }
+                        Spacer(Modifier.height(12.dp))
+                    }
+                }
+            }
+            // 允许返回键优先退出多选
+            BackHandler(enabled = selectionMode) { exitSelection() }
         }
     }
 }
@@ -315,10 +467,15 @@ private fun RetryChip(onClick: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SongRow(
     index: Int,
     song: SongItem,
+    selectionMode: Boolean,
+    selected: Boolean,
+    onToggleSelect: () -> Unit,
+    onLongPress: () -> Unit,
     onClick: () -> Unit,
     indexWidth: Dp = 48.dp
 ) {
@@ -328,7 +485,10 @@ private fun SongRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onClick() }
+            .combinedClickable(
+                onClick = { if (selectionMode) onToggleSelect() else onClick() },
+                onLongClick = { onLongPress() }
+            )
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -336,15 +496,22 @@ private fun SongRow(
             modifier = Modifier.width(indexWidth),
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = index.toString(),
-                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                softWrap = false,
-                overflow = TextOverflow.Clip,
-                textAlign = TextAlign.Center
-            )
+            if (selectionMode) {
+                Checkbox(
+                    checked = selected,
+                    onCheckedChange = { onToggleSelect() }
+                )
+            } else {
+                Text(
+                    text = index.toString(),
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Clip,
+                    textAlign = TextAlign.Center
+                )
+            }
         }
 
         if (!song.coverUrl.isNullOrBlank()) {
@@ -399,7 +566,7 @@ private fun SongRow(
 }
 
 @Composable
-private fun PlayingIndicator(
+fun PlayingIndicator(
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.primary
 ) {

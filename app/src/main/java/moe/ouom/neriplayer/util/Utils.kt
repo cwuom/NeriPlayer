@@ -33,3 +33,10 @@ fun convertTimestampToDate(timestamp: Long): String {
         SimpleDateFormat("yyyy-MM-dd HH:mm:ss")
     return sdf.format(date)
 }
+
+fun formatTotalDuration(ms: Long): String {
+    val totalSec = ms / 1000
+    val h = totalSec / 3600
+    val m = (totalSec % 3600) / 60
+    return if (h > 0) "${h}小时${m}分钟" else "${m}分钟"
+}

@@ -79,6 +79,7 @@ import moe.ouom.neriplayer.data.SettingsRepository
 import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.ui.component.NeriBottomBar
 import moe.ouom.neriplayer.ui.component.NeriMiniPlayer
+import moe.ouom.neriplayer.ui.screen.LocalPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.NowPlayingScreen
 import moe.ouom.neriplayer.ui.screen.PlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.debug.NeteaseApiProbeScreen
@@ -241,14 +242,28 @@ fun NeriApp(
                         })
                     }
 
-                    composable(Destinations.Library.route) {
-                        LibraryScreen(
-                            onNeteasePlaylistClick = { playlist ->
-                                val playlistJson = URLEncoder.encode(
-                                    Gson().toJson(playlist),
-                                    StandardCharsets.UTF_8.name()
+
+                    composable(
+                        route = "local_playlist_detail/{playlistId}",
+                        arguments = listOf(navArgument("playlistId") { type = NavType.LongType }),
+                        enterTransition = { slideInVertically(animationSpec = tween(220)) { it } + fadeIn() },
+                        popExitTransition = { slideOutVertically(animationSpec = tween(240)) { it } + fadeOut() }
+                    ) { backStackEntry ->
+                        val id = backStackEntry.arguments?.getLong("playlistId") ?: 0L
+                        LocalPlaylistDetailScreen(
+                            playlistId = id,
+                            onBack = { navController.popBackStack() },
+                            onDeleted = { navController.popBackStack() },
+                            onSongClick = { songs, index ->
+                                ContextCompat.startForegroundService(
+                                    context,
+                                    Intent(context, AudioPlayerService::class.java).apply {
+                                        action = AudioPlayerService.ACTION_PLAY
+                                        putParcelableArrayListExtra("playlist", ArrayList(songs))
+                                        putExtra("index", index)
+                                    }
                                 )
-                                navController.navigate("playlist_detail/$playlistJson")
+                                showNowPlaying = true
                             }
                         )
                     }
@@ -268,6 +283,43 @@ fun NeriApp(
                     // 调试页面路由
                     composable(Destinations.Debug.route) {
                         NeteaseApiProbeScreen()
+                    }
+
+                    composable(
+                        Destinations.Explore.route,
+                        exitTransition = { fadeOut(animationSpec = tween(160)) },
+                        popEnterTransition = { slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn() }
+                    ) {
+                        ExploreHostScreen(onSongClick = { songs, index ->
+                            ContextCompat.startForegroundService(
+                                context,
+                                Intent(context, AudioPlayerService::class.java).apply {
+                                    action = AudioPlayerService.ACTION_PLAY
+                                    putParcelableArrayListExtra("playlist", ArrayList(songs))
+                                    putExtra("index", index)
+                                }
+                            )
+                            showNowPlaying = true
+                        })
+                    }
+
+                    composable(
+                        Destinations.Library.route,
+                        exitTransition = { fadeOut(animationSpec = tween(160)) },
+                        popEnterTransition = { slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn() }
+                    ) {
+                        LibraryScreen(
+                            onLocalPlaylistClick = { playlist ->
+                                navController.navigate("local_playlist_detail/${playlist.id}")
+                            },
+                            onNeteasePlaylistClick = { playlist ->
+                                val playlistJson = URLEncoder.encode(
+                                    Gson().toJson(playlist),
+                                    StandardCharsets.UTF_8.name()
+                                )
+                                navController.navigate("playlist_detail/$playlistJson")
+                            }
+                        )
                     }
                 }
             }

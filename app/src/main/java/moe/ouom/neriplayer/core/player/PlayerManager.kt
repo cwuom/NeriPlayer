@@ -74,6 +74,7 @@ import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import moe.ouom.neriplayer.data.LocalPlaylist
+import kotlin.random.Random
 
 data class AudioDevice(
     val name: String,
@@ -116,9 +117,14 @@ object PlayerManager {
 
     private var currentPlaylist: List<SongItem> = emptyList()
     private var currentIndex = -1
+
+    /** —— 随机播放相关 —— */
+    private val shuffleHistory = mutableListOf<Int>()   // 已经走过的路径（支持上一首）
+    private val shuffleFuture  = mutableListOf<Int>()   // 预定的“下一首们”（支持先上后下仍回到原来的下一首）
+    private var shuffleBag     = mutableListOf<Int>()   // 本轮还没“抽签”的下标池（不含 current）
+
     private var consecutivePlayFailures = 0
     private const val MAX_CONSECUTIVE_FAILURES = 10
-    private val shuffleHistory = mutableListOf<Int>()
 
     private val _currentSongFlow = MutableStateFlow<SongItem?>(null)
     val currentSongFlow: StateFlow<SongItem?> = _currentSongFlow
@@ -148,7 +154,7 @@ object PlayerManager {
     private val _currentMediaUrl = MutableStateFlow<String?>(null)
     val currentMediaUrlFlow: StateFlow<String?> = _currentMediaUrl
 
-    /** 我们维护给 UI 用的歌单流（避免直接暴露仓库内部可变结构） */
+    /** 给 UI 用的歌单流 */
     private val _playlistsFlow = MutableStateFlow<List<LocalPlaylist>>(emptyList())
     val playlistsFlow: StateFlow<List<LocalPlaylist>> = _playlistsFlow
 
@@ -207,15 +213,17 @@ object PlayerManager {
                 if (state == Player.STATE_ENDED) {
                     _playbackPositionMs.value = 0L
                     when (player.repeatMode) {
-                        Player.REPEAT_MODE_OFF -> {
-                            if (currentIndex < currentPlaylist.size - 1) {
-                                next()
+                        Player.REPEAT_MODE_ONE -> playAtIndex(currentIndex)
+                        Player.REPEAT_MODE_ALL -> next(force = true)
+                        else -> { // REPEAT_MODE_OFF
+                            if (player.shuffleModeEnabled) {
+                                if (shuffleFuture.isNotEmpty() || shuffleBag.isNotEmpty()) next(force = false)
+                                else stopAndClearPlaylist()
                             } else {
-                                stopAndClearPlaylist()
+                                if (currentIndex < currentPlaylist.lastIndex) next(force = false)
+                                else stopAndClearPlaylist()
                             }
                         }
-                        Player.REPEAT_MODE_ALL -> next(force = true)
-                        Player.REPEAT_MODE_ONE -> playAtIndex(currentIndex)
                     }
                 }
             }
@@ -241,7 +249,7 @@ object PlayerManager {
             SettingsRepository(app).audioQualityFlow.collect { q -> preferredQuality = q }
         }
 
-        // 订阅 CookieFlow，登录后立刻注入最新 Cookie
+        // 注入登录 Cookie
         ioScope.launch {
             NeteaseCookieRepository(app).cookieFlow.collect { raw ->
                 val cookies = raw.toMutableMap()
@@ -251,7 +259,7 @@ object PlayerManager {
             }
         }
 
-        // 同步仓库歌单 -> 做“深拷贝为新引用”的不可变视图，供 UI 使用
+        // 同步本地歌单
         ioScope.launch {
             localRepo.playlists.collect { repoLists ->
                 _playlistsFlow.value = deepCopyPlaylists(repoLists)
@@ -319,10 +327,24 @@ object PlayerManager {
         currentPlaylist = songs
         _currentQueueFlow.value = currentPlaylist
         currentIndex = startIndex
-        playAtIndex(currentIndex)
-        shuffleHistory.clear()
 
+        // 清空历史与未来，重建洗牌袋
+        shuffleHistory.clear()
+        shuffleFuture.clear()
+        if (player.shuffleModeEnabled) {
+            rebuildShuffleBag(excludeIndex = currentIndex)
+        } else {
+            shuffleBag.clear()
+        }
+
+        playAtIndex(currentIndex)
         persistState()
+    }
+
+    private fun rebuildShuffleBag(excludeIndex: Int? = null) {
+        shuffleBag = currentPlaylist.indices.toMutableList()
+        if (excludeIndex != null) shuffleBag.remove(excludeIndex)
+        shuffleBag.shuffle()
     }
 
     private fun playAtIndex(index: Int) {
@@ -342,6 +364,11 @@ object PlayerManager {
         _currentSongFlow.value = song
         persistState()
 
+        // 当前曲不应再出现在洗牌袋中
+        if (player.shuffleModeEnabled) {
+            shuffleBag.remove(index)
+        }
+
         ioScope.launch {
             when (val result = getSongUrl(song.id)) {
                 is SongUrlResult.Success -> {
@@ -351,7 +378,6 @@ object PlayerManager {
                         .setUri(Uri.parse(result.url))
                         .build()
 
-                    // 记录当前播放链接，供 UI 展示来源
                     _currentMediaUrl.value = result.url
 
                     withContext(Dispatchers.Main) {
@@ -429,36 +455,85 @@ object PlayerManager {
 
     fun next(force: Boolean = false) {
         if (currentPlaylist.isEmpty()) return
+        val isShuffle = player.shuffleModeEnabled
 
-        if (player.shuffleModeEnabled) {
-            if (currentIndex != -1) shuffleHistory.add(currentIndex)
-        } else {
-            if (currentIndex < currentPlaylist.size - 1) {
-                currentIndex++
-            } else if (force) {
-                currentIndex = 0
-            } else {
-                NPLogger.d("NERI-Player", "Already at the end of the playlist.")
+        if (isShuffle) {
+            // 如果有预定下一首，优先走它
+            if (shuffleFuture.isNotEmpty()) {
+                val nextIdx = shuffleFuture.removeLast()
+                if (currentIndex != -1) shuffleHistory.add(currentIndex)
+                currentIndex = nextIdx
+                playAtIndex(currentIndex)
                 return
             }
+
+            // 没有预定下一首，需要抽新随机
+            if (shuffleBag.isEmpty()) {
+                if (force || player.repeatMode == Player.REPEAT_MODE_ALL) {
+                    rebuildShuffleBag(excludeIndex = currentIndex) // 新一轮，避免同曲连播
+                } else {
+                    NPLogger.d("NERI-Player", "Shuffle finished and repeat is off, stopping.")
+                    stopAndClearPlaylist()
+                    return
+                }
+            }
+
+            if (shuffleBag.isEmpty()) {
+                // 仅一首歌等极端情况
+                playAtIndex(currentIndex)
+                return
+            }
+
+            if (currentIndex != -1) shuffleHistory.add(currentIndex)
+            // 新随机 -> 断开未来路径
+            shuffleFuture.clear()
+
+            val pick = if (shuffleBag.size == 1) 0 else Random.nextInt(shuffleBag.size)
+            currentIndex = shuffleBag.removeAt(pick)
+            playAtIndex(currentIndex)
+        } else {
+            // 顺序播放
+            if (currentIndex < currentPlaylist.lastIndex) {
+                currentIndex++
+            } else {
+                if (force || player.repeatMode == Player.REPEAT_MODE_ALL) {
+                    currentIndex = 0
+                } else {
+                    NPLogger.d("NERI-Player", "Already at the end of the playlist.")
+                    return
+                }
+            }
+            playAtIndex(currentIndex)
         }
-        playAtIndex(currentIndex)
     }
 
     fun previous() {
         if (currentPlaylist.isEmpty()) return
+        val isShuffle = player.shuffleModeEnabled
 
-        if (player.shuffleModeEnabled) {
+        if (isShuffle) {
             if (shuffleHistory.isNotEmpty()) {
-                currentIndex = shuffleHistory.removeLast()
+                // 回退一步，同时把当前曲放到未来栈，以便再前进能回到原来的下一首
+                if (currentIndex != -1) shuffleFuture.add(currentIndex)
+                val prev = shuffleHistory.removeLast()
+                currentIndex = prev
+                playAtIndex(currentIndex)
             } else {
-                NPLogger.d("NERI-Player", "No previous track in history.")
-                return
+                NPLogger.d("NERI-Player", "No previous track in shuffle history.")
             }
         } else {
-            if (currentIndex > 0) currentIndex-- else { NPLogger.d("NERI-Player", "Already at the start of the playlist."); return }
+            if (currentIndex > 0) {
+                currentIndex--
+                playAtIndex(currentIndex)
+            } else {
+                if (player.repeatMode == Player.REPEAT_MODE_ALL && currentPlaylist.isNotEmpty()) {
+                    currentIndex = currentPlaylist.lastIndex
+                    playAtIndex(currentIndex)
+                } else {
+                    NPLogger.d("NERI-Player", "Already at the start of the playlist.")
+                }
+            }
         }
-        playAtIndex(currentIndex)
     }
 
     fun cycleRepeatMode() {
@@ -479,8 +554,15 @@ object PlayerManager {
     }
 
     fun setShuffle(enabled: Boolean) {
+        if (player.shuffleModeEnabled == enabled) return
         player.shuffleModeEnabled = enabled
-        if (enabled) shuffleHistory.clear()
+        shuffleHistory.clear()
+        shuffleFuture.clear()
+        if (enabled) {
+            rebuildShuffleBag(excludeIndex = currentIndex)
+        } else {
+            shuffleBag.clear()
+        }
     }
 
     private fun startProgressUpdates() {
@@ -505,6 +587,9 @@ object PlayerManager {
         currentPlaylist = emptyList()
         _currentQueueFlow.value = emptyList()
         consecutivePlayFailures = 0
+        shuffleBag.clear()
+        shuffleHistory.clear()
+        shuffleFuture.clear()
         persistState()
     }
 
@@ -580,9 +665,7 @@ object PlayerManager {
         return base
     }
 
-    /** 深拷贝列表（包含 songs 的 MutableList 拷贝），
-     * 确保每次发出新引用，稳定触发 Compose 重组
-     */
+    /** 深拷贝列表，确保 Compose 稳定重组 */
     private fun deepCopyPlaylists(src: List<LocalPlaylist>): List<LocalPlaylist> {
         return src.map { pl ->
             LocalPlaylist(
@@ -621,6 +704,14 @@ object PlayerManager {
     fun playFromQueue(index: Int) {
         if (currentPlaylist.isEmpty()) return
         if (index !in currentPlaylist.indices) return
+
+        // 用户点选队列，视作新路径分叉
+        if (player.shuffleModeEnabled) {
+            if (currentIndex != -1) shuffleHistory.add(currentIndex)
+            shuffleFuture.clear()
+            shuffleBag.remove(index)
+        }
+
         currentIndex = index
         playAtIndex(index)
     }

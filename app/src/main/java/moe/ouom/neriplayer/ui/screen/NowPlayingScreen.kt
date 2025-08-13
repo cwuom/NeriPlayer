@@ -165,7 +165,8 @@ fun NowPlayingScreen(
     )
 
     val queue by PlayerManager.currentQueueFlow.collectAsState()
-    val currentIndexInQueue = queue.indexOfFirst { it.id == currentSong?.id }
+    val displayedQueue = remember(queue) { queue.asReversed() }
+    val currentIndexInDisplay = displayedQueue.indexOfFirst { it.id == currentSong?.id }
 
     var showAddSheet by remember { mutableStateOf(false) }
     var showQueueSheet by remember { mutableStateOf(false) }
@@ -258,6 +259,7 @@ fun NowPlayingScreen(
 
             Spacer(Modifier.height(8.dp))
 
+            // 封面
             AnimatedVisibility(
                 visible = contentVisible,
                 modifier = Modifier.align(Alignment.CenterHorizontally),
@@ -268,7 +270,7 @@ fun NowPlayingScreen(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(280.dp)
+                        .size(240.dp)
                         .background(
                             color = if (currentSong?.coverUrl != null) Color.Transparent else MaterialTheme.colorScheme.primaryContainer,
                             shape = RoundedCornerShape(24.dp)
@@ -440,13 +442,12 @@ fun NowPlayingScreen(
 
         // 播放队列弹窗
         if (showQueueSheet) {
-            val initialIndex = (currentIndexInQueue - 4).coerceAtLeast(0)
+            val initialIndex = (currentIndexInDisplay - 4).coerceAtLeast(0)
             val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialIndex)
-
-            LaunchedEffect(showQueueSheet, currentIndexInQueue) {
-                if (showQueueSheet && currentIndexInQueue >= 0) {
+            LaunchedEffect(showQueueSheet, currentIndexInDisplay) {
+                if (showQueueSheet && currentIndexInDisplay >= 0) {
                     delay(150)
-                    listState.animateScrollToItem(currentIndexInQueue)
+                    listState.animateScrollToItem(currentIndexInDisplay)
                 }
             }
 
@@ -455,41 +456,27 @@ fun NowPlayingScreen(
                 sheetState = queueSheetState
             ) {
                 LazyColumn(state = listState) {
-                    itemsIndexed(queue) { index, song ->
+                    itemsIndexed(displayedQueue) { index, song ->
+                        val sourceIndex = queue.lastIndex - index
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    PlayerManager.playFromQueue(index)
+                                    PlayerManager.playFromQueue(sourceIndex)
                                     showQueueSheet = false
                                 }
                                 .padding(horizontal = 24.dp, vertical = 16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                (index + 1).toString(),
-                                modifier = Modifier.width(48.dp),
-                                textAlign = TextAlign.Start,
-                                fontFamily = FontFamily.Monospace
-                            )
+                            Text((index + 1).toString(), modifier = Modifier.width(48.dp), textAlign = TextAlign.Start, fontFamily = FontFamily.Monospace)
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(song.name, maxLines = 1)
-                                Text(
-                                    song.artist,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1
-                                )
+                                Text(song.artist, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                             }
-                            if (index == currentIndexInQueue) {
-                                Icon(
-                                    Icons.Outlined.PlayArrow,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
+                            if (index == currentIndexInDisplay) {
+                                Icon(Icons.Outlined.PlayArrow, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                             }
                         }
-
                         Spacer(modifier = Modifier.height(4.dp))
                     }
                 }

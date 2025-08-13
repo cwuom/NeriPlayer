@@ -42,7 +42,7 @@ data class LocalPlaylist(
 )
 
 /**
- * 管理本地歌单与收藏的简单仓库。
+ * 管理本地歌单与收藏的仓库
  * 所有数据持久化到应用 filesDir 下的 JSON 文件中
  */
 class LocalPlaylistRepository private constructor(private val context: Context) {
@@ -66,17 +66,24 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
             emptyList()
         }.toMutableList()
 
-        if (list.none { it.name == "我喜欢的音乐" }) {
-            list.add(0, LocalPlaylist(id = System.currentTimeMillis(), name = "我喜欢的音乐"))
+        if (list.none { it.name == FAVORITES_NAME }) {
+            list.add(0, LocalPlaylist(id = System.currentTimeMillis(), name = FAVORITES_NAME))
         }
         _playlists.value = list
         saveToDisk()
     }
 
+    // 原子写
     private fun saveToDisk() {
-        try {
-            file.writeText(gson.toJson(_playlists.value))
-        } catch (_: Exception) {
+        runCatching {
+            val json = gson.toJson(_playlists.value)
+            val parent = file.parentFile ?: context.filesDir
+            val tmp = File(parent, file.name + ".tmp")
+            tmp.writeText(json)
+            if (!tmp.renameTo(file)) {
+                file.writeText(json)
+                tmp.delete()
+            }
         }
     }
 
@@ -92,51 +99,156 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
 
     /** 将歌曲添加到“我喜欢的音乐” */
     suspend fun addToFavorites(song: SongItem) {
-        val fav = _playlists.value.firstOrNull { it.name == "我喜欢的音乐" } ?: return
+        val fav = _playlists.value.firstOrNull { it.name == FAVORITES_NAME } ?: return
         addSongToPlaylist(fav.id, song)
     }
 
-    /** 从“我喜欢的音乐”移除歌曲 */
-    suspend fun removeFromFavorites(songId: Long) {
+    /** 重命名歌单（收藏夹禁止） */
+    suspend fun renamePlaylist(playlistId: Long, newName: String) {
         withContext(Dispatchers.IO) {
             val updated = _playlists.value.map { pl ->
-                if (pl.name == "我喜欢的音乐")
-                    pl.copy(songs = pl.songs.filter { it.id != songId }.toMutableList())
-                else pl
-            }
-            _playlists.value = updated
-            saveToDisk()
-        }
-    }
-
-    /** 将歌曲添加到指定歌单 */
-    suspend fun addSongToPlaylist(playlistId: Long, song: SongItem) {
-        withContext(Dispatchers.IO) {
-            val old = _playlists.value
-            val updated = old.map { pl ->
                 if (pl.id == playlistId) {
-                    if (pl.songs.any { it.id == song.id }) pl
-                    else pl.copy(songs = (pl.songs + song).toMutableList())
+                    if (pl.name == FAVORITES_NAME) pl else pl.copy(name = newName)
                 } else pl
             }
             _playlists.value = updated
             saveToDisk()
         }
     }
-    /** 从指定歌单移除歌曲 */
-    suspend fun removeSongFromPlaylist(playlistId: Long, songId: Long) {
+
+    /** 批量删除 */
+    suspend fun removeSongsFromPlaylist(playlistId: Long, songIds: List<Long>) {
         withContext(Dispatchers.IO) {
+            if (songIds.isEmpty()) return@withContext
             val list = _playlists.value.toMutableList()
-            val pl = list.find { it.id == playlistId } ?: return@withContext
-            val removed = pl.songs.removeAll { it.id == songId }
-            if (removed) {
+            val plIndex = list.indexOfFirst { it.id == playlistId }
+            if (plIndex == -1) return@withContext
+
+            val pl = list[plIndex]
+            val idSet = songIds.toHashSet()
+            val newSongs = pl.songs.filterNot { it.id in idSet }.toMutableList()
+
+            if (newSongs.size != pl.songs.size) {
+                list[plIndex] = pl.copy(songs = newSongs)
                 _playlists.value = list
                 saveToDisk()
             }
         }
     }
 
+    /** 删除指定歌单（收藏夹禁止） -> 返回是否删除成功 */
+    suspend fun deletePlaylist(playlistId: Long): Boolean {
+        return withContext(Dispatchers.IO) {
+            val list = _playlists.value.toMutableList()
+            val pl = list.find { it.id == playlistId } ?: return@withContext false
+            if (pl.name == FAVORITES_NAME) return@withContext false
+            list.remove(pl)
+            _playlists.value = list
+            saveToDisk()
+            true
+        }
+    }
+
+    /** 按索引移动一首歌 */
+    suspend fun moveSong(playlistId: Long, fromIndex: Int, toIndex: Int) {
+        withContext(Dispatchers.IO) {
+            val updated = _playlists.value.map { pl ->
+                if (pl.id != playlistId) return@map pl
+                val songs = pl.songs
+                if (fromIndex !in songs.indices || toIndex !in songs.indices) return@map pl
+                val newSongs = songs.toMutableList().apply {
+                    val s = removeAt(fromIndex)
+                    add(toIndex, s)
+                }
+                pl.copy(songs = newSongs)
+            }
+            _playlists.value = updated
+            saveToDisk()
+        }
+    }
+
+    /** 原子重排 */
+    suspend fun reorderSongs(playlistId: Long, newOrderIds: List<Long>) {
+        withContext(Dispatchers.IO) {
+            val list = _playlists.value.toMutableList()
+            val idx = list.indexOfFirst { it.id == playlistId }
+            if (idx == -1) return@withContext
+            val pl = list[idx]
+
+            val byId = pl.songs.associateBy { it.id }
+            val ordered = newOrderIds.mapNotNull { byId[it] }.toMutableList()
+            // 防御：把遗漏的旧歌拼回末尾，避免丢失
+            pl.songs.forEach { s -> if (ordered.none { it.id == s.id }) ordered.add(s) }
+
+            list[idx] = pl.copy(songs = ordered)
+            _playlists.value = list
+            saveToDisk()
+        }
+    }
+
+    /** 将歌曲添加到指定歌单 */
+    suspend fun addSongsToPlaylist(playlistId: Long, songs: List<SongItem>) {
+        withContext(Dispatchers.IO) {
+            val list = _playlists.value.toMutableList()
+            val idx = list.indexOfFirst { it.id == playlistId }
+            if (idx == -1) return@withContext
+
+            val pl = list[idx]
+            val exists = pl.songs.asSequence().map { it.id }.toMutableSet()
+            val toAdd = songs.filter { exists.add(it.id) }
+            if (toAdd.isEmpty()) return@withContext
+
+            list[idx] = pl.copy(songs = (pl.songs + toAdd).toMutableList())
+            _playlists.value = list
+            saveToDisk()
+        }
+    }
+
+    /** 将“单首”添加到指定歌单 */
+    suspend fun addSongToPlaylist(playlistId: Long, song: SongItem) {
+        addSongsToPlaylist(playlistId, listOf(song))
+    }
+
+    /** 从指定歌单移除歌曲 */
+    suspend fun removeSongFromPlaylist(playlistId: Long, songId: Long) {
+        withContext(Dispatchers.IO) {
+            val list = _playlists.value.toMutableList()
+            val plIndex = list.indexOfFirst { it.id == playlistId }
+            if (plIndex == -1) return@withContext
+            val pl = list[plIndex]
+            val newSongs = pl.songs.filter { it.id != songId }.toMutableList()
+            if (newSongs.size != pl.songs.size) {
+                list[plIndex] = pl.copy(songs = newSongs)
+                _playlists.value = list
+                saveToDisk()
+            }
+        }
+    }
+
+    /** 从一个歌单导出（拷贝）多首歌到另一个歌单（保持源内相对顺序；自动去重） */
+    suspend fun exportSongsToPlaylist(sourcePlaylistId: Long, targetPlaylistId: Long, songIds: List<Long>) {
+        withContext(Dispatchers.IO) {
+            val source = _playlists.value.firstOrNull { it.id == sourcePlaylistId } ?: return@withContext
+            val inSourceOrder = songIds.mapNotNull { id -> source.songs.firstOrNull { it.id == id } }
+            // 直接调用批量添加（会自动去重）
+            val list = _playlists.value.toMutableList()
+            val idx = list.indexOfFirst { it.id == targetPlaylistId }
+            if (idx == -1) return@withContext
+            val pl = list[idx]
+
+            val exists = pl.songs.asSequence().map { it.id }.toMutableSet()
+            val toAdd = inSourceOrder.filter { exists.add(it.id) }
+            if (toAdd.isEmpty()) return@withContext
+
+            list[idx] = pl.copy(songs = (pl.songs + toAdd).toMutableList())
+            _playlists.value = list
+            saveToDisk()
+        }
+    }
+
     companion object {
+        const val FAVORITES_NAME = "我喜欢的音乐"
+
         @SuppressLint("StaticFieldLeak")
         @Volatile
         private var INSTANCE: LocalPlaylistRepository? = null
@@ -145,6 +257,19 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: LocalPlaylistRepository(context.applicationContext).also { INSTANCE = it }
             }
+        }
+    }
+
+    /** 从“我喜欢的音乐”移除歌曲 */
+    suspend fun removeFromFavorites(songId: Long) {
+        withContext(Dispatchers.IO) {
+            val updated = _playlists.value.map { pl ->
+                if (pl.name == FAVORITES_NAME)
+                    pl.copy(songs = pl.songs.filter { it.id != songId }.toMutableList())
+                else pl
+            }
+            _playlists.value = updated
+            saveToDisk()
         }
     }
 }
