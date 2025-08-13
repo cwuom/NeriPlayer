@@ -56,7 +56,7 @@ fun NeteaseApiProbeScreen() {
         )
         Text(
             text = "点击按钮将真实请求接口，并把原始 JSON 复制到剪贴板：\n" +
-                    "包含：Account、UserId、我创建的歌单、我收藏的歌单、我喜欢的音乐歌单ID；不包含 liked songs。",
+                    "包含：Account、UserId、我创建的歌单、我收藏的歌单、我喜欢的音乐歌单ID、歌词（33894312）；不包含 liked songs",
             style = MaterialTheme.typography.bodyMedium
         )
 
@@ -104,6 +104,13 @@ fun NeteaseApiProbeScreen() {
                     enabled = !ui.running,
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("仅 我喜欢的音乐 歌单ID") }
+
+                // ⬇⬇⬇ 新增：获取歌词（固定歌曲ID 33894312）
+                OutlinedButton(
+                    onClick = { vm.callLyric33894312AndCopy() },
+                    enabled = !ui.running,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("仅 歌词（33894312）") }
 
                 if (ui.running) {
                     Spacer(Modifier.height(8.dp))

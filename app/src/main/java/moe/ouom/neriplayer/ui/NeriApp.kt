@@ -116,6 +116,15 @@ fun NeriApp(
     LaunchedEffect(Unit) {
         PlayerManager.initialize(context.applicationContext as Application)
         NPLogger.d("NERI-App","PlayerManager.initialize called")
+        NPLogger.d("PlayerManager.hasItems()", PlayerManager.hasItems())
+        if (PlayerManager.hasItems()) {
+            ContextCompat.startForegroundService(
+                context,
+                Intent(context, AudioPlayerService::class.java).apply {
+                    action = AudioPlayerService.ACTION_SYNC
+                }
+            )
+        }
     }
 
     LaunchedEffect(isDark) { onIsDarkChanged(isDark) }

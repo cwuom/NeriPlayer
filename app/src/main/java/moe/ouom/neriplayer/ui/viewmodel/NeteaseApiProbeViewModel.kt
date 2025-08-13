@@ -69,6 +69,12 @@ class NeteaseApiProbeViewModel(app: Application) : AndroidViewModel(app) {
         client.getLikedPlaylistId(0)
     }
 
+    // ⬇⬇⬇ 新增：仅获取歌词（固定歌曲ID 33894312）
+    fun callLyric33894312AndCopy() = launchAndCopy("lyric_33894312") {
+        // 默认选项：lrc、逐字、翻译、假名、逐词全要
+        client.getLyricNew(33894312L)
+    }
+
     fun callAllAndCopy() {
         viewModelScope.launch {
             _ui.value = _ui.value.copy(running = true, lastMessage = "正在调用所有接口...", lastJsonPreview = "")
@@ -80,6 +86,7 @@ class NeteaseApiProbeViewModel(app: Application) : AndroidViewModel(app) {
                 val createdRaw = withContext(Dispatchers.IO) { client.getUserCreatedPlaylists(0) }
                 val subsRaw = withContext(Dispatchers.IO) { client.getUserSubscribedPlaylists(0) }
                 val likedPlIdRaw = withContext(Dispatchers.IO) { client.getLikedPlaylistId(0) }
+                val lyric33894312Raw = withContext(Dispatchers.IO) { client.getLyricNew(33894312L) }
 
                 // 组装聚合 JSON
                 val result = JSONObject().apply {
@@ -88,6 +95,7 @@ class NeteaseApiProbeViewModel(app: Application) : AndroidViewModel(app) {
                     put("createdPlaylists", JSONObject(createdRaw))
                     put("subscribedPlaylists", JSONObject(subsRaw))
                     put("likedPlaylistId", JSONObject(likedPlIdRaw))
+                    put("lyric_33894312", JSONObject(lyric33894312Raw))
                     // 不包含 liked songs list
                 }.toString()
 

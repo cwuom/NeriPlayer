@@ -41,6 +41,14 @@ import java.nio.charset.StandardCharsets
 import java.util.Locale
 import java.util.zip.GZIPInputStream
 
+data class LyricNewOptions(
+    val withLrc: Boolean = true,
+    val withKLyric: Boolean = true,
+    val withTranslation: Boolean = true,
+    val withRomaji: Boolean = true,
+    val withWordByWord: Boolean = true
+)
+
 class NeteaseClient {
     private val okHttpClient: OkHttpClient
     private val cookieStore: MutableMap<String, MutableList<Cookie>> = mutableMapOf()
@@ -550,5 +558,37 @@ class NeteaseClient {
         val profile = root.optJSONObject("profile")
         return profile?.optLong("userId")
             ?: throw IllegalStateException("未找到 userId: $raw")
+    }
+
+    @Throws(IOException::class)
+    fun getLyricNew(
+        songId: Long,
+        options: LyricNewOptions = LyricNewOptions()
+    ): String {
+        fun flag(on: Boolean) = if (on) "-1" else "1"
+
+        val params = mutableMapOf<String, Any>(
+            "id" to songId.toString(),
+            "cp" to "false",
+            "lv" to flag(options.withLrc),
+            "kv" to flag(options.withKLyric),
+            "tv" to flag(options.withTranslation),
+            "rv" to flag(options.withRomaji),
+            "yv" to flag(options.withWordByWord),
+            "ytv" to flag(options.withWordByWord && options.withTranslation),
+            "yrv" to flag(options.withWordByWord && options.withRomaji)
+        )
+
+        fun call(): String = this.callEApi("/song/lyric/v1", params, usePersistedCookies = true)
+
+        var resp = call()
+        try {
+            val code = JSONObject(resp).optInt("code", 200)
+            if (code == 301 && this.hasLogin()) {
+                try { this.ensureWeapiSession() } catch (_: Exception) {}
+                resp = call()
+            }
+        } catch (_: Exception) { }
+        return resp
     }
 }
