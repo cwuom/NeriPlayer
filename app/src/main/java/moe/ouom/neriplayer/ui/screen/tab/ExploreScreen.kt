@@ -147,7 +147,7 @@ fun ExploreScreen(
                 OutlinedTextField(
                     value = query.value,
                     onValueChange = { query.value = it },
-                    label = { Text("搜索歌曲 / 艺人 / 专辑") },
+                    label = { Text("搜索歌曲 / 艺人 / 专辑 / “私人雷达” / “推荐” ...") },
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     keyboardActions = KeyboardActions(onSearch = { vm.searchSongs(query.value) }),
                     singleLine = true,
