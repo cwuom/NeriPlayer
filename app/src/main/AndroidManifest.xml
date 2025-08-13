@@ -33,6 +33,11 @@
             android:exported="false"
             android:theme="@style/Theme.Material3.DayNight.NoActionBar"
         />
+        <activity
+            android:name="moe.ouom.neriplayer.activity.BiliWebLoginActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            />
         <service
             android:name="moe.ouom.neriplayer.core.player.AudioPlayerService"
             android:exported="false"

@@ -147,6 +147,24 @@ fun SettingsScreen(
 
     val cookieScroll = rememberScrollState()
 
+    // Bilibili 登录
+    var showBiliCookieDialog by remember { mutableStateOf(false) }
+    var biliCookieText by remember { mutableStateOf("") }
+    val biliVm: moe.ouom.neriplayer.ui.viewmodel.BiliAuthViewModel =
+        androidx.lifecycle.viewmodel.compose.viewModel()
+
+    val biliWebLoginLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            val json = result.data?.getStringExtra(moe.ouom.neriplayer.activity.BiliWebLoginActivity.RESULT_COOKIE) ?: "{}"
+            val map = biliVm.parseJsonToMap(json)
+            biliVm.importCookiesFromMap(map)
+        } else {
+            inlineMsg = "已取消读取 B 站 Cookie"
+        }
+    }
+
     // 当前所选音质对应的中文标签
     val qualityLabel = remember(preferredQuality) {
         when (preferredQuality) {
@@ -178,6 +196,21 @@ fun SettingsScreen(
                 is NeteaseAuthEvent.ShowCookies -> {
                     cookieText = e.cookies.entries.joinToString("\n") { (k, v) -> "$k=$v" }
                     showCookieDialog = true
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(biliVm) {
+        biliVm.events.collect { e ->
+            when (e) {
+                is moe.ouom.neriplayer.ui.viewmodel.BiliAuthEvent.ShowSnack -> inlineMsg = e.message
+                is moe.ouom.neriplayer.ui.viewmodel.BiliAuthEvent.ShowCookies -> {
+                    biliCookieText = e.cookies.entries.joinToString("\n") { (k, v) -> "$k=$v" }
+                    showBiliCookieDialog = true
+                }
+                moe.ouom.neriplayer.ui.viewmodel.BiliAuthEvent.LoginSuccess -> {
+                    inlineMsg = "B 站登录成功"
                 }
             }
         }
@@ -306,10 +339,16 @@ fun SettingsScreen(
                                 )
                             },
                             headlineContent = { Text("哔哩哔哩") },
-                            supportingContent = { Text("跳转至哔哩哔哩登录页") },
-                            modifier = Modifier.clickable { },
+                            supportingContent = { Text("浏览器登录") },
+                            modifier = Modifier.clickable {
+                                inlineMsg = null
+                                biliWebLoginLauncher.launch(
+                                    Intent(context, moe.ouom.neriplayer.activity.BiliWebLoginActivity::class.java)
+                                )
+                            },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
+
 
                         // YouTube
                         ListItem(
@@ -338,7 +377,7 @@ fun SettingsScreen(
                                 )
                             },
                             headlineContent = { Text("网易云音乐") },
-                            supportingContent = { Text("验证码登录") },
+                            supportingContent = { Text("浏览器/验证码/Cookie 登录") },
                             modifier = Modifier.clickable {
                                 inlineMsg = null
                                 showNeteaseSheet = true
@@ -606,6 +645,28 @@ fun SettingsScreen(
                 }
             }
         }
+    }
+
+    if (showBiliCookieDialog) {
+        AlertDialog(
+            onDismissRequest = { showBiliCookieDialog = false },
+            title = { Text("B 站登录成功") },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        text = biliCookieText.ifBlank { "(空)" },
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showBiliCookieDialog = false }) { Text("好的") }
+            }
+        )
     }
 
     // 音质选择对话框
