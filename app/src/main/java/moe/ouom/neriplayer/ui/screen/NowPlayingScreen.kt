@@ -164,7 +164,7 @@ fun NowPlayingScreen(
 
     // 缩放动画
     var bumpKey by remember(currentSong?.id) { mutableStateOf(0) }
-    val targetScale = if (isFavorite) 1.0f else 1.0f
+    if (isFavorite) 1.0f else 1.0f
     val scale by animateFloatAsState(
         targetValue = if (bumpKey == 0) 1.0f else 1.12f,
         animationSpec = spring(stiffness = Spring.StiffnessMedium, dampingRatio = 0.42f),

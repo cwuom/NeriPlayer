@@ -154,7 +154,7 @@ fun SettingsScreen(
     var showBiliCookieDialog by remember { mutableStateOf(false) }
     var biliCookieText by remember { mutableStateOf("") }
     val biliVm: moe.ouom.neriplayer.ui.viewmodel.BiliAuthViewModel =
-        androidx.lifecycle.viewmodel.compose.viewModel()
+        viewModel()
 
     val biliWebLoginLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()

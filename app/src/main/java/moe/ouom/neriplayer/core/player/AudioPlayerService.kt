@@ -228,7 +228,7 @@ class AudioPlayerService : Service() {
         val isPlaying = PlayerManager.isPlayingFlow.value
         val song = PlayerManager.currentSongFlow.value
 
-        val playlists = PlayerManager.playlistsFlow.value
+        PlayerManager.playlistsFlow.value
         val contentIntent = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
