@@ -165,7 +165,7 @@ fun NowPlayingScreen(
     )
 
     val queue by PlayerManager.currentQueueFlow.collectAsState()
-    val displayedQueue = remember(queue) { queue.asReversed() }
+    val displayedQueue = remember(queue) { queue }
     val currentIndexInDisplay = displayedQueue.indexOfFirst { it.id == currentSong?.id }
 
     var showAddSheet by remember { mutableStateOf(false) }
