@@ -21,6 +21,7 @@ constraintlayout = "2.2.1"
 
 compose-bom = "2025.07.00"
 activity-compose = "1.10.1"
+media = "1.7.0"
 media3Datasource = "1.8.0"
 media3DatasourceOkhttp = "1.8.0"
 media3Exoplayer = "1.8.0"
@@ -40,6 +41,7 @@ androidx-animation = { module = "androidx.compose.animation:animation" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastorePreferences" }
 androidx-foundation = { module = "androidx.compose.foundation:foundation" }
+androidx-media = { module = "androidx.media:media", version.ref = "media" }
 androidx-media3-common = { module = "androidx.media3:media3-common", version.ref = "media3Common" }
 androidx-media3-datasource-okhttp = { module = "androidx.media3:media3-datasource-okhttp", version.ref = "media3DatasourceOkhttp" }
 androidx-media3-datasource = { module = "androidx.media3:media3-datasource", version.ref = "media3Datasource" }
