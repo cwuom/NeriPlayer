@@ -59,7 +59,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -210,11 +212,23 @@ fun PlaylistCard(
                 text = playlist.name,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.titleSmall
+                style = MaterialTheme.typography.titleSmall.copy(
+                    shadow = Shadow(
+                        color = Color.Black.copy(alpha = 0.6f),
+                        offset = Offset(2f, 2f),
+                        blurRadius = 4f
+                    )
+                )
             )
             Text(
                 text = "${formatPlayCount(playlist.playCount)} · ${playlist.trackCount}首",
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodySmall.copy(
+                    shadow = Shadow(
+                        color = Color.Black.copy(alpha = 0.6f),
+                        offset = Offset(2f, 2f),
+                        blurRadius = 4f
+                    )
+                ),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Clip

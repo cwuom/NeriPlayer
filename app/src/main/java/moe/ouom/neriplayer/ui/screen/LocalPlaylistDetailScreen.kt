@@ -93,8 +93,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -403,7 +405,13 @@ fun LocalPlaylistDetailScreen(
                                 ) {
                                     Text(
                                         text = playlist.name,
-                                        style = MaterialTheme.typography.headlineSmall,
+                                        style = MaterialTheme.typography.headlineSmall.copy(
+                                            shadow = Shadow(
+                                                color = Color.Black.copy(alpha = 0.6f),
+                                                offset = Offset(2f, 2f),
+                                                blurRadius = 4f
+                                            )
+                                        ),
                                         color = Color.White,
                                         maxLines = 2,
                                         overflow = TextOverflow.Ellipsis
@@ -411,7 +419,13 @@ fun LocalPlaylistDetailScreen(
                                     Spacer(Modifier.height(4.dp))
                                     Text(
                                         text = "${formatTotalDuration(totalDurationMs)} · ${localSongs.size} 首",
-                                        style = MaterialTheme.typography.bodySmall,
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            shadow = Shadow(
+                                                color = Color.Black.copy(alpha = 0.6f),
+                                                offset = Offset(2f, 2f),
+                                                blurRadius = 4f
+                                            )
+                                        ),
                                         color = Color.White.copy(alpha = 0.92f)
                                     )
                                 }
