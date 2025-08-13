@@ -31,9 +31,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
 import moe.ouom.neriplayer.navigation.Destinations
+import moe.ouom.neriplayer.util.performHapticFeedback
 
 @Composable
 fun NeriBottomBar(
@@ -41,6 +43,8 @@ fun NeriBottomBar(
     currentDestination: NavDestination?,
     onItemSelected: (Destinations) -> Unit
 ) {
+    val context = LocalContext.current
+
     NavigationBar(
         containerColor = MaterialTheme.colorScheme.surface,
         contentColor = MaterialTheme.colorScheme.onSurface
@@ -49,7 +53,10 @@ fun NeriBottomBar(
             val selected = currentDestination?.hierarchy?.any { it.route == dest.route } == true
             NavigationBarItem(
                 selected = selected,
-                onClick = { onItemSelected(dest) },
+                onClick = {
+                    context.performHapticFeedback()
+                    onItemSelected(dest)
+                },
                 icon = { Icon(icon, contentDescription = dest.label) },
                 label = { Text(dest.label) },
                 colors = NavigationBarItemDefaults.colors(

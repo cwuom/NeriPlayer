@@ -83,6 +83,8 @@ import moe.ouom.neriplayer.ui.viewmodel.ExploreViewModel
 import moe.ouom.neriplayer.ui.viewmodel.NeteasePlaylist
 import moe.ouom.neriplayer.ui.viewmodel.SongItem
 import moe.ouom.neriplayer.util.formatDuration
+import moe.ouom.neriplayer.util.performHapticFeedback
+import moe.ouom.neriplayer.util.HapticTextButton
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -234,7 +236,7 @@ fun ExploreScreen(
                                 .padding(top = 4.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            TextButton(onClick = { vm.toggleExpanded() }) {
+                            HapticTextButton(onClick = { vm.toggleExpanded() }) {
                                 Text(if (ui.expanded) "收起标签" else "展开更多")
                             }
                         }
@@ -281,10 +283,14 @@ private fun SongRow(
     song: SongItem,
     onClick: () -> Unit
 ) {
+    val context = LocalContext.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onClick() }
+            .clickable {
+                context.performHapticFeedback()
+                onClick()
+            }
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

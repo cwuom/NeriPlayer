@@ -118,6 +118,10 @@ import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.formatDuration
 import moe.ouom.neriplayer.util.formatPlayCount
 import androidx.compose.material.icons.filled.Search
+import moe.ouom.neriplayer.util.HapticFloatingActionButton
+import moe.ouom.neriplayer.util.HapticIconButton
+import moe.ouom.neriplayer.util.HapticTextButton
+import moe.ouom.neriplayer.util.performHapticFeedback
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -183,12 +187,12 @@ fun PlaylistDetailScreen(
                             )
                         },
                         navigationIcon = {
-                            IconButton(onClick = onBack) {
+                            HapticIconButton(onClick = onBack) {
                                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                             }
                         },
                         actions = {
-                            IconButton(onClick = {
+                            HapticIconButton(onClick = {
                                 showSearch = !showSearch
                                 if (!showSearch) searchQuery = ""
                             }) { Icon(Icons.Filled.Search, contentDescription = "搜索歌曲") }
@@ -206,18 +210,18 @@ fun PlaylistDetailScreen(
                     TopAppBar(
                         title = { Text("已选 ${selectedIds.size} 项") },
                         navigationIcon = {
-                            IconButton(onClick = { exitSelection() }) {
+                            HapticIconButton(onClick = { exitSelection() }) {
                                 Icon(Icons.Filled.Close, contentDescription = "退出多选")
                             }
                         },
                         actions = {
-                            IconButton(onClick = { if (allSelected) clearSelection() else selectAll() }) {
+                            HapticIconButton(onClick = { if (allSelected) clearSelection() else selectAll() }) {
                                 Icon(
                                     imageVector = if (allSelected) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
                                     contentDescription = if (allSelected) "取消全选" else "全选"
                                 )
                             }
-                            IconButton(
+                            HapticIconButton(
                                 onClick = { if (selectedIds.isNotEmpty()) showExportSheet = true },
                                 enabled = selectedIds.isNotEmpty()
                             ) {
@@ -379,7 +383,7 @@ fun PlaylistDetailScreen(
                     }
 
                     if (currentIndex >= 0) {
-                        FloatingActionButton(
+                        HapticFloatingActionButton(
                             onClick = {
                                 scope.launch { listState.animateScrollToItem(currentIndex) }
                             },
@@ -449,11 +453,11 @@ fun PlaylistDetailScreen(
                                 singleLine = true
                             )
                             Spacer(Modifier.width(12.dp))
-                            TextButton(
+                            HapticTextButton(
                                 enabled = newName.isNotBlank() && selectedIds.isNotEmpty(),
                                 onClick = {
                                     val name = newName.trim()
-                                    if (name.isBlank()) return@TextButton
+                                    if (name.isBlank()) return@HapticTextButton
                                     // 倒序导出
                                     val songs = ui.tracks
                                         .asReversed()
@@ -509,12 +513,16 @@ private fun SongRow(
 ) {
     val current by PlayerManager.currentSongFlow.collectAsState()
     val isPlayingSong = current?.id == song.id
+    val context = LocalContext.current
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .combinedClickable(
-                onClick = { if (selectionMode) onToggleSelect() else onClick() },
+                onClick = {
+                    context.performHapticFeedback()
+                    if (selectionMode) onToggleSelect() else onClick()
+                },
                 onLongClick = { onLongPress() }
             )
             .padding(horizontal = 16.dp, vertical = 12.dp),

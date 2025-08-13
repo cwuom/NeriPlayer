@@ -74,6 +74,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import moe.ouom.neriplayer.ui.viewmodel.HomeViewModel
 import moe.ouom.neriplayer.ui.viewmodel.NeteasePlaylist
+import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.formatPlayCount
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -108,7 +109,7 @@ fun HomeScreen(
         LargeTopAppBar(
             title = { Text(appBarTitle) },
             actions = {
-                IconButton(onClick = { vm.refreshRecommend() }) {
+                HapticIconButton(onClick = { vm.refreshRecommend() }) {
                     Icon(imageVector = Icons.Filled.Refresh, contentDescription = "刷新推荐")
                 }
             },

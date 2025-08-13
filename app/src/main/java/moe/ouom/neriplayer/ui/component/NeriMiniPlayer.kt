@@ -58,6 +58,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import moe.ouom.neriplayer.util.HapticIconButton
 
 @Composable
 fun NeriMiniPlayer(
@@ -119,7 +120,7 @@ fun NeriMiniPlayer(
                 )
             }
 
-            IconButton(onClick = { onPlayPause() }) {
+            HapticIconButton(onClick = { onPlayPause() }) {
                 AnimatedContent(
                     targetState = isPlaying,
                     label = "mini_play_pause_icon",

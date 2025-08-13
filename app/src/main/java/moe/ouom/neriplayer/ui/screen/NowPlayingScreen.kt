@@ -121,6 +121,9 @@ import kotlinx.coroutines.delay
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.ui.component.WaveformSlider
+import moe.ouom.neriplayer.util.HapticFilledIconButton
+import moe.ouom.neriplayer.util.HapticIconButton
+import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.formatDuration
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -206,14 +209,13 @@ fun NowPlayingScreen(
             CenterAlignedTopAppBar(
                 title = { Text("正在播放") },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateUp) {
+                    HapticIconButton(onClick = onNavigateUp) {
                         Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = "返回")
                     }
                 },
                 actions = {
-                    IconButton(onClick = {
-                        if (currentSong == null) return@IconButton
-                        // 切换收藏：UI 先乐观覆盖，Manager 后台真正落库
+                    HapticIconButton(onClick = {
+                        if (currentSong == null) return@HapticIconButton
                         val willFav = !isFavorite
                         favOverride = willFav
                         if (willFav) {
@@ -224,7 +226,7 @@ fun NowPlayingScreen(
                         // 触发一次弹跳
                         bumpKey++
                     }) {
-                        // 图标切换 + scale/fade 动画
+                        // 图标切换 和 scale/fade 动画
                         AnimatedContent(
                             targetState = isFavorite,
                             transitionSpec = {
@@ -375,17 +377,17 @@ fun NowPlayingScreen(
                 horizontalArrangement = Arrangement.spacedBy(20.dp),
                 modifier = Modifier.align(Alignment.CenterHorizontally)
             ) {
-                IconButton(onClick = { PlayerManager.setShuffle(!shuffleEnabled) }) {
+                HapticIconButton(onClick = { PlayerManager.setShuffle(!shuffleEnabled) }) {
                     Icon(
                         Icons.Outlined.Shuffle,
                         contentDescription = "随机",
                         tint = if (shuffleEnabled) MaterialTheme.colorScheme.primary else LocalContentColor.current
                     )
                 }
-                IconButton(onClick = { PlayerManager.previous() }) {
+                HapticIconButton(onClick = { PlayerManager.togglePlayPause() }) {
                     Icon(Icons.Outlined.SkipPrevious, contentDescription = "上一首")
                 }
-                FilledIconButton(onClick = { PlayerManager.togglePlayPause() }) {
+                HapticFilledIconButton(onClick = { PlayerManager.togglePlayPause() }) {
                     AnimatedContent(
                         targetState = isPlaying,
                         label = "play_pause_icon",
@@ -397,10 +399,10 @@ fun NowPlayingScreen(
                         )
                     }
                 }
-                IconButton(onClick = { PlayerManager.next() }) {
+                HapticIconButton(onClick = { PlayerManager.next() }) {
                     Icon(Icons.Outlined.SkipNext, contentDescription = "下一首")
                 }
-                IconButton(onClick = { PlayerManager.cycleRepeatMode() }) {
+                HapticIconButton(onClick = { PlayerManager.cycleRepeatMode() }) {
                     Icon(
                         imageVector = if (repeatMode == Player.REPEAT_MODE_ONE) Icons.Filled.RepeatOne else Icons.Outlined.Repeat,
                         contentDescription = "循环",
@@ -418,13 +420,13 @@ fun NowPlayingScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = { showQueueSheet = true }) {
+                HapticIconButton(onClick = { showQueueSheet = true }) {
                     Icon(Icons.AutoMirrored.Outlined.QueueMusic, contentDescription = "播放列表")
                 }
-                TextButton(onClick = { showVolumeSheet = true }) {
+                HapticTextButton(onClick = { showVolumeSheet = true }) {
                     AudioDeviceHandler()
                 }
-                IconButton(onClick = { showAddSheet = true }) {
+                HapticIconButton(onClick = { showAddSheet = true }) {
                     Icon(Icons.AutoMirrored.Outlined.PlaylistAdd, contentDescription = "添加到歌单")
                 }
             }

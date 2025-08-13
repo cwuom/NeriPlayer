@@ -67,9 +67,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -113,8 +111,12 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.ui.viewmodel.LocalPlaylistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.SongItem
+import moe.ouom.neriplayer.util.HapticFloatingActionButton
+import moe.ouom.neriplayer.util.HapticIconButton
+import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.formatDuration
 import moe.ouom.neriplayer.util.formatTotalDuration
+import moe.ouom.neriplayer.util.performHapticFeedback
 import org.burnoutcrew.reorderable.ItemPosition
 import org.burnoutcrew.reorderable.ReorderableItem
 import org.burnoutcrew.reorderable.detectReorder
@@ -151,7 +153,7 @@ fun LocalPlaylistDetailScreen(
                         TopAppBar(
                             title = { Text("歌单") },
                             navigationIcon = {
-                                IconButton(onClick = onBack) {
+                                HapticIconButton(onClick = onBack) {
                                     Icon(
                                         Icons.AutoMirrored.Filled.ArrowBack,
                                         contentDescription = "返回"
@@ -265,7 +267,7 @@ fun LocalPlaylistDetailScreen(
                         val trimmed = renameText.text.trim()
                         val disabled =
                             renameError != null || trimmed.equals(playlist.name, ignoreCase = true)
-                        TextButton(
+                        HapticTextButton(
                             onClick = {
                                 if (!disabled) {
                                     vm.rename(trimmed)
@@ -276,7 +278,7 @@ fun LocalPlaylistDetailScreen(
                         ) { Text("确定") }
                     },
                     dismissButton = {
-                        TextButton(onClick = {
+                        HapticTextButton(onClick = {
                             showRename = false
                         }) { Text("取消") }
                     },
@@ -346,7 +348,7 @@ fun LocalPlaylistDetailScreen(
                                 )
                             },
                             navigationIcon = {
-                                IconButton(onClick = onBack) {
+                                HapticIconButton(onClick = onBack) {
                                     Icon(
                                         Icons.AutoMirrored.Filled.ArrowBack,
                                         contentDescription = "返回"
@@ -354,15 +356,15 @@ fun LocalPlaylistDetailScreen(
                                 }
                             },
                             actions = {
-                                IconButton(onClick = {
+                                HapticIconButton(onClick = {
                                     showSearch = !showSearch
                                     if (!showSearch) searchQuery = ""
                                 }) { Icon(Icons.Filled.Search, contentDescription = "搜索歌曲") }
                                 if (!isFavorites) {
-                                    IconButton(onClick = {
+                                    HapticIconButton(onClick = {
                                         showRename = true
                                     }) { Icon(Icons.Filled.Edit, contentDescription = "重命名") }
-                                    IconButton(onClick = {
+                                    HapticIconButton(onClick = {
                                         showDeletePlaylistConfirm = true
                                     }) {
                                         Icon(
@@ -384,7 +386,7 @@ fun LocalPlaylistDetailScreen(
                         TopAppBar(
                             title = { Text("已选 ${selectedIdsState.value.size} 项") },
                             navigationIcon = {
-                                IconButton(onClick = { exitSelectionMode() }) {
+                                HapticIconButton(onClick = { exitSelectionMode() }) {
                                     Icon(
                                         Icons.Filled.Close,
                                         contentDescription = "退出多选"
@@ -392,13 +394,13 @@ fun LocalPlaylistDetailScreen(
                                 }
                             },
                             actions = {
-                                IconButton(onClick = { if (allSelected) clearSelection() else selectAll() }) {
+                                HapticIconButton(onClick = { if (allSelected) clearSelection() else selectAll() }) {
                                     Icon(
                                         imageVector = if (allSelected) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
                                         contentDescription = if (allSelected) "取消全选" else "全选"
                                     )
                                 }
-                                IconButton(
+                                HapticIconButton(
                                     onClick = {
                                         if (selectedIdsState.value.isNotEmpty()) showExportSheet =
                                             true
@@ -410,7 +412,7 @@ fun LocalPlaylistDetailScreen(
                                         contentDescription = "导出到歌单"
                                     )
                                 }
-                                IconButton(
+                                HapticIconButton(
                                     onClick = {
                                         if (selectedIdsState.value.isNotEmpty()) showDeleteMultiConfirm =
                                             true
@@ -552,6 +554,7 @@ fun LocalPlaylistDetailScreen(
                                                 .weight(1f)
                                                 .combinedClickable(
                                                     onClick = {
+                                                        context.performHapticFeedback()
                                                         if (selectionMode) {
                                                             toggleSelect(song.id)
                                                         } else {
@@ -683,7 +686,7 @@ fun LocalPlaylistDetailScreen(
                         } else -1
 
                         if (currentIndexInDisplay >= 0) {
-                            FloatingActionButton(
+                            HapticFloatingActionButton(
                                 onClick = {
                                     scope.launch {
                                         reorderState.listState.animateScrollToItem(
@@ -711,13 +714,13 @@ fun LocalPlaylistDetailScreen(
                         title = { Text("删除歌单") },
                         text = { Text("确定要删除此歌单吗？此操作不可恢复！") },
                         confirmButton = {
-                            TextButton(onClick = {
+                            HapticTextButton(onClick = {
                                 vm.delete { ok -> if (ok) onDeleted() }
                                 showDeletePlaylistConfirm = false
                             }) { Text("删除") }
                         },
                         dismissButton = {
-                            TextButton(onClick = {
+                            HapticTextButton(onClick = {
                                 showDeletePlaylistConfirm = false
                             }) { Text("取消") }
                         }
@@ -732,7 +735,7 @@ fun LocalPlaylistDetailScreen(
                         title = { Text("删除所选歌曲") },
                         text = { Text("确定要从歌单移除所选的 $count 首歌曲吗？") },
                         confirmButton = {
-                            TextButton(onClick = {
+                            HapticTextButton(onClick = {
                                 val ids: List<Long> = selectedIdsState.value.toList()
                                 val expected = localSongs.filterNot { it.id in ids }.map { it.id }
                                 pendingOrder = expected
@@ -747,7 +750,7 @@ fun LocalPlaylistDetailScreen(
                             }) { Text("删除（$count）") }
                         },
                         dismissButton = {
-                            TextButton(onClick = {
+                            HapticTextButton(onClick = {
                                 showDeleteMultiConfirm = false
                             }) { Text("取消") }
                         }
@@ -771,6 +774,7 @@ fun LocalPlaylistDetailScreen(
                                             .fillMaxWidth()
                                             .padding(vertical = 10.dp)
                                             .combinedClickable(onClick = {
+                                                context.performHapticFeedback()
                                                 val ids = selectedIdsState.value
                                                 val displayedSongs = localSongs
                                                 val songs =
@@ -806,11 +810,11 @@ fun LocalPlaylistDetailScreen(
                                     singleLine = true
                                 )
                                 Spacer(Modifier.width(12.dp))
-                                TextButton(
+                                HapticTextButton(
                                     enabled = newName.isNotBlank() && selectedIdsState.value.isNotEmpty(),
                                     onClick = {
                                         val name = newName.trim()
-                                        if (name.isBlank()) return@TextButton
+                                        if (name.isBlank()) return@HapticTextButton
                                         val ids = selectedIdsState.value
                                         // 以展示顺序（倒序）筛选导出
                                         val displayedSongs = localSongs.asReversed()

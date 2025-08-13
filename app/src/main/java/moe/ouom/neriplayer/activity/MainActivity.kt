@@ -98,6 +98,8 @@ import moe.ouom.neriplayer.core.player.PlayerEvent
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.SettingsRepository
 import moe.ouom.neriplayer.ui.NeriApp
+import moe.ouom.neriplayer.util.HapticButton
+import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.NPLogger
 
 private enum class AppStage { Loading, Disclaimer, Main }
@@ -221,7 +223,7 @@ class MainActivity : ComponentActivity() {
                                     title = { Text("提示") },
                                     text = { Text(dialogMessage) },
                                     confirmButton = {
-                                        TextButton(onClick = { showDialog = false }) {
+                                        HapticTextButton(onClick = { showDialog = false }) {
                                             Text("确定")
                                         }
                                     }
@@ -387,7 +389,7 @@ fun DisclaimerScreen(onAgree: () -> Unit) {
 
                 Spacer(Modifier.height(16.dp))
 
-                Button(
+                HapticButton(
                     onClick = { onAgree() },
                     enabled = countdown == 0,
                     shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),

@@ -108,6 +108,9 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.NeteaseWebLoginActivity
 import moe.ouom.neriplayer.ui.viewmodel.NeteaseAuthEvent
 import moe.ouom.neriplayer.ui.viewmodel.NeteaseAuthViewModel
+import moe.ouom.neriplayer.util.HapticButton
+import moe.ouom.neriplayer.util.HapticIconButton
+import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.NightModeHelper
 import moe.ouom.neriplayer.util.convertTimestampToDate
 
@@ -523,13 +526,13 @@ fun SettingsScreen(
                 title = { Text("确认发送验证码？") },
                 text = { Text("将发送验证码到 >${confirmPhoneMasked ?: ""}<") },
                 confirmButton = {
-                    TextButton(onClick = {
+                    HapticTextButton(onClick = {
                         showConfirmDialog = false
                         neteaseVm.sendCaptcha(ctcode = "86")
                     }) { Text("发送") }
                 },
                 dismissButton = {
-                    TextButton(onClick = {
+                    HapticTextButton(onClick = {
                         showConfirmDialog = false
                         inlineMsg = "已取消发送"
                     }) { Text("取消") }
@@ -602,7 +605,7 @@ fun SettingsScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(Modifier.height(12.dp))
-                            Button(onClick = {
+                            HapticButton(onClick = {
                                 inlineMsg = null
                                 webLoginLauncher.launch(
                                     Intent(
@@ -625,7 +628,7 @@ fun SettingsScreen(
                                 modifier = Modifier.fillMaxWidth()
                             )
                             Spacer(Modifier.height(8.dp))
-                            Button(onClick = {
+                            HapticButton(onClick = {
                                 if (rawCookie.isBlank()) {
                                     inlineMsg = "请输入 Cookie"
                                 } else {
@@ -664,7 +667,7 @@ fun SettingsScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showBiliCookieDialog = false }) { Text("好的") }
+                HapticTextButton(onClick = { showBiliCookieDialog = false }) { Text("好的") }
             }
         )
     }
@@ -708,7 +711,7 @@ fun SettingsScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showQualityDialog = false }) {
+                HapticTextButton(onClick = { showQualityDialog = false }) {
                     Text("关闭")
                 }
             }
@@ -733,7 +736,7 @@ fun SettingsScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showCookieDialog = false }) { Text("好的") }
+                HapticTextButton(onClick = { showCookieDialog = false }) { Text("好的") }
             }
         )
     }
@@ -781,7 +784,7 @@ private fun NeteaseLoginContent(
         Spacer(modifier = Modifier.height(12.dp))
 
         // 发送验证码
-        Button(
+        HapticButton(
             enabled = !state.sending && state.countdownSec <= 0,
             onClick = { vm.askConfirmSendCaptcha() }
         ) {
@@ -797,7 +800,7 @@ private fun NeteaseLoginContent(
         Spacer(modifier = Modifier.height(8.dp))
 
         // 登录
-        Button(
+        HapticButton(
             enabled = state.captcha.isNotEmpty() && !state.loggingIn,
             onClick = { vm.loginByCaptcha(countryCode = "86") }
         ) {
@@ -838,7 +841,7 @@ private fun InlineMessage(
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.weight(1f)
             )
-            IconButton(onClick = onClose) {
+            HapticIconButton(onClick = onClose) {
                 Icon(imageVector = Icons.Filled.Close, contentDescription = "关闭")
             }
         }

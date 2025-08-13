@@ -83,6 +83,7 @@ import moe.ouom.neriplayer.data.LocalPlaylist
 import moe.ouom.neriplayer.data.LocalPlaylistRepository.Companion.FAVORITES_NAME
 import moe.ouom.neriplayer.ui.viewmodel.LibraryViewModel
 import moe.ouom.neriplayer.ui.viewmodel.NeteasePlaylist
+import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.formatPlayCount
 
 enum class LibraryTab(val label: String) {
@@ -265,12 +266,12 @@ private fun LocalPlaylistList(
                         }
                     },
                     confirmButton = {
-                        TextButton(
+                        HapticTextButton(
                             onClick = { tryCreate() }
                         ) { Text("创建") }
                     },
                     dismissButton = {
-                        TextButton(
+                        HapticTextButton(
                             onClick = {
                                 showDialog = false
                                 newName = ""
