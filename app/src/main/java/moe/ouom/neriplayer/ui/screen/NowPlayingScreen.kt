@@ -384,9 +384,10 @@ fun NowPlayingScreen(
                         tint = if (shuffleEnabled) MaterialTheme.colorScheme.primary else LocalContentColor.current
                     )
                 }
-                HapticIconButton(onClick = { PlayerManager.togglePlayPause() }) {
+                HapticIconButton(onClick = { PlayerManager.previous() }) {
                     Icon(Icons.Outlined.SkipPrevious, contentDescription = "上一首")
                 }
+
                 HapticFilledIconButton(onClick = { PlayerManager.togglePlayPause() }) {
                     AnimatedContent(
                         targetState = isPlaying,
@@ -459,7 +460,7 @@ fun NowPlayingScreen(
             ) {
                 LazyColumn(state = listState) {
                     itemsIndexed(displayedQueue) { index, song ->
-                        val sourceIndex = queue.lastIndex - index
+                        val sourceIndex = index
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
