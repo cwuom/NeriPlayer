@@ -45,6 +45,9 @@ data class ExploreUiState(
     val error: String? = null,
     val playlists: List<NeteasePlaylist> = emptyList(),
     val selectedTag: String = "全部",
+    val searching: Boolean = false,
+    val searchError: String? = null,
+    val searchResults: List<SongItem> = emptyList(),
 )
 
 class ExploreViewModel(application: Application) : AndroidViewModel(application) {
@@ -133,4 +136,95 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         }
         return result
     }
+
+    /** 搜索歌曲 */
+    fun searchSongs(keyword: String) {
+        if (keyword.isBlank()) return
+        _uiState.value = _uiState.value.copy(searching = true, searchError = null)
+        viewModelScope.launch {
+            try {
+                val cookies = withContext(Dispatchers.IO) { repo.getCookiesOnce() }.toMutableMap()
+                if (!cookies.containsKey("os")) cookies["os"] = "pc"
+                client.setPersistedCookies(cookies)
+
+                val raw = withContext(Dispatchers.IO) {
+                    client.searchSongs(keyword, limit = 30, offset = 0, type = 1)
+                }
+                val songs = parseSongs(raw)
+
+                _uiState.value = _uiState.value.copy(
+                    searching = false,
+                    searchError = null,
+                    searchResults = songs
+                )
+            } catch (e: IOException) {
+                _uiState.value = _uiState.value.copy(
+                    searching = false,
+                    searchError = "网络异常：${e.message}",
+                    searchResults = emptyList()
+                )
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    searching = false,
+                    searchError = "解析错误：${e.message}",
+                    searchResults = emptyList()
+                )
+            }
+        }
+    }
+
+    private fun parseSongs(raw: String): List<SongItem> {
+        val list = mutableListOf<SongItem>()
+        try {
+            val root = JSONObject(raw)
+            if (root.optInt("code") != 200) return emptyList()
+
+            val result = root.optJSONObject("result") ?: return emptyList()
+            val songs = result.optJSONArray("songs") ?: return emptyList()
+
+            for (i in 0 until songs.length()) {
+                val obj = songs.optJSONObject(i) ?: continue
+                val id = obj.optLong("id", 0)
+                val name = obj.optString("name")
+                if (id == 0L || name.isBlank()) continue
+
+                val artistsArr = obj.optJSONArray("ar") ?: obj.optJSONArray("artists")
+                val artistNames = mutableListOf<String>()
+                var artistAvatar = ""
+                if (artistsArr != null) {
+                    for (j in 0 until artistsArr.length()) {
+                        val a = artistsArr.optJSONObject(j) ?: continue
+                        a.optString("name").takeIf { it.isNotBlank() }?.let { artistNames.add(it) }
+                        if (artistAvatar.isBlank()) {
+                            artistAvatar = a.optString("img1v1Url").orEmpty()
+                        }
+                    }
+                }
+                val artistStr = artistNames.joinToString(" / ")
+
+                val albumObj = obj.optJSONObject("al") ?: obj.optJSONObject("album")
+                val albumName = albumObj?.optString("name").orEmpty()
+                var cover = albumObj?.optString("picUrl").orEmpty()
+                if (cover.isBlank()) cover = artistAvatar
+                if (cover.startsWith("http://")) cover = cover.replace("http://", "https://")
+
+                val duration = obj.optLong("dt", obj.optLong("duration", 0))
+
+                list.add(
+                    SongItem(
+                        id = id,
+                        name = name,
+                        artist = artistStr,
+                        album = albumName,
+                        durationMs = duration,
+                        coverUrl = cover.takeIf { it.isNotBlank() }
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            NPLogger.w(TAG, "parseSongs failed: ${e.message}")
+        }
+        return list
+    }
+
 }

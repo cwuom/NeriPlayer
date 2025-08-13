@@ -82,6 +82,13 @@ data class AudioDevice(
     val icon: ImageVector
 )
 
+data class QueueContext(
+    val fromLocalPlaylist: Boolean = false,
+    val sourceId: Long? = null,
+    val sourceName: String? = null
+)
+
+
 /** 用于封装播放器需要通知UI的事件 */
 sealed class PlayerEvent {
     data class ShowLoginPrompt(val message: String) : PlayerEvent()

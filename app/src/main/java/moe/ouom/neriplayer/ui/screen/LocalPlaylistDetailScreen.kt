@@ -447,7 +447,7 @@ fun LocalPlaylistDetailScreen(
                                                 onClick = {
                                                     if (selectionMode) toggleSelect(song.id)
                                                     else {
-                                                        // ★ 播放按“倒序展示列表”作为播放列表
+                                                        // 播放按“倒序展示列表”作为播放列表
                                                         onSongClick(displayedSongs, revIndex)
                                                     }
                                                 },
@@ -677,7 +677,7 @@ fun LocalPlaylistDetailScreen(
                                     val name = newName.trim()
                                     if (name.isBlank()) return@TextButton
                                     val ids = selectedIdsState.value
-                                    // ★ 以展示顺序（倒序）筛选导出
+                                    // 以展示顺序（倒序）筛选导出
                                     val displayedSongs = localSongs.asReversed()
                                     val songs = displayedSongs.filter { ids.contains(it.id) }
                                     scope.launch {

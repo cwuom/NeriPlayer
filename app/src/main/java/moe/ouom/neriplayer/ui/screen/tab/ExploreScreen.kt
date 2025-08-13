@@ -24,21 +24,29 @@ package moe.ouom.neriplayer.ui.screen.tab
  */
 
 import android.app.Application
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -57,20 +65,31 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import moe.ouom.neriplayer.ui.viewmodel.ExploreViewModel
 import moe.ouom.neriplayer.ui.viewmodel.NeteasePlaylist
+import moe.ouom.neriplayer.ui.viewmodel.SongItem
+import moe.ouom.neriplayer.util.formatDuration
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ExploreScreen(
     gridState: LazyGridState,
-    onPlay: (NeteasePlaylist) -> Unit
+    onPlay: (NeteasePlaylist) -> Unit,
+    onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
     val vm: ExploreViewModel = viewModel(
@@ -129,48 +148,100 @@ fun ExploreScreen(
                     value = query.value,
                     onValueChange = { query.value = it },
                     label = { Text("搜索歌曲 / 艺人 / 专辑") },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { vm.searchSongs(query.value) }),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
             }
 
-            // 标签区
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                Column(Modifier.fillMaxWidth()) {
-                    val display = if (ui.expanded) tags else tags.take(12)
-
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        display.forEach { tag ->
-                            val selected = (ui.selectedTag == tag)
-                            FilterChip(
-                                selected = selected,
-                                onClick = {
-                                    if (!selected) {
-                                        vm.setSelectedTag(tag)
-                                        vm.loadHighQuality(tag)
-                                    }
-                                },
-                                label = { Text(tag) },
+            if (query.value.isNotBlank()) {
+                when {
+                    ui.searching -> {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 24.dp),
+                                contentAlignment = Alignment.Center
+                            ) { CircularProgressIndicator() }
+                        }
+                    }
+                    ui.searchError != null -> {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            Text(
+                                text = "搜索失败：${ui.searchError}",
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 16.dp)
                             )
                         }
                     }
-
-                    Box(
-                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        TextButton(onClick = { vm.toggleExpanded() }) {
-                            Text(if (ui.expanded) "收起标签" else "展开更多")
+                    ui.searchResults.isEmpty() -> {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            Text(
+                                text = "未找到结果",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 16.dp)
+                            )
                         }
                     }
-                    Spacer(modifier = Modifier.padding(top = 4.dp))
+                    else -> {
+                        itemsIndexed(
+                            items = ui.searchResults,
+                            key = { _: Int, s: SongItem -> s.id },
+                            span = { _: Int, _: SongItem -> GridItemSpan(maxLineSpan) }
+                        ) { index: Int, song: SongItem ->
+                            SongRow(index + 1, song) {
+                                onSongClick(ui.searchResults, index)
+                            }
+                        }
+                    }
+                }
+            } else {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    Column(Modifier.fillMaxWidth()) {
+                        val display = if (ui.expanded) tags else tags.take(12)
+
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            display.forEach { tag ->
+                                val selected = (ui.selectedTag == tag)
+                                FilterChip(
+                                    selected = selected,
+                                    onClick = {
+                                        if (!selected) {
+                                            vm.setSelectedTag(tag)
+                                            vm.loadHighQuality(tag)
+                                        }
+                                    },
+                                    label = { Text(tag) },
+                                )
+                            }
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 4.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            TextButton(onClick = { vm.toggleExpanded() }) {
+                                Text(if (ui.expanded) "收起标签" else "展开更多")
+                            }
+                        }
+                        Spacer(modifier = Modifier.padding(top = 4.dp))
+                    }
                 }
             }
-
             // 状态区
             if (ui.loading) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
@@ -179,9 +250,7 @@ fun ExploreScreen(
                             .fillMaxWidth()
                             .padding(vertical = 24.dp),
                         contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator()
-                    }
+                    ) { CircularProgressIndicator() }
                 }
             } else if (ui.error != null) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
@@ -196,12 +265,77 @@ fun ExploreScreen(
                 }
             } else {
                 items(
-                    ui.playlists,
+                    items = ui.playlists,
                     key = { it.id }
                 ) { playlist ->
                     PlaylistCard(playlist) { onPlay(playlist) }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SongRow(
+    index: Int,
+    song: SongItem,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(modifier = Modifier.width(48.dp), contentAlignment = Alignment.Center) {
+            Text(
+                text = index.toString(),
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Clip,
+                textAlign = TextAlign.Center
+            )
+        }
+
+        if (!song.coverUrl.isNullOrBlank()) {
+            AsyncImage(
+                model = ImageRequest.Builder(LocalContext.current).data(song.coverUrl).build(),
+                contentDescription = song.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(10.dp))
+            )
+            Spacer(Modifier.width(12.dp))
+        } else {
+            Spacer(Modifier.width(12.dp))
+        }
+
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = song.name,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                text = listOfNotNull(
+                    song.artist.takeIf { it.isNotBlank() },
+                    song.album.takeIf { it.isNotBlank() }
+                ).joinToString(" · "),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        Text(
+            text = formatDuration(song.durationMs),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }

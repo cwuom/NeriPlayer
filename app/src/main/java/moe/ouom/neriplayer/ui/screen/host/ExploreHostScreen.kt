@@ -75,7 +75,8 @@ fun ExploreHostScreen(
             if (current == null) {
                 ExploreScreen(
                     gridState = gridState,
-                    onPlay = { pl -> selected = pl }
+                    onPlay = { pl -> selected = pl },
+                    onSongClick = onSongClick
                 )
             } else {
                 PlaylistDetailScreen(
