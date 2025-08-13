@@ -117,6 +117,7 @@ import moe.ouom.neriplayer.ui.viewmodel.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.formatDuration
 import moe.ouom.neriplayer.util.formatPlayCount
+import androidx.compose.material.icons.filled.Search
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -139,7 +140,8 @@ fun PlaylistDetailScreen(
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
-    val currentIndex = ui.tracks.indexOfFirst { it.id == currentSong?.id }
+    var showSearch by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
 
     LaunchedEffect(playlist.id) { vm.start(playlist) }
 
@@ -185,6 +187,12 @@ fun PlaylistDetailScreen(
                                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                             }
                         },
+                        actions = {
+                            IconButton(onClick = {
+                                showSearch = !showSearch
+                                if (!showSearch) searchQuery = ""
+                            }) { Icon(Icons.Filled.Search, contentDescription = "搜索歌曲") }
+                        },
                         windowInsets = WindowInsets.statusBars,
                         colors = TopAppBarDefaults.topAppBarColors(
                             containerColor = MaterialTheme.colorScheme.surface,
@@ -223,6 +231,24 @@ fun PlaylistDetailScreen(
                         )
                     )
                 }
+
+                AnimatedVisibility(showSearch && !selectionMode) {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        placeholder = { Text("搜索歌单内歌曲") },
+                        singleLine = true
+                    )
+                }
+
+                val displayedTracks = remember(ui.tracks, searchQuery) {
+                    if (searchQuery.isBlank()) ui.tracks
+                    else ui.tracks.filter { it.name.contains(searchQuery, true) || it.artist.contains(searchQuery, true) }
+                }
+                val currentIndex = displayedTracks.indexOfFirst { it.id == currentSong?.id }
 
                 Box(modifier = Modifier.fillMaxSize()) {
                     LazyColumn(
@@ -325,7 +351,7 @@ fun PlaylistDetailScreen(
                             }
 
                             else -> {
-                                itemsIndexed(ui.tracks, key = { _, it -> it.id }) { index, item ->
+                                itemsIndexed(displayedTracks, key = { _, it -> it.id }) { index, item ->
                                     SongRow(
                                         index = index + 1,
                                         song = item,
@@ -342,7 +368,9 @@ fun PlaylistDetailScreen(
                                         },
                                         onClick = {
                                             NPLogger.d("NERI-UI", "tap song index=$index id=${item.id}")
-                                            onSongClick(ui.tracks, index)
+                                            val full = ui.tracks
+                                            val pos = full.indexOfFirst { it.id == item.id }
+                                            if (pos >= 0) onSongClick(full, pos)
                                         }
                                     )
                                 }
