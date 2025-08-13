@@ -125,7 +125,7 @@ object PlayerManager {
     private var currentPlaylist: List<SongItem> = emptyList()
     private var currentIndex = -1
 
-    /** —— 随机播放相关 —— */
+    /** 随机播放相关  */
     private val shuffleHistory = mutableListOf<Int>()   // 已经走过的路径（支持上一首）
     private val shuffleFuture  = mutableListOf<Int>()   // 预定的“下一首们”（支持先上后下仍回到原来的下一首）
     private var shuffleBag     = mutableListOf<Int>()   // 本轮还没“抽签”的下标池（不含 current）
@@ -164,6 +164,8 @@ object PlayerManager {
     /** 给 UI 用的歌单流 */
     private val _playlistsFlow = MutableStateFlow<List<LocalPlaylist>>(emptyList())
     val playlistsFlow: StateFlow<List<LocalPlaylist>> = _playlistsFlow
+
+    private fun isPreparedInPlayer(): Boolean = player.currentMediaItem != null
 
     private data class PersistedState(
         val playlist: List<SongItem>,
@@ -445,10 +447,20 @@ object PlayerManager {
     }
 
     fun play() {
-        if (hasItems()) {
-            player.play()
-        } else if (currentPlaylist.isNotEmpty() && currentIndex != -1) {
-            playAtIndex(currentIndex)
+        when {
+            isPreparedInPlayer() -> {
+                // 播放器里已经有 MediaItem，直接播
+                player.play()
+            }
+            currentPlaylist.isNotEmpty() && currentIndex != -1 -> {
+                // 有队列且知道当前位置，装载并播该首
+                playAtIndex(currentIndex)
+            }
+            currentPlaylist.isNotEmpty() -> {
+                // 有队列但没有效 index
+                playAtIndex(0)
+            }
+            else -> { /* 没队列，啥也不做 */ }
         }
     }
 
@@ -600,7 +612,7 @@ object PlayerManager {
         persistState()
     }
 
-    fun hasItems(): Boolean = player.currentMediaItem != null
+    fun hasItems(): Boolean = currentPlaylist.isNotEmpty()
 
 
     /** 添加当前歌到“我喜欢的音乐” */
