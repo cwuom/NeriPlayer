@@ -118,6 +118,8 @@ import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.formatDuration
 import moe.ouom.neriplayer.util.formatPlayCount
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Shadow
 import moe.ouom.neriplayer.util.HapticFloatingActionButton
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
@@ -303,7 +305,11 @@ fun PlaylistDetailScreen(
                                     Text(
                                         text = ui.header?.name ?: playlist.name,
                                         style = MaterialTheme.typography.headlineSmall.copy(
-                                            fontWeight = FontWeight.Bold
+                                            shadow = Shadow(
+                                                color = Color.Black.copy(alpha = 0.6f),
+                                                offset = Offset(2f, 2f),
+                                                blurRadius = 4f
+                                            )
                                         ),
                                         color = Color.White,
                                         maxLines = 2,
@@ -312,7 +318,13 @@ fun PlaylistDetailScreen(
                                     Spacer(Modifier.height(4.dp))
                                     Text(
                                         text = "播放量 ${formatPlayCount(ui.header?.playCount ?: playlist.playCount)} · ${(ui.header?.trackCount ?: playlist.trackCount)} 首",
-                                        style = MaterialTheme.typography.bodySmall,
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            shadow = Shadow(
+                                                color = Color.Black.copy(alpha = 0.6f),
+                                                offset = Offset(2f, 2f),
+                                                blurRadius = 4f
+                                            )
+                                        ),
                                         color = Color.White.copy(alpha = 0.9f)
                                     )
                                 }
