@@ -431,7 +431,7 @@ fun NowPlayingScreen(
                     lyrics = lyrics,
                     currentTimeMs = currentPosition,
                     modifier = Modifier.fillMaxWidth().weight(8f),
-                    textColor = if (isSystemInDarkTheme()) Color.White else Color.Black,
+                    textColor = MaterialTheme.colorScheme.onBackground,
                     visualSpec = LyricVisualSpec(),
                     lyricOffsetMs = 1000L   // fuck, 网易云的逐字歌曲偏移 1000ms 才准确
                 )
