@@ -25,6 +25,7 @@ package moe.ouom.neriplayer.ui.component
 
 import android.annotation.SuppressLint
 import android.os.Build
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
@@ -208,6 +209,8 @@ fun AppleMusicLyric(
 ) {
     val spec = visualSpec
     val listState = rememberLazyListState()
+    var isUserScrolling by remember { mutableStateOf(false) }
+    var isAutoScrolling by remember { mutableStateOf(false) }
 
     val currentIndex = remember(lyrics, currentTimeMs + lyricOffsetMs) {
         findCurrentLineIndex(lyrics, currentTimeMs + lyricOffsetMs)
@@ -215,7 +218,16 @@ fun AppleMusicLyric(
 
     LaunchedEffect(currentIndex) {
         if (currentIndex >= 0 && !listState.isScrollInProgress) {
+            isAutoScrolling = true
             listState.animateScrollToItem(currentIndex)
+            isAutoScrolling = false
+            isUserScrolling = false // Explicitly reset here
+        }
+    }
+
+    LaunchedEffect(listState.isScrollInProgress) {
+        if (listState.isScrollInProgress && !isAutoScrolling) {
+            isUserScrolling = true
         }
     }
 
@@ -236,89 +248,113 @@ fun AppleMusicLyric(
                 .verticalEdgeFade(fadeHeight = 72.dp)
         ) {
             itemsIndexed(lyrics) { index, line ->
-                val distance = abs(index - currentIndex)
-                val isActive = index == currentIndex
-
-                val targetScale = if (isActive) spec.activeScale else scaleForDistance(distance, spec)
-                val scale by animateFloatAsState(
-                    targetValue = targetScale,
-                    animationSpec = spring(stiffness = Spring.StiffnessLow, dampingRatio = 0.85f),
-                    label = "lyric_scale"
-                )
-
-                val tilt = if (isActive) 0f else if (index < currentIndex) spec.pageTiltDeg else -spec.pageTiltDeg
-                val rotationX by animateFloatAsState(
-                    targetValue = tilt,
-                    animationSpec = tween(durationMillis = spec.flipDurationMs),
-                    label = "lyric_flip"
-                )
-
-                val blurRadiusDp = if (isActive) 0.dp else {
-                    val t = ((distance - 1).coerceAtLeast(0) / 3f).coerceIn(0f, 1f)
-                    lerp(spec.inactiveBlurNear, spec.inactiveBlurFar, t)
-                }
-                val blurRadiusPx = with(density) { blurRadiusDp.toPx() }
-
-                var blurEffect: androidx.compose.ui.graphics.RenderEffect? = null
-                var shadowEffect: Shadow? = null
-
-                if (blurRadiusPx > 0.1f) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                        blurEffect = BlurEffect(blurRadiusPx, blurRadiusPx, TileMode.Decal)
-                    } else {
-                        shadowEffect = Shadow(
-                            color = textColor.copy(alpha = 0.28f),
-                            offset = Offset.Zero,
-                            blurRadius = blurRadiusPx
-                        )
-                    }
-                }
-
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = centerPadding / 2, horizontal = 24.dp)
-                        .widthIn(max = maxTextWidth)
-                        .graphicsLayer {
-                            transformOrigin = TransformOrigin(0.5f, if (index < currentIndex) 1f else 0f)
-                            cameraDistance = 16f * density.density
-                            this.rotationX = rotationX
-                            scaleX = scale
-                            scaleY = scale
-                            renderEffect = blurEffect
-                        },
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    if (isActive) {
-                        AppleMusicActiveLine(
-                            line = line,
-                            currentTimeMs = currentTimeMs + lyricOffsetMs,
-                            activeColor = textColor,
-                            inactiveColor = textColor.copy(alpha = 0.5f),
-                            fontSize = fontSize,
-                            fadeWidth = 12.dp,
-                            spec = spec
-                        )
-                    } else {
+                Crossfade(
+                    targetState = isUserScrolling,
+                    animationSpec = tween(1000),
+                    label = "lyric_mode_fade"
+                ) { isScrolling ->
+                    if (isScrolling) {
                         Text(
                             text = line.text,
                             style = TextStyle(
-                                color = textColor.copy(alpha = alphaForDistance(distance, inactiveAlphaNear, inactiveAlphaFar)),
+                                color = textColor,
                                 fontSize = fontSize,
                                 fontWeight = FontWeight.Medium,
-                                textAlign = TextAlign.Center,
-                                // 4. 应用 Shadow (只在 API 31 以下的设备上生效)
-                                shadow = shadowEffect
+                                textAlign = TextAlign.Center
                             ),
-                            maxLines = 1,
-                            softWrap = false
+                            maxLines = Int.MAX_VALUE,
+                            softWrap = true,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = centerPadding / 2, horizontal = 24.dp)
+                                .widthIn(max = maxTextWidth)
                         )
+                    } else {
+                        val distance = abs(index - currentIndex)
+                        val isActive = index == currentIndex
+
+                        val targetScale = if (isActive) spec.activeScale else scaleForDistance(distance, spec)
+                        val scale by animateFloatAsState(
+                            targetValue = targetScale,
+                            animationSpec = spring(stiffness = Spring.StiffnessLow, dampingRatio = 0.85f),
+                            label = "lyric_scale"
+                        )
+
+                        val tilt = if (isActive) 0f else if (index < currentIndex) spec.pageTiltDeg else -spec.pageTiltDeg
+                        val rotationX by animateFloatAsState(
+                            targetValue = tilt,
+                            animationSpec = tween(durationMillis = spec.flipDurationMs),
+                            label = "lyric_flip"
+                        )
+
+                        val blurRadiusDp = if (isActive) 0.dp else {
+                            val t = ((distance - 1).coerceAtLeast(0) / 3f).coerceIn(0f, 1f)
+                            lerp(spec.inactiveBlurNear, spec.inactiveBlurFar, t)
+                        }
+                        val blurRadiusPx = with(density) { blurRadiusDp.toPx() }
+
+                        var blurEffect: androidx.compose.ui.graphics.RenderEffect? = null
+                        var shadowEffect: Shadow? = null
+
+                        if (blurRadiusPx > 0.1f) {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                blurEffect = BlurEffect(blurRadiusPx, blurRadiusPx, TileMode.Decal)
+                            } else {
+                                shadowEffect = Shadow(
+                                    color = textColor.copy(alpha = 0.28f),
+                                    offset = Offset.Zero,
+                                    blurRadius = blurRadiusPx
+                                )
+                            }
+                        }
+
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = centerPadding / 2, horizontal = 24.dp)
+                                .widthIn(max = maxTextWidth)
+                                .graphicsLayer {
+                                    transformOrigin = TransformOrigin(0.5f, if (index < currentIndex) 1f else 0f)
+                                    cameraDistance = 16f * density.density
+                                    this.rotationX = rotationX
+                                    scaleX = scale
+                                    scaleY = scale
+                                    renderEffect = blurEffect
+                                },
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            if (isActive) {
+                                AppleMusicActiveLine(
+                                    line = line,
+                                    currentTimeMs = currentTimeMs + lyricOffsetMs,
+                                    activeColor = textColor,
+                                    inactiveColor = textColor.copy(alpha = 0.5f),
+                                    fontSize = fontSize,
+                                    fadeWidth = 12.dp,
+                                    spec = spec
+                                )
+                            } else {
+                                Text(
+                                    text = line.text,
+                                    style = TextStyle(
+                                        color = textColor.copy(alpha = alphaForDistance(distance, inactiveAlphaNear, inactiveAlphaFar)),
+                                        fontSize = fontSize,
+                                        fontWeight = FontWeight.Medium,
+                                        textAlign = TextAlign.Center,
+                                        shadow = shadowEffect
+                                    ),
+                                    maxLines = Int.MAX_VALUE,
+                                    softWrap = true
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
     }
 }
+
 
 /**
  * 解析网易云 yrc（逐字/逐词）
