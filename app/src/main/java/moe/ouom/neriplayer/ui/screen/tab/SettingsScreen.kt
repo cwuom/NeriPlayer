@@ -600,7 +600,7 @@ fun SettingsScreen(
                     when (selectedTab) {
                         0 -> {
                             Text(
-                                "将打开内置浏览器（桌面UA）访问 music.163.com，登录成功后点击右上角“读取 Cookie 并返回”。",
+                                "将打开内置浏览器（桌面UA）访问 music.163.com，登录成功后点击右上角 “完成”。",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
