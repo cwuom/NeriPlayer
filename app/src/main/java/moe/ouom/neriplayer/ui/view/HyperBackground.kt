@@ -27,6 +27,7 @@ import android.os.Build
 import android.view.View
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,6 +39,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.ViewCompat
 import kotlinx.coroutines.isActive
+import moe.ouom.neriplayer.core.player.PlayerManager
+import kotlin.math.max
 
 /**
  * 渲染 Hyper 背景。
@@ -124,5 +127,40 @@ fun HyperBackground(
             }
         }
 
+    }
+
+    val level by PlayerManager.audioLevelFlow.collectAsState(0f)
+    val beat  by PlayerManager.beatImpulseFlow.collectAsState(0f)
+
+    LaunchedEffect(painter, hostView, currentIsDark) {
+        if (painter == null || hostView == null) return@LaunchedEffect
+        val v = hostView!!
+
+        awaitViewReady(v)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            try {
+                painter.showRuntimeShader(context, v, null, currentIsDark)
+            } catch (_: Throwable) { return@LaunchedEffect }
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            var startNs = 0L
+            var beatEnv = 0f
+            while (isActive) {
+                withFrameNanos { t ->
+                    if (startNs == 0L) startNs = t
+                    val seconds = ((t - startNs) / 1_000_000_000.0).toFloat()
+                    painter.setAnimTime(seconds % 62.831852f)
+
+                    beatEnv = max(beatEnv * 0.92f, beat)
+                    painter.setReactive(level, beatEnv)
+
+                    val w = v.width; val h = v.height
+                    if (w > 0 && h > 0) painter.setResolution(floatArrayOf(w.toFloat(), h.toFloat()))
+                    painter.updateMaterials()
+                    v.setRenderEffect(painter.renderEffect)
+                }
+            }
+        }
     }
 }

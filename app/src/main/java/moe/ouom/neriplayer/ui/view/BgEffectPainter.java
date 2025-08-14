@@ -69,6 +69,8 @@ public class BgEffectPainter {
     private final float uShadowColorOffset = 0.3f;
     private final float uShadowNoiseScale = 5.0f;
     private final float uShadowOffset = 0.01f;
+    private float uMusicLevel = 0f;
+    private float uBeat = 0f;
 
     public BgEffectPainter(Context context) {
         mContext = context;
@@ -90,6 +92,15 @@ public class BgEffectPainter {
         mBgRuntimeShader.setFloatUniform("uLightOffset", uLightOffset);
         mBgRuntimeShader.setFloatUniform("uAlphaOffset", uAlphaOffset);
         mBgRuntimeShader.setFloatUniform("uShadowNoiseScale", uShadowNoiseScale);
+        mBgRuntimeShader.setFloatUniform("uMusicLevel", uMusicLevel);
+        mBgRuntimeShader.setFloatUniform("uBeat", uBeat);
+    }
+
+    public void setReactive(float level, float beat) {
+        this.uMusicLevel = Math.max(0f, Math.min(1f, level));
+        this.uBeat = Math.max(0f, Math.min(1f, beat));
+        mBgRuntimeShader.setFloatUniform("uMusicLevel", this.uMusicLevel);
+        mBgRuntimeShader.setFloatUniform("uBeat", this.uBeat);
     }
 
     public RenderEffect getRenderEffect() {
@@ -99,6 +110,8 @@ public class BgEffectPainter {
     public void updateMaterials() {
         mBgRuntimeShader.setFloatUniform("uAnimTime", uAnimTime);
         mBgRuntimeShader.setFloatUniform("uResolution", uResolution);
+        mBgRuntimeShader.setFloatUniform("uMusicLevel", uMusicLevel);
+        mBgRuntimeShader.setFloatUniform("uBeat", uBeat);
     }
 
     public void setAnimTime(float f) {

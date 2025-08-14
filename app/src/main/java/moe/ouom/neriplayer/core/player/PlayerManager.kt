@@ -169,6 +169,9 @@ object PlayerManager {
 
     private var playJob: Job? = null
 
+    val audioLevelFlow get() = AudioReactive.level
+    val beatImpulseFlow get() = AudioReactive.beat
+
     private fun isPreparedInPlayer(): Boolean = player.currentMediaItem != null
 
     private data class PersistedState(
@@ -199,7 +202,8 @@ object PlayerManager {
 
         val mediaSourceFactory = DefaultMediaSourceFactory(cacheDsFactory)
 
-        player = ExoPlayer.Builder(app)
+        val renderersFactory = ReactiveRenderersFactory(app)
+        player = ExoPlayer.Builder(app, renderersFactory)
             .setMediaSourceFactory(mediaSourceFactory)
             .build()
 

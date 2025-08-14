@@ -22,6 +22,10 @@ uniform float uShadowColorOffset;
 uniform float uShadowNoiseScale;
 uniform float uShadowOffset;
 
+// 音乐驱动参数
+uniform float uMusicLevel;  // 0..1, 平滑音量
+uniform float uBeat;        // 0..1, 脉冲
+
 vec3 hsl2rgb(in vec3 c)
 {
     vec3 rgb = clamp(abs(mod(c.x*6.0+vec3(0.0, 4.0, 2.0), 6.0)-3.0)-1.0, 0.0, 1.0);
@@ -130,60 +134,65 @@ float gradientNoise(in vec2 uv)
 }
 
 vec4 main(vec2 fragCoord){
-
     vec2 vUv = fragCoord/uResolution;
     vUv.y = 1.0-vUv.y;
     vec2 uv = vUv;
     uv -= vec2(0., uTranslateY);
 
+    float zoom = 1.0 + 0.04 * clamp(uMusicLevel, 0., 1.) + 0.10 * uBeat;
+    vec2  center = vec2(0.5);
+    uv = (uv - center) / zoom + center;
+
+    uv += (uBeat * uBeat) * 0.006 * vec2(sin(uAnimTime * 60.0), cos(uAnimTime * 54.0));
+
     uv.xy -= uBound.xy;
     uv.xy /= uBound.zw;
 
     vec3 hsv;
-
     vec4 color = vec4(0.0);
 
     float noiseValue = perlin(vUv * uNoiseScale + vec2(-uAnimTime, -uAnimTime));
+
+    float pointOffset = uPointOffset + 0.02 * uMusicLevel + 0.05 * uBeat;
+    float pointRadiusMulti = uPointRadiusMulti * (1.0 + 0.05 * uMusicLevel + 0.12 * uBeat);
 
     // draw circles
     for (int i = 0; i < 4; i++){
         vec4 pointColor = uColors[i];
         pointColor.rgb *= pointColor.a;
         vec2 point = uPoints[i].xy;
-        float rad = uPoints[i].z * uPointRadiusMulti;
+        float rad = uPoints[i].z * pointRadiusMulti;
 
-        point.x += sin(uAnimTime + point.y) * uPointOffset;
-        point.y += cos(uAnimTime + point.x) * uPointOffset;
+        point.x += sin(uAnimTime + point.y) * pointOffset;
+        point.y += cos(uAnimTime + point.x) * pointOffset;
 
         float d = distance(uv, point);
         float pct = smoothstep(rad, 0., d);
 
         color.rgb = mix(color.rgb, pointColor.rgb, pct);
-        color.a = mix(color.a, pointColor.a, pct);
+        color.a   = mix(color.a,   pointColor.a,   pct);
     }
 
     float oppositeNoise = smoothstep(0., 1., noiseValue);
-    color.rgb /= color.a;
+    color.rgb /= max(color.a, 1e-5);
     hsv = rgb2hsv(color.rgb);
-    hsv.y = mix(hsv.y, 0.0, oppositeNoise * uSaturateOffset);
-    color.rgb = hsv2rgb(hsv);
 
-    color.rgb += oppositeNoise * uLightOffset;
+    // 饱和与亮度，level/beat 驱动
+    hsv.y = clamp(hsv.y + (0.12 * uMusicLevel + 0.30 * uBeat) * uSaturateOffset, 0.0, 1.0);
+    color.rgb = hsv2rgb(hsv);
+    color.rgb += (0.05 * uMusicLevel + 0.14 * uBeat) * uLightOffset;
+
+    // 透明度，轻度呼吸
     color.a = clamp(color.a, 0., 1.);
-    color.a *= uAlphaMulti;
+    float alphaMod = clamp(1.0 - 0.18 * uMusicLevel - 0.12 * uBeat, 0.55, 1.0);
+    color.a *= uAlphaMulti * alphaMod;
 
     vec4 texColor = uTexBitmap.eval(vec2(vUv.x, 1.0 - vUv.y)*uTexWH);
-    vec4 uiColor = uTex.eval(vec2(vUv.x, 1.0 - vUv.y)*uResolution);
+    vec4 uiColor  = uTex.eval(vec2(vUv.x, 1.0 - vUv.y)*uResolution);
 
-    vec4 fragColor;
-
+    // 颗粒
     color += (10.0 / 255.0) * gradientNoise(fragCoord.xy) - (5.0 / 255.0);
 
-    if (uiColor.a < 0.01) {
-        fragColor = color;
-    } else {
-        fragColor = uiColor;
-    }
-
+    vec4 fragColor = (uiColor.a < 0.01) ? color : uiColor;
     return vec4(fragColor.rgb*fragColor.a, fragColor.a);
 }
