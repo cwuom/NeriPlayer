@@ -167,6 +167,8 @@ object PlayerManager {
     private val _playlistsFlow = MutableStateFlow<List<LocalPlaylist>>(emptyList())
     val playlistsFlow: StateFlow<List<LocalPlaylist>> = _playlistsFlow
 
+    private var playJob: Job? = null
+
     private fun isPreparedInPlayer(): Boolean = player.currentMediaItem != null
 
     private data class PersistedState(
@@ -380,7 +382,9 @@ object PlayerManager {
             shuffleBag.remove(index)
         }
 
-        ioScope.launch {
+        playJob?.cancel()
+        _playbackPositionMs.value = 0L
+        playJob = ioScope.launch {
             when (val result = getSongUrl(song.id)) {
                 is SongUrlResult.Success -> {
                     consecutivePlayFailures = 0
@@ -599,11 +603,14 @@ object PlayerManager {
     private fun stopProgressUpdates() { progressJob?.cancel(); progressJob = null }
 
     private fun stopAndClearPlaylist() {
+        playJob?.cancel()
+        playJob = null
         player.stop()
         player.clearMediaItems()
         _isPlayingFlow.value = false
         _currentSongFlow.value = null
         _currentMediaUrl.value = null
+        _playbackPositionMs.value = 0L
         currentIndex = -1
         currentPlaylist = emptyList()
         _currentQueueFlow.value = emptyList()

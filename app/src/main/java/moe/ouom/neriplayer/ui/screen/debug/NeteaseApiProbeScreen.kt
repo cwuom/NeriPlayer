@@ -105,7 +105,6 @@ fun NeteaseApiProbeScreen() {
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("仅 我喜欢的音乐 歌单ID") }
 
-                // ⬇⬇⬇ 新增：获取歌词（固定歌曲ID 33894312）
                 OutlinedButton(
                     onClick = { vm.callLyric33894312AndCopy() },
                     enabled = !ui.running,

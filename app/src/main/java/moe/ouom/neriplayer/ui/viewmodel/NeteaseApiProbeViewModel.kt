@@ -69,9 +69,7 @@ class NeteaseApiProbeViewModel(app: Application) : AndroidViewModel(app) {
         client.getLikedPlaylistId(0)
     }
 
-    // ⬇⬇⬇ 新增：仅获取歌词（固定歌曲ID 33894312）
     fun callLyric33894312AndCopy() = launchAndCopy("lyric_33894312") {
-        // 默认选项：lrc、逐字、翻译、假名、逐词全要
         client.getLyricNew(33894312L)
     }
 
