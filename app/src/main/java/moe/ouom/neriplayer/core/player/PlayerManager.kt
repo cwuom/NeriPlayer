@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -174,6 +175,8 @@ object PlayerManager {
 
     private fun isPreparedInPlayer(): Boolean = player.currentMediaItem != null
 
+    private var pendingOffload: Boolean? = null
+
     private data class PersistedState(
         val playlist: List<SongItem>,
         val index: Int
@@ -206,6 +209,22 @@ object PlayerManager {
         player = ExoPlayer.Builder(app, renderersFactory)
             .setMediaSourceFactory(mediaSourceFactory)
             .build()
+
+        val want = pendingOffload ?: true
+        applyOffloadInternal(want)
+        pendingOffload = null
+
+        val audioOffload = TrackSelectionParameters.AudioOffloadPreferences.Builder()
+            .setAudioOffloadMode(
+                TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_DISABLED
+            )
+            .build()
+
+        player.trackSelectionParameters = player.trackSelectionParameters
+            .buildUpon()
+            .setAudioOffloadPreferences(audioOffload)
+            .build()
+
 
         player.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
@@ -773,6 +792,36 @@ object PlayerManager {
             _currentSongFlow.value = currentPlaylist.getOrNull(currentIndex)
         } catch (e: Exception) {
             NPLogger.w("NERI-PlayerManager", "Failed to restore state: ${e.message}")
+        }
+    }
+
+    fun setOffloadEnabled(enable: Boolean) {
+        if (!initialized) {
+            pendingOffload = enable
+            return
+        }
+        applyOffloadInternal(enable)
+    }
+
+    private fun applyOffloadInternal(enable: Boolean) {
+        if (!initialized) { pendingOffload = enable; return }
+
+        NPLogger.d("NERI-PlayerManager","OffloadEnabled->$enable")
+        val mode = if (enable)
+            TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_ENABLED
+        else
+            TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_DISABLED
+
+        val prefs = TrackSelectionParameters.AudioOffloadPreferences.Builder()
+            .setAudioOffloadMode(mode)
+            .build()
+
+        mainScope.launch {
+            val newParams = player.trackSelectionParameters
+                .buildUpon()
+                .setAudioOffloadPreferences(prefs)
+                .build()
+            player.trackSelectionParameters = newParams
         }
     }
 }

@@ -90,45 +90,6 @@ fun HyperBackground(
         }
     }
 
-    LaunchedEffect(painter, hostView, currentIsDark) {
-        if (painter == null || hostView == null) return@LaunchedEffect
-        val v = hostView!!
-
-        // 等待就绪，再初始化 RuntimeShader
-        // 避免 NPE
-        awaitViewReady(v)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            try {
-                painter.showRuntimeShader(context, v, /* container */ null, currentIsDark)
-            } catch (t: Throwable) {
-                t.printStackTrace()
-                return@LaunchedEffect
-            }
-        }
-
-        // 帧驱动
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            var startNs = 0L
-            while (isActive) {
-                withFrameNanos { t: Long ->
-                    if (startNs == 0L) startNs = t
-                    val seconds = ((t - startNs) / 1_000_000_000.0).toFloat()
-                    painter.setAnimTime(seconds % 62.831852f)
-
-                    val w = v.width
-                    val h = v.height
-                    if (w > 0 && h > 0) {
-                        painter.setResolution(floatArrayOf(w.toFloat(), h.toFloat()))
-                    }
-
-                    painter.updateMaterials()
-                    v.setRenderEffect(painter.renderEffect)
-                }
-            }
-        }
-
-    }
-
     val level by PlayerManager.audioLevelFlow.collectAsState(0f)
     val beat  by PlayerManager.beatImpulseFlow.collectAsState(0f)
 

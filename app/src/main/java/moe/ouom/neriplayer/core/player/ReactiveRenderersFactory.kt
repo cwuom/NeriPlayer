@@ -43,7 +43,7 @@ class ReactiveRenderersFactory(context: Context) : DefaultRenderersFactory(conte
         val tee = TeeAudioProcessor(AudioReactive.teeSink)
         return DefaultAudioSink.Builder(context)
             .setAudioProcessors(arrayOf<AudioProcessor>(tee))
-            .setEnableFloatOutput(true)
+            .setEnableFloatOutput(false)
             .setEnableAudioTrackPlaybackParams(true)
             .build()
     }
