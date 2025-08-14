@@ -25,9 +25,12 @@ package moe.ouom.neriplayer.ui.component
 
 import android.annotation.SuppressLint
 import android.os.Build
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -35,8 +38,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -121,38 +127,45 @@ data class LyricEntry(
     val words: List<WordTiming>? = null
 )
 
-/** 根据当前时间计算该行的高亮进度（0f..1f） */
+/**
+ * 根据当前时间计算该行的高亮进度（0f..1f），基于字符数进行精确计算
+ */
 fun calculateLineProgress(line: LyricEntry, currentTimeMs: Long): Float {
     val start = line.startTimeMs
     val end = line.endTimeMs
+
     if (currentTimeMs <= start) return 0f
     if (currentTimeMs >= end) return 1f
 
     val words = line.words
-    if (words.isNullOrEmpty()) {
-        return (currentTimeMs - start).toFloat() / (end - start).toFloat()
+    val totalChars = line.text.length
+    if (words.isNullOrEmpty() || totalChars == 0) {
+        val lineDur = (end - start).coerceAtLeast(1)
+        return ((currentTimeMs - start).toFloat() / lineDur).coerceIn(0f, 1f)
     }
 
-    var completed = 0
-    var partial = 0f
-    for ((i, w) in words.withIndex()) {
-        val ws = w.startTimeMs
-        val we = w.endTimeMs
-        if (currentTimeMs < ws) break
-        if (currentTimeMs in ws..we) {
-            val dur = (we - ws).coerceAtLeast(1)
-            partial = (currentTimeMs - ws).toFloat() / dur.toFloat()
-            completed = i
-            break
-        } else {
-            completed = i + 1
+    var completedChars = 0
+    for (word in words) {
+        val ws = word.startTimeMs
+        val we = word.endTimeMs
+
+        if (currentTimeMs < ws) {
+            return completedChars.toFloat() / totalChars
         }
-    }
-    val total = words.size.coerceAtLeast(1)
-    val p = (completed + partial) / total.toFloat()
-    return p.coerceIn(0f, 1f)
-}
 
+        if (currentTimeMs < we) {
+            val wordDur = (we - ws).coerceAtLeast(1)
+            val timeInWord = currentTimeMs - ws
+            val partialProgress = timeInWord.toFloat() / wordDur
+            val partialChars = partialProgress * word.charCount
+            return ((completedChars + partialChars) / totalChars).coerceIn(0f, 1f)
+        }
+
+        completedChars += word.charCount
+    }
+
+    return 1f
+}
 /** 找到当前时间所在的行索引 */
 fun findCurrentLineIndex(lines: List<LyricEntry>, currentTimeMs: Long): Int {
     if (lines.isEmpty()) return -1
@@ -190,13 +203,14 @@ fun AppleMusicLyric(
     inactiveAlphaFar: Float = 0.40f,
     fontSize: TextUnit = 18.sp,
     centerPadding: Dp = 16.dp,
-    visualSpec: LyricVisualSpec = LyricVisualSpec()
+    visualSpec: LyricVisualSpec = LyricVisualSpec(),
+    lyricOffsetMs: Long = 0L,
 ) {
     val spec = visualSpec
     val listState = rememberLazyListState()
 
-    val currentIndex = remember(lyrics, currentTimeMs) {
-        findCurrentLineIndex(lyrics, currentTimeMs)
+    val currentIndex = remember(lyrics, currentTimeMs + lyricOffsetMs) {
+        findCurrentLineIndex(lyrics, currentTimeMs + lyricOffsetMs)
     }
 
     LaunchedEffect(currentIndex) {
@@ -278,7 +292,7 @@ fun AppleMusicLyric(
                     if (isActive) {
                         AppleMusicActiveLine(
                             line = line,
-                            currentTimeMs = currentTimeMs,
+                            currentTimeMs = currentTimeMs + lyricOffsetMs,
                             activeColor = textColor,
                             inactiveColor = textColor.copy(alpha = 0.5f),
                             fontSize = fontSize,
@@ -358,13 +372,19 @@ fun parseNeteaseYrc(yrc: String): List<LyricEntry> {
 @Composable
 fun Modifier.multilineGradientReveal(
     layout: TextLayoutResult?,
-    revealOffsetChars: Float, // 小数级字符偏移
+    revealOffsetChars: Float,
     textLength: Int,
     fadeWidth: Dp
 ): Modifier = this
     .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
     .drawWithContent {
         if (layout == null || textLength == 0 || revealOffsetChars <= 0f) {
+            // 如果不需要揭示，直接返回
+            return@drawWithContent
+        }
+
+        if (revealOffsetChars >= textLength) {
+            drawContent()
             return@drawWithContent
         }
 
@@ -387,8 +407,8 @@ fun Modifier.multilineGradientReveal(
         for (i in 0 until line) {
             val l = layout.getLineLeft(i)
             val r = layout.getLineRight(i)
-            val t = layout.getLineTop(i).toFloat()
-            val b = layout.getLineBottom(i).toFloat()
+            val t = layout.getLineTop(i)
+            val b = layout.getLineBottom(i)
             clipRect(left = l, top = t, right = r, bottom = b) {
                 this@drawWithContent.drawContent()
             }
@@ -396,8 +416,8 @@ fun Modifier.multilineGradientReveal(
 
         val l = layout.getLineLeft(line)
         val r = layout.getLineRight(line)
-        val t = layout.getLineTop(line).toFloat()
-        val b = layout.getLineBottom(line).toFloat()
+        val t = layout.getLineTop(line)
+        val b = layout.getLineBottom(line)
         val lineStart = layout.getLineStart(line)
         val lineEnd = layout.getLineEnd(line, true)
         if (lineEnd <= lineStart) return@drawWithContent
@@ -434,7 +454,6 @@ fun Modifier.multilineGradientReveal(
             )
         }
     }
-
 /**
  * 顶层当前行
  */
@@ -453,13 +472,33 @@ fun AppleMusicActiveLine(
     val progressTarget = remember(line, currentTimeMs) {
         calculateLineProgress(line, currentTimeMs).coerceIn(0f, 1f)
     }
-    val revealOffsetChars by animateFloatAsState(
-        targetValue = line.text.length * progressTarget,
-        animationSpec = spring(stiffness = Spring.StiffnessLow, dampingRatio = 0.92f),
-        label = "reveal_chars_anim"
-    )
 
-    val isWordCurrentlyActive = isWordActive(line, currentTimeMs)
+    val revealOffsetCharsAnimatable = remember(line.text) { Animatable(0f) }
+
+    LaunchedEffect(progressTarget) {
+        val targetChars = line.text.length * progressTarget
+
+        if (revealOffsetCharsAnimatable.value == 0f && progressTarget > 0) {
+            revealOffsetCharsAnimatable.animateTo(
+                targetValue = targetChars,
+                animationSpec = tween(durationMillis = 1000, easing = LinearEasing)
+            )
+        } else {
+            revealOffsetCharsAnimatable.snapTo(targetChars)
+        }
+    }
+
+    val revealOffsetChars = revealOffsetCharsAnimatable.value
+
+    val mergedWords = remember(line.words) {
+        mergeWordTimings(line.words)
+    }
+
+
+
+    val isWordCurrentlyActive = remember(mergedWords, currentTimeMs) {
+        findActiveWord(mergedWords, currentTimeMs) != null
+    }
     val headGlowRadius by animateDpAsState(
         targetValue = if (isWordCurrentlyActive) spec.glowRadiusExpanded else 0.dp,
         animationSpec = spring(stiffness = spec.glowPulseStiffness, dampingRatio = spec.glowPulseDamping),
@@ -517,60 +556,6 @@ fun AppleMusicActiveLine(
     }
 }
 
-
-private fun isWordActive(line: LyricEntry, currentTimeMs: Long): Boolean {
-    return currentWordAndSustainStable(line, currentTimeMs) != null
-}
-fun currentWordAndSustainStable(
-    line: LyricEntry,
-    t: Long,
-    marginMs: Long = 80L,
-    mergeGapMs: Long = 90L
-): ActiveWord? {
-    val words = line.words ?: return null
-    val merged: MutableList<Triple<IntRange, Long, Long>> = mutableListOf()
-    var offset = 0
-    var accStart = words.first().startTimeMs
-    var accEnd = words.first().endTimeMs
-    var accRangeStart = 0
-    var accRangeEnd = words.first().charCount.coerceAtLeast(1) - 1
-
-    fun flush() { merged += Triple(accRangeStart..accRangeEnd, accStart, accEnd) }
-
-    for (i in 1 until words.size) {
-        val wPrevEnd = accEnd
-        val w = words[i]
-        val ws = w.startTimeMs
-        val we = w.endTimeMs
-        val chars = w.charCount.coerceAtLeast(1)
-        val rStart = offset + (accRangeEnd - accRangeStart + 1)
-        val rEnd = rStart + chars - 1
-
-        if (ws - wPrevEnd <= mergeGapMs) {
-            accEnd = maxOf(accEnd, we)
-            accRangeEnd = rEnd
-        } else {
-            flush()
-            accStart = ws
-            accEnd = we
-            accRangeStart = rStart
-            accRangeEnd = rEnd
-        }
-    }
-    flush()
-
-    for ((range, start, end) in merged) {
-        val s = start - marginMs
-        val e = end + marginMs
-        if (t in s..e) {
-            val dur = (end - start).coerceAtLeast(1)
-            val tIn = ((t - start).toFloat() / dur).coerceIn(0f, 1f)
-            val sustain = ((dur - 140f) / (900f - 140f)).coerceIn(0f, 1f)
-            return ActiveWord(range, sustain, tIn)
-        }
-    }
-    return null
-}
 
 data class ActiveWord(val range: IntRange, val sustainWeight: Float, val tInWord: Float)
 
@@ -659,7 +644,111 @@ private fun DrawScope.drawRadialHeadGlow(
     )
 }
 
+/**
+ * 将单词时间戳合并的逻辑提取出来
+ */
+private fun mergeWordTimings(words: List<WordTiming>?, mergeGapMs: Long = 90L): List<Triple<IntRange, Long, Long>> {
+    if (words.isNullOrEmpty()) return emptyList()
 
+    val merged = mutableListOf<Triple<IntRange, Long, Long>>()
+    var accStart = words.first().startTimeMs
+    var accEnd = words.first().endTimeMs
+    var accRangeStart = 0
+    var accRangeEnd = words.first().charCount.coerceAtLeast(1) - 1
+
+    fun flush() { merged += Triple(accRangeStart..accRangeEnd, accStart, accEnd) }
+
+    val offset = 0
+    for (i in 1 until words.size) {
+        val wPrevEnd = accEnd
+        val w = words[i]
+        val chars = w.charCount.coerceAtLeast(1)
+        val rStart = offset + (accRangeEnd - accRangeStart + 1)
+        val rEnd = rStart + chars - 1
+
+        if (w.startTimeMs - wPrevEnd <= mergeGapMs) {
+            accEnd = maxOf(accEnd, w.endTimeMs)
+            accRangeEnd = rEnd
+        } else {
+            flush()
+            accStart = w.startTimeMs
+            accEnd = w.endTimeMs
+            accRangeStart = rStart
+            accRangeEnd = rEnd
+        }
+    }
+    flush()
+    return merged
+}
+
+/**
+ * 从已合并的列表中查找当前活动的单词
+ */
+private fun findActiveWord(
+    mergedWords: List<Triple<IntRange, Long, Long>>,
+    t: Long,
+    marginMs: Long = 80L
+): ActiveWord? {
+    for ((range, start, end) in mergedWords) {
+        val s = start - marginMs
+        val e = end + marginMs
+        if (t in s..e) {
+            val dur = (end - start).coerceAtLeast(1)
+            val tIn = ((t - start).toFloat() / dur).coerceIn(0f, 1f)
+            val sustain = ((dur - 140f) / (900f - 140f)).coerceIn(0f, 1f)
+            return ActiveWord(range, sustain, tIn)
+        }
+    }
+    return null
+}
+
+@Composable
+fun DebugActiveLine(
+    line: LyricEntry,
+    currentTimeMs: Long,
+    activeColor: Color,
+    inactiveColor: Color,
+    fontSize: TextUnit
+) {
+    val progressTarget = remember(line, currentTimeMs) {
+        calculateLineProgress(line, currentTimeMs)
+    }
+
+    val revealCharIndex = (line.text.length * progressTarget).toInt()
+
+    val highlightedText = line.text.substring(0, revealCharIndex.coerceIn(0, line.text.length))
+    val remainingText = line.text.substring(revealCharIndex.coerceIn(0, line.text.length))
+
+    val textStyle = TextStyle(
+        fontSize = fontSize,
+        fontWeight = FontWeight.Bold,
+        textAlign = TextAlign.Center
+    )
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Row {
+            Text(
+                text = highlightedText,
+                style = textStyle,
+                color = activeColor,
+            )
+            Text(
+                text = remainingText,
+                style = textStyle,
+                color = inactiveColor,
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = "Time: $currentTimeMs ms | Progress: ${(progressTarget * 100).toInt()}% | Chars: $revealCharIndex/${line.text.length}",
+            fontSize = 12.sp,
+            color = Color.Gray,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
 
 private fun scaleForDistance(d: Int, spec: LyricVisualSpec): Float =
     when {

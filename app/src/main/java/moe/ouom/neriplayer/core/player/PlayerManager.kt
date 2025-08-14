@@ -595,7 +595,7 @@ object PlayerManager {
         progressJob = mainScope.launch {
             while (isActive) {
                 _playbackPositionMs.value = player.currentPosition
-                delay(100)
+                delay(40)
             }
         }
     }

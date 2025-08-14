@@ -82,7 +82,6 @@ class AudioPlayerService : Service() {
         private const val CHANNEL_ID = "neriplayer_playback_channel"
     }
 
-    private var progressJob: Job? = null
     private lateinit var becomingNoisyReceiver: BroadcastReceiver
 
     private lateinit var mediaSession: MediaSessionCompat
@@ -120,10 +119,22 @@ class AudioPlayerService : Service() {
         serviceScope.launch {
             PlayerManager.currentSongFlow.collect {
                 updateMetadata()
+                updateNotification()
+            }
+        }
+
+        serviceScope.launch {
+            PlayerManager.isPlayingFlow.collect {
                 updatePlaybackState()
                 updateNotification()
             }
         }
+        serviceScope.launch {
+            PlayerManager.playbackPositionFlow.collect {
+                updatePlaybackState()
+            }
+        }
+
 
         // 通知渠道
         val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
@@ -210,16 +221,6 @@ class AudioPlayerService : Service() {
 
 //        val notif = buildNotification()
 //        startForeground(NOTIFICATION_ID, notif)
-
-        // 进度轮询
-        if (progressJob == null) {
-            progressJob = serviceScope.launch {
-                while (isActive) {
-                    updatePlaybackState()
-                    delay(1000)
-                }
-            }
-        }
 
         return START_STICKY
     }
@@ -404,7 +405,6 @@ class AudioPlayerService : Service() {
 
     override fun onDestroy() {
         unregisterReceiver(becomingNoisyReceiver)
-        progressJob?.cancel()
         serviceScope.cancel()
         mediaSession.isActive = false
         mediaSession.release()
