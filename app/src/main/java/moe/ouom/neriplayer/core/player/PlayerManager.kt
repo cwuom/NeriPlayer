@@ -48,6 +48,7 @@ import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import kotlinx.coroutines.CoroutineScope
@@ -175,8 +176,6 @@ object PlayerManager {
 
     private fun isPreparedInPlayer(): Boolean = player.currentMediaItem != null
 
-    private var pendingOffload: Boolean? = null
-
     private data class PersistedState(
         val playlist: List<SongItem>,
         val index: Int
@@ -209,10 +208,6 @@ object PlayerManager {
         player = ExoPlayer.Builder(app, renderersFactory)
             .setMediaSourceFactory(mediaSourceFactory)
             .build()
-
-        val want = pendingOffload ?: true
-        applyOffloadInternal(want)
-        pendingOffload = null
 
         val audioOffload = TrackSelectionParameters.AudioOffloadPreferences.Builder()
             .setAudioOffloadMode(
@@ -792,36 +787,6 @@ object PlayerManager {
             _currentSongFlow.value = currentPlaylist.getOrNull(currentIndex)
         } catch (e: Exception) {
             NPLogger.w("NERI-PlayerManager", "Failed to restore state: ${e.message}")
-        }
-    }
-
-    fun setOffloadEnabled(enable: Boolean) {
-        if (!initialized) {
-            pendingOffload = enable
-            return
-        }
-        applyOffloadInternal(enable)
-    }
-
-    private fun applyOffloadInternal(enable: Boolean) {
-        if (!initialized) { pendingOffload = enable; return }
-
-        NPLogger.d("NERI-PlayerManager","OffloadEnabled->$enable")
-        val mode = if (enable)
-            TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_ENABLED
-        else
-            TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_DISABLED
-
-        val prefs = TrackSelectionParameters.AudioOffloadPreferences.Builder()
-            .setAudioOffloadMode(mode)
-            .build()
-
-        mainScope.launch {
-            val newParams = player.trackSelectionParameters
-                .buildUpon()
-                .setAudioOffloadPreferences(prefs)
-                .build()
-            player.trackSelectionParameters = newParams
         }
     }
 }

@@ -72,8 +72,10 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.google.gson.Gson
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.player.AudioPlayerService
+import moe.ouom.neriplayer.core.player.AudioReactive
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.SettingsRepository
 import moe.ouom.neriplayer.navigation.Destinations
@@ -150,10 +152,11 @@ fun NeriApp(
 
         val snackbarHostState = remember { SnackbarHostState() }
 
+
         DisposableEffect(showNowPlaying) {
-            PlayerManager.setOffloadEnabled(!showNowPlaying)
+            AudioReactive.enabled = showNowPlaying
             onDispose {
-                PlayerManager.setOffloadEnabled(true)
+                AudioReactive.enabled = false
             }
         }
 

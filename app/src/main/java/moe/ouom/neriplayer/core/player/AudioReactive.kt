@@ -41,6 +41,7 @@ import kotlin.math.sqrt
  * 从 ExoPlayer PCM 管线中“分流”样本，计算音量 level 与鼓点脉冲 beat
  */
 object AudioReactive {
+    var enabled = true
 
     private const val MIN_BEAT_GAP_NS = 120_000_000L
     private const val DECAY_PER_CALL = 0.90f
@@ -70,10 +71,11 @@ object AudioReactive {
         }
 
         override fun handleBuffer(buffer: ByteBuffer) {
-            if (!buffer.hasRemaining()) return
+            if (!enabled || !buffer.hasRemaining()) return
+
             val lvl = when (encoding) {
                 C.ENCODING_PCM_FLOAT -> rmsFloat(buffer)
-                else                  -> rms16(buffer) // 16bit as default
+                else                 -> rms16(buffer) // 16bit as default
             } // lvl ~ [0..1] 线性幅值
 
             // 双时间常数包络：快/慢
