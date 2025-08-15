@@ -43,6 +43,8 @@ object SettingsKeys {
     val FOLLOW_SYSTEM_DARK = booleanPreferencesKey("follow_system_dark")
     val DISCLAIMER_ACCEPTED_V2 = booleanPreferencesKey("disclaimer_accepted_v2")
     val AUDIO_QUALITY = stringPreferencesKey("audio_quality")
+    val BILI_AUDIO_QUALITY = stringPreferencesKey("bili_audio_quality")
+    val KEY_DEV_MODE = booleanPreferencesKey("dev_mode_enabled")
 }
 
 class SettingsRepository(private val context: Context) {
@@ -57,6 +59,13 @@ class SettingsRepository(private val context: Context) {
 
     val audioQualityFlow: Flow<String> =
         context.dataStore.data.map { it[SettingsKeys.AUDIO_QUALITY] ?: "exhigh" }
+
+    val biliAudioQualityFlow: Flow<String> =
+        context.dataStore.data.map { it[SettingsKeys.BILI_AUDIO_QUALITY] ?: "high" }
+
+    val devModeEnabledFlow: Flow<Boolean> =
+        context.dataStore.data.map { it[SettingsKeys.KEY_DEV_MODE] ?: false }
+
     val disclaimerAcceptedFlow: Flow<Boolean?> =
         flow {
             emit(null) // 加载态
@@ -84,6 +93,14 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setAudioQuality(value: String) {
         context.dataStore.edit { it[SettingsKeys.AUDIO_QUALITY] = value }
+    }
+
+    suspend fun setBiliAudioQuality(value: String) {
+        context.dataStore.edit { it[SettingsKeys.BILI_AUDIO_QUALITY] = value }
+    }
+
+    suspend fun setDevModeEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.KEY_DEV_MODE] = enabled }
     }
 
     /** 备用：一次性读取（非 Compose 场景） */

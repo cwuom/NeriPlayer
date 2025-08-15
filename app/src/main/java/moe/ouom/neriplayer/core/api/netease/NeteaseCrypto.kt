@@ -122,7 +122,7 @@ object NeteaseCrypto {
         return plain.copyOfRange(0, plain.size - pad)
     }
 
-    /** RSA 加密随机密钥，使用与官方客户端一致的无填充算法。 */
+    /** RSA 加密随机密钥，使用与官方客户端一致的无填充算法  */
     private fun rsaEncrypt(text: String): String {
         return try {
             val cleanedKey = publicKeyPem

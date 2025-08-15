@@ -112,9 +112,11 @@ class MainActivity : ComponentActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
         setContent {
+            val repo = SettingsRepository(this)
+            val devModeEnabled by repo.devModeEnabledFlow.collectAsState(initial = false)
             NPLogger.init(
                 context = this,
-                enableFileLogging = BuildConfig.DEBUG
+                enableFileLogging = devModeEnabled
             )
 
             val dynamicColor by settingsRepository.dynamicColorFlow.collectAsState(initial = true)

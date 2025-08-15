@@ -123,7 +123,11 @@ fun SettingsScreen(
     forceDark: Boolean,
     onForceDarkChange: (Boolean) -> Unit,
     preferredQuality: String,
-    onQualityChange: (String) -> Unit
+    onQualityChange: (String) -> Unit,
+    biliPreferredQuality: String,
+    onBiliQualityChange: (String) -> Unit,
+    devModeEnabled: Boolean,
+    onDevModeChange: (Boolean) -> Unit
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val context = LocalContext.current
@@ -137,6 +141,8 @@ fun SettingsScreen(
     var showNeteaseSheet by remember { mutableStateOf(false) }
     val neteaseVm: NeteaseAuthViewModel = viewModel()
 
+    var showBiliQualityDialog by remember { mutableStateOf(false) }
+
     // 弹窗内提示信息
     var inlineMsg by remember { mutableStateOf<String?>(null) }
 
@@ -149,6 +155,8 @@ fun SettingsScreen(
     var cookieText by remember { mutableStateOf("") }
 
     val cookieScroll = rememberScrollState()
+
+    var versionTapCount by remember { mutableStateOf(0) }
 
     // Bilibili 登录
     var showBiliCookieDialog by remember { mutableStateOf(false) }
@@ -182,6 +190,19 @@ fun SettingsScreen(
             else -> preferredQuality
         }
     }
+
+    val biliQualityLabel = remember(biliPreferredQuality) {
+        when (biliPreferredQuality) {
+            "dolby"   -> "杜比全景声"
+            "hires"   -> "Hi-Res"
+            "lossless"-> "无损"
+            "high"    -> "高（约192kbps）"
+            "medium"  -> "中（约128kbps）"
+            "low"     -> "低（约64kbps）"
+            else -> biliPreferredQuality
+        }
+    }
+
     LaunchedEffect(neteaseVm) {
         neteaseVm.events.collect { e ->
             when (e) {
@@ -424,6 +445,23 @@ fun SettingsScreen(
                 )
             }
 
+            item {
+                ListItem(
+                    leadingContent = {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_bilibili),
+                            contentDescription = "B 站默认音质",
+                            modifier = Modifier.size(24.dp),
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    headlineContent = { Text("B 站默认音质", style = MaterialTheme.typography.titleMedium) },
+                    supportingContent = { Text("$biliQualityLabel - ${biliPreferredQuality}") },
+                    modifier = Modifier.clickable { showBiliQualityDialog = true },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                )
+            }
+
             // 关于
             item {
                 ListItem(
@@ -467,7 +505,22 @@ fun SettingsScreen(
                         )
                     },
                     headlineContent = { Text("版本", style = MaterialTheme.typography.titleMedium) },
-                    supportingContent = { Text(BuildConfig.VERSION_NAME) },
+                    supportingContent = {
+                        val hint = if (!devModeEnabled) "" else "（DEBUG MODE）"
+                        Text("${BuildConfig.VERSION_NAME} $hint")
+                    },
+                    modifier = Modifier.clickable {
+                        if (!devModeEnabled) {
+                            versionTapCount++
+                            if (versionTapCount >= 7) {
+                                onDevModeChange(true)
+                                inlineMsg = "已开启调试模式"
+                                versionTapCount = 0
+                            }
+                        } else {
+                            inlineMsg = "调试模式已开启"
+                        }
+                    },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
             }
@@ -511,6 +564,49 @@ fun SettingsScreen(
                 )
             }
         }
+    }
+
+    if (showBiliQualityDialog) {
+        AlertDialog(
+            onDismissRequest = { showBiliQualityDialog = false },
+            title = { Text("选择 B 站默认音质") },
+            text = {
+                Column {
+                    val options = listOf(
+                        "dolby" to "杜比全景声",
+                        "hires" to "Hi-Res",
+                        "lossless" to "无损",
+                        "high" to "高（约192kbps）",
+                        "medium" to "中（约128kbps）",
+                        "low" to "低（约64kbps）"
+                    )
+                    options.forEach { (level, label) ->
+                        ListItem(
+                            headlineContent = { Text(label) },
+                            trailingContent = {
+                                if (level == biliPreferredQuality) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Check,
+                                        contentDescription = "Selected",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            },
+                            modifier = Modifier.clickable {
+                                onBiliQualityChange(level)
+                                showBiliQualityDialog = false
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                HapticTextButton(onClick = { showBiliQualityDialog = false }) {
+                    Text("关闭")
+                }
+            }
+        )
     }
 
     // 网易云登录窗

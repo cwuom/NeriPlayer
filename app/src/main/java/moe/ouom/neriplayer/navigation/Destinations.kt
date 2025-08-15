@@ -30,6 +30,8 @@ sealed class Destinations(val route: String, val label: String) {
     data object Settings : Destinations("settings", "设置")
 
     data object Debug : Destinations("debug", "调试")
+    data object DebugBili : Destinations("debug/bili", "B 站调试")
+    data object DebugNetease : Destinations("debug/netease", "网易云调试")
 
     // 带参数的歌单详情路由
     data object PlaylistDetail : Destinations("playlist_detail/{playlistId}", "歌单详情")

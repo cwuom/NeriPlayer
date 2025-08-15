@@ -43,7 +43,7 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import kotlin.math.max
 
 /**
- * 渲染 Hyper 背景。
+ * 渲染 Hyper 背景
  * - Android 13+（API 33）启用 RuntimeShader；低版本自动降级为透明
  * - 通过 withFrameNanos 获取逐帧时间，驱动 BgEffectPainter
  */

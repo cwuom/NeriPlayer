@@ -73,7 +73,6 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.google.gson.Gson
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.BuildConfig
 import moe.ouom.neriplayer.core.player.AudioPlayerService
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.SettingsRepository
@@ -84,6 +83,8 @@ import moe.ouom.neriplayer.ui.screen.LocalPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.NowPlayingScreen
 import moe.ouom.neriplayer.ui.screen.PlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.debug.NeteaseApiProbeScreen
+import moe.ouom.neriplayer.ui.screen.debug.BiliApiProbeScreen
+import moe.ouom.neriplayer.ui.screen.debug.DebugHomeScreen
 import moe.ouom.neriplayer.ui.screen.host.ExploreHostScreen
 import moe.ouom.neriplayer.ui.screen.tab.HomeScreen
 import moe.ouom.neriplayer.ui.screen.tab.LibraryScreen
@@ -109,6 +110,8 @@ fun NeriApp(
 
     var showNowPlaying by rememberSaveable { mutableStateOf(false) }
 
+    val devModeEnabled by repo.devModeEnabledFlow.collectAsState(initial = false)
+
     val isDark = when {
         forceDark -> true
         followSystemDark -> isSystemInDarkTheme()
@@ -132,6 +135,7 @@ fun NeriApp(
 
     val scope = rememberCoroutineScope()
     val preferredQuality by repo.audioQualityFlow.collectAsState(initial = "exhigh")
+    val biliPreferredQuality by repo.biliAudioQualityFlow.collectAsState(initial = "high")
 
     NeriTheme(
         followSystemDark = followSystemDark,
@@ -178,7 +182,7 @@ fun NeriApp(
                                 add(Destinations.Explore to Icons.Outlined.Search)
                                 add(Destinations.Library to Icons.Outlined.LibraryMusic)
                                 add(Destinations.Settings to Icons.Outlined.Settings)
-                                if (BuildConfig.DEBUG) {
+                                if (devModeEnabled) {
                                     add(Destinations.Debug to Icons.Outlined.BugReport)
                                 }
                             }
@@ -293,14 +297,45 @@ fun NeriApp(
                             forceDark = forceDark,
                             onForceDarkChange = { scope.launch { repo.setForceDark(it) } },
                             preferredQuality = preferredQuality,
-                            onQualityChange = { scope.launch { repo.setAudioQuality(it) } }
+                            onQualityChange = { scope.launch { repo.setAudioQuality(it) } },
+                            onBiliQualityChange = {
+                                scope.launch { repo.setBiliAudioQuality(it) }
+                            },
+                            biliPreferredQuality = biliPreferredQuality,
+                            devModeEnabled = devModeEnabled,
+                            onDevModeChange = { enabled ->
+                                scope.launch { repo.setDevModeEnabled(enabled) }
+                                if (enabled) {
+                                    navController.navigate(Destinations.Debug.route)
+                                }
+                            }
                         )
                     }
 
-                    // 调试页面路由
                     composable(Destinations.Debug.route) {
+                        DebugHomeScreen(
+                            onOpenBiliDebug = { navController.navigate(Destinations.DebugBili.route) },
+                            onOpenNeteaseDebug = { navController.navigate(Destinations.DebugNetease.route) },
+                            onHideDebugMode = {
+                                scope.launch {
+                                    repo.setDevModeEnabled(false)
+                                }
+                                // 隐藏后回到设置页
+                                navController.navigate(Destinations.Settings.route) {
+                                    popUpTo(Destinations.Home.route) { inclusive = false }
+                                    launchSingleTop = true
+                                }
+                            }
+                        )
+                    }
+
+                    composable(Destinations.DebugBili.route) {
+                        BiliApiProbeScreen()
+                    }
+                    composable(Destinations.DebugNetease.route) {
                         NeteaseApiProbeScreen()
                     }
+
 
                     composable(
                         Destinations.Explore.route,

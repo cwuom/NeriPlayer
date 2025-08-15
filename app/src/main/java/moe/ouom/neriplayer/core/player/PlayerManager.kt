@@ -390,7 +390,7 @@ object PlayerManager {
         }
 
         if (consecutivePlayFailures >= MAX_CONSECUTIVE_FAILURES) {
-            NPLogger.e("NERI-PlayerManager", "已连续失败 $consecutivePlayFailures 次，停止播放。")
+            NPLogger.e("NERI-PlayerManager", "已连续失败 $consecutivePlayFailures 次，停止播放")
             mainScope.launch { Toast.makeText(application, "多首歌曲无法播放，已停止", Toast.LENGTH_SHORT).show() }
             stopAndClearPlaylist()
             return
