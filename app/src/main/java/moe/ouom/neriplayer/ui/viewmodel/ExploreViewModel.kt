@@ -31,7 +31,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
+import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.data.BiliCookieRepository
 import moe.ouom.neriplayer.data.NeteaseCookieRepository
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
@@ -39,6 +42,15 @@ import org.json.JSONObject
 import java.io.IOException
 
 private const val TAG = "NERI-ExploreVM"
+
+/**
+ * 定义搜索源
+ * @param displayName 用于在UI上显示的名称
+ */
+enum class SearchSource(val displayName: String) {
+    NETEASE("网易云"),
+    BILIBILI("哔哩哔哩")
+}
 
 data class ExploreUiState(
     val expanded: Boolean = false,
@@ -49,32 +61,81 @@ data class ExploreUiState(
     val searching: Boolean = false,
     val searchError: String? = null,
     val searchResults: List<SongItem> = emptyList(),
+    val selectedSearchSource: SearchSource = SearchSource.NETEASE
 )
 
 class ExploreViewModel(application: Application) : AndroidViewModel(application) {
-    private val repo = NeteaseCookieRepository(application)
-    private val client = NeteaseClient()
+    private val neteaseRepo = NeteaseCookieRepository(application)
+    private val neteaseClient = NeteaseClient()
+
+    private val biliCookieRepo = BiliCookieRepository(application)
+    private val biliClient = BiliClient(biliCookieRepo)
 
     private val _uiState = MutableStateFlow(ExploreUiState())
     val uiState: StateFlow<ExploreUiState> = _uiState
 
     init {
-        // 登录后自动注入 Cookie 并触发刷新
+        // 注入网易云 Cookie
         viewModelScope.launch {
-            repo.cookieFlow.collect { raw ->
+            neteaseRepo.cookieFlow.collect { raw ->
                 val cookies = raw.toMutableMap()
                 if (!cookies.containsKey("os")) cookies["os"] = "pc"
-                client.setPersistedCookies(cookies)
-                NPLogger.d(TAG, "cookieFlow updated: keys=${cookies.keys.joinToString()}")
-                if (!cookies["MUSIC_U"].isNullOrBlank()) {
-                    NPLogger.d(TAG, "Detected login cookie, refreshing high-quality playlists")
-                    loadHighQuality() // 自动按当前选中标签刷新
+                neteaseClient.setPersistedCookies(cookies)
+                NPLogger.d(TAG, "Netease cookie updated: keys=${cookies.keys.joinToString()}")
+                if (!cookies["MUSIC_U"].isNullOrBlank() && _uiState.value.playlists.isEmpty()) {
+                    loadHighQuality()
                 }
             }
         }
     }
 
-    /** 设置当前选中标签（仅更新状态，不发请求） */
+    /** 设置当前搜索源 */
+    fun setSearchSource(source: SearchSource) {
+        if (source == _uiState.value.selectedSearchSource) return
+        _uiState.value = _uiState.value.copy(
+            selectedSearchSource = source,
+            searchResults = emptyList(), // 切换源时清空结果
+            searchError = null
+        )
+    }
+
+    /** 统一搜索入口 */
+    fun search(keyword: String) {
+        if (keyword.isBlank()) {
+            _uiState.value = _uiState.value.copy(searchResults = emptyList(), searchError = null)
+            return
+        }
+        when (_uiState.value.selectedSearchSource) {
+            SearchSource.NETEASE -> searchNetease(keyword)
+            SearchSource.BILIBILI -> searchBilibili(keyword)
+        }
+    }
+
+    /** 搜索 Bilibili 视频 */
+    private fun searchBilibili(keyword: String) {
+        _uiState.value = _uiState.value.copy(searching = true, searchError = null)
+        viewModelScope.launch {
+            try {
+                val searchPage = withContext(Dispatchers.IO) {
+                    biliClient.searchVideos(keyword = keyword, page = 1)
+                }
+                // 将B站搜索结果转换为通用的 SongItem
+                val songs = searchPage.items.map { it.toSongItem() }
+                _uiState.value = _uiState.value.copy(
+                    searching = false,
+                    searchError = null,
+                    searchResults = songs
+                )
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    searching = false,
+                    searchError = "Bilibili 搜索失败: ${e.message}",
+                    searchResults = emptyList()
+                )
+            }
+        }
+    }
+
     fun setSelectedTag(tag: String) {
         if (tag == _uiState.value.selectedTag) return
         _uiState.value = _uiState.value.copy(selectedTag = tag)
@@ -89,12 +150,8 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         _uiState.value = _uiState.value.copy(loading = true, error = null)
         viewModelScope.launch {
             try {
-                val cookies = withContext(Dispatchers.IO) { repo.getCookiesOnce() }.toMutableMap()
-                if (!cookies.containsKey("os")) cookies["os"] = "pc"
-                client.setPersistedCookies(cookies)
-
                 val raw = withContext(Dispatchers.IO) {
-                    client.getHighQualityPlaylists(realCat, 50, 0L)
+                    neteaseClient.getHighQualityPlaylists(realCat, 50, 0L)
                 }
                 val mapped = parsePlaylists(raw)
 
@@ -104,15 +161,10 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                     playlists = mapped,
                     selectedTag = realCat
                 )
-            } catch (e: IOException) {
-                _uiState.value = _uiState.value.copy(
-                    loading = false,
-                    error = "网络异常：${e.message}"
-                )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     loading = false,
-                    error = "解析错误：${e.message}"
+                    error = "加载歌单失败: ${e.message}"
                 )
             }
         }
@@ -121,53 +173,39 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     private fun parsePlaylists(raw: String): List<NeteasePlaylist> {
         val result = mutableListOf<NeteasePlaylist>()
         val root = JSONObject(raw)
-        NPLogger.d("NERI-ParsePlaylists", raw)
         if (root.optInt("code") != 200) return emptyList()
         val arr = root.optJSONArray("playlists") ?: return emptyList()
         for (i in 0 until arr.length()) {
             val obj = arr.optJSONObject(i) ?: continue
-            val id = obj.optLong("id", 0)
-            val name = obj.optString("name")
-            val coverImgUrl = obj.optString("coverImgUrl").replace("http://", "https://")
-            val playCount = obj.optLong("playCount", 0)
-            val trackCount = obj.optInt("trackCount", 0)
-            if (id != 0L && name.isNotBlank() && coverImgUrl.isNotBlank()) {
-                result.add(NeteasePlaylist(id, name, coverImgUrl, playCount, trackCount))
-            }
+            result.add(NeteasePlaylist(
+                id = obj.optLong("id"),
+                name = obj.optString("name"),
+                picUrl = obj.optString("coverImgUrl").replace("http://", "https://"),
+                playCount = obj.optLong("playCount"),
+                trackCount = obj.optInt("trackCount")
+            ))
         }
         return result
     }
 
-    /** 搜索歌曲 */
-    fun searchSongs(keyword: String) {
-        if (keyword.isBlank()) return
+    /** 搜索网易云歌曲 */
+    private fun searchNetease(keyword: String) {
         _uiState.value = _uiState.value.copy(searching = true, searchError = null)
         viewModelScope.launch {
             try {
-                val cookies = withContext(Dispatchers.IO) { repo.getCookiesOnce() }.toMutableMap()
-                if (!cookies.containsKey("os")) cookies["os"] = "pc"
-                client.setPersistedCookies(cookies)
-
                 val raw = withContext(Dispatchers.IO) {
-                    client.searchSongs(keyword, limit = 30, offset = 0, type = 1)
+                    neteaseClient.searchSongs(keyword, limit = 30, offset = 0, type = 1)
                 }
                 val songs = parseSongs(raw)
-
                 _uiState.value = _uiState.value.copy(
                     searching = false,
                     searchError = null,
                     searchResults = songs
                 )
-            } catch (e: IOException) {
-                _uiState.value = _uiState.value.copy(
-                    searching = false,
-                    searchError = "网络异常：${e.message}",
-                    searchResults = emptyList()
-                )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     searching = false,
-                    searchError = "解析错误：${e.message}",
+                    searchError = "网易云搜索失败: ${e.message}",
                     searchResults = emptyList()
                 )
             }
@@ -176,56 +214,36 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
 
     private fun parseSongs(raw: String): List<SongItem> {
         val list = mutableListOf<SongItem>()
-        try {
-            val root = JSONObject(raw)
-            if (root.optInt("code") != 200) return emptyList()
-
-            val result = root.optJSONObject("result") ?: return emptyList()
-            val songs = result.optJSONArray("songs") ?: return emptyList()
-
-            for (i in 0 until songs.length()) {
-                val obj = songs.optJSONObject(i) ?: continue
-                val id = obj.optLong("id", 0)
-                val name = obj.optString("name")
-                if (id == 0L || name.isBlank()) continue
-
-                val artistsArr = obj.optJSONArray("ar") ?: obj.optJSONArray("artists")
-                val artistNames = mutableListOf<String>()
-                var artistAvatar = ""
-                if (artistsArr != null) {
-                    for (j in 0 until artistsArr.length()) {
-                        val a = artistsArr.optJSONObject(j) ?: continue
-                        a.optString("name").takeIf { it.isNotBlank() }?.let { artistNames.add(it) }
-                        if (artistAvatar.isBlank()) {
-                            artistAvatar = a.optString("img1v1Url").orEmpty()
-                        }
-                    }
-                }
-                val artistStr = artistNames.joinToString(" / ")
-
-                val albumObj = obj.optJSONObject("al") ?: obj.optJSONObject("album")
-                val albumName = albumObj?.optString("name").orEmpty()
-                var cover = albumObj?.optString("picUrl").orEmpty()
-                if (cover.isBlank()) cover = artistAvatar
-                if (cover.startsWith("http://")) cover = cover.replace("http://", "https://")
-
-                val duration = obj.optLong("dt", obj.optLong("duration", 0))
-
-                list.add(
-                    SongItem(
-                        id = id,
-                        name = name,
-                        artist = artistStr,
-                        album = albumName,
-                        durationMs = duration,
-                        coverUrl = cover.takeIf { it.isNotBlank() }
-                    )
-                )
-            }
-        } catch (e: Exception) {
-            NPLogger.w(TAG, "parseSongs failed: ${e.message}")
+        val root = JSONObject(raw)
+        if (root.optInt("code") != 200) return emptyList()
+        val songs = root.optJSONObject("result")?.optJSONArray("songs") ?: return emptyList()
+        for (i in 0 until songs.length()) {
+            val obj = songs.optJSONObject(i) ?: continue
+            val artistsArr = obj.optJSONArray("ar")
+            val artistNames = if (artistsArr != null) (0 until artistsArr.length())
+                .mapNotNull { artistsArr.optJSONObject(it)?.optString("name") } else emptyList()
+            val albumObj = obj.optJSONObject("al")
+            list.add(SongItem(
+                id = obj.optLong("id"),
+                name = obj.optString("name"),
+                artist = artistNames.joinToString(" / "),
+                album = albumObj?.optString("name").orEmpty(),
+                durationMs = obj.optLong("dt"),
+                coverUrl = albumObj?.optString("picUrl")?.replace("http://", "https://")
+            ))
         }
         return list
     }
+}
 
+/** Bilibili 搜索结果到通用 SongItem 的转换器 */
+private fun BiliClient.SearchVideoItem.toSongItem(): SongItem {
+    return SongItem(
+        id = this.aid, // 使用 avid 作为唯一ID
+        name = this.titlePlain,
+        artist = this.author,
+        album = PlayerManager.BILI_SOURCE_TAG, // 标记来源
+        durationMs = this.durationSec * 1000L,
+        coverUrl = this.coverUrl
+    )
 }

@@ -35,25 +35,33 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -62,12 +70,14 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -80,10 +90,12 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import moe.ouom.neriplayer.ui.viewmodel.ExploreViewModel
 import moe.ouom.neriplayer.ui.viewmodel.NeteasePlaylist
+import moe.ouom.neriplayer.ui.viewmodel.SearchSource
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.util.HapticIconButton
+import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.formatDuration
 import moe.ouom.neriplayer.util.performHapticFeedback
-import moe.ouom.neriplayer.util.HapticTextButton
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -99,24 +111,24 @@ fun ExploreScreen(
         }
     )
     val ui by vm.uiState.collectAsState()
+    var searchQuery by remember { mutableStateOf("") }
+    val focusManager = LocalFocusManager.current
 
     LaunchedEffect(Unit) {
         if (ui.playlists.isEmpty()) vm.loadHighQuality()
     }
 
-    val query = remember { mutableStateOf("") }
     val tags = listOf(
-        "全部",
-        "流行","影视原声","华语","怀旧","摇滚","ACG","欧美","清新","夜晚","儿童","民谣","日语","浪漫",
-        "学习","韩语","工作","电子","粤语","舞曲","伤感","游戏","下午茶","治愈","说唱","轻音乐",
-        "地铁","放松","90后","爵士","驾车","孤独","乡村","运动","感动","网络歌曲","兴奋","R&B/Soul","旅行",
-        "KTV","经典","快乐","散步","古典","安静","酒吧","翻唱","民族","吉他","思念","英伦","钢琴","金属","朋克","器乐",
-        "蓝调","榜单","雷鬼","00后","世界音乐","拉丁","古风","后摇"
+        "全部", "流行", "影视原声", "华语", "怀旧", "摇滚", "ACG", "欧美", "清新", "夜晚", "儿童", "民谣", "日语", "浪漫",
+        "学习", "韩语", "工作", "电子", "粤语", "舞曲", "伤感", "游戏", "下午茶", "治愈", "说唱", "轻音乐"
     )
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     Scaffold(
+        modifier = Modifier
+            .fillMaxSize()
+            .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             LargeTopAppBar(
                 title = { Text("探索") },
@@ -126,151 +138,147 @@ fun ExploreScreen(
                     scrolledContainerColor = MaterialTheme.colorScheme.surface
                 )
             )
-        },
-        modifier = Modifier
-            .fillMaxSize()
-            .nestedScroll(scrollBehavior.nestedScrollConnection)
+        }
     ) { innerPadding ->
-        LazyVerticalGrid(
-            state = gridState,
-            columns = GridCells.Adaptive(150.dp),
-            contentPadding = PaddingValues(
-                start = 16.dp, end = 16.dp,
-                top = innerPadding.calculateTopPadding() + 8.dp,
-                bottom = innerPadding.calculateBottomPadding() + 16.dp
-            ),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.fillMaxSize()
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
         ) {
-            // 搜索框
-            item(span = { GridItemSpan(maxLineSpan) }) {
+            // 搜索栏 & 切换器
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                 OutlinedTextField(
-                    value = query.value,
-                    onValueChange = { query.value = it },
-                    label = { Text("搜索歌曲 / 艺人 / 专辑 / “私人雷达” / “推荐” ...") },
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    label = { Text("搜索...") },
+                    leadingIcon = { Icon(Icons.Default.Search, "Search") },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            HapticIconButton(onClick = {
+                                searchQuery = ""
+                                vm.search("")
+                            }) { Icon(Icons.Default.Clear, "Clear") }
+                        }
+                    },
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = { vm.searchSongs(query.value) }),
+                    keyboardActions = KeyboardActions(onSearch = {
+                        vm.search(searchQuery)
+                        focusManager.clearFocus()
+                    }),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                Spacer(Modifier.height(8.dp))
+                TabRow(selectedTabIndex = ui.selectedSearchSource.ordinal) {
+                    SearchSource.entries.forEach { source ->
+                        Tab(
+                            selected = ui.selectedSearchSource == source,
+                            onClick = {
+                                if (ui.selectedSearchSource != source) {
+                                    vm.setSearchSource(source)
+                                    searchQuery = ""
+                                }
+                            },
+                            text = { Text(source.displayName) }
+                        )
+                    }
+                }
             }
 
-            if (query.value.isNotBlank()) {
+            // 内容区
+            if (searchQuery.isNotEmpty()) {
+                // 显示搜索结果
                 when {
                     ui.searching -> {
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 24.dp),
-                                contentAlignment = Alignment.Center
-                            ) { CircularProgressIndicator() }
-                        }
+                        Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
                     }
                     ui.searchError != null -> {
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            Text(
-                                text = "搜索失败：${ui.searchError}",
-                                color = MaterialTheme.colorScheme.error,
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 16.dp)
-                            )
+                        Box(Modifier.fillMaxSize(), Alignment.Center) {
+                            Text(ui.searchError!!, color = MaterialTheme.colorScheme.error)
                         }
                     }
                     ui.searchResults.isEmpty() -> {
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            Text(
-                                text = "未找到结果",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 16.dp)
-                            )
-                        }
+                        Box(Modifier.fillMaxSize(), Alignment.Center) { Text("未找到结果") }
                     }
                     else -> {
-                        itemsIndexed(
-                            items = ui.searchResults,
-                            key = { _: Int, s: SongItem -> s.id },
-                            span = { _: Int, _: SongItem -> GridItemSpan(maxLineSpan) }
-                        ) { index: Int, song: SongItem ->
-                            SongRow(index + 1, song) {
-                                onSongClick(ui.searchResults, index)
+                        LazyColumn(contentPadding = PaddingValues(top = 8.dp)) {
+                            itemsIndexed(ui.searchResults) { index, song ->
+                                SongRow(index + 1, song) {
+                                    onSongClick(ui.searchResults, index)
+                                }
                             }
                         }
                     }
                 }
             } else {
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    Column(Modifier.fillMaxWidth()) {
-                        val display = if (ui.expanded) tags else tags.take(12)
-
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            display.forEach { tag ->
-                                val selected = (ui.selectedTag == tag)
-                                FilterChip(
-                                    selected = selected,
-                                    onClick = {
-                                        if (!selected) {
-                                            vm.setSelectedTag(tag)
-                                            vm.loadHighQuality(tag)
-                                        }
-                                    },
-                                    label = { Text(tag) },
-                                )
-                            }
+                // 根据源显示默认内容
+                when (ui.selectedSearchSource) {
+                    SearchSource.NETEASE -> {
+                        NeteaseDefaultContent(gridState, ui, tags, vm, onPlay)
+                    }
+                    SearchSource.BILIBILI -> {
+                        Box(Modifier.fillMaxSize(), Alignment.Center) {
+                            Text("在 Bilibili 中发现更多精彩视频", style = MaterialTheme.typography.bodyLarge)
                         }
-
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 4.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            HapticTextButton(onClick = { vm.toggleExpanded() }) {
-                                Text(if (ui.expanded) "收起标签" else "展开更多")
-                            }
-                        }
-                        Spacer(modifier = Modifier.padding(top = 4.dp))
                     }
                 }
             }
-            // 状态区
-            if (ui.loading) {
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 24.dp),
-                        contentAlignment = Alignment.Center
-                    ) { CircularProgressIndicator() }
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+private fun NeteaseDefaultContent(
+    gridState: LazyGridState,
+    ui: moe.ouom.neriplayer.ui.viewmodel.ExploreUiState,
+    tags: List<String>,
+    vm: ExploreViewModel,
+    onPlay: (NeteasePlaylist) -> Unit
+) {
+    LazyVerticalGrid(
+        state = gridState,
+        columns = GridCells.Adaptive(150.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            Column(Modifier.fillMaxWidth()) {
+                val display = if (ui.expanded) tags else tags.take(12)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    display.forEach { tag ->
+                        val selected = (ui.selectedTag == tag)
+                        FilterChip(
+                            selected = selected,
+                            onClick = { if (!selected) vm.loadHighQuality(tag) },
+                            label = { Text(tag) },
+                        )
+                    }
                 }
-            } else if (ui.error != null) {
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    Text(
-                        text = ui.error ?: "",
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 16.dp)
-                    )
+                Box(Modifier.fillMaxWidth(), Alignment.Center) {
+                    HapticTextButton(onClick = { vm.toggleExpanded() }) {
+                        Text(if (ui.expanded) "收起" else "展开更多")
+                    }
                 }
-            } else {
-                items(
-                    items = ui.playlists,
-                    key = { it.id }
-                ) { playlist ->
-                    PlaylistCard(playlist) { onPlay(playlist) }
+            }
+        }
+        if (ui.loading) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Box(Modifier.fillMaxWidth().padding(vertical = 24.dp), Alignment.Center) {
+                    CircularProgressIndicator()
                 }
+            }
+        } else if (ui.error != null) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Text(ui.error!!, color = MaterialTheme.colorScheme.error)
+            }
+        } else {
+            items(items = ui.playlists, key = { it.id }) { playlist ->
+                PlaylistCard(playlist) { onPlay(playlist) }
             }
         }
     }
