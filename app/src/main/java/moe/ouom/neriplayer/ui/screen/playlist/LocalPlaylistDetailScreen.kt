@@ -308,10 +308,12 @@ fun LocalPlaylistDetailScreen(
             val reorderState = rememberReorderableLazyListState(
                 onMove = { from: ItemPosition, to: ItemPosition ->
                     if (!blockSync) blockSync = true
-                    val fromId = from.key as? Long ?: return@rememberReorderableLazyListState
-                    val toId = to.key as? Long ?: return@rememberReorderableLazyListState
-                    val fromIdx = localSongs.indexOfFirst { it.id == fromId }
-                    val toIdx = localSongs.indexOfFirst { it.id == toId }
+                    val fromKey = from.key as? Pair<*, *> ?: return@rememberReorderableLazyListState
+                    val toKey = to.key as? Pair<*, *> ?: return@rememberReorderableLazyListState
+                    val fromId = fromKey.first as? Long ?: return@rememberReorderableLazyListState
+                    val toId = toKey.first as? Long ?: return@rememberReorderableLazyListState
+                    val fromIdx = localSongs.indexOfFirst { it.id == fromId && it.album == fromKey.second }
+                    val toIdx = localSongs.indexOfFirst { it.id == toId && it.album == toKey.second }
                     if (fromIdx != -1 && toIdx != -1 && fromIdx != toIdx) {
                         localSongs.add(toIdx, localSongs.removeAt(fromIdx))
                     }
@@ -535,7 +537,7 @@ fun LocalPlaylistDetailScreen(
                                 items = displayedSongs,
                                 key = { _, song -> song.id to song.album }
                             ) { revIndex, song ->
-                                ReorderableItem(state = reorderState, key = song.id) { isDragging ->
+                                ReorderableItem(state = reorderState, key = song.id to song.album) { isDragging ->
                                     val rowScale by animateFloatAsState(
                                         targetValue = if (isDragging) 1.02f else 1f,
                                         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
