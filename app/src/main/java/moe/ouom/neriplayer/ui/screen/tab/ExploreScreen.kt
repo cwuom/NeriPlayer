@@ -29,63 +29,18 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyGridState
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
-import androidx.compose.material.icons.filled.CheckBox
-import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
-import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DividerDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.LargeTopAppBar
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -111,7 +66,6 @@ import moe.ouom.neriplayer.ui.viewmodel.ExploreViewModel
 import moe.ouom.neriplayer.ui.viewmodel.NeteasePlaylist
 import moe.ouom.neriplayer.ui.viewmodel.SearchSource
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
-import moe.ouom.neriplayer.ui.viewmodel.playlist.toSongItem
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.NPLogger
@@ -137,25 +91,20 @@ fun ExploreScreen(
     val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
 
-    // 本地歌单仓库
     val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
     val allLocalPlaylists by repo.playlists.collectAsState(initial = emptyList())
 
-    // 分P列表弹窗状态
     var showPartsSheet by remember { mutableStateOf(false) }
     var partsInfo by remember { mutableStateOf<BiliClient.VideoBasicInfo?>(null) }
     var clickedSongCoverUrl by remember { mutableStateOf("") }
     val partsSheetState = rememberModalBottomSheetState()
 
-    // 分P选择模式状态
     var partsSelectionMode by remember { mutableStateOf(false) }
-    var selectedParts by remember { mutableStateOf<Set<Int>>(emptySet()) } // 使用分P的 page number 作为ID
+    var selectedParts by remember { mutableStateOf<Set<Int>>(emptySet()) }
 
-    // 导出歌单弹窗状态
     var showExportSheet by remember { mutableStateOf(false) }
     val exportSheetState = rememberModalBottomSheetState()
 
-    // 退出分P选择模式的辅助函数
     fun exitPartsSelection() {
         partsSelectionMode = false
         selectedParts = emptySet()
@@ -192,7 +141,6 @@ fun ExploreScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // 搜索栏 & 切换器
             Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                 OutlinedTextField(
                     value = searchQuery,
@@ -232,9 +180,7 @@ fun ExploreScreen(
                 }
             }
 
-            // 内容区
             if (searchQuery.isNotEmpty()) {
-                // 显示搜索结果
                 when {
                     ui.searching -> {
                         Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
@@ -256,10 +202,8 @@ fun ExploreScreen(
                                             try {
                                                 val info = vm.getVideoInfoByAvid(song.id)
                                                 if (info.pages.size <= 1) {
-                                                    // 单P，直接播放
                                                     onSongClick(ui.searchResults, index)
                                                 } else {
-                                                    // 多P，显示弹窗
                                                     partsInfo = info
                                                     clickedSongCoverUrl = song.coverUrl ?: ""
                                                     showPartsSheet = true
@@ -269,7 +213,6 @@ fun ExploreScreen(
                                             }
                                         }
                                     } else {
-                                        // 其他来源，直接播放
                                         onSongClick(ui.searchResults, index)
                                     }
                                 }
@@ -278,7 +221,6 @@ fun ExploreScreen(
                     }
                 }
             } else {
-                // 根据源显示默认内容
                 when (ui.selectedSearchSource) {
                     SearchSource.NETEASE -> {
                         NeteaseDefaultContent(gridState, ui, tags, vm, onPlay)
@@ -293,23 +235,17 @@ fun ExploreScreen(
         }
     }
 
-    // 分P弹窗
     if (showPartsSheet && partsInfo != null) {
         val currentPartsInfo = partsInfo!!
-
-        BackHandler(enabled = partsSelectionMode) {
-            exitPartsSelection()
-        }
-
+        BackHandler(enabled = partsSelectionMode) { exitPartsSelection() }
         ModalBottomSheet(
             onDismissRequest = {
                 showPartsSheet = false
-                exitPartsSelection() // 关闭时重置状态
+                exitPartsSelection()
             },
             sheetState = partsSheetState
         ) {
             Column(Modifier.padding(bottom = 12.dp)) {
-                // 多选模式下的顶部操作栏
                 AnimatedVisibility(visible = partsSelectionMode) {
                     val allSelected = selectedParts.size == currentPartsInfo.pages.size
                     TopAppBar(
@@ -320,7 +256,6 @@ fun ExploreScreen(
                             }
                         },
                         actions = {
-                            // 全选/取消全选
                             HapticIconButton(onClick = {
                                 if (allSelected) {
                                     selectedParts = emptySet()
@@ -333,14 +268,13 @@ fun ExploreScreen(
                                     contentDescription = if (allSelected) "取消全选" else "全选"
                                 )
                             }
-                            // 导出按钮
                             HapticIconButton(
                                 onClick = {
                                     if (selectedParts.isNotEmpty()) {
                                         scope.launch { partsSheetState.hide() }.invokeOnCompletion {
                                             if (!partsSheetState.isVisible) {
                                                 showPartsSheet = false
-                                                showExportSheet = true // 显示导出歌单选择界面
+                                                showExportSheet = true
                                             }
                                         }
                                     }
@@ -350,14 +284,10 @@ fun ExploreScreen(
                                 Icon(Icons.AutoMirrored.Outlined.PlaylistAdd, contentDescription = "导出到歌单")
                             }
                         },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.surface,
-                            scrolledContainerColor = MaterialTheme.colorScheme.surface
-                        )
+                        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
                     )
                 }
 
-                // 视频主标题
                 AnimatedVisibility(visible = !partsSelectionMode) {
                     Text(
                         text = currentPartsInfo.title,
@@ -369,7 +299,6 @@ fun ExploreScreen(
                 }
                 HorizontalDivider()
 
-                // 分P列表
                 LazyColumn {
                     itemsIndexed(currentPartsInfo.pages, key = { _, page -> page.page }) { index, page ->
                         Row(
@@ -413,7 +342,6 @@ fun ExploreScreen(
                                 )
                                 Spacer(Modifier.width(16.dp))
                             }
-
                             Text(
                                 text = "P${page.page}",
                                 style = MaterialTheme.typography.bodyMedium,
@@ -432,7 +360,6 @@ fun ExploreScreen(
         }
     }
 
-    // 导出歌单弹窗
     if (showExportSheet) {
         ModalBottomSheet(
             onDismissRequest = { showExportSheet = false },
@@ -451,7 +378,7 @@ fun ExploreScreen(
                                 .clickable {
                                     val songs = partsInfo!!.pages
                                         .filter { selectedParts.contains(it.page) }
-                                        .map { it.toSongItem(partsInfo!!, clickedSongCoverUrl) }
+                                        .map { page -> vm.toSongItem(page, partsInfo!!, clickedSongCoverUrl) }
 
                                     scope.launch {
                                         repo.addSongsToPlaylist(pl.id, songs)
@@ -490,7 +417,7 @@ fun ExploreScreen(
 
                             val songs = partsInfo!!.pages
                                 .filter { selectedParts.contains(it.page) }
-                                .map { it.toSongItem(partsInfo!!, clickedSongCoverUrl) }
+                                .map { page -> vm.toSongItem(page, partsInfo!!, clickedSongCoverUrl) }
 
                             scope.launch {
                                 repo.createPlaylist(name)
@@ -557,11 +484,11 @@ private fun NeteaseDefaultContent(
             }
         } else if (ui.error != null) {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                Text(ui.error, color = MaterialTheme.colorScheme.error)
+                Text(ui.error!!, color = MaterialTheme.colorScheme.error)
             }
         } else {
             items(items = ui.playlists, key = { it.id }) { playlist ->
-                 PlaylistCard(playlist) { onPlay(playlist) }
+                  PlaylistCard(playlist) { onPlay(playlist) }
             }
         }
     }

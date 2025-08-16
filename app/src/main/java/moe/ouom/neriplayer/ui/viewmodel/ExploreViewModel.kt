@@ -39,7 +39,6 @@ import moe.ouom.neriplayer.data.NeteaseCookieRepository
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
-import java.io.IOException
 
 private const val TAG = "NERI-ExploreVM"
 
@@ -239,6 +238,24 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         return withContext(Dispatchers.IO) {
             biliClient.getVideoBasicInfoByAvid(avid)
         }
+    }
+
+    /**
+     * 将 Bilibili 视频的分P转换为通用的 SongItem
+     * @param page 分P信息
+     * @param basicInfo 视频的基本信息
+     * @param coverUrl 视频封面
+     * @return 转换后的 SongItem
+     */
+    fun toSongItem(page: BiliClient.VideoPage, basicInfo: BiliClient.VideoBasicInfo, coverUrl: String): SongItem {
+        return SongItem(
+            id = basicInfo.aid * 10000 + page.page, // 使用 avid 和 page 组合成唯一 ID
+            name = page.part, // 直接使用分P的标题作为歌曲名
+            artist = basicInfo.ownerName,
+            album = PlayerManager.BILI_SOURCE_TAG,
+            durationMs = page.durationSec * 1000L,
+            coverUrl = coverUrl
+        )
     }
 }
 

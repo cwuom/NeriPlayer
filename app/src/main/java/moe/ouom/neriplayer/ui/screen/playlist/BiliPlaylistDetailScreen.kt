@@ -33,20 +33,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -57,30 +44,8 @@ import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DividerDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -107,7 +72,6 @@ import moe.ouom.neriplayer.ui.viewmodel.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliPlaylistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
-import moe.ouom.neriplayer.ui.viewmodel.playlist.toSongItem
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.NPLogger
@@ -135,7 +99,7 @@ fun BiliPlaylistDetailScreen(
     LaunchedEffect(playlist.mediaId) { vm.start(playlist) }
 
     val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
-    val allLocalPlaylists by repo.playlists.collectAsState()
+    val allLocalPlaylists by repo.playlists.collectAsState(initial = emptyList())
     var selectionMode by remember { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     var showExportSheet by remember { mutableStateOf(false) }
@@ -153,12 +117,11 @@ fun BiliPlaylistDetailScreen(
     fun selectAll() { selectedIds = ui.videos.map { it.id }.toSet() }
     fun exitSelection() { selectionMode = false; clearSelection() }
 
-    // Search
     var showSearch by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
 
     var partsSelectionMode by remember { mutableStateOf(false) }
-    var selectedParts by remember { mutableStateOf<Set<Int>>(emptySet()) } // 使用分P的 page number 作为ID
+    var selectedParts by remember { mutableStateOf<Set<Int>>(emptySet()) }
 
     fun exitPartsSelection() {
         partsSelectionMode = false
@@ -260,7 +223,6 @@ fun BiliPlaylistDetailScreen(
                             Header(playlist = playlist, headerData = ui.header)
                         }
 
-                        // Status block
                         when {
                             ui.loading && ui.videos.isEmpty() -> {
                                 item {
@@ -318,22 +280,16 @@ fun BiliPlaylistDetailScreen(
                                                 try {
                                                     val info = vm.getVideoInfo(item.bvid)
                                                     if (info.pages.size <= 1) {
-                                                        // 单P视频
                                                         val fullList = ui.videos
                                                         val originalIndex =
                                                             fullList.indexOfFirst { it.id == item.id }
                                                         onPlayAudio(fullList, originalIndex)
                                                     } else {
-                                                        // 多P视频
                                                         partsInfo = info
                                                         showPartsSheet = true
                                                     }
                                                 } catch (e: Exception) {
-                                                    NPLogger.e(
-                                                        "BiliPlaylistDetail",
-                                                        "获取分 P 失败",
-                                                        e
-                                                    )
+                                                    NPLogger.e("BiliPlaylistDetail", "获取分 P 失败", e)
                                                 }
                                             }
                                         }
@@ -361,12 +317,11 @@ fun BiliPlaylistDetailScreen(
                                         .fillMaxWidth()
                                         .padding(vertical = 10.dp)
                                         .clickable {
-                                            // 根据模式决定导出的内容
                                             val songs = if (partsSelectionMode && partsInfo != null) {
                                                 val originalVideoItem = displayedVideos.find { it.bvid == partsInfo!!.bvid }
                                                 partsInfo!!.pages
                                                     .filter { selectedParts.contains(it.page) }
-                                                    .map { it.toSongItem(partsInfo!!, originalVideoItem?.coverUrl ?: "") }
+                                                    .map { page -> vm.toSongItem(page, partsInfo!!, originalVideoItem?.coverUrl ?: "") }
                                             } else {
                                                 ui.videos
                                                     .filter { selectedIds.contains(it.id) }
@@ -377,7 +332,7 @@ fun BiliPlaylistDetailScreen(
                                                 repo.addSongsToPlaylist(pl.id, songs)
                                                 showExportSheet = false
                                                 exitSelection()
-                                                exitPartsSelection() // 同时退出分P选择
+                                                exitPartsSelection()
                                             }
                                         },
                                     verticalAlignment = Alignment.CenterVertically
@@ -404,18 +359,16 @@ fun BiliPlaylistDetailScreen(
                             )
                             Spacer(Modifier.width(12.dp))
                             HapticTextButton(
-                                // 同时检查两种选择模式
                                 enabled = newName.isNotBlank() && (selectedIds.isNotEmpty() || selectedParts.isNotEmpty()),
                                 onClick = {
                                     val name = newName.trim()
                                     if (name.isBlank()) return@HapticTextButton
 
-                                    // 根据模式决定导出的内容
                                     val songs = if (partsSelectionMode && partsInfo != null) {
                                         val originalVideoItem = displayedVideos.find { it.bvid == partsInfo!!.bvid }
                                         partsInfo!!.pages
                                             .filter { selectedParts.contains(it.page) }
-                                            .map { it.toSongItem(partsInfo!!, originalVideoItem?.coverUrl ?: "") }
+                                            .map { page -> vm.toSongItem(page, partsInfo!!, originalVideoItem?.coverUrl ?: "") }
                                     } else {
                                         ui.videos
                                             .filter { selectedIds.contains(it.id) }
@@ -430,7 +383,7 @@ fun BiliPlaylistDetailScreen(
                                         }
                                         showExportSheet = false
                                         exitSelection()
-                                        exitPartsSelection() // 同时退出分P选择
+                                        exitPartsSelection()
                                     }
                                 }
                             ) { Text("新建并导出") }
@@ -442,20 +395,15 @@ fun BiliPlaylistDetailScreen(
 
             if (showPartsSheet && partsInfo != null) {
                 val currentPartsInfo = partsInfo!!
-
-                BackHandler(enabled = partsSelectionMode) {
-                    exitPartsSelection()
-                }
-
+                BackHandler(enabled = partsSelectionMode) { exitPartsSelection() }
                 ModalBottomSheet(
                     onDismissRequest = {
                         showPartsSheet = false
-                        exitPartsSelection() // 关闭时重置状态
+                        exitPartsSelection()
                     },
                     sheetState = partsSheetState
                 ) {
                     Column(Modifier.padding(bottom = 12.dp)) {
-                        // 多选模式下的顶部操作栏
                         AnimatedVisibility(visible = partsSelectionMode) {
                             val allSelected = selectedParts.size == currentPartsInfo.pages.size
                             TopAppBar(
@@ -466,7 +414,6 @@ fun BiliPlaylistDetailScreen(
                                     }
                                 },
                                 actions = {
-                                    // 全选/取消全选
                                     HapticIconButton(onClick = {
                                         if (allSelected) {
                                             selectedParts = emptySet()
@@ -479,14 +426,13 @@ fun BiliPlaylistDetailScreen(
                                             contentDescription = if (allSelected) "取消全选" else "全选"
                                         )
                                     }
-                                    // 导出按钮
                                     HapticIconButton(
                                         onClick = {
                                             if (selectedParts.isNotEmpty()) {
                                                 scope.launch { partsSheetState.hide() }.invokeOnCompletion {
                                                     if (!partsSheetState.isVisible) {
                                                         showPartsSheet = false
-                                                        showExportSheet = true // 显示导出歌单选择界面
+                                                        showExportSheet = true
                                                     }
                                                 }
                                             }
@@ -496,14 +442,10 @@ fun BiliPlaylistDetailScreen(
                                         Icon(Icons.AutoMirrored.Outlined.PlaylistAdd, contentDescription = "导出到歌单")
                                     }
                                 },
-                                colors = TopAppBarDefaults.topAppBarColors(
-                                    containerColor = MaterialTheme.colorScheme.surface,
-                                    scrolledContainerColor = MaterialTheme.colorScheme.surface
-                                )
+                                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
                             )
                         }
 
-                        // 视频主标题
                         AnimatedVisibility(visible = !partsSelectionMode) {
                             Text(
                                 text = currentPartsInfo.title,
@@ -516,7 +458,6 @@ fun BiliPlaylistDetailScreen(
 
                         HorizontalDivider()
 
-                        // 分P列表
                         LazyColumn {
                             val originalVideoItem = displayedVideos.find { it.bvid == currentPartsInfo.bvid }
 
@@ -527,14 +468,12 @@ fun BiliPlaylistDetailScreen(
                                         .combinedClickable(
                                             onClick = {
                                                 if (partsSelectionMode) {
-                                                    // 多选模式下，单击是选择/取消选择
                                                     selectedParts = if (selectedParts.contains(page.page)) {
                                                         selectedParts - page.page
                                                     } else {
                                                         selectedParts + page.page
                                                     }
                                                 } else {
-                                                    // 普通模式下，单击是播放
                                                     onPlayParts(currentPartsInfo, index, originalVideoItem?.coverUrl ?: "")
                                                     scope.launch { partsSheetState.hide() }.invokeOnCompletion {
                                                         if (!partsSheetState.isVisible) showPartsSheet = false
@@ -542,7 +481,6 @@ fun BiliPlaylistDetailScreen(
                                                 }
                                             },
                                             onLongClick = {
-                                                // 长按进入多选模式
                                                 if (!partsSelectionMode) {
                                                     partsSelectionMode = true
                                                     selectedParts = setOf(page.page)
@@ -590,7 +528,7 @@ fun BiliPlaylistDetailScreen(
 
 private fun BiliVideoItem.toSongItem(): SongItem {
     return SongItem(
-        id = this.id, // avid
+        id = this.id,
         name = this.title,
         artist = this.uploader,
         album = "Bilibili",
@@ -598,7 +536,6 @@ private fun BiliVideoItem.toSongItem(): SongItem {
         coverUrl = this.coverUrl
     )
 }
-
 
 @Composable
 private fun Header(playlist: BiliPlaylist, headerData: BiliPlaylist?) {

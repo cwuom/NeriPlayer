@@ -553,8 +553,8 @@ object PlayerManager {
         check(initialized) { "Call PlayerManager.initialize(application) first." }
         val songs = videoInfo.pages.map { page ->
             SongItem(
-                id = videoInfo.aid, // avid
-                name = if (videoInfo.pages.size > 1) "${videoInfo.title} P${page.page}. ${page.part}" else videoInfo.title,
+                id = videoInfo.aid,
+                name = page.part,
                 artist = videoInfo.ownerName,
                 album = "$BILI_SOURCE_TAG|${page.cid}",
                 durationMs = page.durationSec * 1000L,
