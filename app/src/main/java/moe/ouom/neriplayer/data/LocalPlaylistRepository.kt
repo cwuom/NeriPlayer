@@ -272,4 +272,24 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
             saveToDisk()
         }
     }
+
+    suspend fun updateSongMetadata(songId: Long, albumIdentifier: String, newSongInfo: SongItem) {
+        withContext(Dispatchers.IO) {
+            val updatedPlaylists = _playlists.value.map { playlist ->
+                val songIndex = playlist.songs.indexOfFirst { it.id == songId && it.album == albumIdentifier }
+
+                if (songIndex != -1) {
+                    val updatedSongs = playlist.songs.toMutableList().apply {
+                        this[songIndex] = newSongInfo
+                    }
+                    playlist.copy(songs = updatedSongs)
+                } else {
+                    playlist
+                }
+            }
+
+            _playlists.value = updatedPlaylists
+            saveToDisk()
+        }
+    }
 }

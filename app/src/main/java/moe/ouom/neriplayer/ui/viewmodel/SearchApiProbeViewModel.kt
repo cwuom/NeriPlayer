@@ -66,8 +66,7 @@ class SearchApiProbeViewModel(app: Application) : AndroidViewModel(app) {
         _ui.value = _ui.value.copy(keyword = newKeyword)
     }
 
-    /** * 在调用 API 前确保 Cookie 已经注入 NeteaseClient
-     */
+    /** 在调用 API 前确保 Cookie 已经注入 NeteaseClient */
     private suspend fun ensureCookies() {
         val cookies = withContext(Dispatchers.IO) { cookieRepo.getCookiesOnce() }
         neteaseClient.setPersistedCookies(cookies)

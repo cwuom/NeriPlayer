@@ -533,7 +533,7 @@ fun LocalPlaylistDetailScreen(
                             // 列表（倒序）
                             itemsIndexed(
                                 items = displayedSongs,
-                                key = { _, song -> song.id }
+                                key = { _, song -> song.id to song.album }
                             ) { revIndex, song ->
                                 ReorderableItem(state = reorderState, key = song.id) { isDragging ->
                                     val rowScale by animateFloatAsState(
@@ -558,8 +558,8 @@ fun LocalPlaylistDetailScreen(
                                                         if (selectionMode) {
                                                             toggleSelect(song.id)
                                                         } else {
-                                                            val baseQueue = localSongs.asReversed()           // 原始展示队列（未搜索过滤）
-                                                            val pos = baseQueue.indexOfFirst { it.id == song.id }
+                                                            val baseQueue = localSongs.asReversed() // 原始展示队列
+                                                            val pos = baseQueue.indexOfFirst { it.id == song.id && it.album == song.album }
                                                             if (pos >= 0) onSongClick(baseQueue, pos)
                                                         }
                                                     },
@@ -632,7 +632,7 @@ fun LocalPlaylistDetailScreen(
                                         }
 
                                         // 右侧：非多选为时间/播放态；多选为手柄
-                                        val isPlayingSong = currentSong?.id == song.id
+                                        val isPlayingSong = currentSong?.id == song.id && currentSong?.album == song.album
                                         val trailingVisible = !isDragging && !selectionMode
                                         val trailingScale by animateFloatAsState(
                                             targetValue = if (trailingVisible) 1f else 0.85f,

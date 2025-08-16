@@ -46,7 +46,7 @@ data class SongDetails(
     val songName: String,
     val singer: String,
     val album: String,
-    val albumArt: ByteArray?,
+    val coverUrl: String?,
     val lyric: String?
 ) {
     override fun equals(other: Any?): Boolean {
@@ -59,7 +59,6 @@ data class SongDetails(
         if (songName != other.songName) return false
         if (singer != other.singer) return false
         if (album != other.album) return false
-        if (!albumArt.contentEquals(other.albumArt)) return false
         if (lyric != other.lyric) return false
 
         return true
@@ -70,7 +69,6 @@ data class SongDetails(
         result = 31 * result + songName.hashCode()
         result = 31 * result + singer.hashCode()
         result = 31 * result + album.hashCode()
-        result = 31 * result + (albumArt?.contentHashCode() ?: 0)
         result = 31 * result + (lyric?.hashCode() ?: 0)
         return result
     }

@@ -71,6 +71,7 @@ import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.api.bili.BiliClientAudioDataSource
 import moe.ouom.neriplayer.core.api.bili.BiliPlaybackRepository
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
+import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.data.BiliCookieRepository
 import moe.ouom.neriplayer.data.LocalPlaylist
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
@@ -81,8 +82,13 @@ import moe.ouom.neriplayer.ui.component.parseNeteaseLrc
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.util.SearchManager
 import org.json.JSONObject
 import java.io.File
+import android.util.Base64
+import moe.ouom.neriplayer.core.api.search.CloudMusicSearchApi
+import moe.ouom.neriplayer.core.api.search.QQMusicSearchApi
+import moe.ouom.neriplayer.core.api.search.SongSearchInfo
 import kotlin.random.Random
 
 data class AudioDevice(
@@ -117,7 +123,7 @@ object PlayerManager {
     private val mainScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var progressJob: Job? = null
 
-    private val neteaseClient = NeteaseClient()
+    val neteaseClient = NeteaseClient()
 
     private lateinit var localRepo: LocalPlaylistRepository
 
@@ -174,6 +180,9 @@ object PlayerManager {
 
     private lateinit var biliRepo: BiliPlaybackRepository
     private lateinit var biliClient: BiliClient
+
+    internal val cloudMusicApi = CloudMusicSearchApi(neteaseClient)
+    internal val qqMusicApi = QQMusicSearchApi()
 
     private fun isPreparedInPlayer(): Boolean = player.currentMediaItem != null
 
@@ -896,6 +905,91 @@ object PlayerManager {
             _currentSongFlow.value = currentPlaylist.getOrNull(currentIndex)
         } catch (e: Exception) {
             NPLogger.w("NERI-PlayerManager", "Failed to restore state: ${e.message}")
+        }
+    }
+
+    fun matchAndReplaceMetadata(songToReplace: SongItem, platform: MusicPlatform) {
+        val originalId = songToReplace.id
+        val originalAlbum = songToReplace.album // B站音源的唯一标识
+
+        ioScope.launch {
+            val newDetails = SearchManager.findBestMatch(songToReplace.name, platform, neteaseClient)
+            if (newDetails == null) {
+                mainScope.launch {
+                    Toast.makeText(application, "未能找到匹配的歌曲信息", Toast.LENGTH_SHORT).show()
+                }
+                return@launch
+            }
+
+            // 创建一个新的 SongItem，保留核心的音源信息
+            val updatedSong = songToReplace.copy(
+                name = newDetails.songName,
+                artist = newDetails.singer,
+                durationMs = songToReplace.durationMs,
+                coverUrl = newDetails.coverUrl
+            )
+
+            val queueIndex = currentPlaylist.indexOfFirst { it.id == originalId && it.album == originalAlbum }
+            if (queueIndex != -1) {
+                val newList = currentPlaylist.toMutableList()
+                newList[queueIndex] = updatedSong
+                currentPlaylist = newList
+                _currentQueueFlow.value = currentPlaylist
+            }
+
+            if (_currentSongFlow.value?.id == originalId && _currentSongFlow.value?.album == originalAlbum) {
+                _currentSongFlow.value = updatedSong
+            }
+
+            localRepo.updateSongMetadata(originalId, originalAlbum, updatedSong)
+        }
+    }
+
+
+    fun replaceMetadataFromSearch(originalSong: SongItem, selectedSong: SongSearchInfo) {
+        ioScope.launch {
+            val platform = selectedSong.source
+
+            val api = when (platform) {
+                MusicPlatform.CLOUD_MUSIC -> cloudMusicApi
+                MusicPlatform.QQ_MUSIC -> qqMusicApi
+            }
+
+            try {
+                val newDetails = api.getSongInfo(selectedSong.id)
+
+                val updatedSong = originalSong.copy(
+                    name = newDetails.songName,
+                    artist = newDetails.singer,
+                    coverUrl = newDetails.coverUrl
+                )
+
+                updateSongInAllPlaces(originalSong, updatedSong)
+
+            } catch (e: Exception) {
+                mainScope.launch { Toast.makeText(application, "匹配失败: ${e.message}", Toast.LENGTH_SHORT).show() }
+            }
+        }
+    }
+
+    private fun updateSongInAllPlaces(originalSong: SongItem, updatedSong: SongItem) {
+        val originalId = originalSong.id
+        val originalAlbum = originalSong.album
+
+        val queueIndex = currentPlaylist.indexOfFirst { it.id == originalId && it.album == originalAlbum }
+        if (queueIndex != -1) {
+            val newList = currentPlaylist.toMutableList()
+            newList[queueIndex] = updatedSong
+            currentPlaylist = newList
+            _currentQueueFlow.value = currentPlaylist
+        }
+
+        if (_currentSongFlow.value?.id == originalId && _currentSongFlow.value?.album == originalAlbum) {
+            _currentSongFlow.value = updatedSong
+        }
+
+        mainScope.launch {
+            localRepo.updateSongMetadata(originalId, originalAlbum, updatedSong)
         }
     }
 }

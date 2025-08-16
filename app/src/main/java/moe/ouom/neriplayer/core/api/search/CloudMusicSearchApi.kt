@@ -46,8 +46,14 @@ import java.io.IOException
     @SerialName("ar") val artists: List<CloudMusicArtist>,
     @SerialName("al") val album: CloudMusicAlbum
 )
+
+@Serializable private data class CloudMusicSongDetail(
+    val name: String,
+    @SerialName("artists") val artists: List<CloudMusicArtist>,
+    @SerialName("album") val album: CloudMusicAlbum,
+)
+
 @Serializable private data class CloudMusicSongDetailResponse(val songs: List<CloudMusicSongDetail>)
-@Serializable private data class CloudMusicSongDetail(val name: String, @SerialName("ar") val artists: List<CloudMusicArtist>, @SerialName("al") val album: CloudMusicAlbum)
 @Serializable private data class CloudMusicArtist(val name: String)
 @Serializable private data class CloudMusicAlbum(val name: String, val picUrl: String?)
 @Serializable private data class CloudMusicLyricResponse(val lrc: CloudMusicLrc?)
@@ -92,12 +98,6 @@ class CloudMusicSearchApi(private val neteaseClient: NeteaseClient) : SearchApi 
                 ?: throw IOException("找不到ID为 $id 的歌曲")
 
             coroutineScope {
-                val albumArtDeferred = async {
-                    songData.album.picUrl?.let { url ->
-                        executeRequest(url, asBytes = true) as? ByteArray
-                    }
-                }
-
                 val lyricDeferred = async {
                     val lyricUrl = "https://music.163.com/api/song/lyric?id=${id}&lv=-1"
                     val lyricJson = executeRequest(lyricUrl) as String
@@ -109,7 +109,7 @@ class CloudMusicSearchApi(private val neteaseClient: NeteaseClient) : SearchApi 
                     songName = songData.name,
                     singer = songData.artists.joinToString("/") { it.name },
                     album = songData.album.name,
-                    albumArt = albumArtDeferred.await(),
+                    coverUrl = songData.album.picUrl,
                     lyric = lyricDeferred.await()
                 )
             }

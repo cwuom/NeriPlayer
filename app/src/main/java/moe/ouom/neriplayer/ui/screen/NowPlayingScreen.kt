@@ -23,7 +23,6 @@ package moe.ouom.neriplayer.ui.screen
  * Created: 2025/8/8
  */
 
-import android.R.attr.textColor
 import android.content.Context
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
@@ -40,10 +39,10 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -60,6 +59,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -67,11 +67,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Headset
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.RepeatOne
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SpeakerGroup
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
@@ -80,13 +85,18 @@ import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -113,21 +123,24 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.Player
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.delay
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.ui.component.AppleMusicLyric
 import moe.ouom.neriplayer.ui.component.LyricEntry
 import moe.ouom.neriplayer.ui.component.LyricVisualSpec
 import moe.ouom.neriplayer.ui.component.WaveformSlider
+import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
+import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.HapticFilledIconButton
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.formatDuration
-import kotlin.collections.isNotEmpty
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -165,7 +178,7 @@ fun NowPlayingScreen(
     val isFavorite = favOverride ?: isFavoriteComputed
 
     // 缩放动画
-    var bumpKey by remember(currentSong?.id) { mutableStateOf(0) }
+    var bumpKey by remember(currentSong?.id) { mutableIntStateOf(0) }
     if (isFavorite) 1.0f else 1.0f
     val scale by animateFloatAsState(
         targetValue = if (bumpKey == 0) 1.0f else 1.12f,
@@ -198,12 +211,15 @@ fun NowPlayingScreen(
     val volumeSheetState = rememberModalBottomSheetState()
 
     var lyrics by remember(currentSong?.id) { mutableStateOf<List<LyricEntry>>(emptyList()) }
+
+    val nowPlayingViewModel: NowPlayingViewModel = viewModel()
+
     LaunchedEffect(currentSong?.id, isFromNetease) {
         val songId = currentSong?.id
-        if (songId != null && isFromNetease) {
-            lyrics = PlayerManager.getNeteaseLyrics(songId)
+        lyrics = if (songId != null && isFromNetease) {
+            PlayerManager.getNeteaseLyrics(songId)
         } else {
-            lyrics = emptyList()
+            emptyList()
         }
     }
 
@@ -258,13 +274,26 @@ fun NowPlayingScreen(
                                 contentDescription = if (fav) "已收藏" else "收藏",
                                 tint = if (fav) Color.Red else LocalContentColor.current,
                                 modifier = Modifier.graphicsLayer {
-                                    // 轻微弹跳缩放（与 AnimatedContent 的 scaleIn 叠加）
                                     val s = if (bumpKey == 0) 1f else scale
                                     scaleX = s
                                     scaleY = s
                                 }
                             )
                         }
+                    }
+
+                    var showMoreOptions by remember { mutableStateOf(false) }
+                    AnimatedVisibility(visible = isFromBili) {
+                        HapticIconButton(onClick = { showMoreOptions = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "更多选项")
+                        }
+                    }
+                    if (showMoreOptions) {
+                        MoreOptionsSheet(
+                            viewModel = nowPlayingViewModel,
+                            originalSong = currentSong!!, // 此时 currentSong 必不为 null
+                            onDismiss = { showMoreOptions = false }
+                        )
                     }
                 },
                 scrollBehavior = scrollBehavior,
@@ -623,6 +652,104 @@ private fun getCurrentAudioDevice(audioManager: AudioManager): Pair<String, Imag
     return Pair("手机扬声器", Icons.Default.SpeakerGroup)
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MoreOptionsSheet(
+    viewModel: NowPlayingViewModel,
+    originalSong: SongItem,
+    onDismiss: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState()
+    var showSearchView by remember { mutableStateOf(false) }
+
+    // 当弹窗打开时，如果需要，预填充搜索词，并搜索
+    LaunchedEffect(showSearchView) {
+        if (showSearchView) {
+            viewModel.prepareForSearch(originalSong.name)
+            viewModel.performSearch()
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = {
+            showSearchView = false
+            onDismiss()
+        },
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface,
+    ) {
+        if (!showSearchView) {
+            Column(Modifier.padding(bottom = 32.dp)) {
+                ListItem(
+                    headlineContent = { Text("获取歌曲信息") },
+                    leadingContent = { Icon(Icons.Outlined.Info, null) },
+                    modifier = Modifier.clickable { showSearchView = true }
+                )
+            }
+        } else {
+            val searchState by viewModel.manualSearchState.collectAsState()
+
+            Column(Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                TextField(
+                    value = searchState.keyword,
+                    onValueChange = { viewModel.onKeywordChange(it) },
+                    label = { Text("搜索关键词") },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    trailingIcon = {
+                        HapticIconButton(onClick = { viewModel.performSearch() }) {
+                            Icon(Icons.Default.Search, contentDescription = "搜索")
+                        }
+                    }
+                )
+
+                // 平台切换
+                TabRow(selectedTabIndex = searchState.selectedPlatform.ordinal) {
+                    MusicPlatform.entries.forEachIndexed { index, platform ->
+                        Tab(
+                            selected = searchState.selectedPlatform.ordinal == index,
+                            onClick = { viewModel.selectPlatform(platform) },
+                            text = { Text(platform.name.replace("_", " ")) }
+                        )
+                    }
+                }
+
+                // 搜索结果区域
+                Box(Modifier.height(300.dp)) {
+                    if (searchState.isLoading) {
+                        CircularProgressIndicator(Modifier.align(Alignment.Center))
+                    } else if (searchState.searchResults.isNotEmpty()) {
+                        LazyColumn {
+                            items(searchState.searchResults) { songResult ->
+                                ListItem(
+                                    headlineContent = { Text(songResult.songName, maxLines = 1) },
+                                    supportingContent = { Text(songResult.singer, maxLines = 1) },
+                                    leadingContent = {
+                                        AsyncImage(
+                                            model = songResult.coverUrl?.replaceFirst("http://", "https://"),
+                                            contentDescription = songResult.songName,
+                                            modifier = Modifier.size(48.dp).clip(RoundedCornerShape(8.dp))
+                                        )
+                                    },
+                                    modifier = Modifier.clickable {
+                                        viewModel.onSongSelected(originalSong, songResult)
+                                        onDismiss()
+                                    }
+                                )
+                            }
+                        }
+                    } else {
+                        Text(
+                            text = searchState.error ?: "无搜索结果",
+                            color = if (searchState.error != null) MaterialTheme.colorScheme.error else LocalContentColor.current
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
 @Composable
 private fun VolumeControlSheetContent() {
     val context = LocalContext.current
