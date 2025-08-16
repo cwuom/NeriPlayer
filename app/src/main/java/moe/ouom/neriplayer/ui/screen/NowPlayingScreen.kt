@@ -152,13 +152,14 @@ fun NowPlayingScreen(
     val playlists by PlayerManager.playlistsFlow.collectAsState()
 
     // 点击即切换，回流后撤销覆盖
-    var favOverride by remember(currentSong?.id) { mutableStateOf<Boolean?>(null) }
-    val isFavoriteComputed = remember(currentSong?.id, playlists) {
-        val songId = currentSong?.id
-        if (songId == null) false
-        else {
+    var favOverride by remember(currentSong) { mutableStateOf<Boolean?>(null) }
+    val isFavoriteComputed = remember(currentSong, playlists) {
+        val song = currentSong
+        if (song == null) {
+            false
+        } else {
             val fav = playlists.firstOrNull { it.name == "我喜欢的音乐" }
-            fav?.songs?.any { it.id == songId } == true
+            fav?.songs?.any { it.id == song.id && it.album == song.album } == true
         }
     }
     val isFavorite = favOverride ?: isFavoriteComputed
@@ -174,7 +175,9 @@ fun NowPlayingScreen(
 
     val queue by PlayerManager.currentQueueFlow.collectAsState()
     val displayedQueue = remember(queue) { queue }
-    val currentIndexInDisplay = displayedQueue.indexOfFirst { it.id == currentSong?.id }
+    val currentIndexInDisplay = displayedQueue.indexOfFirst {
+        it.id == currentSong?.id && it.album == currentSong?.album
+    }
 
     var showAddSheet by remember { mutableStateOf(false) }
     var showQueueSheet by remember { mutableStateOf(false) }
