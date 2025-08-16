@@ -915,43 +915,6 @@ object PlayerManager {
         }
     }
 
-    fun matchAndReplaceMetadata(songToReplace: SongItem, platform: MusicPlatform) {
-        val originalId = songToReplace.id
-        val originalAlbum = songToReplace.album // B站音源的唯一标识
-
-        ioScope.launch {
-            val newDetails = SearchManager.findBestMatch(songToReplace.name, platform, neteaseClient)
-            if (newDetails == null) {
-                mainScope.launch {
-                    Toast.makeText(application, "未能找到匹配的歌曲信息", Toast.LENGTH_SHORT).show()
-                }
-                return@launch
-            }
-
-            // 创建一个新的 SongItem，保留核心的音源信息
-            val updatedSong = songToReplace.copy(
-                name = newDetails.songName,
-                artist = newDetails.singer,
-                durationMs = songToReplace.durationMs,
-                coverUrl = newDetails.coverUrl
-            )
-
-            val queueIndex = currentPlaylist.indexOfFirst { it.id == originalId && it.album == originalAlbum }
-            if (queueIndex != -1) {
-                val newList = currentPlaylist.toMutableList()
-                newList[queueIndex] = updatedSong
-                currentPlaylist = newList
-                _currentQueueFlow.value = currentPlaylist
-            }
-
-            if (_currentSongFlow.value?.id == originalId && _currentSongFlow.value?.album == originalAlbum) {
-                _currentSongFlow.value = updatedSong
-            }
-
-            localRepo.updateSongMetadata(originalId, originalAlbum, updatedSong)
-        }
-    }
-
 
     fun replaceMetadataFromSearch(originalSong: SongItem, selectedSong: SongSearchInfo) {
         ioScope.launch {
@@ -1002,6 +965,8 @@ object PlayerManager {
                 songToUpdate.copy(userLyricOffsetMs = newOffset)
             )
         }
+
+        persistState()
     }
 
     private suspend fun updateSongInAllPlaces(originalSong: SongItem, updatedSong: SongItem) {
