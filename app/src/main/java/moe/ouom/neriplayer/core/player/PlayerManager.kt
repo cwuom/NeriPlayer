@@ -130,6 +130,7 @@ object PlayerManager {
     private lateinit var stateFile: File
 
     private var preferredQuality: String = "exhigh"
+    private var biliPreferredQuality: String = "high"
 
     private var currentPlaylist: List<SongItem> = emptyList()
     private var currentIndex = -1
@@ -299,6 +300,9 @@ object PlayerManager {
         ioScope.launch {
             SettingsRepository(app).audioQualityFlow.collect { q -> preferredQuality = q }
         }
+        ioScope.launch {
+            SettingsRepository(app).biliAudioQualityFlow.collect { q -> biliPreferredQuality = q }
+        }
 
         // 注入登录 Cookie
         ioScope.launch {
@@ -439,12 +443,12 @@ object PlayerManager {
                         val parts = song.album?.split('|')
                         val cidPart = if (parts != null && parts.size > 1) parts[1] else null
                         if (cidPart != null) {
-                            "$sourcePrefix-${song.id}-$cidPart"
+                            "$sourcePrefix-${song.id}-$cidPart-$biliPreferredQuality"
                         } else {
-                            "$sourcePrefix-${song.id}"
+                            "$sourcePrefix-${song.id}-$biliPreferredQuality"
                         }
                     } else {
-                        "$sourcePrefix-${song.id}"
+                        "$sourcePrefix-${song.id}-$preferredQuality"
                     }
                     NPLogger.d("NERI-PlayerManager", "Using custom cache key: $cacheKey for song: ${song.name}")
 
