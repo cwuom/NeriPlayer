@@ -234,6 +234,12 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         }
         return list
     }
+
+    suspend fun getVideoInfoByAvid(avid: Long): BiliClient.VideoBasicInfo {
+        return withContext(Dispatchers.IO) {
+            biliClient.getVideoBasicInfoByAvid(avid)
+        }
+    }
 }
 
 /** Bilibili 搜索结果到通用 SongItem 的转换器 */

@@ -269,6 +269,11 @@ fun NeriApp(
                                 NPLogger.d("NERI-App", "Playing audio from Bili video: ${videos[index].title}")
                                 PlayerManager.playBiliVideoAsAudio(videos, index)
                                 showNowPlaying = true // 显示播放界面
+                            },
+                            onPlayParts = { videoInfo, index, coverUrl ->
+                                NPLogger.d("NERI-App", "Playing parts from Bili video: ${videoInfo.title}")
+                                PlayerManager.playBiliVideoParts(videoInfo, index, coverUrl)
+                                showNowPlaying = true
                             }
                         )
                     }
@@ -287,6 +292,10 @@ fun NeriApp(
                                     putExtra("index", index)
                                 }
                             )
+                            showNowPlaying = true
+                        },
+                        onPlayParts = { videoInfo, index, coverUrl ->
+                            PlayerManager.playBiliVideoParts(videoInfo, index, coverUrl)
                             showNowPlaying = true
                         })
                     }

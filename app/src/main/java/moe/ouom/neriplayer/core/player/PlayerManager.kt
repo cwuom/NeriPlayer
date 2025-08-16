@@ -420,10 +420,20 @@ object PlayerManager {
                 is SongUrlResult.Success -> {
                     consecutivePlayFailures = 0
 
-                    val sourcePrefix = if (song.album == BILI_SOURCE_TAG) "bili" else "netease"
-                    val cacheKey = "$sourcePrefix-${song.id}"
-                    NPLogger.d("NERI-PlayerManager", "Using custom cache key: $cacheKey for song: ${song.name}")
+                    val sourcePrefix = if (song.album?.startsWith(BILI_SOURCE_TAG) == true) "bili" else "netease"
 
+                    val cacheKey = if (sourcePrefix == "bili") {
+                        val parts = song.album?.split('|')
+                        val cidPart = if (parts != null && parts.size > 1) parts[1] else null
+                        if (cidPart != null) {
+                            "$sourcePrefix-${song.id}-$cidPart"
+                        } else {
+                            "$sourcePrefix-${song.id}"
+                        }
+                    } else {
+                        "$sourcePrefix-${song.id}"
+                    }
+                    NPLogger.d("NERI-PlayerManager", "Using custom cache key: $cacheKey for song: ${song.name}")
 
                     val mediaItem = MediaItem.Builder()
                         .setMediaId(song.id.toString())
@@ -454,8 +464,11 @@ object PlayerManager {
     }
 
     private suspend fun resolveSongUrl(song: SongItem): SongUrlResult {
-        return if (song.album == BILI_SOURCE_TAG) {
-            getBiliAudioUrl(song.id)
+        return if (song.album.startsWith(BILI_SOURCE_TAG)) {
+            // 解析可能的 cid
+            val parts = song.album.split('|')
+            val cid = if (parts.size > 1) parts[1].toLongOrNull() ?: 0L else 0L
+            getBiliAudioUrl(song.id, cid) // song.id 始终是 avid
         } else {
             getNeteaseSongUrl(song.id)
         }
@@ -501,7 +514,7 @@ object PlayerManager {
     private suspend fun getBiliAudioUrl(avid: Long, cid: Long = 0): SongUrlResult = withContext(Dispatchers.IO) {
         try {
             var finalCid = cid
-            var bvid = ""
+            val bvid: String
             if (finalCid == 0L) {
                 val videoInfo = biliClient.getVideoBasicInfoByAvid(avid)
                 bvid = videoInfo.bvid
@@ -510,6 +523,8 @@ object PlayerManager {
                     _playerEventFlow.emit(PlayerEvent.ShowError("无法获取视频信息 (cid)"))
                     return@withContext SongUrlResult.Failure
                 }
+            } else {
+                bvid = biliClient.getVideoBasicInfoByAvid(avid).bvid
             }
 
             val audioStream = biliRepo.getBestPlayableAudio(bvid, finalCid)
@@ -526,6 +541,27 @@ object PlayerManager {
             _playerEventFlow.emit(PlayerEvent.ShowError("获取播放地址失败: ${e.message}"))
             SongUrlResult.Failure
         }
+    }
+
+    /**
+     * 播放 Bilibili 视频的所有分 P
+     * @param videoInfo 包含所有分 P 信息的视频详情对象
+     * @param startIndex 从第几个分 P 开始播放
+     * @param coverUrl 封面 URL
+     */
+    fun playBiliVideoParts(videoInfo: BiliClient.VideoBasicInfo, startIndex: Int, coverUrl: String) {
+        check(initialized) { "Call PlayerManager.initialize(application) first." }
+        val songs = videoInfo.pages.map { page ->
+            SongItem(
+                id = videoInfo.aid, // avid
+                name = if (videoInfo.pages.size > 1) "${videoInfo.title} P${page.page}. ${page.part}" else videoInfo.title,
+                artist = videoInfo.ownerName,
+                album = "$BILI_SOURCE_TAG|${page.cid}",
+                durationMs = page.durationSec * 1000L,
+                coverUrl = coverUrl
+            )
+        }
+        playPlaylist(songs, startIndex)
     }
 
     fun play() {

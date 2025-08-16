@@ -82,6 +82,18 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
         uiState.value.header?.let { start(it) }
     }
 
+
+    /**
+     * 获取单个视频的详细信息，包括分P列表
+     * @param bvid 视频的 BV 号
+     * @return 包含所有分P信息的 VideoBasicInfo 对象
+     */
+    suspend fun getVideoInfo(bvid: String): BiliClient.VideoBasicInfo {
+        return withContext(Dispatchers.IO) {
+            client.getVideoBasicInfoByBvid(bvid)
+        }
+    }
+
     private fun loadContent() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(loading = true, error = null)

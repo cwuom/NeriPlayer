@@ -101,6 +101,7 @@ import coil.compose.AsyncImage
 import coil.request.CachePolicy
 import coil.request.ImageRequest
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.ui.viewmodel.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliPlaylistDetailViewModel
@@ -108,6 +109,7 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
+import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.formatDurationSec
 import moe.ouom.neriplayer.util.performHapticFeedback
 
@@ -116,7 +118,8 @@ import moe.ouom.neriplayer.util.performHapticFeedback
 fun BiliPlaylistDetailScreen(
     playlist: BiliPlaylist,
     onBack: () -> Unit = {},
-    onPlayAudio: (List<BiliVideoItem>, Int) -> Unit = { _, _ -> }
+    onPlayAudio: (List<BiliVideoItem>, Int) -> Unit = { _, _ -> },
+    onPlayParts: (BiliClient.VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> }
 ) {
     val context = LocalContext.current
     val vm: BiliPlaylistDetailViewModel = viewModel(
@@ -138,6 +141,10 @@ fun BiliPlaylistDetailScreen(
     val exportSheetState = rememberModalBottomSheetState()
     val scope = rememberCoroutineScope()
 
+    var showPartsSheet by remember { mutableStateOf(false) }
+    var partsInfo by remember { mutableStateOf<BiliClient.VideoBasicInfo?>(null) }
+    val partsSheetState = rememberModalBottomSheetState()
+
     fun toggleSelect(id: Long) {
         selectedIds = if (selectedIds.contains(id)) selectedIds - id else selectedIds + id
     }
@@ -148,6 +155,13 @@ fun BiliPlaylistDetailScreen(
     // Search
     var showSearch by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
+
+    val displayedVideos = remember(ui.videos, searchQuery) {
+        if (searchQuery.isBlank()) ui.videos
+        else ui.videos.filter {
+            it.title.contains(searchQuery, true) || it.uploader.contains(searchQuery, true)
+        }
+    }
 
     AnimatedVisibility(
         visible = true,
@@ -228,13 +242,6 @@ fun BiliPlaylistDetailScreen(
                     )
                 }
 
-                val displayedVideos = remember(ui.videos, searchQuery) {
-                    if (searchQuery.isBlank()) ui.videos
-                    else ui.videos.filter {
-                        it.title.contains(searchQuery, true) || it.uploader.contains(searchQuery, true)
-                    }
-                }
-
                 Box(modifier = Modifier.fillMaxSize()) {
                     LazyColumn(
                         contentPadding = PaddingValues(bottom = 24.dp),
@@ -298,9 +305,28 @@ fun BiliPlaylistDetailScreen(
                                             }
                                         },
                                         onClick = {
-                                            val fullList = ui.videos
-                                            val originalIndex = fullList.indexOfFirst { it.id == item.id }
-                                            onPlayAudio(fullList, originalIndex)
+                                            scope.launch {
+                                                try {
+                                                    val info = vm.getVideoInfo(item.bvid)
+                                                    if (info.pages.size <= 1) {
+                                                        // 单P视频
+                                                        val fullList = ui.videos
+                                                        val originalIndex =
+                                                            fullList.indexOfFirst { it.id == item.id }
+                                                        onPlayAudio(fullList, originalIndex)
+                                                    } else {
+                                                        // 多P视频
+                                                        partsInfo = info
+                                                        showPartsSheet = true
+                                                    }
+                                                } catch (e: Exception) {
+                                                    NPLogger.e(
+                                                        "BiliPlaylistDetail",
+                                                        "获取分 P 失败",
+                                                        e
+                                                    )
+                                                }
+                                            }
                                         }
                                     )
                                 }
@@ -377,6 +403,54 @@ fun BiliPlaylistDetailScreen(
                             ) { Text("新建并导出") }
                         }
                         Spacer(Modifier.height(12.dp))
+                    }
+                }
+            }
+
+            if (showPartsSheet && partsInfo != null) {
+                ModalBottomSheet(
+                    onDismissRequest = { showPartsSheet = false },
+                    sheetState = partsSheetState
+                ) {
+                    Column(Modifier.padding(bottom = 12.dp)) {
+                        Text(
+                            text = partsInfo!!.title,
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        HorizontalDivider()
+                        LazyColumn {
+                            val originalVideoItem = displayedVideos.find { it.bvid == partsInfo!!.bvid }
+
+                            itemsIndexed(partsInfo!!.pages) { index, page ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            onPlayParts(partsInfo!!, index, originalVideoItem?.coverUrl ?: "")
+                                            scope.launch { partsSheetState.hide() }.invokeOnCompletion {
+                                                if (!partsSheetState.isVisible) showPartsSheet = false
+                                            }
+                                        }
+                                        .padding(horizontal = 20.dp, vertical = 14.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "P${page.page}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.width(48.dp)
+                                    )
+                                    Text(
+                                        text = page.part,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }

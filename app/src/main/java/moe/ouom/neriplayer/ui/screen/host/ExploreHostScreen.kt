@@ -41,6 +41,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.ui.screen.playlist.PlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.tab.ExploreScreen
 import moe.ouom.neriplayer.ui.viewmodel.NeteasePlaylist
@@ -48,7 +49,8 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 
 @Composable
 fun ExploreHostScreen(
-    onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> }
+    onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
+    onPlayParts: (BiliClient.VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> }
 ) {
     var selected by rememberSaveable { mutableStateOf<NeteasePlaylist?>(null) }
     BackHandler(enabled = selected != null) { selected = null }
@@ -76,7 +78,8 @@ fun ExploreHostScreen(
                 ExploreScreen(
                     gridState = gridState,
                     onPlay = { pl -> selected = pl },
-                    onSongClick = onSongClick
+                    onSongClick = onSongClick,
+                    onPlayParts = onPlayParts
                 )
             } else {
                 PlaylistDetailScreen(

@@ -55,21 +55,25 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -88,12 +92,16 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.core.api.bili.BiliClient
+import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.ui.viewmodel.ExploreViewModel
 import moe.ouom.neriplayer.ui.viewmodel.NeteasePlaylist
 import moe.ouom.neriplayer.ui.viewmodel.SearchSource
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
+import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.formatDuration
 import moe.ouom.neriplayer.util.performHapticFeedback
 
@@ -102,7 +110,8 @@ import moe.ouom.neriplayer.util.performHapticFeedback
 fun ExploreScreen(
     gridState: LazyGridState,
     onPlay: (NeteasePlaylist) -> Unit,
-    onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> }
+    onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
+    onPlayParts: (BiliClient.VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> }
 ) {
     val context = LocalContext.current
     val vm: ExploreViewModel = viewModel(
@@ -113,6 +122,14 @@ fun ExploreScreen(
     val ui by vm.uiState.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     val focusManager = LocalFocusManager.current
+
+    val scope = rememberCoroutineScope()
+
+    // 为分P列表弹窗创建状态
+    var showPartsSheet by remember { mutableStateOf(false) }
+    var partsInfo by remember { mutableStateOf<BiliClient.VideoBasicInfo?>(null) }
+    var clickedSongCoverUrl by remember { mutableStateOf("") }
+    val partsSheetState = rememberModalBottomSheetState()
 
     LaunchedEffect(Unit) {
         if (ui.playlists.isEmpty()) vm.loadHighQuality()
@@ -204,7 +221,27 @@ fun ExploreScreen(
                         LazyColumn(contentPadding = PaddingValues(top = 8.dp)) {
                             itemsIndexed(ui.searchResults) { index, song ->
                                 SongRow(index + 1, song) {
-                                    onSongClick(ui.searchResults, index)
+                                    if (song.album == PlayerManager.BILI_SOURCE_TAG) {
+                                        scope.launch {
+                                            try {
+                                                val info = vm.getVideoInfoByAvid(song.id)
+                                                if (info.pages.size <= 1) {
+                                                    // 单P，直接播放
+                                                    onSongClick(ui.searchResults, index)
+                                                } else {
+                                                    // 多P，显示弹窗
+                                                    partsInfo = info
+                                                    clickedSongCoverUrl = song.coverUrl ?: ""
+                                                    showPartsSheet = true
+                                                }
+                                            } catch (e: Exception) {
+                                                NPLogger.e("ExploreScreen", "处理搜索结果时出错", e)
+                                            }
+                                        }
+                                    } else {
+                                        // 其他来源，直接播放
+                                        onSongClick(ui.searchResults, index)
+                                    }
                                 }
                             }
                         }
@@ -219,6 +256,51 @@ fun ExploreScreen(
                     SearchSource.BILIBILI -> {
                         Box(Modifier.fillMaxSize(), Alignment.Center) {
                             Text("在 Bilibili 中发现更多精彩视频", style = MaterialTheme.typography.bodyLarge)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if (showPartsSheet && partsInfo != null) {
+        ModalBottomSheet(
+            onDismissRequest = { showPartsSheet = false },
+            sheetState = partsSheetState
+        ) {
+            Column(Modifier.padding(bottom = 12.dp)) {
+                Text(
+                    text = partsInfo!!.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                HorizontalDivider()
+                LazyColumn {
+                    itemsIndexed(partsInfo!!.pages) { index, page ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    onPlayParts(partsInfo!!, index, clickedSongCoverUrl)
+                                    scope.launch { partsSheetState.hide() }.invokeOnCompletion {
+                                        if (!partsSheetState.isVisible) showPartsSheet = false
+                                    }
+                                }
+                                .padding(horizontal = 20.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "P${page.page}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.width(48.dp)
+                            )
+                            Text(
+                                text = page.part,
+                                style = MaterialTheme.typography.bodyLarge,
+                                modifier = Modifier.weight(1f)
+                            )
                         }
                     }
                 }
