@@ -146,6 +146,7 @@ fun NowPlayingScreen(
     // 订阅当前播放链接
     val currentMediaUrl by PlayerManager.currentMediaUrlFlow.collectAsState()
     val isFromNetease = currentMediaUrl?.contains("music.126.net", ignoreCase = true) == true
+    val isFromBili = currentMediaUrl?.contains("bilivideo.", ignoreCase = true) == true
 
     // 歌单&收藏
     val playlists by PlayerManager.playlistsFlow.collectAsState()
@@ -323,6 +324,31 @@ fun NowPlayingScreen(
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = "网易云",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+
+                    if (isFromBili) {
+                        Row(
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(10.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_bilibili),
+                                contentDescription = "哔哩哔哩",
+                                tint = LocalContentColor.current,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "哔哩哔哩",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
