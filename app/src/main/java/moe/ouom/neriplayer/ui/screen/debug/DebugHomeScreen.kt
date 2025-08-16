@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Build
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SettingsBackupRestore
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -51,6 +52,7 @@ import moe.ouom.neriplayer.R
 fun DebugHomeScreen(
     onOpenBiliDebug: () -> Unit,
     onOpenNeteaseDebug: () -> Unit,
+    onOpenSearchDebug: () -> Unit,
     onHideDebugMode: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -98,8 +100,23 @@ fun DebugHomeScreen(
                         )
                     },
                     headlineContent = { Text("网易云接口调试") },
-                    supportingContent = { Text("账户 / 歌单 / 歌曲 URL / 歌词（已实现）") },
+                    supportingContent = { Text("账户 / 歌单 / 歌曲 URL / 歌词") },
                     modifier = Modifier.clickable(onClick = onOpenNeteaseDebug),
+                    colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                )
+
+                ListItem(
+                    leadingContent = {
+                        Icon(
+                            imageVector = Icons.Outlined.Search,
+                            contentDescription = "搜索",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    },
+                    headlineContent = { Text("多平台搜索接口调试") },
+                    supportingContent = { Text("QQ / 网易云") },
+                    modifier = Modifier.clickable(onClick = onOpenSearchDebug),
                     colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
                 )
             }

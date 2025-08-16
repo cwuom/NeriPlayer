@@ -86,6 +86,7 @@ import moe.ouom.neriplayer.ui.screen.playlist.PlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.debug.BiliApiProbeScreen
 import moe.ouom.neriplayer.ui.screen.debug.DebugHomeScreen
 import moe.ouom.neriplayer.ui.screen.debug.NeteaseApiProbeScreen
+import moe.ouom.neriplayer.ui.screen.debug.SearchApiProbeScreen
 import moe.ouom.neriplayer.ui.screen.host.ExploreHostScreen
 import moe.ouom.neriplayer.ui.screen.tab.HomeScreen
 import moe.ouom.neriplayer.ui.screen.tab.LibraryScreen
@@ -378,6 +379,7 @@ fun NeriApp(
                         DebugHomeScreen(
                             onOpenBiliDebug = { navController.navigate(Destinations.DebugBili.route) },
                             onOpenNeteaseDebug = { navController.navigate(Destinations.DebugNetease.route) },
+                            onOpenSearchDebug = { navController.navigate(Destinations.DebugSearch.route) },
                             onHideDebugMode = {
                                 scope.launch {
                                     repo.setDevModeEnabled(false)
@@ -393,6 +395,7 @@ fun NeriApp(
 
                     composable(Destinations.DebugBili.route) { BiliApiProbeScreen() }
                     composable(Destinations.DebugNetease.route) { NeteaseApiProbeScreen() }
+                    composable(Destinations.DebugSearch.route) { SearchApiProbeScreen() }
                 }
             }
 

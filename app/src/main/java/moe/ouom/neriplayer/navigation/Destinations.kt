@@ -24,14 +24,17 @@ package moe.ouom.neriplayer.navigation
  */
 
 sealed class Destinations(val route: String, val label: String) {
+    // TAB
     data object Home : Destinations("home", "首页")
     data object Explore : Destinations("explore", "探索")
     data object Library : Destinations("library", "媒体库")
     data object Settings : Destinations("settings", "设置")
 
+    // DEBUG
     data object Debug : Destinations("debug", "调试")
     data object DebugBili : Destinations("debug/bili", "B 站调试")
     data object DebugNetease : Destinations("debug/netease", "网易云调试")
+    data object DebugSearch : Destinations("debug/search", "搜索调试")
 
     // 网易云歌单详情路由
     data object PlaylistDetail : Destinations("playlist_detail/{playlistJson}", "歌单详情") {
