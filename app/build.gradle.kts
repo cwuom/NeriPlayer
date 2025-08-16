@@ -143,4 +143,6 @@ dependencies {
     implementation(libs.androidx.media)
 
     implementation(libs.androidx.ui.graphics)
+
+    implementation(files("libs/lib-decoder-ffmpeg-release.aar"))
 }
