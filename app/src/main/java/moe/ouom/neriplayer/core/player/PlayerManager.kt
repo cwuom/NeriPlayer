@@ -50,9 +50,6 @@ import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.audio.AudioCapabilities
-import androidx.media3.exoplayer.audio.AudioSink
-import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -92,12 +89,6 @@ data class AudioDevice(
     val name: String,
     val type: Int,
     val icon: ImageVector
-)
-
-data class QueueContext(
-    val fromLocalPlaylist: Boolean = false,
-    val sourceId: Long? = null,
-    val sourceName: String? = null
 )
 
 /** 用于封装播放器需要通知UI的事件 */
@@ -164,7 +155,6 @@ object PlayerManager {
     val repeatModeFlow: StateFlow<Int> = _repeatModeFlow
 
     private val _currentAudioDevice = MutableStateFlow<AudioDevice?>(null)
-    val currentAudioDeviceFlow: StateFlow<AudioDevice?> = _currentAudioDevice
 
     private val _playerEventFlow = MutableSharedFlow<PlayerEvent>()
     val playerEventFlow: SharedFlow<PlayerEvent> = _playerEventFlow.asSharedFlow()
@@ -424,15 +414,21 @@ object PlayerManager {
         playJob?.cancel()
         _playbackPositionMs.value = 0L
         playJob = ioScope.launch {
-            // 核心修改点：根据来源决定调用哪个URL获取方法
             val result = resolveSongUrl(song)
 
             when (result) {
                 is SongUrlResult.Success -> {
                     consecutivePlayFailures = 0
+
+                    val sourcePrefix = if (song.album == BILI_SOURCE_TAG) "bili" else "netease"
+                    val cacheKey = "$sourcePrefix-${song.id}"
+                    NPLogger.d("NERI-PlayerManager", "Using custom cache key: $cacheKey for song: ${song.name}")
+
+
                     val mediaItem = MediaItem.Builder()
                         .setMediaId(song.id.toString())
                         .setUri(Uri.parse(result.url))
+                        .setCustomCacheKey(cacheKey)
                         .build()
 
                     _currentMediaUrl.value = result.url
