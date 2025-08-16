@@ -389,7 +389,9 @@ object PlayerManager {
         }
 
         playAtIndex(currentIndex)
-        persistState()
+        ioScope.launch {
+            persistState()
+        }
     }
 
     private fun rebuildShuffleBag(excludeIndex: Int? = null) {
@@ -413,7 +415,9 @@ object PlayerManager {
 
         val song = currentPlaylist[index]
         _currentSongFlow.value = song
-        persistState()
+        ioScope.launch {
+            persistState()
+        }
 
         // 当前曲不应再出现在洗牌袋中
         if (player.shuffleModeEnabled) {
@@ -739,7 +743,9 @@ object PlayerManager {
         shuffleBag.clear()
         shuffleHistory.clear()
         shuffleFuture.clear()
-        persistState()
+        ioScope.launch {
+            persistState()
+        }
     }
 
     fun hasItems(): Boolean = currentPlaylist.isNotEmpty()
@@ -825,16 +831,17 @@ object PlayerManager {
         }
     }
 
-    private fun persistState() {
-        ioScope.launch {
+    private suspend fun persistState() {
+        withContext(Dispatchers.IO) {
             try {
                 if (currentPlaylist.isEmpty()) {
-                    stateFile.delete()
+                    if (stateFile.exists()) stateFile.delete()
                 } else {
                     val data = PersistedState(currentPlaylist, currentIndex)
                     stateFile.writeText(Gson().toJson(data))
                 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                NPLogger.e("PlayerManager", "Failed to persist state", e)
             }
         }
     }
@@ -961,7 +968,9 @@ object PlayerManager {
                 val updatedSong = originalSong.copy(
                     name = newDetails.songName,
                     artist = newDetails.singer,
-                    coverUrl = newDetails.coverUrl
+                    coverUrl = newDetails.coverUrl,
+                    matchedLyric = newDetails.lyric,
+                    matchedLyricSource = selectedSong.source
                 )
 
                 updateSongInAllPlaces(originalSong, updatedSong)
@@ -972,7 +981,30 @@ object PlayerManager {
         }
     }
 
-    private fun updateSongInAllPlaces(originalSong: SongItem, updatedSong: SongItem) {
+    suspend fun updateUserLyricOffset(songToUpdate: SongItem, newOffset: Long) {
+        val queueIndex = currentPlaylist.indexOfFirst { it.id == songToUpdate.id && it.album == songToUpdate.album }
+        if (queueIndex != -1) {
+            val updatedSong = currentPlaylist[queueIndex].copy(userLyricOffsetMs = newOffset)
+            val newList = currentPlaylist.toMutableList()
+            newList[queueIndex] = updatedSong
+            currentPlaylist = newList
+            _currentQueueFlow.value = currentPlaylist
+        }
+
+        if (_currentSongFlow.value?.id == songToUpdate.id && _currentSongFlow.value?.album == songToUpdate.album) {
+            _currentSongFlow.value = _currentSongFlow.value?.copy(userLyricOffsetMs = newOffset)
+        }
+
+        withContext(Dispatchers.IO) {
+            localRepo.updateSongMetadata(
+                songToUpdate.id,
+                songToUpdate.album,
+                songToUpdate.copy(userLyricOffsetMs = newOffset)
+            )
+        }
+    }
+
+    private suspend fun updateSongInAllPlaces(originalSong: SongItem, updatedSong: SongItem) {
         val originalId = originalSong.id
         val originalAlbum = originalSong.album
 
@@ -988,9 +1020,11 @@ object PlayerManager {
             _currentSongFlow.value = updatedSong
         }
 
-        mainScope.launch {
+        withContext(Dispatchers.IO) {
             localRepo.updateSongMetadata(originalId, originalAlbum, updatedSong)
         }
+
+        persistState()
     }
 }
 

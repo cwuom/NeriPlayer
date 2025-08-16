@@ -39,7 +39,6 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -67,8 +66,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.MoreVert
@@ -84,6 +81,7 @@ import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
+import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -107,8 +105,10 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -128,6 +128,7 @@ import androidx.media3.common.Player
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.player.PlayerManager
@@ -135,12 +136,15 @@ import moe.ouom.neriplayer.ui.component.AppleMusicLyric
 import moe.ouom.neriplayer.ui.component.LyricEntry
 import moe.ouom.neriplayer.ui.component.LyricVisualSpec
 import moe.ouom.neriplayer.ui.component.WaveformSlider
+import moe.ouom.neriplayer.ui.component.parseNeteaseLrc
+import moe.ouom.neriplayer.ui.component.parseNeteaseYrc
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.HapticFilledIconButton
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.formatDuration
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -210,16 +214,28 @@ fun NowPlayingScreen(
     var showVolumeSheet by remember { mutableStateOf(false) }
     val volumeSheetState = rememberModalBottomSheetState()
 
+
     var lyrics by remember(currentSong?.id) { mutableStateOf<List<LyricEntry>>(emptyList()) }
 
     val nowPlayingViewModel: NowPlayingViewModel = viewModel()
 
-    LaunchedEffect(currentSong?.id, isFromNetease) {
-        val songId = currentSong?.id
-        lyrics = if (songId != null && isFromNetease) {
-            PlayerManager.getNeteaseLyrics(songId)
-        } else {
-            emptyList()
+    LaunchedEffect(currentSong?.id, currentSong?.matchedLyric, isFromNetease) {
+        val song = currentSong
+        lyrics = when {
+            // 优先使用匹配到的歌词
+            song?.matchedLyric != null -> {
+                if (song.matchedLyric.contains(Regex("""\[\d+,\s*\d+]\(\d+,"""))) {
+                    parseNeteaseYrc(song.matchedLyric)
+                } else {
+                    parseNeteaseLrc(song.matchedLyric)
+                }
+            }
+            song != null && isFromNetease -> {
+                PlayerManager.getNeteaseLyrics(song.id)
+            }
+            else -> {
+                emptyList()
+            }
         }
     }
 
@@ -283,10 +299,8 @@ fun NowPlayingScreen(
                     }
 
                     var showMoreOptions by remember { mutableStateOf(false) }
-                    AnimatedVisibility(visible = isFromBili) {
-                        HapticIconButton(onClick = { showMoreOptions = true }) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "更多选项")
-                        }
+                    HapticIconButton(onClick = { showMoreOptions = true }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "更多选项")
                     }
                     if (showMoreOptions) {
                         MoreOptionsSheet(
@@ -483,15 +497,32 @@ fun NowPlayingScreen(
                 }
             }
 
-            if (isFromNetease && lyrics.isNotEmpty()) {
+            if (lyrics.isNotEmpty()) {
                 Spacer(Modifier.weight(1f))
+
+                val lyricOffset = if (currentSong?.matchedLyricSource == MusicPlatform.CLOUD_MUSIC) {
+                    1000L
+                } else {
+                    0L
+                }
+                val platformOffset = if (currentSong?.matchedLyricSource == MusicPlatform.QQ_MUSIC) {
+                    500L
+                } else {
+                    0L
+                }
+
+                val userOffset = currentSong?.userLyricOffsetMs ?: 0L
+                val totalOffset = platformOffset + userOffset
+
                 AppleMusicLyric(
                     lyrics = lyrics,
                     currentTimeMs = currentPosition,
-                    modifier = Modifier.fillMaxWidth().weight(8f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(8f),
                     textColor = MaterialTheme.colorScheme.onBackground,
                     visualSpec = LyricVisualSpec(),
-                    lyricOffsetMs = 1000L   // fuck, 网易云的逐字歌曲偏移 1000ms 才准确
+                    lyricOffsetMs = totalOffset
                 )
             }
 
@@ -661,8 +692,9 @@ private fun MoreOptionsSheet(
 ) {
     val sheetState = rememberModalBottomSheetState()
     var showSearchView by remember { mutableStateOf(false) }
+    var showOffsetSheet by remember { mutableStateOf(false) }
 
-    // 当弹窗打开时，如果需要，预填充搜索词，并搜索
+    // 当弹窗打开时，如果需要，预填充搜索词
     LaunchedEffect(showSearchView) {
         if (showSearchView) {
             viewModel.prepareForSearch(originalSong.name)
@@ -671,85 +703,123 @@ private fun MoreOptionsSheet(
     }
 
     ModalBottomSheet(
-        onDismissRequest = {
-            showSearchView = false
-            onDismiss()
-        },
+        onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surface,
     ) {
-        if (!showSearchView) {
-            Column(Modifier.padding(bottom = 32.dp)) {
-                ListItem(
-                    headlineContent = { Text("获取歌曲信息") },
-                    leadingContent = { Icon(Icons.Outlined.Info, null) },
-                    modifier = Modifier.clickable { showSearchView = true }
-                )
-            }
-        } else {
-            val searchState by viewModel.manualSearchState.collectAsState()
-
-            Column(Modifier.fillMaxWidth().padding(bottom = 16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                TextField(
-                    value = searchState.keyword,
-                    onValueChange = { viewModel.onKeywordChange(it) },
-                    label = { Text("搜索关键词") },
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                    trailingIcon = {
-                        HapticIconButton(onClick = { viewModel.performSearch() }) {
-                            Icon(Icons.Default.Search, contentDescription = "搜索")
-                        }
-                    }
-                )
-
-                // 平台切换
-                TabRow(selectedTabIndex = searchState.selectedPlatform.ordinal) {
-                    MusicPlatform.entries.forEachIndexed { index, platform ->
-                        Tab(
-                            selected = searchState.selectedPlatform.ordinal == index,
-                            onClick = { viewModel.selectPlatform(platform) },
-                            text = { Text(platform.name.replace("_", " ")) }
+        AnimatedContent(
+            targetState = when {
+                showOffsetSheet -> "Offset"
+                showSearchView -> "Search"
+                else -> "Main"
+            },
+            transitionSpec = {
+                (fadeIn(animationSpec = tween(220, delayMillis = 90)) +
+                        scaleIn(initialScale = 0.92f, animationSpec = tween(220, delayMillis = 90)))
+                    .togetherWith(fadeOut(animationSpec = tween(90)))
+            },
+            label = "more_options_sheet_content"
+        ) { targetState ->
+            when (targetState) {
+                "Main" -> {
+                    Column(Modifier.padding(bottom = 32.dp)) {
+                        ListItem(
+                            headlineContent = { Text("获取歌曲信息") },
+                            leadingContent = { Icon(Icons.Outlined.Info, null) },
+                            modifier = Modifier.clickable { showSearchView = true }
+                        )
+                        ListItem(
+                            headlineContent = { Text("调整歌词偏移") },
+                            leadingContent = { Icon(Icons.Outlined.Timer, null) },
+                            modifier = Modifier.clickable { showOffsetSheet = true }
                         )
                     }
                 }
+                "Search" -> {
+                    // 搜索界面
+                    val searchState by viewModel.manualSearchState.collectAsState()
 
-                // 搜索结果区域
-                Box(Modifier.height(300.dp)) {
-                    if (searchState.isLoading) {
-                        CircularProgressIndicator(Modifier.align(Alignment.Center))
-                    } else if (searchState.searchResults.isNotEmpty()) {
-                        LazyColumn {
-                            items(searchState.searchResults) { songResult ->
-                                ListItem(
-                                    headlineContent = { Text(songResult.songName, maxLines = 1) },
-                                    supportingContent = { Text(songResult.singer, maxLines = 1) },
-                                    leadingContent = {
-                                        AsyncImage(
-                                            model = songResult.coverUrl?.replaceFirst("http://", "https://"),
-                                            contentDescription = songResult.songName,
-                                            modifier = Modifier.size(48.dp).clip(RoundedCornerShape(8.dp))
-                                        )
-                                    },
-                                    modifier = Modifier.clickable {
-                                        viewModel.onSongSelected(originalSong, songResult)
-                                        onDismiss()
-                                    }
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        TextField(
+                            value = searchState.keyword,
+                            onValueChange = { viewModel.onKeywordChange(it) },
+                            label = { Text("搜索关键词") },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            trailingIcon = {
+                                HapticIconButton(onClick = { viewModel.performSearch() }) {
+                                    Icon(Icons.Default.Search, contentDescription = "搜索")
+                                }
+                            }
+                        )
+
+                        // 平台切换
+                        TabRow(selectedTabIndex = searchState.selectedPlatform.ordinal) {
+                            MusicPlatform.entries.forEachIndexed { index, platform ->
+                                Tab(
+                                    selected = searchState.selectedPlatform.ordinal == index,
+                                    onClick = { viewModel.selectPlatform(platform) },
+                                    text = { Text(platform.name.replace("_", " ")) }
                                 )
                             }
                         }
-                    } else {
-                        Text(
-                            text = searchState.error ?: "无搜索结果",
-                            color = if (searchState.error != null) MaterialTheme.colorScheme.error else LocalContentColor.current
-                        )
+
+                        // 搜索结果区域
+                        Box(Modifier.height(300.dp)) {
+                            if (searchState.isLoading) {
+                                CircularProgressIndicator(Modifier.align(Alignment.Center))
+                            } else if (searchState.searchResults.isNotEmpty()) {
+                                LazyColumn {
+                                    items(searchState.searchResults) { songResult ->
+                                        ListItem(
+                                            headlineContent = { Text(songResult.songName, maxLines = 1) },
+                                            supportingContent = { Text(songResult.singer, maxLines = 1) },
+                                            leadingContent = {
+                                                AsyncImage(
+                                                    model = songResult.coverUrl?.replaceFirst(
+                                                        "http://",
+                                                        "https://"
+                                                    ),
+                                                    contentDescription = songResult.songName,
+                                                    modifier = Modifier
+                                                        .size(48.dp)
+                                                        .clip(RoundedCornerShape(8.dp))
+                                                )
+                                            },
+                                            modifier = Modifier.clickable {
+                                                viewModel.onSongSelected(originalSong, songResult)
+                                                onDismiss()
+                                            }
+                                        )
+                                    }
+                                }
+                            } else {
+                                Text(
+                                    text = searchState.error ?: "无搜索结果",
+                                    modifier = Modifier.align(Alignment.Center),
+                                    color = if (searchState.error != null) MaterialTheme.colorScheme.error else LocalContentColor.current
+                                )
+                            }
+                        }
                     }
+                }
+                "Offset" -> {
+                    LyricOffsetSheet(
+                        song = originalSong,
+                        onDismiss = { showOffsetSheet = false }
+                    )
                 }
             }
         }
     }
 }
+
 @Composable
 private fun VolumeControlSheetContent() {
     val context = LocalContext.current
@@ -783,5 +853,50 @@ private fun VolumeControlSheetContent() {
             )
         }
         Spacer(modifier = Modifier.height(16.dp))
+    }
+}
+
+@Composable
+private fun LyricOffsetSheet(song: SongItem, onDismiss: () -> Unit) {
+    var currentOffset by remember { mutableLongStateOf(song.userLyricOffsetMs) }
+    val scope = rememberCoroutineScope()
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 16.dp)
+            .windowInsetsPadding(WindowInsets.navigationBars),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text("歌词偏移调整", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "${if (currentOffset > 0) "+" else ""}${currentOffset} ms",
+            style = MaterialTheme.typography.titleLarge.copy(fontFamily = FontFamily.Monospace),
+            color = when {
+                currentOffset > 0 -> Color(0xFF388E3C) // 快了 绿色
+                currentOffset < 0 -> MaterialTheme.colorScheme.error // 慢了红色
+                else -> LocalContentColor.current
+            }
+        )
+        Text("向右滑动歌词快进，向左滑动歌词延后", style = MaterialTheme.typography.bodySmall)
+
+        Slider(
+            value = currentOffset.toFloat(),
+            onValueChange = {
+                currentOffset = (it / 50).roundToInt() * 50L
+            },
+            onValueChangeFinished = {
+                scope.launch {
+                    PlayerManager.updateUserLyricOffset(song, currentOffset)
+                }
+            },
+            valueRange = -2000f..2000f,
+            steps = 79
+        )
+        Spacer(Modifier.height(16.dp))
+        HapticTextButton(onClick = onDismiss) {
+            Text("完成")
+        }
     }
 }

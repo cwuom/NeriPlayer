@@ -83,6 +83,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
+import moe.ouom.neriplayer.util.NPLogger
 import kotlin.math.abs
 import kotlin.math.floor
 
@@ -362,6 +363,7 @@ fun AppleMusicLyric(
  * 会把每段文字的长度写入 WordTiming.charCount，用于多行逐字揭示
  */
 fun parseNeteaseYrc(yrc: String): List<LyricEntry> {
+//    NPLogger.d("parseYrc-N", yrc)
     val out = mutableListOf<LyricEntry>()
     val headerRegex = Regex("""\[(\d+),\s*(\d+)]""")
     val segRegex = Regex("""\((\d+),\s*(\d+),\s*[-\d]+\)([^()\n\r]+)""")
@@ -600,6 +602,7 @@ data class ActiveWord(val range: IntRange, val sustainWeight: Float, val tInWord
  * 没有逐字信息时，逐字揭示会按整句线性推进
  */
 fun parseNeteaseLrc(lrc: String): List<LyricEntry> {
+//    NPLogger.d("parseLyc-N", lrc)
     val tag = Regex("""\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?]""")
     val timeline = mutableListOf<Pair<Long, String>>()
 
