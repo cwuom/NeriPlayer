@@ -68,7 +68,8 @@ class ConditionalHttpDataSourceFactory(
         return object : HttpDataSource by defaultDataSource {
 
             override fun open(dataSpec: DataSpec): Long {
-                val isBiliRequest = dataSpec.uri.host?.contains("bilivideo.") == true
+                val isBiliRequest =
+                    dataSpec.uri.host?.contains("bilivideo.") == true || dataSpec.uri.toString().contains("https://upos-hz-")
 
                 val finalDataSpec = if (isBiliRequest) {
                     val originalHeaders = dataSpec.httpRequestHeaders
