@@ -89,12 +89,13 @@ fun selectStreamByPreference(
         val hit = when (q) {
             BiliQuality.DOLBY   -> sorted.firstOrNull { it.qualityTag == "dolby" }
             BiliQuality.HIRES   -> sorted.firstOrNull { it.qualityTag == "hires" }
-            BiliQuality.LOSSLESS-> sorted.firstOrNull { it.bitrateKbps >= q.minBitrateKbps }
-            else                -> sorted.firstOrNull { it.bitrateKbps >= q.minBitrateKbps }
+            else -> {
+                val candidates = sorted.filter { it.bitrateKbps >= q.minBitrateKbps }
+                candidates.lastOrNull()
+            }
         }
         if (hit != null) return hit
     }
-
 
     return sorted.firstOrNull()
 }
