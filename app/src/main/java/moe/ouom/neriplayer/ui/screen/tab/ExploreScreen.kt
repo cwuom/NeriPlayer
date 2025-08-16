@@ -24,7 +24,11 @@ package moe.ouom.neriplayer.ui.screen.tab
  */
 
 import android.app.Application
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -50,9 +54,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
+import androidx.compose.material.icons.filled.CheckBox
+import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DividerDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -65,6 +75,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -95,17 +106,19 @@ import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.ui.viewmodel.ExploreViewModel
 import moe.ouom.neriplayer.ui.viewmodel.NeteasePlaylist
 import moe.ouom.neriplayer.ui.viewmodel.SearchSource
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.ui.viewmodel.playlist.toSongItem
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.formatDuration
 import moe.ouom.neriplayer.util.performHapticFeedback
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun ExploreScreen(
     gridState: LazyGridState,
@@ -122,14 +135,31 @@ fun ExploreScreen(
     val ui by vm.uiState.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     val focusManager = LocalFocusManager.current
-
     val scope = rememberCoroutineScope()
 
-    // 为分P列表弹窗创建状态
+    // 本地歌单仓库
+    val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
+    val allLocalPlaylists by repo.playlists.collectAsState(initial = emptyList())
+
+    // 分P列表弹窗状态
     var showPartsSheet by remember { mutableStateOf(false) }
     var partsInfo by remember { mutableStateOf<BiliClient.VideoBasicInfo?>(null) }
     var clickedSongCoverUrl by remember { mutableStateOf("") }
     val partsSheetState = rememberModalBottomSheetState()
+
+    // 分P选择模式状态
+    var partsSelectionMode by remember { mutableStateOf(false) }
+    var selectedParts by remember { mutableStateOf<Set<Int>>(emptySet()) } // 使用分P的 page number 作为ID
+
+    // 导出歌单弹窗状态
+    var showExportSheet by remember { mutableStateOf(false) }
+    val exportSheetState = rememberModalBottomSheetState()
+
+    // 退出分P选择模式的辅助函数
+    fun exitPartsSelection() {
+        partsSelectionMode = false
+        selectedParts = emptySet()
+    }
 
     LaunchedEffect(Unit) {
         if (ui.playlists.isEmpty()) vm.loadHighQuality()
@@ -262,34 +292,128 @@ fun ExploreScreen(
             }
         }
     }
+
+    // 分P弹窗
     if (showPartsSheet && partsInfo != null) {
+        val currentPartsInfo = partsInfo!!
+
+        BackHandler(enabled = partsSelectionMode) {
+            exitPartsSelection()
+        }
+
         ModalBottomSheet(
-            onDismissRequest = { showPartsSheet = false },
+            onDismissRequest = {
+                showPartsSheet = false
+                exitPartsSelection() // 关闭时重置状态
+            },
             sheetState = partsSheetState
         ) {
             Column(Modifier.padding(bottom = 12.dp)) {
-                Text(
-                    text = partsInfo!!.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
+                // 多选模式下的顶部操作栏
+                AnimatedVisibility(visible = partsSelectionMode) {
+                    val allSelected = selectedParts.size == currentPartsInfo.pages.size
+                    TopAppBar(
+                        title = { Text("已选 ${selectedParts.size} 项") },
+                        navigationIcon = {
+                            HapticIconButton(onClick = { exitPartsSelection() }) {
+                                Icon(Icons.Filled.Close, contentDescription = "退出多选")
+                            }
+                        },
+                        actions = {
+                            // 全选/取消全选
+                            HapticIconButton(onClick = {
+                                if (allSelected) {
+                                    selectedParts = emptySet()
+                                } else {
+                                    selectedParts = currentPartsInfo.pages.map { it.page }.toSet()
+                                }
+                            }) {
+                                Icon(
+                                    imageVector = if (allSelected) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
+                                    contentDescription = if (allSelected) "取消全选" else "全选"
+                                )
+                            }
+                            // 导出按钮
+                            HapticIconButton(
+                                onClick = {
+                                    if (selectedParts.isNotEmpty()) {
+                                        scope.launch { partsSheetState.hide() }.invokeOnCompletion {
+                                            if (!partsSheetState.isVisible) {
+                                                showPartsSheet = false
+                                                showExportSheet = true // 显示导出歌单选择界面
+                                            }
+                                        }
+                                    }
+                                },
+                                enabled = selectedParts.isNotEmpty()
+                            ) {
+                                Icon(Icons.AutoMirrored.Outlined.PlaylistAdd, contentDescription = "导出到歌单")
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.surface,
+                            scrolledContainerColor = MaterialTheme.colorScheme.surface
+                        )
+                    )
+                }
+
+                // 视频主标题
+                AnimatedVisibility(visible = !partsSelectionMode) {
+                    Text(
+                        text = currentPartsInfo.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
                 HorizontalDivider()
+
+                // 分P列表
                 LazyColumn {
-                    itemsIndexed(partsInfo!!.pages) { index, page ->
+                    itemsIndexed(currentPartsInfo.pages, key = { _, page -> page.page }) { index, page ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable {
-                                    onPlayParts(partsInfo!!, index, clickedSongCoverUrl)
-                                    scope.launch { partsSheetState.hide() }.invokeOnCompletion {
-                                        if (!partsSheetState.isVisible) showPartsSheet = false
+                                .combinedClickable(
+                                    onClick = {
+                                        if (partsSelectionMode) {
+                                            selectedParts = if (selectedParts.contains(page.page)) {
+                                                selectedParts - page.page
+                                            } else {
+                                                selectedParts + page.page
+                                            }
+                                        } else {
+                                            onPlayParts(currentPartsInfo, index, clickedSongCoverUrl)
+                                            scope.launch { partsSheetState.hide() }.invokeOnCompletion {
+                                                if (!partsSheetState.isVisible) showPartsSheet = false
+                                            }
+                                        }
+                                    },
+                                    onLongClick = {
+                                        if (!partsSelectionMode) {
+                                            partsSelectionMode = true
+                                            selectedParts = setOf(page.page)
+                                        }
                                     }
-                                }
+                                )
                                 .padding(horizontal = 20.dp, vertical = 14.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            if (partsSelectionMode) {
+                                Checkbox(
+                                    checked = selectedParts.contains(page.page),
+                                    onCheckedChange = {
+                                        selectedParts = if (selectedParts.contains(page.page)) {
+                                            selectedParts - page.page
+                                        } else {
+                                            selectedParts + page.page
+                                        }
+                                    }
+                                )
+                                Spacer(Modifier.width(16.dp))
+                            }
+
                             Text(
                                 text = "P${page.page}",
                                 style = MaterialTheme.typography.bodyMedium,
@@ -304,6 +428,83 @@ fun ExploreScreen(
                         }
                     }
                 }
+            }
+        }
+    }
+
+    // 导出歌单弹窗
+    if (showExportSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showExportSheet = false },
+            sheetState = exportSheetState
+        ) {
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+                Text("导出到本地歌单", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(8.dp))
+
+                LazyColumn {
+                    itemsIndexed(allLocalPlaylists) { _, pl ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 10.dp)
+                                .clickable {
+                                    val songs = partsInfo!!.pages
+                                        .filter { selectedParts.contains(it.page) }
+                                        .map { it.toSongItem(partsInfo!!, clickedSongCoverUrl) }
+
+                                    scope.launch {
+                                        repo.addSongsToPlaylist(pl.id, songs)
+                                        showExportSheet = false
+                                        exitPartsSelection()
+                                    }
+                                },
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(pl.name, style = MaterialTheme.typography.bodyLarge)
+                            Spacer(Modifier.weight(1f))
+                            Text("${pl.songs.size} 首", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+                HorizontalDivider(thickness = DividerDefaults.Thickness, color = DividerDefaults.color)
+                Spacer(Modifier.height(12.dp))
+
+                var newName by remember { mutableStateOf("") }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = newName,
+                        onValueChange = { newName = it },
+                        modifier = Modifier.weight(1f),
+                        placeholder = { Text("新建歌单名称") },
+                        singleLine = true
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    HapticTextButton(
+                        enabled = newName.isNotBlank() && selectedParts.isNotEmpty(),
+                        onClick = {
+                            val name = newName.trim()
+                            if (name.isBlank()) return@HapticTextButton
+
+                            val songs = partsInfo!!.pages
+                                .filter { selectedParts.contains(it.page) }
+                                .map { it.toSongItem(partsInfo!!, clickedSongCoverUrl) }
+
+                            scope.launch {
+                                repo.createPlaylist(name)
+                                val target = repo.playlists.value.lastOrNull { it.name == name }
+                                if (target != null) {
+                                    repo.addSongsToPlaylist(target.id, songs)
+                                }
+                                showExportSheet = false
+                                exitPartsSelection()
+                            }
+                        }
+                    ) { Text("新建并导出") }
+                }
+                Spacer(Modifier.height(12.dp))
             }
         }
     }
@@ -356,11 +557,11 @@ private fun NeteaseDefaultContent(
             }
         } else if (ui.error != null) {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                Text(ui.error!!, color = MaterialTheme.colorScheme.error)
+                Text(ui.error, color = MaterialTheme.colorScheme.error)
             }
         } else {
             items(items = ui.playlists, key = { it.id }) { playlist ->
-                PlaylistCard(playlist) { onPlay(playlist) }
+                 PlaylistCard(playlist) { onPlay(playlist) }
             }
         }
     }

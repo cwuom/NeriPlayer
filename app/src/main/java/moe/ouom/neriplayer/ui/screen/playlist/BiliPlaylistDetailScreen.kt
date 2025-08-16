@@ -107,6 +107,7 @@ import moe.ouom.neriplayer.ui.viewmodel.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliPlaylistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.ui.viewmodel.playlist.toSongItem
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.NPLogger
@@ -155,6 +156,14 @@ fun BiliPlaylistDetailScreen(
     // Search
     var showSearch by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
+
+    var partsSelectionMode by remember { mutableStateOf(false) }
+    var selectedParts by remember { mutableStateOf<Set<Int>>(emptySet()) } // 使用分P的 page number 作为ID
+
+    fun exitPartsSelection() {
+        partsSelectionMode = false
+        selectedParts = emptySet()
+    }
 
     val displayedVideos = remember(ui.videos, searchQuery) {
         if (searchQuery.isBlank()) ui.videos
@@ -352,12 +361,23 @@ fun BiliPlaylistDetailScreen(
                                         .fillMaxWidth()
                                         .padding(vertical = 10.dp)
                                         .clickable {
-                                            val videosToExport = ui.videos.filter { selectedIds.contains(it.id) }
-                                            val songs = videosToExport.map { it.toSongItem() }
+                                            // 根据模式决定导出的内容
+                                            val songs = if (partsSelectionMode && partsInfo != null) {
+                                                val originalVideoItem = displayedVideos.find { it.bvid == partsInfo!!.bvid }
+                                                partsInfo!!.pages
+                                                    .filter { selectedParts.contains(it.page) }
+                                                    .map { it.toSongItem(partsInfo!!, originalVideoItem?.coverUrl ?: "") }
+                                            } else {
+                                                ui.videos
+                                                    .filter { selectedIds.contains(it.id) }
+                                                    .map { it.toSongItem() }
+                                            }
+
                                             scope.launch {
                                                 repo.addSongsToPlaylist(pl.id, songs)
                                                 showExportSheet = false
                                                 exitSelection()
+                                                exitPartsSelection() // 同时退出分P选择
                                             }
                                         },
                                     verticalAlignment = Alignment.CenterVertically
@@ -384,12 +404,24 @@ fun BiliPlaylistDetailScreen(
                             )
                             Spacer(Modifier.width(12.dp))
                             HapticTextButton(
-                                enabled = newName.isNotBlank() && selectedIds.isNotEmpty(),
+                                // 同时检查两种选择模式
+                                enabled = newName.isNotBlank() && (selectedIds.isNotEmpty() || selectedParts.isNotEmpty()),
                                 onClick = {
                                     val name = newName.trim()
                                     if (name.isBlank()) return@HapticTextButton
-                                    val videosToExport = ui.videos.filter { selectedIds.contains(it.id) }
-                                    val songs = videosToExport.map { it.toSongItem() }
+
+                                    // 根据模式决定导出的内容
+                                    val songs = if (partsSelectionMode && partsInfo != null) {
+                                        val originalVideoItem = displayedVideos.find { it.bvid == partsInfo!!.bvid }
+                                        partsInfo!!.pages
+                                            .filter { selectedParts.contains(it.page) }
+                                            .map { it.toSongItem(partsInfo!!, originalVideoItem?.coverUrl ?: "") }
+                                    } else {
+                                        ui.videos
+                                            .filter { selectedIds.contains(it.id) }
+                                            .map { it.toSongItem() }
+                                    }
+
                                     scope.launch {
                                         repo.createPlaylist(name)
                                         val target = repo.playlists.value.lastOrNull { it.name == name }
@@ -398,6 +430,7 @@ fun BiliPlaylistDetailScreen(
                                         }
                                         showExportSheet = false
                                         exitSelection()
+                                        exitPartsSelection() // 同时退出分P选择
                                     }
                                 }
                             ) { Text("新建并导出") }
@@ -408,35 +441,131 @@ fun BiliPlaylistDetailScreen(
             }
 
             if (showPartsSheet && partsInfo != null) {
+                val currentPartsInfo = partsInfo!!
+
+                BackHandler(enabled = partsSelectionMode) {
+                    exitPartsSelection()
+                }
+
                 ModalBottomSheet(
-                    onDismissRequest = { showPartsSheet = false },
+                    onDismissRequest = {
+                        showPartsSheet = false
+                        exitPartsSelection() // 关闭时重置状态
+                    },
                     sheetState = partsSheetState
                 ) {
                     Column(Modifier.padding(bottom = 12.dp)) {
-                        Text(
-                            text = partsInfo!!.title,
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        HorizontalDivider()
-                        LazyColumn {
-                            val originalVideoItem = displayedVideos.find { it.bvid == partsInfo!!.bvid }
+                        // 多选模式下的顶部操作栏
+                        AnimatedVisibility(visible = partsSelectionMode) {
+                            val allSelected = selectedParts.size == currentPartsInfo.pages.size
+                            TopAppBar(
+                                title = { Text("已选 ${selectedParts.size} 项") },
+                                navigationIcon = {
+                                    HapticIconButton(onClick = { exitPartsSelection() }) {
+                                        Icon(Icons.Filled.Close, contentDescription = "退出多选")
+                                    }
+                                },
+                                actions = {
+                                    // 全选/取消全选
+                                    HapticIconButton(onClick = {
+                                        if (allSelected) {
+                                            selectedParts = emptySet()
+                                        } else {
+                                            selectedParts = currentPartsInfo.pages.map { it.page }.toSet()
+                                        }
+                                    }) {
+                                        Icon(
+                                            imageVector = if (allSelected) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
+                                            contentDescription = if (allSelected) "取消全选" else "全选"
+                                        )
+                                    }
+                                    // 导出按钮
+                                    HapticIconButton(
+                                        onClick = {
+                                            if (selectedParts.isNotEmpty()) {
+                                                scope.launch { partsSheetState.hide() }.invokeOnCompletion {
+                                                    if (!partsSheetState.isVisible) {
+                                                        showPartsSheet = false
+                                                        showExportSheet = true // 显示导出歌单选择界面
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        enabled = selectedParts.isNotEmpty()
+                                    ) {
+                                        Icon(Icons.AutoMirrored.Outlined.PlaylistAdd, contentDescription = "导出到歌单")
+                                    }
+                                },
+                                colors = TopAppBarDefaults.topAppBarColors(
+                                    containerColor = MaterialTheme.colorScheme.surface,
+                                    scrolledContainerColor = MaterialTheme.colorScheme.surface
+                                )
+                            )
+                        }
 
-                            itemsIndexed(partsInfo!!.pages) { index, page ->
+                        // 视频主标题
+                        AnimatedVisibility(visible = !partsSelectionMode) {
+                            Text(
+                                text = currentPartsInfo.title,
+                                style = MaterialTheme.typography.titleMedium,
+                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        HorizontalDivider()
+
+                        // 分P列表
+                        LazyColumn {
+                            val originalVideoItem = displayedVideos.find { it.bvid == currentPartsInfo.bvid }
+
+                            itemsIndexed(currentPartsInfo.pages, key = { _, page -> page.page }) { index, page ->
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clickable {
-                                            onPlayParts(partsInfo!!, index, originalVideoItem?.coverUrl ?: "")
-                                            scope.launch { partsSheetState.hide() }.invokeOnCompletion {
-                                                if (!partsSheetState.isVisible) showPartsSheet = false
+                                        .combinedClickable(
+                                            onClick = {
+                                                if (partsSelectionMode) {
+                                                    // 多选模式下，单击是选择/取消选择
+                                                    selectedParts = if (selectedParts.contains(page.page)) {
+                                                        selectedParts - page.page
+                                                    } else {
+                                                        selectedParts + page.page
+                                                    }
+                                                } else {
+                                                    // 普通模式下，单击是播放
+                                                    onPlayParts(currentPartsInfo, index, originalVideoItem?.coverUrl ?: "")
+                                                    scope.launch { partsSheetState.hide() }.invokeOnCompletion {
+                                                        if (!partsSheetState.isVisible) showPartsSheet = false
+                                                    }
+                                                }
+                                            },
+                                            onLongClick = {
+                                                // 长按进入多选模式
+                                                if (!partsSelectionMode) {
+                                                    partsSelectionMode = true
+                                                    selectedParts = setOf(page.page)
+                                                }
                                             }
-                                        }
+                                        )
                                         .padding(horizontal = 20.dp, vertical = 14.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
+                                    if (partsSelectionMode) {
+                                        Checkbox(
+                                            checked = selectedParts.contains(page.page),
+                                            onCheckedChange = {
+                                                selectedParts = if (selectedParts.contains(page.page)) {
+                                                    selectedParts - page.page
+                                                } else {
+                                                    selectedParts + page.page
+                                                }
+                                            }
+                                        )
+                                        Spacer(Modifier.width(16.dp))
+                                    }
+
                                     Text(
                                         text = "P${page.page}",
                                         style = MaterialTheme.typography.bodyMedium,
