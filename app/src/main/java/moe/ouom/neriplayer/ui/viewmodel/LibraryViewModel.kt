@@ -27,28 +27,52 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
+import moe.ouom.neriplayer.data.BiliCookieRepository
 import moe.ouom.neriplayer.data.LocalPlaylist
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.NeteaseCookieRepository
+import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
 import java.io.IOException
+
+/** Bilibili 收藏夹数据模型 */
+data class BiliPlaylist(
+    val mediaId: Long,
+    val fid: Long,
+    val mid: Long,
+    val title: String,
+    val count: Int,
+    val coverUrl: String
+)
+
 
 /** 媒体库页面 UI 状态 */
 data class LibraryUiState(
     val localPlaylists: List<LocalPlaylist> = emptyList(),
     val neteasePlaylists: List<NeteasePlaylist> = emptyList(),
-    val neteaseError: String? = null
+    val neteaseError: String? = null,
+    val biliPlaylists: List<BiliPlaylist> = emptyList(),
+    val biliError: String? = null
 )
 
 class LibraryViewModel(application: Application) : AndroidViewModel(application) {
     private val localRepo = LocalPlaylistRepository.getInstance(application)
-    private val cookieRepo = NeteaseCookieRepository(application)
-    private val client = NeteaseClient()
+
+    private val neteaseCookieRepo = NeteaseCookieRepository(application)
+    private val neteaseClient = NeteaseClient()
+
+    private val biliCookieRepo = BiliCookieRepository(application)
+    private val biliClient = BiliClient(biliCookieRepo)
+
 
     private val _uiState = MutableStateFlow(
         LibraryUiState(localPlaylists = localRepo.playlists.value)
@@ -56,17 +80,19 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     val uiState: StateFlow<LibraryUiState> = _uiState
 
     init {
+        // 本地歌单
         viewModelScope.launch {
             localRepo.playlists.collect { list ->
                 _uiState.value = _uiState.value.copy(localPlaylists = list)
             }
         }
 
+        // 网易云
         viewModelScope.launch {
-            cookieRepo.cookieFlow.collect { cookies ->
+            neteaseCookieRepo.cookieFlow.collect { cookies ->
                 val mutable = cookies.toMutableMap()
                 mutable.putIfAbsent("os", "pc")
-                client.setPersistedCookies(mutable)
+                neteaseClient.setPersistedCookies(mutable)
                 if (!cookies["MUSIC_U"].isNullOrBlank()) {
                     refreshNetease()
                 } else {
@@ -74,13 +100,76 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 }
             }
         }
+
+        // Bilibili
+        viewModelScope.launch {
+            biliCookieRepo.cookieFlow.collect { cookies ->
+                if (!cookies["SESSDATA"].isNullOrBlank()) {
+                    refreshBilibili()
+                } else {
+                    _uiState.value = _uiState.value.copy(biliPlaylists = emptyList())
+                }
+            }
+        }
     }
+
+    private fun refreshBilibili() {
+        viewModelScope.launch {
+            try {
+                val mid = biliCookieRepo.getCookiesOnce()["DedeUserID"]?.toLongOrNull() ?: 0L
+                if (mid == 0L) {
+                    _uiState.value = _uiState.value.copy(biliError = "无法获取用户ID，请重新登录")
+                    return@launch
+                }
+                val rawList = withContext(Dispatchers.IO) { biliClient.getUserCreatedFavFolders(mid) }
+
+                // 并发获取每个收藏夹的详细信息
+                val mapped = withContext(Dispatchers.IO) {
+                    rawList.map { folder ->
+                        async {
+                            try {
+                                val folderInfo = biliClient.getFavFolderInfo(folder.mediaId)
+                                BiliPlaylist(
+                                    mediaId = folderInfo.mediaId,
+                                    fid = folderInfo.fid,
+                                    mid = folderInfo.mid,
+                                    title = folderInfo.title,
+                                    count = folderInfo.count,
+                                    coverUrl = folderInfo.coverUrl.replace("http://", "https://")
+                                )
+                            } catch (e: Exception) {
+                                // 获取详情失败，使用原始数据并提供一个空的封面URL
+                                NPLogger.e("LibraryViewModel-Bili", "获取详情失败",e)
+                                BiliPlaylist(
+                                    mediaId = folder.mediaId,
+                                    fid = folder.fid,
+                                    mid = folder.mid,
+                                    title = folder.title,
+                                    count = folder.count,
+                                    coverUrl = ""
+                                )
+                            }
+                        }
+                    }.awaitAll()
+                }
+
+                NPLogger.d("LibraryViewModel-Bili",mapped)
+
+                _uiState.value = _uiState.value.copy(biliPlaylists = mapped, biliError = null)
+            } catch (e: IOException) {
+                _uiState.value = _uiState.value.copy(biliError = e.message)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(biliError = e.message)
+            }
+        }
+    }
+
 
     fun refreshNetease() {
         viewModelScope.launch {
             try {
-                val uid = withContext(Dispatchers.IO) { client.getCurrentUserId() }
-                val raw = withContext(Dispatchers.IO) { client.getUserPlaylists(uid) }
+                val uid = withContext(Dispatchers.IO) { neteaseClient.getCurrentUserId() }
+                val raw = withContext(Dispatchers.IO) { neteaseClient.getUserPlaylists(uid) }
                 val mapped = parseNeteasePlaylists(raw)
                 _uiState.value = _uiState.value.copy(
                     neteasePlaylists = mapped,

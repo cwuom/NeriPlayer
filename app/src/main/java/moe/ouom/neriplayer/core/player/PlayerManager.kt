@@ -22,7 +22,7 @@ package moe.ouom.neriplayer.core.player
  * If not, see <https://www.gnu.org/licenses/>.
  *
  * File: moe.ouom.neriplayer.core.player/PlayerManager
- * Created: 2025/8/11
+ * Updated: 2025/8/16
  */
 
 import android.app.Application
@@ -48,9 +48,14 @@ import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
-import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.audio.AudioCapabilities
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -65,19 +70,22 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.core.api.bili.BiliClient
+import moe.ouom.neriplayer.core.api.bili.BiliClientAudioDataSource
+import moe.ouom.neriplayer.core.api.bili.BiliPlaybackRepository
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
+import moe.ouom.neriplayer.data.BiliCookieRepository
+import moe.ouom.neriplayer.data.LocalPlaylist
+import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.NeteaseCookieRepository
 import moe.ouom.neriplayer.data.SettingsRepository
-import moe.ouom.neriplayer.ui.viewmodel.SongItem
+import moe.ouom.neriplayer.ui.component.LyricEntry
+import moe.ouom.neriplayer.ui.component.parseNeteaseLrc
+import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
+import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
 import java.io.File
-import moe.ouom.neriplayer.data.LocalPlaylistRepository
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
-import moe.ouom.neriplayer.data.LocalPlaylist
-import moe.ouom.neriplayer.ui.component.LyricEntry
-import moe.ouom.neriplayer.ui.component.parseNeteaseLrc
 import kotlin.random.Random
 
 data class AudioDevice(
@@ -91,7 +99,6 @@ data class QueueContext(
     val sourceId: Long? = null,
     val sourceName: String? = null
 )
-
 
 /** 用于封装播放器需要通知UI的事件 */
 sealed class PlayerEvent {
@@ -107,6 +114,7 @@ private sealed class SongUrlResult {
 
 object PlayerManager {
     private const val FAVORITES_NAME = "我喜欢的音乐"
+    const val BILI_SOURCE_TAG = "Bilibili"
 
     private var initialized = false
     private lateinit var application: Application
@@ -174,6 +182,9 @@ object PlayerManager {
     val audioLevelFlow get() = AudioReactive.level
     val beatImpulseFlow get() = AudioReactive.beat
 
+    private lateinit var biliRepo: BiliPlaybackRepository
+    private lateinit var biliClient: BiliClient
+
     private fun isPreparedInPlayer(): Boolean = player.currentMediaItem != null
 
     private data class PersistedState(
@@ -189,6 +200,12 @@ object PlayerManager {
         localRepo = LocalPlaylistRepository.getInstance(app)
         stateFile = File(app.filesDir, "last_playlist.json")
 
+        val biliCookieRepo = BiliCookieRepository(app)
+        val biliSettingsRepo = SettingsRepository(app)
+        val biliDataSource = BiliClientAudioDataSource(BiliClient(biliCookieRepo))
+        biliRepo = BiliPlaybackRepository(biliDataSource, biliSettingsRepo)
+        biliClient = BiliClient(biliCookieRepo)
+
         val cacheDir = File(app.cacheDir, "media_cache")
         val dbProvider = StandaloneDatabaseProvider(app)
         cache = SimpleCache(
@@ -197,14 +214,18 @@ object PlayerManager {
             dbProvider
         )
 
-        val httpFactory = DefaultHttpDataSource.Factory()
+        val defaultHttpFactory = DefaultHttpDataSource.Factory()
+        val conditionalHttpFactory = ConditionalHttpDataSourceFactory(defaultHttpFactory, biliCookieRepo)
+
         val cacheDsFactory = CacheDataSource.Factory()
             .setCache(cache)
-            .setUpstreamDataSourceFactory(httpFactory)
+            .setUpstreamDataSourceFactory(conditionalHttpFactory)
 
         val mediaSourceFactory = DefaultMediaSourceFactory(cacheDsFactory)
 
         val renderersFactory = ReactiveRenderersFactory(app)
+            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+
         player = ExoPlayer.Builder(app, renderersFactory)
             .setMediaSourceFactory(mediaSourceFactory)
             .build()
@@ -357,7 +378,7 @@ object PlayerManager {
         consecutivePlayFailures = 0
         currentPlaylist = songs
         _currentQueueFlow.value = currentPlaylist
-        currentIndex = startIndex
+        currentIndex = startIndex.coerceIn(0, songs.lastIndex)
 
         // 清空历史与未来，重建洗牌袋
         shuffleHistory.clear()
@@ -403,7 +424,10 @@ object PlayerManager {
         playJob?.cancel()
         _playbackPositionMs.value = 0L
         playJob = ioScope.launch {
-            when (val result = getSongUrl(song.id)) {
+            // 核心修改点：根据来源决定调用哪个URL获取方法
+            val result = resolveSongUrl(song)
+
+            when (result) {
                 is SongUrlResult.Success -> {
                     consecutivePlayFailures = 0
                     val mediaItem = MediaItem.Builder()
@@ -420,20 +444,28 @@ object PlayerManager {
                     }
                 }
                 is SongUrlResult.RequiresLogin -> {
-                    NPLogger.w("NERI-PlayerManager", "需要登录才能播放: id=${song.id}")
-                    _playerEventFlow.emit(PlayerEvent.ShowLoginPrompt("播放失败，请尝试登录"))
-                    withContext(Dispatchers.Main) { stopAndClearPlaylist() }
+                    NPLogger.w("NERI-PlayerManager", "需要登录才能播放: id=${song.id}, source=${song.album}")
+                    _playerEventFlow.emit(PlayerEvent.ShowLoginPrompt("播放失败，请尝试登录对应的平台"))
+                    withContext(Dispatchers.Main) { next() } // 自动跳到下一首
                 }
                 is SongUrlResult.Failure -> {
-                    NPLogger.e("NERI-PlayerManager", "获取播放 URL 失败, 跳过: id=${song.id}")
+                    NPLogger.e("NERI-PlayerManager", "获取播放 URL 失败, 跳过: id=${song.id}, source=${song.album}")
                     consecutivePlayFailures++
-                    withContext(Dispatchers.Main) { next() }
+                    withContext(Dispatchers.Main) { next() } // 自动跳到下一首
                 }
             }
         }
     }
 
-    private suspend fun getSongUrl(songId: Long): SongUrlResult = withContext(Dispatchers.IO) {
+    private suspend fun resolveSongUrl(song: SongItem): SongUrlResult {
+        return if (song.album == BILI_SOURCE_TAG) {
+            getBiliAudioUrl(song.id)
+        } else {
+            getNeteaseSongUrl(song.id)
+        }
+    }
+
+    private suspend fun getNeteaseSongUrl(songId: Long): SongUrlResult = withContext(Dispatchers.IO) {
         try {
             val resp = neteaseClient.getSongDownloadUrl(
                 songId,
@@ -466,6 +498,36 @@ object PlayerManager {
             }
         } catch (e: Exception) {
             NPLogger.e("NERI-PlayerManager", "获取URL时出错", e)
+            SongUrlResult.Failure
+        }
+    }
+
+    private suspend fun getBiliAudioUrl(avid: Long, cid: Long = 0): SongUrlResult = withContext(Dispatchers.IO) {
+        try {
+            var finalCid = cid
+            var bvid = ""
+            if (finalCid == 0L) {
+                val videoInfo = biliClient.getVideoBasicInfoByAvid(avid)
+                bvid = videoInfo.bvid
+                finalCid = videoInfo.pages.firstOrNull()?.cid ?: 0L
+                if (finalCid == 0L) {
+                    _playerEventFlow.emit(PlayerEvent.ShowError("无法获取视频信息 (cid)"))
+                    return@withContext SongUrlResult.Failure
+                }
+            }
+
+            val audioStream = biliRepo.getBestPlayableAudio(bvid, finalCid)
+
+            if (audioStream?.url != null) {
+                NPLogger.d("NERI-PlayerManager-BiliAudioUrl", audioStream.url)
+                SongUrlResult.Success(audioStream.url)
+            } else {
+                _playerEventFlow.emit(PlayerEvent.ShowError("无法获取播放地址"))
+                SongUrlResult.Failure
+            }
+        } catch (e: Exception) {
+            NPLogger.e("NERI-PlayerManager", "获取B站音频URL时出错", e)
+            _playerEventFlow.emit(PlayerEvent.ShowError("获取播放地址失败: ${e.message}"))
             SongUrlResult.Failure
         }
     }
@@ -747,6 +809,21 @@ object PlayerManager {
         }
     }
 
+    /**
+     * 修改：让 playBiliVideoAsAudio 也使用统一的 playPlaylist 入口
+     */
+    fun playBiliVideoAsAudio(videos: List<BiliVideoItem>, startIndex: Int) {
+        check(initialized) { "Call PlayerManager.initialize(application) first." }
+        if (videos.isEmpty()) {
+            NPLogger.w("NERI-Player", "playBiliVideoAsAudio called with EMPTY list")
+            return
+        }
+        // 转换为通用的 SongItem 列表，然后调用统一的播放入口
+        val songs = videos.map { it.toSongItem() }
+        playPlaylist(songs, startIndex)
+    }
+
+
     /** 获取网易云歌词 */
     suspend fun getNeteaseLyrics(songId: Long): List<LyricEntry> {
         return withContext(Dispatchers.IO) {
@@ -789,4 +866,15 @@ object PlayerManager {
             NPLogger.w("NERI-PlayerManager", "Failed to restore state: ${e.message}")
         }
     }
+}
+
+private fun BiliVideoItem.toSongItem(): SongItem {
+    return SongItem(
+        id = this.id, // avid
+        name = this.title,
+        artist = this.uploader,
+        album = PlayerManager.BILI_SOURCE_TAG,
+        durationMs = this.durationSec * 1000L,
+        coverUrl = this.coverUrl
+    )
 }

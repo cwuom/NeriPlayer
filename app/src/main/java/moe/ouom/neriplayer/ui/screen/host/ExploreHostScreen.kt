@@ -41,10 +41,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import moe.ouom.neriplayer.ui.screen.PlaylistDetailScreen
+import moe.ouom.neriplayer.ui.screen.playlist.PlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.tab.ExploreScreen
 import moe.ouom.neriplayer.ui.viewmodel.NeteasePlaylist
-import moe.ouom.neriplayer.ui.viewmodel.SongItem
+import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 
 @Composable
 fun ExploreHostScreen(

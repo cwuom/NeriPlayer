@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.ui.screen
+package moe.ouom.neriplayer.ui.screen.playlist
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -19,7 +19,7 @@ package moe.ouom.neriplayer.ui.screen
  * along with this software.
  * If not, see <https://www.gnu.org/licenses/>.
  *
- * File: moe.ouom.neriplayer.ui.screens/LocalPlaylistDetailScreen
+ * File: moe.ouom.neriplayer.ui.screen.playlist/LocalPlaylistDetailScreen
  * Created: 2025/8/13
  */
 
@@ -67,6 +67,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -74,7 +75,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -109,8 +109,8 @@ import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
-import moe.ouom.neriplayer.ui.viewmodel.LocalPlaylistDetailViewModel
-import moe.ouom.neriplayer.ui.viewmodel.SongItem
+import moe.ouom.neriplayer.ui.viewmodel.playlist.LocalPlaylistDetailViewModel
+import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.HapticFloatingActionButton
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
@@ -797,7 +797,7 @@ fun LocalPlaylistDetailScreen(
                             }
 
                             Spacer(Modifier.height(12.dp))
-                            androidx.compose.material3.HorizontalDivider()
+                            HorizontalDivider()
                             Spacer(Modifier.height(12.dp))
 
                             var newName by remember { mutableStateOf("") }

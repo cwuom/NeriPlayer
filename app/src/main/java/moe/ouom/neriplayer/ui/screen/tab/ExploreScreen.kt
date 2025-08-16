@@ -19,7 +19,7 @@ package moe.ouom.neriplayer.ui.screen.tab
  * along with this software.
  * If not, see <https://www.gnu.org/licenses/>.
  *
- * File: moe.ouom.neriplayer.ui.screens/ExploreScreen
+ * File: moe.ouom.neriplayer.ui.screen.tab/ExploreScreen
  * Created: 2025/8/8
  */
 
@@ -55,7 +55,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -81,7 +80,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import moe.ouom.neriplayer.ui.viewmodel.ExploreViewModel
 import moe.ouom.neriplayer.ui.viewmodel.NeteasePlaylist
-import moe.ouom.neriplayer.ui.viewmodel.SongItem
+import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.formatDuration
 import moe.ouom.neriplayer.util.performHapticFeedback
 import moe.ouom.neriplayer.util.HapticTextButton

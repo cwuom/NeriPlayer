@@ -7,6 +7,7 @@ dec = "0.1.2"
 exoplayerCore = "2.19.1"
 exoplayerProgressive = "2.19.1"
 exoplayerUi = "2.19.1"
+extensionFfmpeg = "2.20.0"
 gson = "2.13.1"
 kotlin = "2.2.0"
 coreKtx = "1.16.0"
@@ -25,6 +26,7 @@ media = "1.7.0"
 media3Datasource = "1.8.0"
 media3DatasourceOkhttp = "1.8.0"
 media3Exoplayer = "1.8.0"
+media3ExoplayerRtsp = "1.8.0"
 media3Extractor = "1.8.0"
 media3Ui = "1.8.0"
 media3Common = "1.8.0"
@@ -46,6 +48,7 @@ androidx-media = { module = "androidx.media:media", version.ref = "media" }
 androidx-media3-common = { module = "androidx.media3:media3-common", version.ref = "media3Common" }
 androidx-media3-datasource-okhttp = { module = "androidx.media3:media3-datasource-okhttp", version.ref = "media3DatasourceOkhttp" }
 androidx-media3-datasource = { module = "androidx.media3:media3-datasource", version.ref = "media3Datasource" }
+androidx-media3-exoplayer-rtsp = { module = "androidx.media3:media3-exoplayer-rtsp", version.ref = "media3ExoplayerRtsp" }
 androidx-media3-extractor = { module = "androidx.media3:media3-extractor", version.ref = "media3Extractor" }
 androidx-media3-ui = { module = "androidx.media3:media3-ui", version.ref = "media3Ui" }
 androidx-media3-exoplayer = { module = "androidx.media3:media3-exoplayer", version.ref = "media3Exoplayer" }

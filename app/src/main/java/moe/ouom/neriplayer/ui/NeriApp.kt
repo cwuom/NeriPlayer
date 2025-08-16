@@ -27,7 +27,6 @@ import android.app.Application
 import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -72,7 +71,6 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.google.gson.Gson
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.player.AudioPlayerService
 import moe.ouom.neriplayer.core.player.AudioReactive
@@ -81,24 +79,25 @@ import moe.ouom.neriplayer.data.SettingsRepository
 import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.ui.component.NeriBottomBar
 import moe.ouom.neriplayer.ui.component.NeriMiniPlayer
-import moe.ouom.neriplayer.ui.screen.LocalPlaylistDetailScreen
+import moe.ouom.neriplayer.ui.screen.playlist.BiliPlaylistDetailScreen
+import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.NowPlayingScreen
-import moe.ouom.neriplayer.ui.screen.PlaylistDetailScreen
-import moe.ouom.neriplayer.ui.screen.debug.NeteaseApiProbeScreen
+import moe.ouom.neriplayer.ui.screen.playlist.PlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.debug.BiliApiProbeScreen
 import moe.ouom.neriplayer.ui.screen.debug.DebugHomeScreen
+import moe.ouom.neriplayer.ui.screen.debug.NeteaseApiProbeScreen
 import moe.ouom.neriplayer.ui.screen.host.ExploreHostScreen
 import moe.ouom.neriplayer.ui.screen.tab.HomeScreen
 import moe.ouom.neriplayer.ui.screen.tab.LibraryScreen
 import moe.ouom.neriplayer.ui.screen.tab.SettingsScreen
 import moe.ouom.neriplayer.ui.theme.NeriTheme
 import moe.ouom.neriplayer.ui.view.HyperBackground
+import moe.ouom.neriplayer.ui.viewmodel.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.NeteasePlaylist
 import moe.ouom.neriplayer.util.NPLogger
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
-@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun NeriApp(
     onIsDarkChanged: (Boolean) -> Unit = {}
@@ -122,7 +121,7 @@ fun NeriApp(
     LaunchedEffect(Unit) {
         PlayerManager.initialize(context.applicationContext as Application)
         NPLogger.d("NERI-App","PlayerManager.initialize called")
-        NPLogger.d("PlayerManager.hasItems()", PlayerManager.hasItems())
+        NPLogger.d("PlayerManager.hasItems()", PlayerManager.hasItems().toString())
         if (PlayerManager.hasItems()) {
             ContextCompat.startForegroundService(
                 context,
@@ -148,8 +147,6 @@ fun NeriApp(
         val backEntry by navController.currentBackStackEntryAsState()
         val currentRoute = backEntry?.destination?.route
 
-        val showBottomBar = !showNowPlaying
-
         val snackbarHostState = remember { SnackbarHostState() }
 
 
@@ -166,7 +163,11 @@ fun NeriApp(
                 contentColor = MaterialTheme.colorScheme.onSurface,
                 snackbarHost = { SnackbarHost(snackbarHostState) },
                 bottomBar = {
-                    if (showBottomBar) {
+                    AnimatedVisibility(
+                        visible = !showNowPlaying,
+                        enter = slideInVertically { it },
+                        exit = slideOutVertically { it }
+                    ) {
                         Column {
                             val currentSong by PlayerManager.currentSongFlow.collectAsState()
                             val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
@@ -222,13 +223,13 @@ fun NeriApp(
                             gridState = gridState,
                             onItemClick = { playlist ->
                                 val playlistJson = URLEncoder.encode(Gson().toJson(playlist), StandardCharsets.UTF_8.name())
-                                navController.navigate("playlist_detail/$playlistJson")
+                                navController.navigate(Destinations.PlaylistDetail.createRoute(playlistJson))
                             }
                         )
                     }
 
                     composable(
-                        route = "playlist_detail/{playlistJson}",
+                        route = Destinations.PlaylistDetail.route,
                         arguments = listOf(navArgument("playlistJson") { type = NavType.StringType }),
                         enterTransition = { slideInVertically(animationSpec = tween(220)) { it } + fadeIn() },
                         popExitTransition = { slideOutVertically(animationSpec = tween(240)) { it } + fadeOut() }
@@ -252,7 +253,31 @@ fun NeriApp(
                         )
                     }
 
-                    composable(Destinations.Explore.route) {
+
+                    composable(
+                        route = Destinations.BiliPlaylistDetail.route,
+                        arguments = listOf(navArgument("playlistJson") { type = NavType.StringType }),
+                        enterTransition = { slideInVertically(animationSpec = tween(220)) { it } + fadeIn() },
+                        popExitTransition = { slideOutVertically(animationSpec = tween(240)) { it } + fadeOut() }
+                    ) { backStackEntry ->
+                        val playlistJson = backStackEntry.arguments?.getString("playlistJson")
+                        val playlist = Gson().fromJson(playlistJson, BiliPlaylist::class.java)
+                        BiliPlaylistDetailScreen(
+                            playlist = playlist,
+                            onBack = { navController.popBackStack() },
+                            onPlayAudio = { videos, index ->
+                                NPLogger.d("NERI-App", "Playing audio from Bili video: ${videos[index].title}")
+                                PlayerManager.playBiliVideoAsAudio(videos, index)
+                                showNowPlaying = true // 显示播放界面
+                            }
+                        )
+                    }
+
+                    composable(
+                        Destinations.Explore.route,
+                        exitTransition = { fadeOut(animationSpec = tween(160)) },
+                        popEnterTransition = { slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn() }
+                    ) {
                         ExploreHostScreen(onSongClick = { songs, index ->
                             ContextCompat.startForegroundService(
                                 context,
@@ -266,9 +291,34 @@ fun NeriApp(
                         })
                     }
 
+                    composable(
+                        Destinations.Library.route,
+                        exitTransition = { fadeOut(animationSpec = tween(160)) },
+                        popEnterTransition = { slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn() }
+                    ) {
+                        LibraryScreen(
+                            onLocalPlaylistClick = { playlist ->
+                                navController.navigate(Destinations.LocalPlaylistDetail.createRoute(playlist.id))
+                            },
+                            onNeteasePlaylistClick = { playlist ->
+                                val playlistJson = URLEncoder.encode(
+                                    Gson().toJson(playlist),
+                                    StandardCharsets.UTF_8.name()
+                                )
+                                navController.navigate(Destinations.PlaylistDetail.createRoute(playlistJson))
+                            },
+                            onBiliPlaylistClick = { playlist ->
+                                val playlistJson = URLEncoder.encode(
+                                    Gson().toJson(playlist),
+                                    StandardCharsets.UTF_8.name()
+                                )
+                                navController.navigate(Destinations.BiliPlaylistDetail.createRoute(playlistJson))
+                            }
+                        )
+                    }
 
                     composable(
-                        route = "local_playlist_detail/{playlistId}",
+                        route = Destinations.LocalPlaylistDetail.route,
                         arguments = listOf(navArgument("playlistId") { type = NavType.LongType }),
                         enterTransition = { slideInVertically(animationSpec = tween(220)) { it } + fadeIn() },
                         popExitTransition = { slideOutVertically(animationSpec = tween(240)) { it } + fadeOut() }
@@ -332,50 +382,8 @@ fun NeriApp(
                         )
                     }
 
-                    composable(Destinations.DebugBili.route) {
-                        BiliApiProbeScreen()
-                    }
-                    composable(Destinations.DebugNetease.route) {
-                        NeteaseApiProbeScreen()
-                    }
-
-
-                    composable(
-                        Destinations.Explore.route,
-                        exitTransition = { fadeOut(animationSpec = tween(160)) },
-                        popEnterTransition = { slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn() }
-                    ) {
-                        ExploreHostScreen(onSongClick = { songs, index ->
-                            ContextCompat.startForegroundService(
-                                context,
-                                Intent(context, AudioPlayerService::class.java).apply {
-                                    action = AudioPlayerService.ACTION_PLAY
-                                    putParcelableArrayListExtra("playlist", ArrayList(songs))
-                                    putExtra("index", index)
-                                }
-                            )
-                            showNowPlaying = true
-                        })
-                    }
-
-                    composable(
-                        Destinations.Library.route,
-                        exitTransition = { fadeOut(animationSpec = tween(160)) },
-                        popEnterTransition = { slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn() }
-                    ) {
-                        LibraryScreen(
-                            onLocalPlaylistClick = { playlist ->
-                                navController.navigate("local_playlist_detail/${playlist.id}")
-                            },
-                            onNeteasePlaylistClick = { playlist ->
-                                val playlistJson = URLEncoder.encode(
-                                    Gson().toJson(playlist),
-                                    StandardCharsets.UTF_8.name()
-                                )
-                                navController.navigate("playlist_detail/$playlistJson")
-                            }
-                        )
-                    }
+                    composable(Destinations.DebugBili.route) { BiliApiProbeScreen() }
+                    composable(Destinations.DebugNetease.route) { NeteaseApiProbeScreen() }
                 }
             }
 

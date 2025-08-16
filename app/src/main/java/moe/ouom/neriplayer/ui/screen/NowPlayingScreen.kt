@@ -19,7 +19,7 @@ package moe.ouom.neriplayer.ui.screen
  * along with this software.
  * If not, see <https://www.gnu.org/licenses/>.
  *
- * File: moe.ouom.neriplayer.ui.screens/NowPlayingScreen
+ * File: moe.ouom.neriplayer.ui.screen/NowPlayingScreen
  * Created: 2025/8/8
  */
 

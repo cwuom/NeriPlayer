@@ -19,7 +19,7 @@ package moe.ouom.neriplayer.ui.screen.tab
  * along with this software.
  * If not, see <https://www.gnu.org/licenses/>.
  *
- * File: moe.ouom.neriplayer.ui.screens/HomeScreen
+ * File: moe.ouom.neriplayer.ui.screen.tab/HomeScreen
  * Created: 2025/8/8
  */
 

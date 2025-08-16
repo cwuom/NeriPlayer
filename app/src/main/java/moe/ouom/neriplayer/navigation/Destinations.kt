@@ -13,7 +13,7 @@ package moe.ouom.neriplayer.navigation
  * This software is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See the GNU General Public License for more details.
+ * See the GNU General Public License for more details
  *
  * You should have received a copy of the GNU General Public License
  * along with this software.
@@ -33,6 +33,18 @@ sealed class Destinations(val route: String, val label: String) {
     data object DebugBili : Destinations("debug/bili", "B 站调试")
     data object DebugNetease : Destinations("debug/netease", "网易云调试")
 
-    // 带参数的歌单详情路由
-    data object PlaylistDetail : Destinations("playlist_detail/{playlistId}", "歌单详情")
+    // 网易云歌单详情路由
+    data object PlaylistDetail : Destinations("playlist_detail/{playlistJson}", "歌单详情") {
+        fun createRoute(playlistJson: String) = "playlist_detail/$playlistJson"
+    }
+
+    // B 站收藏夹详情路由
+    data object BiliPlaylistDetail : Destinations("bili_playlist_detail/{playlistJson}", "B站收藏夹详情") {
+        fun createRoute(playlistJson: String) = "bili_playlist_detail/$playlistJson"
+    }
+
+    // 本地歌单详情路由
+    data object LocalPlaylistDetail : Destinations("local_playlist_detail/{playlistId}", "本地歌单详情") {
+        fun createRoute(playlistId: Long) = "local_playlist_detail/$playlistId"
+    }
 }

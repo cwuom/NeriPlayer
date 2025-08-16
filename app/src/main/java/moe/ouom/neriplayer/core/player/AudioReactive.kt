@@ -2,7 +2,6 @@
 
 package moe.ouom.neriplayer.core.player
 
-
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
  * Copyright (C) 2025-2025 NeriPlayer developers
@@ -23,7 +22,7 @@ package moe.ouom.neriplayer.core.player
  * If not, see <https://www.gnu.org/licenses/>.
  *
  * File: moe.ouom.neriplayer.core.player/AudioReactive
- * Created: 2025/8/14
+ * Updated: 2025/8/16
  */
 
 import androidx.media3.common.C
@@ -75,10 +74,15 @@ object AudioReactive {
 
             val lvl = when (encoding) {
                 C.ENCODING_PCM_FLOAT -> rmsFloat(buffer)
-                else                 -> rms16(buffer) // 16bit as default
-            } // lvl ~ [0..1] 线性幅值
+                C.ENCODING_PCM_16BIT -> rms16(buffer)
+                C.ENCODING_PCM_24BIT -> rms24(buffer)
+                C.ENCODING_PCM_32BIT -> rms32(buffer)
+                else -> rms16(buffer) // 默认回退到16位处理
+            }
 
-            // 双时间常数包络：快/慢
+            // lvl ~ [0..1] 线性幅值
+
+
             val aFast = 0.5   // 攻速
             val aSlow = 0.05  // 释速
             emaFast = aFast * lvl + (1 - aFast) * emaFast
@@ -114,9 +118,41 @@ object AudioReactive {
                 count++
             }
             if (count == 0) return 0.0
-            return kotlin.math.sqrt(sum / count)
+            return sqrt(sum / count)
         }
 
+        private fun rms24(buf: ByteBuffer): Double {
+            val dup = buf.duplicate().order(ByteOrder.LITTLE_ENDIAN)
+            var sum = 0.0
+            var count = 0
+            while (dup.remaining() >= 3) {
+                // 将3个字节手动组合成一个24位有符号整数
+                val sample = (dup.get().toInt() and 0xFF) or
+                        ((dup.get().toInt() and 0xFF) shl 8) or
+                        ((dup.get().toInt() and 0xFF) shl 16)
+                // 符号位扩展
+                val signedSample = if (sample and 0x800000 != 0) sample or 0xFF000000.toInt() else sample
+                val f = signedSample / 8388608.0 // 2^23
+                sum += f * f
+                count++
+            }
+            if (count == 0) return 0.0
+            return sqrt(sum / count)
+        }
+
+        private fun rms32(buf: ByteBuffer): Double {
+            val dup = buf.duplicate().order(ByteOrder.LITTLE_ENDIAN)
+            var sum = 0.0
+            var count = 0
+            while (dup.remaining() >= 4) {
+                val s = dup.int.toLong() // -2147483648..2147483647
+                val f = s / 2147483648.0
+                sum += f * f
+                count++
+            }
+            if (count == 0) return 0.0
+            return sqrt(sum / count)
+        }
         private fun rmsFloat(buf: ByteBuffer): Double {
             val dup = buf.duplicate().order(ByteOrder.LITTLE_ENDIAN)
             var sum = 0.0

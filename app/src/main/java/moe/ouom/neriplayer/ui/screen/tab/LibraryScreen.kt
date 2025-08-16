@@ -19,7 +19,7 @@ package moe.ouom.neriplayer.ui.screen.tab
  * along with this software.
  * If not, see <https://www.gnu.org/licenses/>.
  *
- * File: moe.ouom.neriplayer.ui.screens/LibraryScreen
+ * File: moe.ouom.neriplayer.ui.screen.tab/LibraryScreen
  * Created: 2025/8/8
  */
 
@@ -55,7 +55,6 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -81,6 +80,7 @@ import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.data.LocalPlaylist
 import moe.ouom.neriplayer.data.LocalPlaylistRepository.Companion.FAVORITES_NAME
+import moe.ouom.neriplayer.ui.viewmodel.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.LibraryViewModel
 import moe.ouom.neriplayer.ui.viewmodel.NeteasePlaylist
 import moe.ouom.neriplayer.util.HapticTextButton
@@ -89,6 +89,7 @@ import moe.ouom.neriplayer.util.formatPlayCount
 enum class LibraryTab(val label: String) {
     LOCAL("本地"),
     NETEASE("网易云"),
+    BILI("哔哩哔哩"),
     QQMUSIC("QQ音乐")
 }
 
@@ -96,7 +97,8 @@ enum class LibraryTab(val label: String) {
 @Composable
 fun LibraryScreen(
     onLocalPlaylistClick: (LocalPlaylist) -> Unit = {},
-    onNeteasePlaylistClick: (NeteasePlaylist) -> Unit = {}
+    onNeteasePlaylistClick: (NeteasePlaylist) -> Unit = {},
+    onBiliPlaylistClick: (BiliPlaylist) -> Unit = {}
 ) {
     val vm: LibraryViewModel = viewModel()
     val ui by vm.uiState.collectAsState()
@@ -168,10 +170,63 @@ fun LibraryScreen(
                     playlists = ui.neteasePlaylists,
                     onClick = onNeteasePlaylistClick
                 )
+                LibraryTab.BILI -> BiliPlaylistList(
+                    playlists = ui.biliPlaylists,
+                    onClick = onBiliPlaylistClick
+                )
                 LibraryTab.QQMUSIC -> {
                     // TODO: QQ 音乐支持
                     LazyColumn { }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BiliPlaylistList(
+    playlists: List<BiliPlaylist>,
+    onClick: (BiliPlaylist) -> Unit
+) {
+    LazyColumn(
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        items(
+            items = playlists,
+            key = { it.mediaId }
+        ) { pl ->
+            Card(
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                modifier = Modifier
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                    .animateItem()
+                    .clickable { onClick(pl) }
+            ) {
+                ListItem(
+                    headlineContent = { Text(pl.title) },
+                    supportingContent = {
+                        Text(
+                            "${pl.count} 个内容",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    leadingContent = {
+                        AsyncImage(
+                            model = ImageRequest.Builder(LocalContext.current).data(pl.coverUrl).build(),
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                        )
+                    }
+                )
             }
         }
     }

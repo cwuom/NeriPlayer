@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.ui.screen
+package moe.ouom.neriplayer.ui.screen.playlist
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -19,23 +19,19 @@ package moe.ouom.neriplayer.ui.screen
  * along with this software.
  * If not, see <https://www.gnu.org/licenses/>.
  *
- * File: moe.ouom.neriplayer.ui.screens/PlaylistDetailScreen
- * Created: 2025/8/10
+ * File: moe.ouom.neriplayer.ui.screen.playlist/BiliPlaylistDetailScreen
+ * Created: 2025/8/15
  */
 
+import android.app.Application
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -53,31 +49,27 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
-import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DividerDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -93,14 +85,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -109,64 +101,53 @@ import coil.compose.AsyncImage
 import coil.request.CachePolicy
 import coil.request.ImageRequest
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
-import moe.ouom.neriplayer.ui.viewmodel.NeteasePlaylist
-import moe.ouom.neriplayer.ui.viewmodel.PlaylistDetailViewModel
-import moe.ouom.neriplayer.ui.viewmodel.SongItem
-import moe.ouom.neriplayer.util.NPLogger
-import moe.ouom.neriplayer.util.formatDuration
-import moe.ouom.neriplayer.util.formatPlayCount
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Shadow
-import moe.ouom.neriplayer.util.HapticFloatingActionButton
+import moe.ouom.neriplayer.ui.viewmodel.BiliPlaylist
+import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliPlaylistDetailViewModel
+import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
+import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
+import moe.ouom.neriplayer.util.formatDurationSec
 import moe.ouom.neriplayer.util.performHapticFeedback
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun PlaylistDetailScreen(
-    playlist: NeteasePlaylist,
+fun BiliPlaylistDetailScreen(
+    playlist: BiliPlaylist,
     onBack: () -> Unit = {},
-    onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> }
+    onPlayAudio: (List<BiliVideoItem>, Int) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
-    val vm: PlaylistDetailViewModel = viewModel(
+    val vm: BiliPlaylistDetailViewModel = viewModel(
         factory = viewModelFactory {
             initializer {
-                val app = context.applicationContext as android.app.Application
-                PlaylistDetailViewModel(app)
+                val app = context.applicationContext as Application
+                BiliPlaylistDetailViewModel(app)
             }
         }
     )
     val ui by vm.uiState.collectAsState()
+    LaunchedEffect(playlist.mediaId) { vm.start(playlist) }
 
-    val currentSong by PlayerManager.currentSongFlow.collectAsState()
-    val listState = rememberLazyListState()
-    val scope = rememberCoroutineScope()
-    var showSearch by remember { mutableStateOf(false) }
-    var searchQuery by remember { mutableStateOf("") }
-
-    LaunchedEffect(playlist.id) { vm.start(playlist) }
-
-    // 多选 & 导出到本地歌单
     val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
-    val allPlaylists by repo.playlists.collectAsState()
+    val allLocalPlaylists by repo.playlists.collectAsState()
     var selectionMode by remember { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    var showExportSheet by remember { mutableStateOf(false) }
+    val exportSheetState = rememberModalBottomSheetState()
+    val scope = rememberCoroutineScope()
+
     fun toggleSelect(id: Long) {
         selectedIds = if (selectedIds.contains(id)) selectedIds - id else selectedIds + id
     }
     fun clearSelection() { selectedIds = emptySet() }
-    fun selectAll() { selectedIds = ui.tracks.map { it.id }.toSet() }
+    fun selectAll() { selectedIds = ui.videos.map { it.id }.toSet() }
     fun exitSelection() { selectionMode = false; clearSelection() }
 
-    var showExportSheet by remember { mutableStateOf(false) }
-    val exportSheetState = rememberModalBottomSheetState()
-
-    val headerHeight: Dp = 280.dp
+    // Search
+    var showSearch by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
 
     AnimatedVisibility(
         visible = true,
@@ -178,12 +159,11 @@ fun PlaylistDetailScreen(
             color = MaterialTheme.colorScheme.background
         ) {
             Column {
-                // 顶部栏：普通模式 / 多选模式
                 if (!selectionMode) {
                     TopAppBar(
                         title = {
                             Text(
-                                text = ui.header?.name ?: playlist.name,
+                                text = ui.header?.title ?: playlist.title,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -197,18 +177,16 @@ fun PlaylistDetailScreen(
                             HapticIconButton(onClick = {
                                 showSearch = !showSearch
                                 if (!showSearch) searchQuery = ""
-                            }) { Icon(Icons.Filled.Search, contentDescription = "搜索歌曲") }
+                            }) { Icon(Icons.Filled.Search, contentDescription = "搜索视频") }
                         },
                         windowInsets = WindowInsets.statusBars,
                         colors = TopAppBarDefaults.topAppBarColors(
                             containerColor = MaterialTheme.colorScheme.surface,
-                            scrolledContainerColor = MaterialTheme.colorScheme.surface,
-                            titleContentColor = MaterialTheme.colorScheme.onSurface,
-                            navigationIconContentColor = MaterialTheme.colorScheme.onSurface
+                            scrolledContainerColor = MaterialTheme.colorScheme.surface
                         )
                     )
                 } else {
-                    val allSelected = selectedIds.size == ui.tracks.size && ui.tracks.isNotEmpty()
+                    val allSelected = selectedIds.size == ui.videos.size && ui.videos.isNotEmpty()
                     TopAppBar(
                         title = { Text("已选 ${selectedIds.size} 项") },
                         navigationIcon = {
@@ -245,132 +223,71 @@ fun PlaylistDetailScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 8.dp),
-                        placeholder = { Text("搜索歌单内歌曲") },
+                        placeholder = { Text("搜索收藏夹内视频") },
                         singleLine = true
                     )
                 }
 
-                val displayedTracks = remember(ui.tracks, searchQuery) {
-                    if (searchQuery.isBlank()) ui.tracks
-                    else ui.tracks.filter { it.name.contains(searchQuery, true) || it.artist.contains(searchQuery, true) }
+                val displayedVideos = remember(ui.videos, searchQuery) {
+                    if (searchQuery.isBlank()) ui.videos
+                    else ui.videos.filter {
+                        it.title.contains(searchQuery, true) || it.uploader.contains(searchQuery, true)
+                    }
                 }
-                val currentIndex = displayedTracks.indexOfFirst { it.id == currentSong?.id }
 
                 Box(modifier = Modifier.fillMaxSize()) {
                     LazyColumn(
-                        state = listState,
                         contentPadding = PaddingValues(bottom = 24.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
                         item {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(headerHeight)
-                            ) {
-                                AsyncImage(
-                                    model = ImageRequest.Builder(LocalContext.current)
-                                        .data(ui.header?.coverUrl.takeUnless { it.isNullOrBlank() }
-                                            ?: playlist.picUrl)
-                                        .crossfade(true)
-                                        .memoryCachePolicy(CachePolicy.ENABLED)
-                                        .diskCachePolicy(CachePolicy.ENABLED)
-                                        .networkCachePolicy(CachePolicy.ENABLED)
-                                        .build(),
-                                    contentDescription = ui.header?.name ?: playlist.name,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .drawWithContent {
-                                            drawContent()
-                                            drawRect(
-                                                brush = Brush.verticalGradient(
-                                                    colors = listOf(
-                                                        Color.Black.copy(alpha = 0.10f),
-                                                        Color.Black.copy(alpha = 0.35f),
-                                                        Color.Transparent
-                                                    ),
-                                                    startY = 0f,
-                                                    endY = size.height
-                                                )
-                                            )
-                                        }
-                                )
-
-                                Column(
-                                    modifier = Modifier
-                                        .align(Alignment.BottomStart)
-                                        .padding(horizontal = 16.dp, vertical = 12.dp)
-                                ) {
-                                    Text(
-                                        text = ui.header?.name ?: playlist.name,
-                                        style = MaterialTheme.typography.headlineSmall.copy(
-                                            shadow = Shadow(
-                                                color = Color.Black.copy(alpha = 0.6f),
-                                                offset = Offset(2f, 2f),
-                                                blurRadius = 4f
-                                            )
-                                        ),
-                                        color = Color.White,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Spacer(Modifier.height(4.dp))
-                                    Text(
-                                        text = "播放量 ${formatPlayCount(ui.header?.playCount ?: playlist.playCount)} · ${(ui.header?.trackCount ?: playlist.trackCount)} 首",
-                                        style = MaterialTheme.typography.bodySmall.copy(
-                                            shadow = Shadow(
-                                                color = Color.Black.copy(alpha = 0.6f),
-                                                offset = Offset(2f, 2f),
-                                                blurRadius = 4f
-                                            )
-                                        ),
-                                        color = Color.White.copy(alpha = 0.9f)
-                                    )
-                                }
-                            }
+                            Header(playlist = playlist, headerData = ui.header)
                         }
 
-                        // 状态块
+                        // Status block
                         when {
-                            ui.loading && ui.tracks.isEmpty() -> {
+                            ui.loading && ui.videos.isEmpty() -> {
                                 item {
                                     Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(20.dp),
+                                        modifier = Modifier.fillMaxWidth().padding(20.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.Center
                                     ) {
                                         CircularProgressIndicator()
-                                        Text("  正在拉取歌单曲目...")
+                                        Text("  正在加载收藏夹内容...")
                                     }
                                 }
                             }
-
-                            ui.error != null && ui.tracks.isEmpty() -> {
+                            ui.error != null && ui.videos.isEmpty() -> {
                                 item {
                                     Column(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(20.dp),
+                                        modifier = Modifier.fillMaxWidth().padding(20.dp),
                                         horizontalAlignment = Alignment.CenterHorizontally
                                     ) {
                                         Text(
-                                            text = "加载失败：${ui.error}",
+                                            text = "加载失败: ${ui.error}",
                                             color = MaterialTheme.colorScheme.error
                                         )
                                         Spacer(Modifier.height(8.dp))
-                                        RetryChip { vm.retry() }
+                                        Card(
+                                            onClick = { vm.retry() },
+                                            shape = RoundedCornerShape(50),
+                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                                        ) {
+                                            Text(
+                                                "点我重试",
+                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                            )
+                                        }
                                     }
                                 }
                             }
-
                             else -> {
-                                itemsIndexed(displayedTracks, key = { _, it -> it.id }) { index, item ->
-                                    SongRow(
+                                itemsIndexed(displayedVideos, key = { _, it -> it.id }) { index, item ->
+                                    VideoRow(
                                         index = index + 1,
-                                        song = item,
+                                        video = item,
                                         selectionMode = selectionMode,
                                         selected = selectedIds.contains(item.id),
                                         onToggleSelect = { toggleSelect(item.id) },
@@ -378,41 +295,21 @@ fun PlaylistDetailScreen(
                                             if (!selectionMode) {
                                                 selectionMode = true
                                                 selectedIds = setOf(item.id)
-                                            } else {
-                                                toggleSelect(item.id)
                                             }
                                         },
                                         onClick = {
-                                            NPLogger.d("NERI-UI", "tap song index=$index id=${item.id}")
-                                            val full = ui.tracks
-                                            val pos = full.indexOfFirst { it.id == item.id }
-                                            if (pos >= 0) onSongClick(full, pos)
+                                            val fullList = ui.videos
+                                            val originalIndex = fullList.indexOfFirst { it.id == item.id }
+                                            onPlayAudio(fullList, originalIndex)
                                         }
                                     )
                                 }
                             }
                         }
                     }
-
-                    if (currentIndex >= 0) {
-                        HapticFloatingActionButton(
-                            onClick = {
-                                scope.launch { listState.animateScrollToItem(currentIndex) }
-                            },
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(16.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Outlined.PlaylistPlay,
-                                contentDescription = "定位到正在播放"
-                            )
-                        }
-                    }
                 }
             }
 
-            // 导出面板 //
             if (showExportSheet) {
                 ModalBottomSheet(
                     onDismissRequest = { showExportSheet = false },
@@ -423,21 +320,20 @@ fun PlaylistDetailScreen(
                         Spacer(Modifier.height(8.dp))
 
                         LazyColumn {
-                            itemsIndexed(allPlaylists) { _, pl ->
+                            itemsIndexed(allLocalPlaylists) { _, pl ->
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(vertical = 10.dp)
-                                        .combinedClickable(onClick = {
-                                            // 倒序导出
-                                            val songs = ui.tracks
-                                                .asReversed()
-                                                .filter { selectedIds.contains(it.id) }
+                                        .clickable {
+                                            val videosToExport = ui.videos.filter { selectedIds.contains(it.id) }
+                                            val songs = videosToExport.map { it.toSongItem() }
                                             scope.launch {
                                                 repo.addSongsToPlaylist(pl.id, songs)
                                                 showExportSheet = false
+                                                exitSelection()
                                             }
-                                        }),
+                                        },
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(pl.name, style = MaterialTheme.typography.bodyLarge)
@@ -448,11 +344,7 @@ fun PlaylistDetailScreen(
                         }
 
                         Spacer(Modifier.height(12.dp))
-                        HorizontalDivider(
-                            Modifier,
-                            DividerDefaults.Thickness,
-                            DividerDefaults.color
-                        )
+                        HorizontalDivider(thickness = DividerDefaults.Thickness, color = DividerDefaults.color)
                         Spacer(Modifier.height(12.dp))
 
                         var newName by remember { mutableStateOf("") }
@@ -470,10 +362,8 @@ fun PlaylistDetailScreen(
                                 onClick = {
                                     val name = newName.trim()
                                     if (name.isBlank()) return@HapticTextButton
-                                    // 倒序导出
-                                    val songs = ui.tracks
-                                        .asReversed()
-                                        .filter { selectedIds.contains(it.id) }
+                                    val videosToExport = ui.videos.filter { selectedIds.contains(it.id) }
+                                    val songs = videosToExport.map { it.toSongItem() }
                                     scope.launch {
                                         repo.createPlaylist(name)
                                         val target = repo.playlists.value.lastOrNull { it.name == name }
@@ -481,6 +371,7 @@ fun PlaylistDetailScreen(
                                             repo.addSongsToPlaylist(target.id, songs)
                                         }
                                         showExportSheet = false
+                                        exitSelection()
                                     }
                                 }
                             ) { Text("新建并导出") }
@@ -489,44 +380,96 @@ fun PlaylistDetailScreen(
                     }
                 }
             }
-            // 允许返回键优先退出多选
             BackHandler(enabled = selectionMode) { exitSelection() }
         }
     }
 }
 
-/* 小组件 */
+private fun BiliVideoItem.toSongItem(): SongItem {
+    return SongItem(
+        id = this.id, // avid
+        name = this.title,
+        artist = this.uploader,
+        album = "Bilibili",
+        durationMs = this.durationSec * 1000L,
+        coverUrl = this.coverUrl
+    )
+}
+
+
 @Composable
-private fun RetryChip(onClick: () -> Unit) {
-    Card(
-        onClick = onClick,
-        shape = RoundedCornerShape(50),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+private fun Header(playlist: BiliPlaylist, headerData: BiliPlaylist?) {
+    val displayData = headerData ?: playlist
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(280.dp)
     ) {
-        Text(
-            "点我重试",
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            color = MaterialTheme.colorScheme.onPrimaryContainer
+        AsyncImage(
+            model = ImageRequest.Builder(LocalContext.current)
+                .data(displayData.coverUrl)
+                .crossfade(true)
+                .memoryCachePolicy(CachePolicy.ENABLED)
+                .diskCachePolicy(CachePolicy.ENABLED)
+                .networkCachePolicy(CachePolicy.ENABLED)
+                .build(),
+            contentDescription = displayData.title,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .fillMaxSize()
+                .drawWithContent {
+                    drawContent()
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Black.copy(alpha = 0.10f),
+                                Color.Black.copy(alpha = 0.35f),
+                                Color.Transparent
+                            ),
+                            startY = 0f,
+                            endY = size.height
+                        )
+                    )
+                }
         )
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+        ) {
+            Text(
+                text = displayData.title,
+                style = MaterialTheme.typography.headlineSmall.copy(
+                    shadow = Shadow(color = Color.Black.copy(alpha = 0.6f), offset = Offset(2f, 2f), blurRadius = 4f)
+                ),
+                color = Color.White,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "${displayData.count} 个内容",
+                style = MaterialTheme.typography.bodySmall.copy(
+                    shadow = Shadow(color = Color.Black.copy(alpha = 0.6f), offset = Offset(2f, 2f), blurRadius = 4f)
+                ),
+                color = Color.White.copy(alpha = 0.9f)
+            )
+        }
     }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun SongRow(
+private fun VideoRow(
     index: Int,
-    song: SongItem,
+    video: BiliVideoItem,
     selectionMode: Boolean,
     selected: Boolean,
     onToggleSelect: () -> Unit,
     onLongPress: () -> Unit,
-    onClick: () -> Unit,
-    indexWidth: Dp = 48.dp
+    onClick: () -> Unit
 ) {
-    val current by PlayerManager.currentSongFlow.collectAsState()
-    val isPlayingSong = current?.id == song.id
     val context = LocalContext.current
-
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -535,13 +478,13 @@ private fun SongRow(
                     context.performHapticFeedback()
                     if (selectionMode) onToggleSelect() else onClick()
                 },
-                onLongClick = { onLongPress() }
+                onLongClick = onLongPress
             )
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
-            modifier = Modifier.width(indexWidth),
+            modifier = Modifier.width(40.dp),
             contentAlignment = Alignment.Center
         ) {
             if (selectionMode) {
@@ -552,119 +495,43 @@ private fun SongRow(
             } else {
                 Text(
                     text = index.toString(),
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Clip,
                     textAlign = TextAlign.Center
                 )
             }
         }
 
-        if (!song.coverUrl.isNullOrBlank()) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        shape = RoundedCornerShape(10.dp)
-                    )
-            ) {
-                AsyncImage(
-                    model = ImageRequest.Builder(LocalContext.current).data(song.coverUrl).build(),
-                    contentDescription = song.name,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.matchParentSize()
-                )
-            }
-            Spacer(Modifier.width(12.dp))
-        }
-
+        AsyncImage(
+            model = ImageRequest.Builder(LocalContext.current).data(video.coverUrl).build(),
+            contentDescription = video.title,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .size(width = 100.dp, height = 60.dp)
+                .clip(RoundedCornerShape(8.dp))
+        )
+        Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                text = song.name,
-                maxLines = 1,
+                text = video.title,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.titleMedium
+                style = MaterialTheme.typography.bodyLarge
             )
+            Spacer(Modifier.height(4.dp))
             Text(
-                text = listOfNotNull(
-                    song.artist.takeIf { it.isNotBlank() },
-                    song.album.takeIf { it.isNotBlank() }
-                ).joinToString(" · "),
+                text = video.uploader,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-
-        if (isPlayingSong) {
-            PlayingIndicator(color = MaterialTheme.colorScheme.primary)
-        } else {
-            Text(
-                text = formatDuration(song.durationMs),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-fun PlayingIndicator(
-    modifier: Modifier = Modifier,
-    color: Color = MaterialTheme.colorScheme.primary
-) {
-    val transition = rememberInfiniteTransition(label = "playing")
-    val animValues = listOf(
-        transition.animateFloat(
-            initialValue = 0.3f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 300),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "bar1"
-        ),
-        transition.animateFloat(
-            initialValue = 0.5f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 350),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "bar2"
-        ),
-        transition.animateFloat(
-            initialValue = 0.4f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 400),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "bar3"
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = formatDurationSec(video.durationSec),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-    )
-
-    val barWidth = 3.dp
-    val barMaxHeight = 12.dp
-
-    Row(
-        modifier = modifier.height(barMaxHeight),
-        verticalAlignment = Alignment.Bottom,
-        horizontalArrangement = Arrangement.spacedBy(1.dp)
-    ) {
-        animValues.forEach { anim ->
-            Box(
-                Modifier
-                    .width(barWidth)
-                    .height(barMaxHeight * anim.value)
-                    .clip(RoundedCornerShape(50))
-                    .background(color)
-            )
-        }
     }
 }

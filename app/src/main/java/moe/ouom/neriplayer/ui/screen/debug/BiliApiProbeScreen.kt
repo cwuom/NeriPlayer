@@ -19,7 +19,7 @@ package moe.ouom.neriplayer.ui.screen.debug
  * along with this software.
  * If not, see <https://www.gnu.org/licenses/>.
  *
- * File: moe.ouom.neriplayer.ui.viewmodel/BiliApiProbeScreen
+ * File: moe.ouom.neriplayer.ui.screen.debug/BiliApiProbeScreen
  * Created: 2025/8/14
  */
 import android.app.Application

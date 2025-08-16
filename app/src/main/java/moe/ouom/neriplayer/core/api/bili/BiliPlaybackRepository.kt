@@ -29,6 +29,8 @@ import moe.ouom.neriplayer.data.SettingsRepository
 import moe.ouom.neriplayer.data.selectStreamByPreference
 
 interface BiliAudioDataSource {
+    val client: BiliClient
+
     /**
      * 获取当前视频的所有可用音频流
      */
