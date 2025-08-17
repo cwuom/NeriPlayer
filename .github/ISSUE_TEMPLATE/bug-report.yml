@@ -1,0 +1,72 @@
+name: Bug report / 报告问题
+description: 提交一份问题报告帮助开发者改进模块
+title: "[BUG] "
+labels: [ "Bug" ]
+
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢给 NeriPlayer 汇报问题！
+        为了使我们更好地帮助你，请提供以下信息。
+  - type: textarea
+    attributes:
+      label: 复现步骤 / Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: 预期行为 / Expected behaviour
+      placeholder: 正常情况下应该发生什么 / Tell us what should happen
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: 实际行为 / Actual behaviour
+      description: 如果含有截图，个人信息注意打码保护
+      placeholder: 实际上发生了什么 / Tell us what happens instead
+    validations:
+      required: true
+
+  - type: input
+    attributes:
+      label: 你使用的安卓系统版本 / Your Android version
+    validations:
+      required: true
+
+  - type: input
+    attributes:
+      label: 你正在使用的手机型号 / Your phone model
+    validations:
+      required: true
+
+
+  - type: checkboxes
+    id: latest
+    attributes:
+      label: 版本和其他要求 / Version and Other Requirements
+      options:
+        - label: 我正在使用最新 CI 调试版本且启用 DEBUG MODE / I am using latest debug CI version of ono and enable log
+          required: false
+        - label: 我已经在 [Issue Tracker](https://github.com/cwuom/NeriPlayer/issues) 中找过我要提出的问题，没有找到相同问题。重复问题会被关闭。
+          required: true
+        - label: 我已知晓并同意，如果我不按照模板提供的指示进行填写，则我的 Issue 可能会被无条件删除。
+          required: true
+
+  - type: textarea
+    attributes:
+      label: 日志 / Logs
+      description: 请先开启 DEBUG MODE （在设置界面点击 7 次版本号） 复现问题，然后在调试界面查看并导出日志。
+      placeholder: 将日志粘贴到此处或者点击文本框底栏上传日志文件。 / Paste logs here or upload logs by clicking the bar on the bottom.
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra-desc
+    attributes:
+      label: 补充说明（可选） / Additional information (optional)

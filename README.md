@@ -46,6 +46,9 @@
 - 音频下载
 - ~~云存储~~（维护成本有点高）
 
+# BUG Report / 问题反馈
+- 反馈问题前请先开启调试模式（在设置界面点击 7 下版本号），然后在 [Issues](https://github.com/cwuom/NeriPlayer/issues) 中根据模板创建问题报告。
+
 # Adaptation Status / 三方平台适配情况
 - [x] 网易云音乐 / NetEase Cloud Music
 - [x] 哔哩哔哩 / BiliBili
