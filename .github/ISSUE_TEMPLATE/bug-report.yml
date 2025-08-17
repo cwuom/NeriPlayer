@@ -1,5 +1,5 @@
 name: Bug report / 报告问题
-description: 提交一份问题报告帮助开发者改进模块
+description: 提交一份问题报告帮助开发者改进产品
 title: "[BUG] "
 labels: [ "Bug" ]
 
@@ -51,7 +51,7 @@ body:
     attributes:
       label: 版本和其他要求 / Version and Other Requirements
       options:
-        - label: 我正在使用最新 CI 调试版本且启用 DEBUG MODE / I am using latest debug CI version of ono and enable log
+        - label: 我正在使用最新 CI 调试版本且启用 DEBUG MODE / I am using latest debug CI version of NeriPlayer and enable DEBUG MODE
           required: false
         - label: 我已经在 [Issue Tracker](https://github.com/cwuom/NeriPlayer/issues) 中找过我要提出的问题，没有找到相同问题。重复问题会被关闭。
           required: true
