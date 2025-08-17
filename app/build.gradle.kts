@@ -91,6 +91,16 @@ private fun getShortGitRevision(): String {
     }
 }
 
+android.applicationVariants.all {
+    outputs.all {
+        if (this is com.android.build.gradle.internal.api.ApkVariantOutputImpl) {
+            val config = project.android.defaultConfig
+            val versionName = config.versionName
+            this.outputFileName = "NeriPlayer-${versionName}.apk"
+        }
+    }
+}
+
 fun getBuildVersionCode(): Int {
     val appVerCode: Int by lazy {
         val versionCode = SimpleDateFormat("yyMMddHH", Locale.ENGLISH).format(Date())
