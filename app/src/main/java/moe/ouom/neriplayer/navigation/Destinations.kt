@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.navigation
 
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
+
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
  * Copyright (C) 2025-2025 NeriPlayer developers
@@ -35,6 +38,7 @@ sealed class Destinations(val route: String, val label: String) {
     data object DebugBili : Destinations("debug/bili", "B 站调试")
     data object DebugNetease : Destinations("debug/netease", "网易云调试")
     data object DebugSearch : Destinations("debug/search", "搜索调试")
+    data object DebugLogsList : Destinations("debug_logs_list", "日志列表")
 
     // 网易云歌单详情路由
     data object PlaylistDetail : Destinations("playlist_detail/{playlistJson}", "歌单详情") {
@@ -49,5 +53,12 @@ sealed class Destinations(val route: String, val label: String) {
     // 本地歌单详情路由
     data object LocalPlaylistDetail : Destinations("local_playlist_detail/{playlistId}", "本地歌单详情") {
         fun createRoute(playlistId: Long) = "local_playlist_detail/$playlistId"
+    }
+
+    data object DebugLogViewer : Destinations("debug_log_viewer/{filePath}", "日志查看") {
+        fun createRoute(filePath: String): String {
+            val encodedPath = URLEncoder.encode(filePath, StandardCharsets.UTF_8.name())
+            return "debug_log_viewer/$encodedPath"
+        }
     }
 }

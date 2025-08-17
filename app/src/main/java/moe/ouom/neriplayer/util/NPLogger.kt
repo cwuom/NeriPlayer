@@ -155,4 +155,18 @@ object NPLogger {
             }
         }
     }
+
+    /**
+     * Returns the directory where log files are stored.
+     * @param context The application context.
+     * @return The log directory File object, or null if not available.
+     */
+    fun getLogDirectory(context: Context): File? {
+        if (!isFileLoggingEnabled) return null
+        return File(context.getExternalFilesDir(null), "logs").also {
+            if (!it.exists()) {
+                it.mkdirs()
+            }
+        }
+    }
 }

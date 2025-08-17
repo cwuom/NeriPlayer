@@ -85,6 +85,7 @@ import moe.ouom.neriplayer.ui.screen.NowPlayingScreen
 import moe.ouom.neriplayer.ui.screen.playlist.PlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.debug.BiliApiProbeScreen
 import moe.ouom.neriplayer.ui.screen.debug.DebugHomeScreen
+import moe.ouom.neriplayer.ui.screen.debug.LogListScreen
 import moe.ouom.neriplayer.ui.screen.debug.NeteaseApiProbeScreen
 import moe.ouom.neriplayer.ui.screen.debug.SearchApiProbeScreen
 import moe.ouom.neriplayer.ui.screen.host.ExploreHostScreen
@@ -94,6 +95,7 @@ import moe.ouom.neriplayer.ui.screen.tab.SettingsScreen
 import moe.ouom.neriplayer.ui.theme.NeriTheme
 import moe.ouom.neriplayer.ui.view.HyperBackground
 import moe.ouom.neriplayer.ui.viewmodel.BiliPlaylist
+import moe.ouom.neriplayer.ui.viewmodel.LogViewerScreen
 import moe.ouom.neriplayer.ui.viewmodel.NeteasePlaylist
 import moe.ouom.neriplayer.util.NPLogger
 import java.net.URLEncoder
@@ -380,6 +382,7 @@ fun NeriApp(
                             onOpenBiliDebug = { navController.navigate(Destinations.DebugBili.route) },
                             onOpenNeteaseDebug = { navController.navigate(Destinations.DebugNetease.route) },
                             onOpenSearchDebug = { navController.navigate(Destinations.DebugSearch.route) },
+                            onOpenLogs = { navController.navigate(Destinations.DebugLogsList.route) },
                             onHideDebugMode = {
                                 scope.launch {
                                     repo.setDevModeEnabled(false)
@@ -396,6 +399,25 @@ fun NeriApp(
                     composable(Destinations.DebugBili.route) { BiliApiProbeScreen() }
                     composable(Destinations.DebugNetease.route) { NeteaseApiProbeScreen() }
                     composable(Destinations.DebugSearch.route) { SearchApiProbeScreen() }
+                    composable(Destinations.DebugLogsList.route) {
+                        LogListScreen(
+                            onBack = { navController.popBackStack() },
+                            onLogFileClick = { filePath ->
+                                navController.navigate(Destinations.DebugLogViewer.createRoute(filePath))
+                            }
+                        )
+                    }
+
+                    composable(
+                        route = Destinations.DebugLogViewer.route,
+                        arguments = listOf(navArgument("filePath") { type = NavType.StringType })
+                    ) { backStackEntry ->
+                        val filePath = backStackEntry.arguments?.getString("filePath") ?: ""
+                        LogViewerScreen(
+                            filePath = filePath,
+                            onBack = { navController.popBackStack() }
+                        )
+                    }
                 }
             }
 
