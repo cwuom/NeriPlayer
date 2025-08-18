@@ -602,33 +602,36 @@ class BiliClient(
     }
 
     /**
-     * 获取收藏夹内所有内容（自动处理分页）
+     * 获取收藏夹内所有内容
      */
     suspend fun getAllFavFolderItems(mediaId: Long): List<FavResourceItem> = withContext(Dispatchers.IO) {
-        // 先获取收藏夹信息，拿到总数
         val folderInfo = getFavFolderInfo(mediaId)
         val totalCount = folderInfo.count
         if (totalCount == 0) {
             return@withContext emptyList()
         }
 
-        val pageSize = 20 // getFavFolderContents 的默认页面大小
+        val pageSize = 20
         val totalPages = (totalCount + pageSize - 1) / pageSize
 
         // 并发请求所有分页
         val deferredPages = (1..totalPages).map { page ->
             async {
                 try {
-                    getFavFolderContents(mediaId, page = page, pageSize = pageSize).items
+                    // 将页码与请求结果配对，以便后续排序
+                    page to getFavFolderContents(mediaId, page = page, pageSize = pageSize).items
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to fetch page $page for mediaId $mediaId", e)
-                    emptyList<FavResourceItem>() // 出错时返回空列表
+                    page to emptyList() // 出错时返回空列表，但页码保留
                 }
             }
         }
 
-        // 等待所有请求完成，并把结果合并成一个列表
-        deferredPages.awaitAll().flatten()
+        // 等待所有请求完成
+        val pageResults = deferredPages.awaitAll()
+
+        // 按页码从小到大排序，然后展开并合并列表
+        pageResults.sortedBy { it.first }.flatMap { it.second }
     }
 
     // 内部实现 //
