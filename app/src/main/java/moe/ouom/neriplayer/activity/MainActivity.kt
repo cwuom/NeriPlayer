@@ -281,7 +281,7 @@ fun NeriTheme(
 
 @Composable
 fun DisclaimerScreen(onAgree: () -> Unit) {
-    var countdown by remember { mutableIntStateOf(30) }
+    var countdown by remember { mutableIntStateOf(5) }
     LaunchedEffect(Unit) { while (countdown > 0) { delay(1000); countdown-- } }
 
     Surface(
