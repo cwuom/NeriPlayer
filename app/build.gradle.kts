@@ -16,6 +16,17 @@ android {
     compileSdk = 36
 
     val buildUUID = UUID.randomUUID()
+
+    signingConfigs {
+        create("release") {
+            val storePath = project.findProperty("KEYSTORE_FILE") as String? ?: "neri.jks"
+            storeFile = file(storePath)
+            storePassword = project.findProperty("KEYSTORE_PASSWORD") as String? ?: ""
+            keyAlias = project.findProperty("KEY_ALIAS") as String? ?: "key0"
+            keyPassword = project.findProperty("KEY_PASSWORD") as String? ?: ""
+        }
+    }
+
     println(" __  __                     ____    ___                                     \n" +
             "/\\ \\/\\ \\                 __/\\  _`\\ /\\_ \\                                    \n" +
             "\\ \\ `\\\\ \\     __   _ __ /\\_\\ \\ \\L\\ \\//\\ \\      __     __  __     __   _ __  \n" +
