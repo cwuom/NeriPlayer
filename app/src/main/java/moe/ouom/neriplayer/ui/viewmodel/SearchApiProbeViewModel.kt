@@ -34,13 +34,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import moe.ouom.neriplayer.core.api.netease.NeteaseClient
-import moe.ouom.neriplayer.core.api.search.CloudMusicSearchApi
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
-import moe.ouom.neriplayer.core.api.search.QQMusicSearchApi
-import moe.ouom.neriplayer.data.NeteaseCookieRepository
+import moe.ouom.neriplayer.core.di.AppContainer
 
 data class SearchProbeUiState(
     val running: Boolean = false,
@@ -51,12 +47,12 @@ data class SearchProbeUiState(
 
 class SearchApiProbeViewModel(app: Application) : AndroidViewModel(app) {
 
-    private val cookieRepo = NeteaseCookieRepository(getApplication())
+    private val cookieRepo = AppContainer.neteaseCookieRepo
 
-    private val neteaseClient = NeteaseClient()
+    private val neteaseClient = AppContainer.neteaseClient
 
-    private val cloudMusicApi = CloudMusicSearchApi(neteaseClient)
-    private val qqMusicApi = QQMusicSearchApi()
+    private val cloudMusicApi = AppContainer.cloudMusicSearchApi
+    private val qqMusicApi = AppContainer.qqMusicSearchApi
     private val json = Json { prettyPrint = true }
 
     private val _ui = MutableStateFlow(SearchProbeUiState())
@@ -69,7 +65,6 @@ class SearchApiProbeViewModel(app: Application) : AndroidViewModel(app) {
     /** 在调用 API 前确保 Cookie 已经注入 NeteaseClient */
     private suspend fun ensureCookies() {
         val cookies = withContext(Dispatchers.IO) { cookieRepo.getCookiesOnce() }
-        neteaseClient.setPersistedCookies(cookies)
     }
 
     fun callSearchAndCopy(platform: MusicPlatform) {

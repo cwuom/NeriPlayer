@@ -49,6 +49,7 @@ object SettingsKeys {
     val THEME_SEED_COLOR = stringPreferencesKey("theme_seed_color")
     val LYRIC_BLUR_ENABLED = booleanPreferencesKey("lyric_blur_enabled")
     val UI_DENSITY_SCALE = floatPreferencesKey("ui_density_scale")
+    val BYPASS_PROXY = booleanPreferencesKey("bypass_proxy")
 }
 
 
@@ -92,6 +93,9 @@ class SettingsRepository(private val context: Context) {
 
     val uiDensityScaleFlow: Flow<Float> =
         context.dataStore.data.map { it[SettingsKeys.UI_DENSITY_SCALE] ?: 1.0f }
+
+    val bypassProxyFlow: Flow<Boolean> =
+        context.dataStore.data.map { it[SettingsKeys.BYPASS_PROXY] ?: true }
 
     val disclaimerAcceptedFlow: Flow<Boolean?> =
         flow {
@@ -142,6 +146,9 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { it[SettingsKeys.UI_DENSITY_SCALE] = scale }
     }
 
+    suspend fun setBypassProxy(enabled: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.BYPASS_PROXY] = enabled }
+    }
 
     /** 备用：一次性读取（非 Compose 场景） */
     suspend fun isDisclaimerAcceptedFirst(): Boolean {

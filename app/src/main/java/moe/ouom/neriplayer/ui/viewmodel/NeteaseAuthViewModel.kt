@@ -32,8 +32,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.core.api.netease.NeteaseClient
-import moe.ouom.neriplayer.data.NeteaseCookieRepository
+import moe.ouom.neriplayer.core.di.AppContainer
 import org.json.JSONObject
 
 data class NeteaseAuthUiState(
@@ -55,9 +54,9 @@ sealed interface NeteaseAuthEvent {
 
 class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
 
-    private val cookieRepo = NeteaseCookieRepository(app)
+    private val cookieRepo = AppContainer.neteaseCookieRepo
     private val cookieStore: MutableMap<String, String> = mutableMapOf()
-    private val api = NeteaseClient()
+    private val api = AppContainer.neteaseClient
 
     private val _uiState = MutableStateFlow(NeteaseAuthUiState())
     val uiState: StateFlow<NeteaseAuthUiState> = _uiState
@@ -164,7 +163,6 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
                     cookieStore.clear()
                     cookieStore.putAll(latest)
 
-                    api.setPersistedCookies(cookieStore)
                     try {
                         api.ensureWeapiSession()
                         val withCsrf = api.getCookies()
@@ -173,7 +171,6 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
                     } catch (_: Exception) { }
 
                     cookieRepo.saveCookies(cookieStore)
-                    api.setPersistedCookies(cookieStore)
 
                     _uiState.value = _uiState.value.copy(isLoggedIn = true)
                     emitSnack("登录成功")
@@ -213,7 +210,6 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
             cookieStore.putAll(m)
 
             cookieRepo.saveCookies(cookieStore)
-            api.setPersistedCookies(cookieStore)
 
             _uiState.value = _uiState.value.copy(isLoggedIn = cookieStore.containsKey("MUSIC_U"))
             _events.tryEmit(NeteaseAuthEvent.ShowCookies(cookieStore.toMap()))

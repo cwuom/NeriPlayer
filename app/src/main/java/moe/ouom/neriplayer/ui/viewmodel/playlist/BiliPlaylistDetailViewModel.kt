@@ -34,6 +34,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.parcelize.Parcelize
 import moe.ouom.neriplayer.core.api.bili.BiliClient
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.BiliCookieRepository
 import moe.ouom.neriplayer.ui.viewmodel.BiliPlaylist
 import java.io.IOException
@@ -58,8 +59,7 @@ data class BiliPlaylistDetailUiState(
 )
 
 class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(application) {
-    private val cookieRepo = BiliCookieRepository(application)
-    private val client = BiliClient(cookieRepo)
+    private val client = AppContainer.biliClient
 
     private val _uiState = MutableStateFlow(BiliPlaylistDetailUiState())
     val uiState: StateFlow<BiliPlaylistDetailUiState> = _uiState

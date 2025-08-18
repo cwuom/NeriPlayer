@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.api.bili.BiliClient
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.BiliCookieRepository
 import org.json.JSONArray
 import org.json.JSONObject
@@ -53,9 +54,7 @@ data class BiliProbeUiState(
 )
 
 class BiliApiProbeViewModel(app: Application) : AndroidViewModel(app) {
-
-    private val cookieRepo = BiliCookieRepository(app)
-    private val client = BiliClient(cookieRepo)
+    private val client = AppContainer.biliClient
 
     private val _ui = MutableStateFlow(BiliProbeUiState())
     val ui: StateFlow<BiliProbeUiState> = _ui

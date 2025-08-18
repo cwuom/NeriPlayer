@@ -33,12 +33,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.core.api.bili.BiliClient
-import moe.ouom.neriplayer.core.api.netease.NeteaseClient
-import moe.ouom.neriplayer.data.BiliCookieRepository
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.LocalPlaylist
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
-import moe.ouom.neriplayer.data.NeteaseCookieRepository
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
@@ -67,11 +64,11 @@ data class LibraryUiState(
 class LibraryViewModel(application: Application) : AndroidViewModel(application) {
     private val localRepo = LocalPlaylistRepository.getInstance(application)
 
-    private val neteaseCookieRepo = NeteaseCookieRepository(application)
-    private val neteaseClient = NeteaseClient()
+    private val neteaseCookieRepo = AppContainer.neteaseCookieRepo
+    private val neteaseClient = AppContainer.neteaseClient
 
-    private val biliCookieRepo = BiliCookieRepository(application)
-    private val biliClient = BiliClient(biliCookieRepo)
+    private val biliCookieRepo = AppContainer.biliCookieRepo
+    private val biliClient = AppContainer.biliClient
 
 
     private val _uiState = MutableStateFlow(
@@ -92,7 +89,6 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             neteaseCookieRepo.cookieFlow.collect { cookies ->
                 val mutable = cookies.toMutableMap()
                 mutable.putIfAbsent("os", "pc")
-                neteaseClient.setPersistedCookies(mutable)
                 if (!cookies["MUSIC_U"].isNullOrBlank()) {
                     refreshNetease()
                 } else {

@@ -68,25 +68,21 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.api.bili.BiliClient
-import moe.ouom.neriplayer.core.api.bili.BiliClientAudioDataSource
-import moe.ouom.neriplayer.core.api.bili.BiliPlaybackRepository
-import moe.ouom.neriplayer.core.api.netease.NeteaseClient
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
-import moe.ouom.neriplayer.data.BiliCookieRepository
+import moe.ouom.neriplayer.core.api.search.SongSearchInfo
+import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.core.di.AppContainer.biliCookieRepo
+import moe.ouom.neriplayer.core.di.AppContainer.settingsRepo
 import moe.ouom.neriplayer.data.LocalPlaylist
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
-import moe.ouom.neriplayer.data.NeteaseCookieRepository
-import moe.ouom.neriplayer.data.SettingsRepository
 import moe.ouom.neriplayer.ui.component.LyricEntry
 import moe.ouom.neriplayer.ui.component.parseNeteaseLrc
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import moe.ouom.neriplayer.core.api.search.CloudMusicSearchApi
-import moe.ouom.neriplayer.core.api.search.QQMusicSearchApi
-import moe.ouom.neriplayer.core.api.search.SongSearchInfo
 import kotlin.random.Random
 
 data class AudioDevice(
@@ -120,8 +116,6 @@ object PlayerManager {
     private val ioScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val mainScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var progressJob: Job? = null
-
-    val neteaseClient = NeteaseClient()
 
     private lateinit var localRepo: LocalPlaylistRepository
 
@@ -177,11 +171,13 @@ object PlayerManager {
     val audioLevelFlow get() = AudioReactive.level
     val beatImpulseFlow get() = AudioReactive.beat
 
-    private lateinit var biliRepo: BiliPlaybackRepository
-    private lateinit var biliClient: BiliClient
+    var biliRepo = AppContainer.biliPlaybackRepository
+    var biliClient = AppContainer.biliClient
+    var neteaseClient = AppContainer.neteaseClient
 
-    internal val cloudMusicApi = CloudMusicSearchApi(neteaseClient)
-    internal val qqMusicApi = QQMusicSearchApi()
+    val cloudMusicSearchApi = AppContainer.cloudMusicSearchApi
+    val qqMusicSearchApi = AppContainer.qqMusicSearchApi
+
 
     private fun isPreparedInPlayer(): Boolean = player.currentMediaItem != null
 
@@ -197,12 +193,6 @@ object PlayerManager {
 
         localRepo = LocalPlaylistRepository.getInstance(app)
         stateFile = File(app.filesDir, "last_playlist.json")
-
-        val biliCookieRepo = BiliCookieRepository(app)
-        val biliSettingsRepo = SettingsRepository(app)
-        val biliDataSource = BiliClientAudioDataSource(BiliClient(biliCookieRepo))
-        biliRepo = BiliPlaybackRepository(biliDataSource, biliSettingsRepo)
-        biliClient = BiliClient(biliCookieRepo)
 
         val cacheDir = File(app.cacheDir, "media_cache")
         val dbProvider = StandaloneDatabaseProvider(app)
@@ -296,20 +286,10 @@ object PlayerManager {
 
         // 订阅音质
         ioScope.launch {
-            SettingsRepository(app).audioQualityFlow.collect { q -> preferredQuality = q }
+            settingsRepo.audioQualityFlow.collect { q -> preferredQuality = q }
         }
         ioScope.launch {
-            SettingsRepository(app).biliAudioQualityFlow.collect { q -> biliPreferredQuality = q }
-        }
-
-        // 注入登录 Cookie
-        ioScope.launch {
-            NeteaseCookieRepository(app).cookieFlow.collect { raw ->
-                val cookies = raw.toMutableMap()
-                if (!cookies.containsKey("os")) cookies["os"] = "pc"
-                neteaseClient.setPersistedCookies(cookies)
-                NPLogger.d("NERI-PlayerManager", "Cookies updated in PlayerManager: keys=${cookies.keys.joinToString()}")
-            }
+            settingsRepo.biliAudioQualityFlow.collect { q -> biliPreferredQuality = q }
         }
 
         // 同步本地歌单
@@ -503,7 +483,7 @@ object PlayerManager {
                 200 -> {
                     val url = when (val dataObj = root.opt("data")) {
                         is JSONObject -> dataObj.optString("url", "")
-                        is org.json.JSONArray -> dataObj.optJSONObject(0)?.optString("url", "")
+                        is JSONArray -> dataObj.optJSONObject(0)?.optString("url", "")
                         else -> ""
                     }
                     if (url.isNullOrBlank()) {
@@ -922,8 +902,8 @@ object PlayerManager {
             val platform = selectedSong.source
 
             val api = when (platform) {
-                MusicPlatform.CLOUD_MUSIC -> cloudMusicApi
-                MusicPlatform.QQ_MUSIC -> qqMusicApi
+                MusicPlatform.CLOUD_MUSIC -> cloudMusicSearchApi
+                MusicPlatform.QQ_MUSIC -> qqMusicSearchApi
             }
 
             try {
@@ -992,6 +972,7 @@ object PlayerManager {
 
         persistState()
     }
+
 }
 
 private fun BiliVideoItem.toSongItem(): SongItem {

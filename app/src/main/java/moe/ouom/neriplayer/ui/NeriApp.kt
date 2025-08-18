@@ -120,7 +120,7 @@ fun NeriApp(
     val themeSeedColor by repo.themeSeedColorFlow.collectAsState(initial = ThemeDefaults.DEFAULT_SEED_COLOR_HEX)
     val lyricBlurEnabled by repo.lyricBlurEnabledFlow.collectAsState(initial = true)
     val uiDensityScale by repo.uiDensityScaleFlow.collectAsState(initial = 1.0f)
-
+    val bypassProxy by repo.bypassProxyFlow.collectAsState(initial = true)
 
     val defaultDensity = LocalDensity.current
     val finalDensity = remember(defaultDensity, uiDensityScale) {
@@ -421,7 +421,6 @@ fun NeriApp(
                             SettingsScreen(
                                 dynamicColor = dynamicColorEnabled,
                                 onDynamicColorChange = { scope.launch { repo.setDynamicColor(it) } },
-                                followSystemDark = followSystemDark,
                                 forceDark = forceDark,
                                 onForceDarkChange = { scope.launch { repo.setForceDark(it) } },
                                 preferredQuality = preferredQuality,
@@ -445,6 +444,10 @@ fun NeriApp(
                                 uiDensityScale = uiDensityScale,
                                 onUiDensityScaleChange = { scale ->
                                     scope.launch { repo.setUiDensityScale(scale) }
+                                },
+                                bypassProxy = bypassProxy,
+                                onBypassProxyChange = { enabled ->
+                                    scope.launch { repo.setBypassProxy(enabled) }
                                 }
                             )
                         }

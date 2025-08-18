@@ -34,6 +34,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.parcelize.Parcelize
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.NeteaseCookieRepository
 import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
@@ -59,8 +60,8 @@ data class NeteasePlaylist(
 
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val repo = NeteaseCookieRepository(application)
-    private val client = NeteaseClient()
+    private val repo = AppContainer.neteaseCookieRepo
+    private val client = AppContainer.neteaseClient
 
     private val _uiState = MutableStateFlow(HomeUiState(loading = true))
     val uiState: StateFlow<HomeUiState> = _uiState
@@ -71,7 +72,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             repo.cookieFlow.collect { raw ->
                 val cookies = raw.toMutableMap()
                 if (!cookies.containsKey("os")) cookies["os"] = "pc"
-                client.setPersistedCookies(cookies)
                 NPLogger.d(TAG, "cookieFlow updated: keys=${cookies.keys.joinToString()}")
                 if (!cookies["MUSIC_U"].isNullOrBlank()) {
                     NPLogger.d(TAG, "Detected login cookie, refreshing recommend")
@@ -90,7 +90,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val cookies = withContext(Dispatchers.IO) { repo.getCookiesOnce() }.toMutableMap()
                 if (!cookies.containsKey("os")) cookies["os"] = "pc"
-                client.setPersistedCookies(cookies)
 
                 val raw = withContext(Dispatchers.IO) { client.getRecommendedPlaylists(limit = 30) }
                 val mapped = parseRecommend(raw)

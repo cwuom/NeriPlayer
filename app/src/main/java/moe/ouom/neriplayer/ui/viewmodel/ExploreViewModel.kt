@@ -32,12 +32,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.api.bili.BiliClient
-import moe.ouom.neriplayer.core.api.netease.NeteaseClient
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.data.BiliCookieRepository
+import moe.ouom.neriplayer.core.player.PlayerManager.biliClient
+import moe.ouom.neriplayer.core.player.PlayerManager.neteaseClient
 import moe.ouom.neriplayer.data.NeteaseCookieRepository
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
-import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
 
 private const val TAG = "NERI-ExploreVM"
@@ -65,25 +64,14 @@ data class ExploreUiState(
 
 class ExploreViewModel(application: Application) : AndroidViewModel(application) {
     private val neteaseRepo = NeteaseCookieRepository(application)
-    private val neteaseClient = NeteaseClient()
-
-    private val biliCookieRepo = BiliCookieRepository(application)
-    private val biliClient = BiliClient(biliCookieRepo)
 
     private val _uiState = MutableStateFlow(ExploreUiState())
     val uiState: StateFlow<ExploreUiState> = _uiState
 
     init {
-        // 注入网易云 Cookie
         viewModelScope.launch {
             neteaseRepo.cookieFlow.collect { raw ->
-                val cookies = raw.toMutableMap()
-                if (!cookies.containsKey("os")) cookies["os"] = "pc"
-                neteaseClient.setPersistedCookies(cookies)
-                NPLogger.d(TAG, "Netease cookie updated: keys=${cookies.keys.joinToString()}")
-                if (!cookies["MUSIC_U"].isNullOrBlank() && _uiState.value.playlists.isEmpty()) {
-                    loadHighQuality()
-                }
+                loadHighQuality()
             }
         }
     }
@@ -133,11 +121,6 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                 )
             }
         }
-    }
-
-    fun setSelectedTag(tag: String) {
-        if (tag == _uiState.value.selectedTag) return
-        _uiState.value = _uiState.value.copy(selectedTag = tag)
     }
 
     fun toggleExpanded() {

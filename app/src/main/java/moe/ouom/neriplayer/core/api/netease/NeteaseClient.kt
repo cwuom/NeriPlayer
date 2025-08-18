@@ -40,8 +40,9 @@ import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.util.Locale
 import java.util.zip.GZIPInputStream
+import java.net.Proxy
 
-class NeteaseClient {
+class NeteaseClient(bypassProxy: Boolean = true) {
     private val okHttpClient: OkHttpClient
     private val cookieStore: MutableMap<String, MutableList<Cookie>> = mutableMapOf()
 
@@ -62,6 +63,11 @@ class NeteaseClient {
                     return cookieStore[url.host] ?: emptyList()
                 }
             })
+            .apply {
+                if (bypassProxy) {
+                    proxy(Proxy.NO_PROXY)
+                }
+            }
             .build()
     }
 

@@ -55,6 +55,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.AltRoute
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Check
@@ -65,17 +66,16 @@ import androidx.compose.material.icons.outlined.Brightness4
 import androidx.compose.material.icons.outlined.ColorLens
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Router
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Update
 import androidx.compose.material.icons.outlined.Verified
 import androidx.compose.material.icons.outlined.ZoomInMap
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -136,7 +136,6 @@ import moe.ouom.neriplayer.util.convertTimestampToDate
 fun SettingsScreen(
     dynamicColor: Boolean,
     onDynamicColorChange: (Boolean) -> Unit,
-    followSystemDark: Boolean,
     forceDark: Boolean,
     onForceDarkChange: (Boolean) -> Unit,
     preferredQuality: String,
@@ -151,6 +150,8 @@ fun SettingsScreen(
     onLyricBlurEnabledChange: (Boolean) -> Unit,
     uiDensityScale: Float,
     onUiDensityScaleChange: (Float) -> Unit,
+    bypassProxy: Boolean,
+    onBypassProxyChange: (Boolean) -> Unit,
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val context = LocalContext.current
@@ -182,6 +183,9 @@ fun SettingsScreen(
     var versionTapCount by remember { mutableIntStateOf(0) }
     var biliCookieText by remember { mutableStateOf("") }
     val biliVm: moe.ouom.neriplayer.ui.viewmodel.BiliAuthViewModel = viewModel()
+
+    var networkExpanded by remember { mutableStateOf(false) }
+    val networkArrowRotation by animateFloatAsState(targetValue = if (networkExpanded) 180f else 0f, label = "network_arrow")
 
 
     val biliWebLoginLauncher = rememberLauncherForActivityResult(
@@ -264,7 +268,7 @@ fun SettingsScreen(
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surface,)
+            .background(MaterialTheme.colorScheme.surface)
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = MaterialTheme.colorScheme.surface,
         contentColor = MaterialTheme.colorScheme.onSurface,
@@ -272,10 +276,12 @@ fun SettingsScreen(
             LargeTopAppBar(
                 title = { Text("设置") },
                 scrollBehavior = scrollBehavior,
-                colors = TopAppBarDefaults.largeTopAppBarColors(
+                colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
                     scrolledContainerColor = MaterialTheme.colorScheme.surface,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface
+                    navigationIconContentColor = Color.Unspecified,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface,
+                    actionIconContentColor = Color.Unspecified
                 )
             )
         }
@@ -546,6 +552,63 @@ fun SettingsScreen(
                 }
             }
 
+            item {
+                ListItem(
+                    leadingContent = {
+                        Icon(
+                            imageVector = Icons.Outlined.Router, // 或者其他合适的图标
+                            contentDescription = "网络设置",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    headlineContent = { Text("网络设置") },
+                    supportingContent = { Text(if (networkExpanded) "收起" else "展开以配置网络选项") },
+                    trailingContent = {
+                        Icon(
+                            imageVector = Icons.Filled.ExpandMore,
+                            contentDescription = if (networkExpanded) "收起" else "展开",
+                            modifier = Modifier.rotate(networkArrowRotation),
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    modifier = Modifier.clickable { networkExpanded = !networkExpanded },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                )
+            }
+
+            // 展开区域
+            item {
+                AnimatedVisibility(
+                    visible = networkExpanded,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.Transparent)
+                            .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
+                    ) {
+                        ListItem(
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Outlined.AltRoute,
+                                    contentDescription = "绕过系统代理",
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = { Text("绕过系统代理") },
+                            supportingContent = { Text("应用内网络请求不走系统代理") },
+                            trailingContent = {
+                                Switch(checked = bypassProxy, onCheckedChange = onBypassProxyChange)
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+                    }
+                }
+            }
+
 
             item {
                 ListItem(
@@ -575,7 +638,7 @@ fun SettingsScreen(
                         )
                     },
                     headlineContent = { Text("B 站默认音质", style = MaterialTheme.typography.titleMedium) },
-                    supportingContent = { Text("$biliQualityLabel - ${biliPreferredQuality}") },
+                    supportingContent = { Text("$biliQualityLabel - $biliPreferredQuality") },
                     modifier = Modifier.clickable { showBiliQualityDialog = true },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )

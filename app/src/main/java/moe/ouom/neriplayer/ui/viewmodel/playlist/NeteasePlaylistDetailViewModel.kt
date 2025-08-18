@@ -36,6 +36,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.parcelize.Parcelize
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.NeteaseCookieRepository
 import moe.ouom.neriplayer.ui.viewmodel.NeteasePlaylist
 import moe.ouom.neriplayer.util.NPLogger
@@ -73,8 +74,8 @@ data class PlaylistDetailUiState(
 )
 
 class PlaylistDetailViewModel(application: Application) : AndroidViewModel(application) {
-    private val client = NeteaseClient()
-    private val cookieRepo = NeteaseCookieRepository(application)
+    private val client = AppContainer.neteaseClient
+    private val cookieRepo = AppContainer.neteaseCookieRepo
 
     private val _uiState = MutableStateFlow(PlaylistDetailUiState())
     val uiState: StateFlow<PlaylistDetailUiState> = _uiState
@@ -86,7 +87,6 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
             cookieRepo.cookieFlow.collect { saved ->
                 val cookies = saved.toMutableMap()
                 cookies.putIfAbsent("os", "pc")
-                client.setPersistedCookies(cookies)
 
                 val loggedIn = !cookies["MUSIC_U"].isNullOrBlank()
                 val hasCsrf = !cookies["__csrf"].isNullOrBlank()
@@ -126,7 +126,6 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
                 // 再读一次当前持久化 Cookie，并注入
                 val cookies = withContext(Dispatchers.IO) { cookieRepo.getCookiesOnce() }.toMutableMap()
                 cookies.putIfAbsent("os", "pc")
-                client.setPersistedCookies(cookies)
 
                 val raw = withContext(Dispatchers.IO) { client.getPlaylistDetail(playlistId) }
                 NPLogger.d(TAG_PD, "detail head=${raw.take(500)}")

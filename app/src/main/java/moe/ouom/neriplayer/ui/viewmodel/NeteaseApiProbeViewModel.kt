@@ -11,8 +11,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.core.api.netease.NeteaseClient
-import moe.ouom.neriplayer.data.NeteaseCookieRepository
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
 import java.io.IOException
@@ -27,8 +26,8 @@ data class ProbeUiState(
 
 class NeteaseApiProbeViewModel(app: Application) : AndroidViewModel(app) {
 
-    private val repo = NeteaseCookieRepository(app)
-    private val client = NeteaseClient()
+    private val repo = AppContainer.neteaseCookieRepo
+    private val client = AppContainer.neteaseClient
 
     private val _ui = MutableStateFlow(ProbeUiState())
     val ui: StateFlow<ProbeUiState> = _ui
@@ -37,7 +36,6 @@ class NeteaseApiProbeViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun ensureCookies() {
         val cookies = withContext(Dispatchers.IO) { repo.getCookiesOnce() }.toMutableMap()
         if (!cookies.containsKey("os")) cookies["os"] = "pc"
-        client.setPersistedCookies(cookies)
         runCatching { withContext(Dispatchers.IO) { client.ensureWeapiSession() } }
         NPLogger.d(TAG_PROBE, "Cookies injected: keys=${cookies.keys.joinToString()}")
     }

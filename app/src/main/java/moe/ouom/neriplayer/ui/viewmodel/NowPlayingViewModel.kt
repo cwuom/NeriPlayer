@@ -77,7 +77,6 @@ class NowPlayingViewModel : ViewModel() {
                 val results = SearchManager.search(
                     keyword = _manualSearchState.value.keyword,
                     platform = _manualSearchState.value.selectedPlatform,
-                    neteaseClient = PlayerManager.neteaseClient
                 )
                 _manualSearchState.update { it.copy(isLoading = false, searchResults = results) }
 

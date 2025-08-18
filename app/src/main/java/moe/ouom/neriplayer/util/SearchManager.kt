@@ -1,15 +1,12 @@
 package moe.ouom.neriplayer.util
 
-import android.content.Context
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
 import moe.ouom.neriplayer.core.api.search.CloudMusicSearchApi
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.search.QQMusicSearchApi
 import moe.ouom.neriplayer.core.api.search.SongDetails
 import moe.ouom.neriplayer.core.api.search.SongSearchInfo
-import moe.ouom.neriplayer.data.NeteaseCookieRepository
+import moe.ouom.neriplayer.core.di.AppContainer
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -40,10 +37,9 @@ object SearchManager {
     suspend fun search(
         keyword: String,
         platform: MusicPlatform,
-        neteaseClient: NeteaseClient
     ): List<SongSearchInfo> {
         val api = if (platform == MusicPlatform.CLOUD_MUSIC) {
-            CloudMusicSearchApi(neteaseClient)
+            CloudMusicSearchApi(AppContainer.neteaseClient)
         } else {
             qqApi
         }

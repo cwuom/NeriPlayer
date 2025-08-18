@@ -24,12 +24,14 @@ package moe.ouom.neriplayer.core.api.bili
  */
 
 import kotlinx.coroutines.flow.first
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.BiliAudioStreamInfo
 import moe.ouom.neriplayer.data.SettingsRepository
 import moe.ouom.neriplayer.data.selectStreamByPreference
 
 interface BiliAudioDataSource {
     val client: BiliClient
+        get() = AppContainer.biliClient
 
     /**
      * 获取当前视频的所有可用音频流
