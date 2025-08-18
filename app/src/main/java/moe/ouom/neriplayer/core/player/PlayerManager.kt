@@ -82,10 +82,8 @@ import moe.ouom.neriplayer.ui.component.parseNeteaseLrc
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
-import moe.ouom.neriplayer.util.SearchManager
 import org.json.JSONObject
 import java.io.File
-import android.util.Base64
 import moe.ouom.neriplayer.core.api.search.CloudMusicSearchApi
 import moe.ouom.neriplayer.core.api.search.QQMusicSearchApi
 import moe.ouom.neriplayer.core.api.search.SongSearchInfo
@@ -495,7 +493,6 @@ object PlayerManager {
         try {
             val resp = neteaseClient.getSongDownloadUrl(
                 songId,
-                bitrate = 320000,
                 level = preferredQuality
             )
             NPLogger.d("NERI-PlayerManager", "id=$songId, resp=$resp")

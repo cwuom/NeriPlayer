@@ -277,17 +277,21 @@ class NeteaseClient {
         return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
     }
 
-    /** 如果已登录但拿不到 URL，先预热拿 __csrf 再重试一次 */
+    /**
+     * 获取下载链接
+     * 如果已登录但拿不到 URL，先预热拿 __csrf 再重试一次
+     * @param songId 歌曲 ID
+     * @param level 音质 （standard, exhigh, lossless, hires, jyeffect(高清环绕声), sky(沉浸环绕声), jymaster(超清母带)）
+     * */
     @Throws(IOException::class)
-    fun getSongDownloadUrl(songId: Long, bitrate: Int = 320000, level: String = "lossless"): String {
+    fun getSongDownloadUrl(songId: Long, level: String = "lossless"): String {
         fun call(): String {
-            val url = "https://music.163.com/weapi/song/enhance/download/url"
             val params = mutableMapOf<String, Any>(
-                "id" to songId.toString(),
-                "br" to bitrate.toString(),
-                "level" to level
+                "ids" to "[$songId]",
+                "level" to level,
+                "encodeType" to "flac",
             )
-            return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
+            return callEApi("/song/enhance/player/url/v1", params, usePersistedCookies = false)
         }
 
         var resp = call()
