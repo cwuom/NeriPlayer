@@ -370,9 +370,6 @@ fun NeriApp(
                             devModeEnabled = devModeEnabled,
                             onDevModeChange = { enabled ->
                                 scope.launch { repo.setDevModeEnabled(enabled) }
-                                if (enabled) {
-                                    navController.navigate(Destinations.Debug.route)
-                                }
                             }
                         )
                     }
@@ -387,15 +384,15 @@ fun NeriApp(
                                 scope.launch {
                                     repo.setDevModeEnabled(false)
                                 }
-                                // 隐藏后回到设置页
                                 navController.navigate(Destinations.Settings.route) {
-                                    popUpTo(Destinations.Home.route) { inclusive = false }
+                                    popUpTo(Destinations.Debug.route) {
+                                        inclusive = true
+                                    }
                                     launchSingleTop = true
                                 }
                             }
                         )
                     }
-
                     composable(Destinations.DebugBili.route) { BiliApiProbeScreen() }
                     composable(Destinations.DebugNetease.route) { NeteaseApiProbeScreen() }
                     composable(Destinations.DebugSearch.route) { SearchApiProbeScreen() }
