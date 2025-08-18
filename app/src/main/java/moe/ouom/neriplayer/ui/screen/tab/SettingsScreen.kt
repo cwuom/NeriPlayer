@@ -34,8 +34,11 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -46,6 +49,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -56,6 +60,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.outlined.Brightness4
+import androidx.compose.material.icons.outlined.ColorLens
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Timer
@@ -90,9 +95,12 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -100,12 +108,15 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.ColorUtils
+import androidx.core.graphics.toColorInt
 import androidx.core.net.toUri
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.flow.StateFlow
 import moe.ouom.neriplayer.BuildConfig
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.NeteaseWebLoginActivity
+import moe.ouom.neriplayer.data.ThemeDefaults
 import moe.ouom.neriplayer.ui.viewmodel.NeteaseAuthEvent
 import moe.ouom.neriplayer.ui.viewmodel.NeteaseAuthViewModel
 import moe.ouom.neriplayer.util.HapticButton
@@ -127,42 +138,34 @@ fun SettingsScreen(
     biliPreferredQuality: String,
     onBiliQualityChange: (String) -> Unit,
     devModeEnabled: Boolean,
-    onDevModeChange: (Boolean) -> Unit
+    onDevModeChange: (Boolean) -> Unit,
+    seedColorHex: String,
+    onSeedColorChange: (String) -> Unit,
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val context = LocalContext.current
     var loginExpanded by remember { mutableStateOf(false) }
     val arrowRotation by animateFloatAsState(targetValue = if (loginExpanded) 180f else 0f, label = "arrow")
 
-    // 音质设置对话框显隐状态
+    // 各种对话框和弹窗的显示状态 //
     var showQualityDialog by remember { mutableStateOf(false) }
-
-    // 网易云登录弹窗显隐
     var showNeteaseSheet by remember { mutableStateOf(false) }
-    val neteaseVm: NeteaseAuthViewModel = viewModel()
-
     var showBiliQualityDialog by remember { mutableStateOf(false) }
-
-    // 弹窗内提示信息
-    var inlineMsg by remember { mutableStateOf<String?>(null) }
-
-    // 网易云 “发送验证码” 确认弹窗
-    var confirmPhoneMasked by remember { mutableStateOf<String?>(null) }
     var showConfirmDialog by remember { mutableStateOf(false) }
-
-    // Cookies 展示对话框
     var showCookieDialog by remember { mutableStateOf(false) }
-    var cookieText by remember { mutableStateOf("") }
-
-    val cookieScroll = rememberScrollState()
-
-    var versionTapCount by remember { mutableStateOf(0) }
-
-    // Bilibili 登录
     var showBiliCookieDialog by remember { mutableStateOf(false) }
+    var showColorPickerDialog by remember { mutableStateOf(false) }
+    // ------------------------------------
+
+    val neteaseVm: NeteaseAuthViewModel = viewModel()
+    var inlineMsg by remember { mutableStateOf<String?>(null) }
+    var confirmPhoneMasked by remember { mutableStateOf<String?>(null) }
+    var cookieText by remember { mutableStateOf("") }
+    val cookieScroll = rememberScrollState()
+    var versionTapCount by remember { mutableIntStateOf(0) }
     var biliCookieText by remember { mutableStateOf("") }
-    val biliVm: moe.ouom.neriplayer.ui.viewmodel.BiliAuthViewModel =
-        viewModel()
+    val biliVm: moe.ouom.neriplayer.ui.viewmodel.BiliAuthViewModel = viewModel()
+
 
     val biliWebLoginLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -285,6 +288,33 @@ fun SettingsScreen(
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
             }
+
+            item {
+                AnimatedVisibility(visible = !dynamicColor) { // 仅在关闭系统动态取色时显示
+                    ListItem(
+                        modifier = Modifier.clickable { showColorPickerDialog = true },
+                        leadingContent = {
+                            Icon(
+                                imageVector = Icons.Outlined.ColorLens,
+                                contentDescription = "主题色",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        },
+                        headlineContent = { Text("主题色") },
+                        supportingContent = { Text("选择一个你喜欢的颜色作为主色调") },
+                        trailingContent = {
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(("#$seedColorHex").toColorInt()))
+                            )
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                    )
+                }
+            }
+
 
             // 强制深色
             item {
@@ -835,6 +865,78 @@ fun SettingsScreen(
                 HapticTextButton(onClick = { showCookieDialog = false }) { Text("好的") }
             }
         )
+    }
+
+    // 颜色选择对话框
+    if (showColorPickerDialog) {
+        ColorPickerDialog(
+            currentHex = seedColorHex,
+            onDismiss = { showColorPickerDialog = false },
+            onColorSelected = { hex ->
+                onSeedColorChange(hex)
+                showColorPickerDialog = false
+            }
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ColorPickerDialog(
+    currentHex: String,
+    onDismiss: () -> Unit,
+    onColorSelected: (String) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("选择主题色") },
+        text = {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                ThemeDefaults.PRESET_COLORS.forEach { hex ->
+                    ColorPickerItem(
+                        hex = hex,
+                        isSelected = currentHex.equals(hex, ignoreCase = true),
+                        onClick = { onColorSelected(hex) }
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("关闭")
+            }
+        }
+    )
+}
+
+@Composable
+private fun ColorPickerItem(hex: String, isSelected: Boolean, onClick: () -> Unit) {
+    val color = Color(("#$hex").toColorInt())
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .clip(CircleShape)
+            .background(color)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        if (isSelected) {
+            // 计算一个与背景色对比度高的颜色来显示对勾
+            val contentColor = if (ColorUtils.calculateLuminance(color.toArgb()) > 0.5) {
+                Color.Black
+            } else {
+                Color.White
+            }
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = "Selected",
+                tint = contentColor
+            )
+        }
     }
 }
 

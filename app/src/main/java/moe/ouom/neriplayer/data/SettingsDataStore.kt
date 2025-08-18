@@ -45,8 +45,23 @@ object SettingsKeys {
     val AUDIO_QUALITY = stringPreferencesKey("audio_quality")
     val BILI_AUDIO_QUALITY = stringPreferencesKey("bili_audio_quality")
     val KEY_DEV_MODE = booleanPreferencesKey("dev_mode_enabled")
+    val THEME_SEED_COLOR = stringPreferencesKey("theme_seed_color")
 }
 
+
+object ThemeDefaults {
+    const val DEFAULT_SEED_COLOR_HEX = "0061A4"
+    val PRESET_COLORS = listOf(
+        "0061A4", // 科技·蓝
+        "6750A4", // 柔和·紫
+        "B3261E", // 热情·红
+        "C425A8", // 浪漫·粉
+        "00897B", // 森系·青
+        "388E3C", // 活力·绿
+        "FBC02D", // 明亮·黄
+        "E65100", // 温暖·橙
+    )
+}
 class SettingsRepository(private val context: Context) {
     val dynamicColorFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.DYNAMIC_COLOR] ?: true }
@@ -65,6 +80,10 @@ class SettingsRepository(private val context: Context) {
 
     val devModeEnabledFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.KEY_DEV_MODE] ?: false }
+
+    val themeSeedColorFlow: Flow<String> =
+        context.dataStore.data.map { it[SettingsKeys.THEME_SEED_COLOR] ?: ThemeDefaults.DEFAULT_SEED_COLOR_HEX }
+
 
     val disclaimerAcceptedFlow: Flow<Boolean?> =
         flow {
@@ -102,6 +121,11 @@ class SettingsRepository(private val context: Context) {
     suspend fun setDevModeEnabled(enabled: Boolean) {
         context.dataStore.edit { it[SettingsKeys.KEY_DEV_MODE] = enabled }
     }
+
+    suspend fun setThemeSeedColor(hex: String) {
+        context.dataStore.edit { it[SettingsKeys.THEME_SEED_COLOR] = hex }
+    }
+
 
     /** 备用：一次性读取（非 Compose 场景） */
     suspend fun isDisclaimerAcceptedFirst(): Boolean {

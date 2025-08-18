@@ -76,6 +76,7 @@ import moe.ouom.neriplayer.core.player.AudioPlayerService
 import moe.ouom.neriplayer.core.player.AudioReactive
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.SettingsRepository
+import moe.ouom.neriplayer.data.ThemeDefaults
 import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.ui.component.NeriBottomBar
 import moe.ouom.neriplayer.ui.component.NeriMiniPlayer
@@ -116,6 +117,8 @@ fun NeriApp(
 
     val devModeEnabled by repo.devModeEnabledFlow.collectAsState(initial = false)
 
+    val themeSeedColor by repo.themeSeedColorFlow.collectAsState(initial = ThemeDefaults.DEFAULT_SEED_COLOR_HEX)
+
     val isDark = when {
         forceDark -> true
         followSystemDark -> isSystemInDarkTheme()
@@ -144,7 +147,8 @@ fun NeriApp(
     NeriTheme(
         followSystemDark = followSystemDark,
         forceDark = forceDark,
-        dynamicColor = dynamicColorEnabled
+        dynamicColor = dynamicColorEnabled,
+        seedColorHex = themeSeedColor
     ) {
         val navController = rememberNavController()
         val backEntry by navController.currentBackStackEntryAsState()
@@ -183,7 +187,7 @@ fun NeriApp(
                                 onExpand = { showNowPlaying = true }
                             )
 
-                            // Debug 构建才显示“调试”
+                            // 开启 DEBUG MODE 才显示调试
                             val items = buildList {
                                 add(Destinations.Home to Icons.Outlined.Home)
                                 add(Destinations.Explore to Icons.Outlined.Search)
@@ -297,10 +301,10 @@ fun NeriApp(
                             )
                             showNowPlaying = true
                         },
-                        onPlayParts = { videoInfo, index, coverUrl ->
-                            PlayerManager.playBiliVideoParts(videoInfo, index, coverUrl)
-                            showNowPlaying = true
-                        })
+                            onPlayParts = { videoInfo, index, coverUrl ->
+                                PlayerManager.playBiliVideoParts(videoInfo, index, coverUrl)
+                                showNowPlaying = true
+                            })
                     }
 
                     composable(
@@ -363,10 +367,14 @@ fun NeriApp(
                             onForceDarkChange = { scope.launch { repo.setForceDark(it) } },
                             preferredQuality = preferredQuality,
                             onQualityChange = { scope.launch { repo.setAudioQuality(it) } },
+                            biliPreferredQuality = biliPreferredQuality,
                             onBiliQualityChange = {
                                 scope.launch { repo.setBiliAudioQuality(it) }
                             },
-                            biliPreferredQuality = biliPreferredQuality,
+                            seedColorHex = themeSeedColor,
+                            onSeedColorChange = { hex ->
+                                scope.launch { repo.setThemeSeedColor(hex) }
+                            },
                             devModeEnabled = devModeEnabled,
                             onDevModeChange = { enabled ->
                                 scope.launch { repo.setDevModeEnabled(enabled) }

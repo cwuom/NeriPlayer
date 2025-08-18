@@ -168,5 +168,7 @@ dependencies {
 
     implementation(libs.androidx.ui.graphics)
 
+    implementation(libs.material.kolor)
+
     implementation(files("libs/lib-decoder-ffmpeg-release.aar"))
 }
