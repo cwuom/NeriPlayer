@@ -24,6 +24,7 @@ package moe.ouom.neriplayer.ui.screen
  */
 
 import android.content.Context
+import android.content.Intent
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
@@ -80,6 +81,7 @@ import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Repeat
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
@@ -97,7 +99,6 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -311,12 +312,13 @@ fun NowPlayingScreen(
                         MoreOptionsSheet(
                             viewModel = nowPlayingViewModel,
                             originalSong = currentSong!!, // 此时 currentSong 必不为 null
+                            queue = displayedQueue,
                             onDismiss = { showMoreOptions = false }
                         )
                     }
                 },
                 scrollBehavior = scrollBehavior,
-                colors = TopAppBarDefaults.largeTopAppBarColors(
+                colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent,
                     scrolledContainerColor = Color.Transparent,
                     navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
@@ -504,16 +506,11 @@ fun NowPlayingScreen(
 
             if (lyrics.isNotEmpty()) {
                 Spacer(Modifier.weight(1f))
-
-                val lyricOffset = if (currentSong?.matchedLyricSource == MusicPlatform.CLOUD_MUSIC) {
-                    1000L
-                } else {
-                    0L
-                }
+                
                 val platformOffset = if (currentSong?.matchedLyricSource == MusicPlatform.QQ_MUSIC) {
                     500L
                 } else {
-                    0L
+                    1000L
                 }
 
                 val userOffset = currentSong?.userLyricOffsetMs ?: 0L
@@ -693,6 +690,7 @@ private fun getCurrentAudioDevice(audioManager: AudioManager): Pair<String, Imag
 private fun MoreOptionsSheet(
     viewModel: NowPlayingViewModel,
     originalSong: SongItem,
+    queue: List<SongItem>,
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState()
@@ -700,6 +698,7 @@ private fun MoreOptionsSheet(
     var showOffsetSheet by remember { mutableStateOf(false) }
 
     val focusManager = LocalFocusManager.current
+    val context = LocalContext.current
 
     // 当弹窗打开时，如果需要，预填充搜索词
     LaunchedEffect(showSearchView) {
@@ -739,6 +738,56 @@ private fun MoreOptionsSheet(
                             headlineContent = { Text("调整歌词偏移") },
                             leadingContent = { Icon(Icons.Outlined.Timer, null) },
                             modifier = Modifier.clickable { showOffsetSheet = true }
+                        )
+                        ListItem(
+                            headlineContent = { Text("分享") },
+                            leadingContent = { Icon(Icons.Outlined.Share, null) },
+                            modifier = Modifier.clickable {
+                                val song = originalSong
+                                val isFromBili = song.album.startsWith(PlayerManager.BILI_SOURCE_TAG)
+
+                                val url = if (isFromBili) {
+                                    // 筛选出队列中属于同一个B站视频的所有分P
+                                    val videoParts = queue.filter {
+                                        it.id == song.id && it.album.startsWith(PlayerManager.BILI_SOURCE_TAG)
+                                    }
+                                    // 如果分 P 数量大于1，说明是多 P 视频
+                                    if (videoParts.size > 1) {
+                                        // 找到当前分 P 在列表中的索引
+                                        val pageIndex = videoParts.indexOfFirst {
+                                            // 使用包含 cid 的 album 字段进行精确匹配
+                                            it.album == song.album
+                                        }
+                                        val pageNumber = pageIndex + 1
+                                        if (pageIndex != -1) {
+                                            // 生成带分 P 参数的链接
+                                            "https://www.bilibili.com/video/av${song.id}/?p=${pageNumber}"
+                                        } else {
+                                            // 如果意外没找到，则回退到不带分P的链接
+                                            "https://www.bilibili.com/video/av${song.id}"
+                                        }
+                                    } else {
+                                        // 单 P 视频
+                                        "https://www.bilibili.com/video/av${song.id}"
+                                    }
+                                } else {
+                                    // 其他来源的歌曲
+                                    "https://music.163.com/#/song?id=${song.id}"
+                                }
+
+                                // 在分享文本中加入艺术家/UP主名称
+                                val shareText = "分享歌曲：${song.name} - ${song.artist}\n$url"
+
+                                val sendIntent: Intent = Intent().apply {
+                                    action = Intent.ACTION_SEND
+                                    putExtra(Intent.EXTRA_TEXT, shareText)
+                                    type = "text/plain"
+                                }
+
+                                val shareIntent = Intent.createChooser(sendIntent, null)
+                                context.startActivity(shareIntent)
+                                onDismiss()
+                            }
                         )
                     }
                 }
