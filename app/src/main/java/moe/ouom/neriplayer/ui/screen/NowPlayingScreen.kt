@@ -62,6 +62,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.automirrored.outlined.QueueMusic
@@ -90,6 +92,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -119,8 +122,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -694,6 +699,8 @@ private fun MoreOptionsSheet(
     var showSearchView by remember { mutableStateOf(false) }
     var showOffsetSheet by remember { mutableStateOf(false) }
 
+    val focusManager = LocalFocusManager.current
+
     // 当弹窗打开时，如果需要，预填充搜索词
     LaunchedEffect(showSearchView) {
         if (showSearchView) {
@@ -745,7 +752,7 @@ private fun MoreOptionsSheet(
                             .padding(bottom = 16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        TextField(
+                        OutlinedTextField(
                             value = searchState.keyword,
                             onValueChange = { viewModel.onKeywordChange(it) },
                             label = { Text("搜索关键词") },
@@ -756,7 +763,12 @@ private fun MoreOptionsSheet(
                                 HapticIconButton(onClick = { viewModel.performSearch() }) {
                                     Icon(Icons.Default.Search, contentDescription = "搜索")
                                 }
-                            }
+                            },
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = KeyboardActions(onSearch = {
+                                viewModel.performSearch()
+                                focusManager.clearFocus()
+                            }),
                         )
 
                         // 平台切换
