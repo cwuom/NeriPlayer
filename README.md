@@ -5,8 +5,11 @@
 <h3>✨ 简易多平台音视频聚合流媒体播放器 🎵</h3>
 <p>
   <a href="https://t.me/ouom_pub">
-    <img alt="Join" src="https://img.shields.io/badge/Telegram-@ouom_pub-blue" />
-  </a>
+    <img alt="Join" src="https://img.shields.io/badge/Telegram-@ouom__pub-blue" />
+</p>
+    <p>
+  <a href="https://t.me/neriplayer_ci">
+    <img alt="ci_builds" src="https://img.shields.io/badge/CI_Builds-@neriplayer__ci-orange" />
 </p>
 <p>
   <img src="icon/neriplayer.svg" width="260" alt="NeriPlayer logo" />
@@ -39,12 +42,16 @@
 > 为保护音乐版权及保障您的使用权益，本软件的音频服务需基于您已登录的第三方平台账号授权，获取其合规音频流。
 根据版权协议，会员专属内容仍需遵循原平台的会员规则哦～
 
-# TODO / 暂不支持
+# TODO / 待完成
 - 视频播放
 - 评论区
 - 清理缓存
 - 音频下载
 - ~~云存储~~（维护成本有点高）
+- 歌曲分享
+- 添加到播放列表
+- 平板适配
+- 歌词悬浮窗
 
 # BUG Report / 问题反馈
 - 反馈问题前请先开启调试模式（在设置界面点击 7 下版本号），然后在 [Issues](https://github.com/cwuom/NeriPlayer/issues) 中根据模板创建问题报告。

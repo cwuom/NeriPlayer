@@ -26,13 +26,8 @@ media = "1.7.0"
 media3Datasource = "1.8.0"
 media3DatasourceOkhttp = "1.8.0"
 media3Exoplayer = "1.8.0"
-media3ExoplayerRtsp = "1.8.0"
-media3Extractor = "1.8.0"
-media3Ui = "1.8.0"
-media3Common = "1.8.0"
 navigation = "2.9.3"
 lifecycle = "2.9.2"
-navigationCompose = "2.9.3"
 okhttp = "5.1.0"
 reorderable = "0.9.6"
 foundationLayout = "1.8.3"
@@ -45,19 +40,12 @@ androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = 
 androidx-datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastorePreferences" }
 androidx-foundation = { module = "androidx.compose.foundation:foundation" }
 androidx-media = { module = "androidx.media:media", version.ref = "media" }
-androidx-media3-common = { module = "androidx.media3:media3-common", version.ref = "media3Common" }
 androidx-media3-datasource-okhttp = { module = "androidx.media3:media3-datasource-okhttp", version.ref = "media3DatasourceOkhttp" }
 androidx-media3-datasource = { module = "androidx.media3:media3-datasource", version.ref = "media3Datasource" }
-androidx-media3-exoplayer-rtsp = { module = "androidx.media3:media3-exoplayer-rtsp", version.ref = "media3ExoplayerRtsp" }
-androidx-media3-extractor = { module = "androidx.media3:media3-extractor", version.ref = "media3Extractor" }
-androidx-media3-ui = { module = "androidx.media3:media3-ui", version.ref = "media3Ui" }
 androidx-media3-exoplayer = { module = "androidx.media3:media3-exoplayer", version.ref = "media3Exoplayer" }
 androidx-ui-graphics = { module = "androidx.compose.ui:ui-graphics", version.ref = "uiGraphics" }
 coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coilCompose" }
 dec = { module = "org.brotli:dec", version.ref = "dec" }
-exoplayer-progressive = { module = "com.google.android.exoplayer:exoplayer-progressive", version.ref = "exoplayerProgressive" }
-exoplayer-ui = { module = "com.google.android.exoplayer:exoplayer-ui", version.ref = "exoplayerUi" }
-exoplayer-core = { module = "com.google.android.exoplayer:exoplayer-core", version.ref = "exoplayerCore" }
 gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
@@ -65,7 +53,6 @@ androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-co
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerializationJson" }
 material = { group = "com.google.android.material", name = "material", version.ref = "material" }
-androidx-activity = { group = "androidx.activity", name = "activity", version.ref = "activity" }
 androidx-constraintlayout = { group = "androidx.constraintlayout", name = "constraintlayout", version.ref = "constraintlayout" }
 
 # Compose
