@@ -145,3 +145,13 @@ NeriPlayer 使用 **GPL-3.0** 开源许可证发布。
 - ✅ 你可以自由地使用、修改和分发本软件；
 - ⚠️ 如果你分发修改后的版本，必须同样以 GPL-3.0 协议开源；
 - 📚 详细条款请参阅 [LICENSE](./LICENSE) 文件。  
+
+---
+<p align="center">
+  <img src="https://moe-counter.lxchapu.com/:neriplayer?theme=moebooru" alt="访问计数 (Moe Counter)">
+  <br/>
+  <a href="https://starchart.cc/cwuom/NeriPlayer">
+    <img src="https://starchart.cc/cwuom/NeriPlayer.svg" alt="Star 历史趋势图">
+  </a>
+</p>
+
