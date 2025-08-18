@@ -119,6 +119,9 @@ fun NeriApp(
 
     val themeSeedColor by repo.themeSeedColorFlow.collectAsState(initial = ThemeDefaults.DEFAULT_SEED_COLOR_HEX)
 
+    val lyricBlurEnabled by repo.lyricBlurEnabledFlow.collectAsState(initial = true)
+
+
     val isDark = when {
         forceDark -> true
         followSystemDark -> isSystemInDarkTheme()
@@ -378,6 +381,10 @@ fun NeriApp(
                             devModeEnabled = devModeEnabled,
                             onDevModeChange = { enabled ->
                                 scope.launch { repo.setDevModeEnabled(enabled) }
+                            },
+                            lyricBlurEnabled = lyricBlurEnabled,
+                            onLyricBlurEnabledChange = { enabled ->
+                                scope.launch { repo.setLyricBlurEnabled(enabled) }
                             }
                         )
                     }
@@ -445,7 +452,10 @@ fun NeriApp(
                             .background(if (isDark) Color(0xFF121212) else Color.White)
                     )
                     HyperBackground(modifier = Modifier.matchParentSize(), isDark = isDark)
-                    NowPlayingScreen(onNavigateUp = { showNowPlaying = false })
+                    NowPlayingScreen(
+                        onNavigateUp = { showNowPlaying = false },
+                        lyricBlurEnabled = lyricBlurEnabled
+                    )
                 }
             }
         }

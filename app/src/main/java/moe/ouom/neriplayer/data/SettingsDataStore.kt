@@ -46,6 +46,7 @@ object SettingsKeys {
     val BILI_AUDIO_QUALITY = stringPreferencesKey("bili_audio_quality")
     val KEY_DEV_MODE = booleanPreferencesKey("dev_mode_enabled")
     val THEME_SEED_COLOR = stringPreferencesKey("theme_seed_color")
+    val LYRIC_BLUR_ENABLED = booleanPreferencesKey("lyric_blur_enabled")
 }
 
 
@@ -84,6 +85,8 @@ class SettingsRepository(private val context: Context) {
     val themeSeedColorFlow: Flow<String> =
         context.dataStore.data.map { it[SettingsKeys.THEME_SEED_COLOR] ?: ThemeDefaults.DEFAULT_SEED_COLOR_HEX }
 
+    val lyricBlurEnabledFlow: Flow<Boolean> =
+        context.dataStore.data.map { it[SettingsKeys.LYRIC_BLUR_ENABLED] ?: true }
 
     val disclaimerAcceptedFlow: Flow<Boolean?> =
         flow {
@@ -124,6 +127,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setThemeSeedColor(hex: String) {
         context.dataStore.edit { it[SettingsKeys.THEME_SEED_COLOR] = hex }
+    }
+
+    suspend fun setLyricBlurEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.LYRIC_BLUR_ENABLED] = enabled }
     }
 
 

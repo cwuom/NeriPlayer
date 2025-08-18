@@ -59,11 +59,13 @@ import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.outlined.BlurOn
 import androidx.compose.material.icons.outlined.Brightness4
 import androidx.compose.material.icons.outlined.ColorLens
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Timer
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Update
 import androidx.compose.material.icons.outlined.Verified
 import androidx.compose.material3.AlertDialog
@@ -141,11 +143,19 @@ fun SettingsScreen(
     onDevModeChange: (Boolean) -> Unit,
     seedColorHex: String,
     onSeedColorChange: (String) -> Unit,
+    lyricBlurEnabled: Boolean,
+    onLyricBlurEnabledChange: (Boolean) -> Unit,
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val context = LocalContext.current
+
+    // 登录菜单的状态
     var loginExpanded by remember { mutableStateOf(false) }
     val arrowRotation by animateFloatAsState(targetValue = if (loginExpanded) 180f else 0f, label = "arrow")
+
+    // 个性化菜单的状态
+    var personalizationExpanded by remember { mutableStateOf(false) }
+    val personalizationArrowRotation by animateFloatAsState(targetValue = if (personalizationExpanded) 180f else 0f, label = "personalization_arrow")
 
     // 各种对话框和弹窗的显示状态 //
     var showQualityDialog by remember { mutableStateOf(false) }
@@ -457,6 +467,64 @@ fun SettingsScreen(
                     }
                 }
             }
+
+            item {
+                ListItem(
+                    leadingContent = {
+                        Icon(
+                            imageVector = Icons.Outlined.Tune,
+                            contentDescription = "个性化",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    headlineContent = { Text("个性化") },
+                    supportingContent = { Text(if (personalizationExpanded) "收起" else "展开以调整视觉效果") },
+                    trailingContent = {
+                        Icon(
+                            imageVector = Icons.Filled.ExpandMore,
+                            contentDescription = if (personalizationExpanded) "收起" else "展开",
+                            modifier = Modifier.rotate(personalizationArrowRotation),
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    modifier = Modifier.clickable { personalizationExpanded = !personalizationExpanded },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                )
+            }
+
+            // 展开区域
+            item {
+                AnimatedVisibility(
+                    visible = personalizationExpanded,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.Transparent)
+                            .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
+                    ) {
+                        ListItem(
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Outlined.BlurOn,
+                                    contentDescription = "歌词模糊",
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = { Text("歌词模糊效果") },
+                            supportingContent = { Text("为非当前行歌词添加景深模糊") },
+                            trailingContent = {
+                                Switch(checked = lyricBlurEnabled, onCheckedChange = onLyricBlurEnabledChange)
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+                    }
+                }
+            }
+
 
             item {
                 ListItem(

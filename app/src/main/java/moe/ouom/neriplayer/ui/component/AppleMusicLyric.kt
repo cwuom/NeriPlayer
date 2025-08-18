@@ -201,12 +201,15 @@ fun AppleMusicLyric(
     currentTimeMs: Long,
     modifier: Modifier = Modifier,
     textColor: Color = if (isSystemInDarkTheme()) Color.White else Color.Black,
-    inactiveAlphaNear: Float = 0.72f,
-    inactiveAlphaFar: Float = 0.40f,
+    inactiveAlphaNear: Float = 0.4f,
+    inactiveAlphaFar: Float = 0.35f,
+    blurInactiveAlphaNear: Float = 0.72f,
+    blurInactiveAlphaFar: Float = 0.40f,
     fontSize: TextUnit = 18.sp,
     centerPadding: Dp = 16.dp,
     visualSpec: LyricVisualSpec = LyricVisualSpec(),
     lyricOffsetMs: Long = 0L,
+    lyricBlurEnabled: Boolean = true
 ) {
     val spec = visualSpec
     val listState = rememberLazyListState()
@@ -288,7 +291,7 @@ fun AppleMusicLyric(
                             label = "lyric_flip"
                         )
 
-                        val blurRadiusDp = if (isActive) 0.dp else {
+                        val blurRadiusDp = if (isActive || !lyricBlurEnabled) 0.dp else {
                             val t = ((distance - 1).coerceAtLeast(0) / 3f).coerceIn(0f, 1f)
                             lerp(spec.inactiveBlurNear, spec.inactiveBlurFar, t)
                         }
@@ -335,10 +338,14 @@ fun AppleMusicLyric(
                                     spec = spec
                                 )
                             } else {
+                                var colorStyle = textColor.copy(alpha = alphaForDistance(distance, inactiveAlphaNear, inactiveAlphaFar))
+                                if (lyricBlurEnabled) {
+                                    colorStyle = textColor.copy(alpha = alphaForDistance(distance, blurInactiveAlphaNear, blurInactiveAlphaFar))
+                                }
                                 Text(
                                     text = line.text,
                                     style = TextStyle(
-                                        color = textColor.copy(alpha = alphaForDistance(distance, inactiveAlphaNear, inactiveAlphaFar)),
+                                        color = colorStyle,
                                         fontSize = fontSize,
                                         fontWeight = FontWeight.Medium,
                                         textAlign = TextAlign.Center,

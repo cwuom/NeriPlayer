@@ -156,6 +156,7 @@ import kotlin.math.roundToInt
 @Composable
 fun NowPlayingScreen(
     onNavigateUp: () -> Unit,
+    lyricBlurEnabled: Boolean,
 ) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
@@ -524,7 +525,8 @@ fun NowPlayingScreen(
                         .weight(8f),
                     textColor = MaterialTheme.colorScheme.onBackground,
                     visualSpec = LyricVisualSpec(),
-                    lyricOffsetMs = totalOffset
+                    lyricOffsetMs = totalOffset,
+                    lyricBlurEnabled = lyricBlurEnabled
                 )
             }
 
