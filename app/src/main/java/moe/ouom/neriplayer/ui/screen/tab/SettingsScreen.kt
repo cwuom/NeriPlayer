@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.screen.tab
  * Created: 2025/8/8
  */
 
+import android.annotation.SuppressLint
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -68,6 +69,7 @@ import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Update
 import androidx.compose.material.icons.outlined.Verified
+import androidx.compose.material.icons.outlined.ZoomInMap
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -81,6 +83,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
@@ -93,6 +96,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -145,6 +149,8 @@ fun SettingsScreen(
     onSeedColorChange: (String) -> Unit,
     lyricBlurEnabled: Boolean,
     onLyricBlurEnabledChange: (Boolean) -> Unit,
+    uiDensityScale: Float,
+    onUiDensityScaleChange: (Float) -> Unit,
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val context = LocalContext.current
@@ -165,6 +171,7 @@ fun SettingsScreen(
     var showCookieDialog by remember { mutableStateOf(false) }
     var showBiliCookieDialog by remember { mutableStateOf(false) }
     var showColorPickerDialog by remember { mutableStateOf(false) }
+    var showDpiDialog by remember { mutableStateOf(false) }
     // ------------------------------------
 
     val neteaseVm: NeteaseAuthViewModel = viewModel()
@@ -519,6 +526,20 @@ fun SettingsScreen(
                             trailingContent = {
                                 Switch(checked = lyricBlurEnabled, onCheckedChange = onLyricBlurEnabledChange)
                             },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+                        ListItem(
+                            modifier = Modifier.clickable { showDpiDialog = true },
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Outlined.ZoomInMap,
+                                    contentDescription = "UI 缩放",
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = { Text("UI 缩放 (DPI)") },
+                            supportingContent = { Text("当前: ${"%.2f".format(uiDensityScale)}x (默认 1.00x)") },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
                     }
@@ -946,6 +967,17 @@ fun SettingsScreen(
             }
         )
     }
+
+    if (showDpiDialog) {
+        DpiSettingDialog(
+            currentScale = uiDensityScale,
+            onDismiss = { showDpiDialog = false },
+            onApply = { newScale ->
+                onUiDensityScaleChange(newScale)
+                showDpiDialog = false
+            }
+        )
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -1112,6 +1144,62 @@ private fun InlineMessage(
             }
         }
     }
+}
+
+
+/** DPI 设置对话框 */
+@SuppressLint("DefaultLocale")
+@Composable
+private fun DpiSettingDialog(
+    currentScale: Float,
+    onDismiss: () -> Unit,
+    onApply: (Float) -> Unit
+) {
+    var sliderValue by remember { mutableFloatStateOf(currentScale) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("修改 UI 缩放比例") },
+        text = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = String.format("%.2fx", sliderValue),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                Slider(
+                    value = sliderValue,
+                    onValueChange = { sliderValue = it },
+                    valueRange = 0.6f..1.2f,
+                    steps = 11, // (1.2f - 0.6f) / 0.05f - 1 = 11
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "修改后可能需要重启应用以获得最佳效果",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        },
+        confirmButton = {
+            HapticTextButton(onClick = { onApply(sliderValue) }) {
+                Text("应用")
+            }
+        },
+        dismissButton = {
+            Row {
+                HapticTextButton(onClick = {
+                    sliderValue = 1.0f // 仅重置滑块状态，不应用
+                }) {
+                    Text("重置")
+                }
+                HapticTextButton(onClick = onDismiss) {
+                    Text("取消")
+                }
+            }
+        }
+    )
 }
 
 /** 兼容性：不用依赖 collectAsState / lifecycle-compose，手动收集 StateFlow */
