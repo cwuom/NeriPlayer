@@ -144,7 +144,10 @@ fun ExploreScreen(
             Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                 OutlinedTextField(
                     value = searchQuery,
-                    onValueChange = { searchQuery = it },
+                    onValueChange = {
+                        searchQuery = it
+                        vm.search(searchQuery)
+                    },
                     label = { Text("搜索...") },
                     leadingIcon = { Icon(Icons.Default.Search, "Search") },
                     trailingIcon = {
@@ -157,7 +160,6 @@ fun ExploreScreen(
                     },
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     keyboardActions = KeyboardActions(onSearch = {
-                        vm.search(searchQuery)
                         focusManager.clearFocus()
                     }),
                     singleLine = true,
@@ -171,7 +173,7 @@ fun ExploreScreen(
                             onClick = {
                                 if (ui.selectedSearchSource != source) {
                                     vm.setSearchSource(source)
-                                    searchQuery = ""
+                                    if (searchQuery.isNotEmpty()) vm.search(searchQuery)
                                 }
                             },
                             text = { Text(source.displayName) }
