@@ -25,7 +25,9 @@ package moe.ouom.neriplayer.ui.screen.tab
 
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
@@ -71,6 +73,7 @@ import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Update
 import androidx.compose.material.icons.outlined.Verified
+import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material.icons.outlined.ZoomInMap
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -123,6 +126,7 @@ import moe.ouom.neriplayer.BuildConfig
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.NeteaseWebLoginActivity
 import moe.ouom.neriplayer.data.ThemeDefaults
+import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.NeteaseAuthEvent
 import moe.ouom.neriplayer.ui.viewmodel.NeteaseAuthViewModel
 import moe.ouom.neriplayer.util.HapticButton
@@ -152,6 +156,12 @@ fun SettingsScreen(
     onUiDensityScaleChange: (Float) -> Unit,
     bypassProxy: Boolean,
     onBypassProxyChange: (Boolean) -> Unit,
+    backgroundImageUri: String?,
+    onBackgroundImageChange: (Uri?) -> Unit,
+    backgroundImageBlur: Float,
+    onBackgroundImageBlurChange: (Float) -> Unit,
+    backgroundImageAlpha: Float,
+    onBackgroundImageAlphaChange: (Float) -> Unit,
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val context = LocalContext.current
@@ -163,6 +173,11 @@ fun SettingsScreen(
     // 个性化菜单的状态
     var personalizationExpanded by remember { mutableStateOf(false) }
     val personalizationArrowRotation by animateFloatAsState(targetValue = if (personalizationExpanded) 180f else 0f, label = "personalization_arrow")
+
+    // 网络配置菜单的状态
+    var networkExpanded by remember { mutableStateOf(false) }
+    val networkArrowRotation by animateFloatAsState(targetValue = if (networkExpanded) 180f else 0f, label = "network_arrow")
+
 
     // 各种对话框和弹窗的显示状态 //
     var showQualityDialog by remember { mutableStateOf(false) }
@@ -184,9 +199,18 @@ fun SettingsScreen(
     var biliCookieText by remember { mutableStateOf("") }
     val biliVm: moe.ouom.neriplayer.ui.viewmodel.BiliAuthViewModel = viewModel()
 
-    var networkExpanded by remember { mutableStateOf(false) }
-    val networkArrowRotation by animateFloatAsState(targetValue = if (networkExpanded) 180f else 0f, label = "network_arrow")
-
+    // 照片选择器
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+        onResult = { uri ->
+            if (uri != null) {
+                // 获取永久访问权限
+                val flag = Intent.FLAG_GRANT_READ_URI_PERMISSION
+                context.contentResolver.takePersistableUriPermission(uri, flag)
+                onBackgroundImageChange(uri)
+            }
+        }
+    )
 
     val biliWebLoginLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -268,17 +292,17 @@ fun SettingsScreen(
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surface)
+            .background(Color.Transparent)
             .nestedScroll(scrollBehavior.nestedScrollConnection),
-        containerColor = MaterialTheme.colorScheme.surface,
-        contentColor = MaterialTheme.colorScheme.onSurface,
+        containerColor = Color.Transparent,
+        contentColor = Color.Transparent,
         topBar = {
             LargeTopAppBar(
                 title = { Text("设置") },
                 scrollBehavior = scrollBehavior,
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    scrolledContainerColor = MaterialTheme.colorScheme.surface,
+                    containerColor = Color.Transparent,
+                    scrolledContainerColor = Color.Transparent,
                     navigationIconContentColor = Color.Unspecified,
                     titleContentColor = MaterialTheme.colorScheme.onSurface,
                     actionIconContentColor = Color.Unspecified
@@ -286,12 +310,18 @@ fun SettingsScreen(
             )
         }
     ) { innerPadding ->
+        val miniPlayerHeight = LocalMiniPlayerHeight.current
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Transparent)
                 .padding(innerPadding),
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+            contentPadding = PaddingValues(
+                start = 8.dp,
+                end = 8.dp,
+                top = 8.dp,
+                bottom = 8.dp + miniPlayerHeight
+            )
         ) {
             // 动态取色
             item {
@@ -548,6 +578,66 @@ fun SettingsScreen(
                             supportingContent = { Text("当前: ${"%.2f".format(uiDensityScale)}x (默认 1.00x)") },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
+
+                        // 选择背景图
+                        ListItem(
+                            modifier = Modifier.clickable {
+                                photoPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            },
+                            colors = ListItemDefaults.colors(
+                                containerColor = Color.Transparent
+                            ),
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Outlined.Wallpaper,
+                                    contentDescription = "自定义背景图"
+                                )
+                            },
+                            headlineContent = { Text("自定义背景图") },
+                            supportingContent = { Text(if (backgroundImageUri != null) "点击更换" else "选择一张图片") }
+                        )
+
+                        // 展开区域
+                        AnimatedVisibility(visible = backgroundImageUri != null) {
+                            Column {
+                                // 清除背景图按钮
+                                TextButton(onClick = { onBackgroundImageChange(null) }) {
+                                    Text("清除背景图")
+                                }
+
+                                // 模糊度调节
+                                ListItem(
+                                    headlineContent = { Text("背景模糊度") },
+                                    colors = ListItemDefaults.colors(
+                                        containerColor = Color.Transparent
+                                    ),
+                                    supportingContent = {
+                                        Slider(
+                                            value = backgroundImageBlur,
+                                            onValueChange = onBackgroundImageBlurChange,
+                                            valueRange = 0f..25f // Coil 的模糊范围
+                                        )
+                                    }
+                                )
+
+                                // 透明度调节
+                                ListItem(
+                                    headlineContent = { Text("背景透明度") },
+                                    colors = ListItemDefaults.colors(
+                                        containerColor = Color.Transparent
+                                    ),
+                                    supportingContent = {
+                                        Slider(
+                                            value = backgroundImageAlpha,
+                                            onValueChange = onBackgroundImageAlphaChange,
+                                            valueRange = 0.1f..1.0f
+                                        )
+                                    }
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -556,7 +646,7 @@ fun SettingsScreen(
                 ListItem(
                     leadingContent = {
                         Icon(
-                            imageVector = Icons.Outlined.Router, // 或者其他合适的图标
+                            imageVector = Icons.Outlined.Router,
                             contentDescription = "网络设置",
                             tint = MaterialTheme.colorScheme.onSurface
                         )

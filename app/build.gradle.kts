@@ -51,6 +51,9 @@ android {
 
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        renderscriptTargetApi = 31
+        renderscriptSupportModeEnabled = true
     }
 
     buildTypes {
@@ -171,4 +174,7 @@ dependencies {
     implementation(libs.material.kolor)
 
     implementation(files("libs/lib-decoder-ffmpeg-release.aar"))
+
+    // 模糊
+    implementation(libs.haze.jetpack.compose)
 }

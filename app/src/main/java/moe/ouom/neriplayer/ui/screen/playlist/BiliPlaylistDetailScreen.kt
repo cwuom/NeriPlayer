@@ -68,6 +68,7 @@ import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
+import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliPlaylistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
@@ -142,7 +143,7 @@ fun BiliPlaylistDetailScreen(
     ) {
         Surface(
             modifier = Modifier.fillMaxSize(),
-            color = MaterialTheme.colorScheme.background
+            color = Color.Transparent
         ) {
             Column {
                 if (!selectionMode) {
@@ -167,7 +168,7 @@ fun BiliPlaylistDetailScreen(
                         },
                         windowInsets = WindowInsets.statusBars,
                         colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.surface,
+                            containerColor = Color.Transparent,
                             scrolledContainerColor = MaterialTheme.colorScheme.surface
                         )
                     )
@@ -196,7 +197,7 @@ fun BiliPlaylistDetailScreen(
                         },
                         windowInsets = WindowInsets.statusBars,
                         colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.surface,
+                            containerColor = Color.Transparent,
                             scrolledContainerColor = MaterialTheme.colorScheme.surface
                         )
                     )
@@ -215,8 +216,12 @@ fun BiliPlaylistDetailScreen(
                 }
 
                 Box(modifier = Modifier.fillMaxSize()) {
+                    val miniPlayerHeight = LocalMiniPlayerHeight.current
+
                     LazyColumn(
-                        contentPadding = PaddingValues(bottom = 24.dp),
+                        contentPadding = PaddingValues(
+                            bottom = 24.dp + miniPlayerHeight
+                        ),
                         modifier = Modifier.fillMaxSize()
                     ) {
                         item {

@@ -23,17 +23,23 @@ package moe.ouom.neriplayer.ui.component
  * Created: 2025/8/8
  */
 
+import androidx.compose.foundation.background
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeChild
 import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.util.performHapticFeedback
 
@@ -41,13 +47,16 @@ import moe.ouom.neriplayer.util.performHapticFeedback
 fun NeriBottomBar(
     items: List<Pair<Destinations, ImageVector>>,
     currentDestination: NavDestination?,
-    onItemSelected: (Destinations) -> Unit
+    onItemSelected: (Destinations) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
 
     NavigationBar(
-        containerColor = MaterialTheme.colorScheme.surface,
-        contentColor = MaterialTheme.colorScheme.onSurface
+        modifier = modifier.background(Color.Transparent),
+        containerColor = Color.Transparent,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        tonalElevation = 0.dp,
     ) {
         items.forEach { (dest, icon) ->
             val selected = currentDestination?.hierarchy?.any { it.route == dest.route } == true
@@ -61,8 +70,10 @@ fun NeriBottomBar(
                 label = { Text(dest.label) },
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                    selectedTextColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                    indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
+                    selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                    indicatorColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
+                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             )
         }

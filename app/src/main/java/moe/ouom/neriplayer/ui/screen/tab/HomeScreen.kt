@@ -72,6 +72,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.HomeViewModel
 import moe.ouom.neriplayer.ui.viewmodel.NeteasePlaylist
 import moe.ouom.neriplayer.util.HapticIconButton
@@ -114,7 +115,7 @@ fun HomeScreen(
                 }
             },
             scrollBehavior = scrollBehavior,
-            colors = TopAppBarDefaults.largeTopAppBarColors(
+            colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = Color.Transparent,
                 scrolledContainerColor = Color.Transparent
             )
@@ -123,7 +124,7 @@ fun HomeScreen(
         Card(
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
+                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.0f)
             ),
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
             modifier = Modifier
@@ -165,10 +166,17 @@ fun HomeScreen(
                     }
                 }
                 else -> {
+                    val miniPlayerHeight = LocalMiniPlayerHeight.current
+
                     LazyVerticalGrid(
                         state = gridState,
                         columns = GridCells.Adaptive(150.dp),
-                        contentPadding = PaddingValues(16.dp),
+                        contentPadding = PaddingValues(
+                            start = 8.dp,
+                            end = 8.dp,
+                            top = 8.dp,
+                            bottom = 8.dp + miniPlayerHeight
+                        ),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         modifier = Modifier.fillMaxSize()

@@ -50,6 +50,9 @@ object SettingsKeys {
     val LYRIC_BLUR_ENABLED = booleanPreferencesKey("lyric_blur_enabled")
     val UI_DENSITY_SCALE = floatPreferencesKey("ui_density_scale")
     val BYPASS_PROXY = booleanPreferencesKey("bypass_proxy")
+    val BACKGROUND_IMAGE_URI = stringPreferencesKey("background_image_uri")
+    val BACKGROUND_IMAGE_BLUR = floatPreferencesKey("background_image_blur")
+    val BACKGROUND_IMAGE_ALPHA = floatPreferencesKey("background_image_alpha")
 }
 
 
@@ -97,6 +100,15 @@ class SettingsRepository(private val context: Context) {
     val bypassProxyFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.BYPASS_PROXY] ?: true }
 
+    val backgroundImageUriFlow: Flow<String?> =
+        context.dataStore.data.map { it[SettingsKeys.BACKGROUND_IMAGE_URI] }
+
+    val backgroundImageBlurFlow: Flow<Float> =
+        context.dataStore.data.map { it[SettingsKeys.BACKGROUND_IMAGE_BLUR] ?: 0f }
+
+    val backgroundImageAlphaFlow: Flow<Float> =
+        context.dataStore.data.map { it[SettingsKeys.BACKGROUND_IMAGE_ALPHA] ?: 0.3f }
+
     val disclaimerAcceptedFlow: Flow<Boolean?> =
         flow {
             emit(null) // 加载态
@@ -112,10 +124,6 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setForceDark(value: Boolean) {
         context.dataStore.edit { it[SettingsKeys.FORCE_DARK] = value }
-    }
-
-    suspend fun setFollowSystemDark(value: Boolean) {
-        context.dataStore.edit { it[SettingsKeys.FOLLOW_SYSTEM_DARK] = value }
     }
 
     suspend fun setDisclaimerAccepted(accepted: Boolean) {
@@ -148,6 +156,24 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setBypassProxy(enabled: Boolean) {
         context.dataStore.edit { it[SettingsKeys.BYPASS_PROXY] = enabled }
+    }
+
+    suspend fun setBackgroundImageUri(uri: String?) {
+        context.dataStore.edit {
+            if (uri == null) {
+                it.remove(SettingsKeys.BACKGROUND_IMAGE_URI)
+            } else {
+                it[SettingsKeys.BACKGROUND_IMAGE_URI] = uri
+            }
+        }
+    }
+
+    suspend fun setBackgroundImageBlur(blur: Float) {
+        context.dataStore.edit { it[SettingsKeys.BACKGROUND_IMAGE_BLUR] = blur }
+    }
+
+    suspend fun setBackgroundImageAlpha(alpha: Float) {
+        context.dataStore.edit { it[SettingsKeys.BACKGROUND_IMAGE_ALPHA] = alpha }
     }
 
     /** 备用：一次性读取（非 Compose 场景） */

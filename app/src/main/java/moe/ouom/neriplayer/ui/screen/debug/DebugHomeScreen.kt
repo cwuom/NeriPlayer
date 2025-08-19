@@ -46,6 +46,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.R
 
@@ -67,8 +68,10 @@ fun DebugHomeScreen(
                 )
             },
             headlineContent = { Text("调试工具") },
+            colors = ListItemDefaults.colors(
+                containerColor = Color.Transparent
+            ),
             supportingContent = { Text("选择要调试的平台或隐藏调试模式") },
-            colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface)
         )
 
         Card(
@@ -161,7 +164,9 @@ fun DebugHomeScreen(
             supportingContent = {
                 Text("隐藏后底部栏将移除“调试”，可在设置页点击版本号 7 次再次开启")
             },
-            colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface)
+            colors = ListItemDefaults.colors(
+                containerColor = Color.Transparent
+            )
         )
     }
 }

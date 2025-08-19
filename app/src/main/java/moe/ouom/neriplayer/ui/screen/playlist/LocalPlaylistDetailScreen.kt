@@ -109,6 +109,7 @@ import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
+import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.playlist.LocalPlaylistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.HapticFloatingActionButton
@@ -146,9 +147,10 @@ fun LocalPlaylistDetailScreen(
             tween(250, easing = FastOutSlowInEasing),
             targetOffsetY = { it }) + fadeOut(tween(150))
     ) {
-        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Surface(Modifier.fillMaxSize(), color = Color.Transparent) {
             if (playlistOrNull == null) {
                 Scaffold(
+                    containerColor = Color.Transparent,
                     topBar = {
                         TopAppBar(
                             title = { Text("歌单") },
@@ -162,7 +164,7 @@ fun LocalPlaylistDetailScreen(
                             },
                             windowInsets = WindowInsets.statusBars,
                             colors = TopAppBarDefaults.topAppBarColors(
-                                containerColor = MaterialTheme.colorScheme.surface,
+                                containerColor = Color.Transparent,
                                 scrolledContainerColor = MaterialTheme.colorScheme.surface
                             )
                         )
@@ -339,6 +341,7 @@ fun LocalPlaylistDetailScreen(
             val currentIndexInSource = localSongs.indexOfFirst { it.id == currentSong?.id }
 
             Scaffold(
+                containerColor = Color.Transparent,
                 topBar = {
                     if (!selectionMode) {
                         TopAppBar(
@@ -378,7 +381,7 @@ fun LocalPlaylistDetailScreen(
                             },
                             windowInsets = WindowInsets.statusBars,
                             colors = TopAppBarDefaults.topAppBarColors(
-                                containerColor = MaterialTheme.colorScheme.surface,
+                                containerColor = Color.Transparent,
                                 scrolledContainerColor = MaterialTheme.colorScheme.surface
                             )
                         )
@@ -426,7 +429,7 @@ fun LocalPlaylistDetailScreen(
                             },
                             windowInsets = WindowInsets.statusBars,
                             colors = TopAppBarDefaults.topAppBarColors(
-                                containerColor = MaterialTheme.colorScheme.surface,
+                                containerColor = Color.Transparent,
                                 scrolledContainerColor = MaterialTheme.colorScheme.surface
                             )
                         )
@@ -445,6 +448,7 @@ fun LocalPlaylistDetailScreen(
                 }
 
                 Column(Modifier.padding(padding).fillMaxSize()) {
+                    val miniPlayerHeight = LocalMiniPlayerHeight.current
                     AnimatedVisibility(showSearch && !selectionMode) {
                         OutlinedTextField(
                             value = searchQuery,
@@ -462,7 +466,7 @@ fun LocalPlaylistDetailScreen(
 
                         LazyColumn(
                             state = reorderState.listState,
-                            contentPadding = PaddingValues(bottom = 24.dp),
+                            contentPadding = PaddingValues(bottom = 24.dp + miniPlayerHeight),
                             modifier = Modifier
                                 .fillMaxSize()
                                 .reorderable(reorderState)
@@ -698,7 +702,10 @@ fun LocalPlaylistDetailScreen(
                                 },
                                 modifier = Modifier
                                     .align(Alignment.BottomEnd)
-                                    .padding(16.dp)
+                                    .padding(
+                                        bottom = 16.dp + miniPlayerHeight,
+                                        end = 16.dp
+                                    )
                             ) {
                                 Icon(
                                     Icons.AutoMirrored.Outlined.PlaylistPlay,

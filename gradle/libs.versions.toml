@@ -1,7 +1,9 @@
 [versions]
 accompanistNavigationAnimation = "0.36.0"
 agp = "8.12.0"
+blurview = "version-3.1.0"
 coilCompose = "2.7.0"
+coilTransformations = "2.4.0"
 datastorePreferences = "1.1.7"
 dec = "0.1.2"
 exoplayerCore = "2.19.1"
@@ -9,6 +11,7 @@ exoplayerProgressive = "2.19.1"
 exoplayerUi = "2.19.1"
 extensionFfmpeg = "2.20.0"
 gson = "2.13.1"
+hazeJetpackCompose = "0.7.0"
 kotlin = "2.2.0"
 coreKtx = "1.16.0"
 junit = "4.13.2"
@@ -20,7 +23,7 @@ material = "1.12.0"
 activity = "1.10.1"
 constraintlayout = "2.2.1"
 
-compose-bom = "2025.07.00"
+compose-bom = "2025.08.00"
 activity-compose = "1.10.1"
 materialColorUtilities = "1.3.0"
 materialColorUtilitiesAndroid = "3.0.1"
@@ -33,8 +36,8 @@ navigation = "2.9.3"
 lifecycle = "2.9.2"
 okhttp = "5.1.0"
 reorderable = "0.9.6"
-foundationLayout = "1.8.3"
-uiGraphics = "1.8.3"
+foundationLayout = "1.9.0"
+uiGraphics = "1.9.0"
 
 [libraries]
 accompanist-navigation-animation = { module = "com.google.accompanist:accompanist-navigation-animation", version.ref = "accompanistNavigationAnimation" }
@@ -47,9 +50,11 @@ androidx-media3-datasource-okhttp = { module = "androidx.media3:media3-datasourc
 androidx-media3-datasource = { module = "androidx.media3:media3-datasource", version.ref = "media3Datasource" }
 androidx-media3-exoplayer = { module = "androidx.media3:media3-exoplayer", version.ref = "media3Exoplayer" }
 androidx-ui-graphics = { module = "androidx.compose.ui:ui-graphics", version.ref = "uiGraphics" }
+blurview = { module = "com.github.Dimezis:BlurView", version.ref = "blurview" }
 coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coilCompose" }
 dec = { module = "org.brotli:dec", version.ref = "dec" }
 gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
+haze-jetpack-compose = { module = "dev.chrisbanes.haze:haze-jetpack-compose", version.ref = "hazeJetpackCompose" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }

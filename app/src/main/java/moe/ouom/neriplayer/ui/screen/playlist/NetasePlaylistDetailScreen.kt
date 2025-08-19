@@ -118,6 +118,7 @@ import moe.ouom.neriplayer.util.formatPlayCount
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Shadow
+import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.util.HapticFloatingActionButton
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
@@ -173,7 +174,7 @@ fun PlaylistDetailScreen(
     ) {
         Surface(
             modifier = Modifier.fillMaxSize(),
-            color = MaterialTheme.colorScheme.background
+            color = Color.Transparent
         ) {
             Column {
                 // 顶部栏：普通模式 / 多选模式
@@ -199,7 +200,7 @@ fun PlaylistDetailScreen(
                         },
                         windowInsets = WindowInsets.statusBars,
                         colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.surface,
+                            containerColor = Color.Transparent,
                             scrolledContainerColor = MaterialTheme.colorScheme.surface,
                             titleContentColor = MaterialTheme.colorScheme.onSurface,
                             navigationIconContentColor = MaterialTheme.colorScheme.onSurface
@@ -253,11 +254,14 @@ fun PlaylistDetailScreen(
                     else ui.tracks.filter { it.name.contains(searchQuery, true) || it.artist.contains(searchQuery, true) }
                 }
                 val currentIndex = displayedTracks.indexOfFirst { it.id == currentSong?.id }
+                val miniPlayerHeight = LocalMiniPlayerHeight.current
 
                 Box(modifier = Modifier.fillMaxSize()) {
                     LazyColumn(
                         state = listState,
-                        contentPadding = PaddingValues(bottom = 24.dp),
+                        contentPadding = PaddingValues(
+                            bottom = 24.dp + miniPlayerHeight
+                        ),
                         modifier = Modifier.fillMaxSize()
                     ) {
                         item {
@@ -399,7 +403,10 @@ fun PlaylistDetailScreen(
                             },
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
-                                .padding(16.dp)
+                                .padding(
+                                    bottom = 16.dp + miniPlayerHeight,
+                                    end = 16.dp
+                                )
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Outlined.PlaylistPlay,

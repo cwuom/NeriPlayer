@@ -41,6 +41,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.Color
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.ui.screen.playlist.PlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.tab.ExploreScreen
@@ -60,7 +61,7 @@ fun ExploreHostScreen(
         LazyGridState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
     }
 
-    Surface(color = MaterialTheme.colorScheme.background) {
+    Surface(color = Color.Transparent) {
         AnimatedContent(
             targetState = selected,
             label = "explore_host_switch",

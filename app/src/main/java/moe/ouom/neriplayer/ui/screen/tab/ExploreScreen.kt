@@ -44,6 +44,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -62,6 +63,7 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
+import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.ExploreViewModel
 import moe.ouom.neriplayer.ui.viewmodel.NeteasePlaylist
 import moe.ouom.neriplayer.ui.viewmodel.SearchSource
@@ -125,13 +127,14 @@ fun ExploreScreen(
         modifier = Modifier
             .fillMaxSize()
             .nestedScroll(scrollBehavior.nestedScrollConnection),
+        containerColor = Color.Transparent,
         topBar = {
             LargeTopAppBar(
                 title = { Text("探索") },
                 scrollBehavior = scrollBehavior,
                 colors = TopAppBarDefaults.largeTopAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    scrolledContainerColor = MaterialTheme.colorScheme.surface
+                    containerColor = Color.Transparent,
+                    scrolledContainerColor = Color.Transparent
                 )
             )
         }
@@ -166,7 +169,10 @@ fun ExploreScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(8.dp))
-                TabRow(selectedTabIndex = ui.selectedSearchSource.ordinal) {
+                TabRow(
+                    selectedTabIndex = ui.selectedSearchSource.ordinal,
+                    containerColor = Color.Transparent
+                ) {
                     SearchSource.entries.forEach { source ->
                         Tab(
                             selected = ui.selectedSearchSource == source,
@@ -448,12 +454,18 @@ private fun NeteaseDefaultContent(
     vm: ExploreViewModel,
     onPlay: (NeteasePlaylist) -> Unit
 ) {
+    val miniPlayerHeight = LocalMiniPlayerHeight.current
     LazyVerticalGrid(
         state = gridState,
         columns = GridCells.Adaptive(150.dp),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(
+            start = 16.dp,
+            end = 16.dp,
+            top = 16.dp,
+            bottom = 16.dp + miniPlayerHeight
+        ),
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) {
             Column(Modifier.fillMaxWidth()) {
@@ -468,6 +480,11 @@ private fun NeteaseDefaultContent(
                             selected = selected,
                             onClick = { if (!selected) vm.loadHighQuality(tag) },
                             label = { Text(tag) },
+                            border = FilterChipDefaults.filterChipBorder(
+                                borderColor = MaterialTheme.colorScheme.outline,
+                                selected = selected,
+                                enabled = true
+                            )
                         )
                     }
                 }
@@ -486,7 +503,7 @@ private fun NeteaseDefaultContent(
             }
         } else if (ui.error != null) {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                Text(ui.error!!, color = MaterialTheme.colorScheme.error)
+                Text(ui.error, color = MaterialTheme.colorScheme.error)
             }
         } else {
             items(items = ui.playlists, key = { it.id }) { playlist ->

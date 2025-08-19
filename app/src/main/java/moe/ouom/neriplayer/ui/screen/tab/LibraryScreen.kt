@@ -48,6 +48,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.ScrollableTabRow
@@ -69,6 +70,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -121,8 +123,8 @@ fun LibraryScreen(
             title = { Text("媒体库") },
             scrollBehavior = scrollBehavior,
             colors = TopAppBarDefaults.largeTopAppBarColors(
-                containerColor = MaterialTheme.colorScheme.surface,
-                scrolledContainerColor = MaterialTheme.colorScheme.surface
+                containerColor = Color.Transparent,
+                scrolledContainerColor = Color.Transparent
             )
         )
 
@@ -130,7 +132,7 @@ fun LibraryScreen(
         ScrollableTabRow(
             selectedTabIndex = pagerState.currentPage,
             edgePadding = 16.dp,
-            containerColor = MaterialTheme.colorScheme.surface,
+            containerColor = Color.Transparent,
             contentColor = MaterialTheme.colorScheme.primary,
             indicator = { tabPositions ->
                 TabRowDefaults.SecondaryIndicator(
@@ -200,7 +202,7 @@ private fun BiliPlaylistList(
             Card(
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = Color.Transparent
                 ),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 modifier = Modifier
@@ -210,6 +212,9 @@ private fun BiliPlaylistList(
             ) {
                 ListItem(
                     headlineContent = { Text(pl.title) },
+                    colors = ListItemDefaults.colors(
+                        containerColor = Color.Transparent
+                    ),
                     supportingContent = {
                         Text(
                             "${pl.count} 个内容",
@@ -276,7 +281,7 @@ private fun LocalPlaylistList(
             Card(
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = Color.Transparent
                 ),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 modifier = Modifier
@@ -284,7 +289,10 @@ private fun LocalPlaylistList(
                     .animateItem()
                     .clickable { showDialog = true }
             ) {
-                ListItem(headlineContent = { Text("＋ 新建歌单") })
+                ListItem(headlineContent = { Text("＋ 新建歌单") },
+                colors = ListItemDefaults.colors(
+                    containerColor = Color.Transparent
+                ),)
             }
 
             if (showDialog) {
@@ -344,7 +352,7 @@ private fun LocalPlaylistList(
             Card(
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = Color.Transparent
                 ),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 modifier = Modifier
@@ -357,6 +365,9 @@ private fun LocalPlaylistList(
                     supportingContent = {
                         Text("${pl.songs.size} 首", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     },
+                    colors = ListItemDefaults.colors(
+                        containerColor = Color.Transparent
+                    ),
                     leadingContent = {
                         val cover = pl.songs.lastOrNull()?.coverUrl
                         if (!cover.isNullOrEmpty()) {
@@ -400,7 +411,7 @@ private fun NeteasePlaylistList(
             Card(
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = Color.Transparent
                 ),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 modifier = Modifier
@@ -416,6 +427,9 @@ private fun NeteasePlaylistList(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     },
+                    colors = ListItemDefaults.colors(
+                        containerColor = Color.Transparent
+                    ),
                     leadingContent = {
                         AsyncImage(
                             model = ImageRequest.Builder(LocalContext.current).data(pl.picUrl).build(),
