@@ -33,8 +33,13 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.EaseInOutCubic
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
@@ -94,6 +99,9 @@ import moe.ouom.neriplayer.ui.screen.debug.NeteaseApiProbeScreen
 import moe.ouom.neriplayer.ui.screen.debug.SearchApiProbeScreen
 import moe.ouom.neriplayer.ui.screen.DownloadManagerScreen
 import moe.ouom.neriplayer.ui.screen.host.ExploreHostScreen
+import moe.ouom.neriplayer.ui.screen.host.HomeHostScreen
+import moe.ouom.neriplayer.ui.screen.host.LibraryHostScreen
+import moe.ouom.neriplayer.ui.screen.host.SettingsHostScreen
 import moe.ouom.neriplayer.ui.screen.playlist.BiliPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.PlaylistDetailScreen
@@ -255,22 +263,59 @@ fun NeriApp(
                             ) {
                                 composable(
                                     Destinations.Home.route,
-                                    exitTransition = { fadeOut(animationSpec = tween(160)) },
-                                    popEnterTransition = { slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn() }
+                                    enterTransition = { 
+                                        scaleIn(
+                                            animationSpec = spring(
+                                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                stiffness = Spring.StiffnessLow
+                                            ),
+                                            initialScale = 0.85f
+                                        ) + fadeIn(
+                                            animationSpec = tween(300, easing = EaseInOutCubic)
+                                        )
+                                    },
+                                    exitTransition = { 
+                                        scaleOut(
+                                            animationSpec = tween(200, easing = EaseInOutCubic),
+                                            targetScale = 0.95f
+                                        ) + fadeOut(
+                                            animationSpec = tween(200, easing = EaseInOutCubic)
+                                        )
+                                    },
+                                    popEnterTransition = { 
+                                        scaleIn(
+                                            animationSpec = spring(
+                                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                stiffness = Spring.StiffnessLow
+                                            ),
+                                            initialScale = 0.95f
+                                        ) + fadeIn(
+                                            animationSpec = tween(300, easing = EaseInOutCubic)
+                                        )
+                                    },
+                                    popExitTransition = { 
+                                        scaleOut(
+                                            animationSpec = tween(200, easing = EaseInOutCubic),
+                                            targetScale = 0.85f
+                                        ) + fadeOut(
+                                            animationSpec = tween(200, easing = EaseInOutCubic)
+                                        )
+                                    }
                                 ) {
-                                    val gridState = rememberSaveable(saver = LazyGridState.Saver) { LazyGridState() }
-                                    HomeScreen(
-                                        gridState = gridState,
-                                        onItemClick = { playlist ->
-                                            val playlistJson = URLEncoder.encode(
-                                                Gson().toJson(playlist),
-                                                StandardCharsets.UTF_8.name()
+                                    HomeHostScreen(
+                                        onSongClick = { songs, index ->
+                                            ContextCompat.startForegroundService(
+                                                context,
+                                                Intent(context, AudioPlayerService::class.java).apply {
+                                                    action = AudioPlayerService.ACTION_PLAY
+                                                    putParcelableArrayListExtra(
+                                                        "playlist",
+                                                        ArrayList(songs)
+                                                    )
+                                                    putExtra("index", index)
+                                                }
                                             )
-                                            navController.navigate(
-                                                Destinations.PlaylistDetail.createRoute(
-                                                    playlistJson
-                                                )
-                                            )
+                                            showNowPlaying = true
                                         }
                                     )
                                 }
@@ -280,8 +325,24 @@ fun NeriApp(
                                     arguments = listOf(navArgument("playlistJson") {
                                         type = NavType.StringType
                                     }),
-                                    enterTransition = { slideInVertically(animationSpec = tween(220)) { it } + fadeIn() },
-                                    popExitTransition = { slideOutVertically(animationSpec = tween(240)) { it } + fadeOut() }
+                                    enterTransition = { 
+                                        slideInVertically(
+                                            animationSpec = tween(220)
+                                        ) { it } + fadeIn()
+                                    },
+                                    exitTransition = { 
+                                        fadeOut(animationSpec = tween(160))
+                                    },
+                                    popEnterTransition = { 
+                                        slideInVertically(
+                                            animationSpec = tween(200)
+                                        ) { full -> -full / 6 } + fadeIn()
+                                    },
+                                    popExitTransition = { 
+                                        slideOutVertically(
+                                            animationSpec = tween(240)
+                                        ) { it } + fadeOut()
+                                    }
                                 ) { backStackEntry ->
                                     val playlistJson = backStackEntry.arguments?.getString("playlistJson")
                                     val playlist =
@@ -312,8 +373,24 @@ fun NeriApp(
                                     arguments = listOf(navArgument("playlistJson") {
                                         type = NavType.StringType
                                     }),
-                                    enterTransition = { slideInVertically(animationSpec = tween(220)) { it } + fadeIn() },
-                                    popExitTransition = { slideOutVertically(animationSpec = tween(240)) { it } + fadeOut() }
+                                    enterTransition = { 
+                                        slideInVertically(
+                                            animationSpec = tween(220)
+                                        ) { it } + fadeIn()
+                                    },
+                                    exitTransition = { 
+                                        fadeOut(animationSpec = tween(160))
+                                    },
+                                    popEnterTransition = { 
+                                        slideInVertically(
+                                            animationSpec = tween(200)
+                                        ) { full -> -full / 6 } + fadeIn()
+                                    },
+                                    popExitTransition = { 
+                                        slideOutVertically(
+                                            animationSpec = tween(240)
+                                        ) { it } + fadeOut()
+                                    }
                                 ) { backStackEntry ->
                                     val playlistJson = backStackEntry.arguments?.getString("playlistJson")
                                     val playlist = Gson().fromJson(playlistJson, BiliPlaylist::class.java)
@@ -341,8 +418,44 @@ fun NeriApp(
 
                                 composable(
                                     Destinations.Explore.route,
-                                    exitTransition = { fadeOut(animationSpec = tween(160)) },
-                                    popEnterTransition = { slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn() }
+                                    enterTransition = { 
+                                        scaleIn(
+                                            animationSpec = spring(
+                                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                stiffness = Spring.StiffnessLow
+                                            ),
+                                            initialScale = 0.85f
+                                        ) + fadeIn(
+                                            animationSpec = tween(300, easing = EaseInOutCubic)
+                                        )
+                                    },
+                                    exitTransition = { 
+                                        scaleOut(
+                                            animationSpec = tween(200, easing = EaseInOutCubic),
+                                            targetScale = 0.95f
+                                        ) + fadeOut(
+                                            animationSpec = tween(200, easing = EaseInOutCubic)
+                                        )
+                                    },
+                                    popEnterTransition = { 
+                                        scaleIn(
+                                            animationSpec = spring(
+                                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                stiffness = Spring.StiffnessLow
+                                            ),
+                                            initialScale = 0.95f
+                                        ) + fadeIn(
+                                            animationSpec = tween(300, easing = EaseInOutCubic)
+                                        )
+                                    },
+                                    popExitTransition = { 
+                                        scaleOut(
+                                            animationSpec = tween(200, easing = EaseInOutCubic),
+                                            targetScale = 0.85f
+                                        ) + fadeOut(
+                                            animationSpec = tween(200, easing = EaseInOutCubic)
+                                        )
+                                    }
                                 ) {
                                     ExploreHostScreen(
                                         onSongClick = { songs, index ->
@@ -367,38 +480,63 @@ fun NeriApp(
 
                                 composable(
                                     Destinations.Library.route,
-                                    exitTransition = { fadeOut(animationSpec = tween(160)) },
-                                    popEnterTransition = { slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn() }
+                                    enterTransition = { 
+                                        scaleIn(
+                                            animationSpec = spring(
+                                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                stiffness = Spring.StiffnessLow
+                                            ),
+                                            initialScale = 0.85f
+                                        ) + fadeIn(
+                                            animationSpec = tween(300, easing = EaseInOutCubic)
+                                        )
+                                    },
+                                    exitTransition = { 
+                                        scaleOut(
+                                            animationSpec = tween(200, easing = EaseInOutCubic),
+                                            targetScale = 0.95f
+                                        ) + fadeOut(
+                                            animationSpec = tween(200, easing = EaseInOutCubic)
+                                        )
+                                    },
+                                    popEnterTransition = { 
+                                        scaleIn(
+                                            animationSpec = spring(
+                                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                stiffness = Spring.StiffnessLow
+                                            ),
+                                            initialScale = 0.95f
+                                        ) + fadeIn(
+                                            animationSpec = tween(300, easing = EaseInOutCubic)
+                                        )
+                                    },
+                                    popExitTransition = { 
+                                        scaleOut(
+                                            animationSpec = tween(200, easing = EaseInOutCubic),
+                                            targetScale = 0.85f
+                                        ) + fadeOut(
+                                            animationSpec = tween(200, easing = EaseInOutCubic)
+                                        )
+                                    }
                                 ) {
-                                    LibraryScreen(
-                                        onLocalPlaylistClick = { playlist ->
-                                            navController.navigate(
-                                                Destinations.LocalPlaylistDetail.createRoute(
-                                                    playlist.id
-                                                )
+                                    LibraryHostScreen(
+                                        onSongClick = { songs, index ->
+                                            ContextCompat.startForegroundService(
+                                                context,
+                                                Intent(context, AudioPlayerService::class.java).apply {
+                                                    action = AudioPlayerService.ACTION_PLAY
+                                                    putParcelableArrayListExtra(
+                                                        "playlist",
+                                                        ArrayList(songs)
+                                                    )
+                                                    putExtra("index", index)
+                                                }
                                             )
+                                            showNowPlaying = true
                                         },
-                                        onNeteasePlaylistClick = { playlist ->
-                                            val playlistJson = URLEncoder.encode(
-                                                Gson().toJson(playlist),
-                                                StandardCharsets.UTF_8.name()
-                                            )
-                                            navController.navigate(
-                                                Destinations.PlaylistDetail.createRoute(
-                                                    playlistJson
-                                                )
-                                            )
-                                        },
-                                        onBiliPlaylistClick = { playlist ->
-                                            val playlistJson = URLEncoder.encode(
-                                                Gson().toJson(playlist),
-                                                StandardCharsets.UTF_8.name()
-                                            )
-                                            navController.navigate(
-                                                Destinations.BiliPlaylistDetail.createRoute(
-                                                    playlistJson
-                                                )
-                                            )
+                                        onPlayParts = { videoInfo, index, coverUrl ->
+                                            PlayerManager.playBiliVideoParts(videoInfo, index, coverUrl)
+                                            showNowPlaying = true
                                         }
                                     )
                                 }
@@ -410,8 +548,24 @@ fun NeriApp(
                                     arguments = listOf(navArgument("playlistId") {
                                         type = NavType.LongType
                                     }),
-                                    enterTransition = { slideInVertically(animationSpec = tween(220)) { it } + fadeIn() },
-                                    popExitTransition = { slideOutVertically(animationSpec = tween(240)) { it } + fadeOut() }
+                                    enterTransition = { 
+                                        slideInVertically(
+                                            animationSpec = tween(220)
+                                        ) { it } + fadeIn()
+                                    },
+                                    exitTransition = { 
+                                        fadeOut(animationSpec = tween(160))
+                                    },
+                                    popEnterTransition = { 
+                                        slideInVertically(
+                                            animationSpec = tween(200)
+                                        ) { full -> -full / 6 } + fadeIn()
+                                    },
+                                    popExitTransition = { 
+                                        slideOutVertically(
+                                            animationSpec = tween(240)
+                                        ) { it } + fadeOut()
+                                    }
                                 ) { backStackEntry ->
                                     val id = backStackEntry.arguments?.getLong("playlistId") ?: 0L
                                     LocalPlaylistDetailScreen(
@@ -435,8 +589,48 @@ fun NeriApp(
                                     )
                                 }
 
-                                composable(Destinations.Settings.route) {
-                                    SettingsScreen(
+                                composable(
+                                    Destinations.Settings.route,
+                                    enterTransition = { 
+                                        scaleIn(
+                                            animationSpec = spring(
+                                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                stiffness = Spring.StiffnessLow
+                                            ),
+                                            initialScale = 0.85f
+                                        ) + fadeIn(
+                                            animationSpec = tween(300, easing = EaseInOutCubic)
+                                        )
+                                    },
+                                    exitTransition = { 
+                                        scaleOut(
+                                            animationSpec = tween(200, easing = EaseInOutCubic),
+                                            targetScale = 0.95f
+                                        ) + fadeOut(
+                                            animationSpec = tween(200, easing = EaseInOutCubic)
+                                        )
+                                    },
+                                    popEnterTransition = { 
+                                        scaleIn(
+                                            animationSpec = spring(
+                                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                stiffness = Spring.StiffnessLow
+                                            ),
+                                            initialScale = 0.95f
+                                        ) + fadeIn(
+                                            animationSpec = tween(300, easing = EaseInOutCubic)
+                                        )
+                                    },
+                                    popExitTransition = { 
+                                        scaleOut(
+                                            animationSpec = tween(200, easing = EaseInOutCubic),
+                                            targetScale = 0.85f
+                                        ) + fadeOut(
+                                            animationSpec = tween(200, easing = EaseInOutCubic)
+                                        )
+                                    }
+                                ) {
+                                    SettingsHostScreen(
                                         dynamicColor = dynamicColorEnabled,
                                         onDynamicColorChange = { scope.launch { repo.setDynamicColor(it) } },
                                         forceDark = forceDark,
@@ -478,24 +672,77 @@ fun NeriApp(
                                         backgroundImageAlpha = backgroundImageAlpha,
                                         onBackgroundImageAlphaChange = { alpha ->
                                             scope.launch { repo.setBackgroundImageAlpha(alpha) }
-                                        },
-                                        onNavigateToDownloadManager = {
-                                            navController.navigate(Destinations.DownloadManager.route)
                                         }
                                     )
                                 }
                                 
                                 composable(
                                     route = Destinations.DownloadManager.route,
-                                    exitTransition = { fadeOut(animationSpec = tween(160)) },
-                                    popEnterTransition = { slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn() }
+                                    enterTransition = { 
+                                        slideInVertically(
+                                            animationSpec = tween(220)
+                                        ) { it } + fadeIn()
+                                    },
+                                    exitTransition = { 
+                                        fadeOut(animationSpec = tween(160))
+                                    },
+                                    popEnterTransition = { 
+                                        slideInVertically(
+                                            animationSpec = tween(200)
+                                        ) { full -> -full / 6 } + fadeIn()
+                                    },
+                                    popExitTransition = { 
+                                        slideOutVertically(
+                                            animationSpec = tween(240)
+                                        ) { it } + fadeOut()
+                                    }
                                 ) {
                                     DownloadManagerScreen(
                                         onBack = { navController.popBackStack() }
                                     )
                                 }
 
-                                composable(Destinations.Debug.route) {
+                                composable(
+                                    Destinations.Debug.route,
+                                    enterTransition = { 
+                                        scaleIn(
+                                            animationSpec = spring(
+                                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                stiffness = Spring.StiffnessLow
+                                            ),
+                                            initialScale = 0.85f
+                                        ) + fadeIn(
+                                            animationSpec = tween(300, easing = EaseInOutCubic)
+                                        )
+                                    },
+                                    exitTransition = { 
+                                        scaleOut(
+                                            animationSpec = tween(200, easing = EaseInOutCubic),
+                                            targetScale = 0.95f
+                                        ) + fadeOut(
+                                            animationSpec = tween(200, easing = EaseInOutCubic)
+                                        )
+                                    },
+                                    popEnterTransition = { 
+                                        scaleIn(
+                                            animationSpec = spring(
+                                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                stiffness = Spring.StiffnessLow
+                                            ),
+                                            initialScale = 0.95f
+                                        ) + fadeIn(
+                                            animationSpec = tween(300, easing = EaseInOutCubic)
+                                        )
+                                    },
+                                    popExitTransition = { 
+                                        scaleOut(
+                                            animationSpec = tween(200, easing = EaseInOutCubic),
+                                            targetScale = 0.85f
+                                        ) + fadeOut(
+                                            animationSpec = tween(200, easing = EaseInOutCubic)
+                                        )
+                                    }
+                                ) {
                                     DebugHomeScreen(
                                         onOpenBiliDebug = { navController.navigate(Destinations.DebugBili.route) },
                                         onOpenNeteaseDebug = { navController.navigate(Destinations.DebugNetease.route) },

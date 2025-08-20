@@ -24,8 +24,10 @@ package moe.ouom.neriplayer.ui.viewmodel.tab
  */
 
 import android.app.Application
+import android.os.Parcelable
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.parcelize.Parcelize
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -42,6 +44,7 @@ import org.json.JSONObject
 import java.io.IOException
 
 /** Bilibili 收藏夹数据模型 */
+@Parcelize
 data class BiliPlaylist(
     val mediaId: Long,
     val fid: Long,
@@ -49,7 +52,7 @@ data class BiliPlaylist(
     val title: String,
     val count: Int,
     val coverUrl: String
-)
+) : Parcelable
 
 
 /** 媒体库页面 UI 状态 */

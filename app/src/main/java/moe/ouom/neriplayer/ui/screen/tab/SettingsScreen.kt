@@ -787,7 +787,7 @@ fun SettingsScreen(
                     ) {
                         // 下载进度显示
                         val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsStateWithLifecycleCompat()
-                        
+
                         batchDownloadProgress?.let { progress ->
                             ListItem(
                                 leadingContent = {
@@ -798,7 +798,7 @@ fun SettingsScreen(
                                     )
                                 },
                                 headlineContent = { Text("下载进度") },
-                                supportingContent = { 
+                                supportingContent = {
                                     Text("${progress.completedSongs}/${progress.totalSongs} 首歌曲")
                                 },
                                 trailingContent = {
@@ -812,7 +812,7 @@ fun SettingsScreen(
                                 },
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                             )
-                            
+
                             // 进度条
                             LinearProgressIndicator(
                                 progress = { (progress.percentage / 100f).coerceIn(0f, 1f) },
@@ -820,7 +820,7 @@ fun SettingsScreen(
                                     .fillMaxWidth()
                                     .padding(start = 16.dp, end = 16.dp)
                             )
-                            
+
                             if (progress.currentSong.isNotBlank()) {
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
@@ -831,7 +831,7 @@ fun SettingsScreen(
                                 )
                             }
                         }
-                        
+
                         if (batchDownloadProgress == null) {
                             ListItem(
                                 leadingContent = {

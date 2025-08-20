@@ -29,18 +29,66 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.*
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.CheckBox
+import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DividerDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LargeTopAppBar
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Tab
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -64,11 +112,11 @@ import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.ui.viewmodel.tab.ExploreUiState
 import moe.ouom.neriplayer.ui.viewmodel.tab.ExploreViewModel
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.SearchSource
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
-import moe.ouom.neriplayer.ui.viewmodel.tab.ExploreUiState
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.NPLogger
@@ -108,6 +156,8 @@ fun ExploreScreen(
     var showExportSheet by remember { mutableStateOf(false) }
     val exportSheetState = rememberModalBottomSheetState()
 
+    val pagerState = rememberPagerState(pageCount = { SearchSource.entries.size })
+
     fun exitPartsSelection() {
         partsSelectionMode = false
         selectedParts = emptySet()
@@ -115,6 +165,14 @@ fun ExploreScreen(
 
     LaunchedEffect(Unit) {
         if (ui.playlists.isEmpty()) vm.loadHighQuality()
+    }
+
+    LaunchedEffect(pagerState.currentPage, ui.selectedSearchSource) {
+        val currentSource = SearchSource.entries[pagerState.currentPage]
+        if (ui.selectedSearchSource != currentSource) {
+            vm.setSearchSource(currentSource)
+            if (searchQuery.isNotEmpty()) vm.search(searchQuery)
+        }
     }
 
     val tags = listOf(
@@ -170,17 +228,17 @@ fun ExploreScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(8.dp))
-                TabRow(
-                    selectedTabIndex = ui.selectedSearchSource.ordinal,
-                    containerColor = Color.Transparent
+                PrimaryTabRow(
+                    selectedTabIndex = pagerState.currentPage,
+                    containerColor = Color.Transparent,
+                    contentColor = MaterialTheme.colorScheme.primary
                 ) {
-                    SearchSource.entries.forEach { source ->
+                    SearchSource.entries.forEachIndexed { index, source ->
                         Tab(
-                            selected = ui.selectedSearchSource == source,
+                            selected = pagerState.currentPage == index,
                             onClick = {
-                                if (ui.selectedSearchSource != source) {
-                                    vm.setSearchSource(source)
-                                    if (searchQuery.isNotEmpty()) vm.search(searchQuery)
+                                scope.launch {
+                                    pagerState.animateScrollToPage(index)
                                 }
                             },
                             text = { Text(source.displayName) }
@@ -189,54 +247,60 @@ fun ExploreScreen(
                 }
             }
 
-            if (searchQuery.isNotEmpty()) {
-                when {
-                    ui.searching -> {
-                        Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
-                    }
-                    ui.searchError != null -> {
-                        Box(Modifier.fillMaxSize(), Alignment.Center) {
-                            Text(ui.searchError!!, color = MaterialTheme.colorScheme.error)
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize()
+            ) { page ->
+                val currentSource = SearchSource.entries[page]
+                if (searchQuery.isNotEmpty()) {
+                    when {
+                        ui.searching -> {
+                            Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
                         }
-                    }
-                    ui.searchResults.isEmpty() -> {
-                        Box(Modifier.fillMaxSize(), Alignment.Center) { Text("未找到结果") }
-                    }
-                    else -> {
-                        LazyColumn(contentPadding = PaddingValues(top = 8.dp)) {
-                            itemsIndexed(ui.searchResults) { index, song ->
-                                SongRow(index + 1, song) {
-                                    if (song.album == PlayerManager.BILI_SOURCE_TAG) {
-                                        scope.launch {
-                                            try {
-                                                val info = vm.getVideoInfoByAvid(song.id)
-                                                if (info.pages.size <= 1) {
-                                                    onSongClick(ui.searchResults, index)
-                                                } else {
-                                                    partsInfo = info
-                                                    clickedSongCoverUrl = song.coverUrl ?: ""
-                                                    showPartsSheet = true
+                        ui.searchError != null -> {
+                            Box(Modifier.fillMaxSize(), Alignment.Center) {
+                                Text(ui.searchError!!, color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                        ui.searchResults.isEmpty() -> {
+                            Box(Modifier.fillMaxSize(), Alignment.Center) { Text("未找到结果") }
+                        }
+                        else -> {
+                            LazyColumn(contentPadding = PaddingValues(top = 8.dp)) {
+                                itemsIndexed(ui.searchResults) { index, song ->
+                                    SongRow(index + 1, song) {
+                                        if (song.album == PlayerManager.BILI_SOURCE_TAG) {
+                                            scope.launch {
+                                                try {
+                                                    val info = vm.getVideoInfoByAvid(song.id)
+                                                    if (info.pages.size <= 1) {
+                                                        onSongClick(ui.searchResults, index)
+                                                    } else {
+                                                        partsInfo = info
+                                                        clickedSongCoverUrl = song.coverUrl ?: ""
+                                                        showPartsSheet = true
+                                                    }
+                                                } catch (e: Exception) {
+                                                    NPLogger.e("ExploreScreen", "处理搜索结果时出错", e)
                                                 }
-                                            } catch (e: Exception) {
-                                                NPLogger.e("ExploreScreen", "处理搜索结果时出错", e)
                                             }
+                                        } else {
+                                            onSongClick(ui.searchResults, index)
                                         }
-                                    } else {
-                                        onSongClick(ui.searchResults, index)
                                     }
                                 }
                             }
                         }
                     }
-                }
-            } else {
-                when (ui.selectedSearchSource) {
-                    SearchSource.NETEASE -> {
-                        NeteaseDefaultContent(gridState, ui, tags, vm, onPlay)
-                    }
-                    SearchSource.BILIBILI -> {
-                        Box(Modifier.fillMaxSize(), Alignment.Center) {
-                            Text("在 Bilibili 中发现更多精彩视频", style = MaterialTheme.typography.bodyLarge)
+                } else {
+                    when (currentSource) {
+                        SearchSource.NETEASE -> {
+                            NeteaseDefaultContent(gridState, ui, tags, vm, onPlay)
+                        }
+                        SearchSource.BILIBILI -> {
+                            Box(Modifier.fillMaxSize(), Alignment.Center) {
+                                Text("在 Bilibili 中发现更多精彩视频", style = MaterialTheme.typography.bodyLarge)
+                            }
                         }
                     }
                 }
@@ -266,10 +330,10 @@ fun ExploreScreen(
                         },
                         actions = {
                             HapticIconButton(onClick = {
-                                if (allSelected) {
-                                    selectedParts = emptySet()
+                                selectedParts = if (allSelected) {
+                                    emptySet()
                                 } else {
-                                    selectedParts = currentPartsInfo.pages.map { it.page }.toSet()
+                                    currentPartsInfo.pages.map { it.page }.toSet()
                                 }
                             }) {
                                 Icon(
