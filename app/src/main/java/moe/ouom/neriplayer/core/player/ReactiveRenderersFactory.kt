@@ -38,6 +38,11 @@ import androidx.media3.exoplayer.audio.TeeAudioProcessor
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import java.util.ArrayList
 
+/**
+ * 自定义 RenderersFactory：
+ * - 注入 TeeAudioProcessor 将 PCM 能量送入 AudioReactive，供可视化/背景特效使用
+ * - 添加 FFMpeg 音频渲染器以支持更多音频编码
+ */
 @UnstableApi
 class ReactiveRenderersFactory(context: Context) : DefaultRenderersFactory(context) {
     override fun buildAudioSink(

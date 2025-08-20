@@ -100,8 +100,12 @@ class NeteaseClient(bypassProxy: Boolean = true) {
         }
     }
 
+    /**
+     * Returns a snapshot of all cookies currently in memory, flattened by name.
+     * Later occurrences override earlier ones.
+     */
     fun getCookies(): Map<String, String> {
-        val result = mutableMapOf<String, String>()
+        val result = LinkedHashMap<String, String>()
         cookieStore.values.forEach { list -> list.forEach { cookie -> result[cookie.name] = cookie.value } }
         return result
     }
@@ -110,10 +114,11 @@ class NeteaseClient(bypassProxy: Boolean = true) {
         cookieStore.clear()
     }
 
-    private fun getCookie(name: String): String? {
-        cookieStore.values.forEach { list -> list.firstOrNull { it.name == name }?.let { return it.value } }
-        return null
-    }
+    private fun getCookie(name: String): String? = cookieStore.values
+        .asSequence()
+        .flatMap { it.asSequence() }
+        .firstOrNull { it.name == name }
+        ?.value
 
     private fun buildPersistedCookieHeader(): String? {
         val map = persistedCookies.toMutableMap()

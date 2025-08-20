@@ -34,10 +34,12 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.data.BiliCookieRepository
+import android.net.Uri
 
 /**
- * 一个自定义的 HttpDataSource.Factory，
- * 它可以根据请求的 URL host 来动态添加不同的请求头，包括 Cookie。
+ * 自定义的 HttpDataSource.Factory：
+ * - 按 host/路径动态注入请求头（B 站拉流需要 Referer/UA/Cookie）
+ * - 监听 Cookie 仓库的变化，实时刷新注入的 Cookie 字符串
  */
 @UnstableApi
 class ConditionalHttpDataSourceFactory(
@@ -68,28 +70,14 @@ class ConditionalHttpDataSourceFactory(
         return object : HttpDataSource by defaultDataSource {
 
             override fun open(dataSpec: DataSpec): Long {
-                val isBiliRequest =
-                    dataSpec.uri.host?.contains("bilivideo.") == true || dataSpec.uri.toString().contains("https://upos-hz-")
-
-                val finalDataSpec = if (isBiliRequest) {
-                    val originalHeaders = dataSpec.httpRequestHeaders
-                    val newHeaders = mutableMapOf<String, String>()
-                    newHeaders.putAll(originalHeaders)
-
-                    newHeaders["Referer"] = "https://www.bilibili.com"
-                    newHeaders["User-Agent"] = BILI_USER_AGENT
-                    if (latestCookieHeader.isNotBlank()) {
-                        newHeaders["Cookie"] = latestCookieHeader
-                    }
-
+                val finalSpec = if (shouldInjectBiliHeaders(dataSpec.uri)) {
+                    val headers = buildBiliHeaders(dataSpec.httpRequestHeaders)
                     dataSpec.buildUpon()
-                        .setHttpRequestHeaders(newHeaders)
+                        .setHttpRequestHeaders(headers)
                         .build()
-                } else {
-                    dataSpec
-                }
+                } else dataSpec
 
-                return defaultDataSource.open(finalDataSpec)
+                return defaultDataSource.open(finalSpec)
             }
         }
     }
@@ -97,5 +85,24 @@ class ConditionalHttpDataSourceFactory(
     override fun setDefaultRequestProperties(defaultRequestProperties: Map<String, String>): HttpDataSource.Factory {
         defaultFactory.setDefaultRequestProperties(defaultRequestProperties)
         return this
+    }
+
+    /**
+     * 是否需要为该 URI 注入 B 站拉流所需的请求头
+     */
+    private fun shouldInjectBiliHeaders(uri: Uri): Boolean {
+        val host = uri.host ?: return false
+        return host.contains("bilivideo.") || uri.toString().contains("https://upos-hz-")
+    }
+
+    /**
+     * 基于原始请求头构建 B 站拉流所需的头部（Referer/UA/Cookie）
+     */
+    private fun buildBiliHeaders(original: Map<String, String>): Map<String, String> {
+        val newHeaders = LinkedHashMap<String, String>(original)
+        newHeaders["Referer"] = "https://www.bilibili.com"
+        newHeaders["User-Agent"] = BILI_USER_AGENT
+        if (latestCookieHeader.isNotBlank()) newHeaders["Cookie"] = latestCookieHeader
+        return newHeaders
     }
 }

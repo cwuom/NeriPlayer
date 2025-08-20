@@ -28,30 +28,38 @@ import java.util.concurrent.TimeUnit
  * Created: 2025/8/8
  */
 
+/**
+ * Converts a UNIX epoch millis timestamp to a formatted local time string.
+ */
 fun convertTimestampToDate(timestamp: Long): String {
     val date = Date(timestamp)
-    @SuppressLint("SimpleDateFormat") val sdf =
-        SimpleDateFormat("yyyy-MM-dd HH:mm:ss")
+    @SuppressLint("SimpleDateFormat")
+    val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss")
     return sdf.format(date)
 }
 
+/**
+ * Formats a long duration millis to a human readable string in Chinese.
+ * Example: 90min -> "1小时30分钟"; 45min -> "45分钟".
+ */
 fun formatTotalDuration(ms: Long): String {
+    if (ms <= 0) return "0分钟"
     val totalSec = ms / 1000
     val h = totalSec / 3600
     val m = (totalSec % 3600) / 60
     return if (h > 0) "${h}小时${m}分钟" else "${m}分钟"
 }
 
+/**
+ * Formats seconds to "mm:ss" or "h:mm:ss" when hours > 0.
+ */
 @SuppressLint("DefaultLocale")
 fun formatDurationSec(seconds: Int): String {
-    if (seconds < 0) return "00:00"
-    val hours = TimeUnit.SECONDS.toHours(seconds.toLong())
-    val minutes = TimeUnit.SECONDS.toMinutes(seconds.toLong()) % 60
-    val secs = seconds % 60
-
-    return if (hours > 0) {
-        String.format("%d:%02d:%02d", hours, minutes, secs)
-    } else {
-        String.format("%02d:%02d", minutes, secs)
-    }
+    if (seconds <= 0) return "00:00"
+    val total = seconds.toLong()
+    val hours = TimeUnit.SECONDS.toHours(total)
+    val minutes = TimeUnit.SECONDS.toMinutes(total) % 60
+    val secs = (total % 60).toInt()
+    return if (hours > 0) String.format("%d:%02d:%02d", hours, minutes, secs)
+    else String.format("%02d:%02d", minutes, secs)
 }

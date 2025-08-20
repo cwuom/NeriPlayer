@@ -145,6 +145,7 @@ fun NeriApp(
         else -> false
     }
     LaunchedEffect(Unit) {
+        // 初始化播放器并在已有播放队列时同步到前台服务
         PlayerManager.initialize(context.applicationContext as Application)
         NPLogger.d("NERI-App", "PlayerManager.initialize called")
         NPLogger.d("PlayerManager.hasItems()", PlayerManager.hasItems().toString())

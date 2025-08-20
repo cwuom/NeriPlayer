@@ -110,6 +110,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -121,6 +122,7 @@ import androidx.core.graphics.ColorUtils
 import androidx.core.graphics.toColorInt
 import androidx.core.net.toUri
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.graphics.vector.ImageVector
 import kotlinx.coroutines.flow.StateFlow
 import moe.ouom.neriplayer.BuildConfig
 import moe.ouom.neriplayer.R
@@ -134,6 +136,86 @@ import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.NightModeHelper
 import moe.ouom.neriplayer.util.convertTimestampToDate
+
+/** 可复用的折叠区头部 */
+@Composable
+private fun ExpandableHeader(
+    icon: ImageVector,
+    title: String,
+    subtitleCollapsed: String,
+    subtitleExpanded: String,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    arrowRotation: Float = 0f
+) {
+    ListItem(
+        leadingContent = {
+            Icon(
+                imageVector = icon,
+                contentDescription = title,
+                tint = MaterialTheme.colorScheme.onSurface
+            )
+        },
+        headlineContent = { Text(title) },
+        supportingContent = { Text(if (expanded) subtitleExpanded else subtitleCollapsed) },
+        trailingContent = {
+            Icon(
+                imageVector = Icons.Filled.ExpandMore,
+                contentDescription = if (expanded) "收起" else "展开",
+                modifier = Modifier.rotate(arrowRotation.takeIf { it != 0f } ?: if (expanded) 180f else 0f),
+                tint = MaterialTheme.colorScheme.onSurface
+            )
+        },
+        modifier = Modifier.clickable { onToggle() },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+    )
+}
+
+/** 主题色预览行（当关闭系统动态取色时显示） */
+@Composable
+private fun ThemeSeedListItem(seedColorHex: String, onClick: () -> Unit) {
+    ListItem(
+        modifier = Modifier.clickable(onClick = onClick),
+        leadingContent = {
+            Icon(
+                imageVector = Icons.Outlined.ColorLens,
+                contentDescription = "主题色",
+                tint = MaterialTheme.colorScheme.onSurface
+            )
+        },
+        headlineContent = { Text("主题色") },
+        supportingContent = { Text("选择一个你喜欢的颜色作为主色调") },
+        trailingContent = {
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .clip(CircleShape)
+                    .background(Color(("#$seedColorHex").toColorInt()))
+            )
+        },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+    )
+}
+
+/** UI 缩放设置入口 */
+@Composable
+private fun UiScaleListItem(currentScale: Float, onClick: () -> Unit) {
+    ListItem(
+        modifier = Modifier.clickable(onClick = onClick),
+        leadingContent = {
+            Icon(
+                imageVector = Icons.Outlined.ZoomInMap,
+                contentDescription = "UI 缩放",
+                modifier = Modifier.size(24.dp),
+                tint = MaterialTheme.colorScheme.onSurface
+            )
+        },
+        headlineContent = { Text("UI 缩放 (DPI)") },
+        supportingContent = { Text("当前: ${"%.2f".format(currentScale)}x (默认 1.00x)") },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+    )
+}
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -168,6 +250,7 @@ fun SettingsScreen(
 
     // 登录菜单的状态
     var loginExpanded by remember { mutableStateOf(false) }
+    // 仅用于示意展开箭头的旋转，后续可复用至 ExpandableHeader 的 arrowRotation 入参
     val arrowRotation by animateFloatAsState(targetValue = if (loginExpanded) 180f else 0f, label = "arrow")
 
     // 个性化菜单的状态
@@ -344,26 +427,9 @@ fun SettingsScreen(
 
             item {
                 AnimatedVisibility(visible = !dynamicColor) { // 仅在关闭系统动态取色时显示
-                    ListItem(
-                        modifier = Modifier.clickable { showColorPickerDialog = true },
-                        leadingContent = {
-                            Icon(
-                                imageVector = Icons.Outlined.ColorLens,
-                                contentDescription = "主题色",
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                        },
-                        headlineContent = { Text("主题色") },
-                        supportingContent = { Text("选择一个你喜欢的颜色作为主色调") },
-                        trailingContent = {
-                            Box(
-                                modifier = Modifier
-                                    .size(24.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(("#$seedColorHex").toColorInt()))
-                            )
-                        },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                    ThemeSeedListItem(
+                        seedColorHex = seedColorHex,
+                        onClick = { showColorPickerDialog = true }
                     )
                 }
             }
@@ -399,26 +465,14 @@ fun SettingsScreen(
 
             // 登录三方平台
             item {
-                ListItem(
-                    leadingContent = {
-                        Icon(
-                            imageVector = Icons.Filled.AccountCircle,
-                            contentDescription = "登录三方平台",
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
-                    },
-                    headlineContent = { Text("登录三方平台") },
-                    supportingContent = { Text(if (loginExpanded) "收起" else "展开以选择登录平台") },
-                    trailingContent = {
-                        Icon(
-                            imageVector = Icons.Filled.ExpandMore,
-                            contentDescription = if (loginExpanded) "收起" else "展开",
-                            modifier = Modifier.rotate(arrowRotation),
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
-                    },
-                    modifier = Modifier.clickable { loginExpanded = !loginExpanded },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                ExpandableHeader(
+                    icon = Icons.Filled.AccountCircle,
+                    title = "登录三方平台",
+                    subtitleCollapsed = "展开以选择登录平台",
+                    subtitleExpanded = "收起",
+                    expanded = loginExpanded,
+                    onToggle = { loginExpanded = !loginExpanded },
+                    arrowRotation = arrowRotation
                 )
             }
 
@@ -512,26 +566,14 @@ fun SettingsScreen(
             }
 
             item {
-                ListItem(
-                    leadingContent = {
-                        Icon(
-                            imageVector = Icons.Outlined.Tune,
-                            contentDescription = "个性化",
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
-                    },
-                    headlineContent = { Text("个性化") },
-                    supportingContent = { Text(if (personalizationExpanded) "收起" else "展开以调整视觉效果") },
-                    trailingContent = {
-                        Icon(
-                            imageVector = Icons.Filled.ExpandMore,
-                            contentDescription = if (personalizationExpanded) "收起" else "展开",
-                            modifier = Modifier.rotate(personalizationArrowRotation),
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
-                    },
-                    modifier = Modifier.clickable { personalizationExpanded = !personalizationExpanded },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                ExpandableHeader(
+                    icon = Icons.Outlined.Tune,
+                    title = "个性化",
+                    subtitleCollapsed = "展开以调整视觉效果",
+                    subtitleExpanded = "收起",
+                    expanded = personalizationExpanded,
+                    onToggle = { personalizationExpanded = !personalizationExpanded },
+                    arrowRotation = personalizationArrowRotation
                 )
             }
 
@@ -564,20 +606,7 @@ fun SettingsScreen(
                             },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
-                        ListItem(
-                            modifier = Modifier.clickable { showDpiDialog = true },
-                            leadingContent = {
-                                Icon(
-                                    imageVector = Icons.Outlined.ZoomInMap,
-                                    contentDescription = "UI 缩放",
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
-                            },
-                            headlineContent = { Text("UI 缩放 (DPI)") },
-                            supportingContent = { Text("当前: ${"%.2f".format(uiDensityScale)}x (默认 1.00x)") },
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                        )
+                        UiScaleListItem(currentScale = uiDensityScale, onClick = { showDpiDialog = true })
 
                         // 选择背景图
                         ListItem(
@@ -643,26 +672,14 @@ fun SettingsScreen(
             }
 
             item {
-                ListItem(
-                    leadingContent = {
-                        Icon(
-                            imageVector = Icons.Outlined.Router,
-                            contentDescription = "网络设置",
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
-                    },
-                    headlineContent = { Text("网络设置") },
-                    supportingContent = { Text(if (networkExpanded) "收起" else "展开以配置网络选项") },
-                    trailingContent = {
-                        Icon(
-                            imageVector = Icons.Filled.ExpandMore,
-                            contentDescription = if (networkExpanded) "收起" else "展开",
-                            modifier = Modifier.rotate(networkArrowRotation),
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
-                    },
-                    modifier = Modifier.clickable { networkExpanded = !networkExpanded },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                ExpandableHeader(
+                    icon = Icons.Outlined.Router,
+                    title = "网络设置",
+                    subtitleCollapsed = "展开以配置网络选项",
+                    subtitleExpanded = "收起",
+                    expanded = networkExpanded,
+                    onToggle = { networkExpanded = !networkExpanded },
+                    arrowRotation = networkArrowRotation
                 )
             }
 
@@ -957,7 +974,8 @@ fun SettingsScreen(
                         )
                     }
 
-                    TabRow(selectedTabIndex = selectedTab) {
+                    // 使用 PrimaryTabRow（Material3 推荐），避免旧 TabRow 的弃用告警
+                    androidx.compose.material3.PrimaryTabRow(selectedTabIndex = selectedTab) {
                         Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("浏览器登录") })
                         Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("粘贴 Cookie") })
                         Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }, text = { Text("验证码登录") })

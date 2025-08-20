@@ -44,53 +44,73 @@ object NPLogger {
     private var appTag: String = BuildConfig.TAG
     private var isFileLoggingEnabled = false
     private var logFile: File? = null
+    private var initialized = false
 
     private val logScope = CoroutineScope(Dispatchers.IO)
 
     /**
-     * Initializes the logger. Must be called before any use, preferably in Application.onCreate().
+     * Initializes the logger. Prefer calling once early (e.g., Application.onCreate).
+     * Safe to call repeatedly; it is idempotent except when toggling file logging.
      *
-     * @param context The application context, used for getting file paths.
-     * @param defaultTag The global log TAG for the application. If null, uses BuildConfig.TAG.
-     * @param enableFileLogging Whether to enable file logging.
+     * @param context The application context, used for resolving log directory paths.
+     * @param defaultTag Optional global log TAG; defaults to BuildConfig.TAG.
+     * @param enableFileLogging Whether to enable file logging at init time (can be changed later).
      */
-    fun init(context: Context, defaultTag: String? = null, enableFileLogging: Boolean) {
+    fun init(context: Context, defaultTag: String? = null, enableFileLogging: Boolean = false) {
         defaultTag?.let { this.appTag = it }
-        this.isFileLoggingEnabled = enableFileLogging
 
-        if (enableFileLogging) {
-            setupLogFile(context)
+        if (!initialized) {
+            initialized = true
+            if (enableFileLogging) {
+                this.isFileLoggingEnabled = true
+                setupLogFile(context)
+            }
+            i("Logger initialized (fileLogging=$isFileLoggingEnabled)")
+            return
         }
 
-        i("Logger has been initialized.")
+        // Already initialized: only process file logging toggle
+        setFileLoggingEnabled(context, enableFileLogging)
     }
 
     private fun setupLogFile(context: Context) {
-        val logDir = File(context.getExternalFilesDir(null), "logs")
-        if (!logDir.exists() && !logDir.mkdirs()) {
-            Log.e(appTag, "Failed to create log directory")
+        try {
+            val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
+            val logDir = File(baseDir, "logs")
+            if (!logDir.exists() && !logDir.mkdirs()) {
+                Log.e(appTag, "Failed to create log directory")
+                isFileLoggingEnabled = false
+                return
+            }
+            val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+            logFile = File(logDir, "log_$timestamp.txt")
+            Log.i(appTag, "File logging enabled. Logs will be saved to: ${logFile?.absolutePath}")
+        } catch (t: Throwable) {
+            Log.e(appTag, "Failed to setup log file", t)
             isFileLoggingEnabled = false
-            return
         }
-        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-        logFile = File(logDir, "log_$timestamp.txt")
-        Log.i(appTag, "File logging enabled. Logs will be saved to: ${logFile?.absolutePath}")
+    }
+
+    /**
+     * Dynamically toggles file logging. Creates a new log file when enabling.
+     */
+    fun setFileLoggingEnabled(context: Context, enabled: Boolean) {
+        if (enabled == isFileLoggingEnabled && (enabled && logFile != null)) return
+        isFileLoggingEnabled = enabled
+        if (enabled) setupLogFile(context)
     }
 
     private fun log(level: Int, tag: String?, message: Any?, tr: Throwable? = null) {
-        val finalTag = if (tag != null && tag != appTag) {
-            "$appTag: $tag"
-        } else {
-            appTag
-        }
+        val finalTag = if (tag != null && tag != appTag) "$appTag: $tag" else appTag
+        val safeTag = ensureLogTag(finalTag)
         val finalMessage = formatMessage(message)
 
         when (level) {
-            Log.DEBUG -> Log.d(finalTag, finalMessage, tr)
-            Log.INFO -> Log.i(finalTag, finalMessage, tr)
-            Log.WARN -> Log.w(finalTag, finalMessage, tr)
-            Log.ERROR -> Log.e(finalTag, finalMessage, tr)
-            Log.VERBOSE -> Log.v(finalTag, finalMessage, tr)
+            Log.DEBUG -> Log.d(safeTag, finalMessage, tr)
+            Log.INFO -> Log.i(safeTag, finalMessage, tr)
+            Log.WARN -> Log.w(safeTag, finalMessage, tr)
+            Log.ERROR -> Log.e(safeTag, finalMessage, tr)
+            Log.VERBOSE -> Log.v(safeTag, finalMessage, tr)
         }
 
         if (isFileLoggingEnabled && level != Log.VERBOSE) {
@@ -139,7 +159,7 @@ object NPLogger {
                         Log.INFO -> "I"
                         Log.WARN -> "W"
                         Log.ERROR -> "E"
-                        else -> "U" // Unknownfeat(util): Refactor logger to be self-contained and modern
+                        else -> "U" // Unknown
                     }
                     val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(Date())
 
@@ -154,6 +174,14 @@ object NPLogger {
                 Log.e(appTag, "Failed to write to log file", e)
             }
         }
+    }
+
+    /** Ensures the log tag length is valid on all Android versions. */
+    private fun ensureLogTag(tag: String): String {
+        // Prior to Android O (26), tags longer than 23 characters may crash/log incorrectly
+        return if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.O && tag.length > 23) {
+            tag.take(23)
+        } else tag
     }
 
     /**

@@ -89,17 +89,16 @@ class AudioPlayerService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private val mediaSessionCallback = object : MediaSessionCompat.Callback() {
-        override fun onPlay() { PlayerManager.play(); updatePlaybackState(); updateNotification() }
-        override fun onPause() { PlayerManager.pause(); updatePlaybackState(); updateNotification() }
-        override fun onSkipToNext() { PlayerManager.next(); updateMetadata(); updatePlaybackState(); updateNotification() }
-        override fun onSkipToPrevious() { PlayerManager.previous(); updateMetadata(); updatePlaybackState(); updateNotification() }
+        override fun onPlay() { PlayerManager.play(); updateAll() }
+        override fun onPause() { PlayerManager.pause(); updateAll() }
+        override fun onSkipToNext() { PlayerManager.next(); updateAll() }
+        override fun onSkipToPrevious() { PlayerManager.previous(); updateAll() }
         override fun onStop() { PlayerManager.pause(); stopForeground(STOP_FOREGROUND_REMOVE); stopSelf() }
         override fun onSeekTo(pos: Long) { PlayerManager.seekTo(pos); updatePlaybackState(); updateNotification() }
         override fun onCustomAction(action: String?, extras: Bundle?) {
             if (action == ACTION_TOGGLE_FAV) {
                 PlayerManager.toggleCurrentFavorite()
-                updatePlaybackState()
-                updateNotification()
+                updateAll()
             }
         }
     }
@@ -169,6 +168,7 @@ class AudioPlayerService : Service() {
 
         when (intent?.action) {
             ACTION_PLAY -> {
+                @Suppress("DEPRECATION")
                 val songList = intent.getParcelableArrayListExtra<SongItem>("playlist")
                 val startIndex = intent.getIntExtra("index", 0)
                 if (!songList.isNullOrEmpty()) {
@@ -176,21 +176,16 @@ class AudioPlayerService : Service() {
                 } else if (PlayerManager.hasItems()) {
                     PlayerManager.play()
                 }
-                updateMetadata()
-                updatePlaybackState()
+                updateAll()
             }
             ACTION_PAUSE -> PlayerManager.pause()
             ACTION_NEXT -> {
                 PlayerManager.next()
-                updateMetadata()
-                updatePlaybackState()
-                updateNotification()
+                updateAll()
             }
             ACTION_PREV -> {
                 PlayerManager.previous()
-                updateMetadata()
-                updatePlaybackState()
-                updateNotification()
+                updateAll()
             }
             ACTION_STOP -> {
                 PlayerManager.pause()
@@ -205,9 +200,7 @@ class AudioPlayerService : Service() {
                     stopSelf()
                     return START_NOT_STICKY
                 }
-                updateMetadata()
-                updatePlaybackState()
-                updateNotification()
+                updateAll()
             }
 
             ACTION_TOGGLE_FAV -> {
@@ -222,6 +215,11 @@ class AudioPlayerService : Service() {
         return START_STICKY
     }
 
+    /**
+     * 构建前台播放通知（媒体样式）
+     * - 根据 isPlaying 决定显示 播放/暂停 图标与意图
+     * - 收藏按钮使用自定义 Action
+     */
     private fun buildNotification(): Notification {
         val isPlaying = PlayerManager.isPlayingFlow.value
         val song = PlayerManager.currentSongFlow.value
@@ -234,16 +232,12 @@ class AudioPlayerService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val prevIntent  = PendingIntent.getService(this, 1, Intent(this, AudioPlayerService::class.java).setAction(ACTION_PREV),  PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val playIntent  = PendingIntent.getService(this, 2, Intent(this, AudioPlayerService::class.java).setAction(ACTION_PLAY),  PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val pauseIntent = PendingIntent.getService(this, 3, Intent(this, AudioPlayerService::class.java).setAction(ACTION_PAUSE), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val nextIntent  = PendingIntent.getService(this, 4, Intent(this, AudioPlayerService::class.java).setAction(ACTION_NEXT),  PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val prevIntent  = servicePendingIntent(ACTION_PREV, 1)
+        val playIntent  = servicePendingIntent(ACTION_PLAY, 2)
+        val pauseIntent = servicePendingIntent(ACTION_PAUSE, 3)
+        val nextIntent  = servicePendingIntent(ACTION_NEXT, 4)
 
-        val toggleFavIntent = PendingIntent.getService(
-            this, 6,
-            Intent(this, AudioPlayerService::class.java).setAction(ACTION_TOGGLE_FAV),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
+        val toggleFavIntent = servicePendingIntent(ACTION_TOGGLE_FAV, 6)
 
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_neri_player_round)
@@ -283,11 +277,11 @@ class AudioPlayerService : Service() {
         ).build()
 
         builder.addAction(android.R.drawable.ic_media_previous, "上一首", prevIntent)
-        if (isPlaying) {
-            builder.addAction(android.R.drawable.ic_media_pause, "暂停", pauseIntent)
-        } else {
-            builder.addAction(android.R.drawable.ic_media_play, "播放", playIntent)
-        }
+        builder.addAction(
+            if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
+            if (isPlaying) "暂停" else "播放",
+            if (isPlaying) pauseIntent else playIntent
+        )
         builder.addAction(favAction)
         builder.addAction(android.R.drawable.ic_media_next, "下一首", nextIntent)
 
@@ -297,6 +291,25 @@ class AudioPlayerService : Service() {
         currentLargeIcon?.let { builder.setLargeIcon(it) }
 
         return builder.build()
+    }
+
+    /**
+     * 聚合更新
+     */
+    private fun updateAll() {
+        updateMetadata()
+        updatePlaybackState()
+        updateNotification()
+    }
+
+    /** 构建指向本 Service 的 PendingIntent */
+    private fun servicePendingIntent(action: String, requestCode: Int): PendingIntent {
+        return PendingIntent.getService(
+            this,
+            requestCode,
+            Intent(this, AudioPlayerService::class.java).setAction(action),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
     }
 
     private fun updateNotification() {
@@ -365,6 +378,7 @@ class AudioPlayerService : Service() {
 
     /**
      * 使用 Coil 异步加载通知大图标封面
+     * 仅当回调时 URL 仍是当前曲目的封面时才应用，避免竞态导致的封面错位
      */
     private fun requestLargeIconAsync(url: String?) {
         if (url.isNullOrBlank()) {

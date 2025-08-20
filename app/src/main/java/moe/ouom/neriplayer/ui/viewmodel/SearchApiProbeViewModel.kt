@@ -64,7 +64,7 @@ class SearchApiProbeViewModel(app: Application) : AndroidViewModel(app) {
 
     /** 在调用 API 前确保 Cookie 已经注入 NeteaseClient */
     private suspend fun ensureCookies() {
-        val cookies = withContext(Dispatchers.IO) { cookieRepo.getCookiesOnce() }
+        withContext(Dispatchers.IO) { cookieRepo.getCookiesOnce() }
     }
 
     fun callSearchAndCopy(platform: MusicPlatform) {
