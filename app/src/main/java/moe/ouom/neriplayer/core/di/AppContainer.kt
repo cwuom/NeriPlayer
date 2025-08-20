@@ -38,6 +38,8 @@ import moe.ouom.neriplayer.core.api.search.QQMusicSearchApi
 import moe.ouom.neriplayer.data.BiliCookieRepository
 import moe.ouom.neriplayer.data.NeteaseCookieRepository
 import moe.ouom.neriplayer.data.SettingsRepository
+import moe.ouom.neriplayer.util.DynamicProxySelector
+import okhttp3.OkHttpClient
 
 /**
  * 全局依赖容器，使用 Service Locator 模式管理 App 的单例
@@ -53,6 +55,13 @@ object AppContainer {
     val neteaseCookieRepo by lazy { NeteaseCookieRepository(application) }
     val biliCookieRepo by lazy { BiliCookieRepository(application) }
 
+    // 共享 OkHttpClient：受 DynamicProxySelector 管理
+    val sharedOkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .proxySelector(DynamicProxySelector)
+            .build()
+    }
+
     // 网络客户端
     val neteaseClient by lazy {
         NeteaseClient().also { client ->
@@ -62,7 +71,7 @@ object AppContainer {
         }
     }
 
-    val biliClient by lazy { BiliClient(biliCookieRepo) }
+    val biliClient by lazy { BiliClient(biliCookieRepo, client = sharedOkHttpClient) }
 
     // 功能 Repo 和 API
     val biliPlaybackRepository by lazy {
@@ -77,6 +86,7 @@ object AppContainer {
     fun initialize(app: Application) {
         this.application = app
         startCookieObserver()
+        startSettingsObserver()
     }
 
     private fun startCookieObserver() {
@@ -86,6 +96,14 @@ object AppContainer {
                 mutableCookies.putIfAbsent("os", "pc")
 
                 neteaseClient.setPersistedCookies(mutableCookies)
+            }
+            .launchIn(scope)
+    }
+
+    private fun startSettingsObserver() {
+        settingsRepo.bypassProxyFlow
+            .onEach { enabled ->
+                DynamicProxySelector.bypassProxy = enabled
             }
             .launchIn(scope)
     }

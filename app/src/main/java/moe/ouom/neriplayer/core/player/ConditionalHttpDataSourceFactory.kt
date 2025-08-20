@@ -26,7 +26,6 @@ package moe.ouom.neriplayer.core.player
 
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSpec
-import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -43,7 +42,7 @@ import android.net.Uri
  */
 @UnstableApi
 class ConditionalHttpDataSourceFactory(
-    private val defaultFactory: DefaultHttpDataSource.Factory,
+    private val baseFactory: HttpDataSource.Factory,
     cookieRepo: BiliCookieRepository // 接收 CookieRepository 作为依赖
 ) : HttpDataSource.Factory {
 
@@ -66,8 +65,8 @@ class ConditionalHttpDataSourceFactory(
     }
 
     override fun createDataSource(): HttpDataSource {
-        val defaultDataSource = defaultFactory.createDataSource()
-        return object : HttpDataSource by defaultDataSource {
+        val delegate = baseFactory.createDataSource()
+        return object : HttpDataSource by delegate {
 
             override fun open(dataSpec: DataSpec): Long {
                 val finalSpec = if (shouldInjectBiliHeaders(dataSpec.uri)) {
@@ -77,13 +76,13 @@ class ConditionalHttpDataSourceFactory(
                         .build()
                 } else dataSpec
 
-                return defaultDataSource.open(finalSpec)
+                return delegate.open(finalSpec)
             }
         }
     }
 
     override fun setDefaultRequestProperties(defaultRequestProperties: Map<String, String>): HttpDataSource.Factory {
-        defaultFactory.setDefaultRequestProperties(defaultRequestProperties)
+        baseFactory.setDefaultRequestProperties(defaultRequestProperties)
         return this
     }
 

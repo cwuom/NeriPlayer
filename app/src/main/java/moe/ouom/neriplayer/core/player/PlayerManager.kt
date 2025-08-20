@@ -44,6 +44,8 @@ import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.HttpDataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
@@ -265,8 +267,10 @@ object PlayerManager {
             dbProvider
         )
 
-        val defaultHttpFactory = DefaultHttpDataSource.Factory()
-        val conditionalHttpFactory = ConditionalHttpDataSourceFactory(defaultHttpFactory, biliCookieRepo)
+        // Use OkHttpDataSource with a shared OkHttpClient from AppContainer to honor proxy settings
+        val okHttpClient = moe.ouom.neriplayer.core.di.AppContainer.sharedOkHttpClient
+        val upstreamFactory: HttpDataSource.Factory = OkHttpDataSource.Factory(okHttpClient)
+        val conditionalHttpFactory = ConditionalHttpDataSourceFactory(upstreamFactory, biliCookieRepo)
 
         val cacheDsFactory = CacheDataSource.Factory()
             .setCache(cache)

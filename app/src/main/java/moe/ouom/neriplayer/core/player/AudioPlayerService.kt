@@ -390,7 +390,7 @@ class AudioPlayerService : Service() {
         val appCtx = applicationContext
         serviceScope.launch(Dispatchers.IO) {
             try {
-                val loader = ImageLoader(appCtx)
+                val loader = coil.Coil.imageLoader(appCtx)
                 val request = ImageRequest.Builder(appCtx)
                     .data(url)
                     .allowHardware(false)

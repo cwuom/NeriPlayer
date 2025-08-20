@@ -45,7 +45,7 @@ import java.net.URLEncoder
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 import kotlin.math.max
-import java.net.Proxy
+import moe.ouom.neriplayer.util.DynamicProxySelector
 
 /**
  * B 站 Web 端 API 客户端
@@ -112,11 +112,7 @@ class BiliClient(
         .readTimeout(15, TimeUnit.SECONDS)
         .writeTimeout(15, TimeUnit.SECONDS)
         .connectTimeout(10, TimeUnit.SECONDS)
-        .apply {
-            if (bypassProxy) {
-                proxy(Proxy.NO_PROXY)
-            }
-        }
+        .proxySelector(DynamicProxySelector)
         .build()
 
     // 外部可用的数据结构

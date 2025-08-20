@@ -25,10 +25,19 @@ package moe.ouom.neriplayer
 
 import android.app.Application
 import moe.ouom.neriplayer.core.di.AppContainer
+import coil.Coil
+import coil.ImageLoader
 
 class NeriPlayerApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         AppContainer.initialize(this)
+
+        // set a global Coil ImageLoader that uses the shared OkHttpClient honoring proxy bypass
+        val imageLoader = ImageLoader.Builder(this)
+            .okHttpClient { AppContainer.sharedOkHttpClient }
+            .respectCacheHeaders(false)
+            .build()
+        Coil.setImageLoader(imageLoader)
     }
 }

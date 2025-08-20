@@ -33,6 +33,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
 import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.core.di.AppContainer
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
@@ -65,7 +66,7 @@ class CloudMusicSearchApi(private val neteaseClient: NeteaseClient) : SearchApi 
         private const val TAG = "CloudMusicSearchApi"
     }
 
-    private val client = OkHttpClient()
+    private val client: OkHttpClient = AppContainer.sharedOkHttpClient
     private val json = Json { ignoreUnknownKeys = true }
 
     override suspend fun search(keyword: String, page: Int): List<SongSearchInfo> {

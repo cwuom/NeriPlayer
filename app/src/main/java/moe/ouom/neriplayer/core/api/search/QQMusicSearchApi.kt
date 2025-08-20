@@ -39,6 +39,7 @@ import okhttp3.Request
 import org.json.JSONObject
 import java.io.IOException
 import java.util.Base64
+import moe.ouom.neriplayer.core.di.AppContainer
 
 @Serializable private data class QQMusicSearchResponse(val data: QQMusicSearchData?)
 @Serializable private data class QQMusicSearchData(val song: QQMusicSearchSong?)
@@ -76,7 +77,7 @@ class QQMusicSearchApi : SearchApi {
         private const val TAG = "QQMusicSearchApi"
     }
 
-    private val client = OkHttpClient()
+    private val client: OkHttpClient = AppContainer.sharedOkHttpClient
     private val json = Json { ignoreUnknownKeys = true }
 
     override suspend fun search(keyword: String, page: Int): List<SongSearchInfo> {
