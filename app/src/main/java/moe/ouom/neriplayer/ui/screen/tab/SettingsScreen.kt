@@ -29,12 +29,19 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.contract.ActivityResultContracts.CreateDocument
+import androidx.activity.result.contract.ActivityResultContracts.OpenDocument
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.EaseInCubic
+import androidx.compose.animation.core.EaseOutCubic
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -76,6 +83,10 @@ import androidx.compose.material.icons.outlined.Verified
 import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material.icons.outlined.ZoomInMap
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.Backup
+import androidx.compose.material.icons.outlined.PlaylistPlay
+import androidx.compose.material.icons.outlined.Upload
+import androidx.compose.material.icons.outlined.Analytics
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -105,6 +116,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -131,6 +143,7 @@ import moe.ouom.neriplayer.data.ThemeDefaults
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.debug.NeteaseAuthEvent
 import moe.ouom.neriplayer.ui.viewmodel.debug.NeteaseAuthViewModel
+import moe.ouom.neriplayer.ui.viewmodel.BackupRestoreViewModel
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthEvent
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthViewModel
@@ -269,6 +282,10 @@ fun SettingsScreen(
     var downloadManagerExpanded by remember { mutableStateOf(false) }
     val downloadManagerArrowRotation by animateFloatAsState(targetValue = if (downloadManagerExpanded) 180f else 0f, label = "download_manager_arrow")
 
+    // 备份与恢复菜单的状态
+    var backupRestoreExpanded by remember { mutableStateOf(false) }
+    val backupRestoreArrowRotation by animateFloatAsState(targetValue = if (backupRestoreExpanded) 180f else 0f, label = "backup_restore_arrow")
+
 
     // 各种对话框和弹窗的显示状态 //
     var showQualityDialog by remember { mutableStateOf(false) }
@@ -289,6 +306,10 @@ fun SettingsScreen(
     var versionTapCount by remember { mutableIntStateOf(0) }
     var biliCookieText by remember { mutableStateOf("") }
     val biliVm: BiliAuthViewModel = viewModel()
+    
+    // 备份与恢复
+    val backupRestoreVm: BackupRestoreViewModel = viewModel()
+    val backupRestoreUiState by backupRestoreVm.uiState.collectAsState()
 
     // 照片选择器
     val photoPickerLauncher = rememberLauncherForActivityResult(
@@ -312,6 +333,34 @@ fun SettingsScreen(
             biliVm.importCookiesFromMap(map)
         } else {
             inlineMsg = "已取消读取 B 站 Cookie"
+        }
+    }
+
+    // 备份与恢复的SAF启动器
+    val exportPlaylistLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            backupRestoreVm.initialize(context)
+            backupRestoreVm.exportPlaylists(uri)
+        }
+    }
+
+    val importPlaylistLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            backupRestoreVm.initialize(context)
+            backupRestoreVm.importPlaylists(uri)
+        }
+    }
+
+    val analyzePlaylistLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            backupRestoreVm.initialize(context)
+            backupRestoreVm.analyzeDifferences(uri)
         }
     }
 
@@ -786,7 +835,7 @@ fun SettingsScreen(
                             .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
                     ) {
                         // 下载进度显示
-                        val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsStateWithLifecycleCompat()
+                        val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
 
                         batchDownloadProgress?.let { progress ->
                             ListItem(
@@ -848,6 +897,246 @@ fun SettingsScreen(
                                 },
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                             )
+                        }
+                    }
+                }
+            }
+
+            // 备份与恢复
+            item {
+                ExpandableHeader(
+                    icon = Icons.Outlined.Backup,
+                    title = "备份与恢复",
+                    subtitleCollapsed = "展开以管理歌单备份",
+                    subtitleExpanded = "收起",
+                    expanded = backupRestoreExpanded,
+                    onToggle = { backupRestoreExpanded = !backupRestoreExpanded },
+                    arrowRotation = backupRestoreArrowRotation
+                )
+            }
+
+            // 展开区域
+            item {
+                AnimatedVisibility(
+                    visible = backupRestoreExpanded,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.Transparent)
+                            .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
+                    ) {
+                        // 当前歌单数量
+                        val currentPlaylistCount = backupRestoreVm.getCurrentPlaylistCount(context)
+                        ListItem(
+                            leadingContent = {
+                                Icon(
+                                    Icons.Outlined.PlaylistPlay,
+                                    contentDescription = "当前歌单",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            headlineContent = { Text("当前歌单数量") },
+                            supportingContent = { Text("$currentPlaylistCount 个歌单") },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+
+                        // 导出歌单
+                        ListItem(
+                            leadingContent = {
+                                Icon(
+                                    Icons.Outlined.Upload,
+                                    contentDescription = "导出歌单",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            },
+                            headlineContent = { Text("导出歌单") },
+                            supportingContent = { Text("将歌单导出为备份文件") },
+                            modifier = Modifier.clickable {
+                                if (!backupRestoreUiState.isExporting) {
+                                    exportPlaylistLauncher.launch(backupRestoreVm.generateBackupFileName())
+                                }
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+
+                        // 导入歌单
+                        ListItem(
+                            leadingContent = {
+                                Icon(
+                                    Icons.Outlined.Download,
+                                    contentDescription = "导入歌单",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            },
+                            headlineContent = { Text("导入歌单") },
+                            supportingContent = { Text("从备份文件恢复歌单") },
+                            modifier = Modifier.clickable {
+                                if (!backupRestoreUiState.isImporting) {
+                                    importPlaylistLauncher.launch(arrayOf("*/*"))
+                                }
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+
+                        // 分析差异
+                        ListItem(
+                            leadingContent = {
+                                Icon(
+                                    Icons.Outlined.Analytics,
+                                    contentDescription = "分析差异",
+                                    tint = MaterialTheme.colorScheme.secondary
+                                )
+                            },
+                            headlineContent = { Text("分析差异") },
+                            supportingContent = { Text("分析备份文件与当前歌单的差异") },
+                            modifier = Modifier.clickable {
+                                if (!backupRestoreUiState.isAnalyzing) {
+                                    analyzePlaylistLauncher.launch(arrayOf("*/*"))
+                                }
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+
+                        // 导出进度
+                        backupRestoreUiState.exportProgress?.let { progress ->
+                            ListItem(
+                                headlineContent = { Text("导出进度") },
+                                supportingContent = { Text(progress) },
+                                trailingContent = {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                },
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                            )
+                        }
+
+                        // 导入进度
+                        backupRestoreUiState.importProgress?.let { progress ->
+                            ListItem(
+                                headlineContent = { Text("导入进度") },
+                                supportingContent = { Text(progress) },
+                                trailingContent = {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                },
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                            )
+                        }
+
+                        // 分析进度
+                        backupRestoreUiState.analysisProgress?.let { progress ->
+                            ListItem(
+                                headlineContent = { Text("分析进度") },
+                                supportingContent = { Text(progress) },
+                                trailingContent = {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                },
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                            )
+                        }
+
+                        // 导出结果
+                        AnimatedVisibility(
+                            visible = backupRestoreUiState.lastExportMessage != null,
+                            enter = slideInVertically(
+                                initialOffsetY = { -it },
+                                animationSpec = tween(durationMillis = 300, easing = EaseOutCubic)
+                            ) + fadeIn(
+                                animationSpec = tween(durationMillis = 300, easing = EaseOutCubic)
+                            ),
+                            exit = slideOutVertically(
+                                targetOffsetY = { -it },
+                                animationSpec = tween(durationMillis = 250, easing = EaseInCubic)
+                            ) + fadeOut(
+                                animationSpec = tween(durationMillis = 250, easing = EaseInCubic)
+                            )
+                        ) {
+                            backupRestoreUiState.lastExportMessage?.let { message ->
+                                val isSuccess = backupRestoreUiState.lastExportSuccess == true
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 8.dp),
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = if (isSuccess) 
+                                        MaterialTheme.colorScheme.primaryContainer 
+                                    else 
+                                        MaterialTheme.colorScheme.errorContainer,
+                                    tonalElevation = 2.dp
+                                ) {
+                                    ListItem(
+                                        headlineContent = { Text(if (isSuccess) "导出成功" else "导出失败") },
+                                        supportingContent = { Text(message) },
+                                        trailingContent = {
+                                            HapticTextButton(
+                                                onClick = { backupRestoreVm.clearExportStatus() }
+                                            ) {
+                                                Text("关闭", color = MaterialTheme.colorScheme.primary)
+                                            }
+                                        },
+                                        colors = ListItemDefaults.colors(
+                                            containerColor = Color.Transparent
+                                        )
+                                    )
+                                }
+                            }
+                        }
+
+                        // 导入结果
+                        AnimatedVisibility(
+                            visible = backupRestoreUiState.lastImportMessage != null,
+                            enter = slideInVertically(
+                                initialOffsetY = { -it },
+                                animationSpec = tween(durationMillis = 300, easing = EaseOutCubic)
+                            ) + fadeIn(
+                                animationSpec = tween(durationMillis = 300, easing = EaseOutCubic)
+                            ),
+                            exit = slideOutVertically(
+                                targetOffsetY = { -it },
+                                animationSpec = tween(durationMillis = 250, easing = EaseInCubic)
+                            ) + fadeOut(
+                                animationSpec = tween(durationMillis = 250, easing = EaseInCubic)
+                            )
+                        ) {
+                            backupRestoreUiState.lastImportMessage?.let { message ->
+                                val isSuccess = backupRestoreUiState.lastImportSuccess == true
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 8.dp),
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = if (isSuccess) 
+                                        MaterialTheme.colorScheme.primaryContainer 
+                                    else 
+                                        MaterialTheme.colorScheme.errorContainer,
+                                    tonalElevation = 2.dp
+                                ) {
+                                    ListItem(
+                                        headlineContent = { Text(if (isSuccess) "导入成功" else "导入失败") },
+                                        supportingContent = { Text(message) },
+                                        trailingContent = {
+                                            HapticTextButton(
+                                                onClick = { backupRestoreVm.clearImportStatus() }
+                                            ) {
+                                                Text("关闭", color = MaterialTheme.colorScheme.primary)
+                                            }
+                                        },
+                                        colors = ListItemDefaults.colors(
+                                            containerColor = Color.Transparent
+                                        )
+                                    )
+                                }
+                            }
                         }
                     }
                 }

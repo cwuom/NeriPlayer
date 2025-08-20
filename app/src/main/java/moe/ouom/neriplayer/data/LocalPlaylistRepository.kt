@@ -292,4 +292,12 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
             saveToDisk()
         }
     }
+
+    /** 批量更新歌单列表 */
+    suspend fun updatePlaylists(playlists: List<LocalPlaylist>) {
+        withContext(Dispatchers.IO) {
+            _playlists.value = playlists
+            saveToDisk()
+        }
+    }
 }
