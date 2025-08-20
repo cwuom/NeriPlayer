@@ -64,6 +64,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.DownloadDone
@@ -74,8 +75,11 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -731,11 +735,9 @@ fun LocalPlaylistDetailScreen(
                                                 enter = fadeIn(tween(120)),
                                                 exit = fadeOut(tween(100))
                                             ) {
-                                                Box(
-                                                    modifier = Modifier.graphicsLayer {
-                                                        scaleX = trailingScale
-                                                        scaleY = trailingScale
-                                                    }
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                                 ) {
                                                     if (isPlayingSong) {
                                                         PlayingIndicator(color = MaterialTheme.colorScheme.primary)
@@ -745,6 +747,40 @@ fun LocalPlaylistDetailScreen(
                                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                             style = MaterialTheme.typography.bodySmall
                                                         )
+                                                    }
+                                                    
+                                                    // 更多操作菜单
+                                                    var showMoreMenu by remember { mutableStateOf(false) }
+                                                    Box {
+                                                        IconButton(
+                                                            onClick = { showMoreMenu = true }
+                                                        ) {
+                                                            Icon(
+                                                                Icons.Filled.MoreVert,
+                                                                contentDescription = "更多操作",
+                                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                                            )
+                                                        }
+                                                        
+                                                        DropdownMenu(
+                                                            expanded = showMoreMenu,
+                                                            onDismissRequest = { showMoreMenu = false }
+                                                        ) {
+                                                            DropdownMenuItem(
+                                                                text = { Text("接下来播放...") },
+                                                                onClick = {
+                                                                    PlayerManager.addToQueueNext(song)
+                                                                    showMoreMenu = false
+                                                                }
+                                                            )
+                                                            DropdownMenuItem(
+                                                                text = { Text("添加到播放队列末尾") },
+                                                                onClick = {
+                                                                    PlayerManager.addToQueueEnd(song)
+                                                                    showMoreMenu = false
+                                                                }
+                                                            )
+                                                        }
                                                     }
                                                 }
                                             }

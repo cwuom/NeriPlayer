@@ -156,6 +156,9 @@ import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.formatDuration
 import kotlin.math.roundToInt
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.IconButton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -604,8 +607,48 @@ fun NowPlayingScreen(
                                 Text(song.name, maxLines = 1)
                                 Text(song.artist, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                             }
-                            if (index == currentIndexInDisplay) {
-                                Icon(Icons.Outlined.PlayArrow, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                if (index == currentIndexInDisplay) {
+                                    Icon(Icons.Outlined.PlayArrow, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                }
+                                
+                                // 更多操作菜单
+                                var showMoreMenu by remember { mutableStateOf(false) }
+                                Box {
+                                    IconButton(
+                                        onClick = { showMoreMenu = true }
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.MoreVert,
+                                            contentDescription = "更多操作",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    
+                                    DropdownMenu(
+                                        expanded = showMoreMenu,
+                                        onDismissRequest = { showMoreMenu = false }
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = { Text("接下来播放...") },
+                                            onClick = {
+                                                PlayerManager.addToQueueNext(song)
+                                                showMoreMenu = false
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("添加到播放队列末尾") },
+                                            onClick = {
+                                                PlayerManager.addToQueueEnd(song)
+                                                showMoreMenu = false
+                                            }
+                                        )
+                                    }
+                                }
                             }
                         }
                         Spacer(modifier = Modifier.height(4.dp))

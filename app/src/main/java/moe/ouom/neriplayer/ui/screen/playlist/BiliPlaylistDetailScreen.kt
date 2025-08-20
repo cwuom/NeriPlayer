@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -80,6 +81,7 @@ import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.formatDurationSec
 import moe.ouom.neriplayer.util.performHapticFeedback
+import moe.ouom.neriplayer.core.player.PlayerManager
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -719,5 +721,43 @@ private fun VideoRow(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        
+        // 更多操作菜单
+        if (!selectionMode) {
+            var showMoreMenu by remember { mutableStateOf(false) }
+            Box {
+                IconButton(
+                    onClick = { showMoreMenu = true }
+                ) {
+                    Icon(
+                        Icons.Filled.MoreVert,
+                        contentDescription = "更多操作",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                
+                DropdownMenu(
+                    expanded = showMoreMenu,
+                    onDismissRequest = { showMoreMenu = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("接下来播放...") },
+                        onClick = {
+                            val songItem = video.toSongItem()
+                            PlayerManager.addToQueueNext(songItem)
+                            showMoreMenu = false
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("添加到播放队列末尾") },
+                        onClick = {
+                            val songItem = video.toSongItem()
+                            PlayerManager.addToQueueEnd(songItem)
+                            showMoreMenu = false
+                        }
+                    )
+                }
+            }
+        }
     }
 }

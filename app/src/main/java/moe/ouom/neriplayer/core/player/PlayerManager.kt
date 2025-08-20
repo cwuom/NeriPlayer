@@ -966,6 +966,81 @@ object PlayerManager {
         playAtIndex(index)
     }
 
+    /**
+     * 将歌曲添加到播放队列的下一个位置
+     * @param song 要添加的歌曲
+     */
+    fun addToQueueNext(song: SongItem) {
+        if (currentPlaylist.isEmpty()) {
+            // 如果当前没有播放队列，直接播放这首歌
+            playPlaylist(listOf(song), 0)
+            return
+        }
+
+        val newPlaylist = currentPlaylist.toMutableList()
+        val insertIndex = (currentIndex + 1).coerceIn(0, newPlaylist.size)
+        
+        // 检查歌曲是否已存在于队列中
+        val existingIndex = newPlaylist.indexOfFirst { it.id == song.id && it.album == song.album }
+        if (existingIndex != -1) {
+            newPlaylist.removeAt(existingIndex)
+            // 调整插入位置
+            val adjustedInsertIndex = if (existingIndex < insertIndex) insertIndex - 1 else insertIndex
+            newPlaylist.add(adjustedInsertIndex, song)
+        } else {
+            // 如果歌曲不存在，直接插入
+            newPlaylist.add(insertIndex, song)
+        }
+
+        // 更新播放队列
+        currentPlaylist = newPlaylist
+        _currentQueueFlow.value = currentPlaylist
+        
+        // 如果启用了随机播放，需要重建随机播放袋
+        if (player.shuffleModeEnabled) {
+            rebuildShuffleBag()
+        }
+        
+        ioScope.launch {
+            persistState()
+        }
+    }
+
+    /**
+     * 将歌曲添加到播放队列的末尾
+     * @param song 要添加的歌曲
+     */
+    fun addToQueueEnd(song: SongItem) {
+        if (currentPlaylist.isEmpty()) {
+            // 如果当前没有播放队列，直接播放这首歌
+            playPlaylist(listOf(song), 0)
+            return
+        }
+
+        val newPlaylist = currentPlaylist.toMutableList()
+        
+        // 检查歌曲是否已存在于队列中
+        val existingIndex = newPlaylist.indexOfFirst { it.id == song.id && it.album == song.album }
+        if (existingIndex != -1) {
+            newPlaylist.removeAt(existingIndex)
+        }
+        
+        newPlaylist.add(song)
+
+        // 更新播放队列
+        currentPlaylist = newPlaylist
+        _currentQueueFlow.value = currentPlaylist
+        
+        // 如果启用了随机播放，需要重建随机播放袋
+        if (player.shuffleModeEnabled) {
+            rebuildShuffleBag()
+        }
+
+        ioScope.launch {
+            persistState()
+        }
+    }
+
     private fun restoreState() {
         try {
             if (!stateFile.exists()) return
