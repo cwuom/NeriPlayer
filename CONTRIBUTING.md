@@ -126,7 +126,7 @@ KEY_PASSWORD=your_key_password
 adb logcat | grep "\[NeriPlayer\]"
 ```
 - 问题反馈前请开启调试模式（设置页连点“版本号”7次）。
-- 如需文件日志，可在应用初始化时调用 `NPLogger.init(context, enableFileLogging = true)`（默认未启用）。
+- 如需文件日志，可在应用初始化时调用 `NPLogger.init(context, enableFileLogging = true)`（默认未启用，在开启调试模式(DEBUG MODE)后会自动启用）。
 
 ---
 
@@ -242,12 +242,75 @@ adb logcat | grep "\[NeriPlayer\]"
   1. 在 `SettingsKeys` 增加 key；
   2. 在 `SettingsRepository` 提供对应 `Flow` 与 setter；
   3. 在 UI 中通过 `collectAsState()` 订阅并落地交互。
+  4. 在 `SettingsScreen` 中（`app/src/main/java/moe/ouom/neriplayer/ui/screen/tab/SettingsScreen.kt`）
+     - 在 `SettingsScreen(...)` 的参数列表中新增你的设置值与回调，例如：
+       - 布尔型：`myFeatureEnabled: Boolean, onMyFeatureEnabledChange: (Boolean) -> Unit`
+       - 数值型：`myFloatValue: Float, onMyFloatValueChange: (Float) -> Unit`
+     - 在界面中添加对应的交互控件并调用回调：
+```kotlin
+// 布尔开关示例
+ListItem(
+    leadingContent = {
+        Icon(
+            imageVector = Icons.Outlined.Tune,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurface
+        )
+    },
+    headlineContent = { Text("示例开关") },
+    supportingContent = { Text("这是一项新的设置") },
+    trailingContent = {
+        Switch(checked = myFeatureEnabled, onCheckedChange = onMyFeatureEnabledChange)
+    },
+    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+)
+
+// 数值滑块示例
+ListItem(
+    headlineContent = { Text("示例滑块") },
+    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+    supportingContent = {
+        Slider(
+            value = myFloatValue,
+            onValueChange = onMyFloatValueChange,
+            valueRange = 0f..1f
+        )
+    }
+)
+```
+  - 如需在切换时立刻触发系统/全局副作用（例如夜间模式），可在 onCheckedChange 内额外调用工具函数（参考强制深色使用的 `NightModeHelper.applyNightMode(...)`）。
+
+- 5. 在 `NeriApp.kt` 中（`app/src/main/java/moe/ouom/neriplayer/ui/NeriApp.kt`）
+  - 从 `SettingsRepository` 收集你的设置 `Flow`：
+```kotlin
+val myFeatureEnabled by repo.myFeatureEnabledFlow.collectAsState(initial = false)
+// 数值型
+val myFloatValue by repo.myFloatValueFlow.collectAsState(initial = 0.5f)
+```
+  - 将值与“setter”回调传给 `SettingsScreen`（使用 `scope.launch { repo.setXxx(...) }`）：
+```kotlin
+SettingsScreen(
+    // ...
+    myFeatureEnabled = myFeatureEnabled,
+    onMyFeatureEnabledChange = { enabled ->
+        scope.launch { repo.setMyFeatureEnabled(enabled) }
+    },
+    myFloatValue = myFloatValue,
+    onMyFloatValueChange = { v ->
+        scope.launch { repo.setMyFloatValue(v) }
+    },
+    // ...
+)
+```
+  - 若设置影响全局主题或密度（如 `uiDensityScale`、主题色等），在 `NeriApp` 中与 `NeriTheme` 或 `CompositionLocal` 配置处一并生效（参考已有的 `uiDensityScale` 和 `seedColorHex` 用法）。
+
+- 小结：增 key -> 暴露 Flow 与 setter -> `NeriApp` 收集并传参 -> `SettingsScreen` 增参数与控件 -> 必要时在回调或主题层处理副作用。
 
 ---
 
 ### 代码规范 / Code Conventions
 
-通用：
+#### 通用：
 - **Kotlin 可读性**: 早返回、浅层分支；异常必须被记录或语义化处理；避免滥用 `!!`。
 - **协程**: I/O 密集使用 `withContext(Dispatchers.IO)`；不要在 Compose Composable 内直接做阻塞；避免 `GlobalScope`。
 - **流式状态**: 对外暴露 `StateFlow/SharedFlow`，内部使用 `MutableStateFlow/MutableSharedFlow`；UI 订阅用 `collectAsState()`。
@@ -257,26 +320,26 @@ adb logcat | grep "\[NeriPlayer\]"
 - **资源与本地化**: 文案建议放 `strings.xml`；新增图标放 `res/drawable(或 mipmap)` 并遵循命名规范（小写下划线）。
 - **版本与依赖**: 使用 `gradle/libs.versions.toml` 的 Version Catalog；Compose 依赖使用 BOM。
 
-Compose：
+#### Compose：
 - 状态托管：组件对外暴露事件与状态，尽量无副作用；使用 `rememberSaveable` 存储可恢复状态。
 - 性能：列表提供稳定 key；避免在组合期间创建重对象；动画与过渡使用 `AnimatedVisibility/AnimatedContent` 等。
 - 主题：仅通过 `NeriTheme`/`MaterialTheme` 获取色彩与排版；背景混合时注意容器色透明策略。
 
-网络与平台：
+#### 网络与平台：
 - NetEase：新增接口优先复用 `NeteaseClient.request()` 与 `CryptoMode`；注意 `__csrf`、`os=pc`、`appver` 注入；响应压缩（br/gzip）需解码。
-- B 站：WBI 接口统一通过 `getJsonWbi()`，会自动签名与缓存 mixin key；`ConditionalHttpDataSourceFactory` 仅对指定 host 注入 Cookie/Referer/UA。
+- BiliBili：WBI 接口统一通过 `getJsonWbi()`，会自动签名与缓存 mixin key；`ConditionalHttpDataSourceFactory` 仅对指定 host 注入 Cookie/Referer/UA。
 - 代理：如需屏蔽系统代理，传 `bypassProxy=true`（默认）。
 
-播放器：
+#### 播放器：
 - ExoPlayer 实例在 `PlayerManager.initialize()` 创建；缓存采用 `SimpleCache` + LRU（10GB），自定义 CacheKey 避免不同音质冲突。
 - 随机播放：`shuffleHistory/shuffleFuture/shuffleBag` 三栈模型，确保“上一首/下一首”在洗牌模式下可逆向。
 - 连续失败保护：`MAX_CONSECUTIVE_FAILURES = 10`，达到阈值会停止播放并提示。
 
-提交规范：
+#### 提交规范：
 - Commit 遵循 Conventional Commits：`feat|fix|refactor|perf|docs|test|build|chore(scope): message`。
 - PR 描述需包含：动机、实现概述、风险、测试方式。
 
-安全与隐私：
+#### 安全与隐私：
 - 不要在仓库中留下任何账号、Cookie、证书、下载链接等敏感信息。
 
 
