@@ -65,6 +65,7 @@
 - 添加到播放列表
 - 平板适配
 - 歌词悬浮窗
+- 国际化
 
 ---
 
@@ -91,6 +92,9 @@
 - 歌单详情接口存在获取上限，目前最多只能获取 1000 首歌曲。
 - 或许可通过 `/weapi/v3/playlist/detail` 替代 `/api/v6/playlist/detail` 解决，但考虑到大部分歌单不超过 1000 首歌曲，目前仍采用 `/api/v6/playlist/detail`。
 - 若有更大需求，后续会考虑调整。
+### 网络
+- 目前已知开启代理会有部分平台（如网易云）搜索失效，加载缓慢，歌曲无法波播放等问题。
+- 开启 `绕过系统代理` 功能时好时坏，覆盖不全
 
 ---
 
@@ -114,11 +118,12 @@
 </tr>
 <tr>
   <td><a href="https://github.com/SocialSisterYi/bilibili-API-collect">bilibili-API-collect</a></td>
-  <td>📚 哔哩哔哩 API 收集整理（持续更新）</td>
+  <td>哔哩哔哩-API收集整理【不断更新中....】</td>
 </tr>
 <tr>
   <td><a href="https://github.com/ReChronoRain/HyperCeiler">HyperCeiler</a></td>
-  <td>⚙️ MIUI & HyperOS 增强模块</td>
+  <td>HyperOS enhancement module - Make HyperOS Great Again!
+</td>
 </tr>
 </table>
 
