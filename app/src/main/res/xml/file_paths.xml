@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 应用专属外部存储目录 -->
+    <external-files-path 
+        name="external_files" 
+        path="." />
+    
+    <!-- 音乐文件目录 -->
+    <external-files-path 
+        name="music_files" 
+        path="Music/NeriPlayer/" />
+    
+    <!-- 歌词文件目录 -->
+    <external-files-path 
+        name="lyrics_files" 
+        path="Music/NeriPlayer/Lyrics/" />
+    
+    <!-- 缓存目录 -->
+    <external-cache-path 
+        name="external_cache" 
+        path="." />
+</paths>
