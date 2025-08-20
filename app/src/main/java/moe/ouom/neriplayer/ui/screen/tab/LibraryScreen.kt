@@ -23,6 +23,14 @@ package moe.ouom.neriplayer.ui.screen.tab
  * Created: 2025/8/8
  */
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -53,8 +61,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRowDefaults
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -133,20 +139,21 @@ fun LibraryScreen(
             selectedTabIndex = pagerState.currentPage,
             edgePadding = 16.dp,
             containerColor = Color.Transparent,
-            contentColor = MaterialTheme.colorScheme.primary,
-            indicator = { tabPositions ->
-                TabRowDefaults.SecondaryIndicator(
-                    Modifier.tabIndicatorOffset(tabPositions[pagerState.currentPage]),
-                    color = MaterialTheme.colorScheme.primary
-                )
-            },
-            divider = {}
+            contentColor = MaterialTheme.colorScheme.primary
         ) {
             LibraryTab.entries.forEachIndexed { index, tab ->
                 Tab(
                     selected = pagerState.currentPage == index,
                     onClick = {
-                        scope.launch { pagerState.animateScrollToPage(index) }
+                        scope.launch {
+                            pagerState.animateScrollToPage(
+                                page = index,
+                                animationSpec = tween(
+                                    durationMillis = 200,
+                                    easing = FastOutSlowInEasing
+                                )
+                            )
+                        }
                     },
                     selectedContentColor = MaterialTheme.colorScheme.primary,
                     unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -157,28 +164,46 @@ fun LibraryScreen(
 
         HorizontalPager(
             state = pagerState,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
+            pageSpacing = 0.dp
         ) { page ->
-            when (LibraryTab.entries[page]) {
-                LibraryTab.LOCAL -> LocalPlaylistList(
-                    playlists = ui.localPlaylists,
-                    onCreate = { name ->
-                        val finalName = name.trim().ifBlank { "新建歌单" }
-                        vm.createLocalPlaylist(finalName)
-                    },
-                    onClick = onLocalPlaylistClick
-                )
-                LibraryTab.NETEASE -> NeteasePlaylistList(
-                    playlists = ui.neteasePlaylists,
-                    onClick = onNeteasePlaylistClick
-                )
-                LibraryTab.BILI -> BiliPlaylistList(
-                    playlists = ui.biliPlaylists,
-                    onClick = onBiliPlaylistClick
-                )
-                LibraryTab.QQMUSIC -> {
-                    // TODO: QQ 音乐支持
-                    LazyColumn { }
+            AnimatedContent(
+                targetState = page,
+                transitionSpec = {
+                    slideInHorizontally(
+                        animationSpec = tween(200, easing = FastOutSlowInEasing),
+                        initialOffsetX = { if (targetState > initialState) it else -it }
+                    ) + fadeIn(
+                        animationSpec = tween(200, easing = FastOutSlowInEasing)
+                    ) togetherWith slideOutHorizontally(
+                        animationSpec = tween(200, easing = FastOutSlowInEasing),
+                        targetOffsetX = { if (targetState > initialState) -it else it }
+                    ) + fadeOut(
+                        animationSpec = tween(200, easing = FastOutSlowInEasing)
+                    )
+                }
+            ) { currentPage ->
+                when (LibraryTab.entries[currentPage]) {
+                    LibraryTab.LOCAL -> LocalPlaylistList(
+                        playlists = ui.localPlaylists,
+                        onCreate = { name ->
+                            val finalName = name.trim().ifBlank { "新建歌单" }
+                            vm.createLocalPlaylist(finalName)
+                        },
+                        onClick = onLocalPlaylistClick
+                    )
+                    LibraryTab.NETEASE -> NeteasePlaylistList(
+                        playlists = ui.neteasePlaylists,
+                        onClick = onNeteasePlaylistClick
+                    )
+                    LibraryTab.BILI -> BiliPlaylistList(
+                        playlists = ui.biliPlaylists,
+                        onClick = onBiliPlaylistClick
+                    )
+                    LibraryTab.QQMUSIC -> {
+                        // TODO: QQ 音乐支持
+                        LazyColumn { }
+                    }
                 }
             }
         }
