@@ -25,6 +25,7 @@ package moe.ouom.neriplayer
 
 import android.app.Application
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import coil.Coil
 import coil.ImageLoader
 
@@ -32,6 +33,9 @@ class NeriPlayerApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         AppContainer.initialize(this)
+        
+        // 初始化全局下载管理器
+        GlobalDownloadManager.initialize(this)
 
         // set a global Coil ImageLoader that uses the shared OkHttpClient honoring proxy bypass
         val imageLoader = ImageLoader.Builder(this)

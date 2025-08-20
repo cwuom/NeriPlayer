@@ -33,10 +33,11 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.LazyGridState
@@ -91,6 +92,7 @@ import moe.ouom.neriplayer.ui.screen.debug.DebugHomeScreen
 import moe.ouom.neriplayer.ui.screen.debug.LogListScreen
 import moe.ouom.neriplayer.ui.screen.debug.NeteaseApiProbeScreen
 import moe.ouom.neriplayer.ui.screen.debug.SearchApiProbeScreen
+import moe.ouom.neriplayer.ui.screen.DownloadManagerScreen
 import moe.ouom.neriplayer.ui.screen.host.ExploreHostScreen
 import moe.ouom.neriplayer.ui.screen.playlist.BiliPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistDetailScreen
@@ -100,9 +102,9 @@ import moe.ouom.neriplayer.ui.screen.tab.LibraryScreen
 import moe.ouom.neriplayer.ui.screen.tab.SettingsScreen
 import moe.ouom.neriplayer.ui.theme.NeriTheme
 import moe.ouom.neriplayer.ui.view.HyperBackground
-import moe.ouom.neriplayer.ui.viewmodel.BiliPlaylist
-import moe.ouom.neriplayer.ui.viewmodel.LogViewerScreen
-import moe.ouom.neriplayer.ui.viewmodel.NeteasePlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
+import moe.ouom.neriplayer.ui.viewmodel.debug.LogViewerScreen
+import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
 import moe.ouom.neriplayer.util.NPLogger
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
@@ -401,6 +403,8 @@ fun NeriApp(
                                     )
                                 }
 
+
+
                                 composable(
                                     route = Destinations.LocalPlaylistDetail.route,
                                     arguments = listOf(navArgument("playlistId") {
@@ -474,7 +478,20 @@ fun NeriApp(
                                         backgroundImageAlpha = backgroundImageAlpha,
                                         onBackgroundImageAlphaChange = { alpha ->
                                             scope.launch { repo.setBackgroundImageAlpha(alpha) }
+                                        },
+                                        onNavigateToDownloadManager = {
+                                            navController.navigate(Destinations.DownloadManager.route)
                                         }
+                                    )
+                                }
+                                
+                                composable(
+                                    route = Destinations.DownloadManager.route,
+                                    exitTransition = { fadeOut(animationSpec = tween(160)) },
+                                    popEnterTransition = { slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn() }
+                                ) {
+                                    DownloadManagerScreen(
+                                        onBack = { navController.popBackStack() }
                                     )
                                 }
 
@@ -528,9 +545,21 @@ fun NeriApp(
                             }
                             AnimatedVisibility(
                                 visible = currentSong != null && !showNowPlaying,
-                                modifier = Modifier.align(Alignment.BottomCenter),
-                                enter = slideInVertically { it },
-                                exit = slideOutVertically { it }
+                                modifier = Modifier.align(Alignment.BottomStart),
+                                enter = slideInVertically(
+                                    animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
+                                    initialOffsetY = { it }
+                                ) + fadeIn(animationSpec = tween(durationMillis = 200)) + scaleIn(
+                                    animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
+                                    initialScale = 0.8f
+                                ),
+                                exit = slideOutVertically(
+                                    animationSpec = tween(durationMillis = 250, easing = FastOutSlowInEasing),
+                                    targetOffsetY = { it }
+                                ) + fadeOut(animationSpec = tween(durationMillis = 150)) + scaleOut(
+                                    animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
+                                    targetScale = 0.8f
+                                )
                             ) {
                                 NeriMiniPlayer(
                                     title = currentSong?.name ?: "暂无播放",

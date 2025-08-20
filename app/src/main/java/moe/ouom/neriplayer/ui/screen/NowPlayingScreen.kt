@@ -80,6 +80,7 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Shuffle
@@ -95,7 +96,10 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Slider
+import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -146,6 +150,7 @@ import moe.ouom.neriplayer.ui.component.parseNeteaseLrc
 import moe.ouom.neriplayer.ui.component.parseNeteaseYrc
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.util.HapticFilledIconButton
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
@@ -207,6 +212,9 @@ fun NowPlayingScreen(
     var showQueueSheet by remember { mutableStateOf(false) }
     val addSheetState = rememberModalBottomSheetState()
     val queueSheetState = rememberModalBottomSheetState()
+    
+    // Snackbar状态
+    val snackbarHostState = remember { SnackbarHostState() }
 
     // 是否拖拽进度条
     var isUserDraggingSlider by remember(currentSong?.id) { mutableStateOf(false) }
@@ -237,8 +245,8 @@ fun NowPlayingScreen(
                     parseNeteaseLrc(song.matchedLyric)
                 }
             }
-            song != null && isFromNetease -> {
-                PlayerManager.getNeteaseLyrics(song.id)
+            song != null -> {
+                PlayerManager.getLyrics(song)
             }
             else -> {
                 emptyList()
@@ -314,7 +322,8 @@ fun NowPlayingScreen(
                             viewModel = nowPlayingViewModel,
                             originalSong = currentSong!!, // 此时 currentSong 必不为 null
                             queue = displayedQueue,
-                            onDismiss = { showMoreOptions = false }
+                            onDismiss = { showMoreOptions = false },
+                            snackbarHostState = snackbarHostState
                         )
                     }
                 },
@@ -693,7 +702,8 @@ private fun MoreOptionsSheet(
     viewModel: NowPlayingViewModel,
     originalSong: SongItem,
     queue: List<SongItem>,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    snackbarHostState: SnackbarHostState
 ) {
     val sheetState = rememberModalBottomSheetState()
     var showSearchView by remember { mutableStateOf(false) }
@@ -701,6 +711,7 @@ private fun MoreOptionsSheet(
 
     val focusManager = LocalFocusManager.current
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
     // 当弹窗打开时，如果需要，预填充搜索词
     LaunchedEffect(showSearchView) {
@@ -736,6 +747,20 @@ private fun MoreOptionsSheet(
                             leadingContent = { Icon(Icons.Outlined.Info, null) },
                             modifier = Modifier.clickable { showSearchView = true }
                         )
+                        if (AudioDownloadManager.getLocalFilePath(context, originalSong) == null) {
+                            ListItem(
+                                headlineContent = { Text("下载到本地") },
+                                leadingContent = { Icon(Icons.Outlined.Download, null) },
+                                modifier = Modifier.clickable {
+                                    coroutineScope.launch {
+                                        AudioDownloadManager.downloadSong(context, originalSong)
+                                        snackbarHostState.showSnackbar("开始下载：${originalSong.name}")
+                                    }
+                                    onDismiss()
+                                }
+                            )
+                        }
+
                         ListItem(
                             headlineContent = { Text("调整歌词偏移") },
                             leadingContent = { Icon(Icons.Outlined.Timer, null) },
@@ -879,6 +904,12 @@ private fun MoreOptionsSheet(
                     )
                 }
             }
+            
+            // Snackbar
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.padding(bottom = LocalMiniPlayerHeight.current)
+            )
         }
     }
 }

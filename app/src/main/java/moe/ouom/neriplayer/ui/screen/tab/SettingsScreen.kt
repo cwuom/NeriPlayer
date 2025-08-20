@@ -75,9 +75,11 @@ import androidx.compose.material.icons.outlined.Update
 import androidx.compose.material.icons.outlined.Verified
 import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material.icons.outlined.ZoomInMap
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.ListItem
@@ -90,7 +92,6 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
@@ -110,7 +111,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -129,8 +129,11 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.NeteaseWebLoginActivity
 import moe.ouom.neriplayer.data.ThemeDefaults
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
-import moe.ouom.neriplayer.ui.viewmodel.NeteaseAuthEvent
-import moe.ouom.neriplayer.ui.viewmodel.NeteaseAuthViewModel
+import moe.ouom.neriplayer.ui.viewmodel.debug.NeteaseAuthEvent
+import moe.ouom.neriplayer.ui.viewmodel.debug.NeteaseAuthViewModel
+import moe.ouom.neriplayer.core.player.AudioDownloadManager
+import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthEvent
+import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthViewModel
 import moe.ouom.neriplayer.util.HapticButton
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
@@ -244,6 +247,7 @@ fun SettingsScreen(
     onBackgroundImageBlurChange: (Float) -> Unit,
     backgroundImageAlpha: Float,
     onBackgroundImageAlphaChange: (Float) -> Unit,
+    onNavigateToDownloadManager: () -> Unit = {},
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val context = LocalContext.current
@@ -260,6 +264,10 @@ fun SettingsScreen(
     // 网络配置菜单的状态
     var networkExpanded by remember { mutableStateOf(false) }
     val networkArrowRotation by animateFloatAsState(targetValue = if (networkExpanded) 180f else 0f, label = "network_arrow")
+
+    // 下载管理菜单的状态
+    var downloadManagerExpanded by remember { mutableStateOf(false) }
+    val downloadManagerArrowRotation by animateFloatAsState(targetValue = if (downloadManagerExpanded) 180f else 0f, label = "download_manager_arrow")
 
 
     // 各种对话框和弹窗的显示状态 //
@@ -280,7 +288,7 @@ fun SettingsScreen(
     val cookieScroll = rememberScrollState()
     var versionTapCount by remember { mutableIntStateOf(0) }
     var biliCookieText by remember { mutableStateOf("") }
-    val biliVm: moe.ouom.neriplayer.ui.viewmodel.BiliAuthViewModel = viewModel()
+    val biliVm: BiliAuthViewModel = viewModel()
 
     // 照片选择器
     val photoPickerLauncher = rememberLauncherForActivityResult(
@@ -359,12 +367,12 @@ fun SettingsScreen(
     LaunchedEffect(biliVm) {
         biliVm.events.collect { e ->
             when (e) {
-                is moe.ouom.neriplayer.ui.viewmodel.BiliAuthEvent.ShowSnack -> inlineMsg = e.message
-                is moe.ouom.neriplayer.ui.viewmodel.BiliAuthEvent.ShowCookies -> {
+                is BiliAuthEvent.ShowSnack -> inlineMsg = e.message
+                is BiliAuthEvent.ShowCookies -> {
                     biliCookieText = e.cookies.entries.joinToString("\n") { (k, v) -> "$k=$v" }
                     showBiliCookieDialog = true
                 }
-                moe.ouom.neriplayer.ui.viewmodel.BiliAuthEvent.LoginSuccess -> {
+                BiliAuthEvent.LoginSuccess -> {
                     inlineMsg = "B 站登录成功"
                 }
             }
@@ -749,6 +757,100 @@ fun SettingsScreen(
                     modifier = Modifier.clickable { showBiliQualityDialog = true },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
+            }
+
+            // 下载管理器
+            item {
+                ExpandableHeader(
+                    icon = Icons.Outlined.Download,
+                    title = "下载管理",
+                    subtitleCollapsed = "展开以管理下载任务",
+                    subtitleExpanded = "收起",
+                    expanded = downloadManagerExpanded,
+                    onToggle = { downloadManagerExpanded = !downloadManagerExpanded },
+                    arrowRotation = downloadManagerArrowRotation
+                )
+            }
+
+            // 展开区域
+            item {
+                AnimatedVisibility(
+                    visible = downloadManagerExpanded,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.Transparent)
+                            .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
+                    ) {
+                        // 下载进度显示
+                        val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsStateWithLifecycleCompat()
+                        
+                        batchDownloadProgress?.let { progress ->
+                            ListItem(
+                                leadingContent = {
+                                    Icon(
+                                        Icons.Outlined.Download,
+                                        contentDescription = "下载进度",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                },
+                                headlineContent = { Text("下载进度") },
+                                supportingContent = { 
+                                    Text("${progress.completedSongs}/${progress.totalSongs} 首歌曲")
+                                },
+                                trailingContent = {
+                                    HapticTextButton(
+                                        onClick = {
+                                            AudioDownloadManager.cancelDownload()
+                                        }
+                                    ) {
+                                        Text("取消", color = MaterialTheme.colorScheme.error)
+                                    }
+                                },
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                            )
+                            
+                            // 进度条
+                            LinearProgressIndicator(
+                                progress = { (progress.percentage / 100f).coerceIn(0f, 1f) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 16.dp, end = 16.dp)
+                            )
+                            
+                            if (progress.currentSong.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    "正在下载: ${progress.currentSong}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(start = 16.dp)
+                                )
+                            }
+                        }
+                        
+                        if (batchDownloadProgress == null) {
+                            ListItem(
+                                leadingContent = {
+                                    Icon(
+                                        Icons.Outlined.Download,
+                                        contentDescription = "下载管理",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                },
+                                headlineContent = { Text("下载管理") },
+                                supportingContent = { Text("管理下载任务和本地文件") },
+                                modifier = Modifier.clickable {
+                                    onNavigateToDownloadManager()
+                                },
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                            )
+                        }
+                    }
+                }
             }
 
             // 关于

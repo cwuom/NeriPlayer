@@ -35,8 +35,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.parcelize.Parcelize
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.BiliCookieRepository
-import moe.ouom.neriplayer.ui.viewmodel.BiliPlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import java.io.IOException
 
 /** Bilibili 视频条目数据模型 */

@@ -55,6 +55,9 @@ sealed class Destinations(val route: String, val label: String) {
         fun createRoute(playlistId: Long) = "local_playlist_detail/$playlistId"
     }
 
+    // 下载管理器路由
+    data object DownloadManager : Destinations("download_manager", "下载管理")
+
     data object DebugLogViewer : Destinations("debug_log_viewer/{filePath}", "日志查看") {
         fun createRoute(filePath: String): String {
             val encodedPath = URLEncoder.encode(filePath, StandardCharsets.UTF_8.name())

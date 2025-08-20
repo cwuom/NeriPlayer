@@ -19,7 +19,7 @@ package moe.ouom.neriplayer.core.api.search
  * along with this software.
  * If not, see <https://www.gnu.org/licenses/>.
  *
- * File: moe.ouom.neriplayer.core.api.search/QQMusicApi
+ * File: moe.ouom.neriplayer.core.api.search/QQMusicSearchApi
  * Created: 2025/8/17
  */
 

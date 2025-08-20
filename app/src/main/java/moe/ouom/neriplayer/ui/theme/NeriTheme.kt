@@ -19,7 +19,7 @@ package moe.ouom.neriplayer.ui.theme
  * along with this software.
  * If not, see <https://www.gnu.org/licenses/>.
  *
- * File: moe.ouom.neriplayer.theme/NeriTheme
+ * File: moe.ouom.neriplayer.ui.theme/NeriTheme
  * Created: 2025/8/8
  */
 

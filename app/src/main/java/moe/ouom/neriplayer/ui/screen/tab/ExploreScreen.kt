@@ -64,10 +64,11 @@ import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
-import moe.ouom.neriplayer.ui.viewmodel.ExploreViewModel
-import moe.ouom.neriplayer.ui.viewmodel.NeteasePlaylist
-import moe.ouom.neriplayer.ui.viewmodel.SearchSource
+import moe.ouom.neriplayer.ui.viewmodel.tab.ExploreViewModel
+import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.SearchSource
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.ui.viewmodel.tab.ExploreUiState
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.NPLogger
@@ -449,7 +450,7 @@ fun ExploreScreen(
 @OptIn(ExperimentalLayoutApi::class)
 private fun NeteaseDefaultContent(
     gridState: LazyGridState,
-    ui: moe.ouom.neriplayer.ui.viewmodel.ExploreUiState,
+    ui: ExploreUiState,
     tags: List<String>,
     vm: ExploreViewModel,
     onPlay: (NeteasePlaylist) -> Unit

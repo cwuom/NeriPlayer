@@ -34,6 +34,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.data.BiliCookieRepository
 import android.net.Uri
+import moe.ouom.neriplayer.util.NPLogger
 
 /**
  * 自定义的 HttpDataSource.Factory：
@@ -69,6 +70,7 @@ class ConditionalHttpDataSourceFactory(
         return object : HttpDataSource by delegate {
 
             override fun open(dataSpec: DataSpec): Long {
+                NPLogger.i("createDataSource", dataSpec.uri)
                 val finalSpec = if (shouldInjectBiliHeaders(dataSpec.uri)) {
                     val headers = buildBiliHeaders(dataSpec.httpRequestHeaders)
                     dataSpec.buildUpon()

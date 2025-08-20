@@ -109,13 +109,15 @@ import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
-import moe.ouom.neriplayer.ui.viewmodel.NeteasePlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.PlaylistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.ui.viewmodel.DownloadManagerViewModel
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.formatDuration
 import moe.ouom.neriplayer.util.formatPlayCount
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Shadow
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
@@ -137,6 +139,15 @@ fun PlaylistDetailScreen(
             initializer {
                 val app = context.applicationContext as Application
                 PlaylistDetailViewModel(app)
+            }
+        }
+    )
+    
+    val downloadManager: DownloadManagerViewModel = viewModel(
+        factory = viewModelFactory {
+            initializer {
+                val app = context.applicationContext as Application
+                DownloadManagerViewModel(app)
             }
         }
     )
@@ -227,6 +238,20 @@ fun PlaylistDetailScreen(
                                 enabled = selectedIds.isNotEmpty()
                             ) {
                                 Icon(Icons.AutoMirrored.Outlined.PlaylistAdd, contentDescription = "导出到歌单")
+                            }
+                            HapticIconButton(
+                                onClick = { 
+                                    if (selectedIds.isNotEmpty()) {
+                                        // 先立即退出多选，避免组合离开导致作用域取消
+                                        exitSelection()
+                                        val selectedSongs = ui.tracks.filter { selectedIds.contains(it.id) }
+                                        // 开始批量下载（ViewModel 使用应用作用域）
+                                        downloadManager.startBatchDownload(context, selectedSongs)
+                                    }
+                                },
+                                enabled = selectedIds.isNotEmpty()
+                            ) {
+                                Icon(Icons.Outlined.Download, contentDescription = "下载选中歌曲")
                             }
                         },
                         windowInsets = WindowInsets.statusBars,

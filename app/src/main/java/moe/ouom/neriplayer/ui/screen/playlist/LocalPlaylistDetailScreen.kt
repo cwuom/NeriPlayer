@@ -35,7 +35,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -63,15 +65,22 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.DownloadDone
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -101,13 +110,20 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.ui.viewmodel.DownloadManagerViewModel
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
+import android.app.Application
+import kotlinx.coroutines.DelicateCoroutinesApi
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.playlist.LocalPlaylistDetailViewModel
@@ -124,7 +140,9 @@ import org.burnoutcrew.reorderable.detectReorder
 import org.burnoutcrew.reorderable.rememberReorderableLazyListState
 import org.burnoutcrew.reorderable.reorderable
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class,
+    DelicateCoroutinesApi::class
+)
 @Composable
 fun LocalPlaylistDetailScreen(
     playlistId: Long,
@@ -196,6 +214,14 @@ fun LocalPlaylistDetailScreen(
 
             var showSearch by remember { mutableStateOf(false) }
             var searchQuery by remember { mutableStateOf("") }
+            var showDownloadManager by remember { mutableStateOf(false) }
+            
+            // 下载进度
+            val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
+            val isCancelled by AudioDownloadManager.isCancelledFlow.collectAsState()
+            
+            // Snackbar状态
+            val snackbarHostState = remember { SnackbarHostState() }
 
             // 可变列表：保持存储层顺序（正序），UI 用 asReversed() 倒序展示
             val localSongs = remember(playlist.id) {
@@ -342,6 +368,12 @@ fun LocalPlaylistDetailScreen(
 
             Scaffold(
                 containerColor = Color.Transparent,
+                snackbarHost = { 
+                    SnackbarHost(
+                        hostState = snackbarHostState,
+                        modifier = Modifier.padding(bottom = LocalMiniPlayerHeight.current)
+                    ) 
+                },
                 topBar = {
                     if (!selectionMode) {
                         TopAppBar(
@@ -365,6 +397,19 @@ fun LocalPlaylistDetailScreen(
                                     showSearch = !showSearch
                                     if (!showSearch) searchQuery = ""
                                 }) { Icon(Icons.Filled.Search, contentDescription = "搜索歌曲") }
+                                
+                                if (batchDownloadProgress != null) {
+                                    HapticIconButton(
+                                        onClick = { showDownloadManager = true }
+                                    ) {
+                                        Icon(
+                                            Icons.Outlined.Download,
+                                            contentDescription = "下载管理器",
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                                
                                 if (!isFavorites) {
                                     HapticIconButton(onClick = {
                                         showRename = true
@@ -415,6 +460,23 @@ fun LocalPlaylistDetailScreen(
                                     Icon(
                                         Icons.AutoMirrored.Outlined.PlaylistAdd,
                                         contentDescription = "导出到歌单"
+                                    )
+                                }
+                                HapticIconButton(
+                                    onClick = {
+                                        if (selectedIdsState.value.isNotEmpty()) {
+                                            val selectedSongs = localSongs.filter { it.id in selectedIdsState.value }
+                                            exitSelectionMode()
+                                            kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                                AudioDownloadManager.downloadPlaylist(context, selectedSongs)
+                                            }
+                                        }
+                                    },
+                                    enabled = selectedIdsState.value.isNotEmpty()
+                                ) {
+                                    Icon(
+                                        Icons.Outlined.Download,
+                                        contentDescription = "下载所选歌曲"
                                     )
                                 }
                                 HapticIconButton(
@@ -621,12 +683,26 @@ fun LocalPlaylistDetailScreen(
 
                                             // 标题/歌手
                                             Column(Modifier.weight(1f)) {
-                                                Text(
-                                                    text = song.name,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    style = MaterialTheme.typography.titleMedium
-                                                )
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                ) {
+                                                    Text(
+                                                        text = song.name,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        style = MaterialTheme.typography.titleMedium
+                                                    )
+                                                    // 下载完成标志
+                                                    if (AudioDownloadManager.getLocalFilePath(LocalContext.current, song) != null) {
+                                                        Icon(
+                                                            imageVector = Icons.Outlined.DownloadDone,
+                                                            contentDescription = "已下载",
+                                                            modifier = Modifier.size(16.dp),
+                                                            tint = MaterialTheme.colorScheme.primary
+                                                        )
+                                                    }
+                                                }
                                                 Text(
                                                     text = song.artist,
                                                     maxLines = 1,
@@ -713,6 +789,8 @@ fun LocalPlaylistDetailScreen(
                                 )
                             }
                         }
+                        
+
                     }
                 }
 
@@ -841,6 +919,157 @@ fun LocalPlaylistDetailScreen(
                                 ) { Text("新建并导出") }
                             }
                             Spacer(Modifier.height(12.dp))
+                        }
+                    }
+                }
+
+                // 下载管理器
+                if (showDownloadManager) {
+                    ModalBottomSheet(
+                        onDismissRequest = { showDownloadManager = false }
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(20.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "下载管理器",
+                                    style = MaterialTheme.typography.titleLarge
+                                )
+                                HapticIconButton(
+                                    onClick = { showDownloadManager = false }
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Close,
+                                        contentDescription = "关闭"
+                                    )
+                                }
+                            }
+                            
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            batchDownloadProgress?.let { progress ->
+                                // 下载进度显示
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                    )
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(16.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                "下载进度: ${progress.completedSongs}/${progress.totalSongs}",
+                                                style = MaterialTheme.typography.titleMedium
+                                            )
+                                            HapticTextButton(
+                                                onClick = {
+                                                    AudioDownloadManager.cancelDownload()
+                                                    scope.launch {
+                                                        snackbarHostState.showSnackbar("下载已取消")
+                                                    }
+                                                }
+                                            ) {
+                                                Text("取消", color = MaterialTheme.colorScheme.error)
+                                            }
+                                        }
+                                        
+                                        if (progress.currentSong.isNotBlank()) {
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Text(
+                                                "正在下载: ${progress.currentSong}",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        
+                                        Spacer(modifier = Modifier.height(12.dp))
+                                        
+                                        // 总体进度条
+                                        Text(
+                                            "总体进度: ${progress.percentage}%",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        val animatedOverallProgress by animateFloatAsState(
+                                            targetValue = (progress.percentage / 100f).coerceIn(0f, 1f),
+                                            animationSpec = spring(
+                                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                                stiffness = Spring.StiffnessMedium
+                                            ),
+                                            label = "overallProgress"
+                                        )
+                                        LinearProgressIndicator(
+                                            progress = { animatedOverallProgress },
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                        
+                                        // 单首歌曲进度条
+                                        progress.currentProgress?.let { currentProgress ->
+                                            Spacer(modifier = Modifier.height(12.dp))
+                                            Text(
+                                                "当前文件: ${currentProgress.percentage}% (${currentProgress.speedBytesPerSec / 1024} KB/s)",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            val animatedCurrentProgress by animateFloatAsState(
+                                                targetValue = if (currentProgress.totalBytes > 0) {
+                                                    (currentProgress.bytesRead.toFloat() / currentProgress.totalBytes).coerceIn(0f, 1f)
+                                                } else 0f,
+                                                animationSpec = spring(
+                                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                                    stiffness = Spring.StiffnessMedium
+                                                ),
+                                                label = "currentProgress"
+                                            )
+                                            LinearProgressIndicator(
+                                                progress = { animatedCurrentProgress },
+                                                modifier = Modifier.fillMaxWidth()
+                                            )
+                                        }
+                                    }
+                                }
+                            } ?: run {
+                                // 没有下载任务时的显示
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Icon(
+                                        Icons.Outlined.Download,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(64.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Text(
+                                        "暂无下载任务",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        "选择歌曲后点击下载按钮开始下载",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            }
+                            
+                            Spacer(modifier = Modifier.height(20.dp))
                         }
                     }
                 }

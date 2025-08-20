@@ -82,9 +82,9 @@ import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.data.LocalPlaylist
 import moe.ouom.neriplayer.data.LocalPlaylistRepository.Companion.FAVORITES_NAME
-import moe.ouom.neriplayer.ui.viewmodel.BiliPlaylist
-import moe.ouom.neriplayer.ui.viewmodel.LibraryViewModel
-import moe.ouom.neriplayer.ui.viewmodel.NeteasePlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.LibraryViewModel
+import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.formatPlayCount
 

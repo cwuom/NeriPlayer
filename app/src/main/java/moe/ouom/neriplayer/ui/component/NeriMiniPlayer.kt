@@ -29,6 +29,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -41,6 +43,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -76,7 +79,7 @@ fun NeriMiniPlayer(
         ),
         shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
         modifier = Modifier
-            .padding(horizontal = 12.dp)
+            .padding(start = 16.dp, end = 8.dp)
             .clickable { onExpand() }
             .onSizeChanged { size ->
                 onHeightChanged(size.height)
@@ -104,6 +107,19 @@ fun NeriMiniPlayer(
                             .matchParentSize()
                             .clip(RoundedCornerShape(8.dp))
                     )
+                } else {
+                    // 显示默认音乐图标
+                    Box(
+                        modifier = Modifier.matchParentSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.MusicNote,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
                 }
             }
 
@@ -129,7 +145,17 @@ fun NeriMiniPlayer(
                     targetState = isPlaying,
                     label = "mini_play_pause_icon",
                     transitionSpec = {
-                        (scaleIn() + fadeIn()) togetherWith (scaleOut() + fadeOut())
+                        (scaleIn(
+                            animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
+                            initialScale = 0.7f
+                        ) + fadeIn(
+                            animationSpec = tween(durationMillis = 150)
+                        )) togetherWith (scaleOut(
+                            animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing),
+                            targetScale = 0.7f
+                        ) + fadeOut(
+                            animationSpec = tween(durationMillis = 100)
+                        ))
                     }
                 ) { currentlyPlaying ->
                     Icon(

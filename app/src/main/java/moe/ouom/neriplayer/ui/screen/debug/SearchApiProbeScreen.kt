@@ -40,7 +40,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
-import moe.ouom.neriplayer.ui.viewmodel.SearchApiProbeViewModel
+import moe.ouom.neriplayer.ui.viewmodel.debug.SearchApiProbeViewModel
 
 @Composable
 fun SearchApiProbeScreen() {

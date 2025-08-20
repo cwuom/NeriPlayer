@@ -25,6 +25,7 @@ package moe.ouom.neriplayer.core.player
  * Updated: 2025/8/16
  */
 
+
 import android.app.Application
 import android.content.Context
 import android.media.AudioDeviceCallback
@@ -75,6 +76,7 @@ import moe.ouom.neriplayer.core.api.search.SongSearchInfo
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.di.AppContainer.biliCookieRepo
 import moe.ouom.neriplayer.core.di.AppContainer.settingsRepo
+import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.data.LocalPlaylist
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.ui.component.LyricEntry
@@ -272,9 +274,12 @@ object PlayerManager {
         val upstreamFactory: HttpDataSource.Factory = OkHttpDataSource.Factory(okHttpClient)
         val conditionalHttpFactory = ConditionalHttpDataSourceFactory(upstreamFactory, biliCookieRepo)
 
+        // Use DefaultDataSource so file:// and content:// URIs are handled by File/ContentDataSource
+        val defaultDsFactory = androidx.media3.datasource.DefaultDataSource.Factory(app, conditionalHttpFactory)
+
         val cacheDsFactory = CacheDataSource.Factory()
             .setCache(cache)
-            .setUpstreamDataSourceFactory(conditionalHttpFactory)
+            .setUpstreamDataSourceFactory(defaultDsFactory)
 
         val mediaSourceFactory = DefaultMediaSourceFactory(cacheDsFactory)
 
@@ -498,6 +503,10 @@ object PlayerManager {
     }
 
     private suspend fun resolveSongUrl(song: SongItem): SongUrlResult {
+        // 优先检查本地缓存
+        val localResult = checkLocalCache(song)
+        if (localResult != null) return localResult
+        
         return if (song.album.startsWith(BILI_SOURCE_TAG)) {
             // 解析可能的 cid
             val parts = song.album.split('|')
@@ -506,6 +515,15 @@ object PlayerManager {
         } else {
             getNeteaseSongUrl(song.id)
         }
+    }
+
+    /** 检查歌曲是否有本地缓存，如果有则优先使用本地文件 */
+    private fun checkLocalCache(song: SongItem): SongUrlResult? {
+        val context = application
+        val localPath = AudioDownloadManager.getLocalFilePath(context, song)
+        return if (localPath != null) {
+            SongUrlResult.Success("file://$localPath")
+        } else null
     }
 
     private suspend fun getNeteaseSongUrl(songId: Long): SongUrlResult = withContext(Dispatchers.IO) {
@@ -899,6 +917,37 @@ object PlayerManager {
                 NPLogger.e("NERI-PlayerManager", "getNeteaseLyrics failed: ${e.message}", e)
                 emptyList()
             }
+        }
+    }
+
+    /** 获取歌词，优先使用本地缓存 */
+    suspend fun getLyrics(song: SongItem): List<LyricEntry> {
+        // 最优先使用song.matchedLyric中的歌词
+        if (!song.matchedLyric.isNullOrBlank()) {
+            try {
+                return parseNeteaseLrc(song.matchedLyric)
+            } catch (e: Exception) {
+                NPLogger.w("NERI-PlayerManager", "匹配歌词解析失败: ${e.message}")
+            }
+        }
+        
+        // 其次检查本地歌词缓存
+        val context = application
+        val localLyricPath = AudioDownloadManager.getLyricFilePath(context, song)
+        if (localLyricPath != null) {
+            try {
+                val lrcContent = File(localLyricPath).readText()
+                return parseNeteaseLrc(lrcContent)
+            } catch (e: Exception) {
+                NPLogger.w("NERI-PlayerManager", "本地歌词读取失败: ${e.message}")
+            }
+        }
+
+        // 最后回退到在线获取
+        return if (song.album.startsWith(BILI_SOURCE_TAG)) {
+            emptyList() // B站暂时没有歌词API
+        } else {
+            getNeteaseLyrics(song.id)
         }
     }
 

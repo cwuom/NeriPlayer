@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.ui.viewmodel
+package moe.ouom.neriplayer.ui.viewmodel.debug
 
 import android.app.Application
 import android.content.ClipData

@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -69,10 +70,11 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
-import moe.ouom.neriplayer.ui.viewmodel.BiliPlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliPlaylistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.ui.viewmodel.DownloadManagerViewModel
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.NPLogger
@@ -97,12 +99,20 @@ fun BiliPlaylistDetailScreen(
         }
     )
     val ui by vm.uiState.collectAsState()
+    val downloadManager: DownloadManagerViewModel = viewModel(
+        factory = viewModelFactory {
+            initializer {
+                val app = context.applicationContext as Application
+                DownloadManagerViewModel(app)
+            }
+        }
+    )
     LaunchedEffect(playlist.mediaId) { vm.start(playlist) }
 
     val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
     val allLocalPlaylists by repo.playlists.collectAsState(initial = emptyList())
     var selectionMode by remember { mutableStateOf(false) }
-    var selectedIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    var selectedIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showExportSheet by remember { mutableStateOf(false) }
     val exportSheetState = rememberModalBottomSheetState()
     val scope = rememberCoroutineScope()
@@ -111,11 +121,11 @@ fun BiliPlaylistDetailScreen(
     var partsInfo by remember { mutableStateOf<BiliClient.VideoBasicInfo?>(null) }
     val partsSheetState = rememberModalBottomSheetState()
 
-    fun toggleSelect(id: Long) {
+    fun toggleSelect(id: String) {
         selectedIds = if (selectedIds.contains(id)) selectedIds - id else selectedIds + id
     }
     fun clearSelection() { selectedIds = emptySet() }
-    fun selectAll() { selectedIds = ui.videos.map { it.id }.toSet() }
+    fun selectAll() { selectedIds = ui.videos.map { it.bvid }.toSet() }
     fun exitSelection() { selectionMode = false; clearSelection() }
 
     var showSearch by remember { mutableStateOf(false) }
@@ -193,6 +203,37 @@ fun BiliPlaylistDetailScreen(
                                 enabled = selectedIds.isNotEmpty()
                             ) {
                                 Icon(Icons.AutoMirrored.Outlined.PlaylistAdd, contentDescription = "导出到歌单")
+                            }
+                            HapticIconButton(
+                                onClick = { 
+                                    if (selectedIds.isNotEmpty()) {
+                                        // 先立即退出多选
+                                        exitSelection()
+                                        val selectedSongs = ArrayList<SongItem>()
+                                        ui.videos.forEach { video: BiliVideoItem ->
+                                            if (video.bvid in selectedIds) {
+                                                selectedSongs.add(
+                                                    SongItem(
+                                                        id = video.bvid.hashCode().toLong(),
+                                                        name = video.title,
+                                                        artist = video.uploader,
+                                                        album = "B站视频",
+                                                        durationMs = video.durationSec * 1000L,
+                                                        coverUrl = video.coverUrl,
+                                                        matchedLyric = null,
+                                                        matchedLyricSource = null,
+                                                        userLyricOffsetMs = 0L
+                                                    )
+                                                )
+                                            }
+                                        }
+                                        // 开始批量下载
+                                        downloadManager.startBatchDownload(context, selectedSongs)
+                                    }
+                                },
+                                enabled = selectedIds.isNotEmpty()
+                            ) {
+                                Icon(Icons.Outlined.Download, contentDescription = "下载选中视频")
                             }
                         },
                         windowInsets = WindowInsets.statusBars,
@@ -272,12 +313,12 @@ fun BiliPlaylistDetailScreen(
                                         index = index + 1,
                                         video = item,
                                         selectionMode = selectionMode,
-                                        selected = selectedIds.contains(item.id),
-                                        onToggleSelect = { toggleSelect(item.id) },
+                                        selected = selectedIds.contains(item.bvid),
+                                        onToggleSelect = { toggleSelect(item.bvid) },
                                         onLongPress = {
                                             if (!selectionMode) {
                                                 selectionMode = true
-                                                selectedIds = setOf(item.id)
+                                                selectedIds = setOf(item.bvid)
                                             }
                                         },
                                         onClick = {
@@ -329,7 +370,7 @@ fun BiliPlaylistDetailScreen(
                                                     .map { page -> vm.toSongItem(page, partsInfo!!, originalVideoItem?.coverUrl ?: "") }
                                             } else {
                                                 ui.videos
-                                                    .filter { selectedIds.contains(it.id) }
+                                                    .filter { selectedIds.contains(it.bvid) }
                                                     .map { it.toSongItem() }
                                             }
 
@@ -376,7 +417,7 @@ fun BiliPlaylistDetailScreen(
                                             .map { page -> vm.toSongItem(page, partsInfo!!, originalVideoItem?.coverUrl ?: "") }
                                     } else {
                                         ui.videos
-                                            .filter { selectedIds.contains(it.id) }
+                                            .filter { selectedIds.contains(it.bvid) }
                                             .map { it.toSongItem() }
                                     }
 
