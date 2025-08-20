@@ -134,7 +134,7 @@
 
 # Support / 支持
 - 由于项目特殊性，暂不接受任何形式的捐赠。
-- 若您能参与到开发与优化中，这就是对我们最大的支持。  
+- 若您能参与到开发与优化中，这就是对我们最大的支持。
 
 ---
 
@@ -144,9 +144,15 @@ NeriPlayer 使用 **GPL-3.0** 开源许可证发布。
 这意味着：
 - ✅ 你可以自由地使用、修改和分发本软件；
 - ⚠️ 如果你分发修改后的版本，必须同样以 GPL-3.0 协议开源；
-- 📚 详细条款请参阅 [LICENSE](./LICENSE) 文件。  
+- 📚 详细条款请参阅 [LICENSE](./LICENSE) 文件。
 
 ---
+
+# Contributing to NeriPlayer / 贡献指南
+感谢你愿意为 NeriPlayer 做出贡献！本指南将帮助你快速上手开发、提交修改和参与讨论。请在提交 PR 前阅读完 [CONTRIBUTING.md](./CONTRIBUTING.md)
+
+---
+
 <p align="center">
   <img src="https://moe-counter.lxchapu.com/:neriplayer?theme=moebooru" alt="访问计数 (Moe Counter)">
   <br/>
