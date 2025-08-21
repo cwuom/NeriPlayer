@@ -236,6 +236,7 @@ private fun UiScaleListItem(currentScale: Float, onClick: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
+    listState: androidx.compose.foundation.lazy.LazyListState,
     dynamicColor: Boolean,
     onDynamicColorChange: (Boolean) -> Unit,
     forceDark: Boolean,
@@ -461,7 +462,8 @@ fun SettingsScreen(
                 end = 8.dp,
                 top = 8.dp,
                 bottom = 8.dp + miniPlayerHeight
-            )
+            ),
+            state = listState
         ) {
             // 动态取色
             item {

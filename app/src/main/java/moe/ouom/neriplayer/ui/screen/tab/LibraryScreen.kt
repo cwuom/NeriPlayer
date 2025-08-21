@@ -42,6 +42,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -88,6 +89,7 @@ import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.data.LocalPlaylist
 import moe.ouom.neriplayer.data.LocalPlaylistRepository.Companion.FAVORITES_NAME
+import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.LibraryViewModel
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
@@ -104,6 +106,12 @@ enum class LibraryTab(val label: String) {
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun LibraryScreen(
+    initialTabIndex: Int = 0,
+    onTabIndexChange: (Int) -> Unit = {},
+    localListState: LazyListState,
+    neteaseListState: LazyListState,
+    biliListState: LazyListState,
+    qqMusicListState: LazyListState,
     onLocalPlaylistClick: (LocalPlaylist) -> Unit = {},
     onNeteasePlaylistClick: (NeteasePlaylist) -> Unit = {},
     onBiliPlaylistClick: (BiliPlaylist) -> Unit = {}
@@ -112,12 +120,21 @@ fun LibraryScreen(
     val ui by vm.uiState.collectAsState()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
-    // Pager 用于左右滑动，与 Tab 同步
+    // 使用rememberSaveable来保存当前选中的标签页索引
+    var currentTabIndex by rememberSaveable { mutableStateOf(initialTabIndex) }
+    
+    // 使用rememberPagerState来管理页面状态，支持左右滑动
     val pagerState = rememberPagerState(
-        initialPage = LibraryTab.LOCAL.ordinal,
+        initialPage = currentTabIndex,
         pageCount = { LibraryTab.entries.size }
     )
     val scope = rememberCoroutineScope()
+
+    // 当pagerState改变时，同步更新currentTabIndex并通知父组件
+    LaunchedEffect(pagerState.currentPage) {
+        currentTabIndex = pagerState.currentPage
+        onTabIndexChange(pagerState.currentPage)
+    }
 
     Column(
         Modifier
@@ -145,14 +162,9 @@ fun LibraryScreen(
                 Tab(
                     selected = pagerState.currentPage == index,
                     onClick = {
+                        // 点击Tab时，使用协程来平滑滚动到对应页面
                         scope.launch {
-                            pagerState.animateScrollToPage(
-                                page = index,
-                                animationSpec = tween(
-                                    durationMillis = 200,
-                                    easing = FastOutSlowInEasing
-                                )
-                            )
+                            pagerState.animateScrollToPage(index)
                         }
                     },
                     selectedContentColor = MaterialTheme.colorScheme.primary,
@@ -162,49 +174,37 @@ fun LibraryScreen(
             }
         }
 
+        // 使用HorizontalPager来支持左右滑动切换标签页
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
             pageSpacing = 0.dp
         ) { page ->
-            AnimatedContent(
-                targetState = page,
-                transitionSpec = {
-                    slideInHorizontally(
-                        animationSpec = tween(200, easing = FastOutSlowInEasing),
-                        initialOffsetX = { if (targetState > initialState) it else -it }
-                    ) + fadeIn(
-                        animationSpec = tween(200, easing = FastOutSlowInEasing)
-                    ) togetherWith slideOutHorizontally(
-                        animationSpec = tween(200, easing = FastOutSlowInEasing),
-                        targetOffsetX = { if (targetState > initialState) -it else it }
-                    ) + fadeOut(
-                        animationSpec = tween(200, easing = FastOutSlowInEasing)
-                    )
-                }
-            ) { currentPage ->
-                when (LibraryTab.entries[currentPage]) {
-                    LibraryTab.LOCAL -> LocalPlaylistList(
-                        playlists = ui.localPlaylists,
-                        onCreate = { name ->
-                            val finalName = name.trim().ifBlank { "新建歌单" }
-                            vm.createLocalPlaylist(finalName)
-                        },
-                        onClick = onLocalPlaylistClick
-                    )
-                    LibraryTab.NETEASE -> NeteasePlaylistList(
-                        playlists = ui.neteasePlaylists,
-                        onClick = onNeteasePlaylistClick
-                    )
-                    LibraryTab.BILI -> BiliPlaylistList(
-                        playlists = ui.biliPlaylists,
-                        onClick = onBiliPlaylistClick
-                    )
-                    LibraryTab.QQMUSIC -> {
-                        // TODO: QQ 音乐支持
-                        LazyColumn { }
-                    }
-                }
+            when (LibraryTab.entries[page]) {
+                LibraryTab.LOCAL -> LocalPlaylistList(
+                    playlists = ui.localPlaylists,
+                    listState = localListState,
+                    onCreate = { name ->
+                        val finalName = name.trim().ifBlank { "新建歌单" }
+                        vm.createLocalPlaylist(finalName)
+                    },
+                    onClick = onLocalPlaylistClick
+                )
+                LibraryTab.NETEASE -> NeteasePlaylistList(
+                    playlists = ui.neteasePlaylists,
+                    listState = neteaseListState,
+                    onClick = onNeteasePlaylistClick
+                )
+                LibraryTab.BILI -> BiliPlaylistList(
+                    playlists = ui.biliPlaylists,
+                    listState = biliListState,
+                    onClick = onBiliPlaylistClick
+                )
+                LibraryTab.QQMUSIC -> QqMusicPlaylistList(
+                    playlists = emptyList(), // TODO: Add qqMusicPlaylists to LibraryUiState when QQ Music is implemented
+                    listState = qqMusicListState,
+                    onClick = { /* TODO: Implement QQ Music playlist click */ }
+                )
             }
         }
     }
@@ -213,10 +213,14 @@ fun LibraryScreen(
 @Composable
 private fun BiliPlaylistList(
     playlists: List<BiliPlaylist>,
+    listState: LazyListState,
     onClick: (BiliPlaylist) -> Unit
 ) {
+    val miniPlayerHeight = LocalMiniPlayerHeight.current
+
     LazyColumn(
-        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+        state = listState,
+        contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 8.dp + miniPlayerHeight),
         verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = Modifier.fillMaxSize()
     ) {
@@ -237,24 +241,30 @@ private fun BiliPlaylistList(
             ) {
                 ListItem(
                     headlineContent = { Text(pl.title) },
+                    supportingContent = {
+                        Text("${pl.count} 个视频", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    },
                     colors = ListItemDefaults.colors(
                         containerColor = Color.Transparent
                     ),
-                    supportingContent = {
-                        Text(
-                            "${pl.count} 个内容",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
                     leadingContent = {
-                        AsyncImage(
-                            model = ImageRequest.Builder(LocalContext.current).data(pl.coverUrl).build(),
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .size(56.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                        )
+                        if (pl.coverUrl.isNotEmpty()) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(LocalContext.current).data(pl.coverUrl).build(),
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(56.dp)
+                            )
+                        }
                     }
                 )
             }
@@ -265,6 +275,7 @@ private fun BiliPlaylistList(
 @Composable
 private fun LocalPlaylistList(
     playlists: List<LocalPlaylist>,
+    listState: LazyListState,
     onCreate: (String) -> Unit,
     onClick: (LocalPlaylist) -> Unit
 ) {
@@ -282,7 +293,7 @@ private fun LocalPlaylistList(
         val finalName = trimmedInput.ifBlank { "新建歌单" }
 
         if (finalName.equals(FAVORITES_NAME, ignoreCase = true)) {
-            nameError = "该名称已保留为“$FAVORITES_NAME”，请换一个名称哦~"
+            nameError = "该名称已保留为\"$FAVORITES_NAME\"，请换一个名称哦~"
             return false
         }
         if (playlists.any { it.name.equals(finalName, ignoreCase = true) }) {
@@ -296,9 +307,11 @@ private fun LocalPlaylistList(
         nameError = null
         return true
     }
+    val miniPlayerHeight = LocalMiniPlayerHeight.current
 
     LazyColumn(
-        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+        state = listState,
+        contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 8.dp + miniPlayerHeight),
         verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = Modifier.fillMaxSize()
     ) {
@@ -422,10 +435,14 @@ private fun LocalPlaylistList(
 @Composable
 private fun NeteasePlaylistList(
     playlists: List<NeteasePlaylist>,
+    listState: LazyListState,
     onClick: (NeteasePlaylist) -> Unit
 ) {
+    val miniPlayerHeight = LocalMiniPlayerHeight.current
+
     LazyColumn(
-        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+        state = listState,
+        contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 8.dp + miniPlayerHeight),
         verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = Modifier.fillMaxSize()
     ) {
@@ -463,6 +480,53 @@ private fun NeteasePlaylistList(
                             modifier = Modifier
                                 .size(56.dp)
                                 .clip(RoundedCornerShape(8.dp))
+                        )
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun QqMusicPlaylistList(
+    playlists: List<Any>, // TODO: Replace with proper QQ Music playlist type
+    listState: LazyListState,
+    onClick: (Any) -> Unit
+) {
+    val miniPlayerHeight = LocalMiniPlayerHeight.current
+
+    LazyColumn(
+        state = listState,
+        contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 8.dp + miniPlayerHeight),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        // TODO: Implement QQ Music playlist list when type is available
+        item {
+            Card(
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = Color.Transparent
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                modifier = Modifier
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                ListItem(
+                    headlineContent = { Text("QQ音乐功能开发中...") },
+                    supportingContent = {
+                        Text("敬请期待", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    },
+                    colors = ListItemDefaults.colors(
+                        containerColor = Color.Transparent
+                    ),
+                    leadingContent = {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(56.dp)
                         )
                     }
                 )

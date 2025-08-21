@@ -16,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -65,7 +66,7 @@ fun DownloadManagerScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(Color.Transparent)
     ) {
         // 顶部栏
         TopAppBar(
@@ -87,6 +88,10 @@ fun DownloadManagerScreen(
                     Icon(Icons.Outlined.ArrowBack, contentDescription = "返回")
                 }
             },
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = Color.Transparent,
+                scrolledContainerColor = Color.Transparent
+            ),
             actions = {
                 if (selectionMode) {
                     // 多选模式下的操作按钮
@@ -444,7 +449,7 @@ private fun DownloadedSongItem(
             containerColor = if (isSelected)
                 MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)
             else
-                MaterialTheme.colorScheme.surface
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0f)
         ),
         elevation = CardDefaults.cardElevation(
             defaultElevation = 0.dp

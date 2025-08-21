@@ -33,11 +33,13 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
@@ -72,6 +74,13 @@ fun SettingsHostScreen(
     onBackgroundImageAlphaChange: (Float) -> Unit,
 ) {
     var showDownloadManager by rememberSaveable { mutableStateOf(false) }
+    
+    // 保存设置页面的滚动状态，使用正确的Saver
+    val settingsListSaver: Saver<LazyListState, *> = LazyListState.Saver
+    val settingsListState = rememberSaveable(saver = settingsListSaver) {
+        LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
+    }
+    
     BackHandler(enabled = showDownloadManager) { showDownloadManager = false }
 
     Surface(color = Color.Transparent) {
@@ -90,6 +99,7 @@ fun SettingsHostScreen(
         ) { current ->
             if (!current) {
                 SettingsScreen(
+                    listState = settingsListState,
                     dynamicColor = dynamicColor,
                     onDynamicColorChange = onDynamicColorChange,
                     forceDark = forceDark,

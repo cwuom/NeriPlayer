@@ -34,11 +34,13 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
@@ -69,7 +71,28 @@ fun LibraryHostScreen(
     onPlayParts: (BiliClient.VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> }
 ) {
     var selected by rememberSaveable { mutableStateOf<LibrarySelectedItem?>(null) }
+    // 保存当前选中的标签页索引
+    var selectedTabIndex by rememberSaveable { mutableStateOf(0) }
     BackHandler(enabled = selected != null) { selected = null }
+
+    // 保存各个列表的滚动状态
+    val localListSaver: Saver<LazyListState, *> = LazyListState.Saver
+    val neteaseListSaver: Saver<LazyListState, *> = LazyListState.Saver
+    val biliListSaver: Saver<LazyListState, *> = LazyListState.Saver
+    val qqMusicListSaver: Saver<LazyListState, *> = LazyListState.Saver
+
+    val localListState = rememberSaveable(saver = localListSaver) {
+        LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
+    }
+    val neteaseListState = rememberSaveable(saver = neteaseListSaver) {
+        LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
+    }
+    val biliListState = rememberSaveable(saver = biliListSaver) {
+        LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
+    }
+    val qqMusicListState = rememberSaveable(saver = qqMusicListSaver) {
+        LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
+    }
 
     Surface(color = Color.Transparent) {
         AnimatedContent(
@@ -87,6 +110,12 @@ fun LibraryHostScreen(
         ) { current ->
             if (current == null) {
                 LibraryScreen(
+                    initialTabIndex = selectedTabIndex,
+                    onTabIndexChange = { selectedTabIndex = it },
+                    localListState = localListState,
+                    neteaseListState = neteaseListState,
+                    biliListState = biliListState,
+                    qqMusicListState = qqMusicListState,
                     onLocalPlaylistClick = { playlist -> 
                         selected = LibrarySelectedItem.Local(playlist.id) 
                     },

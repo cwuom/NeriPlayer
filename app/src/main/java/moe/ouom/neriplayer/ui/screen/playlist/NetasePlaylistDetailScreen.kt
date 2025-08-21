@@ -260,7 +260,7 @@ fun PlaylistDetailScreen(
                         },
                         windowInsets = WindowInsets.statusBars,
                         colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.surface,
+                            containerColor = Color.Transparent,
                             scrolledContainerColor = MaterialTheme.colorScheme.surface
                         )
                     )
