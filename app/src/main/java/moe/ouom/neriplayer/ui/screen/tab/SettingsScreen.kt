@@ -347,7 +347,7 @@ fun SettingsScreen(
     }
 
     val importPlaylistLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
+        contract = OpenDocument()
     ) { uri ->
         if (uri != null) {
             backupRestoreVm.initialize(context)
@@ -356,7 +356,7 @@ fun SettingsScreen(
     }
 
     val analyzePlaylistLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
+        contract = OpenDocument()
     ) { uri ->
         if (uri != null) {
             backupRestoreVm.initialize(context)
@@ -976,25 +976,6 @@ fun SettingsScreen(
                             modifier = Modifier.clickable {
                                 if (!backupRestoreUiState.isImporting) {
                                     importPlaylistLauncher.launch(arrayOf("*/*"))
-                                }
-                            },
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                        )
-
-                        // 分析差异
-                        ListItem(
-                            leadingContent = {
-                                Icon(
-                                    Icons.Outlined.Analytics,
-                                    contentDescription = "分析差异",
-                                    tint = MaterialTheme.colorScheme.secondary
-                                )
-                            },
-                            headlineContent = { Text("分析差异") },
-                            supportingContent = { Text("分析备份文件与当前歌单的差异") },
-                            modifier = Modifier.clickable {
-                                if (!backupRestoreUiState.isAnalyzing) {
-                                    analyzePlaylistLauncher.launch(arrayOf("*/*"))
                                 }
                             },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
