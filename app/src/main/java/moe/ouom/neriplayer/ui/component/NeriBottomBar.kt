@@ -38,8 +38,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
-import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.hazeChild
 import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.util.performHapticFeedback
 
@@ -49,8 +47,10 @@ fun NeriBottomBar(
     currentDestination: NavDestination?,
     onItemSelected: (Destinations) -> Unit,
     modifier: Modifier = Modifier,
+    selectAlpha: Float = 1f
 ) {
     val context = LocalContext.current
+    val alwaysShowLabel = selectAlpha != 0f
 
     NavigationBar(
         modifier = modifier.background(Color.Transparent),
@@ -68,10 +68,11 @@ fun NeriBottomBar(
                 },
                 icon = { Icon(icon, contentDescription = dest.label) },
                 label = { Text(dest.label) },
+                alwaysShowLabel = alwaysShowLabel,
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
                     selectedTextColor = MaterialTheme.colorScheme.onSurface,
-                    indicatorColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
+                    indicatorColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = selectAlpha),
                     unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

@@ -33,8 +33,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.core.Spring
@@ -45,7 +43,6 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Home
@@ -82,6 +79,11 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.google.gson.Gson
+import dev.chrisbanes.haze.HazeDefaults
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.haze
+import dev.chrisbanes.haze.hazeChild
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.AudioPlayerService
@@ -105,17 +107,12 @@ import moe.ouom.neriplayer.ui.screen.host.SettingsHostScreen
 import moe.ouom.neriplayer.ui.screen.playlist.BiliPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.PlaylistDetailScreen
-import moe.ouom.neriplayer.ui.screen.tab.HomeScreen
-import moe.ouom.neriplayer.ui.screen.tab.LibraryScreen
-import moe.ouom.neriplayer.ui.screen.tab.SettingsScreen
 import moe.ouom.neriplayer.ui.theme.NeriTheme
 import moe.ouom.neriplayer.ui.view.HyperBackground
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.debug.LogViewerScreen
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
 import moe.ouom.neriplayer.util.NPLogger
-import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
 
 @Composable
 fun NeriApp(
@@ -136,7 +133,7 @@ fun NeriApp(
     val backgroundImageUri by repo.backgroundImageUriFlow.collectAsState(initial = null)
     val backgroundImageBlur by repo.backgroundImageBlurFlow.collectAsState(initial = 10f)
     val backgroundImageAlpha by repo.backgroundImageAlphaFlow.collectAsState(initial = 0.3f)
-
+    val hazeState = remember { HazeState() }
 
     val defaultDensity = LocalDensity.current
     var miniPlayerHeightPx by remember { mutableStateOf(0) }
@@ -198,15 +195,31 @@ fun NeriApp(
             }
 
             Box(modifier = Modifier.fillMaxSize()) {
+                val modifier = if (backgroundImageUri == null) {
+                    Modifier
+                } else Modifier
+                    .haze(
+                        hazeState,
+                        HazeStyle(
+                            tint = MaterialTheme.colorScheme.onSurface.copy(.0f),
+                            blurRadius = 30.dp,
+                            noiseFactor = HazeDefaults.noiseFactor
+                        ))
+
                 CustomBackground(
                     imageUri = backgroundImageUri,
                     blur = backgroundImageBlur,
-                    alpha = backgroundImageAlpha
+                    alpha = backgroundImageAlpha,
+                    modifier = modifier
                 )
 
                 val containerColor = if (backgroundImageUri == null) {
                     MaterialTheme.colorScheme.background
                 } else Color.Transparent
+
+                val selectAlpha = if (backgroundImageUri == null) {
+                    1f
+                } else 0f
 
                 val currentSong by PlayerManager.currentSongFlow.collectAsState()
                 val isMiniPlayerVisible = currentSong != null && !showNowPlaying
@@ -230,6 +243,8 @@ fun NeriApp(
                                 exit = slideOutVertically { it }
                             ) {
                                 NeriBottomBar(
+                                    modifier = Modifier.hazeChild(state = hazeState),
+                                    selectAlpha = selectAlpha,
                                     items = buildList {
                                         add(Destinations.Home to Icons.Outlined.Home)
                                         add(Destinations.Explore to Icons.Outlined.Search)
@@ -255,15 +270,29 @@ fun NeriApp(
                             }
                         }
                     ) { innerPadding ->
-                        Box(modifier = Modifier.padding(innerPadding)) {
+                        Box(modifier = Modifier
+                            .padding(
+                                bottom = innerPadding.calculateBottomPadding()-1.dp,
+                                top = innerPadding.calculateTopPadding()
+                            )
+                        ) {
                             NavHost(
                                 navController = navController,
                                 startDestination = Destinations.Home.route,
-                                modifier = Modifier.fillMaxSize()
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .haze(
+                                        hazeState,
+                                        HazeStyle(
+                                            tint = MaterialTheme.colorScheme.onSurface.copy(.0f),
+                                            blurRadius = 30.dp,
+                                            noiseFactor = HazeDefaults.noiseFactor
+                                        )
+                                    )
                             ) {
                                 composable(
                                     Destinations.Home.route,
-                                    enterTransition = { 
+                                    enterTransition = {
                                         scaleIn(
                                             animationSpec = spring(
                                                 dampingRatio = Spring.DampingRatioMediumBouncy,
@@ -274,7 +303,7 @@ fun NeriApp(
                                             animationSpec = tween(300, easing = EaseInOutCubic)
                                         )
                                     },
-                                    exitTransition = { 
+                                    exitTransition = {
                                         scaleOut(
                                             animationSpec = tween(200, easing = EaseInOutCubic),
                                             targetScale = 0.95f
@@ -282,7 +311,7 @@ fun NeriApp(
                                             animationSpec = tween(200, easing = EaseInOutCubic)
                                         )
                                     },
-                                    popEnterTransition = { 
+                                    popEnterTransition = {
                                         scaleIn(
                                             animationSpec = spring(
                                                 dampingRatio = Spring.DampingRatioMediumBouncy,
@@ -293,7 +322,7 @@ fun NeriApp(
                                             animationSpec = tween(300, easing = EaseInOutCubic)
                                         )
                                     },
-                                    popExitTransition = { 
+                                    popExitTransition = {
                                         scaleOut(
                                             animationSpec = tween(200, easing = EaseInOutCubic),
                                             targetScale = 0.85f
@@ -325,20 +354,20 @@ fun NeriApp(
                                     arguments = listOf(navArgument("playlistJson") {
                                         type = NavType.StringType
                                     }),
-                                    enterTransition = { 
+                                    enterTransition = {
                                         slideInVertically(
                                             animationSpec = tween(220)
                                         ) { it } + fadeIn()
                                     },
-                                    exitTransition = { 
+                                    exitTransition = {
                                         fadeOut(animationSpec = tween(160))
                                     },
-                                    popEnterTransition = { 
+                                    popEnterTransition = {
                                         slideInVertically(
                                             animationSpec = tween(200)
                                         ) { full -> -full / 6 } + fadeIn()
                                     },
-                                    popExitTransition = { 
+                                    popExitTransition = {
                                         slideOutVertically(
                                             animationSpec = tween(240)
                                         ) { it } + fadeOut()
@@ -373,20 +402,20 @@ fun NeriApp(
                                     arguments = listOf(navArgument("playlistJson") {
                                         type = NavType.StringType
                                     }),
-                                    enterTransition = { 
+                                    enterTransition = {
                                         slideInVertically(
                                             animationSpec = tween(220)
                                         ) { it } + fadeIn()
                                     },
-                                    exitTransition = { 
+                                    exitTransition = {
                                         fadeOut(animationSpec = tween(160))
                                     },
-                                    popEnterTransition = { 
+                                    popEnterTransition = {
                                         slideInVertically(
                                             animationSpec = tween(200)
                                         ) { full -> -full / 6 } + fadeIn()
                                     },
-                                    popExitTransition = { 
+                                    popExitTransition = {
                                         slideOutVertically(
                                             animationSpec = tween(240)
                                         ) { it } + fadeOut()
@@ -418,7 +447,7 @@ fun NeriApp(
 
                                 composable(
                                     Destinations.Explore.route,
-                                    enterTransition = { 
+                                    enterTransition = {
                                         scaleIn(
                                             animationSpec = spring(
                                                 dampingRatio = Spring.DampingRatioMediumBouncy,
@@ -429,7 +458,7 @@ fun NeriApp(
                                             animationSpec = tween(300, easing = EaseInOutCubic)
                                         )
                                     },
-                                    exitTransition = { 
+                                    exitTransition = {
                                         scaleOut(
                                             animationSpec = tween(200, easing = EaseInOutCubic),
                                             targetScale = 0.95f
@@ -437,7 +466,7 @@ fun NeriApp(
                                             animationSpec = tween(200, easing = EaseInOutCubic)
                                         )
                                     },
-                                    popEnterTransition = { 
+                                    popEnterTransition = {
                                         scaleIn(
                                             animationSpec = spring(
                                                 dampingRatio = Spring.DampingRatioMediumBouncy,
@@ -448,7 +477,7 @@ fun NeriApp(
                                             animationSpec = tween(300, easing = EaseInOutCubic)
                                         )
                                     },
-                                    popExitTransition = { 
+                                    popExitTransition = {
                                         scaleOut(
                                             animationSpec = tween(200, easing = EaseInOutCubic),
                                             targetScale = 0.85f
@@ -480,7 +509,7 @@ fun NeriApp(
 
                                 composable(
                                     Destinations.Library.route,
-                                    enterTransition = { 
+                                    enterTransition = {
                                         scaleIn(
                                             animationSpec = spring(
                                                 dampingRatio = Spring.DampingRatioMediumBouncy,
@@ -491,7 +520,7 @@ fun NeriApp(
                                             animationSpec = tween(300, easing = EaseInOutCubic)
                                         )
                                     },
-                                    exitTransition = { 
+                                    exitTransition = {
                                         scaleOut(
                                             animationSpec = tween(200, easing = EaseInOutCubic),
                                             targetScale = 0.95f
@@ -499,7 +528,7 @@ fun NeriApp(
                                             animationSpec = tween(200, easing = EaseInOutCubic)
                                         )
                                     },
-                                    popEnterTransition = { 
+                                    popEnterTransition = {
                                         scaleIn(
                                             animationSpec = spring(
                                                 dampingRatio = Spring.DampingRatioMediumBouncy,
@@ -510,7 +539,7 @@ fun NeriApp(
                                             animationSpec = tween(300, easing = EaseInOutCubic)
                                         )
                                     },
-                                    popExitTransition = { 
+                                    popExitTransition = {
                                         scaleOut(
                                             animationSpec = tween(200, easing = EaseInOutCubic),
                                             targetScale = 0.85f
@@ -548,20 +577,20 @@ fun NeriApp(
                                     arguments = listOf(navArgument("playlistId") {
                                         type = NavType.LongType
                                     }),
-                                    enterTransition = { 
+                                    enterTransition = {
                                         slideInVertically(
                                             animationSpec = tween(220)
                                         ) { it } + fadeIn()
                                     },
-                                    exitTransition = { 
+                                    exitTransition = {
                                         fadeOut(animationSpec = tween(160))
                                     },
-                                    popEnterTransition = { 
+                                    popEnterTransition = {
                                         slideInVertically(
                                             animationSpec = tween(200)
                                         ) { full -> -full / 6 } + fadeIn()
                                     },
-                                    popExitTransition = { 
+                                    popExitTransition = {
                                         slideOutVertically(
                                             animationSpec = tween(240)
                                         ) { it } + fadeOut()
@@ -591,7 +620,7 @@ fun NeriApp(
 
                                 composable(
                                     Destinations.Settings.route,
-                                    enterTransition = { 
+                                    enterTransition = {
                                         scaleIn(
                                             animationSpec = spring(
                                                 dampingRatio = Spring.DampingRatioMediumBouncy,
@@ -602,7 +631,7 @@ fun NeriApp(
                                             animationSpec = tween(300, easing = EaseInOutCubic)
                                         )
                                     },
-                                    exitTransition = { 
+                                    exitTransition = {
                                         scaleOut(
                                             animationSpec = tween(200, easing = EaseInOutCubic),
                                             targetScale = 0.95f
@@ -610,7 +639,7 @@ fun NeriApp(
                                             animationSpec = tween(200, easing = EaseInOutCubic)
                                         )
                                     },
-                                    popEnterTransition = { 
+                                    popEnterTransition = {
                                         scaleIn(
                                             animationSpec = spring(
                                                 dampingRatio = Spring.DampingRatioMediumBouncy,
@@ -621,7 +650,7 @@ fun NeriApp(
                                             animationSpec = tween(300, easing = EaseInOutCubic)
                                         )
                                     },
-                                    popExitTransition = { 
+                                    popExitTransition = {
                                         scaleOut(
                                             animationSpec = tween(200, easing = EaseInOutCubic),
                                             targetScale = 0.85f
@@ -675,23 +704,23 @@ fun NeriApp(
                                         }
                                     )
                                 }
-                                
+
                                 composable(
                                     route = Destinations.DownloadManager.route,
-                                    enterTransition = { 
+                                    enterTransition = {
                                         slideInVertically(
                                             animationSpec = tween(220)
                                         ) { it } + fadeIn()
                                     },
-                                    exitTransition = { 
+                                    exitTransition = {
                                         fadeOut(animationSpec = tween(160))
                                     },
-                                    popEnterTransition = { 
+                                    popEnterTransition = {
                                         slideInVertically(
                                             animationSpec = tween(200)
                                         ) { full -> -full / 6 } + fadeIn()
                                     },
-                                    popExitTransition = { 
+                                    popExitTransition = {
                                         slideOutVertically(
                                             animationSpec = tween(240)
                                         ) { it } + fadeOut()
@@ -704,7 +733,7 @@ fun NeriApp(
 
                                 composable(
                                     Destinations.Debug.route,
-                                    enterTransition = { 
+                                    enterTransition = {
                                         scaleIn(
                                             animationSpec = spring(
                                                 dampingRatio = Spring.DampingRatioMediumBouncy,
@@ -715,7 +744,7 @@ fun NeriApp(
                                             animationSpec = tween(300, easing = EaseInOutCubic)
                                         )
                                     },
-                                    exitTransition = { 
+                                    exitTransition = {
                                         scaleOut(
                                             animationSpec = tween(200, easing = EaseInOutCubic),
                                             targetScale = 0.95f
@@ -723,7 +752,7 @@ fun NeriApp(
                                             animationSpec = tween(200, easing = EaseInOutCubic)
                                         )
                                     },
-                                    popEnterTransition = { 
+                                    popEnterTransition = {
                                         scaleIn(
                                             animationSpec = spring(
                                                 dampingRatio = Spring.DampingRatioMediumBouncy,
@@ -734,7 +763,7 @@ fun NeriApp(
                                             animationSpec = tween(300, easing = EaseInOutCubic)
                                         )
                                     },
-                                    popExitTransition = { 
+                                    popExitTransition = {
                                         scaleOut(
                                             animationSpec = tween(200, easing = EaseInOutCubic),
                                             targetScale = 0.85f
@@ -817,7 +846,8 @@ fun NeriApp(
                                     onExpand = { showNowPlaying = true },
                                     onHeightChanged = { heightInPixels ->
                                         miniPlayerHeightPx = heightInPixels
-                                    }
+                                    },
+                                    hazeState = hazeState,
                                 )
                             }
                         }

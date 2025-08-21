@@ -61,6 +61,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeChild
 import moe.ouom.neriplayer.util.HapticIconButton
 
 @Composable
@@ -71,11 +73,13 @@ fun NeriMiniPlayer(
     isPlaying: Boolean,
     onPlayPause: () -> Unit,
     onExpand: () -> Unit,
-    onHeightChanged: (height: Int) -> Unit
+    onHeightChanged: (height: Int) -> Unit,
+    hazeState: HazeState
 ) {
+    val shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer
+            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(.4f)
         ),
         shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
         modifier = Modifier
@@ -84,6 +88,7 @@ fun NeriMiniPlayer(
             .onSizeChanged { size ->
                 onHeightChanged(size.height)
             }
+            .hazeChild(state = hazeState, shape = shape)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
