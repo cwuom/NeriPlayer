@@ -272,7 +272,7 @@ fun NeriApp(
                     ) { innerPadding ->
                         Box(modifier = Modifier
                             .padding(
-                                bottom = innerPadding.calculateBottomPadding()-1.dp,
+                                bottom = (innerPadding.calculateBottomPadding()-1.dp).coerceAtLeast(0.dp),
                                 top = innerPadding.calculateTopPadding()
                             )
                         ) {
