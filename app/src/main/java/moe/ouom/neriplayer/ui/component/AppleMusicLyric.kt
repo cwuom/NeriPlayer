@@ -240,7 +240,7 @@ fun AppleMusicLyric(
         contentAlignment = Alignment.Center
     ) {
         val centerPad = maxHeight / 2.5f
-        val maxTextWidth = maxWidth - 48.dp
+        val maxTextWidth = (maxWidth - 48.dp).coerceAtLeast(0.dp)
         val density = LocalDensity.current
 
         LazyColumn(
