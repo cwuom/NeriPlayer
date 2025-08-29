@@ -36,6 +36,7 @@ import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SettingsBackupRestore
+import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -57,6 +58,7 @@ fun DebugHomeScreen(
     onOpenSearchDebug: () -> Unit,
     onOpenLogs: () -> Unit,
     onHideDebugMode: () -> Unit,
+    onTestExceptionHandler: () -> Unit = {},
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         ListItem(
@@ -137,6 +139,21 @@ fun DebugHomeScreen(
                     headlineContent = { Text("查看应用日志") },
                     supportingContent = { Text("查看、复制和导出本次运行的日志") },
                     modifier = Modifier.clickable(onClick = onOpenLogs), // 使用新回调
+                    colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                )
+
+                ListItem(
+                    leadingContent = {
+                        Icon(
+                            imageVector = Icons.Outlined.Warning,
+                            contentDescription = "异常测试",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    },
+                    headlineContent = { Text("测试异常处理器") },
+                    supportingContent = { Text("测试异常捕获、日志记录和弹窗显示") },
+                    modifier = Modifier.clickable(onClick = onTestExceptionHandler),
                     colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
                 )
             }

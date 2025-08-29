@@ -113,6 +113,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.debug.LogViewerScreen
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
 import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.util.ExceptionHandler
 
 @Composable
 fun NeriApp(
@@ -777,6 +778,12 @@ fun NeriApp(
                                         onOpenNeteaseDebug = { navController.navigate(Destinations.DebugNetease.route) },
                                         onOpenSearchDebug = { navController.navigate(Destinations.DebugSearch.route) },
                                         onOpenLogs = { navController.navigate(Destinations.DebugLogsList.route) },
+                                        onTestExceptionHandler = {
+                                            // 测试异常处理器
+                                            ExceptionHandler.safeExecute("DebugTest") {
+                                                throw RuntimeException("这是一个测试异常，用于验证异常处理器的功能")
+                                            }
+                                        },
                                         onHideDebugMode = {
                                             scope.launch {
                                                 repo.setDevModeEnabled(false)

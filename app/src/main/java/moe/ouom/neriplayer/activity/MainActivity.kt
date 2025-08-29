@@ -98,6 +98,7 @@ import moe.ouom.neriplayer.ui.NeriApp
 import moe.ouom.neriplayer.util.HapticButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.util.ExceptionHandler
 
 private enum class AppStage { Loading, Disclaimer, Main }
 
@@ -193,7 +194,19 @@ class MainActivity : ComponentActivity() {
                             // 弹窗状态管理和事件监听
                             var showDialog by remember { mutableStateOf(false) }
                             var dialogMessage by remember { mutableStateOf("") }
+                            var showErrorDialog by remember { mutableStateOf(false) }
+                            var errorTitle by remember { mutableStateOf("") }
+                            var errorMessage by remember { mutableStateOf("") }
                             val lifecycleOwner = LocalLifecycleOwner.current
+
+                            // 初始化异常处理器
+                            LaunchedEffect(Unit) {
+                                ExceptionHandler.init(this@MainActivity) { title, message ->
+                                    errorTitle = title
+                                    errorMessage = message
+                                    showErrorDialog = true
+                                }
+                            }
 
 
                             LaunchedEffect(lifecycleOwner.lifecycle) {
@@ -227,6 +240,20 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
 
+                            // 异常错误弹窗
+                            if (showErrorDialog) {
+                                AlertDialog(
+                                    onDismissRequest = { showErrorDialog = false },
+                                    title = { Text(errorTitle) },
+                                    text = { Text(errorMessage) },
+                                    confirmButton = {
+                                        HapticTextButton(onClick = { showErrorDialog = false }) {
+                                            Text("确定")
+                                        }
+                                    }
+                                )
+                            }
+
                             NeriApp(
                                 onIsDarkChanged = { isDark ->
                                     // 仅调整窗口底色 & 系统栏外观
@@ -249,6 +276,11 @@ class MainActivity : ComponentActivity() {
             window.statusBarColor = Color.TRANSPARENT
             window.navigationBarColor = Color.TRANSPARENT
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        ExceptionHandler.cleanup()
     }
 }
 
