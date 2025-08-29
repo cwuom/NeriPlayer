@@ -30,7 +30,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    if: ${{ !startsWith(github.event.head_commit.message, '[skip ci]') && success() && (github.ref == 'refs/heads/master' || github.event_name == 'pull_request') }}
+    if: ${{ !startsWith(github.event.head_commit.message, '[skip ci]') && (github.ref == 'refs/heads/master' || github.event_name == 'pull_request') }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,6 +46,7 @@ jobs:
           cache: gradle
 
       - name: Decode keystore
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         run: |
           mkdir -p app
           echo "$KEYSTORE_B64" | base64 -d > app/neri.jks
@@ -55,7 +56,12 @@ jobs:
       - name: Grant execute permission
         run: chmod +x gradlew
 
-      - name: Build signed Release
+      - name: Build unsigned Release for PR
+        if: github.event_name == 'pull_request'
+        run: ./gradlew assembleRelease --warning-mode all --stacktrace
+
+      - name: Build signed Release for master
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         run: |
           ./gradlew assembleRelease \
             -PKEYSTORE_FILE=neri.jks \
@@ -63,7 +69,9 @@ jobs:
             -PKEY_ALIAS=key0 \
             -PKEY_PASSWORD=${{ secrets.KEY_PASSWORD }} \
             --warning-mode all --stacktrace
+
       - name: Upload Release APK
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         uses: actions/upload-artifact@v4
         with:
           name: neri-apk
