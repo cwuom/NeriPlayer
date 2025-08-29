@@ -312,7 +312,35 @@ object AudioDownloadManager {
         val raw = AppContainer.neteaseClient.getSongDownloadUrl(songId, level = quality)
         return try {
             val root = JSONObject(raw)
-            if (root.optInt("code") != 200) return null
+            if (root.optInt("code") != 200) return tryWeapiFallback(songId, quality)
+            val data = when (val d = root.opt("data")) {
+                is JSONObject -> d
+                is JSONArray -> d.optJSONObject(0)
+                else -> null
+            } ?: return tryWeapiFallback(songId, quality)
+            val url = data.optString("url", "")
+            if (url.isNullOrBlank()) return tryWeapiFallback(songId, quality)
+            val type = data.optString("type", "") // e.g., mp3/flac
+            val mime = guessMimeFromUrl(url)
+            Triple(ensureHttps(url), mime, type.lowercase())
+        } catch (_: Exception) {
+            tryWeapiFallback(songId, quality)
+        }
+    }
+
+    private fun bitrateForQuality(level: String): Int = when (level.lowercase()) {
+        "standard" -> 128000
+        "exhigh" -> 320000
+        "lossless", "hires", "jyeffect", "sky", "jymaster" -> 1411200
+        else -> 320000
+    }
+
+    private fun tryWeapiFallback(songId: Long, level: String): Triple<String, String?, String?>? {
+        return try {
+            val br = bitrateForQuality(level)
+            val raw = AppContainer.neteaseClient.getSongUrl(songId, bitrate = br)
+            val root = JSONObject(raw)
+            if (root.optInt("code", -1) != 200) return null
             val data = when (val d = root.opt("data")) {
                 is JSONObject -> d
                 is JSONArray -> d.optJSONObject(0)
@@ -320,12 +348,11 @@ object AudioDownloadManager {
             } ?: return null
             val url = data.optString("url", "")
             if (url.isNullOrBlank()) return null
-            val type = data.optString("type", "") // e.g., mp3/flac
-            val mime = guessMimeFromUrl(url)
-            Triple(ensureHttps(url), mime, type.lowercase())
-        } catch (_: Exception) {
-            null
-        }
+            val finalUrl = ensureHttps(url)
+            val mime = guessMimeFromUrl(finalUrl)
+            val ext = extFromUrl(finalUrl)
+            Triple(finalUrl, mime, ext)
+        } catch (_: Exception) { null }
     }
 
     // 解析 B 站音频直链（按偏好选择）

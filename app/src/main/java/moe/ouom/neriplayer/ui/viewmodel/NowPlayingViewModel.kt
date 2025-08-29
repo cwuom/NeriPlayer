@@ -35,6 +35,8 @@ import moe.ouom.neriplayer.core.api.search.SongSearchInfo
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.SearchManager
+import android.content.Context
+import moe.ouom.neriplayer.core.player.AudioDownloadManager
 
 data class ManualSearchState(
     val keyword: String = "",
@@ -88,5 +90,11 @@ class NowPlayingViewModel : ViewModel() {
 
     fun onSongSelected(originalSong: SongItem, selectedSong: SongSearchInfo) {
         PlayerManager.replaceMetadataFromSearch(originalSong, selectedSong)
+    }
+
+    fun downloadSong(context: Context, song: SongItem) {
+        viewModelScope.launch {
+            AudioDownloadManager.downloadSong(context, song)
+        }
     }
 }

@@ -82,6 +82,10 @@ import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.formatDurationSec
 import moe.ouom.neriplayer.util.performHapticFeedback
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.AudioDownloadManager
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -110,6 +114,11 @@ fun BiliPlaylistDetailScreen(
         }
     )
     LaunchedEffect(playlist.mediaId) { vm.start(playlist) }
+
+    // 下载进度
+    var showDownloadManager by remember { mutableStateOf(false) }
+    val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
+    val isCancelled by AudioDownloadManager.isCancelledFlow.collectAsState()
 
     val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
     val allLocalPlaylists by repo.playlists.collectAsState(initial = emptyList())
@@ -177,6 +186,16 @@ fun BiliPlaylistDetailScreen(
                                 showSearch = !showSearch
                                 if (!showSearch) searchQuery = ""
                             }) { Icon(Icons.Filled.Search, contentDescription = "搜索视频") }
+
+                            if (batchDownloadProgress != null) {
+                                HapticIconButton(onClick = { showDownloadManager = true }) {
+                                    Icon(
+                                        Icons.Outlined.Download,
+                                        contentDescription = "下载管理器",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
                         },
                         windowInsets = WindowInsets.statusBars,
                         colors = TopAppBarDefaults.topAppBarColors(
@@ -207,30 +226,18 @@ fun BiliPlaylistDetailScreen(
                                 Icon(Icons.AutoMirrored.Outlined.PlaylistAdd, contentDescription = "导出到歌单")
                             }
                             HapticIconButton(
-                                onClick = { 
+                                onClick = {
                                     if (selectedIds.isNotEmpty()) {
-                                        // 先立即退出多选
-                                        exitSelection()
-                                        val selectedSongs = ArrayList<SongItem>()
-                                        ui.videos.forEach { video: BiliVideoItem ->
-                                            if (video.bvid in selectedIds) {
-                                                selectedSongs.add(
-                                                    SongItem(
-                                                        id = video.bvid.hashCode().toLong(),
-                                                        name = video.title,
-                                                        artist = video.uploader,
-                                                        album = "B站视频",
-                                                        durationMs = video.durationSec * 1000L,
-                                                        coverUrl = video.coverUrl,
-                                                        matchedLyric = null,
-                                                        matchedLyricSource = null,
-                                                        userLyricOffsetMs = 0L
-                                                    )
-                                                )
-                                            }
+                                        val selectedSongs = ui.videos
+                                            .filter { it.bvid in selectedIds }
+                                            .map { it.toSongItem() }
+
+                                        scope.launch {
+                                            val appCtx = context.applicationContext
+                                            AudioDownloadManager.downloadPlaylist(appCtx, selectedSongs)
                                         }
-                                        // 开始批量下载
-                                        downloadManager.startBatchDownload(context, selectedSongs)
+
+                                        exitSelection()
                                     }
                                 },
                                 enabled = selectedIds.isNotEmpty()
@@ -441,6 +448,139 @@ fun BiliPlaylistDetailScreen(
                 }
             }
 
+            // 下载管理器
+            if (showDownloadManager) {
+                ModalBottomSheet(
+                    onDismissRequest = { showDownloadManager = false }
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "下载管理器",
+                                style = MaterialTheme.typography.titleLarge
+                            )
+                            HapticIconButton(onClick = { showDownloadManager = false }) {
+                                Icon(Icons.Filled.Close, contentDescription = "关闭")
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        batchDownloadProgress?.let { progress ->
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                )
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            "下载进度: ${progress.completedSongs}/${progress.totalSongs}",
+                                            style = MaterialTheme.typography.titleMedium
+                                        )
+                                        HapticTextButton(onClick = { AudioDownloadManager.cancelDownload() }) {
+                                            Text("取消", color = MaterialTheme.colorScheme.error)
+                                        }
+                                    }
+
+                                    if (progress.currentSong.isNotBlank()) {
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Text(
+                                            "正在下载: ${progress.currentSong}",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.height(12.dp))
+
+                                    Text(
+                                        "总体进度: ${progress.percentage}%",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    val animatedOverallProgress by animateFloatAsState(
+                                        targetValue = (progress.percentage / 100f).coerceIn(0f, 1f),
+                                        animationSpec = spring(
+                                            dampingRatio = Spring.DampingRatioNoBouncy,
+                                            stiffness = Spring.StiffnessMedium
+                                        ),
+                                        label = "overallProgress"
+                                    )
+                                    LinearProgressIndicator(
+                                        progress = { animatedOverallProgress },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+
+                                    progress.currentProgress?.let { currentProgress ->
+                                        Spacer(modifier = Modifier.height(12.dp))
+                                        Text(
+                                            "当前文件: ${currentProgress.percentage}% (${currentProgress.speedBytesPerSec / 1024} KB/s)",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        val animatedCurrentProgress by animateFloatAsState(
+                                            targetValue = if (currentProgress.totalBytes > 0) {
+                                                (currentProgress.bytesRead.toFloat() / currentProgress.totalBytes).coerceIn(0f, 1f)
+                                            } else 0f,
+                                            animationSpec = spring(
+                                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                                stiffness = Spring.StiffnessMedium
+                                            ),
+                                            label = "currentProgress"
+                                        )
+                                        LinearProgressIndicator(
+                                            progress = { animatedCurrentProgress },
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    }
+                                }
+                            }
+                        } ?: run {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(
+                                    Icons.Outlined.Download,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(64.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text(
+                                    "暂无下载任务",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    "选择歌曲后点击下载按钮开始下载",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(20.dp))
+                    }
+                }
+            }
+
             if (showPartsSheet && partsInfo != null) {
                 val currentPartsInfo = partsInfo!!
                 BackHandler(enabled = partsSelectionMode) { exitPartsSelection() }
@@ -579,7 +719,7 @@ private fun BiliVideoItem.toSongItem(): SongItem {
         id = this.id,
         name = this.title,
         artist = this.uploader,
-        album = "Bilibili",
+        album = PlayerManager.BILI_SOURCE_TAG,
         durationMs = this.durationSec * 1000L,
         coverUrl = this.coverUrl
     )

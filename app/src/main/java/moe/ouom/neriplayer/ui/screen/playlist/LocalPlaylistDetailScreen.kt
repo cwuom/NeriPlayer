@@ -471,7 +471,7 @@ fun LocalPlaylistDetailScreen(
                                         if (selectedIdsState.value.isNotEmpty()) {
                                             val selectedSongs = localSongs.filter { it.id in selectedIdsState.value }
                                             exitSelectionMode()
-                                            kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                            scope.launch {
                                                 AudioDownloadManager.downloadPlaylist(context, selectedSongs)
                                             }
                                         }

@@ -114,21 +114,26 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.PlaylistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.DownloadManagerViewModel
-import moe.ouom.neriplayer.util.NPLogger
-import moe.ouom.neriplayer.util.formatDuration
-import moe.ouom.neriplayer.util.formatPlayCount
+import moe.ouom.neriplayer.core.player.AudioDownloadManager
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Shadow
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.util.formatDuration
+import moe.ouom.neriplayer.util.formatPlayCount
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import moe.ouom.neriplayer.util.HapticFloatingActionButton
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.performHapticFeedback
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.IconButton
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -156,6 +161,11 @@ fun PlaylistDetailScreen(
         }
     )
     val ui by vm.uiState.collectAsState()
+
+    // 下载进度
+    var showDownloadManager by remember { mutableStateOf(false) }
+    val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
+    val isCancelled by AudioDownloadManager.isCancelledFlow.collectAsState()
 
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
     val listState = rememberLazyListState()
@@ -212,6 +222,16 @@ fun PlaylistDetailScreen(
                                 showSearch = !showSearch
                                 if (!showSearch) searchQuery = ""
                             }) { Icon(Icons.Filled.Search, contentDescription = "搜索歌曲") }
+
+                            if (batchDownloadProgress != null) {
+                                HapticIconButton(onClick = { showDownloadManager = true }) {
+                                    Icon(
+                                        Icons.Outlined.Download,
+                                        contentDescription = "下载管理器",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
                         },
                         windowInsets = WindowInsets.statusBars,
                         colors = TopAppBarDefaults.topAppBarColors(
@@ -244,13 +264,14 @@ fun PlaylistDetailScreen(
                                 Icon(Icons.AutoMirrored.Outlined.PlaylistAdd, contentDescription = "导出到歌单")
                             }
                             HapticIconButton(
-                                onClick = { 
+                                onClick = {
                                     if (selectedIds.isNotEmpty()) {
-                                        // 先立即退出多选，避免组合离开导致作用域取消
+                                        val selectedSongs = ui.tracks.filter { it.id in selectedIds }
+                                        scope.launch {
+                                            val appCtx = context.applicationContext
+                                            AudioDownloadManager.downloadPlaylist(appCtx, selectedSongs)
+                                        }
                                         exitSelection()
-                                        val selectedSongs = ui.tracks.filter { selectedIds.contains(it.id) }
-                                        // 开始批量下载（ViewModel 使用应用作用域）
-                                        downloadManager.startBatchDownload(context, selectedSongs)
                                     }
                                 },
                                 enabled = selectedIds.isNotEmpty()
@@ -525,6 +546,139 @@ fun PlaylistDetailScreen(
             }
             // 允许返回键优先退出多选
             BackHandler(enabled = selectionMode) { exitSelection() }
+        }
+    }
+
+    // 下载管理器
+    if (showDownloadManager) {
+        ModalBottomSheet(
+            onDismissRequest = { showDownloadManager = false }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "下载管理器",
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                    HapticIconButton(onClick = { showDownloadManager = false }) {
+                        Icon(Icons.Filled.Close, contentDescription = "关闭")
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                batchDownloadProgress?.let { progress ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        )
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "下载进度: ${progress.completedSongs}/${progress.totalSongs}",
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                HapticTextButton(onClick = { AudioDownloadManager.cancelDownload() }) {
+                                    Text("取消", color = MaterialTheme.colorScheme.error)
+                                }
+                            }
+
+                            if (progress.currentSong.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    "正在下载: ${progress.currentSong}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Text(
+                                "总体进度: ${progress.percentage}%",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            val animatedOverallProgress by animateFloatAsState(
+                                targetValue = (progress.percentage / 100f).coerceIn(0f, 1f),
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                    stiffness = Spring.StiffnessMedium
+                                ),
+                                label = "overallProgress"
+                            )
+                            LinearProgressIndicator(
+                                progress = { animatedOverallProgress },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            progress.currentProgress?.let { currentProgress ->
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    "当前文件: ${currentProgress.percentage}% (${currentProgress.speedBytesPerSec / 1024} KB/s)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                val animatedCurrentProgress by animateFloatAsState(
+                                    targetValue = if (currentProgress.totalBytes > 0) {
+                                        (currentProgress.bytesRead.toFloat() / currentProgress.totalBytes).coerceIn(0f, 1f)
+                                    } else 0f,
+                                    animationSpec = spring(
+                                        dampingRatio = Spring.DampingRatioNoBouncy,
+                                        stiffness = Spring.StiffnessMedium
+                                    ),
+                                    label = "currentProgress"
+                                )
+                                LinearProgressIndicator(
+                                    progress = { animatedCurrentProgress },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+                    }
+                } ?: run {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            Icons.Outlined.Download,
+                            contentDescription = null,
+                            modifier = Modifier.size(64.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            "暂无下载任务",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            "选择歌曲后点击下载按钮开始下载",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+            }
         }
     }
 }

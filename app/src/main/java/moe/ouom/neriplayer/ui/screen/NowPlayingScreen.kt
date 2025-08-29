@@ -794,8 +794,8 @@ private fun MoreOptionsSheet(
                                 headlineContent = { Text("下载到本地") },
                                 leadingContent = { Icon(Icons.Outlined.Download, null) },
                                 modifier = Modifier.clickable {
+                                    viewModel.downloadSong(context, originalSong)
                                     coroutineScope.launch {
-                                        AudioDownloadManager.downloadSong(context, originalSong)
                                         snackbarHostState.showSnackbar("开始下载：${originalSong.name}")
                                     }
                                     onDismiss()
