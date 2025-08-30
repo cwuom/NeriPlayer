@@ -15,7 +15,7 @@ object DynamicProxySelector : ProxySelector() {
     @Volatile
     var bypassProxy: Boolean = true
 
-    private val systemDefault: ProxySelector? = ProxySelector.getDefault()
+    private val systemDefault: ProxySelector? = getDefault()
 
     override fun select(uri: URI?): List<Proxy> {
         if (uri == null) return listOf(Proxy.NO_PROXY)

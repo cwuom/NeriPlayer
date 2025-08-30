@@ -223,8 +223,7 @@ fun LocalPlaylistDetailScreen(
             
             // 下载进度
             val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
-            val isCancelled by AudioDownloadManager.isCancelledFlow.collectAsState()
-            
+
             // Snackbar状态
             val snackbarHostState = remember { SnackbarHostState() }
 
@@ -719,14 +718,6 @@ fun LocalPlaylistDetailScreen(
                                         // 右侧：非多选为时间/播放态；多选为手柄
                                         val isPlayingSong = currentSong?.id == song.id && currentSong?.album == song.album
                                         val trailingVisible = !isDragging && !selectionMode
-                                        val trailingScale by animateFloatAsState(
-                                            targetValue = if (trailingVisible) 1f else 0.85f,
-                                            animationSpec = tween(
-                                                120,
-                                                easing = FastOutSlowInEasing
-                                            ),
-                                            label = "trailing-scale"
-                                        )
 
                                         if (!selectionMode) {
                                             AnimatedVisibility(

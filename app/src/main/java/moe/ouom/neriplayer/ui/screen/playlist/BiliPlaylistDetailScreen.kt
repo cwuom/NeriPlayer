@@ -106,20 +106,11 @@ fun BiliPlaylistDetailScreen(
         }
     )
     val ui by vm.uiState.collectAsState()
-    val downloadManager: DownloadManagerViewModel = viewModel(
-        factory = viewModelFactory {
-            initializer {
-                val app = context.applicationContext as Application
-                DownloadManagerViewModel(app)
-            }
-        }
-    )
     LaunchedEffect(playlist.mediaId) { vm.start(playlist) }
 
     // 下载进度
     var showDownloadManager by remember { mutableStateOf(false) }
     val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
-    val isCancelled by AudioDownloadManager.isCancelledFlow.collectAsState()
 
     val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
     val allLocalPlaylists by repo.playlists.collectAsState(initial = emptyList())

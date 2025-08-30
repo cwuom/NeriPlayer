@@ -339,7 +339,7 @@ fun SettingsScreen(
 
     // 备份与恢复的SAF启动器
     val exportPlaylistLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("application/json")
+        contract = CreateDocument("application/json")
     ) { uri ->
         if (uri != null) {
             backupRestoreVm.initialize(context)
@@ -356,7 +356,7 @@ fun SettingsScreen(
         }
     }
 
-    val analyzePlaylistLauncher = rememberLauncherForActivityResult(
+    rememberLauncherForActivityResult(
         contract = OpenDocument()
     ) { uri ->
         if (uri != null) {

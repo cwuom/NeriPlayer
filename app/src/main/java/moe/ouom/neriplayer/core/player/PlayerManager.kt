@@ -270,7 +270,7 @@ object PlayerManager {
         )
 
         // Use OkHttpDataSource with a shared OkHttpClient from AppContainer to honor proxy settings
-        val okHttpClient = moe.ouom.neriplayer.core.di.AppContainer.sharedOkHttpClient
+        val okHttpClient = AppContainer.sharedOkHttpClient
         val upstreamFactory: HttpDataSource.Factory = OkHttpDataSource.Factory(okHttpClient)
         val conditionalHttpFactory = ConditionalHttpDataSourceFactory(upstreamFactory, biliCookieRepo)
 

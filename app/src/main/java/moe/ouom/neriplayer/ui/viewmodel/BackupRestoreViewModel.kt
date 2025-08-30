@@ -226,6 +226,6 @@ data class BackupRestoreUiState(
     val lastExportMessage: String? = null,
     val lastImportSuccess: Boolean? = null,
     val lastImportMessage: String? = null,
-    val differenceAnalysis: moe.ouom.neriplayer.data.BackupManager.DifferenceAnalysis? = null,
+    val differenceAnalysis: BackupManager.DifferenceAnalysis? = null,
     val lastAnalysisError: String? = null
 )
