@@ -416,8 +416,12 @@ fun LocalPlaylistDetailScreen(
                                 
                                 if (!isFavorites) {
                                     HapticIconButton(onClick = {
+                                        renameText = TextFieldValue(playlist.name)
+                                        renameError = null
                                         showRename = true
-                                    }) { Icon(Icons.Filled.Edit, contentDescription = "重命名") }
+                                    }) {
+                                        Icon(Icons.Filled.Edit, contentDescription = "重命名")
+                                    }
                                     HapticIconButton(onClick = {
                                         showDeletePlaylistConfirm = true
                                     }) {
