@@ -39,7 +39,18 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.core.content.getSystemService
 
+// 全局触感反馈开关，默认开启
+var hapticFeedbackEnabled: Boolean = true
+
+// 同步触感反馈设置
+fun syncHapticFeedbackSetting(enabled: Boolean) {
+    hapticFeedbackEnabled = enabled
+}
+
 fun Context.performHapticFeedback() {
+    // 检查全局开关
+    if (!hapticFeedbackEnabled) return
+    
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
         val vibrator = getSystemService(Vibrator::class.java) ?: return
         if (!vibrator.hasVibrator()) return

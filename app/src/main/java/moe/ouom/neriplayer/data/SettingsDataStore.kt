@@ -53,6 +53,7 @@ object SettingsKeys {
     val BACKGROUND_IMAGE_URI = stringPreferencesKey("background_image_uri")
     val BACKGROUND_IMAGE_BLUR = floatPreferencesKey("background_image_blur")
     val BACKGROUND_IMAGE_ALPHA = floatPreferencesKey("background_image_alpha")
+    val HAPTIC_FEEDBACK_ENABLED = booleanPreferencesKey("haptic_feedback_enabled")
 }
 
 
@@ -109,6 +110,9 @@ class SettingsRepository(private val context: Context) {
     val backgroundImageAlphaFlow: Flow<Float> =
         context.dataStore.data.map { it[SettingsKeys.BACKGROUND_IMAGE_ALPHA] ?: 0.3f }
 
+    val hapticFeedbackEnabledFlow: Flow<Boolean> =
+        context.dataStore.data.map { it[SettingsKeys.HAPTIC_FEEDBACK_ENABLED] ?: true }
+
     val disclaimerAcceptedFlow: Flow<Boolean?> =
         flow {
             emit(null) // 加载态
@@ -156,6 +160,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setBypassProxy(enabled: Boolean) {
         context.dataStore.edit { it[SettingsKeys.BYPASS_PROXY] = enabled }
+    }
+
+    suspend fun setHapticFeedbackEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.HAPTIC_FEEDBACK_ENABLED] = enabled }
     }
 
     suspend fun setBackgroundImageUri(uri: String?) {

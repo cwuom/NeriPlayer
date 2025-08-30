@@ -114,6 +114,7 @@ import moe.ouom.neriplayer.ui.viewmodel.debug.LogViewerScreen
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.ExceptionHandler
+import moe.ouom.neriplayer.util.syncHapticFeedbackSetting
 
 @Composable
 fun NeriApp(
@@ -134,7 +135,13 @@ fun NeriApp(
     val backgroundImageUri by repo.backgroundImageUriFlow.collectAsState(initial = null)
     val backgroundImageBlur by repo.backgroundImageBlurFlow.collectAsState(initial = 10f)
     val backgroundImageAlpha by repo.backgroundImageAlphaFlow.collectAsState(initial = 0.3f)
+    val hapticFeedbackEnabled by repo.hapticFeedbackEnabledFlow.collectAsState(initial = true)
     val hazeState = remember { HazeState() }
+
+    // 同步触感反馈设置
+    LaunchedEffect(hapticFeedbackEnabled) {
+        syncHapticFeedbackSetting(hapticFeedbackEnabled)
+    }
 
     val defaultDensity = LocalDensity.current
     var miniPlayerHeightPx by remember { mutableStateOf(0) }
@@ -701,6 +708,13 @@ fun NeriApp(
                                         backgroundImageAlpha = backgroundImageAlpha,
                                         onBackgroundImageAlphaChange = { alpha ->
                                             scope.launch { repo.setBackgroundImageAlpha(alpha) }
+                                        },
+                                        hapticFeedbackEnabled = hapticFeedbackEnabled,
+                                        onHapticFeedbackEnabledChange = { enabled ->
+                                            scope.launch { 
+                                                repo.setHapticFeedbackEnabled(enabled)
+                                                syncHapticFeedbackSetting(enabled)
+                                            }
                                         }
                                     )
                                 }

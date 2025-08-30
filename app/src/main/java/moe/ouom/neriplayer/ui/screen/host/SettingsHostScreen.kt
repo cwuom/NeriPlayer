@@ -72,6 +72,8 @@ fun SettingsHostScreen(
     onBackgroundImageBlurChange: (Float) -> Unit,
     backgroundImageAlpha: Float,
     onBackgroundImageAlphaChange: (Float) -> Unit,
+    hapticFeedbackEnabled: Boolean,
+    onHapticFeedbackEnabledChange: (Boolean) -> Unit,
 ) {
     var showDownloadManager by rememberSaveable { mutableStateOf(false) }
     
@@ -124,6 +126,8 @@ fun SettingsHostScreen(
                     onBackgroundImageBlurChange = onBackgroundImageBlurChange,
                     backgroundImageAlpha = backgroundImageAlpha,
                     onBackgroundImageAlphaChange = onBackgroundImageAlphaChange,
+                    hapticFeedbackEnabled = hapticFeedbackEnabled,
+                    onHapticFeedbackEnabledChange = onHapticFeedbackEnabledChange,
                     onNavigateToDownloadManager = { showDownloadManager = true }
                 )
             } else {

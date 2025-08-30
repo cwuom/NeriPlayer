@@ -70,6 +70,7 @@ import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.outlined.AdsClick
 import androidx.compose.material.icons.outlined.BlurOn
 import androidx.compose.material.icons.outlined.Brightness4
 import androidx.compose.material.icons.outlined.ColorLens
@@ -261,6 +262,8 @@ fun SettingsScreen(
     onBackgroundImageBlurChange: (Float) -> Unit,
     backgroundImageAlpha: Float,
     onBackgroundImageAlphaChange: (Float) -> Unit,
+    hapticFeedbackEnabled: Boolean,
+    onHapticFeedbackEnabledChange: (Boolean) -> Unit,
     onNavigateToDownloadManager: () -> Unit = {},
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -522,6 +525,26 @@ fun SettingsScreen(
                 )
             }
 
+            item {
+                // 触感反馈
+                ListItem(
+                    leadingContent = {
+                        Icon(
+                            imageVector = Icons.Outlined.AdsClick,
+                            contentDescription = "触感反馈",
+                            modifier = Modifier.size(24.dp),
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    headlineContent = { Text("触感反馈") },
+                    supportingContent = { Text("开启后点击按钮时会有震动反馈") },
+                    trailingContent = {
+                        Switch(checked = hapticFeedbackEnabled, onCheckedChange = onHapticFeedbackEnabledChange)
+                    },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                )
+            }
+
             // 登录三方平台
             item {
                 ExpandableHeader(
@@ -665,6 +688,7 @@ fun SettingsScreen(
                             },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
+                        
                         UiScaleListItem(currentScale = uiDensityScale, onClick = { showDpiDialog = true })
 
                         // 选择背景图
