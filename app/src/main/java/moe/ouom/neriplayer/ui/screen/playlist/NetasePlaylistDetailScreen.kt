@@ -130,6 +130,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.util.HapticFloatingActionButton
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
@@ -267,10 +268,7 @@ fun PlaylistDetailScreen(
                                 onClick = {
                                     if (selectedIds.isNotEmpty()) {
                                         val selectedSongs = ui.tracks.filter { it.id in selectedIds }
-                                        scope.launch {
-                                            val appCtx = context.applicationContext
-                                            AudioDownloadManager.downloadPlaylist(appCtx, selectedSongs)
-                                        }
+                                        GlobalDownloadManager.startBatchDownload(context, selectedSongs)
                                         exitSelection()
                                     }
                                 },

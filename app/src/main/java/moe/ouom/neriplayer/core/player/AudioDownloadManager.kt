@@ -124,8 +124,9 @@ object AudioDownloadManager {
 
                 val baseDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir
                 val downloadDir = File(baseDir, "NeriPlayer").apply { mkdirs() }
-                val destFile = uniqueFile(downloadDir, fileName)
-                
+                val tempFile = File(downloadDir, "$fileName.downloading")
+                if (tempFile.exists()) tempFile.delete()
+
                 // 同时下载歌词
                 if (!song.album.startsWith("Bilibili")) {
                     downloadLyrics(context, song)
@@ -164,7 +165,12 @@ object AudioDownloadManager {
                 val client = AppContainer.sharedOkHttpClient
 
                 // 貌似很多平台都不支持多线程下载(x  所以采用单线程
-                singleThreadDownload(client, request, destFile)
+                // 传入临时文件
+                singleThreadDownload(client, request, tempFile)
+
+                // 下载完成后，重命名为正式文件
+                val destFile = File(downloadDir, fileName)
+                tempFile.renameTo(destFile)
 
                 _progressFlow.value = null
                 // 通知媒体库（仅当保存到公共目录时必要；App 专属目录通常播放器可直接访问）

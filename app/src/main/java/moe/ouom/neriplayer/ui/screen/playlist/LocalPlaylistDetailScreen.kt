@@ -126,6 +126,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import android.app.Application
 import kotlinx.coroutines.DelicateCoroutinesApi
+import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
@@ -471,9 +472,7 @@ fun LocalPlaylistDetailScreen(
                                         if (selectedIdsState.value.isNotEmpty()) {
                                             val selectedSongs = localSongs.filter { it.id in selectedIdsState.value }
                                             exitSelectionMode()
-                                            scope.launch {
-                                                AudioDownloadManager.downloadPlaylist(context, selectedSongs)
-                                            }
+                                            GlobalDownloadManager.startBatchDownload(context, selectedSongs)
                                         }
                                     },
                                     enabled = selectedIdsState.value.isNotEmpty()

@@ -86,6 +86,7 @@ import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -232,10 +233,7 @@ fun BiliPlaylistDetailScreen(
                                             .filter { it.bvid in selectedIds }
                                             .map { it.toSongItem() }
 
-                                        scope.launch {
-                                            val appCtx = context.applicationContext
-                                            AudioDownloadManager.downloadPlaylist(appCtx, selectedSongs)
-                                        }
+                                        GlobalDownloadManager.startBatchDownload(context, selectedSongs)
 
                                         exitSelection()
                                     }

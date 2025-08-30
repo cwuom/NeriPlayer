@@ -48,8 +48,8 @@ import java.io.File
  * 不依赖于特定的ViewModel或Composable的生命周期
  */
 object GlobalDownloadManager {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     private val _downloadTasks = MutableStateFlow<List<DownloadTask>>(emptyList())
     val downloadTasks: StateFlow<List<DownloadTask>> = _downloadTasks.asStateFlow()
     
