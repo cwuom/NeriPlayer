@@ -14,7 +14,7 @@
 
 ### 开发环境 / Development Environment
 - **Android Studio**: 最新稳定版
-- **Android Gradle Plugin (AGP)**: 8.12.0（由 `gradle/libs.versions.toml` 管理）
+- **Android Gradle Plugin (AGP)**: 8.12.2（由 `gradle/libs.versions.toml` 管理）
 - **Android SDK**: compileSdk 36，minSdk 28，targetSdk 36
 - **Java/Kotlin 目标**: Java 11（`jvmTarget = 11`）
 - **UI**: Jetpack Compose（BOM 对齐）、Material 3
