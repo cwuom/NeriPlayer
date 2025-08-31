@@ -26,14 +26,14 @@ package moe.ouom.neriplayer.ui.component
 import android.annotation.SuppressLint
 import android.os.Build
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -49,16 +49,19 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
@@ -83,7 +86,6 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
-import moe.ouom.neriplayer.util.NPLogger
 import kotlin.math.abs
 import kotlin.math.floor
 
@@ -209,7 +211,10 @@ fun AppleMusicLyric(
     centerPadding: Dp = 16.dp,
     visualSpec: LyricVisualSpec = LyricVisualSpec(),
     lyricOffsetMs: Long = 0L,
-    lyricBlurEnabled: Boolean = true
+    lyricBlurEnabled: Boolean = true,
+    onLyricClick: ((LyricEntry) -> Unit)? = null,
+    translatedLyrics: List<LyricEntry>? = null,
+    translationFontSize: TextUnit = 14.sp
 ) {
     val spec = visualSpec
     val listState = rememberLazyListState()
@@ -225,7 +230,7 @@ fun AppleMusicLyric(
             isAutoScrolling = true
             listState.animateScrollToItem(currentIndex)
             isAutoScrolling = false
-            isUserScrolling = false // Explicitly reset here
+            isUserScrolling = false
         }
     }
 
@@ -252,12 +257,32 @@ fun AppleMusicLyric(
                 .verticalEdgeFade(fadeHeight = 72.dp)
         ) {
             itemsIndexed(lyrics) { index, line ->
-                Crossfade(
-                    targetState = isUserScrolling,
-                    animationSpec = tween(1000),
-                    label = "lyric_mode_fade"
-                ) { isScrolling ->
-                    if (isScrolling) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = centerPadding / 2, horizontal = 24.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .clickable(
+                            enabled = onLyricClick != null,
+                            onClick = { onLyricClick?.invoke(line) }
+                        )
+                        .widthIn(max = maxTextWidth)
+                        .animateContentSize( // 平滑处理高度变化
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioLowBouncy,
+                                stiffness = Spring.StiffnessLow
+                            )
+                        )
+                        .let { modifier ->
+                            if (onLyricClick != null) modifier.clickable { onLyricClick(line) } else modifier
+                        },
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    val distance = abs(index - currentIndex)
+                    val isActive = index == currentIndex
+
+                    if (isUserScrolling) {
+                        // 滚动时：显示简单文本
                         Text(
                             text = line.text,
                             style = TextStyle(
@@ -267,24 +292,23 @@ fun AppleMusicLyric(
                                 textAlign = TextAlign.Center
                             ),
                             maxLines = Int.MAX_VALUE,
-                            softWrap = true,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = centerPadding / 2, horizontal = 24.dp)
-                                .widthIn(max = maxTextWidth)
+                            softWrap = true
                         )
                     } else {
-                        val distance = abs(index - currentIndex)
-                        val isActive = index == currentIndex
-
-                        val targetScale = if (isActive) spec.activeScale else scaleForDistance(distance, spec)
+                        // 播放时：显示带动画的复杂文本
+                        val targetScale =
+                            if (isActive) spec.activeScale else scaleForDistance(distance, spec)
                         val scale by animateFloatAsState(
                             targetValue = targetScale,
-                            animationSpec = spring(stiffness = Spring.StiffnessLow, dampingRatio = 0.85f),
+                            animationSpec = spring(
+                                stiffness = Spring.StiffnessLow,
+                                dampingRatio = 0.85f
+                            ),
                             label = "lyric_scale"
                         )
 
-                        val tilt = if (isActive) 0f else if (index < currentIndex) spec.pageTiltDeg else -spec.pageTiltDeg
+                        val tilt =
+                            if (isActive) 0f else if (index < currentIndex) spec.pageTiltDeg else -spec.pageTiltDeg
                         val rotationX by animateFloatAsState(
                             targetValue = tilt,
                             animationSpec = tween(durationMillis = spec.flipDurationMs),
@@ -312,50 +336,86 @@ fun AppleMusicLyric(
                             }
                         }
 
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = centerPadding / 2, horizontal = 24.dp)
-                                .widthIn(max = maxTextWidth)
-                                .graphicsLayer {
-                                    transformOrigin = TransformOrigin(0.5f, if (index < currentIndex) 1f else 0f)
+                        if (isActive) {
+                            AppleMusicActiveLine(
+                                line = line,
+                                currentTimeMs = currentTimeMs + lyricOffsetMs,
+                                activeColor = textColor,
+                                inactiveColor = textColor.copy(alpha = 0.5f),
+                                fontSize = fontSize,
+                                fadeWidth = 12.dp,
+                                spec = spec
+                            )
+                        } else {
+                            var colorStyle = textColor.copy(
+                                alpha = alphaForDistance(
+                                    distance,
+                                    inactiveAlphaNear,
+                                    inactiveAlphaFar
+                                )
+                            )
+                            if (lyricBlurEnabled) {
+                                colorStyle = textColor.copy(
+                                    alpha = alphaForDistance(
+                                        distance,
+                                        blurInactiveAlphaNear,
+                                        blurInactiveAlphaFar
+                                    )
+                                )
+                            }
+                            Text(
+                                text = line.text,
+                                modifier = Modifier.graphicsLayer {
+                                    transformOrigin =
+                                        TransformOrigin(0.5f, if (index < currentIndex) 1f else 0f)
                                     cameraDistance = 16f * density.density
                                     this.rotationX = rotationX
                                     scaleX = scale
                                     scaleY = scale
                                     renderEffect = blurEffect
                                 },
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            if (isActive) {
-                                AppleMusicActiveLine(
-                                    line = line,
-                                    currentTimeMs = currentTimeMs + lyricOffsetMs,
-                                    activeColor = textColor,
-                                    inactiveColor = textColor.copy(alpha = 0.5f),
+                                style = TextStyle(
+                                    color = colorStyle,
                                     fontSize = fontSize,
-                                    fadeWidth = 12.dp,
-                                    spec = spec
-                                )
-                            } else {
-                                var colorStyle = textColor.copy(alpha = alphaForDistance(distance, inactiveAlphaNear, inactiveAlphaFar))
-                                if (lyricBlurEnabled) {
-                                    colorStyle = textColor.copy(alpha = alphaForDistance(distance, blurInactiveAlphaNear, blurInactiveAlphaFar))
-                                }
+                                    fontWeight = FontWeight.Medium,
+                                    textAlign = TextAlign.Center,
+                                    shadow = shadowEffect
+                                ),
+                                maxLines = Int.MAX_VALUE,
+                                softWrap = true
+                            )
+                        }
+                    }
+
+                    val transText = translatedLyrics?.let { list ->
+                        val t = if (isActive) (currentTimeMs + lyricOffsetMs) else line.startTimeMs
+                        list.lastOrNull { t >= it.startTimeMs && t < it.endTimeMs }?.text
+                    }
+                    val shouldShowTranslation = (isUserScrolling || isActive) && !transText.isNullOrBlank()
+
+                    Crossfade(
+                        targetState = shouldShowTranslation,
+                        animationSpec = tween(250),
+                        label = "translation_crossfade"
+                    ) { show ->
+                        if (show && transText != null) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Spacer(Modifier.height(4.dp)) // 间距可以按需调整
                                 Text(
-                                    text = line.text,
+                                    text = transText,
                                     style = TextStyle(
-                                        color = colorStyle,
-                                        fontSize = fontSize,
-                                        fontWeight = FontWeight.Medium,
-                                        textAlign = TextAlign.Center,
-                                        shadow = shadowEffect
+                                        color = textColor.copy(alpha = 0.85f),
+                                        fontSize = translationFontSize,
+                                        fontWeight = FontWeight.Normal,
+                                        textAlign = TextAlign.Center
                                     ),
                                     maxLines = Int.MAX_VALUE,
                                     softWrap = true
                                 )
                             }
-                        }
+                        } else { }
                     }
                 }
             }
@@ -423,82 +483,103 @@ fun Modifier.multilineGradientReveal(
 ): Modifier = this
     .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
     .drawWithContent {
-        if (layout == null || textLength == 0 || revealOffsetChars <= 0f) {
-            // 如果不需要揭示，直接返回
+        if (layout == null || textLength == 0) {
+            drawContent()
             return@drawWithContent
         }
 
+        // 进度达100%，直接显示全部高亮，跳过裁剪
         if (revealOffsetChars >= textLength) {
             drawContent()
             return@drawWithContent
         }
 
         val safeChars = revealOffsetChars.coerceIn(0f, textLength.toFloat())
-        var idx = floor(safeChars).toInt().coerceIn(0, (textLength - 1).coerceAtLeast(0))
-        var frac = (safeChars - idx).coerceIn(0f, 1f)
+        val totalLines = layout.lineCount
 
-        var line = layout.getLineForOffset(idx)
-        val lineStartAtIdx = layout.getLineStart(line)
-        if (idx == lineStartAtIdx && frac == 0f && idx > 0) {
-            line = (line - 1).coerceAtLeast(0)
-            val prevStart = layout.getLineStart(line)
-            val prevEnd = layout.getLineEnd(line, true)
-            if (prevEnd > prevStart) {
-                idx = (prevEnd - 1).coerceAtLeast(prevStart)
-                frac = 1f
+        // 遍历所有行，分三种情况处理，已完成行、当前行、未开始行
+        for (lineIndex in 0 until totalLines) {
+            val lineStartIdx = layout.getLineStart(lineIndex) // 该行第一个字符的索引
+            val lineEndIdx = layout.getLineEnd(lineIndex, true) // 该行最后一个字符的索引（含换行符）
+
+            // 进度超过该行最后一个字符，直接绘制全高亮
+            if (safeChars >= lineEndIdx) {
+                clipRect(
+                    left = layout.getLineLeft(lineIndex),
+                    top = layout.getLineTop(lineIndex),
+                    right = layout.getLineRight(lineIndex),
+                    bottom = layout.getLineBottom(lineIndex)
+                ) {
+                    this@drawWithContent.drawContent()
+                }
             }
-        }
+            // 进度落在该行内，执行渐变裁剪
+            else if (safeChars >= lineStartIdx) {
+                val currentIdxInLine = (safeChars - lineStartIdx).coerceAtLeast(0f)
+                val currentCharIdx = lineStartIdx + floor(currentIdxInLine).toInt()
+                val frac = (currentIdxInLine - floor(currentIdxInLine)).coerceIn(0f, 1f)
 
-        for (i in 0 until line) {
-            val l = layout.getLineLeft(i)
-            val r = layout.getLineRight(i)
-            val t = layout.getLineTop(i)
-            val b = layout.getLineBottom(i)
-            clipRect(left = l, top = t, right = r, bottom = b) {
-                this@drawWithContent.drawContent()
+                // 计算当前字符和下一个字符的X坐标
+                val x0 = layout.getHorizontalPosition(currentCharIdx, usePrimaryDirection = true)
+                val nextCharIdx = if (currentCharIdx >= lineEndIdx - 1) {
+                    lineEndIdx // 该行最后一个字符，下一个字符指向行尾
+                } else {
+                    currentCharIdx + 1
+                }
+                val x1 = if (currentCharIdx >= lineEndIdx - 1) {
+                    layout.getLineRight(lineIndex) // 该行最后一个字符，X1取行右边界
+                } else {
+                    layout.getHorizontalPosition(nextCharIdx, usePrimaryDirection = true)
+                }
+
+                // 确保X坐标在当前行范围内
+                val lineLeft = layout.getLineLeft(lineIndex)
+                val lineRight = layout.getLineRight(lineIndex)
+                val x = (x0 + (x1 - x0) * frac).coerceIn(lineLeft, lineRight)
+
+                // 计算渐变范围
+                val fadePx = fadeWidth.toPx()
+                val start = (x - fadePx).coerceAtLeast(lineLeft)
+
+                // 裁剪并绘制当前行的渐变高亮
+                clipRect(
+                    left = lineLeft,
+                    top = layout.getLineTop(lineIndex),
+                    right = lineRight,
+                    bottom = layout.getLineBottom(lineIndex)
+                ) {
+                    this@drawWithContent.drawContent()
+
+                    // 绘制渐变遮罩
+                    val brush = Brush.horizontalGradient(
+                        colorStops = arrayOf(
+                            0f to Color.White,
+                            ((start - lineLeft) / (lineRight - lineLeft)) to Color.White,
+                            ((x - lineLeft) / (lineRight - lineLeft)) to Color.Transparent,
+                            1f to Color.Transparent
+                        ),
+                        startX = lineLeft,
+                        endX = lineRight
+                    )
+                    drawRect(
+                        brush = brush,
+                        topLeft = Offset(lineLeft, layout.getLineTop(lineIndex)),
+                        size = androidx.compose.ui.geometry.Size(
+                            lineRight - lineLeft,
+                            layout.getLineBottom(lineIndex) - layout.getLineTop(lineIndex)
+                        ),
+                        blendMode = BlendMode.DstIn
+                    )
+                }
             }
-        }
-
-        val l = layout.getLineLeft(line)
-        val r = layout.getLineRight(line)
-        val t = layout.getLineTop(line)
-        val b = layout.getLineBottom(line)
-        val lineStart = layout.getLineStart(line)
-        val lineEnd = layout.getLineEnd(line, true)
-        if (lineEnd <= lineStart) return@drawWithContent
-
-        val clampedIdx = idx.coerceIn(lineStart, lineEnd - 1)
-        val nextIdx = (clampedIdx + 1).coerceAtMost(lineEnd - 1)
-
-        val atLineLast = clampedIdx >= lineEnd - 1
-        val x0 = layout.getHorizontalPosition(clampedIdx, usePrimaryDirection = true)
-        val x1 = if (atLineLast) r else layout.getHorizontalPosition(nextIdx, usePrimaryDirection = true)
-        val x = (x0 + (x1 - x0) * frac).coerceIn(l, r)
-
-        val fadePx = fadeWidth.toPx()
-        val start = (x - fadePx).coerceAtLeast(l)
-
-        clipRect(left = l, top = t, right = r, bottom = b) {
-            this@drawWithContent.drawContent()
-
-            val brush = Brush.horizontalGradient(
-                colorStops = arrayOf(
-                    0f to Color.White,
-                    ((start - l) / (r - l)) to Color.White,
-                    ((x - l) / (r - l)) to Color.Transparent,
-                    1f to Color.Transparent
-                ),
-                startX = l,
-                endX = r
-            )
-            drawRect(
-                brush = brush,
-                topLeft = Offset(l, t),
-                size = androidx.compose.ui.geometry.Size(r - l, b - t),
-                blendMode = BlendMode.DstIn
-            )
+            // 进度未到该行，不绘制高亮
+            else {
+                continue
+            }
         }
     }
+
+
 /**
  * 顶层当前行
  */
@@ -513,45 +594,35 @@ fun AppleMusicActiveLine(
     spec: LyricVisualSpec = LyricVisualSpec()
 ) {
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
+    val isLayoutReady by remember { derivedStateOf { layout != null } }
 
+    // 计算当前行进度
     val progressTarget = remember(line, currentTimeMs) {
         calculateLineProgress(line, currentTimeMs).coerceIn(0f, 1f)
     }
 
+    // 逐字揭示动画控制器：进度变化时直接同步，避免动画延迟导致的高亮断层
     val revealOffsetCharsAnimatable = remember(line.text) { Animatable(0f) }
-
-    LaunchedEffect(progressTarget) {
+    LaunchedEffect(isLayoutReady, progressTarget) {
+        if (!isLayoutReady) return@LaunchedEffect
         val targetChars = line.text.length * progressTarget
-
-        if (revealOffsetCharsAnimatable.value == 0f && progressTarget > 0) {
-            revealOffsetCharsAnimatable.animateTo(
-                targetValue = targetChars,
-                animationSpec = tween(durationMillis = 1000, easing = LinearEasing)
-            )
-        } else {
-            revealOffsetCharsAnimatable.snapTo(targetChars)
-        }
+        // 进度突变时直接跳转，确保行切换时高亮同步
+        revealOffsetCharsAnimatable.snapTo(targetChars)
     }
-
     val revealOffsetChars = revealOffsetCharsAnimatable.value
 
-    val mergedWords = remember(line.words) {
-        mergeWordTimings(line.words)
-    }
-
-
-
+    val mergedWords = remember(line.words) { mergeWordTimings(line.words) }
     val isWordCurrentlyActive = remember(mergedWords, currentTimeMs) {
         findActiveWord(mergedWords, currentTimeMs) != null
     }
     val headGlowRadius by animateDpAsState(
         targetValue = if (isWordCurrentlyActive) spec.glowRadiusExpanded else 0.dp,
-        animationSpec = spring(stiffness = spec.glowPulseStiffness, dampingRatio = spec.glowPulseDamping),
+        animationSpec = spring(spec.glowPulseStiffness, spec.glowPulseDamping),
         label = "head_glow_radius"
     )
     val headGlowAlpha by animateFloatAsState(
         targetValue = if (isWordCurrentlyActive) spec.glowAlpha else 0f,
-        animationSpec = tween(durationMillis = spec.glowMoveSmoothingMs),
+        animationSpec = tween(spec.glowMoveSmoothingMs),
         label = "head_glow_alpha"
     )
     val headGlowRadiusPx = with(LocalDensity.current) { headGlowRadius.toPx() }
@@ -567,7 +638,7 @@ fun AppleMusicActiveLine(
             if (layout != null && headGlowRadiusPx > 0f) {
                 drawRadialHeadGlow(
                     layout = layout!!,
-                    charOffset = revealOffsetChars, // 使用逐字动画的精确偏移
+                    charOffset = revealOffsetChars,
                     radiusPx = headGlowRadiusPx,
                     color = spec.glowColor,
                     alpha = headGlowAlpha
@@ -575,29 +646,35 @@ fun AppleMusicActiveLine(
             }
         }
     ) {
+        // 底版文本
         Text(
             text = line.text,
-            style = textStyle.copy(
-                color = inactiveColor,
-                fontWeight = FontWeight.Medium
-            ),
+            style = textStyle.copy(color = inactiveColor, fontWeight = FontWeight.Medium),
             maxLines = Int.MAX_VALUE,
             softWrap = true,
-            onTextLayout = { layout = it }
+            onTextLayout = { newLayout ->
+                // 仅在布局实际变化时更新，减少重绘
+                if (layout?.layoutInput != newLayout.layoutInput) {
+                    layout = newLayout
+                }
+            }
         )
 
-        Text(
-            text = line.text,
-            style = textStyle.copy(color = activeColor),
-            maxLines = Int.MAX_VALUE,
-            softWrap = true,
-            modifier = Modifier.multilineGradientReveal(
-                layout = layout,
-                revealOffsetChars = revealOffsetChars,
-                textLength = line.text.length,
-                fadeWidth = fadeWidth
+        // 高亮文本 - 仅在布局准备好后渲染，避免旧数据导致的异常
+        if (isLayoutReady) {
+            Text(
+                text = line.text,
+                style = textStyle.copy(color = activeColor),
+                maxLines = Int.MAX_VALUE,
+                softWrap = true,
+                modifier = Modifier.multilineGradientReveal(
+                    layout = layout,
+                    revealOffsetChars = revealOffsetChars,
+                    textLength = line.text.length,
+                    fadeWidth = fadeWidth
+                )
             )
-        )
+        }
     }
 }
 

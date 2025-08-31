@@ -30,6 +30,8 @@ import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -43,6 +45,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -212,6 +215,7 @@ fun NowPlayingScreen(
 
     var showAddSheet by remember { mutableStateOf(false) }
     var showQueueSheet by remember { mutableStateOf(false) }
+    var showLyricsScreen by remember { mutableStateOf(false) }
     val addSheetState = rememberModalBottomSheetState()
     val queueSheetState = rememberModalBottomSheetState()
     
@@ -233,6 +237,7 @@ fun NowPlayingScreen(
 
 
     var lyrics by remember(currentSong?.id) { mutableStateOf<List<LyricEntry>>(emptyList()) }
+    var translatedLyrics by remember(currentSong?.id) { mutableStateOf<List<LyricEntry>>(emptyList()) }
 
     val nowPlayingViewModel: NowPlayingViewModel = viewModel()
 
@@ -248,12 +253,18 @@ fun NowPlayingScreen(
                 }
             }
             song != null -> {
+                // 在线拉取歌词
                 PlayerManager.getLyrics(song)
             }
             else -> {
                 emptyList()
             }
         }
+
+        // 同步尝试拉取翻译（仅云音乐有）
+        translatedLyrics = try {
+            if (song != null) PlayerManager.getNeteaseTranslatedLyrics(song.id) else emptyList()
+        } catch (e: Exception) { emptyList() }
     }
 
     LaunchedEffect(Unit) { contentVisible = true }
@@ -263,16 +274,48 @@ fun NowPlayingScreen(
     LaunchedEffect(playlists, currentSong?.id) { favOverride = null }
 
     CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.statusBars)
-                .windowInsetsPadding(WindowInsets.navigationBars)
-                .padding(horizontal = 20.dp, vertical = 12.dp)
-                .pointerInput(Unit) {
-                    detectVerticalDragGestures { _, dragAmount -> if (dragAmount > 60) onNavigateUp() }
-                }
-        ) {
+        AnimatedContent(
+            targetState = showLyricsScreen,
+            transitionSpec = {
+                slideInHorizontally(
+                    initialOffsetX = { if (targetState) it else -it },
+                    animationSpec = spring(dampingRatio = 0.8f)
+                ) + fadeIn() togetherWith slideOutHorizontally(
+                    targetOffsetX = { if (targetState) -it else it },
+                    animationSpec = spring(dampingRatio = 0.8f)
+                ) + fadeOut()
+            },
+            label = "lyrics_transition"
+        ) { isLyricsMode ->
+            if (isLyricsMode) {
+                // 歌词页面 - 继承现有背景
+                LyricsScreen(
+                    lyrics = lyrics,
+                    lyricBlurEnabled = lyricBlurEnabled,
+                    onNavigateBack = { showLyricsScreen = false },
+                    onSeekTo = { position -> PlayerManager.seekTo(position) },
+                    translatedLyrics = translatedLyrics
+                )
+            } else {
+                // 播放页面
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .windowInsetsPadding(WindowInsets.statusBars)
+                        .windowInsetsPadding(WindowInsets.navigationBars)
+                        .padding(horizontal = 20.dp, vertical = 12.dp)
+                        .pointerInput(Unit) {
+                            detectVerticalDragGestures { _, dragAmount -> if (dragAmount > 60) onNavigateUp() }
+                        }
+                        .pointerInput(Unit) {
+                            detectHorizontalDragGestures { _, dragAmount ->
+                                // 左滑进入歌词页面
+                                if (dragAmount < -50 && lyrics.isNotEmpty()) {
+                                    showLyricsScreen = true
+                                }
+                            }
+                        }
+                ) {
             CenterAlignedTopAppBar(
                 title = { Text("正在播放") },
                 navigationIcon = {
@@ -681,8 +724,10 @@ fun NowPlayingScreen(
                 }
                 Spacer(Modifier.height(12.dp))
             }
-        }
-    }
+        } // 结束Column
+        } // 结束else分支 
+        } // 结束AnimatedContent
+    } // 结束CompositionLocalProvider
 }
 
 @Composable
@@ -740,7 +785,7 @@ private fun getCurrentAudioDevice(audioManager: AudioManager): Pair<String, Imag
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MoreOptionsSheet(
+fun MoreOptionsSheet(
     viewModel: NowPlayingViewModel,
     originalSong: SongItem,
     queue: List<SongItem>,

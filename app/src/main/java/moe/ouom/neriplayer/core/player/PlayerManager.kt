@@ -920,6 +920,38 @@ object PlayerManager {
         }
     }
 
+    /** 获取网易云歌词翻译（tlyric） */
+    suspend fun getNeteaseTranslatedLyrics(songId: Long): List<LyricEntry> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val raw = neteaseClient.getLyricNew(songId)
+                val tlyric = JSONObject(raw).optJSONObject("tlyric")?.optString("lyric") ?: ""
+                if (tlyric.isBlank()) emptyList() else parseNeteaseLrc(tlyric)
+            } catch (e: Exception) {
+                NPLogger.e("NERI-PlayerManager", "getNeteaseTranslatedLyrics failed: ${e.message}", e)
+                emptyList()
+            }
+        }
+    }
+
+    /** 同时获取歌词与翻译 */
+    suspend fun getNeteaseLyricsWithTrans(songId: Long): Pair<List<LyricEntry>, List<LyricEntry>> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val raw = neteaseClient.getLyricNew(songId)
+                val obj = JSONObject(raw)
+                val lrc = obj.optJSONObject("lrc")?.optString("lyric") ?: ""
+                val tlyric = obj.optJSONObject("tlyric")?.optString("lyric") ?: ""
+                val base = if (lrc.isBlank()) emptyList() else parseNeteaseLrc(lrc)
+                val trans = if (tlyric.isBlank()) emptyList() else parseNeteaseLrc(tlyric)
+                base to trans
+            } catch (e: Exception) {
+                NPLogger.e("NERI-PlayerManager", "getNeteaseLyricsWithTrans failed: ${e.message}", e)
+                emptyList<LyricEntry>() to emptyList()
+            }
+        }
+    }
+
     /** 获取歌词，优先使用本地缓存 */
     suspend fun getLyrics(song: SongItem): List<LyricEntry> {
         // 最优先使用song.matchedLyric中的歌词
