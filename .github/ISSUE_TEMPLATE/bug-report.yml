@@ -1,5 +1,5 @@
 name: Bug report / 报告问题
-description: 提交一份问题报告帮助开发者改进产品
+description: 提交一份问题报告帮助开发者改进产品 / Submit a bug report to help improve the product
 title: "[BUG] "
 labels: [ "Bug" ]
 
@@ -10,25 +10,42 @@ body:
       value: |
         感谢给 NeriPlayer 汇报问题！
         为了使我们更好地帮助你，请提供以下信息。
+        /
+        Thank you for reporting an issue with NeriPlayer!
+        To help us assist you better, please provide the following information.
+
+  - type: textarea
+    attributes:
+      label: 问题描述 / Problem description
+      placeholder: 简要描述你遇到的问题 / Briefly describe the issue you're experiencing
+    validations:
+      required: true
+
   - type: textarea
     attributes:
       label: 复现步骤 / Steps to reproduce
       placeholder: |
-        1.
-        2.
-        3.
+        1. 打开应用的某个页面
+        2. 点击特定按钮
+        3. 观察到错误发生
+        /
+        1. Open a specific page in the app
+        2. Click a particular button
+        3. Observe the error occurring
     validations:
       required: true
+
   - type: textarea
     attributes:
       label: 预期行为 / Expected behaviour
       placeholder: 正常情况下应该发生什么 / Tell us what should happen
     validations:
       required: true
+
   - type: textarea
     attributes:
       label: 实际行为 / Actual behaviour
-      description: 如果含有截图，个人信息注意打码保护
+      description: 如果含有截图，个人信息注意打码保护 / If including screenshots, please censor personal information
       placeholder: 实际上发生了什么 / Tell us what happens instead
     validations:
       required: true
@@ -45,23 +62,22 @@ body:
     validations:
       required: true
 
-
   - type: checkboxes
     id: latest
     attributes:
       label: 版本和其他要求 / Version and Other Requirements
       options:
-        - label: 我正在使用最新 CI 调试版本且启用 DEBUG MODE / I am using latest debug CI version of NeriPlayer and enable DEBUG MODE
+        - label: 我正在使用最新 CI 调试版本且启用 DEBUG MODE / I am using latest debug CI version of NeriPlayer and enabled DEBUG MODE
           required: false
-        - label: 我已经在 [Issue Tracker](https://github.com/cwuom/NeriPlayer/issues) 中找过我要提出的问题，没有找到相同问题。重复问题会被关闭。
+        - label: 我已经在 [Issue Tracker](https://github.com/cwuom/NeriPlayer/issues) 中找过我要提出的问题，没有找到相同问题。重复问题会被关闭。 / I have searched in the [Issue Tracker](https://github.com/cwuom/NeriPlayer/issues) and found no similar issues. Duplicate issues will be closed.
           required: true
-        - label: 我已知晓并同意，如果我不按照模板提供的指示进行填写，则我的 Issue 可能会被无条件删除。
+        - label: 我已知晓并同意，如果我不按照模板提供的指示进行填写，则我的 Issue 可能会被无条件删除。 / I understand and agree that my issue may be deleted without notice if I do not follow the instructions provided in the template.
           required: true
 
   - type: textarea
     attributes:
       label: 日志 / Logs
-      description: 请先开启 DEBUG MODE （在设置界面点击 7 次版本号） 复现问题，然后在调试界面查看并导出日志。
+      description: 请先开启 DEBUG MODE （在设置界面点击 7 次版本号） 复现问题，然后在调试界面查看并导出日志。 / Please enable DEBUG MODE first (click version number 7 times in settings), reproduce the issue, then view and export logs in the debug interface.
       placeholder: 将日志粘贴到此处或者点击文本框底栏上传日志文件。 / Paste logs here or upload logs by clicking the bar on the bottom.
     validations:
       required: false
@@ -70,3 +86,6 @@ body:
     id: extra-desc
     attributes:
       label: 补充说明（可选） / Additional information (optional)
+      description: 任何其他与问题相关的信息都可以在这里提供 / Any other relevant information about the issue can be provided here
+    validations:
+      required: false

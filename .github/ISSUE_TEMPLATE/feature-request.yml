@@ -1,33 +1,36 @@
-name: Feature request / 功能请求
-description: 提出你需要的功能
-title: "[功能请求] "
-labels: [ Feature ]
+name: 功能请求 / Feature Request
+description: Propose the feature you need / 提出你需要的功能
+title: "[Feature] "
+labels: Feature
 
 body:
   - type: markdown
     attributes:
       value: |
-        感谢您给 NeriPlayer 提出建议！
-        为了使我们更好地帮助你，请提供以下信息。
+        感谢您给 NeriPlayer 提出建议！  
+        为了使我们更好地帮助您，请提供以下信息。
+        /
+        Thank you for providing suggestions for NeriPlayer!  
+        To help us assist you better, please provide the following information.  
 
   - type: textarea
     id: why
     attributes:
-      label: 为什么你认为需要此功能
+      label: 为什么你认为需要此功能 / Why do you think this feature is needed
     validations:
       required: true
 
   - type: textarea
     id: related-feature
     attributes:
-      label: 联系到哪些已经存在的 bug 或者功能
-      description: 如果没有留空即可
+      label: 联系到哪些已经存在的 BUG 或者功能 / Which existing bugs or features is this related to
+      description: 如果没有留空即可 / Leave blank if there are none
     validations:
       required: false
 
   - type: textarea
     id: details
     attributes:
-      label: 具体功能需要 / Detailed features requirements
+      label: 具体功能需求 / Detailed Feature Requirements
     validations:
       required: true

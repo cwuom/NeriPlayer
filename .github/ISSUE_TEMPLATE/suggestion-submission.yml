@@ -1,0 +1,88 @@
+name: Suggestion Submission / 提交建议
+description: 提交对 NeriPlayer 的优化建议，助力产品体验提升 / Submit optimization suggestions for NeriPlayer to enhance user experience
+title: "[Suggestion] "
+labels: ["Suggestion"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        非常感谢您为 NeriPlayer 提出优化建议！您的想法对产品改进至关重要。
+        为了让开发者更清晰地理解您的建议，请按以下模板填写信息。
+        
+        Thank you very much for submitting optimization suggestions for NeriPlayer! Your ideas are crucial to product improvement.
+        To help developers better understand your suggestion, please fill in the information according to the following template.
+
+  - type: textarea
+    attributes:
+      label: 建议内容概述 / Suggestion Overview
+      placeholder: |
+        用简洁的语言描述您的建议（例如：建议支持 B 站播放源的视频播放功能）
+        
+        Describe your suggestion concisely (e.g.: Suggest supporting video playback for Bilibili sources)
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: 建议的背景与原因 / Background & Reason for Suggestion
+      placeholder: |
+        说明您提出此建议的场景或痛点（例如：部分 B 站鬼畜视频的核心价值在于视觉呈现，仅播放音频无法完整体验内容）
+        
+        Explain the scenario or pain point that leads to this suggestion (e.g.: The core value of some Bilibili meme videos lies in visual presentation, and audio-only playback fails to deliver the complete experience)
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: 建议的具体实施方案 / Detailed Implementation Plan (Optional)
+      placeholder: |
+        （可选）描述您期望的实现方式（例如：在「正在播放」界面向上滑动封面，让封面变形为视频播放窗口）
+        
+        (Optional) Describe your expected implementation method (e.g.: Swipe up on the cover in the "Now Playing" interface to bring up the video playback window)
+    validations:
+      required: false
+
+  - type: textarea
+    attributes:
+      label: 预期效果 / Expected Effect
+      placeholder: |
+        说明建议实施后能带来的改善（例如：满足用户对视频内容的观看需求，提升B站资源的使用体验）
+        
+        Explain the improvements after implementation (e.g.: Meet users' needs for viewing video content and enhance the experience of using Bilibili resources)
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: 关联的现有功能（可选） / Associated Existing Features (Optional)
+      placeholder: |
+        （可选）若建议与现有功能相关，请列出（例如：与「正在播放界面」功能相关）
+        
+        (Optional) If related to existing features, please list them (e.g.: Related to "Playback Source Management" and "Now Playing Interface" features)
+    validations:
+      required: false
+
+  - type: textarea
+    attributes:
+      label: 补充材料（可选） / Supplementary Materials (Optional)
+      placeholder: |
+        （可选）可粘贴参考案例截图、设计草图链接或其他辅助说明材料
+        
+        (Optional) You can paste links to reference screenshots, design sketches, or other supplementary materials
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: duplication-check
+    attributes:
+      label: 提交前确认 / Confirmation Before Submission
+      options:
+        - label: |
+            我已在 [Issue Tracker](https://github.com/cwuom/NeriPlayer/issues) 中搜索过，未发现与本建议相同或高度相似的内容（重复建议将影响处理效率）。
+            I have searched the [Issue Tracker](https://github.com/cwuom/NeriPlayer/issues) and found no identical or highly similar suggestions (duplicate suggestions will affect processing efficiency).
+          required: true
+        - label: |
+            我承诺建议内容不涉及违规、侵权等不当信息。
+            I promise that the suggestion does not contain inappropriate content such as violations or infringement.
+          required: true
