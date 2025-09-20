@@ -23,18 +23,35 @@ package moe.ouom.neriplayer
  * Created: 2025/8/20
  */
 
+import moe.ouom.neriplayer.util.formatDurationSec
+import moe.ouom.neriplayer.util.formatFileSize
+import moe.ouom.neriplayer.util.formatPlayCount
+import org.junit.Assert.assertEquals
 import org.junit.Test
 
-import org.junit.Assert.*
-
 /**
- * Example local unit test, which will execute on the development machine (host).
- *
- * See [testing documentation](http://d.android.com/tools/testing).
+ * Unit tests covering core formatter helpers.
  */
 class ExampleUnitTest {
+
     @Test
-    fun addition_isCorrect() {
-        assertEquals(4, 2 + 2)
+    fun `formatPlayCount rounds to friendly units`() {
+        assertEquals("9.9万", formatPlayCount(99_000))
+        assertEquals("1.0亿", formatPlayCount(100_000_000))
+        assertEquals("500", formatPlayCount(500))
+    }
+
+    @Test
+    fun `formatFileSize chooses appropriate suffix`() {
+        assertEquals("512 B", formatFileSize(512))
+        assertEquals("1.0 KB", formatFileSize(1_024))
+        assertEquals("2.0 MB", formatFileSize(2_097_152))
+    }
+
+    @Test
+    fun `formatDurationSec adds hours when necessary`() {
+        assertEquals("00:00", formatDurationSec(0))
+        assertEquals("03:25", formatDurationSec(205))
+        assertEquals("1:05:07", formatDurationSec(3_907))
     }
 }

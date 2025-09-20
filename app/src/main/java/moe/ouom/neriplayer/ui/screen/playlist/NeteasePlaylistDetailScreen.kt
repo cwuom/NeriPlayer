@@ -19,7 +19,7 @@ package moe.ouom.neriplayer.ui.screen.playlist
  * along with this software.
  * If not, see <https://www.gnu.org/licenses/>.
  *
- * File: moe.ouom.neriplayer.ui.screen.playlist/PlaylistDetailScreen
+ * File: moe.ouom.neriplayer.ui.screen.playlist/NeteasePlaylistDetailScreen
  * Created: 2025/8/10
  */
 
