@@ -26,6 +26,7 @@ package moe.ouom.neriplayer.ui.viewmodel.playlist
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -45,11 +46,13 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
     val uiState: StateFlow<LocalPlaylistDetailUiState> = _uiState
 
     private var playlistId: Long = 0L
+    private var playlistCollectJob: Job? = null
 
     fun start(id: Long) {
         if (playlistId == id && _uiState.value.playlist != null) return
         playlistId = id
-        viewModelScope.launch {
+        playlistCollectJob?.cancel()
+        playlistCollectJob = viewModelScope.launch {
             repo.playlists.collect { list ->
                 _uiState.value = LocalPlaylistDetailUiState(list.firstOrNull { it.id == id })
             }
