@@ -20,10 +20,16 @@ android {
     signingConfigs {
         create("release") {
             val storePath = project.findProperty("KEYSTORE_FILE") as String? ?: "neri.jks"
-            storeFile = file(storePath)
-            storePassword = project.findProperty("KEYSTORE_PASSWORD") as String? ?: ""
-            keyAlias = project.findProperty("KEY_ALIAS") as String? ?: "key0"
-            keyPassword = project.findProperty("KEY_PASSWORD") as String? ?: ""
+            val resolvedStoreFile = file(storePath)
+
+            if (resolvedStoreFile.exists()) {
+                storeFile = resolvedStoreFile
+                storePassword = project.findProperty("KEYSTORE_PASSWORD") as String? ?: ""
+                keyAlias = project.findProperty("KEY_ALIAS") as String? ?: "key0"
+                keyPassword = project.findProperty("KEY_PASSWORD") as String? ?: ""
+            } else {
+                println("Release keystore not found at '${resolvedStoreFile.path}'. Using debug signing config instead.")
+            }
         }
     }
 
@@ -57,10 +63,17 @@ android {
     }
 
     buildTypes {
+        val releaseSigningConfig = signingConfigs.getByName("release")
+        val debugSigningConfig = signingConfigs.getByName("debug")
+
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = if (releaseSigningConfig.storeFile?.exists() == true) {
+                releaseSigningConfig
+            } else {
+                debugSigningConfig
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
