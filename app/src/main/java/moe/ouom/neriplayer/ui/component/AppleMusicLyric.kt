@@ -388,8 +388,17 @@ fun AppleMusicLyric(
                     }
 
                     val transText = translatedLyrics?.let { list ->
-                        val t = if (isActive) (currentTimeMs + lyricOffsetMs) else line.startTimeMs
-                        list.lastOrNull { t >= it.startTimeMs && t < it.endTimeMs }?.text
+                        if (list.isEmpty()) return@let null
+
+                        val targetTime = if (isActive) (currentTimeMs + lyricOffsetMs) else line.startTimeMs
+                        val matchedLine = list.lastOrNull { targetTime >= it.startTimeMs && targetTime < it.endTimeMs }
+                            ?: list.lastOrNull { targetTime >= it.startTimeMs }
+
+                        val tolerance = 1_500L
+                        val isTimeAligned = matchedLine != null &&
+                            matchedLine.startTimeMs >= line.startTimeMs - tolerance
+
+                        if (isTimeAligned) matchedLine?.text else null
                     }
                     val shouldShowTranslation = (isUserScrolling || isActive) && !transText.isNullOrBlank()
 
