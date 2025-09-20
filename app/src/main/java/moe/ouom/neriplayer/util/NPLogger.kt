@@ -191,10 +191,14 @@ object NPLogger {
      */
     fun getLogDirectory(context: Context): File? {
         if (!isFileLoggingEnabled) return null
-        return File(context.getExternalFilesDir(null), "logs").also {
-            if (!it.exists()) {
-                it.mkdirs()
-            }
+
+        val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
+        val directory = baseDir?.let { File(it, "logs") } ?: return null
+
+        if (!directory.exists()) {
+            directory.mkdirs()
         }
+
+        return directory
     }
 }
