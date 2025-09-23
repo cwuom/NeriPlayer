@@ -44,13 +44,12 @@ import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
-import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
-import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
+import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -76,7 +75,6 @@ import moe.ouom.neriplayer.core.api.search.SongSearchInfo
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.di.AppContainer.biliCookieRepo
 import moe.ouom.neriplayer.core.di.AppContainer.settingsRepo
-import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.data.LocalPlaylist
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.ui.component.LyricEntry
@@ -203,6 +201,20 @@ object PlayerManager {
     }
 
     /**
+     * 仅允许 ExoPlayer 在“单曲循环”时循环；其余一律 OFF，由队列逻辑接管
+     */
+    private fun syncExoRepeatMode() {
+        val desired = if (repeatModeSetting == Player.REPEAT_MODE_ONE) {
+            Player.REPEAT_MODE_ONE
+        } else {
+            Player.REPEAT_MODE_OFF
+        }
+        if (player.repeatMode != desired) {
+            player.repeatMode = desired
+        }
+    }
+
+    /**
      * 基于歌曲来源与所选音质构建缓存键
      * - B 站：bili-avid-可选cid-音质
      * - 网易云：netease-songId-音质
@@ -302,6 +314,8 @@ object PlayerManager {
             .setAudioOffloadPreferences(audioOffload)
             .build()
 
+        // 关键：启动时就禁止 Exo 列表循环，由我们自己接管（仅单曲循环放给 Exo）
+        player.repeatMode = Player.REPEAT_MODE_OFF
 
         player.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
@@ -336,8 +350,10 @@ object PlayerManager {
             }
 
             override fun onRepeatModeChanged(repeatMode: Int) {
-                repeatModeSetting = repeatMode
-                _repeatModeFlow.value = repeatMode
+                // 不接受 Exo 的列表循环（ALL）；仅维持单曲循环或关闭
+                // 重申应用层的 repeat 状态，并钳制 Exo 的实际 repeat
+                syncExoRepeatMode()
+                _repeatModeFlow.value = repeatModeSetting
             }
         })
 
@@ -486,6 +502,8 @@ object PlayerManager {
 
                     withContext(Dispatchers.Main) {
                         player.setMediaItem(mediaItem)
+                        // 关键：每次切歌后都钳制 Exo 的循环状态，避免单媒体项“列表循环”
+                        syncExoRepeatMode()
                         player.prepare()
                         player.play()
                     }
@@ -508,7 +526,7 @@ object PlayerManager {
         // 优先检查本地缓存
         val localResult = checkLocalCache(song)
         if (localResult != null) return localResult
-        
+
         return if (song.album.startsWith(BILI_SOURCE_TAG)) {
             // 解析可能的 cid
             val parts = song.album.split('|')
@@ -619,7 +637,10 @@ object PlayerManager {
 
     fun play() {
         when {
-            isPreparedInPlayer() -> player.play()
+            isPreparedInPlayer() -> {
+                syncExoRepeatMode()
+                player.play()
+            }
             currentPlaylist.isNotEmpty() && currentIndex != -1 -> playAtIndex(currentIndex)
             currentPlaylist.isNotEmpty() -> playAtIndex(0)
             else -> {}
@@ -726,7 +747,8 @@ object PlayerManager {
         }
         repeatModeSetting = newMode
         _repeatModeFlow.value = newMode
-        player.repeatMode = newMode
+        // 仅当单曲循环时让 Exo 循环；其余交给我们的队列推进
+        syncExoRepeatMode()
     }
 
     fun release() {
@@ -966,7 +988,7 @@ object PlayerManager {
                 NPLogger.w("NERI-PlayerManager", "匹配歌词解析失败: ${e.message}")
             }
         }
-        
+
         // 其次检查本地歌词缓存
         val context = application
         val localLyricPath = AudioDownloadManager.getLyricFilePath(context, song)
@@ -1015,7 +1037,7 @@ object PlayerManager {
 
         val newPlaylist = currentPlaylist.toMutableList()
         val insertIndex = (currentIndex + 1).coerceIn(0, newPlaylist.size)
-        
+
         // 检查歌曲是否已存在于队列中
         val existingIndex = newPlaylist.indexOfFirst { it.id == song.id && it.album == song.album }
         if (existingIndex != -1) {
@@ -1031,12 +1053,12 @@ object PlayerManager {
         // 更新播放队列
         currentPlaylist = newPlaylist
         _currentQueueFlow.value = currentPlaylist
-        
+
         // 如果启用了随机播放，需要重建随机播放袋
         if (player.shuffleModeEnabled) {
             rebuildShuffleBag()
         }
-        
+
         ioScope.launch {
             persistState()
         }
@@ -1054,19 +1076,19 @@ object PlayerManager {
         }
 
         val newPlaylist = currentPlaylist.toMutableList()
-        
+
         // 检查歌曲是否已存在于队列中
         val existingIndex = newPlaylist.indexOfFirst { it.id == song.id && it.album == song.album }
         if (existingIndex != -1) {
             newPlaylist.removeAt(existingIndex)
         }
-        
+
         newPlaylist.add(song)
 
         // 更新播放队列
         currentPlaylist = newPlaylist
         _currentQueueFlow.value = currentPlaylist
-        
+
         // 如果启用了随机播放，需要重建随机播放袋
         if (player.shuffleModeEnabled) {
             rebuildShuffleBag()
