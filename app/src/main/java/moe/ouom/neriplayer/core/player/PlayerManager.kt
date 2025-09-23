@@ -164,6 +164,7 @@ object PlayerManager {
 
     private val _repeatModeFlow = MutableStateFlow(Player.REPEAT_MODE_OFF)
     val repeatModeFlow: StateFlow<Int> = _repeatModeFlow
+    private var repeatModeSetting: Int = Player.REPEAT_MODE_OFF
 
     private val _currentAudioDevice = MutableStateFlow<AudioDevice?>(null)
     private var audioDeviceCallback: AudioDeviceCallback? = null
@@ -233,7 +234,7 @@ object PlayerManager {
     /** 处理单曲播放结束：根据循环模式与随机三栈推进或停止 */
     private fun handleTrackEnded() {
         _playbackPositionMs.value = 0L
-        when (player.repeatMode) {
+        when (repeatModeSetting) {
             Player.REPEAT_MODE_ONE -> playAtIndex(currentIndex)
             Player.REPEAT_MODE_ALL -> next(force = true)
             else -> {
@@ -335,6 +336,7 @@ object PlayerManager {
             }
 
             override fun onRepeatModeChanged(repeatMode: Int) {
+                repeatModeSetting = repeatMode
                 _repeatModeFlow.value = repeatMode
             }
         })
@@ -648,7 +650,7 @@ object PlayerManager {
 
             // 没有预定下一首，需要抽新随机
             if (shuffleBag.isEmpty()) {
-                if (force || player.repeatMode == Player.REPEAT_MODE_ALL) {
+                if (force || repeatModeSetting == Player.REPEAT_MODE_ALL) {
                     rebuildShuffleBag(excludeIndex = currentIndex) // 新一轮，避免同曲连播
                 } else {
                     NPLogger.d("NERI-Player", "Shuffle finished and repeat is off, stopping.")
@@ -675,7 +677,7 @@ object PlayerManager {
             if (currentIndex < currentPlaylist.lastIndex) {
                 currentIndex++
             } else {
-                if (force || player.repeatMode == Player.REPEAT_MODE_ALL) {
+                if (force || repeatModeSetting == Player.REPEAT_MODE_ALL) {
                     currentIndex = 0
                 } else {
                     NPLogger.d("NERI-Player", "Already at the end of the playlist.")
@@ -705,7 +707,7 @@ object PlayerManager {
                 currentIndex--
                 playAtIndex(currentIndex)
             } else {
-                if (player.repeatMode == Player.REPEAT_MODE_ALL && currentPlaylist.isNotEmpty()) {
+                if (repeatModeSetting == Player.REPEAT_MODE_ALL && currentPlaylist.isNotEmpty()) {
                     currentIndex = currentPlaylist.lastIndex
                     playAtIndex(currentIndex)
                 } else {
@@ -716,12 +718,14 @@ object PlayerManager {
     }
 
     fun cycleRepeatMode() {
-        val newMode = when (player.repeatMode) {
+        val newMode = when (repeatModeSetting) {
             Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
             Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
             Player.REPEAT_MODE_ONE -> Player.REPEAT_MODE_OFF
             else -> Player.REPEAT_MODE_OFF
         }
+        repeatModeSetting = newMode
+        _repeatModeFlow.value = newMode
         player.repeatMode = newMode
     }
 
