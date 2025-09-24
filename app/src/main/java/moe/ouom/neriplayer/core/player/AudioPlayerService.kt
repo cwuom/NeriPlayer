@@ -224,7 +224,6 @@ class AudioPlayerService : Service() {
         val isPlaying = PlayerManager.isPlayingFlow.value
         val song = PlayerManager.currentSongFlow.value
 
-        PlayerManager.playlistsFlow.value
         val contentIntent = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -236,7 +235,6 @@ class AudioPlayerService : Service() {
         val playIntent  = servicePendingIntent(ACTION_PLAY, 2)
         val pauseIntent = servicePendingIntent(ACTION_PAUSE, 3)
         val nextIntent  = servicePendingIntent(ACTION_NEXT, 4)
-
         val toggleFavIntent = servicePendingIntent(ACTION_TOGGLE_FAV, 6)
 
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
@@ -253,14 +251,6 @@ class AudioPlayerService : Service() {
                     .setShowActionsInCompactView(0, 1, 3)
             )
 
-        builder.addAction(android.R.drawable.ic_media_previous, "上一首", prevIntent)
-
-        if (isPlaying) {
-            builder.addAction(android.R.drawable.ic_media_pause, "暂停", pauseIntent)
-        } else {
-            builder.addAction(android.R.drawable.ic_media_play, "播放", playIntent)
-        }
-
         val isFav = PlayerManager.playlistsFlow.value
             .firstOrNull { it.name == "我喜欢的音乐" }
             ?.songs?.any { it.id == song?.id } == true
@@ -269,23 +259,21 @@ class AudioPlayerService : Service() {
             this,
             if (isFav) R.drawable.ic_baseline_favorite_24 else R.drawable.ic_outline_favorite_24
         )
-
         val favAction = NotificationCompat.Action.Builder(
             favIcon,
             if (isFav) "取消收藏" else "收藏",
             toggleFavIntent
         ).build()
 
-        builder.addAction(android.R.drawable.ic_media_previous, "上一首", prevIntent)
+        builder.addAction(R.drawable.round_skip_previous_24, "上一首", prevIntent)
         builder.addAction(
-            if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
+            if (isPlaying) R.drawable.round_pause_24 else R.drawable.round_play_arrow_24,
             if (isPlaying) "暂停" else "播放",
             if (isPlaying) pauseIntent else playIntent
         )
         builder.addAction(favAction)
-        builder.addAction(android.R.drawable.ic_media_next, "下一首", nextIntent)
+        builder.addAction(R.drawable.round_skip_next_24, "下一首", nextIntent)
 
-        // 标题/副标题/封面
         builder.setContentTitle(song?.name ?: "NeriPlayer")
         builder.setContentText(song?.artist ?: "")
         currentLargeIcon?.let { builder.setLargeIcon(it) }
