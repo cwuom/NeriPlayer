@@ -157,6 +157,7 @@ fun ExploreScreen(
     val exportSheetState = rememberModalBottomSheetState()
 
     val pagerState = rememberPagerState(pageCount = { SearchSource.entries.size })
+    val miniPlayerHeight = LocalMiniPlayerHeight.current
 
     fun exitPartsSelection() {
         partsSelectionMode = false
@@ -255,18 +256,38 @@ fun ExploreScreen(
                 if (searchQuery.isNotEmpty()) {
                     when {
                         ui.searching -> {
-                            Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
+                            Box(
+                                Modifier
+                                    .fillMaxSize()
+                                    .padding(bottom = miniPlayerHeight),
+                                Alignment.Center
+                            ) { CircularProgressIndicator() }
                         }
                         ui.searchError != null -> {
-                            Box(Modifier.fillMaxSize(), Alignment.Center) {
+                            Box(
+                                Modifier
+                                    .fillMaxSize()
+                                    .padding(bottom = miniPlayerHeight),
+                                Alignment.Center
+                            ) {
                                 Text(ui.searchError!!, color = MaterialTheme.colorScheme.error)
                             }
                         }
                         ui.searchResults.isEmpty() -> {
-                            Box(Modifier.fillMaxSize(), Alignment.Center) { Text("未找到结果") }
+                            Box(
+                                Modifier
+                                    .fillMaxSize()
+                                    .padding(bottom = miniPlayerHeight),
+                                Alignment.Center
+                            ) { Text("未找到结果") }
                         }
                         else -> {
-                            LazyColumn(contentPadding = PaddingValues(top = 8.dp)) {
+                            LazyColumn(
+                                contentPadding = PaddingValues(
+                                    top = 8.dp,
+                                    bottom = 16.dp + miniPlayerHeight
+                                )
+                            ) {
                                 itemsIndexed(ui.searchResults) { index, song ->
                                     SongRow(index + 1, song) {
                                         if (song.album == PlayerManager.BILI_SOURCE_TAG) {
@@ -562,7 +583,9 @@ private fun NeteaseDefaultContent(
         }
         if (ui.loading) {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                Box(Modifier.fillMaxWidth().padding(vertical = 24.dp), Alignment.Center) {
+                Box(Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 24.dp), Alignment.Center) {
                     CircularProgressIndicator()
                 }
             }
@@ -572,7 +595,7 @@ private fun NeteaseDefaultContent(
             }
         } else {
             items(items = ui.playlists, key = { it.id }) { playlist ->
-                  PlaylistCard(playlist) { onPlay(playlist) }
+                PlaylistCard(playlist) { onPlay(playlist) }
             }
         }
     }
