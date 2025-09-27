@@ -72,6 +72,11 @@ public class BgEffectPainter {
     private float uMusicLevel = 0f;
     private float uBeat = 0f;
 
+    public void setFullScreenBound() {
+        float[] full = new float[]{0f, 0f, 1f, 1f};
+        setBound(full);
+    }
+
     public BgEffectPainter(Context context) {
         mContext = context;
         mResources = context.getResources();
@@ -213,7 +218,7 @@ public class BgEffectPainter {
     }
 
     public void calcAnimationBound(Context context, View view, MaterialToolbar actionBar) {
-        float heightDp = 416;
+        float heightDp = (float) (416 * 1.3);
         float heightPx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, heightDp, context.getResources().getDisplayMetrics());
 
         float height = (actionBar != null ? actionBar.getHeight() : 0.0f) + heightPx;

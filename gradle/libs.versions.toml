@@ -35,6 +35,7 @@ media3Exoplayer = "1.8.0"
 navigation = "2.9.3"
 lifecycle = "2.9.2"
 okhttp = "5.1.0"
+paletteKtx = "1.0.0"
 reorderable = "0.9.6"
 foundationLayout = "1.9.0"
 uiGraphics = "1.9.0"
@@ -49,6 +50,7 @@ androidx-media = { module = "androidx.media:media", version.ref = "media" }
 androidx-media3-datasource-okhttp = { module = "androidx.media3:media3-datasource-okhttp", version.ref = "media3DatasourceOkhttp" }
 androidx-media3-datasource = { module = "androidx.media3:media3-datasource", version.ref = "media3Datasource" }
 androidx-media3-exoplayer = { module = "androidx.media3:media3-exoplayer", version.ref = "media3Exoplayer" }
+androidx-palette-ktx = { module = "androidx.palette:palette-ktx", version.ref = "paletteKtx" }
 androidx-ui-graphics = { module = "androidx.compose.ui:ui-graphics", version.ref = "uiGraphics" }
 blurview = { module = "com.github.Dimezis:BlurView", version.ref = "blurview" }
 coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coilCompose" }

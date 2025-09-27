@@ -37,8 +37,15 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.graphics.drawable.toBitmap
 import androidx.core.view.ViewCompat
+import androidx.palette.graphics.Palette
+import coil.ImageLoader
+import coil.request.ImageRequest
+import coil.request.SuccessResult
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.player.PlayerManager
 import kotlin.math.max
 
@@ -50,7 +57,8 @@ import kotlin.math.max
 @Composable
 fun HyperBackground(
     modifier: Modifier = Modifier,
-    isDark: Boolean
+    isDark: Boolean,
+    coverUrl: String?
 ) {
     val context = LocalContext.current
     val currentIsDark by rememberUpdatedState(isDark)
@@ -93,7 +101,7 @@ fun HyperBackground(
     val level by PlayerManager.audioLevelFlow.collectAsState(0f)
     val beat  by PlayerManager.beatImpulseFlow.collectAsState(0f)
 
-    LaunchedEffect(painter, hostView, currentIsDark) {
+    LaunchedEffect(painter, hostView, currentIsDark, coverUrl) {
         if (painter == null || hostView == null) return@LaunchedEffect
         val v = hostView!!
 
@@ -102,6 +110,91 @@ fun HyperBackground(
             try {
                 painter.showRuntimeShader(context, v, null, currentIsDark)
             } catch (_: Throwable) { return@LaunchedEffect }
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !coverUrl.isNullOrBlank()) {
+            try {
+                val loader = ImageLoader(context)
+                val req = ImageRequest.Builder(context)
+                    .data(coverUrl)
+                    .allowHardware(false) // Palette 需要 software bitmap
+                    .build()
+                val result = withContext(Dispatchers.IO) { loader.execute(req) }
+                val bmp = (result as? SuccessResult)?.drawable?.toBitmap()
+
+                if (bmp != null) {
+                    val palette = withContext(Dispatchers.Default) {
+                        Palette.from(bmp)
+                            .clearFilters() // 保留更真实的颜色
+                            .maximumColorCount(16)
+                            .generate()
+                    }
+
+                    // dominant / lightVibrant / muted / darkMuted
+                    fun pickColor(vararg candidates: Int?): Int {
+                        val ok = candidates.firstOrNull { it != null && it != 0 } ?: 0xFF808080.toInt()
+                        return ok
+                    }
+
+                    val c1 = pickColor(
+                        palette.dominantSwatch?.rgb,
+                        palette.vibrantSwatch?.rgb,
+                        palette.mutedSwatch?.rgb
+                    )
+                    val c2 = pickColor(
+                        palette.lightVibrantSwatch?.rgb,
+                        palette.lightMutedSwatch?.rgb,
+                        c1
+                    )
+                    val c3 = pickColor(
+                        palette.mutedSwatch?.rgb,
+                        palette.vibrantSwatch?.rgb,
+                        c1
+                    )
+                    val c4 = pickColor(
+                        palette.darkMutedSwatch?.rgb,
+                        palette.darkVibrantSwatch?.rgb,
+                        c1
+                    )
+
+                    fun to01(x: Int) = (x and 0xFF) / 255f
+                    fun argbToVec4(c: Int): FloatArray {
+                        val a = to01(c ushr 24)
+                        val r = to01(c ushr 16)
+                        val g = to01(c ushr 8)
+                        val b = to01(c)
+                        // shader 里把 rgb 乘以 a，所以这里把 a 固定为 1，避免过暗
+                        return floatArrayOf(r, g, b, 1f)
+                    }
+
+                    val colors = floatArrayOf(
+                        *argbToVec4(c1),
+                        *argbToVec4(c2),
+                        *argbToVec4(c3),
+                        *argbToVec4(c4),
+                    )
+
+                    // 亮度估计，调一点点亮度/饱和度
+                    fun luma(c: Int): Float {
+                        val r = to01(c ushr 16); val g = to01(c ushr 8); val b = to01(c)
+                        return (0.2126f*r + 0.7152f*g + 0.0722f*b)
+                    }
+                    val L = luma(c1)
+                    val lightOffset = when {
+                        currentIsDark -> (-0.06f + (0.12f * (L - 0.5f)))  // 暗色下略降亮，偏亮封面就少降一点
+                        else          -> ( 0.08f + (0.10f * (0.5f - L)))  // 亮色下略升亮，偏暗封面就多升一点
+                    }.coerceIn(-0.12f, 0.12f)
+
+                    val saturateOffset = (if (currentIsDark) 0.24f else 0.16f)
+
+                    // 喂给着色器
+                    painter.setColors(colors)
+                    painter.setLightOffset(lightOffset)
+                    painter.setSaturateOffset(saturateOffset)
+                }
+            } catch (_: Throwable) {
+                // 忽略提色失败，继续使用默认配色
+            }
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
