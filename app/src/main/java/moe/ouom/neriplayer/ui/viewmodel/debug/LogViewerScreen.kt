@@ -26,7 +26,11 @@ package moe.ouom.neriplayer.ui.viewmodel.debug
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -45,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import java.io.File
 import java.io.FileNotFoundException
 import java.net.URLDecoder
@@ -103,7 +108,16 @@ fun LogViewerScreen(
     }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = {
+            val miniH = LocalMiniPlayerHeight.current
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier
+                    .padding(bottom = miniH)
+                    .windowInsetsPadding(WindowInsets.navigationBars)
+                    .imePadding()
+            )
+        },
         topBar = {
             TopAppBar(
                 title = { Text(File(decodedFilePath).name, style = MaterialTheme.typography.titleMedium) },
@@ -131,6 +145,7 @@ fun LogViewerScreen(
             )
         }
     ) { padding ->
+        val miniH = LocalMiniPlayerHeight.current
         val listState = rememberLazyListState()
         LaunchedEffect(logContent.size) {
             if (logContent.isNotEmpty()) {
@@ -140,7 +155,9 @@ fun LogViewerScreen(
 
         LazyColumn(
             state = listState,
-            modifier = Modifier.padding(padding)
+            modifier = Modifier
+                .padding(padding)
+                .padding(bottom = miniH)
         ) {
             items(logContent) { line ->
                 Text(

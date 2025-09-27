@@ -43,8 +43,12 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Home
@@ -356,7 +360,16 @@ fun NeriApp(
                     Scaffold(
                         containerColor = containerColor,
                         contentColor = MaterialTheme.colorScheme.onSurface,
-                        snackbarHost = { SnackbarHost(snackbarHostState) },
+                        snackbarHost = {
+                            val miniH = LocalMiniPlayerHeight.current
+                            SnackbarHost(
+                                hostState = snackbarHostState,
+                                modifier = Modifier
+                                    .padding(bottom = miniH)
+                                    .windowInsetsPadding(WindowInsets.navigationBars)
+                                    .imePadding()
+                            )
+                        },
                         bottomBar = {
                             AnimatedVisibility(
                                 visible = !showNowPlaying,

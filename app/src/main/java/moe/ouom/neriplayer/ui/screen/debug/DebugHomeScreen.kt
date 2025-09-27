@@ -27,9 +27,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Build
@@ -60,7 +64,12 @@ fun DebugHomeScreen(
     onHideDebugMode: () -> Unit,
     onTestExceptionHandler: () -> Unit = {},
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(
+        modifier = Modifier
+            .windowInsetsPadding(WindowInsets.safeDrawing)
+            .imePadding(),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
         ListItem(
             leadingContent = {
                 Icon(

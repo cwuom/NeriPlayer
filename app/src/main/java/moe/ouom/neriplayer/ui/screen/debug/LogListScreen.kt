@@ -24,7 +24,11 @@ package moe.ouom.neriplayer.ui.screen.debug
  */
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -39,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.util.NPLogger
 import java.io.File
 import java.text.SimpleDateFormat
@@ -103,7 +108,16 @@ fun LogListScreen(
     }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = {
+            val miniH = LocalMiniPlayerHeight.current
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier
+                    .padding(bottom = miniH)
+                    .windowInsetsPadding(WindowInsets.navigationBars)
+                    .imePadding()
+            )
+        },
         topBar = {
             TopAppBar(
                 title = { Text("应用日志") },
@@ -122,7 +136,12 @@ fun LogListScreen(
             )
         }
     ) { padding ->
-        LazyColumn(modifier = Modifier.padding(padding)) {
+        val miniH = LocalMiniPlayerHeight.current
+
+        LazyColumn(modifier = Modifier
+            .padding(padding)
+            .padding(bottom = miniH)
+        ) {
             if (logFilesState.value.isEmpty()) {
                 item {
                     ListItem(
