@@ -238,7 +238,7 @@ class AudioPlayerService : Service() {
         val toggleFavIntent = servicePendingIntent(ACTION_TOGGLE_FAV, 6)
 
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_neri_player_round)
+            .setSmallIcon(R.drawable.ic_neri_player_round_white)
             .setContentIntent(contentIntent)
             .setCategory(Notification.CATEGORY_TRANSPORT)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
