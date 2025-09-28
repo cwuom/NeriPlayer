@@ -117,7 +117,6 @@
 ### 调试与日志 / Debugging & Logs
 - 过滤应用日志：
 ```bash
-  ```bash
   adb logcat | grep "[NeriPlayer]"
   ```
 - 调试模式可在设置页连点“版本号”7 次启用，启用后默认打开文件日志（`NPLogger.init(..., enableFileLogging = true)`）。
