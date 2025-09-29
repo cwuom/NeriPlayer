@@ -88,6 +88,7 @@ import androidx.compose.material.icons.outlined.Backup
 import androidx.compose.material.icons.outlined.PlaylistPlay
 import androidx.compose.material.icons.outlined.Upload
 import androidx.compose.material.icons.outlined.Analytics
+import androidx.compose.material.icons.outlined.FormatSize
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -136,6 +137,8 @@ import androidx.core.graphics.toColorInt
 import androidx.core.net.toUri
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.flow.StateFlow
 import moe.ouom.neriplayer.BuildConfig
 import moe.ouom.neriplayer.R
@@ -153,6 +156,8 @@ import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.NightModeHelper
 import moe.ouom.neriplayer.util.convertTimestampToDate
+import kotlin.math.absoluteValue
+import kotlin.math.roundToInt
 
 /** 可复用的折叠区头部 */
 @Composable
@@ -252,6 +257,8 @@ fun SettingsScreen(
     onSeedColorChange: (String) -> Unit,
     lyricBlurEnabled: Boolean,
     onLyricBlurEnabledChange: (Boolean) -> Unit,
+    lyricFontScale: Float,
+    onLyricFontScaleChange: (Float) -> Unit,
     uiDensityScale: Float,
     onUiDensityScaleChange: (Float) -> Unit,
     bypassProxy: Boolean,
@@ -685,6 +692,53 @@ fun SettingsScreen(
                             supportingContent = { Text("为非当前行歌词添加景深模糊") },
                             trailingContent = {
                                 Switch(checked = lyricBlurEnabled, onCheckedChange = onLyricBlurEnabledChange)
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+
+                        ListItem(
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Outlined.FormatSize,
+                                    contentDescription = "歌词字体大小",
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = { Text("歌词字体大小") },
+                            supportingContent = {
+                                var pendingLyricFontScale by remember { mutableFloatStateOf(lyricFontScale) }
+                                LaunchedEffect(lyricFontScale) {
+                                    if ((pendingLyricFontScale - lyricFontScale).absoluteValue > 0.001f) {
+                                        pendingLyricFontScale = lyricFontScale
+                                    }
+                                }
+
+                                Column(Modifier.fillMaxWidth()) {
+                                    Text(
+                                        text = "当前：${(pendingLyricFontScale * 100).roundToInt()}%",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Slider(
+                                        value = pendingLyricFontScale,
+                                        onValueChange = { pendingLyricFontScale = it },
+                                        onValueChangeFinished = {
+                                            onLyricFontScaleChange(pendingLyricFontScale)
+                                        },
+                                        valueRange = 0.5f..1.6f,
+                                        steps = 10
+                                    )
+                                    Text(
+                                        text = "示例歌词：昨夜小楼又东风",
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 4.dp),
+                                        textAlign = TextAlign.Center,
+                                        fontSize = (18f * pendingLyricFontScale)
+                                            .coerceIn(12f, 28f).sp
+                                    )
+                                }
                             },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )

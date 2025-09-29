@@ -48,6 +48,7 @@ object SettingsKeys {
     val KEY_DEV_MODE = booleanPreferencesKey("dev_mode_enabled")
     val THEME_SEED_COLOR = stringPreferencesKey("theme_seed_color")
     val LYRIC_BLUR_ENABLED = booleanPreferencesKey("lyric_blur_enabled")
+    val LYRIC_FONT_SCALE = floatPreferencesKey("lyric_font_scale")
     val UI_DENSITY_SCALE = floatPreferencesKey("ui_density_scale")
     val BYPASS_PROXY = booleanPreferencesKey("bypass_proxy")
     val BACKGROUND_IMAGE_URI = stringPreferencesKey("background_image_uri")
@@ -94,6 +95,9 @@ class SettingsRepository(private val context: Context) {
 
     val lyricBlurEnabledFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.LYRIC_BLUR_ENABLED] ?: true }
+
+    val lyricFontScaleFlow: Flow<Float> =
+        context.dataStore.data.map { it[SettingsKeys.LYRIC_FONT_SCALE] ?: 1.0f }
 
     val uiDensityScaleFlow: Flow<Float> =
         context.dataStore.data.map { it[SettingsKeys.UI_DENSITY_SCALE] ?: 1.0f }
@@ -152,6 +156,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setLyricBlurEnabled(enabled: Boolean) {
         context.dataStore.edit { it[SettingsKeys.LYRIC_BLUR_ENABLED] = enabled }
+    }
+
+    suspend fun setLyricFontScale(scale: Float) {
+        context.dataStore.edit { it[SettingsKeys.LYRIC_FONT_SCALE] = scale }
     }
 
     suspend fun setUiDensityScale(scale: Float) {

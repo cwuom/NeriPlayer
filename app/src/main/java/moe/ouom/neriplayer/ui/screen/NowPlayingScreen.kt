@@ -83,6 +83,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SpeakerGroup
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.FormatSize
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Pause
@@ -141,6 +142,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.Player
 import coil.compose.AsyncImage
@@ -171,6 +173,8 @@ import kotlin.math.roundToInt
 fun NowPlayingScreen(
     onNavigateUp: () -> Unit,
     lyricBlurEnabled: Boolean,
+    lyricFontScale: Float,
+    onLyricFontScaleChange: (Float) -> Unit,
 ) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
@@ -308,6 +312,8 @@ fun NowPlayingScreen(
                 LyricsScreen(
                     lyrics = lyrics,
                     lyricBlurEnabled = lyricBlurEnabled,
+                    lyricFontScale = lyricFontScale,
+                    onLyricFontScaleChange = onLyricFontScaleChange,
                     onNavigateBack = { showLyricsScreen = false },
                     onSeekTo = { position -> PlayerManager.seekTo(position) },
                     translatedLyrics = translatedLyrics
@@ -380,7 +386,9 @@ fun NowPlayingScreen(
                                     originalSong = currentSong!!,
                                     queue = displayedQueue,
                                     onDismiss = { showMoreOptions = false },
-                                    snackbarHostState = snackbarHostState
+                                    snackbarHostState = snackbarHostState,
+                                    lyricFontScale = lyricFontScale,
+                                    onLyricFontScaleChange = onLyricFontScaleChange
                                 )
                             }
                         },
@@ -586,6 +594,8 @@ fun NowPlayingScreen(
                                 .fillMaxWidth()
                                 .weight(8f),
                             textColor = MaterialTheme.colorScheme.onBackground,
+                            fontSize = (18f * lyricFontScale).coerceIn(14f, 26f).sp,
+                            translationFontSize = (14f * lyricFontScale).coerceIn(12f, 22f).sp,
                             visualSpec = LyricVisualSpec(),
                             lyricOffsetMs = totalOffset,
                             lyricBlurEnabled = lyricBlurEnabled,
@@ -636,6 +646,8 @@ fun NowPlayingScreen(
                                     .weight(1f) // 右半屏
                                     .fillMaxHeight(),
                                 textColor = MaterialTheme.colorScheme.onBackground,
+                                fontSize = (18f * lyricFontScale).coerceIn(14f, 26f).sp,
+                                translationFontSize = (14f * lyricFontScale).coerceIn(12f, 22f).sp,
                                 visualSpec = LyricVisualSpec(),
                                 lyricOffsetMs = totalOffset,
                                 lyricBlurEnabled = lyricBlurEnabled,
@@ -855,11 +867,14 @@ fun MoreOptionsSheet(
     originalSong: SongItem,
     queue: List<SongItem>,
     onDismiss: () -> Unit,
-    snackbarHostState: SnackbarHostState
+    snackbarHostState: SnackbarHostState,
+    lyricFontScale: Float,
+    onLyricFontScaleChange: (Float) -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState()
     var showSearchView by remember { mutableStateOf(false) }
     var showOffsetSheet by remember { mutableStateOf(false) }
+    var showFontSizeSheet by remember { mutableStateOf(false) }
 
     val focusManager = LocalFocusManager.current
     val context = LocalContext.current
@@ -881,6 +896,7 @@ fun MoreOptionsSheet(
         AnimatedContent(
             targetState = when {
                 showOffsetSheet -> "Offset"
+                showFontSizeSheet -> "FontSize"
                 showSearchView -> "Search"
                 else -> "Main"
             },
@@ -917,6 +933,14 @@ fun MoreOptionsSheet(
                             headlineContent = { Text("调整歌词偏移") },
                             leadingContent = { Icon(Icons.Outlined.Timer, null) },
                             modifier = Modifier.clickable { showOffsetSheet = true }
+                        )
+                        ListItem(
+                            headlineContent = { Text("歌词字体大小") },
+                            leadingContent = { Icon(Icons.Outlined.FormatSize, null) },
+                            supportingContent = {
+                                Text("${(lyricFontScale * 100).roundToInt()}%")
+                            },
+                            modifier = Modifier.clickable { showFontSizeSheet = true }
                         )
                         ListItem(
                             headlineContent = { Text("分享") },
@@ -1053,6 +1077,14 @@ fun MoreOptionsSheet(
                         onDismiss = { showOffsetSheet = false }
                     )
                 }
+
+                "FontSize" -> {
+                    LyricFontSizeSheet(
+                        currentScale = lyricFontScale,
+                        onScaleCommit = onLyricFontScaleChange,
+                        onDismiss = { showFontSizeSheet = false }
+                    )
+                }
             }
 
             // Snackbar
@@ -1140,6 +1172,63 @@ private fun LyricOffsetSheet(song: SongItem, onDismiss: () -> Unit) {
         )
         Spacer(Modifier.height(16.dp))
         HapticTextButton(onClick = onDismiss) {
+            Text("完成")
+        }
+    }
+}
+
+@Composable
+private fun LyricFontSizeSheet(
+    currentScale: Float,
+    onScaleCommit: (Float) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var sliderValue by remember { mutableFloatStateOf(currentScale) }
+
+    LaunchedEffect(currentScale) {
+        sliderValue = currentScale
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 16.dp)
+            .windowInsetsPadding(WindowInsets.navigationBars),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text("歌词字体大小", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "${(sliderValue * 100).roundToInt()}%",
+            style = MaterialTheme.typography.titleLarge.copy(fontFamily = FontFamily.Monospace)
+        )
+        Text(
+            text = "向左减小，向右增大",
+            style = MaterialTheme.typography.bodySmall
+        )
+
+        Slider(
+            value = sliderValue,
+            onValueChange = { sliderValue = it },
+            onValueChangeFinished = { onScaleCommit(sliderValue) },
+            valueRange = 0.5f..1.6f,
+            steps = 10
+        )
+
+        Text(
+            text = "示例歌词：春风十里不如你",
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp),
+            textAlign = TextAlign.Center,
+            fontSize = (18f * sliderValue).coerceIn(12f, 28f).sp
+        )
+
+        Spacer(Modifier.height(16.dp))
+        HapticTextButton(onClick = {
+            onScaleCommit(sliderValue)
+            onDismiss()
+        }) {
             Text("完成")
         }
     }

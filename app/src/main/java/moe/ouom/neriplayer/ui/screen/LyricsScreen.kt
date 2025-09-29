@@ -49,10 +49,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.FavoriteBorder
-import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.SkipNext
@@ -60,10 +60,8 @@ import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -71,17 +69,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -100,6 +97,8 @@ import moe.ouom.neriplayer.util.formatDuration
 fun LyricsScreen(
     lyrics: List<LyricEntry>,
     lyricBlurEnabled: Boolean,
+    lyricFontScale: Float,
+    onLyricFontScaleChange: (Float) -> Unit,
     onNavigateBack: () -> Unit,
     onSeekTo: (Long) -> Unit,
     translatedLyrics: List<LyricEntry>? = null,
@@ -239,7 +238,7 @@ fun LyricsScreen(
 
             Spacer(modifier = Modifier.width(6.dp))
 
-            // 更多按钮（复用 NowPlaying 的底部弹窗）
+            // 更多按钮
             var showMoreOptions by remember { mutableStateOf(false) }
             HapticIconButton(onClick = { showMoreOptions = true }) {
                 Icon(Icons.Filled.MoreVert, contentDescription = "更多选项")
@@ -254,7 +253,9 @@ fun LyricsScreen(
                     originalSong = currentSong!!,
                     queue = displayedQueue,
                     onDismiss = { showMoreOptions = false },
-                    snackbarHostState = snackbarHostState
+                    snackbarHostState = snackbarHostState,
+                    lyricFontScale = lyricFontScale,
+                    onLyricFontScaleChange = onLyricFontScaleChange
                 )
             }
         }
@@ -272,7 +273,7 @@ fun LyricsScreen(
                     modifier = Modifier.fillMaxSize(),
                     textColor = MaterialTheme.colorScheme.onBackground,
                     // 放大歌词与行距，增强可读性
-                    fontSize = 20.sp,
+                    fontSize = (20f * lyricFontScale).coerceIn(16f, 30f).sp,
                     centerPadding = 24.dp,
                     visualSpec = LyricVisualSpec(
                         // 控制缩放范围，避免超界
@@ -287,7 +288,8 @@ fun LyricsScreen(
                     onLyricClick = { lyricEntry ->
                         onSeekTo(lyricEntry.startTimeMs)
                     },
-                    translatedLyrics = translatedLyrics
+                    translatedLyrics = translatedLyrics,
+                    translationFontSize = (16 * lyricFontScale).coerceIn(12f, 26f).sp
                 )
             } else {
                 Box(

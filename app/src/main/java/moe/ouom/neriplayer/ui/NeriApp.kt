@@ -255,6 +255,7 @@ fun NeriApp(
     val devModeEnabled by repo.devModeEnabledFlow.collectAsState(initial = false)
     val themeSeedColor by repo.themeSeedColorFlow.collectAsState(initial = ThemeDefaults.DEFAULT_SEED_COLOR_HEX)
     val lyricBlurEnabled by repo.lyricBlurEnabledFlow.collectAsState(initial = true)
+    val lyricFontScale by repo.lyricFontScaleFlow.collectAsState(initial = 1.0f)
     val uiDensityScale by repo.uiDensityScaleFlow.collectAsState(initial = 1.0f)
     val bypassProxy by repo.bypassProxyFlow.collectAsState(initial = true)
     val backgroundImageUri by repo.backgroundImageUriFlow.collectAsState(initial = null)
@@ -729,6 +730,10 @@ fun NeriApp(
                                         onLyricBlurEnabledChange = { enabled ->
                                             scope.launch { repo.setLyricBlurEnabled(enabled) }
                                         },
+                                        lyricFontScale = lyricFontScale,
+                                        onLyricFontScaleChange = { scale ->
+                                            scope.launch { repo.setLyricFontScale(scale) }
+                                        },
                                         uiDensityScale = uiDensityScale,
                                         onUiDensityScaleChange = { scale ->
                                             scope.launch { repo.setUiDensityScale(scale) }
@@ -925,7 +930,11 @@ fun NeriApp(
 
                             NowPlayingScreen(
                                 onNavigateUp = { showNowPlaying = false },
-                                lyricBlurEnabled = lyricBlurEnabled
+                                lyricBlurEnabled = lyricBlurEnabled,
+                                lyricFontScale = lyricFontScale,
+                                onLyricFontScaleChange = { scale ->
+                                    scope.launch { repo.setLyricFontScale(scale) }
+                                }
                             )
                         }
                     }
