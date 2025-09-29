@@ -362,7 +362,7 @@ fun LocalPlaylistDetailScreen(
             )
 
             // 统计
-            val totalDurationMs by remember {
+            val totalDurationMs by remember(playlist.id) {
                 derivedStateOf { localSongs.sumOf { it.durationMs } }
             }
 
