@@ -32,6 +32,7 @@ sealed class Destinations(val route: String, val label: String) {
     data object Explore : Destinations("explore", "探索")
     data object Library : Destinations("library", "媒体库")
     data object Settings : Destinations("settings", "设置")
+    object Recent { const val route = "recent" }
 
     // DEBUG
     data object Debug : Destinations("debug", "调试")

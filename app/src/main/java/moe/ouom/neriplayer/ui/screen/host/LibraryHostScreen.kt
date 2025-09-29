@@ -53,6 +53,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.core.api.bili.BiliClient
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
 
 @Parcelize
@@ -117,13 +118,25 @@ fun LibraryHostScreen(
                     biliListState = biliListState,
                     qqMusicListState = qqMusicListState,
                     onLocalPlaylistClick = { playlist -> 
-                        selected = LibrarySelectedItem.Local(playlist.id) 
+                        selected = LibrarySelectedItem.Local(playlist.id)
+                        AppContainer.playlistUsageRepo.recordOpen(
+                            id = playlist.id, name = playlist.name, picUrl = playlist.songs.last().coverUrl,
+                            trackCount = playlist.songs.size, source = "local"
+                        )
                     },
                     onNeteasePlaylistClick = { playlist -> 
-                        selected = LibrarySelectedItem.Netease(playlist) 
+                        selected = LibrarySelectedItem.Netease(playlist)
+                        AppContainer.playlistUsageRepo.recordOpen(
+                            id = playlist.id, name = playlist.name, picUrl = playlist.picUrl,
+                            trackCount = playlist.trackCount, source = "netease"
+                        )
                     },
                     onBiliPlaylistClick = { playlist -> 
-                        selected = LibrarySelectedItem.Bili(playlist) 
+                        selected = LibrarySelectedItem.Bili(playlist)
+                        AppContainer.playlistUsageRepo.recordOpen(
+                            id = playlist.mediaId, name = playlist.title, picUrl = playlist.coverUrl,
+                            trackCount = playlist.count, source = "bili", mid = playlist.mid, fid = playlist.fid
+                        )
                     }
                 )
             } else {

@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.core.di
  * Created: 2025/8/19
  */
 
+import android.annotation.SuppressLint
 import android.app.Application
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,6 +38,8 @@ import moe.ouom.neriplayer.core.api.search.CloudMusicSearchApi
 import moe.ouom.neriplayer.core.api.search.QQMusicSearchApi
 import moe.ouom.neriplayer.data.BiliCookieRepository
 import moe.ouom.neriplayer.data.NeteaseCookieRepository
+import moe.ouom.neriplayer.data.PlayHistoryRepository
+import moe.ouom.neriplayer.data.PlaylistUsageRepository
 import moe.ouom.neriplayer.data.SettingsRepository
 import moe.ouom.neriplayer.util.DynamicProxySelector
 import okhttp3.OkHttpClient
@@ -54,6 +57,15 @@ object AppContainer {
     val settingsRepo by lazy { SettingsRepository(application) }
     val neteaseCookieRepo by lazy { NeteaseCookieRepository(application) }
     val biliCookieRepo by lazy { BiliCookieRepository(application) }
+
+
+    @SuppressLint("StaticFieldLeak")
+    lateinit var playHistoryRepo: PlayHistoryRepository
+        private set
+    @SuppressLint("StaticFieldLeak")
+    lateinit var playlistUsageRepo: PlaylistUsageRepository
+        private set
+
 
     // 共享 OkHttpClient：受 DynamicProxySelector 管理
     val sharedOkHttpClient by lazy {
@@ -87,6 +99,8 @@ object AppContainer {
         this.application = app
         startCookieObserver()
         startSettingsObserver()
+        playHistoryRepo = PlayHistoryRepository(app)
+        playlistUsageRepo = PlaylistUsageRepository(app)
     }
 
     private fun startCookieObserver() {

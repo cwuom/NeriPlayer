@@ -19,7 +19,7 @@ package moe.ouom.neriplayer.ui.viewmodel.tab
  * along with this software.
  * If not, see <https://www.gnu.org/licenses/>.
  *
- * File: moe.ouom.neriplayer.ui.viewmodel/ExploreViewModel
+ * File: moe.ouom.neriplayer.ui.viewmodel/HomeViewModel
  * Created: 2025/8/10
  */
 
@@ -34,6 +34,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.parcelize.Parcelize
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
 import java.io.IOException
@@ -64,8 +65,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _uiState = MutableStateFlow(HomeUiState(loading = true))
     val uiState: StateFlow<HomeUiState> = _uiState
 
+    // 首页歌曲推荐：热门热曲 / 私人雷达
+    private val _hotSongsFlow = MutableStateFlow<List<SongItem>>(emptyList())
+    val hotSongsFlow: StateFlow<List<SongItem>> = _hotSongsFlow
+
+    private val _radarSongsFlow = MutableStateFlow<List<SongItem>>(emptyList())
+    val radarSongsFlow: StateFlow<List<SongItem>> = _radarSongsFlow
+
     init {
-        // 登录后自动刷新
+        // 登录后自动刷新首页推荐歌单
         viewModelScope.launch {
             repo.cookieFlow.collect { raw ->
                 val cookies = raw.toMutableMap()
@@ -74,14 +82,17 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 if (!cookies["MUSIC_U"].isNullOrBlank()) {
                     NPLogger.d(TAG, "Detected login cookie, refreshing recommend")
                     refreshRecommend()
+                    // 登录后也触发歌曲推荐加载
+                    loadHomeRecommendations()
                 }
             }
         }
-        // 首次进入也拉一次
+        // 首次进入拉一次
         refreshRecommend()
+        loadHomeRecommendations()
     }
 
-    /** 拉首页推荐 */
+    /** 拉首页推荐歌单 */
     fun refreshRecommend() {
         _uiState.value = _uiState.value.copy(loading = true, error = null)
         viewModelScope.launch {
@@ -111,6 +122,40 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * 首页歌曲推荐：
+     * - 热门热曲：使用关键词“热歌”搜索 30 首
+     * - 私人雷达：使用关键词“私人雷达”搜索 30 首
+     */
+    fun loadHomeRecommendations() {
+        // 已经有数据就不重复拉
+        if (_hotSongsFlow.value.isNotEmpty() && _radarSongsFlow.value.isNotEmpty()) return
+
+        viewModelScope.launch {
+            // 热门热曲
+            launch {
+                runCatching {
+                    val raw = withContext(Dispatchers.IO) {
+                        client.searchSongs(keyword = "热歌", limit = 30, offset = 0, type = 1)
+                    }
+                    parseSongs(raw)
+                }.onSuccess { _hotSongsFlow.value = it }
+            }
+
+            // 私人雷达
+            launch {
+                runCatching {
+                    val raw = withContext(Dispatchers.IO) {
+                        client.searchSongs(keyword = "私人雷达", limit = 30, offset = 0, type = 1)
+                    }
+                    parseSongs(raw)
+                }.onSuccess { _radarSongsFlow.value = it }
+            }
+        }
+    }
+
+    // 解析函数
+
     private fun parseRecommend(raw: String): List<NeteasePlaylist> {
         val result = mutableListOf<NeteasePlaylist>()
         val root = JSONObject(raw)
@@ -126,7 +171,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             val obj = arr.optJSONObject(i) ?: continue
             val id = obj.optLong("id", 0L)
             val name = obj.optString("name", "")
-            val picUrl = obj.optString("picUrl", "")
+            val picUrl = obj.optString("picUrl", "").replace("http://", "https://")
             val playCount = obj.optLong("playCount", 0L)
             val trackCount = obj.optInt("trackCount", 0)
 
@@ -143,5 +188,33 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         return result
+    }
+
+    /** 将网易云搜索结果解析为 SongItem 列表 */
+    private fun parseSongs(raw: String): List<SongItem> {
+        val list = mutableListOf<SongItem>()
+        val root = JSONObject(raw)
+        if (root.optInt("code") != 200) return emptyList()
+        val songs = root.optJSONObject("result")?.optJSONArray("songs") ?: return emptyList()
+        for (i in 0 until songs.length()) {
+            val obj = songs.optJSONObject(i) ?: continue
+            val artistsArr = obj.optJSONArray("ar")
+            val artistNames =
+                if (artistsArr != null) (0 until artistsArr.length())
+                    .mapNotNull { artistsArr.optJSONObject(it)?.optString("name") }
+                else emptyList()
+            val albumObj = obj.optJSONObject("al")
+            list.add(
+                SongItem(
+                    id = obj.optLong("id"),
+                    name = obj.optString("name"),
+                    artist = artistNames.joinToString(" / "),
+                    album = albumObj?.optString("name").orEmpty(),
+                    durationMs = obj.optLong("dt"),
+                    coverUrl = albumObj?.optString("picUrl")?.replace("http://", "https://")
+                )
+            )
+        }
+        return list
     }
 }

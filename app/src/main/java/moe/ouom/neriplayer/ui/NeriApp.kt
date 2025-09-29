@@ -132,6 +132,8 @@ import moe.ouom.neriplayer.util.ExceptionHandler
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.syncHapticFeedbackSetting
 import androidx.palette.graphics.Palette
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filterNotNull
 
 private fun adjustAccent(base: Color, isDark: Boolean): Color {
     val r = (base.red * 255).toInt().coerceIn(0, 255)
@@ -270,6 +272,17 @@ fun NeriApp(
 
     var coverSeedHex by remember { mutableStateOf<String?>(null) }   // 形如 "RRGGBB"
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
+
+    LaunchedEffect(Unit) {
+        // 跳过初始值，订阅之后的变更，每次切曲写入最近播放
+        PlayerManager.currentSongFlow
+            .drop(1)
+            .filterNotNull()
+            .collect { song ->
+                AppContainer.playHistoryRepo.record(song)
+            }
+    }
+
 
     LaunchedEffect(currentSong?.coverUrl, dynamicColorEnabled, fallbackPrimary) {
         if (!dynamicColorEnabled) {

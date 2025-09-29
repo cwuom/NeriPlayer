@@ -42,6 +42,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import moe.ouom.neriplayer.core.api.bili.BiliClient
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.ui.screen.playlist.PlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.tab.ExploreScreen
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
@@ -77,7 +78,13 @@ fun ExploreHostScreen(
             if (current == null) {
                 ExploreScreen(
                     gridState = gridState,
-                    onPlay = { pl -> selected = pl },
+                    onPlay = { pl ->
+                        AppContainer.playlistUsageRepo.recordOpen(
+                            id = pl.id, name = pl.name, picUrl = pl.picUrl,
+                            trackCount = pl.trackCount, source = "netease"
+                        )
+                        selected = pl
+                    },
                     onSongClick = onSongClick,
                     onPlayParts = onPlayParts
                 )
