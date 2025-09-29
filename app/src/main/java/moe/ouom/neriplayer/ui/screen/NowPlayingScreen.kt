@@ -763,6 +763,33 @@ fun NowPlayingScreen(
                     }
                 }
             }
+
+            if (showAddSheet) {
+                ModalBottomSheet(
+                    onDismissRequest = { showAddSheet = false },
+                    sheetState = addSheetState
+                ) {
+                    LazyColumn {
+                        itemsIndexed(playlists) { _, pl ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        PlayerManager.addCurrentToPlaylist(pl.id)
+                                        showAddSheet = false
+                                    }
+                                    .padding(horizontal = 24.dp, vertical = 16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(pl.name, style = MaterialTheme.typography.bodyLarge)
+                                Spacer(modifier = Modifier.weight(1f))
+                                Text("${pl.songs.size} 首", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
+            }
         }
     }
 }
