@@ -127,9 +127,10 @@ private fun getShortGitRevision(): String {
 
 android.applicationVariants.all {
     outputs.all {
-        if (this is com.android.build.gradle.internal.api.ApkVariantOutputImpl) {
-            val config = project.android.defaultConfig
-            val versionName = config.versionName
+        if (this is com.android.build.gradle.internal.api.ApkVariantOutputImpl
+            && !this.outputFileName.lowercase().contains("debug")
+        ) {
+            val versionName = project.android.defaultConfig.versionName
             this.outputFileName = "NeriPlayer-${versionName}.apk"
         }
     }
