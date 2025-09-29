@@ -327,7 +327,7 @@ fun NowPlayingScreen(
                 if (!useTabletLandscapeLayout && lyrics.isNotEmpty()) {
                     contentModifier = contentModifier.pointerInput(lyrics) {
                         detectHorizontalDragGestures { _, dragAmount ->
-                            if (dragAmount < -50) showLyricsScreen = true
+                            if (dragAmount < -20) showLyricsScreen = true
                         }
                     }
                 }
