@@ -95,6 +95,8 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.LibraryViewModel
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.formatPlayCount
+import androidx.compose.material.icons.outlined.History
+import moe.ouom.neriplayer.util.HapticIconButton
 
 enum class LibraryTab(val label: String) {
     LOCAL("本地"),
@@ -114,7 +116,8 @@ fun LibraryScreen(
     qqMusicListState: LazyListState,
     onLocalPlaylistClick: (LocalPlaylist) -> Unit = {},
     onNeteasePlaylistClick: (NeteasePlaylist) -> Unit = {},
-    onBiliPlaylistClick: (BiliPlaylist) -> Unit = {}
+    onBiliPlaylistClick: (BiliPlaylist) -> Unit = {},
+    onOpenRecent: () -> Unit = {}
 ) {
     val vm: LibraryViewModel = viewModel()
     val ui by vm.uiState.collectAsState()
@@ -148,7 +151,12 @@ fun LibraryScreen(
             colors = TopAppBarDefaults.largeTopAppBarColors(
                 containerColor = Color.Transparent,
                 scrolledContainerColor = Color.Transparent
-            )
+            ),
+            actions = {
+                HapticIconButton(onClick = onOpenRecent) {
+                    Icon(Icons.Outlined.History, contentDescription = "最近播放")
+                }
+            }
         )
 
         // 顶部 Tabs

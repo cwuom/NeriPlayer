@@ -134,6 +134,7 @@ import moe.ouom.neriplayer.util.syncHapticFeedbackSetting
 import androidx.palette.graphics.Palette
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filterNotNull
+import moe.ouom.neriplayer.ui.screen.RecentScreen
 
 private fun adjustAccent(base: Color, isDark: Boolean): Color {
     val r = (base.red * 255).toInt().coerceIn(0, 255)
@@ -696,7 +697,8 @@ fun NeriApp(
                                         onPlayParts = { videoInfo, index, coverUrl ->
                                             PlayerManager.playBiliVideoParts(videoInfo, index, coverUrl)
                                             showNowPlaying = true
-                                        }
+                                        },
+                                        onOpenRecent = { navController.navigate(Destinations.Recent.route) }
                                     )
                                 }
 
@@ -719,6 +721,29 @@ fun NeriApp(
                                         playlistId = id,
                                         onBack = { navController.popBackStack() },
                                         onDeleted = { navController.popBackStack() },
+                                        onSongClick = { songs, index ->
+                                            ContextCompat.startForegroundService(
+                                                context,
+                                                Intent(context, AudioPlayerService::class.java).apply {
+                                                    action = AudioPlayerService.ACTION_PLAY
+                                                    putParcelableArrayListExtra("playlist", ArrayList(songs))
+                                                    putExtra("index", index)
+                                                }
+                                            )
+                                            showNowPlaying = true
+                                        }
+                                    )
+                                }
+
+                                composable(
+                                    route = Destinations.Recent.route,
+                                    enterTransition = { slideInVertically(animationSpec = tween(220)) { it } + fadeIn() },
+                                    exitTransition = { fadeOut(animationSpec = tween(160)) },
+                                    popEnterTransition = { slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn() },
+                                    popExitTransition = { slideOutVertically(animationSpec = tween(240)) { it } + fadeOut() }
+                                ) {
+                                    RecentScreen(
+                                        onBack = { navController.popBackStack() },
                                         onSongClick = { songs, index ->
                                             ContextCompat.startForegroundService(
                                                 context,

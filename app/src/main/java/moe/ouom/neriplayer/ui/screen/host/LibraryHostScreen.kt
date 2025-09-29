@@ -69,7 +69,8 @@ sealed class LibrarySelectedItem : Parcelable {
 @Composable
 fun LibraryHostScreen(
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
-    onPlayParts: (BiliClient.VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> }
+    onPlayParts: (BiliClient.VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> },
+    onOpenRecent: () -> Unit
 ) {
     var selected by rememberSaveable { mutableStateOf<LibrarySelectedItem?>(null) }
     // 保存当前选中的标签页索引
@@ -137,7 +138,8 @@ fun LibraryHostScreen(
                             id = playlist.mediaId, name = playlist.title, picUrl = playlist.coverUrl,
                             trackCount = playlist.count, source = "bili", mid = playlist.mid, fid = playlist.fid
                         )
-                    }
+                    },
+                    onOpenRecent = onOpenRecent
                 )
             } else {
                 when (current) {
