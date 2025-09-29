@@ -42,7 +42,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -90,6 +92,7 @@ import androidx.compose.material.icons.outlined.Upload
 import androidx.compose.material.icons.outlined.Analytics
 import androidx.compose.material.icons.outlined.FormatSize
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
@@ -99,6 +102,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -156,8 +160,13 @@ import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.NightModeHelper
 import moe.ouom.neriplayer.util.convertTimestampToDate
+import java.util.Locale
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
+import androidx.compose.foundation.combinedClickable
+import moe.ouom.neriplayer.ui.component.HsvPicker
+import android.graphics.Color as AndroidColor
+
 
 /** 可复用的折叠区头部 */
 @Composable
@@ -255,6 +264,9 @@ fun SettingsScreen(
     onDevModeChange: (Boolean) -> Unit,
     seedColorHex: String,
     onSeedColorChange: (String) -> Unit,
+    themeColorPalette: List<String>,
+    onAddColorToPalette: (String) -> Unit,
+    onRemoveColorFromPalette: (String) -> Unit,
     lyricBlurEnabled: Boolean,
     onLyricBlurEnabledChange: (Boolean) -> Unit,
     lyricFontScale: Float,
@@ -486,7 +498,7 @@ fun SettingsScreen(
                         )
                     },
                     headlineContent = { Text("动态取色") },
-                    supportingContent = { Text("跟随系统主题色，Android 12+ 可用") },
+                    supportingContent = { Text("跟随封面主题色") },
                     trailingContent = {
                         Switch(checked = dynamicColor, onCheckedChange = onDynamicColorChange)
                     },
@@ -1583,11 +1595,14 @@ fun SettingsScreen(
     if (showColorPickerDialog) {
         ColorPickerDialog(
             currentHex = seedColorHex,
+            palette = themeColorPalette,
             onDismiss = { showColorPickerDialog = false },
             onColorSelected = { hex ->
                 onSeedColorChange(hex)
                 showColorPickerDialog = false
-            }
+            },
+            onAddColor = onAddColorToPalette,
+            onRemoveColor = onRemoveColorFromPalette
         )
     }
 
@@ -1603,52 +1618,124 @@ fun SettingsScreen(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 private fun ColorPickerDialog(
     currentHex: String,
+    palette: List<String>,
     onDismiss: () -> Unit,
-    onColorSelected: (String) -> Unit
+    onColorSelected: (String) -> Unit,
+    onAddColor: (String) -> Unit,
+    onRemoveColor: (String) -> Unit
 ) {
+    // 用于 HSV 取色器输出
+    var pickedHex by remember(currentHex) { mutableStateOf(currentHex.uppercase(Locale.ROOT)) }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("选择主题色") },
         text = {
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                ThemeDefaults.PRESET_COLORS.forEach { hex ->
-                    ColorPickerItem(
-                        hex = hex,
-                        isSelected = currentHex.equals(hex, ignoreCase = true),
-                        onClick = { onColorSelected(hex) }
+                // 色列表
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    palette.forEach { hex ->
+                        val isPreset = ThemeDefaults.PRESET_SET.contains(hex.uppercase(Locale.ROOT))
+                        ColorPickerItem(
+                            hex = hex,
+                            isSelected = currentHex.equals(hex, ignoreCase = true),
+                            onClick = {
+                                pickedHex = hex.uppercase(Locale.ROOT)
+                                onColorSelected(hex) // 允许直接使用预设色
+                            },
+                            onRemove = if (!isPreset) { { onRemoveColor(hex) } } else null
+                        )
+                    }
+                }
+
+                // 滑动取色
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("自定义颜色（滑动选择）", style = MaterialTheme.typography.titleSmall)
+                    HsvPicker(
+                        initialHex = currentHex,
+                        onColorChanged = { pickedHex = it.uppercase(Locale.ROOT) }
+                    )
+                }
+
+                // 操作按钮
+                val existsInPalette = palette.any { it.equals(pickedHex, ignoreCase = true) }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedButton(
+                        onClick = { onAddColor(pickedHex) },
+                        enabled = !existsInPalette && !ThemeDefaults.PRESET_SET.contains(pickedHex),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("添加到取色盘")
+                    }
+                    Button(
+                        onClick = { onColorSelected(pickedHex) },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("应用颜色")
+                    }
+                }
+
+                // 仅当存在可删除的自定义色时给出提示
+                val deletableCount = palette.count { !ThemeDefaults.PRESET_SET.contains(it.uppercase(Locale.ROOT)) }
+                if (deletableCount > 0) {
+                    Text(
+                        text = "长按颜色或点击 × 可删除自定义颜色",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("关闭")
-            }
+            TextButton(onClick = onDismiss) { Text("关闭") }
         }
     )
 }
 
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ColorPickerItem(hex: String, isSelected: Boolean, onClick: () -> Unit) {
+private fun ColorPickerItem(
+    hex: String,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    onRemove: (() -> Unit)? = null
+) {
     val color = Color(("#$hex").toColorInt())
+    val clickableModifier = if (onRemove != null) {
+        Modifier.combinedClickable(
+            onClick = onClick,
+            onLongClick = { onRemove() }
+        )
+    } else {
+        Modifier.clickable(onClick = onClick)
+    }
+
     Box(
         modifier = Modifier
             .size(48.dp)
             .clip(CircleShape)
             .background(color)
-            .clickable(onClick = onClick),
+            .then(clickableModifier),
         contentAlignment = Alignment.Center
     ) {
         if (isSelected) {
-            // 计算一个与背景色对比度高的颜色来显示对勾
+            // 让对勾在深/浅色上都有对比度
             val contentColor = if (ColorUtils.calculateLuminance(color.toArgb()) > 0.5) {
                 Color.Black
             } else {
@@ -1659,6 +1746,26 @@ private fun ColorPickerItem(hex: String, isSelected: Boolean, onClick: () -> Uni
                 contentDescription = "Selected",
                 tint = contentColor
             )
+        }
+
+        if (onRemove != null) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(2.dp)
+                    .size(18.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
+                    .clickable { onRemove() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Close,
+                    contentDescription = "删除该颜色",
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.size(12.dp)
+                )
+            }
         }
     }
 }

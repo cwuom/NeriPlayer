@@ -165,13 +165,14 @@ private fun adjustAccent(base: Color, isDark: Boolean): Color {
 }
 
 /**
- * 播放界面强调色背景
+ * 根据封面提取播放界面强调色
  */
 @Composable
 private fun NowPlayingAccentBackdrop(
     coverUrl: String?,
     isDark: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onAccentChanged: (String?) -> Unit = {}
 ) {
     val context = LocalContext.current
     val fallback = MaterialTheme.colorScheme.background
@@ -180,6 +181,7 @@ private fun NowPlayingAccentBackdrop(
     LaunchedEffect(coverUrl) {
         if (coverUrl.isNullOrEmpty()) {
             target = null
+            onAccentChanged(null)
             return@LaunchedEffect
         }
         val loader = ImageLoader(context)
@@ -246,6 +248,7 @@ fun NeriApp(
     onIsDarkChanged: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
+    val fallbackPrimary = MaterialTheme.colorScheme.primary.toArgb()
     val repo = remember { AppContainer.settingsRepo }
 
     val followSystemDark by repo.followSystemDarkFlow.collectAsState(initial = true)
@@ -254,6 +257,7 @@ fun NeriApp(
     var showNowPlaying by rememberSaveable { mutableStateOf(false) }
     val devModeEnabled by repo.devModeEnabledFlow.collectAsState(initial = false)
     val themeSeedColor by repo.themeSeedColorFlow.collectAsState(initial = ThemeDefaults.DEFAULT_SEED_COLOR_HEX)
+    val themeColorPalette by repo.themeColorPaletteFlow.collectAsState(initial = ThemeDefaults.PRESET_COLORS)
     val lyricBlurEnabled by repo.lyricBlurEnabledFlow.collectAsState(initial = true)
     val lyricFontScale by repo.lyricFontScaleFlow.collectAsState(initial = 1.0f)
     val uiDensityScale by repo.uiDensityScaleFlow.collectAsState(initial = 1.0f)
@@ -263,6 +267,39 @@ fun NeriApp(
     val backgroundImageAlpha by repo.backgroundImageAlphaFlow.collectAsState(initial = 0.3f)
     val hapticFeedbackEnabled by repo.hapticFeedbackEnabledFlow.collectAsState(initial = true)
     val hazeState = remember { HazeState() }
+
+    var coverSeedHex by remember { mutableStateOf<String?>(null) }   // 形如 "RRGGBB"
+    val currentSong by PlayerManager.currentSongFlow.collectAsState()
+
+    LaunchedEffect(currentSong?.coverUrl, dynamicColorEnabled, fallbackPrimary) {
+        if (!dynamicColorEnabled) {
+            coverSeedHex = null
+            return@LaunchedEffect
+        }
+        val url = currentSong?.coverUrl
+        if (url.isNullOrBlank()) {
+            coverSeedHex = null
+            return@LaunchedEffect
+        }
+
+        val loader = ImageLoader(context) // ← 这个可以用，因为 context 是普通对象
+        val req = ImageRequest.Builder(context).data(url).allowHardware(false).build()
+        val result = withContext(Dispatchers.IO) { loader.execute(req) }
+        val bmp = (result as? SuccessResult)?.drawable.let { it as? BitmapDrawable }?.bitmap
+
+        coverSeedHex = bmp?.let { bitmap ->
+            val p = Palette.from(bitmap).clearFilters().generate()
+            val base = p.getVibrantColor(
+                p.getMutedColor(
+                    p.getDominantColor(fallbackPrimary)
+                )
+            )
+            val r = (base shr 16) and 0xFF
+            val g = (base shr 8) and 0xFF
+            val b = base and 0xFF
+            String.format("%02X%02X%02X", r, g, b)
+        }
+    }
 
     // 同步触感反馈设置
     LaunchedEffect(hapticFeedbackEnabled) {
@@ -306,11 +343,14 @@ fun NeriApp(
     val biliPreferredQuality by repo.biliAudioQualityFlow.collectAsState(initial = "high")
 
     CompositionLocalProvider(LocalDensity provides finalDensity) {
+        val effectiveSeedHex = coverSeedHex ?: themeSeedColor
+        val useSystemDynamic = dynamicColorEnabled && coverSeedHex == null
+
         NeriTheme(
             followSystemDark = followSystemDark,
             forceDark = forceDark,
-            dynamicColor = dynamicColorEnabled,
-            seedColorHex = themeSeedColor
+            dynamicColor = useSystemDynamic,
+            seedColorHex = effectiveSeedHex
         ) {
             val navController = rememberNavController()
             val backEntry by navController.currentBackStackEntryAsState()
@@ -724,6 +764,9 @@ fun NeriApp(
                                         onBiliQualityChange = { scope.launch { repo.setBiliAudioQuality(it) } },
                                         seedColorHex = themeSeedColor,
                                         onSeedColorChange = { hex -> scope.launch { repo.setThemeSeedColor(hex) } },
+                                        themeColorPalette = themeColorPalette,
+                                        onAddColorToPalette = { hex -> scope.launch { repo.addThemePaletteColor(hex) } },
+                                        onRemoveColorFromPalette = { hex -> scope.launch { repo.removeThemePaletteColor(hex) } },
                                         devModeEnabled = devModeEnabled,
                                         onDevModeChange = { enabled -> scope.launch { repo.setDevModeEnabled(enabled) } },
                                         lyricBlurEnabled = lyricBlurEnabled,
@@ -902,11 +945,14 @@ fun NeriApp(
                         targetOffsetY = { fullHeight -> fullHeight }
                     ) + fadeOut(animationSpec = tween(durationMillis = 150))
                 ) {
+                    val useSystemDynamic = dynamicColorEnabled && (coverSeedHex == null || currentSong == null)
+                    val effectiveSeedHex = coverSeedHex ?: themeSeedColor
+
                     NeriTheme(
                         followSystemDark = false,
                         forceDark = true,
-                        dynamicColor = dynamicColorEnabled,
-                        seedColorHex = themeSeedColor
+                        dynamicColor = useSystemDynamic,
+                        seedColorHex = effectiveSeedHex
                     ) {
                         BackHandler { showNowPlaying = false }
 
