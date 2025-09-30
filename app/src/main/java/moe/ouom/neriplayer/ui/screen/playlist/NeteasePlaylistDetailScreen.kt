@@ -118,6 +118,8 @@ import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.ui.geometry.Offset
@@ -295,7 +297,10 @@ fun PlaylistDetailScreen(
                 val currentIndex = displayedTracks.indexOfFirst { it.id == currentSong?.id }
                 val miniPlayerHeight = LocalMiniPlayerHeight.current
 
-                Box(modifier = Modifier.fillMaxSize()) {
+                Box(modifier = Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.navigationBars)
+                ) {
                     LazyColumn(
                         state = listState,
                         contentPadding = PaddingValues(
