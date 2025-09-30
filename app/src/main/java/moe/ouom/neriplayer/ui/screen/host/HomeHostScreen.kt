@@ -47,7 +47,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.UsageEntry
 import moe.ouom.neriplayer.ui.screen.playlist.BiliPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistDetailScreen
-import moe.ouom.neriplayer.ui.screen.playlist.PlaylistDetailScreen
+import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.tab.HomeScreen
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
@@ -108,7 +108,7 @@ fun HomeHostScreen(
             } else {
                 when (current) {
                     is HomeSelectedItem.Netease -> {
-                        PlaylistDetailScreen(
+                        NeteasePlaylistDetailScreen(
                             playlist = current.playlist,
                             onBack = { selected = null },
                             onSongClick = onSongClick

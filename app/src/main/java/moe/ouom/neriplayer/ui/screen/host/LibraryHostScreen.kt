@@ -45,13 +45,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistDetailScreen
-import moe.ouom.neriplayer.ui.screen.playlist.PlaylistDetailScreen
+import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.BiliPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.tab.LibraryScreen
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
-import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
@@ -157,7 +156,7 @@ fun LibraryHostScreen(
                         )
                     }
                     is LibrarySelectedItem.Netease -> {
-                        PlaylistDetailScreen(
+                        NeteasePlaylistDetailScreen(
                             playlist = current.playlist,
                             onBack = { selected = null },
                             onSongClick = onSongClick

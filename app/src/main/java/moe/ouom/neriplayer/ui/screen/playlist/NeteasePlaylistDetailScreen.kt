@@ -113,7 +113,6 @@ import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.PlaylistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
-import moe.ouom.neriplayer.ui.viewmodel.DownloadManagerViewModel
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Spring
@@ -140,7 +139,7 @@ import moe.ouom.neriplayer.util.performHapticFeedback
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun PlaylistDetailScreen(
+fun NeteasePlaylistDetailScreen(
     playlist: NeteasePlaylist,
     onBack: () -> Unit = {},
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> }

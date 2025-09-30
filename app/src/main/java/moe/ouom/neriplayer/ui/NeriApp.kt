@@ -123,7 +123,7 @@ import moe.ouom.neriplayer.ui.screen.host.LibraryHostScreen
 import moe.ouom.neriplayer.ui.screen.host.SettingsHostScreen
 import moe.ouom.neriplayer.ui.screen.playlist.BiliPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistDetailScreen
-import moe.ouom.neriplayer.ui.screen.playlist.PlaylistDetailScreen
+import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
 import moe.ouom.neriplayer.ui.theme.NeriTheme
 import moe.ouom.neriplayer.ui.view.HyperBackground
 import moe.ouom.neriplayer.ui.viewmodel.debug.LogViewerScreen
@@ -547,7 +547,7 @@ fun NeriApp(
                                 ) { backStackEntry ->
                                     val playlistJson = backStackEntry.arguments?.getString("playlistJson")
                                     val playlist = Gson().fromJson(playlistJson, NeteasePlaylist::class.java)
-                                    PlaylistDetailScreen(
+                                    NeteasePlaylistDetailScreen(
                                         playlist = playlist,
                                         onBack = { navController.popBackStack() },
                                         onSongClick = { songs, index ->
