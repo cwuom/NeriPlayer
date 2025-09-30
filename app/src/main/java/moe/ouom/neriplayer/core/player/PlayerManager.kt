@@ -989,7 +989,7 @@ object PlayerManager {
     }
 
     /**
-     * 修改：让 playBiliVideoAsAudio 也使用统一的 playPlaylist 入口
+     * 让 playBiliVideoAsAudio 也使用统一的 playPlaylist 入口
      */
     fun playBiliVideoAsAudio(videos: List<BiliVideoItem>, startIndex: Int) {
         ensureInitialized()
@@ -1047,6 +1047,25 @@ object PlayerManager {
                 NPLogger.e("NERI-PlayerManager", "getNeteaseLyricsWithTrans failed: ${e.message}", e)
                 emptyList<LyricEntry>() to emptyList()
             }
+        }
+    }
+
+    /** 根据歌曲来源返回可用的翻译（如果有） */
+    suspend fun getTranslatedLyrics(song: SongItem): List<LyricEntry> {
+        // B站歌曲在匹配网易云信息后应使用匹配到的歌曲 ID 获取翻译
+        if (song.album.startsWith(BILI_SOURCE_TAG)) {
+            return when (song.matchedLyricSource) {
+                MusicPlatform.CLOUD_MUSIC -> {
+                    val matchedId = song.matchedSongId?.toLongOrNull()
+                    if (matchedId != null) getNeteaseTranslatedLyrics(matchedId) else emptyList()
+                }
+                else -> emptyList()
+            }
+        }
+
+        return when (song.matchedLyricSource) {
+            null, MusicPlatform.CLOUD_MUSIC -> getNeteaseTranslatedLyrics(song.id)
+            else -> emptyList()
         }
     }
 
@@ -1209,7 +1228,8 @@ object PlayerManager {
                     artist = newDetails.singer,
                     coverUrl = newDetails.coverUrl,
                     matchedLyric = newDetails.lyric,
-                    matchedLyricSource = selectedSong.source
+                    matchedLyricSource = selectedSong.source,
+                    matchedSongId = selectedSong.id
                 )
 
                 updateSongInAllPlaces(originalSong, updatedSong)

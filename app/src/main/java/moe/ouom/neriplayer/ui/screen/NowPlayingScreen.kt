@@ -270,8 +270,8 @@ fun NowPlayingScreen(
 
         // 同步尝试拉取翻译（仅云音乐有）
         translatedLyrics = try {
-            if (song != null) PlayerManager.getNeteaseTranslatedLyrics(song.id) else emptyList()
-        } catch (e: Exception) {
+            if (song != null) PlayerManager.getTranslatedLyrics(song) else emptyList()
+        } catch (_: Exception) {
             emptyList()
         }
     }

@@ -61,6 +61,7 @@ data class SongItem(
     val coverUrl: String?,
     val matchedLyric: String? = null,
     val matchedLyricSource: MusicPlatform? = null,
+    val matchedSongId: String? = null,
     val userLyricOffsetMs: Long = 0L
 ) : Parcelable
 
