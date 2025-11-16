@@ -68,7 +68,7 @@ fun NeriBottomBar(
                 },
                 icon = { Icon(icon, contentDescription = dest.label) },
                 label = { Text(dest.label) },
-                alwaysShowLabel = alwaysShowLabel,
+                //alwaysShowLabel = alwaysShowLabel,
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
                     selectedTextColor = MaterialTheme.colorScheme.onSurface,

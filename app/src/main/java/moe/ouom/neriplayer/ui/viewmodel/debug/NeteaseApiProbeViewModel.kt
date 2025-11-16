@@ -59,6 +59,10 @@ class NeteaseApiProbeViewModel(app: Application) : AndroidViewModel(app) {
         client.getUserCreatedPlaylists(0)
     }
 
+    fun callStaredTrackers() = launchAndCopy("staredTrackers") {
+        client.getUserStaredTrackers(0)
+    }
+    
     fun callSubscribedPlaylistsAndCopy() = launchAndCopy("subscribedPlaylists") {
         client.getUserSubscribedPlaylists(0)
     }
