@@ -1124,40 +1124,54 @@ object PlayerManager {
     fun addToQueueNext(song: SongItem) {
         ensureInitialized()
         if (!initialized) return
+
+        // 空队列特殊处理
         if (currentPlaylist.isEmpty()) {
-            // 如果当前没有播放队列，直接播放这首歌
             playPlaylist(listOf(song), 0)
             return
         }
 
-        val newPlaylist = currentPlaylist.toMutableList()
-        val insertIndex = (currentIndex + 1).coerceIn(0, newPlaylist.size)
+        val currentSong = _currentSongFlow.value
 
-        // 检查歌曲是否已存在于队列中
+        val newPlaylist = currentPlaylist.toMutableList()
+        var insertIndex = (currentIndex + 1).coerceIn(0, newPlaylist.size + 1)
+
+        // 检查歌曲是否已存在
         val existingIndex = newPlaylist.indexOfFirst { it.id == song.id && it.album == song.album }
         if (existingIndex != -1) {
             newPlaylist.removeAt(existingIndex)
-            // 调整插入位置
-            val adjustedInsertIndex = if (existingIndex < insertIndex) insertIndex - 1 else insertIndex
-            newPlaylist.add(adjustedInsertIndex, song)
-        } else {
-            // 如果歌曲不存在，直接插入
-            newPlaylist.add(insertIndex, song)
+            // 如果移除的歌曲在插入位置之前，插入位置需要前移一位
+            if (existingIndex < insertIndex) {
+                insertIndex--
+            }
         }
 
-        // 更新播放队列
+        // 确保索引安全
+        insertIndex = insertIndex.coerceIn(0, newPlaylist.size)
+        newPlaylist.add(insertIndex, song)
+
+        // 更新列表
         currentPlaylist = newPlaylist
         _currentQueueFlow.value = currentPlaylist
 
-        // 如果启用了随机播放，需要重建随机播放袋
+        if (currentSong != null) {
+            currentIndex = newPlaylist.indexOfFirst { it.id == currentSong.id && it.album == currentSong.album }
+        }
+
         if (player.shuffleModeEnabled) {
-            rebuildShuffleBag()
+            val newSongRealIndex = newPlaylist.indexOfFirst { it.id == song.id && it.album == song.album }
+
+            if (newSongRealIndex != -1) {
+                shuffleBag.remove(newSongRealIndex)
+                shuffleFuture.add(newSongRealIndex)
+            }
         }
 
         ioScope.launch {
             persistState()
         }
     }
+
 
     /**
      * 将歌曲添加到播放队列的末尾
