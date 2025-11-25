@@ -102,6 +102,7 @@ fun LyricsScreen(
     onNavigateBack: () -> Unit,
     onSeekTo: (Long) -> Unit,
     translatedLyrics: List<LyricEntry>? = null,
+    lyricOffsetMs: Long,
 ) {
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
     val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
@@ -283,13 +284,13 @@ fun LyricsScreen(
                         inactiveBlurNear = if (lyricBlurEnabled) 2.dp else 0.dp,
                         inactiveBlurFar = if (lyricBlurEnabled) 4.dp else 0.dp
                     ),
-                    lyricOffsetMs = 1000L,
+                    lyricOffsetMs = lyricOffsetMs,
                     lyricBlurEnabled = lyricBlurEnabled,
                     onLyricClick = { lyricEntry ->
                         onSeekTo(lyricEntry.startTimeMs)
                     },
                     translatedLyrics = translatedLyrics,
-                    translationFontSize = (16 * lyricFontScale).coerceIn(12f, 26f).sp
+                    translationFontSize = (16 * lyricFontScale).coerceIn(12f, 26f).sp,
                 )
             } else {
                 Box(
