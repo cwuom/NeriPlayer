@@ -39,22 +39,24 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.mapSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistDetailScreen
-import moe.ouom.neriplayer.ui.screen.playlist.PlaylistDetailScreen
+import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.BiliPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.tab.LibraryScreen
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
-import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.ui.util.toSaveMap
+import moe.ouom.neriplayer.ui.util.restoreBiliPlaylist
+import moe.ouom.neriplayer.ui.util.restoreNeteasePlaylist
 
 @Parcelize
 sealed class LibrarySelectedItem : Parcelable {
@@ -72,7 +74,9 @@ fun LibraryHostScreen(
     onPlayParts: (BiliClient.VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> },
     onOpenRecent: () -> Unit
 ) {
-    var selected by rememberSaveable { mutableStateOf<LibrarySelectedItem?>(null) }
+    var selected by rememberSaveable(stateSaver = librarySelectedItemSaver) {
+        mutableStateOf<LibrarySelectedItem?>(null)
+    }
     // 保存当前选中的标签页索引
     var selectedTabIndex by rememberSaveable { mutableStateOf(0) }
     BackHandler(enabled = selected != null) { selected = null }
@@ -152,7 +156,7 @@ fun LibraryHostScreen(
                         )
                     }
                     is LibrarySelectedItem.Netease -> {
-                        PlaylistDetailScreen(
+                        NeteasePlaylistDetailScreen(
                             playlist = current.playlist,
                             onBack = { selected = null },
                             onSongClick = onSongClick
@@ -173,3 +177,32 @@ fun LibraryHostScreen(
         }
     }
 }
+
+private val librarySelectedItemSaver = mapSaver<LibrarySelectedItem?>(
+    save = { item ->
+        when (item) {
+            null -> emptyMap<String, Any?>()
+            is LibrarySelectedItem.Local -> hashMapOf(
+                "type" to "local",
+                "playlistId" to item.playlistId
+            )
+            is LibrarySelectedItem.Netease -> hashMapOf(
+                "type" to "netease",
+                "playlist" to item.playlist.toSaveMap()
+            )
+            is LibrarySelectedItem.Bili -> hashMapOf(
+                "type" to "bili",
+                "playlist" to item.playlist.toSaveMap()
+            )
+        }
+    },
+    restore = { saved ->
+        when (saved["type"] as? String) {
+            null -> null
+            "local" -> (saved["playlistId"] as? Number)?.toLong()?.let { LibrarySelectedItem.Local(it) }
+            "netease" -> restoreNeteasePlaylist(saved["playlist"] as? Map<*, *>)?.let { LibrarySelectedItem.Netease(it) }
+            "bili" -> restoreBiliPlaylist(saved["playlist"] as? Map<*, *>)?.let { LibrarySelectedItem.Bili(it) }
+            else -> null
+        }
+    }
+)

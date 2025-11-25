@@ -395,6 +395,7 @@ private fun LocalPlaylistList(
             items = playlists,
             key = { it.id }
         ) { pl ->
+            val isListEmpty = pl.songs.isEmpty()
             Card(
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(
@@ -404,7 +405,7 @@ private fun LocalPlaylistList(
                 modifier = Modifier
                     .padding(horizontal = 8.dp, vertical = 4.dp)
                     .animateItem()
-                    .clickable { onClick(pl) }
+                    .clickable(enabled = !isListEmpty) { onClick(pl) }
             ) {
                 ListItem(
                     headlineContent = { Text(pl.name) },

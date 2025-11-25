@@ -38,6 +38,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
@@ -62,6 +63,9 @@ class BiliClient(
         // 官方接口 / WBI
         private const val BASE_PLAY_URL = "https://api.bilibili.com/x/player/wbi/playurl"
         private const val NAV_URL = "https://api.bilibili.com/x/web-interface/nav"
+        private const val FINGERPRINT_URL = "https://api.bilibili.com/x/frontend/finger/spi"
+        private const val WEB_TICKET_URL =
+            "https://api.bilibili.com/bapis/bilibili.api.ticket.v1.Ticket/GenWebTicket"
 
         // 基础信息（WBI 可用）
         private const val VIEW_URL = "https://api.bilibili.com/x/web-interface/wbi/view"
@@ -86,6 +90,16 @@ class BiliClient(
                     "AppleWebKit/537.36 (KHTML, like Gecko) " +
                     "Chrome/124.0.0.0 Safari/537.36"
 
+        /** 指纹接口专用 UA（移动端） */
+        private const val FINGERPRINT_UA =
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) " +
+                    "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 " +
+                    "Mobile/15E148 Safari/604.1 Edg/114.0.0.0"
+
+        /** WebTicket 接口 UA */
+        private const val WEB_TICKET_UA =
+            "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0"
+
         /** 默认 Referer */
         private const val REFERER = "https://www.bilibili.com"
 
@@ -99,6 +113,12 @@ class BiliClient(
 
         /** Wbi key 缓存时间 */
         private const val WBI_CACHE_MS = 10 * 60 * 1000L
+
+        /** 匿名指纹缓存时间 */
+        private const val ANON_COOKIE_CACHE_MS = 60 * 60 * 1000L
+
+        /** WebTicket HMAC key */
+        private const val WEB_TICKET_KEY = "XgwSnGZ1p"
 
         // ---- fnval 位 ----
         /** DASH 开关（必开，否则只有 durl/mp4） */
@@ -114,6 +134,14 @@ class BiliClient(
         .connectTimeout(10, TimeUnit.SECONDS)
         .proxySelector(DynamicProxySelector)
         .build()
+
+    private val anonCookieMutex = Mutex()
+
+    @Volatile
+    private var cachedAnonCookies: Map<String, String>? = null
+
+    @Volatile
+    private var anonCookiesCachedAt: Long = 0L
 
     // 外部可用的数据结构
     data class PlayOptions(
@@ -769,8 +797,7 @@ class BiliClient(
     // 请求封装 //
 
     private suspend fun executeGetAsText(url: HttpUrl): String {
-        val cookieMap = cookieRepo.getCookiesOnce()
-        val cookieHeader = cookieMap.entries.joinToString("; ") { "${it.key}=${it.value}" }
+        val cookieHeader = getEffectiveCookies().toCookieHeader()
 
         val req = Request.Builder()
             .url(url)
@@ -846,20 +873,24 @@ class BiliClient(
             if (cachedMixinKey != null && againNow - cachedAt < WBI_CACHE_MS) {
                 return@withLock cachedMixinKey!!
             }
-            val mk = fetchMixinKeyFromNav()
+            val mk = fetchMixinKey()
             cachedMixinKey = mk
             cachedAt = againNow
             mk
         }
     }
 
-    /**
-     * 拉取 nav，解析 wbi_img / wbi_sub 的文件名（不含后缀）作为 imgKey/subKey，
-     * 然后执行 mixin 索引表，取前 32 位为最终 key
-     */
+    private suspend fun fetchMixinKey(): String {
+        return try {
+            fetchMixinKeyFromNav()
+        } catch (e: Exception) {
+            Log.w(TAG, "Fetch Wbi key from nav failed, fallback to ticket", e)
+            fetchMixinKeyFromTicket()
+        }
+    }
+
     private suspend fun fetchMixinKeyFromNav(): String = withContext(Dispatchers.IO) {
-        val cookieMap = cookieRepo.getCookiesOnce()
-        val cookieHeader = cookieMap.entries.joinToString("; ") { "${it.key}=${it.value}" }
+        val cookieHeader = getEffectiveCookies().toCookieHeader()
 
         val req = Request.Builder()
             .url(NAV_URL)
@@ -876,6 +907,42 @@ class BiliClient(
         val imgUrl = wbiImg.optString("img_url", "")
         val subUrl = wbiImg.optString("sub_url", "")
 
+        ensureValidMixin(imgUrl, subUrl)
+    }
+
+    private suspend fun fetchMixinKeyFromTicket(): String = withContext(Dispatchers.IO) {
+        val ts = System.currentTimeMillis() / 1000L
+        val hexSign = hmacSha256Hex(WEB_TICKET_KEY, "ts$ts")
+        val urlBuilder = WEB_TICKET_URL.toHttpUrl().newBuilder()
+            .addQueryParameter("key_id", "ec02")
+            .addQueryParameter("hexsign", hexSign)
+            .addQueryParameter("context[ts]", ts.toString())
+
+        val csrf = getEffectiveCookies()["bili_jct"].orEmpty()
+        if (csrf.isNotBlank()) {
+            urlBuilder.addQueryParameter("csrf", csrf)
+        }
+
+        val req = Request.Builder()
+            .url(urlBuilder.build())
+            .header("User-Agent", WEB_TICKET_UA)
+            .post(ByteArray(0).toRequestBody(null))
+            .build()
+
+        val text = http.newCall(req).executeOrThrow().use { it.body?.string().orEmpty() }
+        val jo = JSONObject(text)
+        val data = jo.optJSONObject("data") ?: JSONObject()
+        val nav = data.optJSONObject("nav") ?: JSONObject()
+        val imgUrl = nav.optString("img", "")
+        val subUrl = nav.optString("sub", "")
+
+        ensureValidMixin(imgUrl, subUrl)
+    }
+
+    private fun ensureValidMixin(imgUrl: String, subUrl: String): String {
+        if (imgUrl.isBlank() || subUrl.isBlank()) {
+            throw IOException("Invalid wbi mixin url: img=$imgUrl sub=$subUrl")
+        }
         val imgKey = imgUrl.substringAfterLast('/').substringBefore('.')
         val subKey = subUrl.substringAfterLast('/').substringBefore('.')
         val raw = imgKey + subKey
@@ -885,7 +952,72 @@ class BiliClient(
         }
         val result = if (mixed.length >= 32) mixed.substring(0, 32) else mixed.toString()
         Log.d(TAG, "Refreshed Wbi mixin key: $result")
-        result
+        return result
+    }
+
+    private fun hmacSha256Hex(key: String, message: String): String {
+        val mac = javax.crypto.Mac.getInstance("HmacSHA256")
+        val secretKey = javax.crypto.spec.SecretKeySpec(key.toByteArray(), "HmacSHA256")
+        mac.init(secretKey)
+        return mac.doFinal(message.toByteArray()).joinToString("") { "%02x".format(it) }
+    }
+
+    private suspend fun getEffectiveCookies(): Map<String, String> {
+        val stored = cookieRepo.getCookiesOnce()
+        if (stored.isNotEmpty()) return stored
+        return ensureAnonCookies()
+    }
+
+    private suspend fun ensureAnonCookies(): Map<String, String> {
+        val now = System.currentTimeMillis()
+        cachedAnonCookies?.let { cached ->
+            if (now - anonCookiesCachedAt < ANON_COOKIE_CACHE_MS) return cached
+        }
+        return anonCookieMutex.withLock {
+            val againNow = System.currentTimeMillis()
+            cachedAnonCookies?.let { cached ->
+                if (againNow - anonCookiesCachedAt < ANON_COOKIE_CACHE_MS) {
+                    return@withLock cached
+                }
+            }
+            val cookies = fetchAnonCookies()
+            cachedAnonCookies = cookies
+            anonCookiesCachedAt = againNow
+            cookies
+        }
+    }
+
+    private suspend fun fetchAnonCookies(): Map<String, String> = withContext(Dispatchers.IO) {
+        val req = Request.Builder()
+            .url(FINGERPRINT_URL)
+            .header("User-Agent", FINGERPRINT_UA)
+            .get()
+            .build()
+
+        val text = http.newCall(req).executeOrThrow().use { it.body?.string().orEmpty() }
+        val jo = JSONObject(text)
+        val data = jo.optJSONObject("data") ?: JSONObject()
+        val map = mutableMapOf<String, String>()
+
+        val buvid3 = data.optString("b_3", data.optString("buvid3", ""))
+        val buvid4 = data.optString("b_4", data.optString("buvid4", ""))
+        val buvidFp = data.optString("buvid_fp", "")
+        val buvidFpPlain = data.optString("buvid_fp_plain", "")
+        val bLsid = data.optString("b_lsid", "")
+
+        if (buvid3.isNotBlank()) map["buvid3"] = buvid3
+        if (buvid4.isNotBlank()) map["buvid4"] = buvid4
+        if (buvidFp.isNotBlank()) map["buvid_fp"] = buvidFp
+        if (buvidFpPlain.isNotBlank()) map["buvid_fp_plain"] = buvidFpPlain
+        if (bLsid.isNotBlank()) map["b_lsid"] = bLsid
+
+        map
+    }
+
+    private fun Map<String, String>.toCookieHeader(): String? {
+        if (isEmpty()) return null
+        val header = entries.joinToString("; ") { "${it.key}=${it.value}" }
+        return header.ifBlank { null }
     }
 
     // 工具 / 扩展 //

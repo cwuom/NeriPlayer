@@ -123,8 +123,11 @@ object PlayerManager {
 
     private lateinit var cache: Cache
 
-    private val ioScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private val mainScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private fun newIoScope() = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private fun newMainScope() = CoroutineScope(Dispatchers.Main + SupervisorJob())
+
+    private var ioScope = newIoScope()
+    private var mainScope = newMainScope()
     private var progressJob: Job? = null
 
     private lateinit var localRepo: LocalPlaylistRepository
@@ -271,6 +274,9 @@ object PlayerManager {
         initialized = true
         application = app
 
+        ioScope = newIoScope()
+        mainScope = newMainScope()
+
         localRepo = LocalPlaylistRepository.getInstance(app)
         stateFile = File(app.filesDir, "last_playlist.json")
 
@@ -314,7 +320,7 @@ object PlayerManager {
             .setAudioOffloadPreferences(audioOffload)
             .build()
 
-        // 关键：启动时就禁止 Exo 列表循环，由我们自己接管（仅单曲循环放给 Exo）
+        // 启动时就禁止 Exo 列表循环，由我们自己接管（仅单曲循环放给 Exo）
         player.repeatMode = Player.REPEAT_MODE_OFF
 
         player.addListener(object : Player.Listener {
@@ -378,6 +384,12 @@ object PlayerManager {
         restoreState()
     }
 
+    private fun ensureInitialized() {
+        if (!initialized && ::application.isInitialized) {
+            initialize(application)
+        }
+    }
+
     private fun setupAudioDeviceCallback() {
         val audioManager = application.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         _currentAudioDevice.value = getCurrentAudioDevice(audioManager)
@@ -428,6 +440,7 @@ object PlayerManager {
     }
 
     fun playPlaylist(songs: List<SongItem>, startIndex: Int) {
+        ensureInitialized()
         check(initialized) { "Call PlayerManager.initialize(application) first." }
         if (songs.isEmpty()) {
             NPLogger.w("NERI-Player", "playPlaylist called with EMPTY list")
@@ -502,7 +515,7 @@ object PlayerManager {
 
                     withContext(Dispatchers.Main) {
                         player.setMediaItem(mediaItem)
-                        // 关键：每次切歌后都钳制 Exo 的循环状态，避免单媒体项“列表循环”
+                        // 每次切歌后都钳制 Exo 的循环状态，避免单媒体项“列表循环”
                         syncExoRepeatMode()
                         player.prepare()
                         player.play()
@@ -621,6 +634,7 @@ object PlayerManager {
      * @param coverUrl 封面 URL
      */
     fun playBiliVideoParts(videoInfo: BiliClient.VideoBasicInfo, startIndex: Int, coverUrl: String) {
+        ensureInitialized()
         check(initialized) { "Call PlayerManager.initialize(application) first." }
         val songs = videoInfo.pages.map { page ->
             SongItem(
@@ -636,6 +650,8 @@ object PlayerManager {
     }
 
     fun play() {
+        ensureInitialized()
+        if (!initialized) return
         when {
             isPreparedInPlayer() -> {
                 syncExoRepeatMode()
@@ -647,15 +663,28 @@ object PlayerManager {
         }
     }
 
-    fun pause() { player.pause() }
-    fun togglePlayPause() { if (player.isPlaying) pause() else play() }
+    fun pause() {
+        ensureInitialized()
+        if (!initialized) return
+        player.pause()
+    }
+
+    fun togglePlayPause() {
+        ensureInitialized()
+        if (!initialized) return
+        if (player.isPlaying) pause() else play()
+    }
 
     fun seekTo(positionMs: Long) {
+        ensureInitialized()
+        if (!initialized) return
         player.seekTo(positionMs)
         _playbackPositionMs.value = positionMs
     }
 
     fun next(force: Boolean = false) {
+        ensureInitialized()
+        if (!initialized) return
         if (currentPlaylist.isEmpty()) return
         val isShuffle = player.shuffleModeEnabled
 
@@ -710,6 +739,8 @@ object PlayerManager {
     }
 
     fun previous() {
+        ensureInitialized()
+        if (!initialized) return
         if (currentPlaylist.isEmpty()) return
         val isShuffle = player.shuffleModeEnabled
 
@@ -739,6 +770,8 @@ object PlayerManager {
     }
 
     fun cycleRepeatMode() {
+        ensureInitialized()
+        if (!initialized) return
         val newMode = when (repeatModeSetting) {
             Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
             Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
@@ -752,18 +785,48 @@ object PlayerManager {
     }
 
     fun release() {
+        if (!initialized) return
+
         try {
             val audioManager = application.getSystemService(Context.AUDIO_SERVICE) as AudioManager
             audioDeviceCallback?.let { audioManager.unregisterAudioDeviceCallback(it) }
         } catch (_: Exception) { }
         audioDeviceCallback = null
-        player.release()
-        cache.release()
+
+        stopProgressUpdates()
+        playJob?.cancel()
+        playJob = null
+
+        if (::player.isInitialized) {
+            runCatching { player.stop() }
+            player.release()
+        }
+        if (::cache.isInitialized) {
+            cache.release()
+        }
+
         mainScope.cancel()
         ioScope.cancel()
+
+        _isPlayingFlow.value = false
+        _currentMediaUrl.value = null
+        _currentSongFlow.value = null
+        _currentQueueFlow.value = emptyList()
+        _playbackPositionMs.value = 0L
+
+        currentPlaylist = emptyList()
+        currentIndex = -1
+        shuffleBag.clear()
+        shuffleHistory.clear()
+        shuffleFuture.clear()
+        consecutivePlayFailures = 0
+
+        initialized = false
     }
 
     fun setShuffle(enabled: Boolean) {
+        ensureInitialized()
+        if (!initialized) return
         if (player.shuffleModeEnabled == enabled) return
         player.shuffleModeEnabled = enabled
         shuffleHistory.clear()
@@ -813,6 +876,8 @@ object PlayerManager {
 
     /** 添加当前歌到“我喜欢的音乐” */
     fun addCurrentToFavorites() {
+        ensureInitialized()
+        if (!initialized) return
         val song = _currentSongFlow.value ?: return
         val updatedLists = optimisticUpdateFavorites(add = true, song = song)
         _playlistsFlow.value = deepCopyPlaylists(updatedLists)
@@ -831,6 +896,8 @@ object PlayerManager {
 
     /** 从“我喜欢的音乐”移除当前歌 */
     fun removeCurrentFromFavorites() {
+        ensureInitialized()
+        if (!initialized) return
         val songId = _currentSongFlow.value?.id ?: return
         val updatedLists = optimisticUpdateFavorites(add = false, songId = songId)
         _playlistsFlow.value = deepCopyPlaylists(updatedLists)
@@ -845,6 +912,8 @@ object PlayerManager {
 
     /** 切换收藏状态 */
     fun toggleCurrentFavorite() {
+        ensureInitialized()
+        if (!initialized) return
         val song = _currentSongFlow.value ?: return
         val fav = _playlistsFlow.value.firstOrNull { it.name == FAVORITES_NAME }
         val isFav = fav?.songs?.any { it.id == song.id } == true
@@ -907,6 +976,8 @@ object PlayerManager {
     }
 
     fun addCurrentToPlaylist(playlistId: Long) {
+        ensureInitialized()
+        if (!initialized) return
         val song = _currentSongFlow.value ?: return
         ioScope.launch {
             try {
@@ -918,9 +989,10 @@ object PlayerManager {
     }
 
     /**
-     * 修改：让 playBiliVideoAsAudio 也使用统一的 playPlaylist 入口
+     * 让 playBiliVideoAsAudio 也使用统一的 playPlaylist 入口
      */
     fun playBiliVideoAsAudio(videos: List<BiliVideoItem>, startIndex: Int) {
+        ensureInitialized()
         check(initialized) { "Call PlayerManager.initialize(application) first." }
         if (videos.isEmpty()) {
             NPLogger.w("NERI-Player", "playBiliVideoAsAudio called with EMPTY list")
@@ -978,6 +1050,25 @@ object PlayerManager {
         }
     }
 
+    /** 根据歌曲来源返回可用的翻译（如果有） */
+    suspend fun getTranslatedLyrics(song: SongItem): List<LyricEntry> {
+        // B站歌曲在匹配网易云信息后应使用匹配到的歌曲 ID 获取翻译
+        if (song.album.startsWith(BILI_SOURCE_TAG)) {
+            return when (song.matchedLyricSource) {
+                MusicPlatform.CLOUD_MUSIC -> {
+                    val matchedId = song.matchedSongId?.toLongOrNull()
+                    if (matchedId != null) getNeteaseTranslatedLyrics(matchedId) else emptyList()
+                }
+                else -> emptyList()
+            }
+        }
+
+        return when (song.matchedLyricSource) {
+            null, MusicPlatform.CLOUD_MUSIC -> getNeteaseTranslatedLyrics(song.id)
+            else -> emptyList()
+        }
+    }
+
     /** 获取歌词，优先使用本地缓存 */
     suspend fun getLyrics(song: SongItem): List<LyricEntry> {
         // 最优先使用song.matchedLyric中的歌词
@@ -1010,6 +1101,8 @@ object PlayerManager {
     }
 
     fun playFromQueue(index: Int) {
+        ensureInitialized()
+        if (!initialized) return
         if (currentPlaylist.isEmpty()) return
         if (index !in currentPlaylist.indices) return
 
@@ -1029,6 +1122,8 @@ object PlayerManager {
      * @param song 要添加的歌曲
      */
     fun addToQueueNext(song: SongItem) {
+        ensureInitialized()
+        if (!initialized) return
         if (currentPlaylist.isEmpty()) {
             // 如果当前没有播放队列，直接播放这首歌
             playPlaylist(listOf(song), 0)
@@ -1069,6 +1164,8 @@ object PlayerManager {
      * @param song 要添加的歌曲
      */
     fun addToQueueEnd(song: SongItem) {
+        ensureInitialized()
+        if (!initialized) return
         if (currentPlaylist.isEmpty()) {
             // 如果当前没有播放队列，直接播放这首歌
             playPlaylist(listOf(song), 0)
@@ -1131,7 +1228,8 @@ object PlayerManager {
                     artist = newDetails.singer,
                     coverUrl = newDetails.coverUrl,
                     matchedLyric = newDetails.lyric,
-                    matchedLyricSource = selectedSong.source
+                    matchedLyricSource = selectedSong.source,
+                    matchedSongId = selectedSong.id
                 )
 
                 updateSongInAllPlaces(originalSong, updatedSong)

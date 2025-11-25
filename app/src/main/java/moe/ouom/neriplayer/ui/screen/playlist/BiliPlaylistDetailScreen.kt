@@ -254,7 +254,10 @@ fun BiliPlaylistDetailScreen(
                     )
                 }
 
-                Box(modifier = Modifier.fillMaxSize()) {
+                Box(modifier = Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.navigationBars)
+                ) {
                     val miniPlayerHeight = LocalMiniPlayerHeight.current
 
                     LazyColumn(

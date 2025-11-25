@@ -72,6 +72,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -122,7 +123,7 @@ import moe.ouom.neriplayer.ui.screen.host.LibraryHostScreen
 import moe.ouom.neriplayer.ui.screen.host.SettingsHostScreen
 import moe.ouom.neriplayer.ui.screen.playlist.BiliPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistDetailScreen
-import moe.ouom.neriplayer.ui.screen.playlist.PlaylistDetailScreen
+import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
 import moe.ouom.neriplayer.ui.theme.NeriTheme
 import moe.ouom.neriplayer.ui.view.HyperBackground
 import moe.ouom.neriplayer.ui.viewmodel.debug.LogViewerScreen
@@ -296,7 +297,7 @@ fun NeriApp(
             return@LaunchedEffect
         }
 
-        val loader = ImageLoader(context) // ← 这个可以用，因为 context 是普通对象
+        val loader = ImageLoader(context)
         val req = ImageRequest.Builder(context).data(url).allowHardware(false).build()
         val result = withContext(Dispatchers.IO) { loader.execute(req) }
         val bmp = (result as? SuccessResult)?.drawable.let { it as? BitmapDrawable }?.bitmap
@@ -459,9 +460,9 @@ fun NeriApp(
                     ) { innerPadding ->
                         Box(
                             modifier = Modifier.padding(
-                                bottom = (innerPadding.calculateBottomPadding() - 1.dp)
+                                bottom = innerPadding.calculateBottomPadding()
                                     .coerceAtLeast(0.dp)
-                            )
+                            ).clipToBounds()
                         ) {
                             NavHost(
                                 navController = navController,
@@ -546,7 +547,7 @@ fun NeriApp(
                                 ) { backStackEntry ->
                                     val playlistJson = backStackEntry.arguments?.getString("playlistJson")
                                     val playlist = Gson().fromJson(playlistJson, NeteasePlaylist::class.java)
-                                    PlaylistDetailScreen(
+                                    NeteasePlaylistDetailScreen(
                                         playlist = playlist,
                                         onBack = { navController.popBackStack() },
                                         onSongClick = { songs, index ->

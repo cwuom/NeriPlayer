@@ -38,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.mapSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
@@ -46,11 +47,14 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.UsageEntry
 import moe.ouom.neriplayer.ui.screen.playlist.BiliPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistDetailScreen
-import moe.ouom.neriplayer.ui.screen.playlist.PlaylistDetailScreen
+import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.tab.HomeScreen
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
+import moe.ouom.neriplayer.ui.util.restoreBiliPlaylist
+import moe.ouom.neriplayer.ui.util.restoreNeteasePlaylist
+import moe.ouom.neriplayer.ui.util.toSaveMap
 
 // 用密封类承载三种目标
 private sealed class HomeSelectedItem {
@@ -63,7 +67,9 @@ private sealed class HomeSelectedItem {
 fun HomeHostScreen(
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> }
 ) {
-    var selected by rememberSaveable { mutableStateOf<HomeSelectedItem?>(null) }
+    var selected by rememberSaveable(stateSaver = homeSelectedItemSaver) {
+        mutableStateOf<HomeSelectedItem?>(null)
+    }
     BackHandler(enabled = selected != null) { selected = null }
 
     val gridState = remember {
@@ -102,7 +108,7 @@ fun HomeHostScreen(
             } else {
                 when (current) {
                     is HomeSelectedItem.Netease -> {
-                        PlaylistDetailScreen(
+                        NeteasePlaylistDetailScreen(
                             playlist = current.playlist,
                             onBack = { selected = null },
                             onSongClick = onSongClick
@@ -133,6 +139,35 @@ fun HomeHostScreen(
         }
     }
 }
+
+private val homeSelectedItemSaver = mapSaver<HomeSelectedItem?>(
+    save = { item ->
+        when (item) {
+            null -> emptyMap<String, Any?>()
+            is HomeSelectedItem.Local -> hashMapOf(
+                "type" to "local",
+                "playlistId" to item.playlistId
+            )
+            is HomeSelectedItem.Netease -> hashMapOf(
+                "type" to "netease",
+                "playlist" to item.playlist.toSaveMap()
+            )
+            is HomeSelectedItem.Bili -> hashMapOf(
+                "type" to "bili",
+                "playlist" to item.playlist.toSaveMap()
+            )
+        }
+    },
+    restore = { saved ->
+        when (saved["type"] as? String) {
+            null -> null
+            "local" -> (saved["playlistId"] as? Number)?.toLong()?.let { HomeSelectedItem.Local(it) }
+            "netease" -> restoreNeteasePlaylist(saved["playlist"] as? Map<*, *>)?.let { HomeSelectedItem.Netease(it) }
+            "bili" -> restoreBiliPlaylist(saved["playlist"] as? Map<*, *>)?.let { HomeSelectedItem.Bili(it) }
+            else -> null
+        }
+    }
+)
 
 /** 根据 UsageEntry 分发到不同平台详情 */
 private fun openRecent(

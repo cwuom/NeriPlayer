@@ -1364,9 +1364,7 @@ fun SettingsScreen(
 
     // 网易云登录窗
     if (showNeteaseSheet) {
-        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
-        val conf = LocalConfiguration.current
-        val sheetHeight = (conf.screenHeightDp * 0.75f).dp
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
         // “发送验证码” 确认对话框
         if (showConfirmDialog) {
@@ -1422,11 +1420,9 @@ fun SettingsScreen(
         ) {
             Box(
                 modifier = Modifier
-                    .height(sheetHeight)
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .padding(start = 16.dp, end = 16.dp, bottom = 48.dp, top = 12.dp)
             ) {
-                Column(Modifier.fillMaxSize()) {
+                Column {
                     Text(text = "网易云音乐登录", style = MaterialTheme.typography.titleLarge)
                     Spacer(modifier = Modifier.height(8.dp))
 
@@ -1438,7 +1434,6 @@ fun SettingsScreen(
                         )
                     }
 
-                    // 使用 PrimaryTabRow（Material3 推荐），避免旧 TabRow 的弃用告警
                     androidx.compose.material3.PrimaryTabRow(selectedTabIndex = selectedTab) {
                         Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("浏览器登录") })
                         Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("粘贴 Cookie") })
@@ -1778,7 +1773,7 @@ private fun NeteaseLoginContent(
 ) {
     val state by vm.uiState.collectAsStateWithLifecycleCompat()
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column {
         Spacer(modifier = Modifier.height(12.dp))
 
         // 内嵌提示条
