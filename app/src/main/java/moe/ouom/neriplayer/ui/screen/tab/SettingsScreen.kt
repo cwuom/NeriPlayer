@@ -164,6 +164,9 @@ import java.util.Locale
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.outlined.DeleteForever
+import androidx.compose.material.icons.outlined.SdStorage
 import moe.ouom.neriplayer.ui.component.HsvPicker
 import android.graphics.Color as AndroidColor
 
@@ -284,6 +287,9 @@ fun SettingsScreen(
     hapticFeedbackEnabled: Boolean,
     onHapticFeedbackEnabledChange: (Boolean) -> Unit,
     onNavigateToDownloadManager: () -> Unit = {},
+    maxCacheSizeBytes: Long,
+    onMaxCacheSizeBytesChange: (Long) -> Unit,
+    onClearCacheClick: () -> Unit,
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val context = LocalContext.current
@@ -308,6 +314,11 @@ fun SettingsScreen(
     // 备份与恢复菜单的状态
     var backupRestoreExpanded by remember { mutableStateOf(false) }
     val backupRestoreArrowRotation by animateFloatAsState(targetValue = if (backupRestoreExpanded) 180f else 0f, label = "backup_restore_arrow")
+
+    // 缓存设置的状态
+    var showClearCacheDialog by remember { mutableStateOf(false) }
+    var cacheExpanded by remember { mutableStateOf(false) }
+    val cacheArrowRotation by animateFloatAsState(targetValue = if (cacheExpanded) 180f else 0f, label = "backup_restore_arrow")
 
 
     // 各种对话框和弹窗的显示状态 //
@@ -898,6 +909,90 @@ fun SettingsScreen(
                     modifier = Modifier.clickable { showBiliQualityDialog = true },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
+            }
+
+            item {
+                ExpandableHeader(
+                    icon = Icons.Outlined.SdStorage,
+                    title = "存储与缓存",
+                    subtitleCollapsed = "管理缓存大小与清理",
+                    subtitleExpanded = "收起",
+                    expanded = cacheExpanded,
+                    onToggle = { cacheExpanded = !cacheExpanded },
+                    arrowRotation = cacheArrowRotation
+                )
+            }
+
+            item {
+                AnimatedVisibility(
+                    visible = cacheExpanded,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
+                    ) {
+                        // 缓存大小滑块
+                        ListItem(
+                            headlineContent = { Text("音乐缓存上限") },
+                            supportingContent = {
+                                // 计算当前 MB 值
+                                val sizeMb = maxCacheSizeBytes / (1024 * 1024).toFloat()
+                                // 本地状态，用于滑块流畅滑动
+                                var sliderValue by remember(sizeMb) { mutableFloatStateOf(sizeMb) }
+
+                                // 显示文本格式化：超过 1024MB 显示为 GB
+                                val displaySize = if (sliderValue >= 1024) {
+                                    String.format(Locale.US, "%.1f GB", sliderValue / 1024)
+                                } else {
+                                    "${sliderValue.toInt()} MB"
+                                }
+
+                                Column {
+                                    Text(
+                                        text = if (sliderValue < 10f) "不缓存 (0 MB)" else displaySize,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Slider(
+                                        value = sliderValue,
+                                        onValueChange = { sliderValue = it },
+                                        onValueChangeFinished = {
+                                            // 转换为 Bytes 保存，如果小于 10MB 视为 0
+                                            val newBytes = if (sliderValue < 10f) 0L else (sliderValue * 1024 * 1024).toLong()
+                                            onMaxCacheSizeBytesChange(newBytes)
+                                        },
+                                        // 范围扩大到 10GB (10 * 1024 MB)
+                                        valueRange = 0f..(10 * 1024f),
+                                        steps = 0
+                                    )
+                                    Text(
+                                        "设置为 0 MB 即禁用缓存。修改上限后需重启应用生效。",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.outline
+                                    )
+                                }
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+
+                        // 清除缓存按钮
+                        ListItem(
+                            headlineContent = { Text("清除缓存") },
+                            supportingContent = { Text("释放本地存储空间") },
+                            trailingContent = {
+                                OutlinedButton(onClick = { showClearCacheDialog = true }) {
+                                    Icon(Icons.Outlined.DeleteForever, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("清除")
+                                }
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+                    }
+                }
             }
 
             // 下载管理器
@@ -1608,6 +1703,25 @@ fun SettingsScreen(
             onApply = { newScale ->
                 onUiDensityScaleChange(newScale)
                 showDpiDialog = false
+            }
+        )
+    }
+
+    if (showClearCacheDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearCacheDialog = false },
+            title = { Text("确认清除缓存？") },
+            text = { Text("这将删除所有已缓存的音乐文件，释放磁盘空间。") },
+            confirmButton = {
+                HapticTextButton(
+                    onClick = {
+                        onClearCacheClick()
+                        showClearCacheDialog = false
+                    }
+                ) { Text("确认清除", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                HapticTextButton(onClick = { showClearCacheDialog = false }) { Text("取消") }
             }
         )
     }

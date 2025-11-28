@@ -316,7 +316,8 @@ fun NowPlayingScreen(
                     onLyricFontScaleChange = onLyricFontScaleChange,
                     onNavigateBack = { showLyricsScreen = false },
                     onSeekTo = { position -> PlayerManager.seekTo(position) },
-                    translatedLyrics = translatedLyrics
+                    translatedLyrics = translatedLyrics,
+                    lyricOffsetMs = totalOffset
                 )
             } else {
                 // 播放页面

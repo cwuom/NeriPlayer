@@ -193,6 +193,8 @@ object PlayerManager {
     val cloudMusicSearchApi = AppContainer.cloudMusicSearchApi
     val qqMusicSearchApi = AppContainer.qqMusicSearchApi
 
+    // 记录当前缓存大小设置
+    private var currentCacheSize: Long = 1024L * 1024 * 1024
 
     private fun isPreparedInPlayer(): Boolean = player.currentMediaItem != null
 
@@ -269,10 +271,12 @@ object PlayerManager {
         val index: Int
     )
 
-    fun initialize(app: Application) {
+
+    fun initialize(app: Application, maxCacheSize: Long = 1024L * 1024 * 1024) {
         if (initialized) return
         initialized = true
         application = app
+        currentCacheSize = maxCacheSize
 
         ioScope = newIoScope()
         mainScope = newMainScope()
@@ -280,27 +284,40 @@ object PlayerManager {
         localRepo = LocalPlaylistRepository.getInstance(app)
         stateFile = File(app.filesDir, "last_playlist.json")
 
-        val cacheDir = File(app.cacheDir, "media_cache")
-        val dbProvider = StandaloneDatabaseProvider(app)
-        cache = SimpleCache(
-            cacheDir,
-            LeastRecentlyUsedCacheEvictor(10L * 1024 * 1024 * 1024),
-            dbProvider
-        )
-
-        // Use OkHttpDataSource with a shared OkHttpClient from AppContainer to honor proxy settings
+        // 基础网络请求工厂，支持 B 站 Cookie 注入
         val okHttpClient = AppContainer.sharedOkHttpClient
         val upstreamFactory: HttpDataSource.Factory = OkHttpDataSource.Factory(okHttpClient)
         val conditionalHttpFactory = ConditionalHttpDataSourceFactory(upstreamFactory, biliCookieRepo)
 
-        // Use DefaultDataSource so file:// and content:// URIs are handled by File/ContentDataSource
+        // 默认数据源工厂
         val defaultDsFactory = androidx.media3.datasource.DefaultDataSource.Factory(app, conditionalHttpFactory)
 
-        val cacheDsFactory = CacheDataSource.Factory()
-            .setCache(cache)
-            .setUpstreamDataSourceFactory(defaultDsFactory)
+        // 决定是否启用缓存层
+        val finalDataSourceFactory: androidx.media3.datasource.DataSource.Factory = if (maxCacheSize > 0) {
+            val cacheDir = File(app.cacheDir, "media_cache")
+            val dbProvider = StandaloneDatabaseProvider(app)
 
-        val mediaSourceFactory = DefaultMediaSourceFactory(cacheDsFactory)
+            // 创建 LRU 缓存实例
+            cache = SimpleCache(
+                cacheDir,
+                LeastRecentlyUsedCacheEvictor(maxCacheSize),
+                dbProvider
+            )
+
+            // 包裹成缓存数据源
+            CacheDataSource.Factory()
+                .setCache(cache)
+                .setUpstreamDataSourceFactory(defaultDsFactory)
+                // 如果缓存写入失败（如空间不足），忽略错误直接播放网络流
+                .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+        } else {
+            // 缓存大小为 0，直接使用直连数据源
+            NPLogger.d("NERI-Player", "Cache disabled by user setting (size=0).")
+            defaultDsFactory
+        }
+
+        // 将最终的数据源工厂传给 MediaSourceFactory
+        val mediaSourceFactory = DefaultMediaSourceFactory(finalDataSourceFactory)
 
         val renderersFactory = ReactiveRenderersFactory(app)
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
@@ -365,7 +382,7 @@ object PlayerManager {
 
         player.playWhenReady = false
 
-        // 订阅音质
+        // 订阅音质设置
         ioScope.launch {
             settingsRepo.audioQualityFlow.collect { q -> preferredQuality = q }
         }
@@ -382,6 +399,64 @@ object PlayerManager {
 
         setupAudioDeviceCallback()
         restoreState()
+
+        // 初始化完成后检查是否有待播放项并尝试同步前台服务
+        NPLogger.d("NERI-Player", "PlayerManager initialized with cache size: $maxCacheSize")
+    }
+
+    fun clearCache() {
+        ioScope.launch(Dispatchers.IO) {
+            var apiRemovedCount = 0
+            var physicalDeletedCount = 0
+            var totalSpaceFreed = 0L
+
+            try {
+                if (::cache.isInitialized) {
+                    val keysSnapshot = HashSet(cache.keys)
+                    keysSnapshot.forEach { key ->
+                        try {
+                            val resource = cache.getCachedSpans(key)
+                            resource.forEach { totalSpaceFreed += it.length }
+
+                            cache.removeResource(key)
+                            apiRemovedCount++
+                        } catch (e: Exception) { /* 忽略单个失败 */ }
+                    }
+                }
+
+                val cacheDir = File(application.cacheDir, "media_cache")
+
+                if (cacheDir.exists() && cacheDir.isDirectory) {
+                    val files = cacheDir.listFiles() ?: emptyArray()
+
+                    files.forEach { file ->
+                        if (file.isFile && file.name.endsWith(".exo")) {
+                            val length = file.length()
+                            if (file.delete()) {
+                                physicalDeletedCount++
+                            }
+                        }
+                    }
+                }
+
+                NPLogger.d("NERI-Player", "Cache Clear: API removed $apiRemovedCount keys, Physically deleted $physicalDeletedCount .exo files.")
+
+                withContext(Dispatchers.Main) {
+                    val msg = if (physicalDeletedCount > 0 || apiRemovedCount > 0) {
+                        "清理完成"
+                    } else {
+                        "缓存已为空"
+                    }
+                    Toast.makeText(application, msg, Toast.LENGTH_SHORT).show()
+                }
+
+            } catch (e: Exception) {
+                NPLogger.e("NERI-Player", "Clear cache failed", e)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(application, "清理出错: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
     }
 
     private fun ensureInitialized() {
@@ -1124,40 +1199,54 @@ object PlayerManager {
     fun addToQueueNext(song: SongItem) {
         ensureInitialized()
         if (!initialized) return
+
+        // 空队列特殊处理
         if (currentPlaylist.isEmpty()) {
-            // 如果当前没有播放队列，直接播放这首歌
             playPlaylist(listOf(song), 0)
             return
         }
 
-        val newPlaylist = currentPlaylist.toMutableList()
-        val insertIndex = (currentIndex + 1).coerceIn(0, newPlaylist.size)
+        val currentSong = _currentSongFlow.value
 
-        // 检查歌曲是否已存在于队列中
+        val newPlaylist = currentPlaylist.toMutableList()
+        var insertIndex = (currentIndex + 1).coerceIn(0, newPlaylist.size + 1)
+
+        // 检查歌曲是否已存在
         val existingIndex = newPlaylist.indexOfFirst { it.id == song.id && it.album == song.album }
         if (existingIndex != -1) {
             newPlaylist.removeAt(existingIndex)
-            // 调整插入位置
-            val adjustedInsertIndex = if (existingIndex < insertIndex) insertIndex - 1 else insertIndex
-            newPlaylist.add(adjustedInsertIndex, song)
-        } else {
-            // 如果歌曲不存在，直接插入
-            newPlaylist.add(insertIndex, song)
+            // 如果移除的歌曲在插入位置之前，插入位置需要前移一位
+            if (existingIndex < insertIndex) {
+                insertIndex--
+            }
         }
 
-        // 更新播放队列
+        // 确保索引安全
+        insertIndex = insertIndex.coerceIn(0, newPlaylist.size)
+        newPlaylist.add(insertIndex, song)
+
+        // 更新列表
         currentPlaylist = newPlaylist
         _currentQueueFlow.value = currentPlaylist
 
-        // 如果启用了随机播放，需要重建随机播放袋
+        if (currentSong != null) {
+            currentIndex = newPlaylist.indexOfFirst { it.id == currentSong.id && it.album == currentSong.album }
+        }
+
         if (player.shuffleModeEnabled) {
-            rebuildShuffleBag()
+            val newSongRealIndex = newPlaylist.indexOfFirst { it.id == song.id && it.album == song.album }
+
+            if (newSongRealIndex != -1) {
+                shuffleBag.remove(newSongRealIndex)
+                shuffleFuture.add(newSongRealIndex)
+            }
         }
 
         ioScope.launch {
             persistState()
         }
     }
+
 
     /**
      * 将歌曲添加到播放队列的末尾

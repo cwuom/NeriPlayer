@@ -135,6 +135,7 @@ import moe.ouom.neriplayer.util.syncHapticFeedbackSetting
 import androidx.palette.graphics.Palette
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import moe.ouom.neriplayer.ui.screen.RecentScreen
 
 private fun adjustAccent(base: Color, isDark: Boolean): Color {
@@ -270,12 +271,17 @@ fun NeriApp(
     val backgroundImageBlur by repo.backgroundImageBlurFlow.collectAsState(initial = 10f)
     val backgroundImageAlpha by repo.backgroundImageAlphaFlow.collectAsState(initial = 0.3f)
     val hapticFeedbackEnabled by repo.hapticFeedbackEnabledFlow.collectAsState(initial = true)
+    val maxCacheSizeBytes by repo.maxCacheSizeBytesFlow.collectAsState(initial = 1024L * 1024 * 1024)
     val hazeState = remember { HazeState() }
 
     var coverSeedHex by remember { mutableStateOf<String?>(null) }   // 形如 "RRGGBB"
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
 
     LaunchedEffect(Unit) {
+        val initialCacheSize = repo.maxCacheSizeBytesFlow.first()
+        PlayerManager.initialize(context.applicationContext as Application, initialCacheSize)
+
+
         // 跳过初始值，订阅之后的变更，每次切曲写入最近播放
         PlayerManager.currentSongFlow
             .drop(1)
@@ -842,7 +848,12 @@ fun NeriApp(
                                                 repo.setHapticFeedbackEnabled(enabled)
                                                 syncHapticFeedbackSetting(enabled)
                                             }
-                                        }
+                                        },
+                                        maxCacheSizeBytes = maxCacheSizeBytes,
+                                        onMaxCacheSizeBytesChange = { size ->
+                                            scope.launch { repo.setMaxCacheSizeBytes(size) }
+                                        },
+                                        onClearCacheClick = { PlayerManager.clearCache() }
                                     )
                                 }
 

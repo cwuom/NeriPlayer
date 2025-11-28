@@ -28,6 +28,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -57,6 +58,7 @@ object SettingsKeys {
     val BACKGROUND_IMAGE_BLUR = floatPreferencesKey("background_image_blur")
     val BACKGROUND_IMAGE_ALPHA = floatPreferencesKey("background_image_alpha")
     val HAPTIC_FEEDBACK_ENABLED = booleanPreferencesKey("haptic_feedback_enabled")
+    val MAX_CACHE_SIZE_BYTES = longPreferencesKey("max_cache_size_bytes")
 }
 
 
@@ -134,6 +136,10 @@ class SettingsRepository(private val context: Context) {
                 }
             emitAll(realFlow)
         }
+
+    val maxCacheSizeBytesFlow: Flow<Long> =
+        context.dataStore.data.map { it[SettingsKeys.MAX_CACHE_SIZE_BYTES] ?: (1024L * 1024 * 1024) }
+
     suspend fun setDynamicColor(value: Boolean) {
         context.dataStore.edit { it[SettingsKeys.DYNAMIC_COLOR] = value }
     }
@@ -240,6 +246,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setBackgroundImageAlpha(alpha: Float) {
         context.dataStore.edit { it[SettingsKeys.BACKGROUND_IMAGE_ALPHA] = alpha }
+    }
+
+    suspend fun setMaxCacheSizeBytes(bytes: Long) {
+        context.dataStore.edit { it[SettingsKeys.MAX_CACHE_SIZE_BYTES] = bytes }
     }
 
     /** 备用：一次性读取（非 Compose 场景） */

@@ -79,6 +79,9 @@ fun SettingsHostScreen(
     onBackgroundImageAlphaChange: (Float) -> Unit,
     hapticFeedbackEnabled: Boolean,
     onHapticFeedbackEnabledChange: (Boolean) -> Unit,
+    maxCacheSizeBytes: Long,
+    onMaxCacheSizeBytesChange: (Long) -> Unit,
+    onClearCacheClick: () -> Unit,
 ) {
     var showDownloadManager by rememberSaveable { mutableStateOf(false) }
     
@@ -138,7 +141,10 @@ fun SettingsHostScreen(
                     onBackgroundImageAlphaChange = onBackgroundImageAlphaChange,
                     hapticFeedbackEnabled = hapticFeedbackEnabled,
                     onHapticFeedbackEnabledChange = onHapticFeedbackEnabledChange,
-                    onNavigateToDownloadManager = { showDownloadManager = true }
+                    onNavigateToDownloadManager = { showDownloadManager = true },
+                    maxCacheSizeBytes = maxCacheSizeBytes,
+                    onMaxCacheSizeBytesChange = onMaxCacheSizeBytesChange,
+                    onClearCacheClick = onClearCacheClick
                 )
             } else {
                 DownloadManagerScreen(
