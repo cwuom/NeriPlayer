@@ -57,6 +57,14 @@ data class NeteasePlaylist(
     val trackCount: Int
 ) : Parcelable
 
+@Parcelize
+data class NeteaseAlbum(
+    val id: Long,
+    val name: String,
+    val picUrl: String,
+    val size: Int
+) : Parcelable
+
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repo = AppContainer.neteaseCookieRepo

@@ -123,7 +123,7 @@ fun NeteaseApiProbeScreen() {
                 ) { Text("仅 我创建的歌单") }
 
                 OutlinedButton(
-                    onClick = { vm.callStaredTrackers() },
+                    onClick = { vm.callStaredAlbums() },
                     enabled = !ui.running,
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("仅 我收藏的专辑") }

@@ -338,7 +338,7 @@ class NeteaseClient(bypassProxy: Boolean = true) {
     }  
     
     @Throws(IOException::class)
-    fun getUserTrackers(userId: Long, offset: Int = 0, limit: Int = 30): String {
+    fun getUserAlbums(userId: Long, offset: Int = 0, limit: Int = 30): String {
         val url = "https://interface3.music.163.com/eapi/mine/rn/resource/list"
         val params = mutableMapOf<String, Any>(
             "userId" to userId.toString(),
@@ -496,9 +496,9 @@ class NeteaseClient(bypassProxy: Boolean = true) {
      * @param limit  每页返回数量
      */
     @Throws(IOException::class)
-    fun getUserStaredTrackers(userId: Long, offset: Int = 0, limit: Int = 1000): String {
+    fun getUserStaredAlbums(userId: Long, offset: Int = 0, limit: Int = 1000): String {
         val uid = if (userId == 0L) getCurrentUserId() else userId
-        val raw = getUserTrackers(uid, offset, limit)
+        val raw = getUserAlbums(uid, offset, limit)
         return try {
             val root = JSONObject(raw)
             val code = root.optInt("code", 200)
