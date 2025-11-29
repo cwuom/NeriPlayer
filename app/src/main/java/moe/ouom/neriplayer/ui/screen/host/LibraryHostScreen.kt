@@ -48,6 +48,7 @@ import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.BiliPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.tab.LibraryScreen
+import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
@@ -56,6 +57,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.ui.util.toSaveMap
 import moe.ouom.neriplayer.ui.util.restoreBiliPlaylist
+import moe.ouom.neriplayer.ui.util.restoreNeteaseAlbum
 import moe.ouom.neriplayer.ui.util.restoreNeteasePlaylist
 
 @Parcelize
@@ -64,6 +66,8 @@ sealed class LibrarySelectedItem : Parcelable {
     data class Local(val playlistId: Long) : LibrarySelectedItem()
     @Parcelize
     data class Netease(val playlist: NeteasePlaylist) : LibrarySelectedItem()
+    @Parcelize
+    data class NeteaseAlbumlist(val album: NeteaseAlbum) : LibrarySelectedItem()
     @Parcelize
     data class Bili(val playlist: BiliPlaylist) : LibrarySelectedItem()
 }
@@ -83,6 +87,7 @@ fun LibraryHostScreen(
 
     // 保存各个列表的滚动状态
     val localListSaver: Saver<LazyListState, *> = LazyListState.Saver
+    val neteaseAlbumSaver: Saver<LazyListState, *> = LazyListState.Saver
     val neteaseListSaver: Saver<LazyListState, *> = LazyListState.Saver
     val biliListSaver: Saver<LazyListState, *> = LazyListState.Saver
     val qqMusicListSaver: Saver<LazyListState, *> = LazyListState.Saver
@@ -91,6 +96,9 @@ fun LibraryHostScreen(
         LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
     }
     val neteaseListState = rememberSaveable(saver = neteaseListSaver) {
+        LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
+    }
+    val neteaseAlbumState = rememberSaveable(saver = neteaseAlbumSaver) {
         LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
     }
     val biliListState = rememberSaveable(saver = biliListSaver) {
@@ -119,6 +127,7 @@ fun LibraryHostScreen(
                     initialTabIndex = selectedTabIndex,
                     onTabIndexChange = { selectedTabIndex = it },
                     localListState = localListState,
+                    neteaseAlbumState = neteaseAlbumState,
                     neteaseListState = neteaseListState,
                     biliListState = biliListState,
                     qqMusicListState = qqMusicListState,
@@ -134,6 +143,13 @@ fun LibraryHostScreen(
                         AppContainer.playlistUsageRepo.recordOpen(
                             id = playlist.id, name = playlist.name, picUrl = playlist.picUrl,
                             trackCount = playlist.trackCount, source = "netease"
+                        )
+                    },
+                    onNeteaseAlbumClick = { album -> 
+                        selected = LibrarySelectedItem.NeteaseAlbumlist(album)
+                        AppContainer.playlistUsageRepo.recordOpen(
+                            id = album.id, name = album.name, picUrl = album.picUrl,
+                            trackCount = album.size, source = "neteaseAlbum"
                         )
                     },
                     onBiliPlaylistClick = { playlist -> 
@@ -154,6 +170,13 @@ fun LibraryHostScreen(
                             onDeleted = { selected = null },
                             onSongClick = onSongClick
                         )
+                    }
+                    is LibrarySelectedItem.NeteaseAlbumlist -> {
+                        /*NeteasePlaylistDetailScreen(
+                            onBack = { selected = null },
+                            onSongClick = onSongClick,
+                            playlist = current.playlist
+                        )*/
                     }
                     is LibrarySelectedItem.Netease -> {
                         NeteasePlaylistDetailScreen(
@@ -186,6 +209,10 @@ private val librarySelectedItemSaver = mapSaver<LibrarySelectedItem?>(
                 "type" to "local",
                 "playlistId" to item.playlistId
             )
+            is LibrarySelectedItem.NeteaseAlbumlist -> hashMapOf(
+                "type" to "neteaseAlbum",
+                "album" to item.album.toSaveMap()
+            )
             is LibrarySelectedItem.Netease -> hashMapOf(
                 "type" to "netease",
                 "playlist" to item.playlist.toSaveMap()
@@ -200,6 +227,7 @@ private val librarySelectedItemSaver = mapSaver<LibrarySelectedItem?>(
         when (saved["type"] as? String) {
             null -> null
             "local" -> (saved["playlistId"] as? Number)?.toLong()?.let { LibrarySelectedItem.Local(it) }
+            "neteaseAlbum" -> restoreNeteaseAlbum(saved["album"] as? Map<*, *>)?.let { LibrarySelectedItem.NeteaseAlbumlist(it) }
             "netease" -> restoreNeteasePlaylist(saved["playlist"] as? Map<*, *>)?.let { LibrarySelectedItem.Netease(it) }
             "bili" -> restoreBiliPlaylist(saved["playlist"] as? Map<*, *>)?.let { LibrarySelectedItem.Bili(it) }
             else -> null

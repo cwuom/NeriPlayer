@@ -110,6 +110,7 @@ import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
+import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.PlaylistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem

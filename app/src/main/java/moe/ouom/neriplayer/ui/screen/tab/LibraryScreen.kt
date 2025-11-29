@@ -113,6 +113,7 @@ fun LibraryScreen(
     initialTabIndex: Int = 0,
     onTabIndexChange: (Int) -> Unit = {},
     localListState: LazyListState,
+    neteaseAlbumState: LazyListState,
     neteaseListState: LazyListState,
     biliListState: LazyListState,
     qqMusicListState: LazyListState,
@@ -208,7 +209,7 @@ fun LibraryScreen(
                 )
                 LibraryTab.NETEASEALBUM -> NeteaseAlbumList(
                     playlists = ui.neteaseAlbums,
-                    listState = neteaseListState,
+                    listState = neteaseAlbumState,
                     onClick = onNeteaseAlbumClick
                 )
                 LibraryTab.BILI -> BiliPlaylistList(
