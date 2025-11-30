@@ -209,6 +209,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                 id = obj.optLong("id"),
                 name = obj.optString("name"),
                 artist = artistNames.joinToString(" / "),
+                albumId = 0L,
                 album = albumObj?.optString("name").orEmpty(),
                 durationMs = obj.optLong("dt"),
                 coverUrl = albumObj?.optString("picUrl")?.replace("http://", "https://")
@@ -236,6 +237,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
             name = page.part, // 直接使用分P的标题作为歌曲名
             artist = basicInfo.ownerName,
             album = PlayerManager.BILI_SOURCE_TAG,
+            albumId = 0L,
             durationMs = page.durationSec * 1000L,
             coverUrl = coverUrl
         )
@@ -249,6 +251,7 @@ private fun BiliClient.SearchVideoItem.toSongItem(): SongItem {
         name = this.titlePlain,
         artist = this.author,
         album = PlayerManager.BILI_SOURCE_TAG, // 标记来源
+        albumId = 0L,
         durationMs = this.durationSec * 1000L,
         coverUrl = this.coverUrl
     )

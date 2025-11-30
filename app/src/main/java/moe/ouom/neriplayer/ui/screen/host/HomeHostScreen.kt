@@ -47,18 +47,22 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.UsageEntry
 import moe.ouom.neriplayer.ui.screen.playlist.BiliPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistDetailScreen
+import moe.ouom.neriplayer.ui.screen.playlist.NeteaseAlbumDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.tab.HomeScreen
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
 import moe.ouom.neriplayer.ui.util.restoreBiliPlaylist
+import moe.ouom.neriplayer.ui.util.restoreNeteaseAlbum
 import moe.ouom.neriplayer.ui.util.restoreNeteasePlaylist
 import moe.ouom.neriplayer.ui.util.toSaveMap
 
-// 用密封类承载三种目标
+// 用密封类承载四种目标
 private sealed class HomeSelectedItem {
     data class Netease(val playlist: NeteasePlaylist) : HomeSelectedItem()
+    data class NeteaseAlbumList(val album: NeteaseAlbum) : HomeSelectedItem()
     data class Local(val playlistId: Long) : HomeSelectedItem()
     data class Bili(val playlist: BiliPlaylist) : HomeSelectedItem()
 }
@@ -107,6 +111,13 @@ fun HomeHostScreen(
                 )
             } else {
                 when (current) {
+                    is HomeSelectedItem.NeteaseAlbumList -> {
+                        NeteaseAlbumDetailScreen(
+                            album = current.album,
+                            onBack = { selected = null },
+                            onSongClick = onSongClick
+                        )
+                    }
                     is HomeSelectedItem.Netease -> {
                         NeteasePlaylistDetailScreen(
                             playlist = current.playlist,
@@ -152,6 +163,10 @@ private val homeSelectedItemSaver = mapSaver<HomeSelectedItem?>(
                 "type" to "netease",
                 "playlist" to item.playlist.toSaveMap()
             )
+            is HomeSelectedItem.NeteaseAlbumList -> hashMapOf(
+                "type" to "neteaseAlbum",
+                "album" to item.album.toSaveMap()
+            )
             is HomeSelectedItem.Bili -> hashMapOf(
                 "type" to "bili",
                 "playlist" to item.playlist.toSaveMap()
@@ -162,6 +177,7 @@ private val homeSelectedItemSaver = mapSaver<HomeSelectedItem?>(
         when (saved["type"] as? String) {
             null -> null
             "local" -> (saved["playlistId"] as? Number)?.toLong()?.let { HomeSelectedItem.Local(it) }
+            "neteaseAlbum" -> restoreNeteaseAlbum(saved["album"] as? Map<*, *>)?.let { HomeSelectedItem.NeteaseAlbumList(it) }
             "netease" -> restoreNeteasePlaylist(saved["playlist"] as? Map<*, *>)?.let { HomeSelectedItem.Netease(it) }
             "bili" -> restoreBiliPlaylist(saved["playlist"] as? Map<*, *>)?.let { HomeSelectedItem.Bili(it) }
             else -> null
@@ -184,6 +200,18 @@ private fun openRecent(
                         picUrl = entry.picUrl ?: "",
                         playCount = 0L,
                         trackCount = entry.trackCount
+                    )
+                )
+            )
+        }
+        "neteasealbum" -> {
+            onSelected(
+                HomeSelectedItem.NeteaseAlbumList(
+                    NeteaseAlbum(
+                        id = entry.id,
+                        name = entry.name,
+                        picUrl = entry.picUrl ?: "",
+                        size = entry.trackCount
                     )
                 )
             )

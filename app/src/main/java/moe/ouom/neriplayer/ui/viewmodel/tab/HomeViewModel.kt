@@ -218,6 +218,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     name = obj.optString("name"),
                     artist = artistNames.joinToString(" / "),
                     album = albumObj?.optString("name").orEmpty(),
+                    albumId = 0L,
                     durationMs = obj.optLong("dt"),
                     coverUrl = albumObj?.optString("picUrl")?.replace("http://", "https://")
                 )

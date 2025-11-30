@@ -84,6 +84,7 @@ import androidx.compose.material.icons.filled.SpeakerGroup
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.FormatSize
+import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Pause
@@ -144,6 +145,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.compose.rememberNavController
 import androidx.media3.common.Player
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
@@ -151,6 +153,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
@@ -160,6 +163,7 @@ import moe.ouom.neriplayer.ui.component.LyricVisualSpec
 import moe.ouom.neriplayer.ui.component.WaveformSlider
 import moe.ouom.neriplayer.ui.component.parseNeteaseLrc
 import moe.ouom.neriplayer.ui.component.parseNeteaseYrc
+import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.HapticFilledIconButton
@@ -172,6 +176,7 @@ import kotlin.math.roundToInt
 @Composable
 fun NowPlayingScreen(
     onNavigateUp: () -> Unit,
+    onEnterAlbum: (NeteaseAlbum) -> Unit,
     lyricBlurEnabled: Boolean,
     lyricFontScale: Float,
     onLyricFontScaleChange: (Float) -> Unit,
@@ -313,6 +318,7 @@ fun NowPlayingScreen(
                     lyrics = lyrics,
                     lyricBlurEnabled = lyricBlurEnabled,
                     lyricFontScale = lyricFontScale,
+                    onEnterAlbum = onEnterAlbum,
                     onLyricFontScaleChange = onLyricFontScaleChange,
                     onNavigateBack = { showLyricsScreen = false },
                     onSeekTo = { position -> PlayerManager.seekTo(position) },
@@ -387,6 +393,7 @@ fun NowPlayingScreen(
                                     originalSong = currentSong!!,
                                     queue = displayedQueue,
                                     onDismiss = { showMoreOptions = false },
+                                    onEnterAlbum = onEnterAlbum,
                                     snackbarHostState = snackbarHostState,
                                     lyricFontScale = lyricFontScale,
                                     onLyricFontScaleChange = onLyricFontScaleChange
@@ -868,6 +875,7 @@ fun MoreOptionsSheet(
     originalSong: SongItem,
     queue: List<SongItem>,
     onDismiss: () -> Unit,
+    onEnterAlbum: (NeteaseAlbum) -> Unit,
     snackbarHostState: SnackbarHostState,
     lyricFontScale: Float,
     onLyricFontScaleChange: (Float) -> Unit
@@ -876,6 +884,7 @@ fun MoreOptionsSheet(
     var showSearchView by remember { mutableStateOf(false) }
     var showOffsetSheet by remember { mutableStateOf(false) }
     var showFontSizeSheet by remember { mutableStateOf(false) }
+    var enterAlbum by remember { mutableStateOf(false) }
 
     val focusManager = LocalFocusManager.current
     val context = LocalContext.current
@@ -888,7 +897,7 @@ fun MoreOptionsSheet(
             viewModel.performSearch()
         }
     }
-
+    
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -943,6 +952,17 @@ fun MoreOptionsSheet(
                             },
                             modifier = Modifier.clickable { showFontSizeSheet = true }
                         )
+                        if (originalSong.album.startsWith(PlayerManager.NETEASE_SOURCE_TAG)) {
+                            val albumName = originalSong.album.replace(PlayerManager.NETEASE_SOURCE_TAG, "")
+                            val album = NeteaseAlbum(id = originalSong.albumId.toLong(), name = albumName, size = 0, picUrl = originalSong?.coverUrl ?:"")
+                            ListItem(
+                                headlineContent = { Text("查看专辑 $albumName") },
+                                leadingContent = { Icon(Icons.Outlined.LibraryMusic, null) },
+                                modifier = Modifier.clickable {
+                                    onEnterAlbum(album)
+                                }
+                            )
+                        }
                         ListItem(
                             headlineContent = { Text("分享") },
                             leadingContent = { Icon(Icons.Outlined.Share, null) },

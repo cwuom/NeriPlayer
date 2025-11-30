@@ -364,6 +364,16 @@ class NeteaseClient(bypassProxy: Boolean = true) {
     }
 
     @Throws(IOException::class)
+    fun getAlbumDetail(albumId: Long, n: Int = 100000, s: Int = 8): String {
+        val url = "https://interface.music.163.com/weapi/v1/album/$albumId"
+        val params = mutableMapOf<String, Any>(
+            "n" to n.toString(),
+            "s" to s.toString()
+        )
+        return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
+    }
+    
+    @Throws(IOException::class)
     fun getPlaylistDetail(playlistId: Long, n: Int = 100000, s: Int = 8): String {
         val url = "https://music.163.com/api/v6/playlist/detail"
         val params = mutableMapOf<String, Any>(

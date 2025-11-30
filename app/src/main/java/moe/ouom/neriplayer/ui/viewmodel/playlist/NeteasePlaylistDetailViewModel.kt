@@ -36,6 +36,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.parcelize.Parcelize
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
 import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
@@ -45,6 +46,7 @@ private const val TAG_PD = "NERI-PlaylistVM"
 
 data class PlaylistHeader(
     val id: Long,
+    val isAlbum: Boolean,//以兼容形式
     val name: String,
     val coverUrl: String,
     val playCount: Long,
@@ -57,6 +59,7 @@ data class SongItem(
     val name: String,
     val artist: String,
     val album: String,
+    val albumId: Long,
     val durationMs: Long,
     val coverUrl: String?,
     val matchedLyric: String? = null,
@@ -103,7 +106,7 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
-    fun start(playlist: NeteasePlaylist) {
+    fun startPlaylist(playlist: NeteasePlaylist) {
         if (playlistId == playlist.id && _uiState.value.header != null && _uiState.value.tracks.isNotEmpty()) return
         playlistId = playlist.id
 
@@ -112,6 +115,7 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
             loading = true,
             header = PlaylistHeader(
                 id = playlist.id,
+                isAlbum = false,
                 name = playlist.name,
                 coverUrl = toHttps(playlist.picUrl) ?: "",
                 playCount = playlist.playCount,
@@ -129,7 +133,58 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
                 val raw = withContext(Dispatchers.IO) { client.getPlaylistDetail(playlistId) }
                 NPLogger.d(TAG_PD, "detail head=${raw.take(500)}")
 
-                val (header, tracks) = parseDetail(raw)
+                val (header, tracks) = parseDetailFromPlaylist(raw)
+
+                _uiState.value = PlaylistDetailUiState(
+                    loading = false,
+                    error = null,
+                    header = header,
+                    tracks = tracks
+                )
+            } catch (e: IOException) {
+                Log.e(TAG_PD, "Network/Server error", e)
+                _uiState.value = _uiState.value.copy(
+                    loading = false,
+                    error = "网络异常或服务器异常：${e.message ?: e.javaClass.simpleName}"
+                )
+            } catch (e: Exception) {
+                Log.e(TAG_PD, "Unexpected error", e)
+                _uiState.value = _uiState.value.copy(
+                    loading = false,
+                    error = "解析/未知错误：${e.message ?: e.javaClass.simpleName}"
+                )
+            }
+        }
+    }
+    
+    fun startAlbum(album: NeteaseAlbum) {
+        if (playlistId == album.id && _uiState.value.header != null && _uiState.value.tracks.isNotEmpty()) return
+        playlistId = album.id
+
+        // 用入口数据把 header 预填
+        _uiState.value = PlaylistDetailUiState(
+            loading = true,
+            header = PlaylistHeader(
+                id = album.id,
+                isAlbum = true,
+                name = album.name,
+                coverUrl = toHttps(album.picUrl) ?: "",
+                playCount = 0,
+                trackCount = album.size
+            ),
+            tracks = emptyList()
+        )
+
+        viewModelScope.launch {
+            try {
+                // 再读一次当前持久化 Cookie，并注入
+                val cookies = withContext(Dispatchers.IO) { cookieRepo.getCookiesOnce() }.toMutableMap()
+                cookies.putIfAbsent("os", "pc")
+
+                val raw = withContext(Dispatchers.IO) { client.getAlbumDetail(playlistId) }
+                NPLogger.d(TAG_PD, "detail head=${raw.take(500)}")
+
+                val (header, tracks) = parseDetailFromAlbum(raw)
 
                 _uiState.value = PlaylistDetailUiState(
                     loading = false,
@@ -155,21 +210,32 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
 
     fun retry() {
         val h = _uiState.value.header ?: return
-        start(
-            NeteasePlaylist(
-                id = h.id,
-                name = h.name,
-                picUrl = h.coverUrl,
-                playCount = h.playCount,
-                trackCount = h.trackCount
+        if (h.isAlbum) {
+            startAlbum(
+                NeteaseAlbum(
+                    id = h.id,
+                    name = h.name,
+                    picUrl = h.coverUrl,
+                    size = h.trackCount
+                )
             )
-        )
+        } else {
+            startPlaylist(
+                NeteasePlaylist(
+                    id = h.id,
+                    name = h.name,
+                    picUrl = h.coverUrl,
+                    playCount = h.playCount,
+                    trackCount = h.trackCount
+                )
+            )
+        }
     }
 
     private fun toHttps(url: String?): String? =
         url?.replaceFirst(Regex("^http://"), "https://")
 
-    private fun parseDetail(raw: String): ParsedDetail {
+    private fun parseDetailFromPlaylist(raw: String): ParsedDetail {
         val root = JSONObject(raw)
         val code = root.optInt("code", -1)
         require(code == 200) { "接口返回异常 code=$code" }
@@ -181,7 +247,8 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
             name = pl.optString("name"),
             coverUrl = toHttps(pl.optString("coverImgUrl", "")) ?: "",
             playCount = pl.optLong("playCount", 0L),
-            trackCount = pl.optInt("trackCount", 0)
+            trackCount = pl.optInt("trackCount", 0),
+            isAlbum = false
         )
 
         val list = mutableListOf<SongItem>()
@@ -204,8 +271,9 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
                     }
                 }
                 val al = t.optJSONObject("al")
-                val album = al?.optString("name", "") ?: ""
-                val cover = toHttps(al?.optString("picUrl", null))
+                val albumName = al?.optString("name", "") ?: ""
+                val albumId = al?.optLong("id", 0L) ?: 0L
+                val cover = toHttps(al?.optString("picUrl", "")) ?: ""
                 val duration = t.optLong("dt", 0L)
 
                 list.add(
@@ -213,7 +281,8 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
                         id = id,
                         name = name,
                         artist = artist,
-                        album = album,
+                        album = "Netease$albumName",
+                        albumId = albumId,
                         durationMs = duration,
                         coverUrl = cover
                     )
@@ -223,6 +292,63 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
         return ParsedDetail(header, list)
     }
 
+    private fun parseDetailFromAlbum(raw: String): ParsedDetail {
+        val root = JSONObject(raw)
+        val code = root.optInt("code", -1)
+        require(code == 200) { "接口返回异常 code=$code" }
+
+        val al = root.optJSONObject("album") ?: error("缺少 album 节点")
+        val cover = toHttps(al.optString("picUrl", "")) ?: ""
+
+        val header = PlaylistHeader(
+            id = al.optLong("id"),
+            name = al.optString("name"),
+            coverUrl = cover,
+            playCount = 0L,
+            trackCount = al.optInt("size", 0),
+            isAlbum = true
+        )
+
+        val list = mutableListOf<SongItem>()
+        val tracksArr = root.optJSONArray("songs")
+        if (tracksArr != null) {
+            for (i in 0 until tracksArr.length()) {
+                val t = tracksArr.optJSONObject(i) ?: continue
+                val id = t.optLong("id", 0L)
+                val name = t.optString("name", "")
+                if (id == 0L || name.isBlank()) continue
+
+                val ar = t.optJSONArray("ar")
+                val artist = buildString {
+                    if (ar != null) {
+                        for (j in 0 until ar.length()) {
+                            val a = ar.optJSONObject(j)?.optString("name") ?: continue
+                            if (isNotEmpty()) append(" / ")
+                            append(a)
+                        }
+                    }
+                }
+                val al = t.optJSONObject("al")
+                val albumName = al?.optString("name", "") ?: ""
+                val albumId = al?.optLong("id", 0L) ?: 0L
+                val duration = t.optLong("dt", 0L)
+
+                list.add(
+                    SongItem(
+                        id = id,
+                        name = name,
+                        artist = artist,
+                        album = "Netease$albumName",
+                        albumId = albumId,
+                        durationMs = duration,
+                        coverUrl = cover
+                    )
+                )
+            }
+        }
+        return ParsedDetail(header, list)
+    }
+    
     private data class ParsedDetail(
         val header: PlaylistHeader,
         val tracks: List<SongItem>

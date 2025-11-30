@@ -97,7 +97,7 @@ fun RecentScreen(
     val baseSongs: List<SongItem> = remember(history) {
         history.map {
             SongItem(
-                id = it.id, name = it.name, artist = it.artist,
+                id = it.id, name = it.name, artist = it.artist, albumId = it.albumId,
                 album = it.album, durationMs = it.durationMs, coverUrl = it.coverUrl
             )
         }

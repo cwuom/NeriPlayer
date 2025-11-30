@@ -45,6 +45,11 @@ sealed class Destinations(val route: String, val label: String) {
     data object PlaylistDetail : Destinations("playlist_detail/{playlistJson}", "歌单详情") {
         fun createRoute(playlistJson: String) = "playlist_detail/$playlistJson"
     }
+    
+    // 网易云专辑详情路由
+    data object NeteaseAlbumDetail : Destinations("netease_album_detail/{playlistJson}", "专辑详情") {
+        fun createRoute(playlistJson: String) = "netease_album_detail/$playlistJson"
+    }
 
     // B 站收藏夹详情路由
     data object BiliPlaylistDetail : Destinations("bili_playlist_detail/{playlistJson}", "B站收藏夹详情") {

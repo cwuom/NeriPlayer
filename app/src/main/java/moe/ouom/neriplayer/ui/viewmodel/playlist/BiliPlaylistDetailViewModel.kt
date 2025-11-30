@@ -149,6 +149,7 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
             name = page.part, // 直接使用分P的标题作为歌曲名
             artist = basicInfo.ownerName,
             album = "Bilibili",
+            albumId = 0L,
             durationMs = page.durationSec * 1000L,
             coverUrl = coverUrl
         )

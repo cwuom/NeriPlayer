@@ -116,6 +116,7 @@ private sealed class SongUrlResult {
 object PlayerManager {
     private const val FAVORITES_NAME = "我喜欢的音乐"
     const val BILI_SOURCE_TAG = "Bilibili"
+    const val NETEASE_SOURCE_TAG = "Netease"
 
     private var initialized = false
     private lateinit var application: Application
@@ -717,6 +718,7 @@ object PlayerManager {
                 name = page.part,
                 artist = videoInfo.ownerName,
                 album = "$BILI_SOURCE_TAG|${page.cid}",
+                albumId = 0,
                 durationMs = page.durationSec * 1000L,
                 coverUrl = coverUrl
             )
@@ -1385,6 +1387,7 @@ private fun BiliVideoItem.toSongItem(): SongItem {
         name = this.title,
         artist = this.uploader,
         album = PlayerManager.BILI_SOURCE_TAG,
+        albumId = 0,
         durationMs = this.durationSec * 1000L,
         coverUrl = this.coverUrl
     )

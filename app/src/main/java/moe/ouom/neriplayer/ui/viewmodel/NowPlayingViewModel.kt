@@ -23,20 +23,32 @@ package moe.ouom.neriplayer.ui.viewmodel
  * Created: 2025/8/17
  */
 
-
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.gson.Gson
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.navigation.compose.rememberNavController
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.search.SongSearchInfo
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.ui.screen.playlist.NeteaseAlbumDetailScreen
+import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.SearchManager
-import android.content.Context
+import moe.ouom.neriplayer.navigation.Destinations
+import androidx.core.content.ContextCompat
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
+import moe.ouom.neriplayer.core.player.AudioPlayerService
+import moe.ouom.neriplayer.ui.NeriApp
+import moe.ouom.neriplayer.core.di.AppContainer
 
 data class ManualSearchState(
     val keyword: String = "",
@@ -97,4 +109,5 @@ class NowPlayingViewModel : ViewModel() {
             AudioDownloadManager.downloadSong(context, song)
         }
     }
+    
 }
