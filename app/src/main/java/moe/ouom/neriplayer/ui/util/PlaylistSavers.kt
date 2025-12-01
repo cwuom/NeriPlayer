@@ -26,6 +26,7 @@ package moe.ouom.neriplayer.ui.util
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.mapSaver
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
 
 private const val KEY_ID = "id"
@@ -67,6 +68,20 @@ val biliPlaylistSaver: Saver<BiliPlaylist?, Any> = mapSaver(
     }
 )
 
+fun restoreNeteaseAlbum(map: Map<*, *>?): NeteaseAlbum? {
+    if (map == null || map.isEmpty()) return null
+    val id = (map[KEY_ID] as? Number)?.toLong() ?: return null
+    val name = map[KEY_NAME] as? String ?: return null
+    val picUrl = map[KEY_PIC_URL] as? String ?: ""
+    val size = (map[KEY_TRACK_COUNT] as? Number)?.toInt() ?: 0
+    return NeteaseAlbum(
+        id = id,
+        name = name,
+        picUrl = picUrl,
+        size = size
+    )
+}
+
 fun restoreNeteasePlaylist(map: Map<*, *>?): NeteasePlaylist? {
     if (map == null || map.isEmpty()) return null
     val id = (map[KEY_ID] as? Number)?.toLong() ?: return null
@@ -100,6 +115,13 @@ fun restoreBiliPlaylist(map: Map<*, *>?): BiliPlaylist? {
         coverUrl = coverUrl
     )
 }
+
+fun NeteaseAlbum.toSaveMap(): HashMap<String, Any?> = hashMapOf(
+    KEY_ID to id,
+    KEY_NAME to name,
+    KEY_PIC_URL to picUrl,
+    KEY_TRACK_COUNT to size
+)
 
 fun NeteasePlaylist.toSaveMap(): HashMap<String, Any?> = hashMapOf(
     KEY_ID to id,

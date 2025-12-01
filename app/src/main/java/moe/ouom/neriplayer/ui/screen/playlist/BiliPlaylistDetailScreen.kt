@@ -712,6 +712,7 @@ private fun BiliVideoItem.toSongItem(): SongItem {
         name = this.title,
         artist = this.uploader,
         album = PlayerManager.BILI_SOURCE_TAG,
+        albumId = 0L,
         durationMs = this.durationSec * 1000L,
         coverUrl = this.coverUrl
     )

@@ -47,7 +47,7 @@ android {
 
     defaultConfig {
         applicationId = "moe.ouom.neriplayer"
-        minSdk = 28
+        minSdk = 27
         targetSdk = 36
         versionCode = getBuildVersionCode()
         versionName = getBuildVersionName()

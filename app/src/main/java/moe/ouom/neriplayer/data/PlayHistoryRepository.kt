@@ -18,6 +18,7 @@ data class PlayedEntry(
     val name: String,
     val artist: String,
     val album: String,
+    val albumId: Long = 0L,
     val durationMs: Long,
     val coverUrl: String?,
     val playedAt: Long // epoch millis
@@ -66,6 +67,7 @@ class PlayHistoryRepository(private val app: Context) {
                     name = song.name,
                     artist = song.artist,
                     album = song.album,
+                    albumId = song.albumId,
                     durationMs = song.durationMs,
                     coverUrl = song.coverUrl,
                     playedAt = now
@@ -76,6 +78,7 @@ class PlayHistoryRepository(private val app: Context) {
                     name = song.name,
                     artist = song.artist,
                     album = song.album,
+                    albumId = song.albumId,
                     durationMs = song.durationMs,
                     coverUrl = song.coverUrl,
                     playedAt = now

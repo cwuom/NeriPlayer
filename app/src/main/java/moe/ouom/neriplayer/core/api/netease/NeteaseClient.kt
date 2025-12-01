@@ -335,13 +335,60 @@ class NeteaseClient(bypassProxy: Boolean = true) {
             "includeVideo" to "true"
         )
         return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
+    }  
+    
+    @Throws(IOException::class)
+    fun getUserAlbums(userId: Long, offset: Int = 0, limit: Int = 30): String {
+        val url = "https://interface3.music.163.com/eapi/mine/rn/resource/list"
+        val params = mutableMapOf<String, Any>(
+            "userId" to userId.toString(),
+            "offset" to offset.toString(),
+            "limit" to limit.toString(),
+            "pageType" to "3",
+            "needRcmd" to "0",
+            "isVistor" to "false",
+            "includeStarPodcast" to "true"
+        )
+        return request(url, params, CryptoMode.EAPI, "POST", usePersistedCookies = true)
+    }
+    
+    @Throws(IOException::class)
+    fun getUserDjRadios(userId: Long, offset: Int = 0, limit: Int = 30): String {
+        val url = "https://music.163.com/weapi/user/djradio/get/subed"
+        val params = mutableMapOf<String, Any>(
+            "uid" to userId.toString(),
+            "offset" to offset.toString(),
+            "limit" to limit.toString()
+        )
+        return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
     }
 
+    @Throws(IOException::class)
+    fun getAlbumDetail(albumId: Long, n: Int = 100000, s: Int = 8): String {
+        val url = "https://interface.music.163.com/weapi/v1/album/$albumId"
+        val params = mutableMapOf<String, Any>(
+            "n" to n.toString(),
+            "s" to s.toString()
+        )
+        return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
+    }
+    
     @Throws(IOException::class)
     fun getPlaylistDetail(playlistId: Long, n: Int = 100000, s: Int = 8): String {
         val url = "https://music.163.com/api/v6/playlist/detail"
         val params = mutableMapOf<String, Any>(
             "id" to playlistId.toString(),
+            "n" to n.toString(),
+            "s" to s.toString()
+        )
+        return request(url, params, CryptoMode.API, "POST", usePersistedCookies = true)
+    }
+        
+    @Throws(IOException::class)
+    fun getDjRadioDetail(radioId: Long, n: Int = 100000, s: Int = 8): String {
+        val url = "https://music.163.com/api/v6/playlist/detail"
+        val params = mutableMapOf<String, Any>(
+            "id" to radioId.toString(),
             "n" to n.toString(),
             "s" to s.toString()
         )
@@ -452,6 +499,36 @@ class NeteaseClient(bypassProxy: Boolean = true) {
         }
     }
 
+    /**
+     * 获取用户收藏的专辑
+     * @param userId 用户 ID；传 0 时自动使用当前登录用户 ID
+     * @param offset 偏移量，分页用
+     * @param limit  每页返回数量
+     */
+    @Throws(IOException::class)
+    fun getUserStaredAlbums(userId: Long, offset: Int = 0, limit: Int = 1000): String {
+        val uid = if (userId == 0L) getCurrentUserId() else userId
+        val raw = getUserAlbums(uid, offset, limit)
+        return try {
+            val root = JSONObject(raw)
+            val code = root.optInt("code", 200)
+            val list = root.optJSONObject("data")?.optJSONObject("mainCollectInfo")?.optJSONObject("mineAllTabDto")?.optJSONArray("dataList") ?: JSONArray()
+            val created = JSONArray()
+            for (i in 0 until list.length()) {
+                val pl = list.optJSONObject(i) ?: continue
+                created.put(pl)
+                
+            }
+            JSONObject().apply {
+                put("code", code)
+                put("playlist", created)
+                put("count", created.length())
+            }.toString()
+        } catch (e: Exception) {
+            """{ "code": 500, "msg": ${jsonQuote(e.message ?: "parse error")} }"""
+        }
+    }
+    
     /**
      * 获取用户收藏的歌单
      * @param userId 用户 ID；传 0 时自动使用当前登录用户 ID

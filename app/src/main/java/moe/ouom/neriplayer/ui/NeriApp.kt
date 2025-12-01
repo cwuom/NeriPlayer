@@ -26,6 +26,7 @@ package moe.ouom.neriplayer.ui
 import android.app.Application
 import android.content.Intent
 import android.graphics.drawable.BitmapDrawable
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.EaseInOutCubic
@@ -123,10 +124,12 @@ import moe.ouom.neriplayer.ui.screen.host.LibraryHostScreen
 import moe.ouom.neriplayer.ui.screen.host.SettingsHostScreen
 import moe.ouom.neriplayer.ui.screen.playlist.BiliPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistDetailScreen
+import moe.ouom.neriplayer.ui.screen.playlist.NeteaseAlbumDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
 import moe.ouom.neriplayer.ui.theme.NeriTheme
 import moe.ouom.neriplayer.ui.view.HyperBackground
 import moe.ouom.neriplayer.ui.viewmodel.debug.LogViewerScreen
+import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
 import moe.ouom.neriplayer.util.ExceptionHandler
@@ -570,6 +573,41 @@ fun NeriApp(
                                     )
                                 }
 
+                                composable(
+                                    route = Destinations.NeteaseAlbumDetail.route,
+                                    arguments = listOf(navArgument("playlistJson") {
+                                        type = NavType.StringType
+                                    }),
+                                    enterTransition = {
+                                        slideInVertically(animationSpec = tween(220)) { it } + fadeIn()
+                                    },
+                                    exitTransition = { fadeOut(animationSpec = tween(160)) },
+                                    popEnterTransition = {
+                                        slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn()
+                                    },
+                                    popExitTransition = {
+                                        slideOutVertically(animationSpec = tween(240)) { it } + fadeOut()
+                                    }
+                                ) { backStackEntry ->
+                                    val playlistJson = backStackEntry.arguments?.getString("playlistJson")
+                                    val album = Gson().fromJson(playlistJson, NeteaseAlbum::class.java)
+                                    NeteaseAlbumDetailScreen(
+                                        album = album,
+                                        onBack = { navController.popBackStack() },
+                                        onSongClick = { songs, index ->
+                                            ContextCompat.startForegroundService(
+                                                context,
+                                                Intent(context, AudioPlayerService::class.java).apply {
+                                                    action = AudioPlayerService.ACTION_PLAY
+                                                    putParcelableArrayListExtra("playlist", ArrayList(songs))
+                                                    putExtra("index", index)
+                                                }
+                                            )
+                                            showNowPlaying = true
+                                        }
+                                    )
+                                }
+                                
                                 composable(
                                     route = Destinations.BiliPlaylistDetail.route,
                                     arguments = listOf(navArgument("playlistJson") {
@@ -1026,6 +1064,11 @@ fun NeriApp(
 
                             NowPlayingScreen(
                                 onNavigateUp = { showNowPlaying = false },
+                                onEnterAlbum = { album -> 
+                                    navController.popBackStack()
+                                    val json = Uri.encode(Gson().toJson(album))
+                                    navController.navigate("netease_album_detail/$json")
+                                },
                                 lyricBlurEnabled = lyricBlurEnabled,
                                 lyricFontScale = lyricFontScale,
                                 onLyricFontScaleChange = { scale ->

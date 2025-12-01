@@ -59,6 +59,7 @@ data class BiliPlaylist(
 data class LibraryUiState(
     val localPlaylists: List<LocalPlaylist> = emptyList(),
     val neteasePlaylists: List<NeteasePlaylist> = emptyList(),
+    val neteaseAlbums: List<NeteaseAlbum> = emptyList(),
     val neteaseError: String? = null,
     val biliPlaylists: List<BiliPlaylist> = emptyList(),
     val biliError: String? = null
@@ -87,15 +88,27 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             }
         }
 
-        // 网易云
+        // 网易云 歌单
         viewModelScope.launch {
             neteaseCookieRepo.cookieFlow.collect { cookies ->
                 val mutable = cookies.toMutableMap()
                 mutable.putIfAbsent("os", "pc")
                 if (!cookies["MUSIC_U"].isNullOrBlank()) {
-                    refreshNetease()
+                    refreshNeteasePlaylists()
                 } else {
                     _uiState.value = _uiState.value.copy(neteasePlaylists = emptyList())
+                }
+            }
+        }
+        // 网易云 专辑
+        viewModelScope.launch {
+            neteaseCookieRepo.cookieFlow.collect { cookies ->
+                val mutable = cookies.toMutableMap()
+                mutable.putIfAbsent("os", "pc")
+                if (!cookies["MUSIC_U"].isNullOrBlank()) {
+                    refreshNeteaseAlbums()
+                } else {
+                    _uiState.value = _uiState.value.copy(neteaseAlbums = emptyList())
                 }
             }
         }
@@ -164,7 +177,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     }
 
 
-    fun refreshNetease() {
+    fun refreshNeteasePlaylists() {
         viewModelScope.launch {
             try {
                 val uid = withContext(Dispatchers.IO) { neteaseClient.getCurrentUserId() }
@@ -172,6 +185,24 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 val mapped = parseNeteasePlaylists(raw)
                 _uiState.value = _uiState.value.copy(
                     neteasePlaylists = mapped,
+                    neteaseError = null
+                )
+            } catch (e: IOException) {
+                _uiState.value = _uiState.value.copy(neteaseError = e.message)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(neteaseError = e.message)
+            }
+        }
+    }
+    
+    fun refreshNeteaseAlbums() {
+        viewModelScope.launch {
+            try {
+                val uid = withContext(Dispatchers.IO) { neteaseClient.getCurrentUserId() }
+                val raw = withContext(Dispatchers.IO) { neteaseClient.getUserStaredAlbums(uid) }
+                val mapped = parseNeteaseAlbums(raw)
+                _uiState.value = _uiState.value.copy(
+                    neteaseAlbums = mapped,
                     neteaseError = null
                 )
             } catch (e: IOException) {
@@ -205,6 +236,25 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             val trackCount = obj.optInt("trackCount", 0)
             if (id != 0L && name.isNotBlank()) {
                 result.add(NeteasePlaylist(id, name, cover, playCount, trackCount))
+            }
+        }
+        return result
+    }
+    
+    private fun parseNeteaseAlbums(raw: String): List<NeteaseAlbum> {
+        val result = mutableListOf<NeteaseAlbum>()
+        val root = JSONObject(raw)
+        if (root.optInt("code", -1) != 200) return emptyList()
+        val arr = root.optJSONArray("playlist") ?: return emptyList()
+        val size = arr.length()
+        for (i in 0 until size) {
+            val obj = arr.optJSONObject(i)?.optJSONObject("dataInfo")?.optJSONObject("data") ?: continue
+            val id = obj.optLong("id", 0L)
+            val name = obj.optString("name", "")
+            val cover = arr.optJSONObject(i)?.optJSONObject("dataInfo")?.optString("picUrl", "")?.replaceFirst("http://", "https://") ?: continue
+            val songSize = obj.optInt("size", 0)
+            if (id != 0L && name.isNotBlank()) {
+                result.add(NeteaseAlbum(id, name, cover, songSize))
             }
         }
         return result

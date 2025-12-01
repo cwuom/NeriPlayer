@@ -308,6 +308,7 @@ object GlobalDownloadManager {
                     name = song.name,
                     artist = song.artist,
                     album = "本地文件",
+                    albumId = 0L,
                     durationMs = durationMs,
                     coverUrl = song.coverPath,
                     userLyricOffsetMs = 0L

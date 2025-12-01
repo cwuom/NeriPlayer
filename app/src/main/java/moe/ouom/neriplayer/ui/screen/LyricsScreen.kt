@@ -88,6 +88,7 @@ import moe.ouom.neriplayer.ui.component.AppleMusicLyric
 import moe.ouom.neriplayer.ui.component.LyricEntry
 import moe.ouom.neriplayer.ui.component.LyricVisualSpec
 import moe.ouom.neriplayer.ui.component.WaveformSlider
+import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
 import moe.ouom.neriplayer.util.HapticFilledIconButton
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.formatDuration
@@ -99,6 +100,7 @@ fun LyricsScreen(
     lyricBlurEnabled: Boolean,
     lyricFontScale: Float,
     onLyricFontScaleChange: (Float) -> Unit,
+    onEnterAlbum: (NeteaseAlbum) -> Unit,
     onNavigateBack: () -> Unit,
     onSeekTo: (Long) -> Unit,
     translatedLyrics: List<LyricEntry>? = null,
@@ -254,6 +256,7 @@ fun LyricsScreen(
                     originalSong = currentSong!!,
                     queue = displayedQueue,
                     onDismiss = { showMoreOptions = false },
+                    onEnterAlbum = onEnterAlbum,
                     snackbarHostState = snackbarHostState,
                     lyricFontScale = lyricFontScale,
                     onLyricFontScaleChange = onLyricFontScaleChange

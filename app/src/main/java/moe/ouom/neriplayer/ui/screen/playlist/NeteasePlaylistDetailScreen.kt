@@ -110,8 +110,10 @@ import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
+import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.PlaylistDetailViewModel
+import moe.ouom.neriplayer.ui.viewmodel.playlist.PlaylistDetailUiState
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import androidx.compose.animation.core.animateFloatAsState
@@ -155,7 +157,43 @@ fun NeteasePlaylistDetailScreen(
     )
 
     val ui by vm.uiState.collectAsState()
+    LaunchedEffect(playlist.id) { vm.startPlaylist(playlist) }
+    DetailScreen(vm = vm, ui = ui, onBack = onBack, onSongClick = onSongClick)
+}
 
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@Composable
+fun NeteaseAlbumDetailScreen(
+    album: NeteaseAlbum,
+    onBack: () -> Unit = {},
+    onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> }
+) {
+    val context = LocalContext.current
+    val vm: PlaylistDetailViewModel = viewModel(
+        factory = viewModelFactory {
+            initializer {
+                val app = context.applicationContext as Application
+                PlaylistDetailViewModel(app)
+            }
+        }
+    )
+
+    val ui by vm.uiState.collectAsState()
+    LaunchedEffect(album.id) { vm.startAlbum(album) }
+    DetailScreen(vm = vm, ui = ui, onBack = onBack, onSongClick = onSongClick)
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@Composable
+fun DetailScreen(
+    vm: PlaylistDetailViewModel,
+    ui: PlaylistDetailUiState,
+    onBack: () -> Unit = {},
+    onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> }
+) {
+
+    val context = LocalContext.current
+    
     // 下载进度
     var showDownloadManager by remember { mutableStateOf(false) }
     val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
@@ -165,8 +203,6 @@ fun NeteasePlaylistDetailScreen(
     val scope = rememberCoroutineScope()
     var showSearch by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
-
-    LaunchedEffect(playlist.id) { vm.start(playlist) }
 
     // 多选 & 导出到本地歌单
     val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
@@ -178,7 +214,7 @@ fun NeteasePlaylistDetailScreen(
     }
     fun clearSelection() { selectedIds = emptySet() }
     fun selectAll() { selectedIds = ui.tracks.map { it.id }.toSet() }
-    fun exitSelection() { selectionMode = false; clearSelection() }
+    fun exitSelection() { selectionMode = false; clearSelection();}
 
     var showExportSheet by remember { mutableStateOf(false) }
     val exportSheetState = rememberModalBottomSheetState()
@@ -200,7 +236,7 @@ fun NeteasePlaylistDetailScreen(
                     TopAppBar(
                         title = {
                             Text(
-                                text = ui.header?.name ?: playlist.name,
+                                text = ui.header?.name ?: "Playlist Shuffling",
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -316,13 +352,13 @@ fun NeteasePlaylistDetailScreen(
                                 AsyncImage(
                                     model = ImageRequest.Builder(LocalContext.current)
                                         .data(ui.header?.coverUrl.takeUnless { it.isNullOrBlank() }
-                                            ?: playlist.picUrl)
+                                            ?: "about:blank")
                                         .crossfade(true)
                                         .memoryCachePolicy(CachePolicy.ENABLED)
                                         .diskCachePolicy(CachePolicy.ENABLED)
                                         .networkCachePolicy(CachePolicy.ENABLED)
                                         .build(),
-                                    contentDescription = ui.header?.name ?: playlist.name,
+                                    contentDescription = ui.header?.name ?: "Playlist Shuffling",
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier
                                         .fillMaxSize()
@@ -348,7 +384,7 @@ fun NeteasePlaylistDetailScreen(
                                         .padding(horizontal = 16.dp, vertical = 12.dp)
                                 ) {
                                     Text(
-                                        text = ui.header?.name ?: playlist.name,
+                                        text = ui.header?.name ?: "Playlist Shuffling",
                                         style = MaterialTheme.typography.headlineSmall.copy(
                                             shadow = Shadow(
                                                 color = Color.Black.copy(alpha = 0.6f),
@@ -362,7 +398,7 @@ fun NeteasePlaylistDetailScreen(
                                     )
                                     Spacer(Modifier.height(4.dp))
                                     Text(
-                                        text = "播放量 ${formatPlayCount(ui.header?.playCount ?: playlist.playCount)} · ${(ui.header?.trackCount ?: playlist.trackCount)} 首",
+                                        text = "播放量 ${formatPlayCount(ui.header?.playCount ?: 0)} · ${(ui.header?.trackCount ?: 0)} 首",
                                         style = MaterialTheme.typography.bodySmall.copy(
                                             shadow = Shadow(
                                                 color = Color.Black.copy(alpha = 0.6f),
@@ -773,7 +809,7 @@ private fun SongRow(
             Text(
                 text = listOfNotNull(
                     song.artist.takeIf { it.isNotBlank() },
-                    song.album.takeIf { it.isNotBlank() }
+                    (song.album.takeIf { it.isNotBlank() })?.replace("Netease", "") ?: ""
                 ).joinToString(" · "),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

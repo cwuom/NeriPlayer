@@ -92,6 +92,7 @@ import moe.ouom.neriplayer.data.LocalPlaylistRepository.Companion.FAVORITES_NAME
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.LibraryViewModel
+import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.formatPlayCount
@@ -100,7 +101,8 @@ import moe.ouom.neriplayer.util.HapticIconButton
 
 enum class LibraryTab(val label: String) {
     LOCAL("本地"),
-    NETEASE("网易云"),
+    NETEASE("网易云 - 歌单"),
+    NETEASEALBUM("网易云 - 专辑"),
     BILI("哔哩哔哩"),
     QQMUSIC("QQ音乐")
 }
@@ -111,11 +113,13 @@ fun LibraryScreen(
     initialTabIndex: Int = 0,
     onTabIndexChange: (Int) -> Unit = {},
     localListState: LazyListState,
+    neteaseAlbumState: LazyListState,
     neteaseListState: LazyListState,
     biliListState: LazyListState,
     qqMusicListState: LazyListState,
     onLocalPlaylistClick: (LocalPlaylist) -> Unit = {},
     onNeteasePlaylistClick: (NeteasePlaylist) -> Unit = {},
+    onNeteaseAlbumClick: (NeteaseAlbum) -> Unit = {},
     onBiliPlaylistClick: (BiliPlaylist) -> Unit = {},
     onOpenRecent: () -> Unit = {}
 ) {
@@ -202,6 +206,11 @@ fun LibraryScreen(
                     playlists = ui.neteasePlaylists,
                     listState = neteaseListState,
                     onClick = onNeteasePlaylistClick
+                )
+                LibraryTab.NETEASEALBUM -> NeteaseAlbumList(
+                    playlists = ui.neteaseAlbums,
+                    listState = neteaseAlbumState,
+                    onClick = onNeteaseAlbumClick
                 )
                 LibraryTab.BILI -> BiliPlaylistList(
                     playlists = ui.biliPlaylists,
@@ -475,6 +484,62 @@ private fun NeteasePlaylistList(
                     supportingContent = {
                         Text(
                             "${formatPlayCount(pl.playCount)} · ${pl.trackCount}首",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    colors = ListItemDefaults.colors(
+                        containerColor = Color.Transparent
+                    ),
+                    leadingContent = {
+                        AsyncImage(
+                            model = ImageRequest.Builder(LocalContext.current).data(pl.picUrl).build(),
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                        )
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun NeteaseAlbumList(
+    playlists: List<NeteaseAlbum>,
+    listState: LazyListState,
+    onClick: (NeteaseAlbum) -> Unit
+) {
+    val miniPlayerHeight = LocalMiniPlayerHeight.current
+
+    LazyColumn(
+        state = listState,
+        contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 8.dp + miniPlayerHeight),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        items(
+            items = playlists,
+            key = { it.id }
+        ) { pl ->
+            Card(
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = Color.Transparent
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                modifier = Modifier
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                    .animateItem()
+                    .clickable { onClick(pl) }
+            ) {
+                ListItem(
+                    headlineContent = { Text(pl.name) },
+                    supportingContent = {
+                        Text(
+                            "${pl.size}首",
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     },
