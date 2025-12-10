@@ -201,3 +201,6 @@ NeriPlayer 使用 **GPL-3.0** 开源许可证发布。
   </a>
 </p>
 
+---
+
+# This project is maintained by Aobo Yang.
