@@ -200,7 +200,3 @@ NeriPlayer 使用 **GPL-3.0** 开源许可证发布。
     <img src="https://starchart.cc/cwuom/NeriPlayer.svg" alt="Star 历史趋势图">
   </a>
 </p>
-
----
-
-# This project is maintained by Aobo Yang.
