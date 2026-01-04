@@ -742,7 +742,7 @@ fun LocalPlaylistDetailScreen(
                                                             style = MaterialTheme.typography.bodySmall
                                                         )
                                                     }
-                                                    
+
                                                     // 更多操作菜单
                                                     var showMoreMenu by remember { mutableStateOf(false) }
                                                     Box {
@@ -755,7 +755,7 @@ fun LocalPlaylistDetailScreen(
                                                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                                                             )
                                                         }
-                                                        
+
                                                         DropdownMenu(
                                                             expanded = showMoreMenu,
                                                             onDismissRequest = { showMoreMenu = false }
@@ -779,13 +779,18 @@ fun LocalPlaylistDetailScreen(
                                                 }
                                             }
                                         } else {
-                                            Icon(
-                                                imageVector = Icons.Filled.DragHandle,
-                                                contentDescription = "拖拽手柄",
+                                            Box(
                                                 modifier = Modifier
-                                                    .padding(start = 8.dp)
                                                     .detectReorder(reorderState)
-                                            )
+                                                    .padding(8.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.DragHandle,
+                                                    contentDescription = "拖拽手柄",
+                                                    modifier = Modifier.size(24.dp)
+                                                )
+                                            }
                                         }
                                     }
                                 }
