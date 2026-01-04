@@ -54,8 +54,15 @@ class PlaylistUsageRepository(private val app: Context) {
         val idx = data.indexOfFirst { it.id == id && it.source == source }
         val updated = if (idx >= 0) {
             val old = data[idx]
-            old.copy(lastOpened = now, openCount = old.openCount + 1)
-                .also { data[idx] = it }
+            old.copy(
+                name = name,
+                picUrl = picUrl,
+                trackCount = trackCount,
+                fid = fid,
+                mid = mid,
+                lastOpened = now,
+                openCount = old.openCount + 1
+            ).also { data[idx] = it }
         } else {
             data.add(
                 UsageEntry(
