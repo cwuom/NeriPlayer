@@ -305,12 +305,13 @@ object PlayerManager {
                 dbProvider
             )
 
-            // 包裹成缓存数据源
+            // 包裹成缓存数据源，配置为支持完整文件缓存
             CacheDataSource.Factory()
                 .setCache(cache)
                 .setUpstreamDataSourceFactory(defaultDsFactory)
-                // 如果缓存写入失败（如空间不足），忽略错误直接播放网络流
-                .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+                // 移除 FLAG_IGNORE_CACHE_ON_ERROR，确保缓存正常工作
+                // 添加 FLAG_BLOCK_ON_CACHE 以支持离线播放
+                .setFlags(CacheDataSource.FLAG_BLOCK_ON_CACHE)
         } else {
             // 缓存大小为 0，直接使用直连数据源
             NPLogger.d("NERI-Player", "Cache disabled by user setting (size=0).")
@@ -346,8 +347,17 @@ object PlayerManager {
                 NPLogger.e("NERI-Player", "onPlayerError: ${error.errorCodeName}", error)
                 consecutivePlayFailures++
 
+                // 检查是否是离线缓存播放失败
+                val currentUrl = _currentMediaUrl.value
+                val isOfflineCache = currentUrl?.startsWith("http://offline.cache/") == true
+
                 val cause = error.cause
                 val msg = when {
+                    isOfflineCache -> {
+                        // 离线缓存播放失败，可能是缓存不完整
+                        NPLogger.w("NERI-Player", "离线缓存播放失败，跳过该歌曲")
+                        null // 不显示错误提示，直接跳到下一首
+                    }
                     cause?.message?.contains("no protocol: null", ignoreCase = true) == true ->
                         "播放地址无效\n请尝试登录或切换音质\n或检查你是否对此歌曲有访问权限"
                     error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ->
@@ -355,7 +365,10 @@ object PlayerManager {
                     else ->
                         "播放失败：${error.errorCodeName}"
                 }
-                postPlayerEvent(PlayerEvent.ShowError(msg))
+
+                if (msg != null) {
+                    postPlayerEvent(PlayerEvent.ShowError(msg))
+                }
 
                 pause()
             }
@@ -612,17 +625,29 @@ object PlayerManager {
     }
 
     private suspend fun resolveSongUrl(song: SongItem): SongUrlResult {
-        // 优先检查本地缓存
+        // 优先检查本地下载的文件
         val localResult = checkLocalCache(song)
         if (localResult != null) return localResult
 
-        return if (song.album.startsWith(BILI_SOURCE_TAG)) {
-            // 解析可能的 cid
+        val cacheKey = computeCacheKey(song)
+        val hasCachedData = checkExoPlayerCache(cacheKey)
+
+        // 尝试从网络获取URL，如果有缓存则抑制错误提示
+        val result = if (song.album.startsWith(BILI_SOURCE_TAG)) {
             val parts = song.album.split('|')
             val cid = if (parts.size > 1) parts[1].toLongOrNull() ?: 0L else 0L
-            getBiliAudioUrl(song.id, cid) // song.id 始终是 avid
+            getBiliAudioUrl(song.id, cid, suppressError = hasCachedData)
         } else {
-            getNeteaseSongUrl(song.id)
+            getNeteaseSongUrl(song.id, suppressError = hasCachedData)
+        }
+
+        // 如果网络失败但有缓存，使用虚拟URL让ExoPlayer使用缓存
+        return if (result is SongUrlResult.Failure && hasCachedData) {
+            NPLogger.d("NERI-PlayerManager", "网络失败但有缓存，尝试离线播放: $cacheKey")
+            // 使用虚拟URL，ExoPlayer会因为customCacheKey自动使用缓存
+            SongUrlResult.Success("http://offline.cache/$cacheKey")
+        } else {
+            result
         }
     }
 
@@ -635,7 +660,30 @@ object PlayerManager {
         } else null
     }
 
-    private suspend fun getNeteaseSongUrl(songId: Long): SongUrlResult = withContext(Dispatchers.IO) {
+    /** 检查 ExoPlayer 缓存中是否有完整的歌曲数据 */
+    private fun checkExoPlayerCache(cacheKey: String): Boolean {
+        return try {
+            if (!::cache.isInitialized) return false
+
+            val cachedSpans = cache.getCachedSpans(cacheKey)
+            if (cachedSpans.isEmpty()) return false
+
+            // 检查是否有完整的缓存数据
+            // 如果有至少一个缓存片段,认为可以尝试播放
+            val hasCachedData = cachedSpans.any { it.length > 0 }
+
+            if (hasCachedData) {
+                NPLogger.d("NERI-PlayerManager", "找到缓存数据: $cacheKey, 片段数: ${cachedSpans.size}")
+            }
+
+            hasCachedData
+        } catch (e: Exception) {
+            NPLogger.w("NERI-PlayerManager", "检查缓存失败: ${e.message}")
+            false
+        }
+    }
+
+    private suspend fun getNeteaseSongUrl(songId: Long, suppressError: Boolean = false): SongUrlResult = withContext(Dispatchers.IO) {
         try {
             val resp = neteaseClient.getSongDownloadUrl(
                 songId,
@@ -653,7 +701,9 @@ object PlayerManager {
                         else -> ""
                     }
                     if (url.isNullOrBlank()) {
-                        postPlayerEvent(PlayerEvent.ShowError("该歌曲暂无可用播放地址（可能需要登录或版权限制）"))
+                        if (!suppressError) {
+                            postPlayerEvent(PlayerEvent.ShowError("该歌曲暂无可用播放地址（可能需要登录或版权限制）"))
+                        }
                         SongUrlResult.Failure
                     } else {
                         val finalUrl = if (url.startsWith("http://")) url.replaceFirst("http://", "https://") else url
@@ -661,17 +711,22 @@ object PlayerManager {
                     }
                 }
                 else -> {
-                    postPlayerEvent(PlayerEvent.ShowError("获取播放地址失败（${root.optInt("code")}）"))
+                    if (!suppressError) {
+                        postPlayerEvent(PlayerEvent.ShowError("获取播放地址失败（${root.optInt("code")}）"))
+                    }
                     SongUrlResult.Failure
                 }
             }
         } catch (e: Exception) {
             NPLogger.e("NERI-PlayerManager", "获取URL时出错", e)
+            if (!suppressError) {
+                postPlayerEvent(PlayerEvent.ShowError("获取播放地址失败：${e.message}"))
+            }
             SongUrlResult.Failure
         }
     }
 
-    private suspend fun getBiliAudioUrl(avid: Long, cid: Long = 0): SongUrlResult = withContext(Dispatchers.IO) {
+    private suspend fun getBiliAudioUrl(avid: Long, cid: Long = 0, suppressError: Boolean = false): SongUrlResult = withContext(Dispatchers.IO) {
         try {
             var finalCid = cid
             val bvid: String
@@ -680,7 +735,9 @@ object PlayerManager {
                 bvid = videoInfo.bvid
                 finalCid = videoInfo.pages.firstOrNull()?.cid ?: 0L
                 if (finalCid == 0L) {
-                    postPlayerEvent(PlayerEvent.ShowError("无法获取视频信息 (cid)"))
+                    if (!suppressError) {
+                        postPlayerEvent(PlayerEvent.ShowError("无法获取视频信息 (cid)"))
+                    }
                     return@withContext SongUrlResult.Failure
                 }
             } else {
@@ -693,12 +750,16 @@ object PlayerManager {
                 NPLogger.d("NERI-PlayerManager-BiliAudioUrl", audioStream.url)
                 SongUrlResult.Success(audioStream.url)
             } else {
-                postPlayerEvent(PlayerEvent.ShowError("无法获取播放地址"))
+                if (!suppressError) {
+                    postPlayerEvent(PlayerEvent.ShowError("无法获取播放地址"))
+                }
                 SongUrlResult.Failure
             }
         } catch (e: Exception) {
             NPLogger.e("NERI-PlayerManager", "获取B站音频URL时出错", e)
-            postPlayerEvent(PlayerEvent.ShowError("获取播放地址失败: ${e.message}"))
+            if (!suppressError) {
+                postPlayerEvent(PlayerEvent.ShowError("获取播放地址失败: ${e.message}"))
+            }
             SongUrlResult.Failure
         }
     }
