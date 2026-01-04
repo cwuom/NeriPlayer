@@ -715,7 +715,9 @@ fun parseNeteaseLrc(lrc: String): List<LyricEntry> {
         }
         val time = mm * 60_000L + ss * 1_000L + ms
         val text = line.substring(m.range.last + 1).trim()
-        timeline.add(time to text)
+        if (text.isNotEmpty()) {
+            timeline.add(time to text)
+        }
     }
 
     timeline.sortBy { it.first }

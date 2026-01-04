@@ -311,6 +311,7 @@ object GlobalDownloadManager {
                     albumId = 0L,
                     durationMs = durationMs,
                     coverUrl = song.coverPath,
+                    matchedLyric = song.matchedLyric,
                     userLyricOffsetMs = 0L
                 )
                 

@@ -127,10 +127,9 @@ object AudioDownloadManager {
                 val tempFile = File(downloadDir, "$fileName.downloading")
                 if (tempFile.exists()) tempFile.delete()
 
-                // 同时下载歌词
-                if (!song.album.startsWith("Bilibili")) {
-                    downloadLyrics(context, song)
-                }
+                // 同时下载歌词（所有歌曲都尝试，downloadLyrics内部会判断）
+                downloadLyrics(context, song)
+
                 // 封面缓存（使用 baseName 作为关联名，保证扫描可命中）
                 try {
                     val baseDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir
@@ -257,20 +256,44 @@ object AudioDownloadManager {
         try {
             val baseDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir
             val lyricsDir = File(baseDir, "NeriPlayer/Lyrics").apply { mkdirs() }
+            val baseName = sanitizeFileName("${song.artist} - ${song.name}")
             val lyricFile = File(lyricsDir, "${song.id}.lrc")
+            val baseNameLyricFile = File(lyricsDir, "$baseName.lrc")
             val transLyricFile = File(lyricsDir, "${song.id}_trans.lrc")
+            val baseNameTransLyricFile = File(lyricsDir, "${baseName}_trans.lrc")
 
             // 优先使用song.matchedLyric中的歌词
             if (!song.matchedLyric.isNullOrBlank()) {
                 lyricFile.writeText(song.matchedLyric)
+                baseNameLyricFile.writeText(song.matchedLyric)
                 NPLogger.d(TAG, "使用匹配的歌词保存: ${song.name}")
-                return
+                // 不要return，继续尝试获取翻译歌词
             }
 
-            // 如果没有匹配的歌词，且是网易云歌曲，尝试从API获取
+            // 如果是网易云歌曲，尝试从API获取翻译歌词
             val isFromNetease = !song.album.startsWith("Bilibili")
             if (!isFromNetease) return
 
+            // 如果已经保存了主歌词，只获取翻译歌词
+            if (!song.matchedLyric.isNullOrBlank()) {
+                try {
+                    val lyrics = AppContainer.neteaseClient.getLyricNew(song.id)
+                    val root = JSONObject(lyrics)
+                    if (root.optInt("code") == 200) {
+                        val tlyric = root.optJSONObject("tlyric")?.optString("lyric") ?: ""
+                        if (tlyric.isNotBlank()) {
+                            transLyricFile.writeText(tlyric)
+                            baseNameTransLyricFile.writeText(tlyric)
+                            NPLogger.d(TAG, "从API获取翻译歌词保存: ${song.name}")
+                        }
+                    }
+                } catch (e: Exception) {
+                    NPLogger.w(TAG, "翻译歌词下载失败: ${song.name} - ${e.message}")
+                }
+                return
+            }
+
+            // 如果没有matchedLyric，从API获取主歌词和翻译歌词
             val lyrics = AppContainer.neteaseClient.getLyricNew(song.id)
             val root = JSONObject(lyrics)
             if (root.optInt("code") != 200) return
@@ -278,6 +301,7 @@ object AudioDownloadManager {
             val lrc = root.optJSONObject("lrc")?.optString("lyric") ?: ""
             if (lrc.isNotBlank()) {
                 lyricFile.writeText(lrc)
+                baseNameLyricFile.writeText(lrc)
                 NPLogger.d(TAG, "从API获取歌词保存: ${song.name}")
             }
 
@@ -285,6 +309,7 @@ object AudioDownloadManager {
             val tlyric = root.optJSONObject("tlyric")?.optString("lyric") ?: ""
             if (tlyric.isNotBlank()) {
                 transLyricFile.writeText(tlyric)
+                baseNameTransLyricFile.writeText(tlyric)
                 NPLogger.d(TAG, "从API获取翻译歌词保存: ${song.name}")
             }
         } catch (e: Exception) {
@@ -324,8 +349,17 @@ object AudioDownloadManager {
     fun getTranslatedLyricFilePath(context: Context, song: SongItem): String? {
         val baseDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir
         val lyricsDir = File(baseDir, "NeriPlayer/Lyrics")
+
+        // 优先按 song.id 查找
         val transLyricFile = File(lyricsDir, "${song.id}_trans.lrc")
-        return if (transLyricFile.exists()) transLyricFile.absolutePath else null
+        if (transLyricFile.exists()) return transLyricFile.absolutePath
+
+        // 其次按 baseName 查找
+        val baseName = sanitizeFileName("${song.artist} - ${song.name}")
+        val baseNameTransLyricFile = File(lyricsDir, "${baseName}_trans.lrc")
+        if (baseNameTransLyricFile.exists()) return baseNameTransLyricFile.absolutePath
+
+        return null
     }
 
     // 解析网易云直链
