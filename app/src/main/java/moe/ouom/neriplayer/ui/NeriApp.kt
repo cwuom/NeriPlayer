@@ -1064,8 +1064,7 @@ fun NeriApp(
 
                             NowPlayingScreen(
                                 onNavigateUp = { showNowPlaying = false },
-                                onEnterAlbum = { album -> 
-                                    navController.popBackStack()
+                                onEnterAlbum = { album ->
                                     val json = Uri.encode(Gson().toJson(album))
                                     navController.navigate("netease_album_detail/$json")
                                 },

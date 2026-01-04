@@ -257,6 +257,7 @@ fun LyricsScreen(
                     queue = displayedQueue,
                     onDismiss = { showMoreOptions = false },
                     onEnterAlbum = onEnterAlbum,
+                    onNavigateUp = onNavigateBack,
                     snackbarHostState = snackbarHostState,
                     lyricFontScale = lyricFontScale,
                     onLyricFontScaleChange = onLyricFontScaleChange

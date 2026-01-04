@@ -394,6 +394,7 @@ fun NowPlayingScreen(
                                     queue = displayedQueue,
                                     onDismiss = { showMoreOptions = false },
                                     onEnterAlbum = onEnterAlbum,
+                                    onNavigateUp = onNavigateUp,
                                     snackbarHostState = snackbarHostState,
                                     lyricFontScale = lyricFontScale,
                                     onLyricFontScaleChange = onLyricFontScaleChange
@@ -877,6 +878,7 @@ fun MoreOptionsSheet(
     queue: List<SongItem>,
     onDismiss: () -> Unit,
     onEnterAlbum: (NeteaseAlbum) -> Unit,
+    onNavigateUp: () -> Unit,
     snackbarHostState: SnackbarHostState,
     lyricFontScale: Float,
     onLyricFontScaleChange: (Float) -> Unit
@@ -961,6 +963,8 @@ fun MoreOptionsSheet(
                                 leadingContent = { Icon(Icons.Outlined.LibraryMusic, null) },
                                 modifier = Modifier.clickable {
                                     onEnterAlbum(album)
+                                    onDismiss()
+                                    onNavigateUp()
                                 }
                             )
                         }
