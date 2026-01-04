@@ -1129,6 +1129,19 @@ object PlayerManager {
 
     /** 根据歌曲来源返回可用的翻译（如果有） */
     suspend fun getTranslatedLyrics(song: SongItem): List<LyricEntry> {
+        // 优先检查本地翻译歌词缓存
+        val context = application
+        val localTransPath = AudioDownloadManager.getTranslatedLyricFilePath(context, song)
+        if (localTransPath != null) {
+            try {
+                val transContent = File(localTransPath).readText()
+                return parseNeteaseLrc(transContent)
+            } catch (e: Exception) {
+                NPLogger.w("NERI-PlayerManager", "本地翻译歌词读取失败: ${e.message}")
+            }
+        }
+
+        // 本地没有，从网络获取
         // B站歌曲在匹配网易云信息后应使用匹配到的歌曲 ID 获取翻译
         if (song.album.startsWith(BILI_SOURCE_TAG)) {
             return when (song.matchedLyricSource) {
