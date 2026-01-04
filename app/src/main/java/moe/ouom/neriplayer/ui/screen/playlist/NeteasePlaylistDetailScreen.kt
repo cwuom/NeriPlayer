@@ -75,6 +75,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -110,6 +113,7 @@ import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.FavoritePlaylistRepository
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.PlaylistDetailViewModel
@@ -122,6 +126,8 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Shadow
@@ -158,7 +164,14 @@ fun NeteasePlaylistDetailScreen(
 
     val ui by vm.uiState.collectAsState()
     LaunchedEffect(playlist.id) { vm.startPlaylist(playlist) }
-    DetailScreen(vm = vm, ui = ui, onBack = onBack, onSongClick = onSongClick)
+    DetailScreen(
+        vm = vm,
+        ui = ui,
+        playlistId = playlist.id,
+        playlistSource = "netease",
+        onBack = onBack,
+        onSongClick = onSongClick
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -180,7 +193,14 @@ fun NeteaseAlbumDetailScreen(
 
     val ui by vm.uiState.collectAsState()
     LaunchedEffect(album.id) { vm.startAlbum(album) }
-    DetailScreen(vm = vm, ui = ui, onBack = onBack, onSongClick = onSongClick)
+    DetailScreen(
+        vm = vm,
+        ui = ui,
+        playlistId = album.id,
+        playlistSource = "neteaseAlbum",
+        onBack = onBack,
+        onSongClick = onSongClick
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -188,12 +208,14 @@ fun NeteaseAlbumDetailScreen(
 fun DetailScreen(
     vm: PlaylistDetailViewModel,
     ui: PlaylistDetailUiState,
+    playlistId: Long,
+    playlistSource: String,
     onBack: () -> Unit = {},
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> }
 ) {
 
     val context = LocalContext.current
-    
+
     // 下载进度
     var showDownloadManager by remember { mutableStateOf(false) }
     val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
@@ -216,8 +238,17 @@ fun DetailScreen(
     fun selectAll() { selectedIds = ui.tracks.map { it.id }.toSet() }
     fun exitSelection() { selectionMode = false; clearSelection();}
 
+    // 收藏歌单
+    val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
+    val favorites by favoriteRepo.favorites.collectAsState()
+    val isFavorite = remember(favorites, playlistId) {
+        favoriteRepo.isFavorite(playlistId, playlistSource)
+    }
+
     var showExportSheet by remember { mutableStateOf(false) }
     val exportSheetState = rememberModalBottomSheetState()
+
+    val snackbarHostState = remember { SnackbarHostState() }
 
     val headerHeight: Dp = 280.dp
 
@@ -226,355 +257,424 @@ fun DetailScreen(
         enter = fadeIn() + slideInVertically { it / 6 },
         exit = fadeOut() + slideOutVertically { it / 6 }
     ) {
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = Color.Transparent
-        ) {
-            Column {
-                // 顶部栏：普通模式 / 多选模式
-                if (!selectionMode) {
-                    TopAppBar(
-                        title = {
-                            Text(
-                                text = ui.header?.name ?: "Playlist Shuffling",
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        },
-                        navigationIcon = {
-                            HapticIconButton(onClick = onBack) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                            }
-                        },
-                        actions = {
-                            HapticIconButton(onClick = {
-                                showSearch = !showSearch
-                                if (!showSearch) searchQuery = ""
-                            }) { Icon(Icons.Filled.Search, contentDescription = "搜索歌曲") }
-
-                            if (batchDownloadProgress != null) {
-                                HapticIconButton(onClick = { showDownloadManager = true }) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = Color.Transparent
+            ) {
+                Column {
+                    // 顶部栏：普通模式 / 多选模式
+                    if (!selectionMode) {
+                        TopAppBar(
+                            title = {
+                                Text(
+                                    text = ui.header?.name ?: "Playlist Shuffling",
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            },
+                            navigationIcon = {
+                                HapticIconButton(onClick = onBack) {
                                     Icon(
-                                        Icons.Outlined.Download,
-                                        contentDescription = "下载管理器",
-                                        tint = MaterialTheme.colorScheme.primary
+                                        Icons.AutoMirrored.Filled.ArrowBack,
+                                        contentDescription = "返回"
                                     )
                                 }
-                            }
-                        },
-                        windowInsets = WindowInsets.statusBars,
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = Color.Transparent,
-                            scrolledContainerColor = MaterialTheme.colorScheme.surface,
-                            titleContentColor = MaterialTheme.colorScheme.onSurface,
-                            navigationIconContentColor = MaterialTheme.colorScheme.onSurface
-                        )
-                    )
-                } else {
-                    val allSelected = selectedIds.size == ui.tracks.size && ui.tracks.isNotEmpty()
-                    TopAppBar(
-                        title = { Text("已选 ${selectedIds.size} 项") },
-                        navigationIcon = {
-                            HapticIconButton(onClick = { exitSelection() }) {
-                                Icon(Icons.Filled.Close, contentDescription = "退出多选")
-                            }
-                        },
-                        actions = {
-                            HapticIconButton(onClick = { if (allSelected) clearSelection() else selectAll() }) {
-                                Icon(
-                                    imageVector = if (allSelected) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
-                                    contentDescription = if (allSelected) "取消全选" else "全选"
-                                )
-                            }
-                            HapticIconButton(
-                                onClick = { if (selectedIds.isNotEmpty()) showExportSheet = true },
-                                enabled = selectedIds.isNotEmpty()
-                            ) {
-                                Icon(Icons.AutoMirrored.Outlined.PlaylistAdd, contentDescription = "导出到歌单")
-                            }
-                            HapticIconButton(
-                                onClick = {
-                                    if (selectedIds.isNotEmpty()) {
-                                        val selectedSongs = ui.tracks.filter { it.id in selectedIds }
-                                        GlobalDownloadManager.startBatchDownload(context, selectedSongs)
-                                        exitSelection()
-                                    }
-                                },
-                                enabled = selectedIds.isNotEmpty()
-                            ) {
-                                Icon(Icons.Outlined.Download, contentDescription = "下载选中歌曲")
-                            }
-                        },
-                        windowInsets = WindowInsets.statusBars,
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = Color.Transparent,
-                            scrolledContainerColor = MaterialTheme.colorScheme.surface
-                        )
-                    )
-                }
+                            },
+                            actions = {
+                                HapticIconButton(onClick = {
+                                    showSearch = !showSearch
+                                    if (!showSearch) searchQuery = ""
+                                }) { Icon(Icons.Filled.Search, contentDescription = "搜索歌曲") }
 
-                AnimatedVisibility(showSearch && !selectionMode) {
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        placeholder = { Text("搜索歌单内歌曲") },
-                        singleLine = true
-                    )
-                }
-
-                val displayedTracks = remember(ui.tracks, searchQuery) {
-                    if (searchQuery.isBlank()) ui.tracks
-                    else ui.tracks.filter { it.name.contains(searchQuery, true) || it.artist.contains(searchQuery, true) }
-                }
-                val currentIndex = displayedTracks.indexOfFirst { it.id == currentSong?.id }
-                val miniPlayerHeight = LocalMiniPlayerHeight.current
-
-                Box(modifier = Modifier
-                    .fillMaxSize()
-                    .windowInsetsPadding(WindowInsets.navigationBars)
-                ) {
-                    LazyColumn(
-                        state = listState,
-                        contentPadding = PaddingValues(
-                            bottom = 24.dp + miniPlayerHeight
-                        ),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        item {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(headerHeight)
-                            ) {
-                                AsyncImage(
-                                    model = ImageRequest.Builder(LocalContext.current)
-                                        .data(ui.header?.coverUrl.takeUnless { it.isNullOrBlank() }
-                                            ?: "about:blank")
-                                        .crossfade(true)
-                                        .memoryCachePolicy(CachePolicy.ENABLED)
-                                        .diskCachePolicy(CachePolicy.ENABLED)
-                                        .networkCachePolicy(CachePolicy.ENABLED)
-                                        .build(),
-                                    contentDescription = ui.header?.name ?: "Playlist Shuffling",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .drawWithContent {
-                                            drawContent()
-                                            drawRect(
-                                                brush = Brush.verticalGradient(
-                                                    colors = listOf(
-                                                        Color.Black.copy(alpha = 0.10f),
-                                                        Color.Black.copy(alpha = 0.35f),
-                                                        Color.Transparent
-                                                    ),
-                                                    startY = 0f,
-                                                    endY = size.height
+                                // 收藏按钮
+                                HapticIconButton(onClick = {
+                                    scope.launch {
+                                        if (isFavorite) {
+                                            favoriteRepo.removeFavorite(playlistId, playlistSource)
+                                        } else {
+                                            ui.header?.let { header ->
+                                                favoriteRepo.addFavorite(
+                                                    id = playlistId,
+                                                    name = header.name,
+                                                    coverUrl = header.coverUrl,
+                                                    trackCount = header.trackCount,
+                                                    source = playlistSource,
+                                                    songs = ui.tracks
                                                 )
-                                            )
+                                            }
                                         }
-                                )
+                                    }
+                                }) {
+                                    Icon(
+                                        imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                                        contentDescription = if (isFavorite) "取消收藏" else "收藏歌单",
+                                        tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
 
-                                Column(
-                                    modifier = Modifier
-                                        .align(Alignment.BottomStart)
-                                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                                if (batchDownloadProgress != null) {
+                                    HapticIconButton(onClick = { showDownloadManager = true }) {
+                                        Icon(
+                                            Icons.Outlined.Download,
+                                            contentDescription = "下载管理器",
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                            },
+                            windowInsets = WindowInsets.statusBars,
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = Color.Transparent,
+                                scrolledContainerColor = MaterialTheme.colorScheme.surface,
+                                titleContentColor = MaterialTheme.colorScheme.onSurface,
+                                navigationIconContentColor = MaterialTheme.colorScheme.onSurface
+                            )
+                        )
+                    } else {
+                        val allSelected =
+                            selectedIds.size == ui.tracks.size && ui.tracks.isNotEmpty()
+                        TopAppBar(
+                            title = { Text("已选 ${selectedIds.size} 项") },
+                            navigationIcon = {
+                                HapticIconButton(onClick = { exitSelection() }) {
+                                    Icon(Icons.Filled.Close, contentDescription = "退出多选")
+                                }
+                            },
+                            actions = {
+                                HapticIconButton(onClick = { if (allSelected) clearSelection() else selectAll() }) {
+                                    Icon(
+                                        imageVector = if (allSelected) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
+                                        contentDescription = if (allSelected) "取消全选" else "全选"
+                                    )
+                                }
+                                HapticIconButton(
+                                    onClick = {
+                                        if (selectedIds.isNotEmpty()) showExportSheet = true
+                                    },
+                                    enabled = selectedIds.isNotEmpty()
                                 ) {
-                                    Text(
-                                        text = ui.header?.name ?: "Playlist Shuffling",
-                                        style = MaterialTheme.typography.headlineSmall.copy(
-                                            shadow = Shadow(
-                                                color = Color.Black.copy(alpha = 0.6f),
-                                                offset = Offset(2f, 2f),
-                                                blurRadius = 4f
-                                            )
-                                        ),
-                                        color = Color.White,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis
+                                    Icon(
+                                        Icons.AutoMirrored.Outlined.PlaylistAdd,
+                                        contentDescription = "导出到歌单"
                                     )
-                                    Spacer(Modifier.height(4.dp))
-                                    Text(
-                                        text = "播放量 ${formatPlayCount(ui.header?.playCount ?: 0)} · ${(ui.header?.trackCount ?: 0)} 首",
-                                        style = MaterialTheme.typography.bodySmall.copy(
-                                            shadow = Shadow(
-                                                color = Color.Black.copy(alpha = 0.6f),
-                                                offset = Offset(2f, 2f),
-                                                blurRadius = 4f
+                                }
+                                HapticIconButton(
+                                    onClick = {
+                                        if (selectedIds.isNotEmpty()) {
+                                            val selectedSongs =
+                                                ui.tracks.filter { it.id in selectedIds }
+                                            GlobalDownloadManager.startBatchDownload(
+                                                context,
+                                                selectedSongs
                                             )
-                                        ),
-                                        color = Color.White.copy(alpha = 0.9f)
+                                            exitSelection()
+                                        }
+                                    },
+                                    enabled = selectedIds.isNotEmpty()
+                                ) {
+                                    Icon(
+                                        Icons.Outlined.Download,
+                                        contentDescription = "下载选中歌曲"
                                     )
+                                }
+                            },
+                            windowInsets = WindowInsets.statusBars,
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = Color.Transparent,
+                                scrolledContainerColor = MaterialTheme.colorScheme.surface
+                            )
+                        )
+                    }
+
+                    AnimatedVisibility(showSearch && !selectionMode) {
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            placeholder = { Text("搜索歌单内歌曲") },
+                            singleLine = true
+                        )
+                    }
+
+                    val displayedTracks = remember(ui.tracks, searchQuery) {
+                        if (searchQuery.isBlank()) ui.tracks
+                        else ui.tracks.filter {
+                            it.name.contains(
+                                searchQuery,
+                                true
+                            ) || it.artist.contains(searchQuery, true)
+                        }
+                    }
+                    val currentIndex = displayedTracks.indexOfFirst { it.id == currentSong?.id }
+                    val miniPlayerHeight = LocalMiniPlayerHeight.current
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .windowInsetsPadding(WindowInsets.navigationBars)
+                    ) {
+                        LazyColumn(
+                            state = listState,
+                            contentPadding = PaddingValues(
+                                bottom = 24.dp + miniPlayerHeight
+                            ),
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(headerHeight)
+                                ) {
+                                    AsyncImage(
+                                        model = ImageRequest.Builder(LocalContext.current)
+                                            .data(ui.header?.coverUrl.takeUnless { it.isNullOrBlank() }
+                                                ?: "about:blank")
+                                            .crossfade(true)
+                                            .memoryCachePolicy(CachePolicy.ENABLED)
+                                            .diskCachePolicy(CachePolicy.ENABLED)
+                                            .networkCachePolicy(CachePolicy.ENABLED)
+                                            .build(),
+                                        contentDescription = ui.header?.name
+                                            ?: "Playlist Shuffling",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .drawWithContent {
+                                                drawContent()
+                                                drawRect(
+                                                    brush = Brush.verticalGradient(
+                                                        colors = listOf(
+                                                            Color.Black.copy(alpha = 0.10f),
+                                                            Color.Black.copy(alpha = 0.35f),
+                                                            Color.Transparent
+                                                        ),
+                                                        startY = 0f,
+                                                        endY = size.height
+                                                    )
+                                                )
+                                            }
+                                    )
+
+                                    Column(
+                                        modifier = Modifier
+                                            .align(Alignment.BottomStart)
+                                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                                    ) {
+                                        Text(
+                                            text = ui.header?.name ?: "Playlist Shuffling",
+                                            style = MaterialTheme.typography.headlineSmall.copy(
+                                                shadow = Shadow(
+                                                    color = Color.Black.copy(alpha = 0.6f),
+                                                    offset = Offset(2f, 2f),
+                                                    blurRadius = 4f
+                                                )
+                                            ),
+                                            color = Color.White,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(
+                                            text = "播放量 ${formatPlayCount(ui.header?.playCount ?: 0)} · ${(ui.header?.trackCount ?: 0)} 首",
+                                            style = MaterialTheme.typography.bodySmall.copy(
+                                                shadow = Shadow(
+                                                    color = Color.Black.copy(alpha = 0.6f),
+                                                    offset = Offset(2f, 2f),
+                                                    blurRadius = 4f
+                                                )
+                                            ),
+                                            color = Color.White.copy(alpha = 0.9f)
+                                        )
+                                    }
+                                }
+                            }
+
+                            // 状态块
+                            when {
+                                ui.loading && ui.tracks.isEmpty() -> {
+                                    item {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(20.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.Center
+                                        ) {
+                                            CircularProgressIndicator()
+                                            Text("  正在拉取歌单曲目...")
+                                        }
+                                    }
+                                }
+
+                                ui.error != null && ui.tracks.isEmpty() -> {
+                                    item {
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(20.dp),
+                                            horizontalAlignment = Alignment.CenterHorizontally
+                                        ) {
+                                            Text(
+                                                text = "加载失败：${ui.error}",
+                                                color = MaterialTheme.colorScheme.error
+                                            )
+                                            Spacer(Modifier.height(8.dp))
+                                            RetryChip { vm.retry() }
+                                        }
+                                    }
+                                }
+
+                                else -> {
+                                    itemsIndexed(
+                                        displayedTracks,
+                                        key = { _, it -> it.id }) { index, item ->
+                                        SongRow(
+                                            index = index + 1,
+                                            song = item,
+                                            selectionMode = selectionMode,
+                                            selected = selectedIds.contains(item.id),
+                                            onToggleSelect = { toggleSelect(item.id) },
+                                            onLongPress = {
+                                                if (!selectionMode) {
+                                                    selectionMode = true
+                                                    selectedIds = setOf(item.id)
+                                                } else {
+                                                    toggleSelect(item.id)
+                                                }
+                                            },
+                                            onClick = {
+                                                NPLogger.d(
+                                                    "NERI-UI",
+                                                    "tap song index=$index id=${item.id}"
+                                                )
+                                                val full = ui.tracks
+                                                val pos = full.indexOfFirst { it.id == item.id }
+                                                if (pos >= 0) onSongClick(full, pos)
+                                            }
+                                        )
+                                    }
                                 }
                             }
                         }
 
-                        // 状态块
-                        when {
-                            ui.loading && ui.tracks.isEmpty() -> {
-                                item {
+                        if (currentIndex >= 0) {
+                            HapticFloatingActionButton(
+                                onClick = {
+                                    scope.launch { listState.animateScrollToItem(currentIndex) }
+                                },
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(
+                                        bottom = 16.dp + miniPlayerHeight,
+                                        end = 16.dp
+                                    )
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Outlined.PlaylistPlay,
+                                    contentDescription = "定位到正在播放"
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // 导出面板 //
+                if (showExportSheet) {
+                    ModalBottomSheet(
+                        onDismissRequest = { showExportSheet = false },
+                        sheetState = exportSheetState
+                    ) {
+                        Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+                            Text("导出到本地歌单", style = MaterialTheme.typography.titleMedium)
+                            Spacer(Modifier.height(8.dp))
+
+                            LazyColumn {
+                                itemsIndexed(allPlaylists) { _, pl ->
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(20.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.Center
+                                            .padding(vertical = 10.dp)
+                                            .combinedClickable(onClick = {
+                                                // 倒序导出
+                                                val songs = ui.tracks
+                                                    .asReversed()
+                                                    .filter { selectedIds.contains(it.id) }
+                                                scope.launch {
+                                                    repo.addSongsToPlaylist(pl.id, songs)
+                                                    showExportSheet = false
+                                                }
+                                            }),
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        CircularProgressIndicator()
-                                        Text("  正在拉取歌单曲目...")
-                                    }
-                                }
-                            }
-
-                            ui.error != null && ui.tracks.isEmpty() -> {
-                                item {
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(20.dp),
-                                        horizontalAlignment = Alignment.CenterHorizontally
-                                    ) {
+                                        Text(pl.name, style = MaterialTheme.typography.bodyLarge)
+                                        Spacer(Modifier.weight(1f))
                                         Text(
-                                            text = "加载失败：${ui.error}",
-                                            color = MaterialTheme.colorScheme.error
+                                            "${pl.songs.size} 首",
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
-                                        Spacer(Modifier.height(8.dp))
-                                        RetryChip { vm.retry() }
                                     }
                                 }
                             }
 
-                            else -> {
-                                itemsIndexed(displayedTracks, key = { _, it -> it.id }) { index, item ->
-                                    SongRow(
-                                        index = index + 1,
-                                        song = item,
-                                        selectionMode = selectionMode,
-                                        selected = selectedIds.contains(item.id),
-                                        onToggleSelect = { toggleSelect(item.id) },
-                                        onLongPress = {
-                                            if (!selectionMode) {
-                                                selectionMode = true
-                                                selectedIds = setOf(item.id)
-                                            } else {
-                                                toggleSelect(item.id)
-                                            }
-                                        },
-                                        onClick = {
-                                            NPLogger.d("NERI-UI", "tap song index=$index id=${item.id}")
-                                            val full = ui.tracks
-                                            val pos = full.indexOfFirst { it.id == item.id }
-                                            if (pos >= 0) onSongClick(full, pos)
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                    }
+                            Spacer(Modifier.height(12.dp))
+                            HorizontalDivider(
+                                Modifier,
+                                DividerDefaults.Thickness,
+                                DividerDefaults.color
+                            )
+                            Spacer(Modifier.height(12.dp))
 
-                    if (currentIndex >= 0) {
-                        HapticFloatingActionButton(
-                            onClick = {
-                                scope.launch { listState.animateScrollToItem(currentIndex) }
-                            },
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(
-                                    bottom = 16.dp + miniPlayerHeight,
-                                    end = 16.dp
+                            var newName by remember { mutableStateOf("") }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                OutlinedTextField(
+                                    value = newName,
+                                    onValueChange = { newName = it },
+                                    modifier = Modifier.weight(1f),
+                                    placeholder = { Text("新建歌单名称") },
+                                    singleLine = true
                                 )
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Outlined.PlaylistPlay,
-                                contentDescription = "定位到正在播放"
-                            )
-                        }
-                    }
-                }
-            }
-
-            // 导出面板 //
-            if (showExportSheet) {
-                ModalBottomSheet(
-                    onDismissRequest = { showExportSheet = false },
-                    sheetState = exportSheetState
-                ) {
-                    Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
-                        Text("导出到本地歌单", style = MaterialTheme.typography.titleMedium)
-                        Spacer(Modifier.height(8.dp))
-
-                        LazyColumn {
-                            itemsIndexed(allPlaylists) { _, pl ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 10.dp)
-                                        .combinedClickable(onClick = {
-                                            // 倒序导出
-                                            val songs = ui.tracks
-                                                .asReversed()
-                                                .filter { selectedIds.contains(it.id) }
-                                            scope.launch {
-                                                repo.addSongsToPlaylist(pl.id, songs)
-                                                showExportSheet = false
+                                Spacer(Modifier.width(12.dp))
+                                HapticTextButton(
+                                    enabled = newName.isNotBlank() && selectedIds.isNotEmpty(),
+                                    onClick = {
+                                        val name = newName.trim()
+                                        if (name.isBlank()) return@HapticTextButton
+                                        // 倒序导出
+                                        val songs = ui.tracks
+                                            .asReversed()
+                                            .filter { selectedIds.contains(it.id) }
+                                        scope.launch {
+                                            repo.createPlaylist(name)
+                                            val target =
+                                                repo.playlists.value.lastOrNull { it.name == name }
+                                            if (target != null) {
+                                                repo.addSongsToPlaylist(target.id, songs)
                                             }
-                                        }),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(pl.name, style = MaterialTheme.typography.bodyLarge)
-                                    Spacer(Modifier.weight(1f))
-                                    Text("${pl.songs.size} 首", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            }
-                        }
-
-                        Spacer(Modifier.height(12.dp))
-                        HorizontalDivider(
-                            Modifier,
-                            DividerDefaults.Thickness,
-                            DividerDefaults.color
-                        )
-                        Spacer(Modifier.height(12.dp))
-
-                        var newName by remember { mutableStateOf("") }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            OutlinedTextField(
-                                value = newName,
-                                onValueChange = { newName = it },
-                                modifier = Modifier.weight(1f),
-                                placeholder = { Text("新建歌单名称") },
-                                singleLine = true
-                            )
-                            Spacer(Modifier.width(12.dp))
-                            HapticTextButton(
-                                enabled = newName.isNotBlank() && selectedIds.isNotEmpty(),
-                                onClick = {
-                                    val name = newName.trim()
-                                    if (name.isBlank()) return@HapticTextButton
-                                    // 倒序导出
-                                    val songs = ui.tracks
-                                        .asReversed()
-                                        .filter { selectedIds.contains(it.id) }
-                                    scope.launch {
-                                        repo.createPlaylist(name)
-                                        val target = repo.playlists.value.lastOrNull { it.name == name }
-                                        if (target != null) {
-                                            repo.addSongsToPlaylist(target.id, songs)
+                                            showExportSheet = false
                                         }
-                                        showExportSheet = false
                                     }
-                                }
-                            ) { Text("新建并导出") }
+                                ) { Text("新建并导出") }
+                            }
+                            Spacer(Modifier.height(12.dp))
                         }
-                        Spacer(Modifier.height(12.dp))
                     }
                 }
+                // 允许返回键优先退出多选
+                BackHandler(enabled = selectionMode) { exitSelection() }
+
+                // Snackbar
+                SnackbarHost(
+                    hostState = snackbarHostState,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = LocalMiniPlayerHeight.current)
+                        .windowInsetsPadding(WindowInsets.navigationBars)
+                )
             }
-            // 允许返回键优先退出多选
-            BackHandler(enabled = selectionMode) { exitSelection() }
         }
     }
 
@@ -827,7 +927,7 @@ private fun SongRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        
+
         // 更多操作菜单
         if (!selectionMode) {
             var showMoreMenu by remember { mutableStateOf(false) }
@@ -841,7 +941,7 @@ private fun SongRow(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                
+
                 DropdownMenu(
                     expanded = showMoreMenu,
                     onDismissRequest = { showMoreMenu = false }

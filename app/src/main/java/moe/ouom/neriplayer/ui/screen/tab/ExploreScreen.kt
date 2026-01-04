@@ -595,7 +595,10 @@ private fun NeteaseDefaultContent(
             }
         } else {
             items(items = ui.playlists, key = { it.id }) { playlist ->
-                PlaylistCard(playlist) { onPlay(playlist) }
+                PlaylistCard(
+                    playlist = playlist,
+                    onClick = { onPlay(playlist) }
+                )
             }
         }
     }

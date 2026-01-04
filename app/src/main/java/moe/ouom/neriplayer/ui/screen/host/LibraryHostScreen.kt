@@ -88,12 +88,16 @@ fun LibraryHostScreen(
 
     // 保存各个列表的滚动状态
     val localListSaver: Saver<LazyListState, *> = LazyListState.Saver
+    val favoriteListSaver: Saver<LazyListState, *> = LazyListState.Saver
     val neteaseAlbumSaver: Saver<LazyListState, *> = LazyListState.Saver
     val neteaseListSaver: Saver<LazyListState, *> = LazyListState.Saver
     val biliListSaver: Saver<LazyListState, *> = LazyListState.Saver
     val qqMusicListSaver: Saver<LazyListState, *> = LazyListState.Saver
 
     val localListState = rememberSaveable(saver = localListSaver) {
+        LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
+    }
+    val favoriteListState = rememberSaveable(saver = favoriteListSaver) {
         LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
     }
     val neteaseListState = rememberSaveable(saver = neteaseListSaver) {
@@ -128,6 +132,7 @@ fun LibraryHostScreen(
                     initialTabIndex = selectedTabIndex,
                     onTabIndexChange = { selectedTabIndex = it },
                     localListState = localListState,
+                    favoriteListState = favoriteListState,
                     neteaseAlbumState = neteaseAlbumState,
                     neteaseListState = neteaseListState,
                     biliListState = biliListState,

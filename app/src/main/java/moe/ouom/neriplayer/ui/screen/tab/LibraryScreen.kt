@@ -88,6 +88,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.data.LocalPlaylist
+import moe.ouom.neriplayer.data.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.LocalPlaylistRepository.Companion.FAVORITES_NAME
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
@@ -101,6 +102,7 @@ import moe.ouom.neriplayer.util.HapticIconButton
 
 enum class LibraryTab(val label: String) {
     LOCAL("本地"),
+    FAVORITE("收藏"),
     NETEASE("网易云 - 歌单"),
     NETEASEALBUM("网易云 - 专辑"),
     BILI("哔哩哔哩"),
@@ -113,6 +115,7 @@ fun LibraryScreen(
     initialTabIndex: Int = 0,
     onTabIndexChange: (Int) -> Unit = {},
     localListState: LazyListState,
+    favoriteListState: LazyListState,
     neteaseAlbumState: LazyListState,
     neteaseListState: LazyListState,
     biliListState: LazyListState,
@@ -201,6 +204,10 @@ fun LibraryScreen(
                         vm.createLocalPlaylist(finalName)
                     },
                     onClick = onLocalPlaylistClick
+                )
+                LibraryTab.FAVORITE -> FavoritePlaylistList(
+                    listState = favoriteListState,
+                    onNeteasePlaylistClick = onNeteasePlaylistClick
                 )
                 LibraryTab.NETEASE -> NeteasePlaylistList(
                     playlists = ui.neteasePlaylists,
@@ -557,6 +564,115 @@ private fun NeteaseAlbumList(
                         )
                     }
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FavoritePlaylistList(
+    listState: LazyListState,
+    onNeteasePlaylistClick: (NeteasePlaylist) -> Unit
+) {
+    val context = LocalContext.current
+    val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
+    val favorites by favoriteRepo.favorites.collectAsState()
+    val miniPlayerHeight = LocalMiniPlayerHeight.current
+
+    LazyColumn(
+        state = listState,
+        contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 8.dp + miniPlayerHeight),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        if (favorites.isEmpty()) {
+            item {
+                Card(
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color.Transparent
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    ListItem(
+                        headlineContent = { Text("暂无收藏的歌单") },
+                        supportingContent = {
+                            Text("在歌单详情页点击收藏按钮，或长按首页推荐歌单收藏", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        },
+                        colors = ListItemDefaults.colors(
+                            containerColor = Color.Transparent
+                        ),
+                        leadingContent = {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(56.dp)
+                            )
+                        }
+                    )
+                }
+            }
+        } else {
+            items(
+                items = favorites,
+                key = { "${it.source}:${it.id}" }
+            ) { favorite ->
+                Card(
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color.Transparent
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                    modifier = Modifier
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .animateItem()
+                        .clickable {
+                            when (favorite.source) {
+                                "netease" -> {
+                                    onNeteasePlaylistClick(
+                                        NeteasePlaylist(
+                                            id = favorite.id,
+                                            name = favorite.name,
+                                            picUrl = favorite.coverUrl ?: "",
+                                            playCount = 0,
+                                            trackCount = favorite.trackCount
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                ) {
+                    ListItem(
+                        headlineContent = { Text(favorite.name) },
+                        supportingContent = {
+                            Text("${favorite.trackCount}首 · ${favorite.source}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        },
+                        colors = ListItemDefaults.colors(
+                            containerColor = Color.Transparent
+                        ),
+                        leadingContent = {
+                            if (!favorite.coverUrl.isNullOrEmpty()) {
+                                AsyncImage(
+                                    model = ImageRequest.Builder(LocalContext.current).data(favorite.coverUrl).build(),
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .size(56.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(56.dp)
+                                )
+                            }
+                        }
+                    )
+                }
             }
         }
     }

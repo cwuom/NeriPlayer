@@ -25,8 +25,11 @@ package moe.ouom.neriplayer.ui.screen.tab
 
 import android.annotation.SuppressLint
 import android.app.Application
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -56,17 +59,25 @@ import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -83,8 +94,10 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.UsageEntry
+import moe.ouom.neriplayer.data.FavoritePlaylistRepository
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.HomeViewModel
@@ -123,11 +136,15 @@ fun HomeScreen(
     val appBarTitle = rememberSaveable { titleOptions.random() }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .nestedScroll(scrollBehavior.nestedScrollConnection)
-    ) {
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+
+    Box(Modifier.fillMaxSize()) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .nestedScroll(scrollBehavior.nestedScrollConnection)
+        ) {
         LargeTopAppBar(
             title = { Text(appBarTitle) },
             actions = {
@@ -238,12 +255,29 @@ fun HomeScreen(
                             SectionHeader(icon = Icons.Outlined.Star, title = "为你推荐")
                         }
                         items(items = ui.playlists, key = { it.id }) { item ->
-                            PlaylistCard(item) { onItemClick(item) }
+                            PlaylistCard(
+                                playlist = item,
+                                onClick = { onItemClick(item) },
+                                onShowSnackbar = { message ->
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar(message)
+                                    }
+                                }
+                            )
                         }
                     }
                 }
             }
         }
+    }
+
+        // Snackbar
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = LocalMiniPlayerHeight.current)
+        )
     }
 }
 
@@ -336,12 +370,29 @@ private fun SongRowMini(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun PlaylistCard(playlist: NeteasePlaylist, onClick: () -> Unit) {
+fun PlaylistCard(
+    playlist: NeteasePlaylist,
+    onClick: () -> Unit,
+    onShowSnackbar: (String) -> Unit = {}
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
+    val favorites by favoriteRepo.favorites.collectAsState()
+    val isFavorite = remember(favorites, playlist.id) {
+        favoriteRepo.isFavorite(playlist.id, "netease")
+    }
+    var showMenu by remember { mutableStateOf(false) }
+
     Column(
         modifier = Modifier
             .clip(RoundedCornerShape(12.dp))
-            .clickable { onClick() }
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = { showMenu = true }
+            )
     ) {
         AsyncImage(
             model = ImageRequest.Builder(LocalContext.current).data(playlist.picUrl).crossfade(true).build(),
@@ -365,6 +416,36 @@ fun PlaylistCard(playlist: NeteasePlaylist, onClick: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Clip
+            )
+        }
+
+        DropdownMenu(
+            expanded = showMenu,
+            onDismissRequest = { showMenu = false }
+        ) {
+            DropdownMenuItem(
+                text = { Text(if (isFavorite) "取消收藏" else "收藏歌单") },
+                onClick = {
+                    showMenu = false
+                    scope.launch {
+                        if (isFavorite) {
+                            favoriteRepo.removeFavorite(playlist.id, "netease")
+                            onShowSnackbar("已取消收藏")
+                        } else {
+                            // 需要先获取歌单详情才能收藏
+                            // 这里暂时只收藏基本信息，歌曲列表为空
+                            favoriteRepo.addFavorite(
+                                id = playlist.id,
+                                name = playlist.name,
+                                coverUrl = playlist.picUrl,
+                                trackCount = playlist.trackCount,
+                                source = "netease",
+                                songs = emptyList() // 长按收藏时不包含歌曲列表
+                            )
+                            onShowSnackbar("收藏成功")
+                        }
+                    }
+                }
             )
         }
     }
