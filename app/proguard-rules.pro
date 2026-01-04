@@ -17,6 +17,15 @@
     public static <fields>;
 }
 
+# Compose 手势检测相关
+-keep class androidx.compose.foundation.gestures.** { *; }
+-keep class androidx.compose.ui.input.pointer.** { *; }
+-keep class androidx.compose.ui.input.pointer.PointerInputScope { *; }
+-keep class androidx.compose.ui.input.pointer.PointerInputChange { *; }
+-keepclassmembers class androidx.compose.ui.input.pointer.PointerInputScope {
+    *;
+}
+
 # OkHttp 内部使用了反射，需要保留一些类
 -keep class okhttp3.** { *; }
 -keep interface okhttp3.** { *; }
