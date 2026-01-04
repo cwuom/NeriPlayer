@@ -60,10 +60,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeChild
 import moe.ouom.neriplayer.util.HapticIconButton
+import moe.ouom.neriplayer.util.offlineCachedImageRequest
 
 @Composable
 fun NeriMiniPlayer(
@@ -104,8 +104,9 @@ fun NeriMiniPlayer(
                     )
             ) {
                 if (coverUrl != null) {
+                    val context = LocalContext.current
                     AsyncImage(
-                        model = ImageRequest.Builder(LocalContext.current).data(coverUrl).build(),
+                        model = offlineCachedImageRequest(context, coverUrl),
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier

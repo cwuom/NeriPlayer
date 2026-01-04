@@ -37,6 +37,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.net.toUri
 import coil.compose.AsyncImage
+import coil.request.CachePolicy
 import coil.request.ImageRequest
 import coil.size.Size
 import coil.transform.Transformation
@@ -56,6 +57,9 @@ fun CustomBackground(
         val imageRequest = ImageRequest.Builder(context)
             .data(imageUri.toUri())
             .crossfade(true)
+            .diskCachePolicy(CachePolicy.ENABLED)
+            .memoryCachePolicy(CachePolicy.ENABLED)
+            .networkCachePolicy(CachePolicy.ENABLED)
             .transformations(
                 if (blur > 0f) {
                     listOf(BlurTransformation(context, radius = blur))

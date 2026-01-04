@@ -28,12 +28,15 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import coil.Coil
 import coil.ImageLoader
+import coil.disk.DiskCache
+import coil.memory.MemoryCache
+import coil.request.CachePolicy
 
 class NeriPlayerApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         AppContainer.initialize(this)
-        
+
         // 初始化全局下载管理器
         GlobalDownloadManager.initialize(this)
 
@@ -41,6 +44,19 @@ class NeriPlayerApplication : Application() {
         val imageLoader = ImageLoader.Builder(this)
             .okHttpClient { AppContainer.sharedOkHttpClient }
             .respectCacheHeaders(false)
+            .diskCachePolicy(CachePolicy.ENABLED)
+            .memoryCachePolicy(CachePolicy.ENABLED)
+            .diskCache {
+                DiskCache.Builder()
+                    .directory(cacheDir.resolve("image_cache"))
+                    .maxSizePercent(0.02)
+                    .build()
+            }
+            .memoryCache {
+                MemoryCache.Builder(this)
+                    .maxSizePercent(0.25)
+                    .build()
+            }
             .build()
         Coil.setImageLoader(imageLoader)
     }

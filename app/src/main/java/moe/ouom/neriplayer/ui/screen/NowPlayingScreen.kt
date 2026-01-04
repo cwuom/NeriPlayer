@@ -148,10 +148,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.rememberNavController
 import androidx.media3.common.Player
 import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.util.offlineCachedImageRequest
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
@@ -430,8 +430,9 @@ fun NowPlayingScreen(
                                 )
                         ) {
                             currentSong?.coverUrl?.let { cover ->
+                                val context = LocalContext.current
                                 AsyncImage(
-                                    model = ImageRequest.Builder(LocalContext.current).data(cover).build(),
+                                    model = offlineCachedImageRequest(context, cover),
                                     contentDescription = currentSong?.name ?: "",
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier
@@ -1063,10 +1064,14 @@ fun MoreOptionsSheet(
                                             headlineContent = { Text(songResult.songName, maxLines = 1) },
                                             supportingContent = { Text(songResult.singer, maxLines = 1) },
                                             leadingContent = {
+                                                val context = LocalContext.current
                                                 AsyncImage(
-                                                    model = songResult.coverUrl?.replaceFirst(
-                                                        "http://",
-                                                        "https://"
+                                                    model = offlineCachedImageRequest(
+                                                        context,
+                                                        songResult.coverUrl?.replaceFirst(
+                                                            "http://",
+                                                            "https://"
+                                                        )
                                                     ),
                                                     contentDescription = songResult.songName,
                                                     modifier = Modifier
