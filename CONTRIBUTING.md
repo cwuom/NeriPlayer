@@ -188,23 +188,23 @@ KEY_PASSWORD=your_key_password
 
 - **Kotlin / 协程**：
 
-- I/O 与网络调用放在 `Dispatchers.IO` 或 `withContext(Dispatchers.IO)` 中执行，避免阻塞主线程。
+  - I/O 与网络调用放在 `Dispatchers.IO` 或 `withContext(Dispatchers.IO)` 中执行，避免阻塞主线程。
 
-- 倾向早返回与浅层分支，谨慎使用 `!!`，异常需记录或语义化处理。
+  - 倾向早返回与浅层分支，谨慎使用 `!!`，异常需记录或语义化处理。
 
-- 对外暴露的异步状态推荐使用 `StateFlow/SharedFlow`，内部使用可变版本管理状态。
+  - 对外暴露的异步状态推荐使用 `StateFlow/SharedFlow`，内部使用可变版本管理状态。
 
 - **Compose**：
 
-- 状态向上托管，组件通过参数传入状态与回调；可恢复状态使用 `rememberSaveable`。
+  - 状态向上托管，组件通过参数传入状态与回调；可恢复状态使用 `rememberSaveable`。
 
-- 列表提供稳定 key，合理拆分组合，避免在组合期间创建大对象或执行耗时逻辑。
+  - 列表提供稳定 key，合理拆分组合，避免在组合期间创建大对象或执行耗时逻辑。
 
 - **状态与资源管理**：
 
-- 文案放入 `strings.xml`，资源命名使用小写加下划线，保持一致性。
+  - 文案放入 `strings.xml`，资源命名使用小写加下划线，保持一致性。
 
-- 避免在 UI 热路径打印大 JSON 或分配昂贵对象。
+  - 避免在 UI 热路径打印大 JSON 或分配昂贵对象。
 
 - **日志与调试**：统一使用 `NPLogger`；如需文件日志，可在调试模式下开启 `NPLogger.init(..., enableFileLogging = true)`。
 
@@ -212,11 +212,11 @@ KEY_PASSWORD=your_key_password
 
 - **网络与平台细节**：
 
-- **NetEase**：复用 `NeteaseClient.request()` 及 `CryptoMode`，注意 `__csrf`、`os=pc`、`appver` 注入与压缩编码处理。
+  - **NetEase**：复用 `NeteaseClient.request()` 及 `CryptoMode`，注意 `__csrf`、`os=pc`、`appver` 注入与压缩编码处理。
 
-- **BiliBili**：通过 `getJsonWbi()` 自动签名并缓存 mixin key；`ConditionalHttpDataSourceFactory` 仅对指定 host 注入 Header。
+  - **BiliBili**：通过 `getJsonWbi()` 自动签名并缓存 mixin key；`ConditionalHttpDataSourceFactory` 仅对指定 host 注入 Header。
 
-- **代理**：如需绕过系统代理，传入 `bypassProxy = true`。
+  - **代理**：如需绕过系统代理，传入 `bypassProxy = true`。
 
 - **播放器**：
 
