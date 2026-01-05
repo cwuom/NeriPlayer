@@ -1,4 +1,5 @@
 
+
 ## Contributing to NeriPlayer / 贡献指南
 
 
@@ -6,8 +7,8 @@
 感谢你愿意为 NeriPlayer 做出贡献！本指南旨在帮助你了解项目定位、快速搭建开发环境、理解核心结构，并高效地提交修改。请在创建 PR 前完整阅读本页内容。
 
 
-
----
+  
+---  
 
 
 
@@ -21,7 +22,7 @@
 
 - **GPL-3.0**：所有贡献均将以 GPL-3.0 协议发布。
 
----
+---  
 
 
 
@@ -46,8 +47,8 @@
 - 首次构建可能需要下载较多依赖，建议配置国内镜像源以加速（可在 `settings.gradle.kts` 中配置）。
 
 
-
----
+  
+---  
 
 
 
@@ -55,35 +56,35 @@
 
 1. 克隆并打开项目：
 
-```bash
-
-git clone https://github.com/cwuom/NeriPlayer.git
-
-cd NeriPlayer
-
-```
+```bash  
+  
+git clone https://github.com/cwuom/NeriPlayer.git  
+  
+cd NeriPlayer  
+  
+```  
 
 2. 使用 Android Studio 同步依赖（首次打开会自动执行）。
 
 3. 构建调试版：
 
-```bash
-
-./gradlew :app:assembleDebug
-
-```
+```bash  
+  
+./gradlew :app:assembleDebug  
+  
+```  
 
 4. 安装到 Android 设备（需要 Android 9 或更高版本）：
 
-```bash
-
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-
-```
+```bash  
+  
+adb install -r app/build/outputs/apk/debug/app-debug.apk  
+  
+```  
 
 5. 启用调试入口：在应用设置界面连续点击“版本号”7 次开启开发者模式，用于自测与问题反馈。
 
----
+---  
 
 
 
@@ -95,25 +96,25 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 1. 在 `~/.gradle/gradle.properties` 或环境变量中提供签名信息：
 
-```properties
-
-KEYSTORE_FILE=/absolute/path/to/neri.jks
-
-KEYSTORE_PASSWORD=your_store_password
-
-KEY_ALIAS=key0
-
-KEY_PASSWORD=your_key_password
-
-```
+```properties  
+  
+KEYSTORE_FILE=/absolute/path/to/neri.jks  
+  
+KEYSTORE_PASSWORD=your_store_password  
+  
+KEY_ALIAS=key0  
+  
+KEY_PASSWORD=your_key_password  
+  
+```  
 
 2. 执行命令：
 
-```bash
-
-./gradlew :app:assembleRelease
-
-```
+```bash  
+  
+./gradlew :app:assembleRelease  
+  
+```  
 
 3. 产物位于 `app/build/outputs/apk/release/` 目录，文件名格式为 `NeriPlayer-<git>.<MMddHHmm>.apk`。
 
@@ -122,8 +123,8 @@ KEY_PASSWORD=your_key_password
 **安全提醒**：请勿将证书或密码提交到仓库，也不要在 Issue/PR 中公开相关敏感信息。
 
 
-
----
+  
+---  
 
 
 
@@ -180,7 +181,7 @@ KEY_PASSWORD=your_key_password
 
 - **新增设置项**：增添 `SettingsKeys` → 在 `SettingsRepository` 暴露 Flow 与 setter → `NeriApp` 收集 → `SettingsScreen` 提供交互。
 
----
+---  
 
 
 
@@ -230,7 +231,7 @@ KEY_PASSWORD=your_key_password
 
 - **提交信息**：建议遵循 Conventional Commits（如 `feat: ...`、`fix: ...`、`docs: ...`）。
 
----
+---  
 
 
 
@@ -238,17 +239,17 @@ KEY_PASSWORD=your_key_password
 
 - 过滤应用日志：
 
-```bash
-
-adb logcat | grep "[NeriPlayer]"
-
-```
+```bash  
+  
+adb logcat | grep "[NeriPlayer]"  
+  
+```  
 
 - 调试模式可在设置页连点“版本号”7 次启用，启用后默认打开文件日志（`NPLogger.init(..., enableFileLogging = true)`）。
 
 - 反馈问题时附上复现步骤、日志截取以及设备/系统信息。
 
----
+---  
 
 
 
@@ -263,8 +264,8 @@ adb logcat | grep "[NeriPlayer]"
 - 关键逻辑已编写必要注释，保持良好可读性。
 
 
-
----
+  
+---  
 
 
 
@@ -281,8 +282,8 @@ adb logcat | grep "[NeriPlayer]"
 - 大型变更可先创建 Draft PR 以便早期讨论。
 
 
-
----
+  
+---  
 
 
 
@@ -293,8 +294,8 @@ adb logcat | grep "[NeriPlayer]"
 - 若涉及第三方平台接口异常，请说明使用的账号类型与网络环境（如代理配置）。
 
 
-
----
+  
+---  
 
 
 
@@ -305,8 +306,8 @@ adb logcat | grep "[NeriPlayer]"
 - 提交贡献即表示同意以 GPL-3.0 许可分发你的修改。
 
 
-
----
+  
+---  
 
 
 
@@ -321,8 +322,8 @@ adb logcat | grep "[NeriPlayer]"
 欢迎你的想法、建议与 PR！谢谢！
 
 
-
----
+  
+---  
 
 
 
@@ -336,81 +337,79 @@ adb logcat | grep "[NeriPlayer]"
 
 - `app/src/main/AndroidManifest.xml`
 
-- 应用入口、权限与前台服务（`AudioPlayerService`）声明；`NeriPlayerApplication` 为 `Application` 类。
+  - 应用入口、权限与前台服务（`AudioPlayerService`）声明；`NeriPlayerApplication` 为 `Application` 类。
 
 
 
 - `moe/ouom/neriplayer/activity/`
 
-- `MainActivity.kt`：宿主 Activity，负责动态色、免责声明、媒体弹窗与顶层 `NeriApp()` 组合。
+  - `MainActivity.kt`：宿主 Activity，负责动态色、免责声明、媒体弹窗与顶层 `NeriApp()` 组合。
 
-- `NeteaseWebLoginActivity.kt`、`BiliWebLoginActivity.kt`：第三方平台 Web 登录流程，登录成功后由 DataStore 持久化 Cookie。
-
-
+  - `NeteaseWebLoginActivity.kt`、`BiliWebLoginActivity.kt`：第三方平台 Web 登录流程，登录成功后由 DataStore 持久化 Cookie。
 
 - `moe/ouom/neriplayer/core/di/`
 
-- `AppContainer.kt`：Service Locator，集中管理 `SettingsRepository`、Cookie 仓库、`NeteaseClient`、`BiliClient`、`BiliPlaybackRepository`、搜索 API 等。新增平台/仓库/客户端时请在此注册。
+  - `AppContainer.kt`：Service Locator，集中管理 `SettingsRepository`、Cookie 仓库、`NeteaseClient`、`BiliClient`、`BiliPlaybackRepository`、搜索 API 等。新增平台/仓库/客户端时请在此注册。
 
 
 
 - `moe/ouom/neriplayer/core/api/`
 
-- `netease/`
+  - `netease/`
 
-- `NeteaseClient.kt`：封装网易云接口访问与加密（`CryptoMode`: WEAPI/EAPI/Linux/API），维护 Cookie 注入、CSRF 处理、歌曲/歌单/歌词等业务接口。
+    - `NeteaseClient.kt`：封装网易云接口访问与加密（`CryptoMode`: WEAPI/EAPI/Linux/API），维护 Cookie 注入、CSRF 处理、歌曲/歌单/歌词等业务接口。
 
-- `bili/`
+  - `bili/`
 
-- `BiliClient.kt`: 封装 B 站 Web 接口访问（WBI 签名、Nav 获取 mixin key 缓存、视频基础信息/分页/取流、搜索、收藏夹、点赞等）。
+    - `BiliClient.kt`: 封装 B 站 Web 接口访问（WBI 签名、Nav 获取 mixin key 缓存、视频基础信息/分页/取流、搜索、收藏夹、点赞等）。
 
-- `BiliPlaybackRepository.kt`: 按用户偏好音质从 `BiliClientAudioDataSource.fetchAudioStreams` 中选择最佳音轨。
+    - `BiliPlaybackRepository.kt`: 按用户偏好音质从 `BiliClientAudioDataSource.fetchAudioStreams` 中选择最佳音轨。
 
-- `search/`
+  - `search/`
 
-- `SearchApi.kt`: 跨平台搜索接口（`search()`/`getSongInfo()`）。
+    - `SearchApi.kt`: 跨平台搜索接口（`search()`/`getSongInfo()`）。
 
-- `CloudMusicSearchApi.kt`: 基于 `NeteaseClient` 的网易云实现，包含歌曲信息与歌词并发获取。
+    - `CloudMusicSearchApi.kt`: 基于 `NeteaseClient` 的网易云实现，包含歌曲信息与歌词并发获取。
 
-- `QQMusicSearchApi.kt`: QQ 音乐实现（JSON 解析、Base64 歌词处理）。
+    - `QQMusicSearchApi.kt`: QQ 音乐实现（JSON 解析、Base64 歌词处理）。
 
 
 
 - `moe/ouom/neriplayer/core/player/`
 
-- `PlayerManager.kt`: 播放核心（队列/状态/事件/随机洗牌/进度同步/收藏/缓存键策略/解析源 URL）。统一入口：`playPlaylist()`、`next()`、`previous()`、`togglePlayPause()` 等。
+  - `PlayerManager.kt`: 播放核心（队列/状态/事件/随机洗牌/进度同步/收藏/缓存键策略/解析源 URL）。统一入口：`playPlaylist()`、`next()`、`previous()`、`togglePlayPause()` 等。
 
-- `AudioPlayerService.kt`: 前台媒体服务与通知（媒体按钮、收藏切换等），订阅 `PlayerManager` 的 `StateFlow` 同步 UI。
+  - `AudioPlayerService.kt`: 前台媒体服务与通知（媒体按钮、收藏切换等），订阅 `PlayerManager` 的 `StateFlow` 同步 UI。
 
-- `ReactiveRenderersFactory.kt`: 在 Media3 中插入 `TeeAudioProcessor`，以收集 PCM 实时能量送给 `AudioReactive`。
+  - `ReactiveRenderersFactory.kt`: 在 Media3 中插入 `TeeAudioProcessor`，以收集 PCM 实时能量送给 `AudioReactive`。
 
-- `AudioReactive.kt`: 实时音频分析（RMS、包络、鼓点脉冲），对外暴露 `level` 与 `beat` 的 `StateFlow`。
+  - `AudioReactive.kt`: 实时音频分析（RMS、包络、鼓点脉冲），对外暴露 `level` 与 `beat` 的 `StateFlow`。
 
-- `ConditionalHttpDataSourceFactory.kt`: 针对 `bilivideo.`/`upos-hz-` 的请求自动附加 UA/Referer/Cookie，确保 B 站音轨拉流可用。
+  - `ConditionalHttpDataSourceFactory.kt`: 针对 `bilivideo.`/`upos-hz-` 的请求自动附加 UA/Referer/Cookie，确保 B 站音轨拉流可用。
 
 
 
 - `moe/ouom/neriplayer/data/`
 
-- `SettingsDataStore.kt`（`SettingsRepository`）: 所有设置项（主题/动态色/音质/开发者模式/背景图等）基于 `DataStore` 的 `Flow` 暴露。
+  - `SettingsDataStore.kt`（`SettingsRepository`）: 所有设置项（主题/动态色/音质/开发者模式/背景图等）基于 `DataStore` 的 `Flow` 暴露。
 
-- `NeteaseCookieRepository.kt`, `BiliCookieRepository.kt`: 各平台 Cookie 的持久化与流式观察。
+  - `NeteaseCookieRepository.kt`, `BiliCookieRepository.kt`: 各平台 Cookie 的持久化与流式观察。
 
-- `LocalPlaylistRepository.kt`: 本地歌单/收藏持久化（JSON 原子写），提供增删改查与排序、导出等操作。
+  - `LocalPlaylistRepository.kt`: 本地歌单/收藏持久化（JSON 原子写），提供增删改查与排序、导出等操作。
 
 
 
 - `moe/ouom/neriplayer/ui/`
 
-- `NeriApp.kt`：应用骨架（`NavHost`、底部栏、迷你播放器、Now Playing 过场），整合背景渲染与前台服务同步。
+  - `NeriApp.kt`：应用骨架（`NavHost`、底部栏、迷你播放器、Now Playing 过场），整合背景渲染与前台服务同步。
 
-- `theme/NeriTheme.kt`：统一主题（动态色/自定义种子色）。
+  - `theme/NeriTheme.kt`：统一主题（动态色/自定义种子色）。
 
-- `component/`：复用 UI 组件（`NeriMiniPlayer`、歌词组件、滑块等）。
+  - `component/`：复用 UI 组件（`NeriMiniPlayer`、歌词组件、滑块等）。
 
-- `screen/`：各页面（`NowPlayingScreen` 播放页、`tab/` 主 tab、`playlist/` 详情、`debug/` 调试工具）。
+  - `screen/`：各页面（`NowPlayingScreen` 播放页、`tab/` 主 tab、`playlist/` 详情、`debug/` 调试工具）。
 
-- `view/HyperBackground.kt` + `view/BgEffectPainter.java`：Android 13+ RuntimeShader 动态背景实现。
+  - `view/HyperBackground.kt` + `view/BgEffectPainter.java`：Android 13+ RuntimeShader 动态背景实现。
 
 
 
@@ -432,7 +431,7 @@ adb logcat | grep "[NeriPlayer]"
 
 - **背景反应**：`ReactiveRenderersFactory` → `AudioReactive.level/beat` → `HyperBackground` → RuntimeShader 渲染。
 
----
+---  
 
 
 
@@ -477,8 +476,8 @@ adb logcat | grep "[NeriPlayer]"
   5. 若设置影响全局主题或密度,需在 `NeriApp` 中同步处理（可参考 `uiDensityScale` 与 `seedColorHex`）。
 
 
-
----
+  
+---  
 
 
 
@@ -537,8 +536,8 @@ adb logcat | grep "[NeriPlayer]"
 - 妥善处理用户隐私数据。
 
 
-
----
+  
+---  
 
 
 
@@ -597,8 +596,8 @@ adb logcat | grep "[NeriPlayer]"
 - [ ] 兼容目标 Android 版本范围
 
 
-
----
+  
+---  
 
 
 
@@ -641,8 +640,8 @@ adb logcat | grep "[NeriPlayer]"
 - 避免在 Composable 中创建新对象，使用 `remember`。
 
 
-
----
+  
+---  
 
 
 
@@ -685,8 +684,8 @@ adb logcat | grep "[NeriPlayer]"
 - 欢迎贡献其他语言！
 
 
-
----
+  
+---  
 
 
 
@@ -731,8 +730,8 @@ adb logcat | grep "[NeriPlayer]"
 - 欢迎修正拼写错误、改进表达、补充遗漏内容。
 
 
-
----
+  
+---  
 
 
 
@@ -777,8 +776,8 @@ adb logcat | grep "[NeriPlayer]"
 - 严重或反复违规者可能被暂时或永久禁止参与项目。
 
 
-
----
+  
+---  
 
 
 
@@ -815,8 +814,8 @@ A: 当然！你可以报告 Bug、改进文档、翻译界面、提供设计建�
 A: 持续贡献高质量的代码和文档，积极参与社区讨论，帮助其他贡献者。维护者会邀请活跃且可靠的贡献者加入。
 
 
-
----
+  
+---  
 
 
 
@@ -831,8 +830,8 @@ A: 持续贡献高质量的代码和文档，积极参与社区讨论，帮助�
 你的每一个 PR、Issue、建议都让这个项目变得更好。
 
 
-
----
+  
+---  
 
 
 
@@ -871,8 +870,8 @@ A: 持续贡献高质量的代码和文档，积极参与社区讨论，帮助�
 - [README 文档](./README.md)
 
 
-
----
+  
+---  
 
 
 
