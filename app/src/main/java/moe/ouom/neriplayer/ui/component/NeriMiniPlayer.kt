@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.component
  * Created: 2025/8/8
  */
 
+import android.os.Build
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -77,9 +78,13 @@ fun NeriMiniPlayer(
     hazeState: HazeState
 ) {
     val shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+    val supportsBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(.4f)
+            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(
+                alpha = if (supportsBlur) .4f else 1f
+            )
         ),
         shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
         modifier = Modifier
@@ -88,7 +93,10 @@ fun NeriMiniPlayer(
             .onSizeChanged { size ->
                 onHeightChanged(size.height)
             }
-            .hazeChild(state = hazeState, shape = shape)
+            .then(
+                if (supportsBlur) Modifier.hazeChild(state = hazeState, shape = shape)
+                else Modifier
+            )
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
