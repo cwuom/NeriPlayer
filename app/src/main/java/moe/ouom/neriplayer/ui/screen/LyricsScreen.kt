@@ -31,6 +31,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -47,16 +48,24 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
+import androidx.compose.material.icons.automirrored.outlined.QueueMusic
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.SpeakerGroup
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
+import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -106,14 +115,17 @@ fun LyricsScreen(
     translatedLyrics: List<LyricEntry>? = null,
     lyricOffsetMs: Long,
 ) {
+    // 处理返回键
+    androidx.activity.compose.BackHandler(onBack = onNavigateBack)
+
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
     val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
     val currentPosition by PlayerManager.playbackPositionFlow.collectAsState()
     val durationMs = currentSong?.durationMs ?: 0L
-    
+
     // 动画状态
     var isLyricsMode by remember { mutableStateOf(false) }
-    
+
     // 启动进入动画
     LaunchedEffect(Unit) {
         isLyricsMode = true
@@ -382,7 +394,7 @@ fun LyricsScreen(
                         )
                     }
                 }
-                
+
                 HapticIconButton(onClick = { PlayerManager.next() }) {
                     Icon(
                         Icons.Outlined.SkipNext,
@@ -391,6 +403,234 @@ fun LyricsScreen(
                     )
                 }
             }
+
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+
+        // 底部操作栏（固定在底部，与 NowPlayingScreen 完全一致）
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .windowInsetsPadding(WindowInsets.navigationBars)
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // 播放队列按钮
+            var showQueueSheet by remember { mutableStateOf(false) }
+            HapticIconButton(onClick = { showQueueSheet = true }) {
+                Icon(
+                    Icons.AutoMirrored.Outlined.QueueMusic,
+                    contentDescription = "播放列表",
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            // 定时器按钮
+            val sleepTimerState by PlayerManager.sleepTimerManager.timerState.collectAsState()
+            var showSleepTimerDialog by remember { mutableStateOf(false) }
+            HapticIconButton(onClick = { showSleepTimerDialog = true }) {
+                Icon(
+                    Icons.Outlined.Timer,
+                    contentDescription = "定时器",
+                    tint = if (sleepTimerState.isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            // 音量按钮（根据设备显示不同图标，居中）
+            val audioDeviceInfo = rememberAudioDeviceInfo()
+            var showVolumeSheet by remember { mutableStateOf(false) }
+            HapticIconButton(onClick = { showVolumeSheet = true }) {
+                Icon(
+                    audioDeviceInfo.second,
+                    contentDescription = audioDeviceInfo.first,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            // 歌词按钮（返回封面页，高亮显示）
+            HapticIconButton(onClick = onNavigateBack) {
+                AnimatedContent(
+                    targetState = true,
+                    transitionSpec = {
+                        (scaleIn() + fadeIn()) togetherWith (scaleOut() + fadeOut())
+                    },
+                    label = "lyrics_icon"
+                ) { _ ->
+                    Icon(
+                        imageVector = Icons.Outlined.LibraryMusic,
+                        contentDescription = "返回封面",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            // 添加到歌单按钮
+            var showAddSheet by remember { mutableStateOf(false) }
+            HapticIconButton(onClick = { showAddSheet = true }) {
+                Icon(
+                    Icons.AutoMirrored.Outlined.PlaylistAdd,
+                    contentDescription = "添加到歌单",
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            // 定时器对话框
+            if (showSleepTimerDialog) {
+                moe.ouom.neriplayer.ui.component.SleepTimerDialog(
+                    onDismiss = { showSleepTimerDialog = false }
+                )
+            }
+
+            // 音量控制弹窗
+            if (showVolumeSheet) {
+                androidx.compose.material3.ModalBottomSheet(
+                    onDismissRequest = { showVolumeSheet = false }
+                ) {
+                    VolumeControlSheetContent(audioDeviceInfo.first)
+                }
+            }
+
+            // 播放队列弹窗
+            if (showQueueSheet) {
+                val queue by PlayerManager.currentQueueFlow.collectAsState()
+                androidx.compose.material3.ModalBottomSheet(
+                    onDismissRequest = { showQueueSheet = false }
+                ) {
+                    androidx.compose.foundation.lazy.LazyColumn {
+                        itemsIndexed(queue) { index, song ->
+                            androidx.compose.foundation.layout.Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { /* TODO: 需要公开的playAtIndex方法 */ }
+                                    .padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "${index + 1}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.width(32.dp)
+                                )
+                                androidx.compose.foundation.layout.Column(modifier = Modifier.weight(1f)) {
+                                    Text(song.name, maxLines = 1)
+                                    Text(
+                                        song.artist,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 添加到歌单弹窗
+            if (showAddSheet && currentSong != null) {
+                val playlists by PlayerManager.playlistsFlow.collectAsState()
+                androidx.compose.material3.ModalBottomSheet(
+                    onDismissRequest = { showAddSheet = false }
+                ) {
+                    androidx.compose.foundation.lazy.LazyColumn {
+                        itemsIndexed(playlists) { _, pl ->
+                            androidx.compose.foundation.layout.Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        PlayerManager.addCurrentToPlaylist(pl.id)
+                                        showAddSheet = false
+                                    }
+                                    .padding(horizontal = 24.dp, vertical = 16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(pl.name, style = MaterialTheme.typography.bodyLarge)
+                                Spacer(modifier = Modifier.weight(1f))
+                                Text("${pl.songs.size} 首", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
+            }
         }
     }
+}
+
+@Composable
+private fun VolumeControlSheetContent(deviceName: String) {
+    androidx.compose.foundation.layout.Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 16.dp)
+            .windowInsetsPadding(WindowInsets.navigationBars),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = deviceName,
+            style = MaterialTheme.typography.titleMedium
+        )
+        androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(16.dp))
+        val context = androidx.compose.ui.platform.LocalContext.current
+        val audioManager = remember { context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager }
+        var volume by remember {
+            mutableFloatStateOf(
+                audioManager.getStreamVolume(android.media.AudioManager.STREAM_MUSIC).toFloat()
+            )
+        }
+        val maxVolume = remember { audioManager.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC) }
+        androidx.compose.material3.Slider(
+            value = volume,
+            onValueChange = {
+                volume = it
+                audioManager.setStreamVolume(
+                    android.media.AudioManager.STREAM_MUSIC,
+                    it.toInt(),
+                    0
+                )
+            },
+            valueRange = 0f..maxVolume.toFloat(),
+            steps = maxVolume - 1
+        )
+    }
+}
+
+@Composable
+private fun rememberAudioDeviceInfo(): Pair<String, androidx.compose.ui.graphics.vector.ImageVector> {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val audioManager = remember { context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager }
+    var deviceInfo by remember { mutableStateOf(getCurrentAudioDevice(audioManager)) }
+
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        val deviceCallback = object : android.media.AudioDeviceCallback() {
+            override fun onAudioDevicesAdded(addedDevices: Array<out android.media.AudioDeviceInfo>?) {
+                deviceInfo = getCurrentAudioDevice(audioManager)
+            }
+            override fun onAudioDevicesRemoved(removedDevices: Array<out android.media.AudioDeviceInfo>?) {
+                deviceInfo = getCurrentAudioDevice(audioManager)
+            }
+        }
+        audioManager.registerAudioDeviceCallback(deviceCallback, null)
+        onDispose { audioManager.unregisterAudioDeviceCallback(deviceCallback) }
+    }
+
+    return deviceInfo
+}
+
+private fun getCurrentAudioDevice(audioManager: android.media.AudioManager): Pair<String, androidx.compose.ui.graphics.vector.ImageVector> {
+    val devices = audioManager.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS)
+    val bluetoothDevice = devices.firstOrNull { it.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP }
+    if (bluetoothDevice != null) {
+        return try {
+            Pair(bluetoothDevice.productName.toString().ifBlank { "蓝牙设备" }, Icons.Default.Headset)
+        } catch (_: SecurityException) {
+            Pair("蓝牙设备", Icons.Default.Headset)
+        }
+    }
+    val wiredHeadset =
+        devices.firstOrNull { it.type == android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET || it.type == android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES }
+    if (wiredHeadset != null) return Pair("有线耳机", Icons.Default.Headset)
+    return Pair("手机扬声器", Icons.Default.SpeakerGroup)
 }

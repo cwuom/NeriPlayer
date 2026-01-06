@@ -160,6 +160,7 @@ import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.AppleMusicLyric
 import moe.ouom.neriplayer.ui.component.LyricEntry
 import moe.ouom.neriplayer.ui.component.LyricVisualSpec
+import moe.ouom.neriplayer.ui.component.SleepTimerDialog
 import moe.ouom.neriplayer.ui.component.WaveformSlider
 import moe.ouom.neriplayer.ui.component.parseNeteaseLrc
 import moe.ouom.neriplayer.ui.component.parseNeteaseYrc
@@ -189,6 +190,7 @@ fun NowPlayingScreen(
     val repeatMode by PlayerManager.repeatModeFlow.collectAsState()
     val currentPosition by PlayerManager.playbackPositionFlow.collectAsState()
     val durationMs = currentSong?.durationMs ?: 0L
+    val sleepTimerState by PlayerManager.sleepTimerManager.timerState.collectAsState()
 
     // 订阅当前播放链接
     val currentMediaUrl by PlayerManager.currentMediaUrlFlow.collectAsState()
@@ -229,6 +231,7 @@ fun NowPlayingScreen(
     var showAddSheet by remember { mutableStateOf(false) }
     var showQueueSheet by remember { mutableStateOf(false) }
     var showLyricsScreen by remember { mutableStateOf(false) }
+    var showSleepTimerDialog by remember { mutableStateOf(false) }
     val addSheetState = rememberModalBottomSheetState()
     val queueSheetState = rememberModalBottomSheetState()
 
@@ -304,11 +307,27 @@ fun NowPlayingScreen(
             transitionSpec = {
                 slideInHorizontally(
                     initialOffsetX = { if (targetState) it else -it },
-                    animationSpec = spring(dampingRatio = 0.8f)
-                ) + fadeIn() togetherWith slideOutHorizontally(
+                    animationSpec = spring(
+                        dampingRatio = 0.85f,
+                        stiffness = 380f
+                    )
+                ) + fadeIn(
+                    animationSpec = spring(
+                        dampingRatio = 0.85f,
+                        stiffness = 380f
+                    )
+                ) togetherWith slideOutHorizontally(
                     targetOffsetX = { if (targetState) -it else it },
-                    animationSpec = spring(dampingRatio = 0.8f)
-                ) + fadeOut()
+                    animationSpec = spring(
+                        dampingRatio = 0.85f,
+                        stiffness = 380f
+                    )
+                ) + fadeOut(
+                    animationSpec = spring(
+                        dampingRatio = 0.85f,
+                        stiffness = 380f
+                    )
+                )
             },
             label = "lyrics_transition"
         ) { isLyricsMode ->
@@ -617,20 +636,76 @@ fun NowPlayingScreen(
                     // 将下面的内容推到底部
                     Spacer(modifier = Modifier.weight(1f))
 
-                    // 底部操作栏
+                    // 底部操作栏（固定在底部）
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .windowInsetsPadding(WindowInsets.navigationBars)
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         HapticIconButton(onClick = { showQueueSheet = true }) {
-                            Icon(Icons.AutoMirrored.Outlined.QueueMusic, contentDescription = "播放列表")
+                            Icon(
+                                Icons.AutoMirrored.Outlined.QueueMusic,
+                                contentDescription = "播放列表",
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
-                        HapticTextButton(onClick = { showVolumeSheet = true }) {
-                            AudioDeviceHandler()
+
+                        // 定时器按钮
+                        HapticIconButton(onClick = { showSleepTimerDialog = true }) {
+                            Icon(
+                                Icons.Outlined.Timer,
+                                contentDescription = "定时器",
+                                tint = if (sleepTimerState.isActive) MaterialTheme.colorScheme.primary else LocalContentColor.current,
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
+
+                        // 音量按钮（根据设备显示不同图标，居中）
+                        val audioDeviceInfo = rememberAudioDeviceInfo()
+                        HapticIconButton(onClick = { showVolumeSheet = true }) {
+                            Icon(
+                                audioDeviceInfo.second,
+                                contentDescription = audioDeviceInfo.first,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        // 歌词按钮（有动画）
+                        HapticIconButton(
+                            onClick = { showLyricsScreen = !showLyricsScreen },
+                            enabled = lyrics.isNotEmpty()
+                        ) {
+                            AnimatedContent(
+                                targetState = showLyricsScreen,
+                                transitionSpec = {
+                                    (scaleIn() + fadeIn()) togetherWith (scaleOut() + fadeOut())
+                                },
+                                label = "lyrics_icon"
+                            ) { isShowingLyrics ->
+                                Icon(
+                                    imageVector = if (isShowingLyrics) Icons.Outlined.LibraryMusic else Icons.Outlined.LibraryMusic,
+                                    contentDescription = "歌词",
+                                    tint = if (lyrics.isEmpty()) {
+                                        LocalContentColor.current.copy(alpha = 0.38f)
+                                    } else if (isShowingLyrics) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        LocalContentColor.current
+                                    },
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+
                         HapticIconButton(onClick = { showAddSheet = true }) {
-                            Icon(Icons.AutoMirrored.Outlined.PlaylistAdd, contentDescription = "添加到歌单")
+                            Icon(
+                                Icons.AutoMirrored.Outlined.PlaylistAdd,
+                                contentDescription = "添加到歌单",
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
                     }
                 }
@@ -812,8 +887,37 @@ fun NowPlayingScreen(
                     Spacer(Modifier.height(12.dp))
                 }
             }
+
+            // 睡眠定时器对话框
+            if (showSleepTimerDialog) {
+                SleepTimerDialog(
+                    onDismiss = { showSleepTimerDialog = false }
+                )
+            }
         }
     }
+}
+
+@Composable
+private fun rememberAudioDeviceInfo(): Pair<String, ImageVector> {
+    val context = LocalContext.current
+    val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
+    var deviceInfo by remember { mutableStateOf(getCurrentAudioDevice(audioManager)) }
+
+    DisposableEffect(Unit) {
+        val deviceCallback = object : AudioDeviceCallback() {
+            override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>?) {
+                deviceInfo = getCurrentAudioDevice(audioManager)
+            }
+            override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>?) {
+                deviceInfo = getCurrentAudioDevice(audioManager)
+            }
+        }
+        audioManager.registerAudioDeviceCallback(deviceCallback, null)
+        onDispose { audioManager.unregisterAudioDeviceCallback(deviceCallback) }
+    }
+
+    return deviceInfo
 }
 
 @Composable
@@ -1134,6 +1238,9 @@ private fun VolumeControlSheetContent() {
     val maxVolume = remember { audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) }
     var currentVolume by remember { mutableIntStateOf(audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)) }
 
+    // 获取当前音频设备信息
+    val audioDeviceInfo = rememberAudioDeviceInfo()
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1141,13 +1248,13 @@ private fun VolumeControlSheetContent() {
             .windowInsetsPadding(WindowInsets.navigationBars),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("音量", style = MaterialTheme.typography.titleMedium)
+        Text(audioDeviceInfo.first, style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(16.dp))
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Icon(imageVector = Icons.AutoMirrored.Outlined.VolumeUp, contentDescription = "音量")
+            Icon(imageVector = audioDeviceInfo.second, contentDescription = audioDeviceInfo.first)
             Slider(
                 value = currentVolume.toFloat(),
                 onValueChange = {

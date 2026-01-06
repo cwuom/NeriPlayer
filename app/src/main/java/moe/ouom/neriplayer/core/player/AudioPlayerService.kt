@@ -131,6 +131,13 @@ class AudioPlayerService : Service() {
             }
         }
 
+        // 监听定时器状态变化并更新通知
+        serviceScope.launch {
+            PlayerManager.sleepTimerManager.timerState.collect {
+                updateNotification()
+            }
+        }
+
 
         // 通知渠道
         val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
@@ -274,8 +281,26 @@ class AudioPlayerService : Service() {
         builder.addAction(favAction)
         builder.addAction(R.drawable.round_skip_next_24, "下一首", nextIntent)
 
+        // 设置标题和副标题
         builder.setContentTitle(song?.name ?: "NeriPlayer")
-        builder.setContentText(song?.artist ?: "")
+
+        // 如果定时器激活，在副标题中显示剩余时间
+        val timerState = PlayerManager.sleepTimerManager.timerState.value
+        val contentText = if (timerState.isActive) {
+            val timerInfo = when (timerState.mode) {
+                SleepTimerMode.COUNTDOWN -> {
+                    val remaining = PlayerManager.sleepTimerManager.formatRemainingTime()
+                    "⏱ $remaining"
+                }
+                SleepTimerMode.FINISH_CURRENT -> "⏱ 播完当前停止"
+                SleepTimerMode.FINISH_PLAYLIST -> "⏱ 播完列表停止"
+            }
+            "${song?.artist ?: ""} • $timerInfo"
+        } else {
+            song?.artist ?: ""
+        }
+        builder.setContentText(contentText)
+
         currentLargeIcon?.let { builder.setLargeIcon(it) }
 
         return builder.build()

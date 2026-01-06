@@ -197,7 +197,12 @@ object PlayerManager {
     // 记录当前缓存大小设置
     private var currentCacheSize: Long = 1024L * 1024 * 1024
 
-    private fun isPreparedInPlayer(): Boolean = player.currentMediaItem != null
+    // 睡眠定时器
+    lateinit var sleepTimerManager: SleepTimerManager
+        private set
+
+    private fun isPreparedInPlayer(): Boolean =
+        player.currentMediaItem != null && player.playbackState != Player.STATE_ENDED
 
     private val gson = Gson()
 
@@ -252,6 +257,20 @@ object PlayerManager {
     /** 处理单曲播放结束：根据循环模式与随机三栈推进或停止 */
     private fun handleTrackEnded() {
         _playbackPositionMs.value = 0L
+
+        // 检查睡眠定时器
+        val isLastInPlaylist = if (player.shuffleModeEnabled) {
+            shuffleFuture.isEmpty() && shuffleBag.isEmpty()
+        } else {
+            currentIndex >= currentPlaylist.lastIndex
+        }
+
+        if (sleepTimerManager.shouldStopOnTrackEnd(isLastInPlaylist)) {
+            pause()
+            sleepTimerManager.cancel()
+            return
+        }
+
         when (repeatModeSetting) {
             Player.REPEAT_MODE_ONE -> playAtIndex(currentIndex)
             Player.REPEAT_MODE_ALL -> next(force = true)
@@ -413,6 +432,15 @@ object PlayerManager {
 
         setupAudioDeviceCallback()
         restoreState()
+
+        // 初始化睡眠定时器
+        sleepTimerManager = SleepTimerManager(
+            scope = mainScope,
+            onTimerExpired = {
+                pause()
+                sleepTimerManager.cancel()
+            }
+        )
 
         // 初始化完成后检查是否有待播放项并尝试同步前台服务
         NPLogger.d("NERI-Player", "PlayerManager initialized with cache size: $maxCacheSize")
@@ -793,6 +821,7 @@ object PlayerManager {
         when {
             isPreparedInPlayer() -> {
                 syncExoRepeatMode()
+                player.playWhenReady = true
                 player.play()
             }
             currentPlaylist.isNotEmpty() && currentIndex != -1 -> playAtIndex(currentIndex)
@@ -804,6 +833,7 @@ object PlayerManager {
     fun pause() {
         ensureInitialized()
         if (!initialized) return
+        player.playWhenReady = false
         player.pause()
     }
 

@@ -59,6 +59,9 @@ object SettingsKeys {
     val BACKGROUND_IMAGE_ALPHA = floatPreferencesKey("background_image_alpha")
     val HAPTIC_FEEDBACK_ENABLED = booleanPreferencesKey("haptic_feedback_enabled")
     val MAX_CACHE_SIZE_BYTES = longPreferencesKey("max_cache_size_bytes")
+    val SLEEP_TIMER_ENABLED = booleanPreferencesKey("sleep_timer_enabled")
+    val SLEEP_TIMER_MODE = stringPreferencesKey("sleep_timer_mode")
+    val SLEEP_TIMER_MINUTES = longPreferencesKey("sleep_timer_minutes")
 }
 
 
@@ -139,6 +142,15 @@ class SettingsRepository(private val context: Context) {
 
     val maxCacheSizeBytesFlow: Flow<Long> =
         context.dataStore.data.map { it[SettingsKeys.MAX_CACHE_SIZE_BYTES] ?: (1024L * 1024 * 1024) }
+
+    val sleepTimerEnabledFlow: Flow<Boolean> =
+        context.dataStore.data.map { it[SettingsKeys.SLEEP_TIMER_ENABLED] ?: false }
+
+    val sleepTimerModeFlow: Flow<String> =
+        context.dataStore.data.map { it[SettingsKeys.SLEEP_TIMER_MODE] ?: "COUNTDOWN" }
+
+    val sleepTimerMinutesFlow: Flow<Long> =
+        context.dataStore.data.map { it[SettingsKeys.SLEEP_TIMER_MINUTES] ?: 30L }
 
     suspend fun setDynamicColor(value: Boolean) {
         context.dataStore.edit { it[SettingsKeys.DYNAMIC_COLOR] = value }
@@ -250,6 +262,18 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setMaxCacheSizeBytes(bytes: Long) {
         context.dataStore.edit { it[SettingsKeys.MAX_CACHE_SIZE_BYTES] = bytes }
+    }
+
+    suspend fun setSleepTimerEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.SLEEP_TIMER_ENABLED] = enabled }
+    }
+
+    suspend fun setSleepTimerMode(mode: String) {
+        context.dataStore.edit { it[SettingsKeys.SLEEP_TIMER_MODE] = mode }
+    }
+
+    suspend fun setSleepTimerMinutes(minutes: Long) {
+        context.dataStore.edit { it[SettingsKeys.SLEEP_TIMER_MINUTES] = minutes }
     }
 
     /** 备用：一次性读取（非 Compose 场景） */
