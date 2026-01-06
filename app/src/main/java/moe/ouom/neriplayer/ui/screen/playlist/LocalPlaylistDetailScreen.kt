@@ -96,6 +96,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -228,13 +229,13 @@ fun LocalPlaylistDetailScreen(
             val snackbarHostState = remember { SnackbarHostState() }
 
             // 可变列表：保持存储层顺序（正序），UI 用 asReversed() 倒序展示
-            val localSongs = remember(playlist.id) {
+            val localSongs = remember(playlistId) {
                 mutableStateListOf<SongItem>().also { it.addAll(playlist.songs) }
             }
 
             // 阻断 VM->UI 同步；同时用 pendingOrder 兼容 重排/批删 两类操作
-            var blockSync by remember { mutableStateOf(false) }
-            var pendingOrder by remember { mutableStateOf<List<Long>?>(null) }
+            var blockSync by remember(playlistId) { mutableStateOf(false) }
+            var pendingOrder by remember(playlistId) { mutableStateOf<List<Long>?>(null) }
             LaunchedEffect(playlist.songs, blockSync, pendingOrder) {
                 val repoIds = playlist.songs.map { it.id }
                 val wanted = pendingOrder
@@ -250,8 +251,9 @@ fun LocalPlaylistDetailScreen(
             }
 
             // 多选
-            var selectionMode by remember { mutableStateOf(false) }
-            val selectedIdsState = remember { mutableStateOf<Set<Long>>(emptySet()) }
+            var selectionMode by remember(playlistId) { mutableStateOf(false) }
+            val selectedIdsState = remember(playlistId) { mutableStateOf<Set<Long>>(emptySet()) }
+
             fun toggleSelect(id: Long) {
                 selectedIdsState.value =
                     if (selectedIdsState.value.contains(id)) selectedIdsState.value - id
@@ -362,7 +364,7 @@ fun LocalPlaylistDetailScreen(
             )
 
             // 统计
-            val totalDurationMs by remember(playlist.id) {
+            val totalDurationMs by remember(playlistId) {
                 derivedStateOf { localSongs.sumOf { it.durationMs } }
             }
 
@@ -504,14 +506,16 @@ fun LocalPlaylistDetailScreen(
                     }
                 }
             ) { padding ->
-                val displayedSongs: List<SongItem> = remember(localSongs, searchQuery) {
-                    val base = localSongs.asReversed()
-                    if (searchQuery.isBlank()) base
-                    else base.filter {
-                        it.name.contains(searchQuery, true) || it.artist.contains(
-                            searchQuery,
-                            true
-                        )
+                val displayedSongs by remember {
+                    derivedStateOf {
+                        val base = localSongs.asReversed()
+                        if (searchQuery.isBlank()) base
+                        else base.filter {
+                            it.name.contains(searchQuery, true) || it.artist.contains(
+                                searchQuery,
+                                true
+                            )
+                        }
                     }
                 }
 
@@ -532,13 +536,14 @@ fun LocalPlaylistDetailScreen(
                     Box(Modifier.fillMaxSize()) {
                         val headerHeight: Dp = 240.dp
 
-                        LazyColumn(
-                            state = reorderState.listState,
-                            contentPadding = PaddingValues(bottom = 24.dp + miniPlayerHeight),
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .reorderable(reorderState)
-                        ) {
+                        key(playlistId) {
+                            LazyColumn(
+                                state = reorderState.listState,
+                                contentPadding = PaddingValues(bottom = 24.dp + miniPlayerHeight),
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .reorderable(reorderState)
+                            ) {
                             // 头图
                             item(key = headerKey) {
                                 Box(
@@ -795,6 +800,7 @@ fun LocalPlaylistDetailScreen(
                                     }
                                 }
                             }
+                        }
                         }
 
                         // 定位到正在播放
