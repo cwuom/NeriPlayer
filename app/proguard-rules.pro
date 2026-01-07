@@ -88,6 +88,10 @@
 -keep class androidx.security.crypto.** { *; }
 -keep class com.google.crypto.tink.** { *; }
 
+# Tink 可选依赖 - 忽略未使用的 Google API Client 和 Joda Time
+-dontwarn com.google.api.client.http.**
+-dontwarn org.joda.time.**
+
 # GitHub 同步数据模型 - 确保Gson序列化正常
 -keep class moe.ouom.neriplayer.data.github.** { *; }
 -keepclassmembers class moe.ouom.neriplayer.data.github.** {
