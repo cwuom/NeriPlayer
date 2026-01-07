@@ -25,6 +25,7 @@ package moe.ouom.neriplayer.data.github
 
 import android.util.Base64
 import com.google.gson.Gson
+import com.google.gson.GsonBuilder
 import com.google.gson.annotations.SerializedName
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -214,18 +215,33 @@ class GitHubApiClient(private val token: String) {
         content: String,
         sha: String? = null,
         path: String = BACKUP_FILE_PATH,
-        message: String = "Update backup data"
+        message: String = "Update backup data",
+        branch: String? = null
     ): Result<String> = withContext(Dispatchers.IO) {
         try {
+            // 如果没有指定分支，先获取仓库的默认分支
+            val targetBranch = branch ?: run {
+                val repoResult = checkRepository(owner, repo)
+                if (repoResult.isSuccess) {
+                    repoResult.getOrNull()?.defaultBranch ?: "main"
+                } else {
+                    "main"
+                }
+            }
+
             // Base64编码内容
             val encodedContent = Base64.encodeToString(content.toByteArray(), Base64.NO_WRAP)
 
-            val requestBody = GitHubFileRequest(
-                message = message,
-                content = encodedContent,
-                sha = sha
-            )
-            val json = gson.toJson(requestBody)
+            // 使用JSONObject构建请求体，确保sha为null或空字符串时不包含该字段
+            val jsonObject = org.json.JSONObject().apply {
+                put("message", message)
+                put("content", encodedContent)
+                put("branch", targetBranch)
+                if (!sha.isNullOrEmpty()) {
+                    put("sha", sha)
+                }
+            }
+            val json = jsonObject.toString()
 
             val request = Request.Builder()
                 .url("$GITHUB_API_BASE/repos/$owner/$repo/contents/$path")

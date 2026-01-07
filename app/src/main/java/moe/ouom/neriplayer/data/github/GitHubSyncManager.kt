@@ -154,8 +154,9 @@ class GitHubSyncManager(private val context: Context) {
 
             val (remoteContent, remoteSha) = remoteResult.getOrThrow()
             if (remoteContent.isEmpty()) {
-                // 远程文件为空,直接上传
-                val uploadResult = uploadLocalData(apiClient, owner, repo, localData, null)
+                // 远程文件为空，可能是新文件（sha为空）或已存在的空文件（sha有值）
+                // 无论哪种情况，都传递remoteSha，updateFileContent会正确处理
+                val uploadResult = uploadLocalData(apiClient, owner, repo, localData, remoteSha)
                 return@withContext if (uploadResult.isSuccess) {
                     val newSha = uploadResult.getOrNull()
                     if (newSha != null) {
@@ -560,12 +561,36 @@ class GitHubSyncManager(private val context: Context) {
             }
 
             if (existingPlaylist != null) {
-                // 歌单已存在，更新它（保留本地ID，使用远程modifiedAt）
-                val updatedPlaylist = existingPlaylist.copy(
-                    name = syncPlaylist.name,
-                    songs = syncPlaylist.songs.map { it.toSongItem() }.toMutableList(),
-                    modifiedAt = syncPlaylist.modifiedAt
-                )
+                // 歌单已存在，检查是否在同步期间被修改
+                val updatedPlaylist = when {
+                    // 本地为空但远程有歌曲 -> 使用远程数据（恢复云端备份）
+                    existingPlaylist.songs.isEmpty() && syncPlaylist.songs.isNotEmpty() -> {
+                        NPLogger.d(TAG, "Local playlist '${existingPlaylist.name}' is empty but remote has songs, using remote version")
+                        existingPlaylist.copy(
+                            name = syncPlaylist.name,
+                            songs = syncPlaylist.songs.map { it.toSongItem() }.toMutableList(),
+                            modifiedAt = syncPlaylist.modifiedAt
+                        )
+                    }
+                    // 本地有歌曲但远程为空 -> 保留本地数据
+                    existingPlaylist.songs.isNotEmpty() && syncPlaylist.songs.isEmpty() -> {
+                        NPLogger.d(TAG, "Local playlist '${existingPlaylist.name}' has songs but remote is empty, keeping local version")
+                        existingPlaylist
+                    }
+                    // 两边都有内容，按时间戳判断
+                    existingPlaylist.modifiedAt > syncPlaylist.modifiedAt -> {
+                        NPLogger.d(TAG, "Local playlist '${existingPlaylist.name}' was modified during sync, keeping local version")
+                        existingPlaylist
+                    }
+                    // 使用合并后的数据
+                    else -> {
+                        existingPlaylist.copy(
+                            name = syncPlaylist.name,
+                            songs = syncPlaylist.songs.map { it.toSongItem() }.toMutableList(),
+                            modifiedAt = syncPlaylist.modifiedAt
+                        )
+                    }
+                }
                 // 从两个map中移除旧的，添加新的
                 currentPlaylistsById.remove(existingPlaylist.id)
                 currentPlaylistsByName.remove(existingPlaylist.name)

@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.data.github
  * Created: 2025/1/7
  */
 
+import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.data.FavoritePlaylist
 import moe.ouom.neriplayer.data.LocalPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
@@ -87,7 +88,11 @@ data class SyncSong(
     val albumId: Long,
     val durationMs: Long,
     val coverUrl: String?,
-    val addedAt: Long = System.currentTimeMillis()
+    val addedAt: Long = System.currentTimeMillis(),
+    val matchedLyric: String? = null,
+    val matchedLyricSource: String? = null,
+    val matchedSongId: String? = null,
+    val userLyricOffsetMs: Long = 0L
 ) {
     companion object {
         fun fromSongItem(song: SongItem): SyncSong {
@@ -98,7 +103,11 @@ data class SyncSong(
                 album = song.album,
                 albumId = song.albumId,
                 durationMs = song.durationMs,
-                coverUrl = song.coverUrl
+                coverUrl = song.coverUrl,
+                matchedLyric = song.matchedLyric,
+                matchedLyricSource = song.matchedLyricSource?.name,
+                matchedSongId = song.matchedSongId,
+                userLyricOffsetMs = song.userLyricOffsetMs
             )
         }
     }
@@ -111,7 +120,13 @@ data class SyncSong(
             album = album,
             albumId = albumId,
             durationMs = durationMs,
-            coverUrl = coverUrl
+            coverUrl = coverUrl,
+            matchedLyric = matchedLyric,
+            matchedLyricSource = matchedLyricSource?.let {
+                try { MusicPlatform.valueOf(it) } catch (e: Exception) { null }
+            },
+            matchedSongId = matchedSongId,
+            userLyricOffsetMs = userLyricOffsetMs
         )
     }
 }
