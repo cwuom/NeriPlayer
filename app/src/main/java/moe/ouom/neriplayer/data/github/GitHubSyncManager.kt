@@ -185,9 +185,14 @@ class GitHubSyncManager(private val context: Context) {
 
             // 4. 检测远程是否有变化（通过SHA）
             val lastRemoteSha = storage.getLastRemoteSha()
-            val remoteHasChanged = lastRemoteSha != null && lastRemoteSha != remoteSha
+            // 首次同步(lastRemoteSha为null)或SHA变化时都认为远程有变化
+            val remoteHasChanged = lastRemoteSha == null || lastRemoteSha != remoteSha
             if (remoteHasChanged) {
-                NPLogger.d(TAG, "Remote file has changed (SHA mismatch), prioritizing remote data")
+                if (lastRemoteSha == null) {
+                    NPLogger.d(TAG, "First sync detected, applying remote data")
+                } else {
+                    NPLogger.d(TAG, "Remote file has changed (SHA mismatch), prioritizing remote data")
+                }
             }
 
             // 5. 三路合并（传递远程变化标记）
@@ -608,9 +613,19 @@ class GitHubSyncManager(private val context: Context) {
             )
         }
 
-        // 应用播放历史（只有远程有变化时才应用，避免阻塞本地播放记录）
-        if (remoteHasChanged) {
-            NPLogger.d(TAG, "Applying remote play history to local (${mergedData.recentPlays.size} entries)")
+        // 应用播放历史
+        // 条件：1) 远程有变化，或 2) 本地为空但远程有数据（恢复场景）
+        val localPlayHistoryEmpty = playHistoryRepo.historyFlow.value.isEmpty()
+        val shouldApplyRemoteHistory = remoteHasChanged ||
+            (localPlayHistoryEmpty && mergedData.recentPlays.isNotEmpty())
+
+        if (shouldApplyRemoteHistory) {
+            val reason = when {
+                remoteHasChanged -> "remote changed"
+                localPlayHistoryEmpty -> "local empty, restoring from remote"
+                else -> "unknown"
+            }
+            NPLogger.d(TAG, "Applying remote play history to local (${mergedData.recentPlays.size} entries, reason: $reason)")
             val playHistory = mergedData.recentPlays.map { syncPlay ->
                 PlayedEntry(
                     id = syncPlay.song.id,
