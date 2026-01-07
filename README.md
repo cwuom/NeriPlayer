@@ -79,7 +79,7 @@ NeriPlayer 是一个专注于「聚合多平台音视频流」的开源播放器
 ---
 
 ## GitHub同步功能 / GitHub Sync
-NeriPlayer 支持将歌单数据自动备份到GitHub私有仓库,实现跨设备同步:
+NeriPlayer 支持将歌单数据自动备份到 GitHub 私有仓库,实现跨设备同步:
 
 ### 特性
 - 🔒 **安全加密**：GitHub Token 使用 Android Keystore 加密存储
