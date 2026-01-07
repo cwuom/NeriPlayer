@@ -82,13 +82,13 @@ NeriPlayer 是一个专注于「聚合多平台音视频流」的开源播放器
 NeriPlayer 支持将歌单数据自动备份到GitHub私有仓库,实现跨设备同步:
 
 ### 特性
-- 🔒 **安全加密**：GitHub Token使用Android Keystore加密存储
+- 🔒 **安全加密**：GitHub Token 使用 Android Keystore 加密存储
 - 🔄 **智能同步**：修改后自动同步,支持冲突自动合并
-- 📱 **跨平台**：支持Android和桌面端(开发中)数据互通
+- 📱 **跨平台**：支持 Android 和桌面端(开发中) 数据互通
 - 🚀 **零配置**：自动创建私有仓库,或使用现有仓库
 
 ### 使用方法
-1. 在设置 → 备份与恢复 → GitHub自动同步
+1. 在设置 → 备份与恢复 → GitHub 自动同步
 2. 点击"配置 GitHub 同步"
 3. 在 GitHub 创建 Personal Access Token (需要`repo`权限)
 4. 输入 Token 并验证
