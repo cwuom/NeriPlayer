@@ -91,10 +91,18 @@ import androidx.compose.material.icons.outlined.PlaylistPlay
 import androidx.compose.material.icons.outlined.Upload
 import androidx.compose.material.icons.outlined.Analytics
 import androidx.compose.material.icons.outlined.FormatSize
+import androidx.compose.material.icons.outlined.CloudSync
+import androidx.compose.material.icons.outlined.CloudUpload
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Sync
+import androidx.compose.material.icons.outlined.Error
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeTopAppBar
@@ -104,6 +112,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
@@ -152,6 +161,8 @@ import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.debug.NeteaseAuthEvent
 import moe.ouom.neriplayer.ui.viewmodel.debug.NeteaseAuthViewModel
 import moe.ouom.neriplayer.ui.viewmodel.BackupRestoreViewModel
+import moe.ouom.neriplayer.ui.viewmodel.GitHubSyncViewModel
+import moe.ouom.neriplayer.data.github.SecureTokenStorage
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthEvent
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthViewModel
@@ -330,6 +341,8 @@ fun SettingsScreen(
     var showBiliCookieDialog by remember { mutableStateOf(false) }
     var showColorPickerDialog by remember { mutableStateOf(false) }
     var showDpiDialog by remember { mutableStateOf(false) }
+    var showGitHubConfigDialog by remember { mutableStateOf(false) }
+    var showClearGitHubConfigDialog by remember { mutableStateOf(false) }
     // ------------------------------------
 
     val neteaseVm: NeteaseAuthViewModel = viewModel()
@@ -1306,6 +1319,272 @@ fun SettingsScreen(
                                 }
                             }
                         }
+
+                        // GitHub自动同步
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 8.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant
+                        )
+
+                        val githubVm: GitHubSyncViewModel = viewModel()
+                        val githubState by githubVm.uiState.collectAsState()
+
+                        LaunchedEffect(Unit) {
+                            githubVm.initialize(context)
+                        }
+
+                        ListItem(
+                            leadingContent = {
+                                Icon(
+                                    Icons.Outlined.CloudSync,
+                                    contentDescription = "GitHub同步",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            },
+                            headlineContent = { Text("GitHub 自动同步") },
+                            supportingContent = {
+                                Text(if (githubState.isConfigured) "已配置" else "未配置")
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+
+                        if (!githubState.isConfigured) {
+                            ListItem(
+                                leadingContent = {
+                                    Icon(
+                                        Icons.Outlined.Settings,
+                                        contentDescription = "配置",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                },
+                                headlineContent = { Text("配置 GitHub 同步") },
+                                supportingContent = { Text("点击配置 Token 和仓库") },
+                                modifier = Modifier.clickable {
+                                    showGitHubConfigDialog = true
+                                },
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                            )
+                        } else {
+                            ListItem(
+                                leadingContent = {
+                                    Icon(
+                                        Icons.Outlined.Sync,
+                                        contentDescription = "自动同步",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                },
+                                headlineContent = { Text("自动同步") },
+                                supportingContent = { Text("修改后自动同步到 GitHub") },
+                                trailingContent = {
+                                    Switch(
+                                        checked = githubState.autoSyncEnabled,
+                                        onCheckedChange = { githubVm.toggleAutoSync(context, it) }
+                                    )
+                                },
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                            )
+
+                            ListItem(
+                                leadingContent = {
+                                    Icon(
+                                        Icons.Outlined.CloudUpload,
+                                        contentDescription = "立即同步",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                },
+                                headlineContent = { Text("立即同步") },
+                                supportingContent = {
+                                    if (githubState.lastSyncTime > 0) {
+                                        Text("上次同步: ${formatSyncTime(githubState.lastSyncTime)}")
+                                    } else {
+                                        Text("尚未同步")
+                                    }
+                                },
+                                trailingContent = {
+                                    if (githubState.isSyncing) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(20.dp),
+                                            strokeWidth = 2.dp
+                                        )
+                                    } else {
+                                        HapticTextButton(onClick = { githubVm.performSync(context) }) {
+                                            Text("同步")
+                                        }
+                                    }
+                                },
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                            )
+
+                            // 播放历史更新频率设置
+                            var showPlayHistoryModeDialog by remember { mutableStateOf(false) }
+                            val storage = remember { SecureTokenStorage(context) }
+                            val currentMode = remember { mutableStateOf(storage.getPlayHistoryUpdateMode()) }
+
+                            ListItem(
+                                leadingContent = {
+                                    Icon(
+                                        Icons.Outlined.Timer,
+                                        contentDescription = "播放历史更新频率",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                },
+                                headlineContent = { Text("播放历史更新频率") },
+                                supportingContent = {
+                                    Text(
+                                        when (currentMode.value) {
+                                            SecureTokenStorage.PlayHistoryUpdateMode.IMMEDIATE -> "立即更新"
+                                            SecureTokenStorage.PlayHistoryUpdateMode.BATCHED -> "每10分钟更新"
+                                        }
+                                    )
+                                },
+                                modifier = Modifier.clickable {
+                                    showPlayHistoryModeDialog = true
+                                },
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                            )
+
+                            // 播放历史更新频率选择对话框
+                            if (showPlayHistoryModeDialog) {
+                                AlertDialog(
+                                    onDismissRequest = { showPlayHistoryModeDialog = false },
+                                    title = { Text("播放历史更新频率") },
+                                    text = {
+                                        Column {
+                                            Text("选择播放历史同步到云端的频率：", style = MaterialTheme.typography.bodyMedium)
+                                            Spacer(modifier = Modifier.height(16.dp))
+
+                                            // 立即更新选项
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clickable {
+                                                        storage.setPlayHistoryUpdateMode(SecureTokenStorage.PlayHistoryUpdateMode.IMMEDIATE)
+                                                        currentMode.value = SecureTokenStorage.PlayHistoryUpdateMode.IMMEDIATE
+                                                        showPlayHistoryModeDialog = false
+                                                    }
+                                                    .padding(vertical = 8.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                RadioButton(
+                                                    selected = currentMode.value == SecureTokenStorage.PlayHistoryUpdateMode.IMMEDIATE,
+                                                    onClick = {
+                                                        storage.setPlayHistoryUpdateMode(SecureTokenStorage.PlayHistoryUpdateMode.IMMEDIATE)
+                                                        currentMode.value = SecureTokenStorage.PlayHistoryUpdateMode.IMMEDIATE
+                                                        showPlayHistoryModeDialog = false
+                                                    }
+                                                )
+                                                Column(modifier = Modifier.padding(start = 8.dp)) {
+                                                    Text("立即更新", style = MaterialTheme.typography.bodyLarge)
+                                                    Text("每次播放后立即同步", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                }
+                                            }
+
+                                            // 批量更新选项
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clickable {
+                                                        storage.setPlayHistoryUpdateMode(SecureTokenStorage.PlayHistoryUpdateMode.BATCHED)
+                                                        currentMode.value = SecureTokenStorage.PlayHistoryUpdateMode.BATCHED
+                                                        showPlayHistoryModeDialog = false
+                                                    }
+                                                    .padding(vertical = 8.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                RadioButton(
+                                                    selected = currentMode.value == SecureTokenStorage.PlayHistoryUpdateMode.BATCHED,
+                                                    onClick = {
+                                                        storage.setPlayHistoryUpdateMode(SecureTokenStorage.PlayHistoryUpdateMode.BATCHED)
+                                                        currentMode.value = SecureTokenStorage.PlayHistoryUpdateMode.BATCHED
+                                                        showPlayHistoryModeDialog = false
+                                                    }
+                                                )
+                                                Column(modifier = Modifier.padding(start = 8.dp)) {
+                                                    Text("批量更新", style = MaterialTheme.typography.bodyLarge)
+                                                    Text("每10分钟同步一次（节省流量）", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                }
+                                            }
+                                        }
+                                    },
+                                    confirmButton = {
+                                        HapticTextButton(onClick = { showPlayHistoryModeDialog = false }) {
+                                            Text("关闭")
+                                        }
+                                    }
+                                )
+                            }
+
+                            HapticTextButton(
+                                onClick = { showClearGitHubConfigDialog = true },
+                                modifier = Modifier.padding(start = 16.dp)
+                            ) {
+                                Text("清除配置", color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+
+                        // GitHub错误消息
+                        githubState.errorMessage?.let { error ->
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(8.dp),
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.errorContainer
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Outlined.Error,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        error,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onErrorContainer,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    IconButton(onClick = { githubVm.clearMessages() }) {
+                                        Icon(Icons.Default.Close, contentDescription = "关闭")
+                                    }
+                                }
+                            }
+                        }
+
+                        // GitHub成功消息
+                        githubState.successMessage?.let { message ->
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(8.dp),
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Outlined.CheckCircle,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        message,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    IconButton(onClick = { githubVm.clearMessages() }) {
+                                        Icon(Icons.Default.Close, contentDescription = "关闭")
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1707,6 +1986,168 @@ fun SettingsScreen(
         )
     }
 
+    // GitHub配置对话框
+    if (showGitHubConfigDialog) {
+        val githubVm: GitHubSyncViewModel = viewModel()
+        val githubState by githubVm.uiState.collectAsState()
+        var githubToken by remember { mutableStateOf("") }
+        var githubRepoName by remember { mutableStateOf("neriplayer-backup") }
+        var useExistingRepo by remember { mutableStateOf(false) }
+        var existingRepoName by remember { mutableStateOf("") }
+
+        AlertDialog(
+            onDismissRequest = { showGitHubConfigDialog = false },
+            title = { Text("配置 GitHub 同步") },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text("步骤1: 输入 GitHub Token", style = MaterialTheme.typography.titleSmall)
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = githubToken,
+                        onValueChange = { githubToken = it },
+                        label = { Text("GitHub Token") },
+                        placeholder = { Text("ghp_xxxxxxxxxxxx") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "需要权限: repo (完整仓库访问)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    TextButton(
+                        onClick = {
+                            val intent = Intent(
+                                Intent.ACTION_VIEW,
+                                "https://github.com/settings/tokens/new?scopes=repo&description=NeriPlayer%20Backup".toUri()
+                            )
+                            context.startActivity(intent)
+                        }
+                    ) {
+                        Text("在 GitHub 创建 Token")
+                    }
+
+                    if (githubState.tokenValid) {
+                        Spacer(Modifier.height(16.dp))
+                        Text("步骤2: 选择仓库", style = MaterialTheme.typography.titleSmall)
+                        Spacer(Modifier.height(8.dp))
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            androidx.compose.material3.RadioButton(
+                                selected = !useExistingRepo,
+                                onClick = { useExistingRepo = false }
+                            )
+                            Text("创建新仓库")
+                        }
+
+                        if (!useExistingRepo) {
+                            OutlinedTextField(
+                                value = githubRepoName,
+                                onValueChange = { githubRepoName = it },
+                                label = { Text("仓库名称") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            androidx.compose.material3.RadioButton(
+                                selected = useExistingRepo,
+                                onClick = { useExistingRepo = true }
+                            )
+                            Text("使用现有仓库")
+                        }
+
+                        if (useExistingRepo) {
+                            OutlinedTextField(
+                                value = existingRepoName,
+                                onValueChange = { existingRepoName = it },
+                                label = { Text("仓库全名") },
+                                placeholder = { Text("username/repo-name") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                if (!githubState.tokenValid) {
+                    HapticButton(
+                        onClick = { githubVm.validateToken(context, githubToken) },
+                        enabled = githubToken.isNotBlank() && !githubState.isValidating
+                    ) {
+                        if (githubState.isValidating) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Text("验证Token")
+                    }
+                } else {
+                    HapticButton(
+                        onClick = {
+                            if (useExistingRepo) {
+                                githubVm.useExistingRepository(context, existingRepoName)
+                            } else {
+                                githubVm.createRepository(context, githubRepoName)
+                            }
+                            showGitHubConfigDialog = false
+                        },
+                        enabled = !githubState.isCreatingRepo && !githubState.isCheckingRepo
+                    ) {
+                        if (githubState.isCreatingRepo || githubState.isCheckingRepo) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Text("完成")
+                    }
+                }
+            },
+            dismissButton = {
+                HapticTextButton(onClick = { showGitHubConfigDialog = false }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
+    // 清除 GitHub 配置对话框
+    if (showClearGitHubConfigDialog) {
+        val githubVm: GitHubSyncViewModel = viewModel()
+
+        AlertDialog(
+            onDismissRequest = { showClearGitHubConfigDialog = false },
+            title = { Text("清除 GitHub 配置") },
+            text = { Text("这将清除所有 GitHub 同步配置,包括 Token 和仓库信息。本地数据不会被删除。") },
+            confirmButton = {
+                HapticTextButton(
+                    onClick = {
+                        githubVm.clearConfiguration(context)
+                        showClearGitHubConfigDialog = false
+                    }
+                ) {
+                    Text("确认清除", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                HapticTextButton(onClick = { showClearGitHubConfigDialog = false }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
     if (showClearCacheDialog) {
         AlertDialog(
             onDismissRequest = { showClearCacheDialog = false },
@@ -2050,4 +2491,19 @@ private fun <T> StateFlow<T>.collectAsStateWithLifecycleCompat(): State<T> {
         flow.collect { v -> state.value = v }
     }
     return state
+}
+
+/**
+ * 格式化同步时间
+ */
+private fun formatSyncTime(timestamp: Long): String {
+    val now = System.currentTimeMillis()
+    val diff = now - timestamp
+
+    return when {
+        diff < 60_000 -> "刚刚"
+        diff < 3600_000 -> "${diff / 60_000}分钟前"
+        diff < 86400_000 -> "${diff / 3600_000}小时前"
+        else -> "${diff / 86400_000}天前"
+    }
 }

@@ -55,24 +55,47 @@ NeriPlayer 是一个专注于「聚合多平台音视频流」的开源播放器
 
 ## 核心特性 / Key Features
 - 🎧 **跨平台音频播放**：同一界面内快速切换网易云、B 站等多平台歌曲来源。
-- 🔍 **统一搜索与元数据补全**：聚合多平台搜索接口，自动补齐封面、歌词与曲目信息。
+- 🔍 **统一搜索与元数据补全**：聚合多平台搜索接口,自动补齐封面、歌词与曲目信息。
 - 🧠 **自研播放器管理器**：`PlayerManager` 统一处理播放队列、缓存、失败重试与洗牌逻辑。
 - 🌈 **Material You & Compose**：全局动态色彩、沉浸式背景渲染与可组合式 UI 组件库。
 - 🪄 **音频可视化背景**：基于 `ReactiveRenderersFactory` + RuntimeShader 的实时音频反应效果。
 - 🔐 **零云端存储**：不上传、不分发任何媒体文件；Cookie 与账号信息仅保存在本地 `DataStore`。
+- ☁️ **GitHub自动同步**：可选的歌单云端备份功能,使用GitHub私有仓库加密存储,支持多设备同步。
 
 ---
 
 ## 架构速览 / Architecture Highlights
 - **核心模块**：
     - `core/api`：封装各平台 API（网易云、B 站、跨平台搜索等）。
-    - `core/player`：基于 Media3 的播放器服务与前台通知，处理音轨解析、缓存策略与状态同步。
+    - `core/player`：基于 Media3 的播放器服务与前台通知,处理音轨解析、缓存策略与状态同步。
     - `data`：使用 Jetpack DataStore 与 JSON 文件维护设置、Cookie、本地歌单等持久化数据。
+    - `data/github`：GitHub同步模块,使用三路合并算法实现跨设备歌单同步,Token加密存储。
     - `ui`：Jetpack Compose 构建的多 Tab 导航、Now Playing 页面以及调试工具。
-- **依赖注入**：通过 `AppContainer` 实现 Service Locator，集中管理客户端、仓库、搜索服务与播放器实例。
-- **扩展方式**：新增平台时实现对应 API/仓库，并在 `AppContainer` 和 `PlayerManager` 中注册即可复用现有能力。
+- **依赖注入**：通过 `AppContainer` 实现 Service Locator,集中管理客户端、仓库、搜索服务与播放器实例。
+- **扩展方式**：新增平台时实现对应 API/仓库,并在 `AppContainer` 和 `PlayerManager` 中注册即可复用现有能力。
 
 想深入了解实现细节？请阅读 [CONTRIBUTING.md](./CONTRIBUTING.md) 中的「目录结构与关键实现」与「扩展指南」。
+
+---
+
+## GitHub同步功能 / GitHub Sync
+NeriPlayer 支持将歌单数据自动备份到GitHub私有仓库,实现跨设备同步:
+
+### 特性
+- 🔒 **安全加密**：GitHub Token使用Android Keystore加密存储
+- 🔄 **智能同步**：修改后自动同步,支持冲突自动合并
+- 📱 **跨平台**：支持Android和桌面端(开发中)数据互通
+- 🚀 **零配置**：自动创建私有仓库,或使用现有仓库
+
+### 使用方法
+1. 在设置 → 备份与恢复 → GitHub自动同步
+2. 点击"配置 GitHub 同步"
+3. 在 GitHub 创建 Personal Access Token (需要`repo`权限)
+4. 输入 Token 并验证
+5. 选择创建新仓库或使用现有仓库
+6. 开启"自动同步"开关
+
+详细说明请参考 [GITHUB_SYNC_INTEGRATION.md](./GITHUB_SYNC_INTEGRATION.md)
 
 ---
 

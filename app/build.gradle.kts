@@ -197,6 +197,12 @@ dependencies {
     // 模糊
     implementation(libs.haze.jetpack.compose)
 
+    // Security - 加密存储
+    implementation(libs.androidx.security.crypto)
+
+    // WorkManager - 后台同步
+    implementation(libs.androidx.work.runtime.ktx)
+
     // 取主题色
     implementation(libs.androidx.palette.ktx)
 }

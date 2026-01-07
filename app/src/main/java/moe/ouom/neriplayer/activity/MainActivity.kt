@@ -138,6 +138,17 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            // GitHub自动同步 - 应用启动时拉取最新数据(异步,不阻塞UI)
+            LaunchedEffect(Unit) {
+                launch {
+                    delay(1000) // 延迟1秒,避免阻塞启动
+                    val storage = moe.ouom.neriplayer.data.github.SecureTokenStorage(this@MainActivity)
+                    if (storage.isConfigured()) {
+                        moe.ouom.neriplayer.data.github.GitHubSyncWorker.syncNow(this@MainActivity)
+                    }
+                }
+            }
+
             NeriTheme(useDark = useDark, useDynamic = dynamicColor) {
                 SideEffect {
                     applyWindowBackground(useDark)
@@ -208,6 +219,35 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
 
+                            // GitHub同步配置检查（每次回到前台时检查，并定期轮询）
+                            var hasShownTokenWarning by remember { mutableStateOf(false) }
+                            var showTokenWarningDialog by remember { mutableStateOf(false) }
+                            LaunchedEffect(lifecycleOwner.lifecycle) {
+                                lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                                    while (true) {
+                                        val storage = moe.ouom.neriplayer.data.github.SecureTokenStorage(this@MainActivity)
+                                        // 如果有仓库信息但token缺失，或者曾经同步过但现在未配置，显示警告
+                                        val hasRepoInfo = !storage.getRepoOwner().isNullOrEmpty() || !storage.getRepoName().isNullOrEmpty()
+                                        val hasSyncHistory = storage.getLastSyncTime() > 0
+                                        val isConfigured = storage.isConfigured()
+                                        val isDismissed = storage.isTokenWarningDismissed()
+
+                                        if ((hasRepoInfo || hasSyncHistory) && !isConfigured && !hasShownTokenWarning && !isDismissed) {
+                                            // 曾经配置过但现在token缺失，显示警告
+                                            NPLogger.d("MainActivity", "显示 GitHub 配置警告")
+                                            showTokenWarningDialog = true
+                                            hasShownTokenWarning = true
+                                        } else if (isConfigured) {
+                                            // 如果重新配置了，重置警告标志和忽略标志
+                                            hasShownTokenWarning = false
+                                            storage.setTokenWarningDismissed(false)
+                                        }
+
+                                        // 每3秒检查一次
+                                        delay(3000)
+                                    }
+                                }
+                            }
 
                             LaunchedEffect(lifecycleOwner.lifecycle) {
                                 lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -249,6 +289,40 @@ class MainActivity : ComponentActivity() {
                                     confirmButton = {
                                         HapticTextButton(onClick = { showErrorDialog = false }) {
                                             Text("确定")
+                                        }
+                                    }
+                                )
+                            }
+
+                            // Token过期警告弹窗（带"不再提醒"按钮）
+                            if (showTokenWarningDialog) {
+                                var countdown by remember { mutableIntStateOf(3) }
+                                LaunchedEffect(Unit) {
+                                    while (countdown > 0) {
+                                        delay(1000)
+                                        countdown--
+                                    }
+                                }
+
+                                AlertDialog(
+                                    onDismissRequest = { showTokenWarningDialog = false },
+                                    title = { Text("GitHub 同步配置警告") },
+                                    text = { Text("检测到 GitHub 同步配置不完整。Token 可能已过期或被删除，请在设置中重新配置。") },
+                                    confirmButton = {
+                                        HapticTextButton(onClick = { showTokenWarningDialog = false }) {
+                                            Text("确定")
+                                        }
+                                    },
+                                    dismissButton = {
+                                        HapticTextButton(
+                                            onClick = {
+                                                val storage = moe.ouom.neriplayer.data.github.SecureTokenStorage(this@MainActivity)
+                                                storage.setTokenWarningDismissed(true)
+                                                showTokenWarningDialog = false
+                                            },
+                                            enabled = countdown == 0
+                                        ) {
+                                            Text(if (countdown > 0) "不再提醒 ($countdown)" else "不再提醒")
                                         }
                                     }
                                 )
@@ -397,7 +471,8 @@ fun DisclaimerScreen(onAgree: () -> Unit) {
                             "当用户发起下载时，文件仅保存至本地存储，不会回传开发者或任何第三方；",
                             "不接入第三方统计、崩溃分析或广告SDK；",
                             "第三方平台访问日志由该平台依据其隐私政策处理；",
-                            "本隐私说明更新日期：2025-08-09。"
+                            "GitHub 同步功能 (可选): 用户可选择将歌单数据备份到自己的 GitHub 私有仓库, Token 使用 Android Keystore 加密存储在本地, 开发者无法访问；",
+                            "本隐私说明更新日期：2025-01-07。"
                         )
                     )
 

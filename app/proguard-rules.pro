@@ -76,3 +76,21 @@
 -keep class com.google.accompanist.** { *; }
 
 -keep class moe.ouom.neriplayer.** { *; }
+
+# WorkManager - 保留Worker类
+-keep class * extends androidx.work.Worker
+-keep class * extends androidx.work.CoroutineWorker {
+    public <init>(...);
+}
+-keep class androidx.work.** { *; }
+
+# Security Crypto - 保留加密相关类
+-keep class androidx.security.crypto.** { *; }
+-keep class com.google.crypto.tink.** { *; }
+
+# GitHub 同步数据模型 - 确保Gson序列化正常
+-keep class moe.ouom.neriplayer.data.github.** { *; }
+-keepclassmembers class moe.ouom.neriplayer.data.github.** {
+    <fields>;
+    <init>(...);
+}

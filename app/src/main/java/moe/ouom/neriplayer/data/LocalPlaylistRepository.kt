@@ -31,14 +31,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.data.github.GitHubSyncWorker
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.util.NPLogger
 import java.io.File
 
 /** 本地歌单数据模型 */
 data class LocalPlaylist(
     val id: Long,
     val name: String,
-    val songs: MutableList<SongItem> = mutableListOf()
+    val songs: MutableList<SongItem> = mutableListOf(),
+    val modifiedAt: Long = System.currentTimeMillis()
 )
 
 /**
@@ -67,14 +70,18 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
         }.toMutableList()
 
         if (list.none { it.name == FAVORITES_NAME }) {
-            list.add(0, LocalPlaylist(id = System.currentTimeMillis(), name = FAVORITES_NAME))
+            list.add(0, LocalPlaylist(
+                id = System.currentTimeMillis(),
+                name = FAVORITES_NAME,
+                modifiedAt = System.currentTimeMillis()
+            ))
         }
         _playlists.value = list
-        saveToDisk()
+        saveToDisk(triggerSync = false)  // 加载时不触发同步
     }
 
     // 原子写
-    private fun saveToDisk() {
+    private fun saveToDisk(triggerSync: Boolean = true) {
         runCatching {
             val json = gson.toJson(_playlists.value)
             val parent = file.parentFile ?: context.filesDir
@@ -85,13 +92,38 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
                 tmp.delete()
             }
         }
+        // 触发自动同步
+        if (triggerSync) {
+            triggerAutoSync()
+        }
+    }
+
+    /** 触发自动同步（延迟5秒） */
+    private fun triggerAutoSync() {
+        try {
+            // 检查是否启用自动同步
+            val storage = moe.ouom.neriplayer.data.github.SecureTokenStorage(context)
+            if (!storage.isAutoSyncEnabled()) {
+                NPLogger.d("LocalPlaylistRepo", "Auto sync is disabled, skipping sync")
+                return
+            }
+
+            GitHubSyncWorker.scheduleDelayedSync(context, triggerByUserAction = false)
+            NPLogger.d("LocalPlaylistRepo", "Sync scheduled after playlist change")
+        } catch (e: Exception) {
+            NPLogger.e("LocalPlaylistRepo", "Failed to trigger sync", e)
+        }
     }
 
     /** 创建一个新的本地歌单 */
     suspend fun createPlaylist(name: String) {
         withContext(Dispatchers.IO) {
             val list = _playlists.value.toMutableList()
-            list.add(LocalPlaylist(id = System.currentTimeMillis(), name = name))
+            list.add(LocalPlaylist(
+                id = System.currentTimeMillis(),
+                name = name,
+                modifiedAt = System.currentTimeMillis()
+            ))
             _playlists.value = list
             saveToDisk()
         }
@@ -106,9 +138,10 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
     /** 重命名歌单（收藏夹禁止） */
     suspend fun renamePlaylist(playlistId: Long, newName: String) {
         withContext(Dispatchers.IO) {
+            val now = System.currentTimeMillis()
             val updated = _playlists.value.map { pl ->
                 if (pl.id == playlistId) {
-                    if (pl.name == FAVORITES_NAME) pl else pl.copy(name = newName)
+                    if (pl.name == FAVORITES_NAME) pl else pl.copy(name = newName, modifiedAt = now)
                 } else pl
             }
             _playlists.value = updated
@@ -129,14 +162,14 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
             val newSongs = pl.songs.filterNot { it.id in idSet }.toMutableList()
 
             if (newSongs.size != pl.songs.size) {
-                list[plIndex] = pl.copy(songs = newSongs)
+                list[plIndex] = pl.copy(songs = newSongs, modifiedAt = System.currentTimeMillis())
                 _playlists.value = list
                 saveToDisk()
             }
         }
     }
 
-    /** 删除指定歌单（收藏夹禁止） -> 返回是否删除成功 */
+    /** 删除指定歌单(收藏夹禁止) -> 返回是否删除成功 */
     suspend fun deletePlaylist(playlistId: Long): Boolean {
         return withContext(Dispatchers.IO) {
             val list = _playlists.value.toMutableList()
@@ -144,6 +177,15 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
             if (pl.name == FAVORITES_NAME) return@withContext false
             list.remove(pl)
             _playlists.value = list
+
+            // 记录删除的歌单ID用于同步
+            try {
+                val storage = moe.ouom.neriplayer.data.github.SecureTokenStorage(context)
+                storage.addDeletedPlaylistId(playlistId)
+            } catch (e: Exception) {
+                NPLogger.e("LocalPlaylistRepo", "Failed to track deleted playlist", e)
+            }
+
             saveToDisk()
             true
         }
@@ -152,6 +194,7 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
     /** 按索引移动一首歌 */
     suspend fun moveSong(playlistId: Long, fromIndex: Int, toIndex: Int) {
         withContext(Dispatchers.IO) {
+            val now = System.currentTimeMillis()
             val updated = _playlists.value.map { pl ->
                 if (pl.id != playlistId) return@map pl
                 val songs = pl.songs
@@ -160,7 +203,7 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
                     val s = removeAt(fromIndex)
                     add(toIndex, s)
                 }
-                pl.copy(songs = newSongs)
+                pl.copy(songs = newSongs, modifiedAt = now)
             }
             _playlists.value = updated
             saveToDisk()
@@ -180,7 +223,7 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
             // 防御：把遗漏的旧歌拼回末尾，避免丢失
             pl.songs.forEach { s -> if (ordered.none { it.id == s.id }) ordered.add(s) }
 
-            list[idx] = pl.copy(songs = ordered)
+            list[idx] = pl.copy(songs = ordered, modifiedAt = System.currentTimeMillis())
             _playlists.value = list
             saveToDisk()
         }
@@ -198,7 +241,7 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
             val toAdd = songs.filter { exists.add(it.id) }
             if (toAdd.isEmpty()) return@withContext
 
-            list[idx] = pl.copy(songs = (pl.songs + toAdd).toMutableList())
+            list[idx] = pl.copy(songs = (pl.songs + toAdd).toMutableList(), modifiedAt = System.currentTimeMillis())
             _playlists.value = list
             saveToDisk()
         }
@@ -218,7 +261,7 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
             val pl = list[plIndex]
             val newSongs = pl.songs.filter { it.id != songId }.toMutableList()
             if (newSongs.size != pl.songs.size) {
-                list[plIndex] = pl.copy(songs = newSongs)
+                list[plIndex] = pl.copy(songs = newSongs, modifiedAt = System.currentTimeMillis())
                 _playlists.value = list
                 saveToDisk()
             }
@@ -240,7 +283,7 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
             val toAdd = inSourceOrder.filter { exists.add(it.id) }
             if (toAdd.isEmpty()) return@withContext
 
-            list[idx] = pl.copy(songs = (pl.songs + toAdd).toMutableList())
+            list[idx] = pl.copy(songs = (pl.songs + toAdd).toMutableList(), modifiedAt = System.currentTimeMillis())
             _playlists.value = list
             saveToDisk()
         }
@@ -260,12 +303,13 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
         }
     }
 
-    /** 从“我喜欢的音乐”移除歌曲 */
+    /** 从"我喜欢的音乐"移除歌曲 */
     suspend fun removeFromFavorites(songId: Long) {
         withContext(Dispatchers.IO) {
+            val now = System.currentTimeMillis()
             val updated = _playlists.value.map { pl ->
                 if (pl.name == FAVORITES_NAME)
-                    pl.copy(songs = pl.songs.filter { it.id != songId }.toMutableList())
+                    pl.copy(songs = pl.songs.filter { it.id != songId }.toMutableList(), modifiedAt = now)
                 else pl
             }
             _playlists.value = updated
@@ -293,11 +337,11 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
         }
     }
 
-    /** 批量更新歌单列表 */
+    /** 批量更新歌单列表（由同步管理器调用，不触发新的同步） */
     suspend fun updatePlaylists(playlists: List<LocalPlaylist>) {
         withContext(Dispatchers.IO) {
             _playlists.value = playlists
-            saveToDisk()
+            saveToDisk(triggerSync = false)
         }
     }
 }

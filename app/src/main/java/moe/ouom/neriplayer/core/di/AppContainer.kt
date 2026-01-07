@@ -99,7 +99,7 @@ object AppContainer {
         this.application = app
         startCookieObserver()
         startSettingsObserver()
-        playHistoryRepo = PlayHistoryRepository(app)
+        playHistoryRepo = PlayHistoryRepository.getInstance(app)
         playlistUsageRepo = PlaylistUsageRepository(app)
     }
 
