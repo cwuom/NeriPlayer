@@ -94,9 +94,6 @@ NeriPlayer 支持将歌单数据自动备份到GitHub私有仓库,实现跨设�
 4. 输入 Token 并验证
 5. 选择创建新仓库或使用现有仓库
 6. 开启"自动同步"开关
-
-详细说明请参考 [GITHUB_SYNC_INTEGRATION.md](./GITHUB_SYNC_INTEGRATION.md)
-
 ---
 
 ## 快速体验 / Getting Started
