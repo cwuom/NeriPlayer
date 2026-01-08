@@ -53,7 +53,6 @@ class GitHubApiClient(private val token: String) {
     companion object {
         private const val TAG = "GitHubApiClient"
         private const val GITHUB_API_BASE = "https://api.github.com"
-        private const val BACKUP_FILE_PATH = "backup.json"
     }
 
     /** GitHub API响应 - 文件内容 */
@@ -178,7 +177,7 @@ class GitHubApiClient(private val token: String) {
     /**
      * 读取文件内容
      */
-    suspend fun getFileContent(owner: String, repo: String, path: String = BACKUP_FILE_PATH): Result<Pair<String, String>> = withContext(Dispatchers.IO) {
+    suspend fun getFileContent(owner: String, repo: String, path: String): Result<Pair<String, String>> = withContext(Dispatchers.IO) {
         try {
             val request = Request.Builder()
                 .url("$GITHUB_API_BASE/repos/$owner/$repo/contents/$path")
@@ -214,7 +213,7 @@ class GitHubApiClient(private val token: String) {
         repo: String,
         content: String,
         sha: String? = null,
-        path: String = BACKUP_FILE_PATH,
+        path: String,
         message: String = "Update backup data",
         branch: String? = null
     ): Result<String> = withContext(Dispatchers.IO) {

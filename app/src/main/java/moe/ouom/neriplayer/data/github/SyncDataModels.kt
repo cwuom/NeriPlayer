@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.data.github
  * Created: 2025/1/7
  */
 
+import kotlinx.serialization.Serializable
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.data.FavoritePlaylist
 import moe.ouom.neriplayer.data.LocalPlaylist
@@ -32,6 +33,7 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
  * 同步数据结构
  * 包含所有需要同步的数据和元信息
  */
+@Serializable
 data class SyncData(
     val version: String = "2.0",
     val deviceId: String,
@@ -47,6 +49,7 @@ data class SyncData(
  * 同步歌单
  * 包含时间戳用于冲突检测
  */
+@Serializable
 data class SyncPlaylist(
     val id: Long,
     val name: String,
@@ -80,6 +83,7 @@ data class SyncPlaylist(
 /**
  * 同步歌曲
  */
+@Serializable
 data class SyncSong(
     val id: Long,
     val name: String,
@@ -134,6 +138,7 @@ data class SyncSong(
 /**
  * 最近播放记录
  */
+@Serializable
 data class SyncRecentPlay(
     val songId: Long,
     val song: SyncSong,
@@ -144,6 +149,7 @@ data class SyncRecentPlay(
 /**
  * 收藏的歌单
  */
+@Serializable
 data class SyncFavoritePlaylist(
     val id: Long,
     val name: String,
@@ -184,6 +190,7 @@ data class SyncFavoritePlaylist(
  * 同步日志条目
  * 用于追踪操作历史,辅助冲突解决
  */
+@Serializable
 data class SyncLogEntry(
     val timestamp: Long,
     val deviceId: String,
@@ -196,6 +203,7 @@ data class SyncLogEntry(
 /**
  * 同步操作类型
  */
+@Serializable
 enum class SyncAction {
     CREATE_PLAYLIST,
     DELETE_PLAYLIST,

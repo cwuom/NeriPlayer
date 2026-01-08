@@ -57,6 +57,7 @@ class SecureTokenStorage(context: Context) {
         private const val KEY_PLAY_HISTORY_UPDATE_MODE = "play_history_update_mode"
         private const val KEY_DELETED_PLAYLIST_IDS = "deleted_playlist_ids"
         private const val KEY_TOKEN_WARNING_DISMISSED = "token_warning_dismissed"
+        private const val KEY_DATA_SAVER_MODE = "data_saver_mode"
     }
 
     /** 播放历史更新模式 */
@@ -195,5 +196,15 @@ class SecureTokenStorage(context: Context) {
     /** 获取Token警告是否已忽略 */
     fun isTokenWarningDismissed(): Boolean {
         return encryptedPrefs.getBoolean(KEY_TOKEN_WARNING_DISMISSED, false)
+    }
+
+    /** 设置省流模式 */
+    fun setDataSaverMode(enabled: Boolean) {
+        encryptedPrefs.edit().putBoolean(KEY_DATA_SAVER_MODE, enabled).apply()
+    }
+
+    /** 获取省流模式状态 */
+    fun isDataSaverMode(): Boolean {
+        return encryptedPrefs.getBoolean(KEY_DATA_SAVER_MODE, true)
     }
 }

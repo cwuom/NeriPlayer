@@ -1514,6 +1514,31 @@ fun SettingsScreen(
                                 )
                             }
 
+                            // 省流模式开关
+                            var dataSaverMode by remember { mutableStateOf(storage.isDataSaverMode()) }
+
+                            ListItem(
+                                leadingContent = {
+                                    Icon(
+                                        Icons.Outlined.Download,
+                                        contentDescription = "省流通道",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                },
+                                headlineContent = { Text("省流通道") },
+                                supportingContent = { Text("若无特殊需求，十分推荐打开此选项\n切换通道可能导致数据丢失，请确保所有平台的设置保持一致，请勿随意切换") },
+                                trailingContent = {
+                                    Switch(
+                                        checked = dataSaverMode,
+                                        onCheckedChange = {
+                                            dataSaverMode = it
+                                            storage.setDataSaverMode(it)
+                                        }
+                                    )
+                                },
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                            )
+
                             HapticTextButton(
                                 onClick = { showClearGitHubConfigDialog = true },
                                 modifier = Modifier.padding(start = 16.dp)

@@ -117,11 +117,28 @@ class GitHubSyncManager(private val context: Context) {
 
             val apiClient = GitHubApiClient(token)
 
-            // 1. 获取本地数据
+            // 获取本地数据
             val localData = buildLocalSyncData()
 
-            // 2. 获取远程数据
-            val remoteResult = apiClient.getFileContent(owner, repo)
+            // 确定使用的文件名
+            val useDataSaver = storage.isDataSaverMode()
+            val fileName = SyncDataSerializer.getFileName(useDataSaver)
+
+            // 尝试获取远程数据（优先使用当前格式，如果不存在则尝试另一种格式）
+            var remoteResult = apiClient.getFileContent(owner, repo, fileName)
+            var actualFileName = fileName
+
+            // 如果当前格式文件不存在，尝试另一种格式（兼容性处理）
+            if (remoteResult.isFailure) {
+                val alternativeFileName = SyncDataSerializer.getFileName(!useDataSaver)
+                val alternativeResult = apiClient.getFileContent(owner, repo, alternativeFileName)
+                if (alternativeResult.isSuccess) {
+                    remoteResult = alternativeResult
+                    actualFileName = alternativeFileName
+                    NPLogger.d(TAG, "Using alternative file format: $alternativeFileName")
+                }
+            }
+
             if (remoteResult.isFailure) {
                 val error = remoteResult.exceptionOrNull()
                 // 检查是否是Token过期
@@ -132,7 +149,7 @@ class GitHubSyncManager(private val context: Context) {
                     return@withContext Result.failure(error)
                 }
                 // 远程文件不存在,直接上传本地数据
-                val uploadResult = uploadLocalData(apiClient, owner, repo, localData, null)
+                val uploadResult = uploadLocalData(apiClient, owner, repo, localData, null, fileName)
                 return@withContext if (uploadResult.isSuccess) {
                     val newSha = uploadResult.getOrNull()
                     if (newSha != null) {
@@ -156,7 +173,7 @@ class GitHubSyncManager(private val context: Context) {
             if (remoteContent.isEmpty()) {
                 // 远程文件为空，可能是新文件（sha为空）或已存在的空文件（sha有值）
                 // 无论哪种情况，都传递remoteSha，updateFileContent会正确处理
-                val uploadResult = uploadLocalData(apiClient, owner, repo, localData, remoteSha)
+                val uploadResult = uploadLocalData(apiClient, owner, repo, localData, remoteSha, fileName)
                 return@withContext if (uploadResult.isSuccess) {
                     val newSha = uploadResult.getOrNull()
                     if (newSha != null) {
@@ -176,33 +193,33 @@ class GitHubSyncManager(private val context: Context) {
                 }
             }
 
-            // 3. 解析远程数据
+            // 解析远程数据
+            val isBinaryFormat = SyncDataSerializer.isBinaryFileName(actualFileName)
             val remoteData = try {
-                gson.fromJson(remoteContent, SyncData::class.java)
+                SyncDataSerializer.deserialize(remoteContent, isBinaryFormat)
             } catch (e: Exception) {
                 NPLogger.e(TAG, "Failed to parse remote data", e)
                 return@withContext Result.failure(e)
             }
 
-            // 4. 检测远程是否有变化（通过SHA）
+            // 检测远程是否有变化（通过SHA）
             val lastRemoteSha = storage.getLastRemoteSha()
-            // 首次同步(lastRemoteSha为null)或SHA变化时都认为远程有变化
-            val remoteHasChanged = lastRemoteSha == null || lastRemoteSha != remoteSha
-            if (remoteHasChanged) {
-                if (lastRemoteSha == null) {
-                    NPLogger.d(TAG, "First sync detected, applying remote data")
-                } else {
-                    NPLogger.d(TAG, "Remote file has changed (SHA mismatch), prioritizing remote data")
-                }
+            val isFirstSync = lastRemoteSha == null
+            val remoteHasChanged = lastRemoteSha != null && lastRemoteSha != remoteSha
+
+            if (isFirstSync) {
+                NPLogger.d(TAG, "First sync detected, prioritizing remote data")
+            } else if (remoteHasChanged) {
+                NPLogger.d(TAG, "Remote file has changed (SHA mismatch)")
             }
 
-            // 5. 三路合并（传递远程变化标记）
-            val mergeResult = performThreeWayMerge(localData, remoteData, remoteHasChanged)
+            // 三路合并（传递首次同步标记）
+            val mergeResult = performThreeWayMerge(localData, remoteData, isFirstSync)
 
-            // 6. 应用合并结果到本地（传递远程变化标记）
-            applyMergedDataToLocal(mergeResult.mergedData, remoteHasChanged)
+            // 应用合并结果到本地（传递首次同步和远程变化标记）
+            applyMergedDataToLocal(mergeResult.mergedData, isFirstSync || remoteHasChanged)
 
-            // 7. 检查数据是否有变化（优化流量）
+            // 检查数据是否有变化（优化流量）
             val dataChanged = hasDataChanged(remoteData, mergeResult.mergedData)
             if (!dataChanged && !remoteHasChanged) {
                 NPLogger.d(TAG, "No data changes detected, skipping upload to save bandwidth")
@@ -215,8 +232,8 @@ class GitHubSyncManager(private val context: Context) {
                 ))
             }
 
-            // 8. 上传合并后的数据
-            val uploadResult = uploadLocalData(apiClient, owner, repo, mergeResult.mergedData, remoteSha)
+            // 上传合并后的数据
+            val uploadResult = uploadLocalData(apiClient, owner, repo, mergeResult.mergedData, remoteSha, fileName)
             if (uploadResult.isFailure) {
                 val error = uploadResult.exceptionOrNull()
                 // 检查是否是Token过期
@@ -229,16 +246,16 @@ class GitHubSyncManager(private val context: Context) {
                 return@withContext Result.failure(uploadResult.exceptionOrNull() ?: Exception("上传失败"))
             }
 
-            // 9. 保存上传后的新SHA（而不是上传前的旧SHA）
+            // 保存上传后的新SHA
             val newSha = uploadResult.getOrNull()
             if (newSha != null) {
                 storage.saveLastRemoteSha(newSha)
             }
 
-            // 10. 更新最后同步时间
+            // 更新最后同步时间
             storage.saveLastSyncTime(System.currentTimeMillis())
 
-            // 11. 清除已删除的歌单ID列表（同步成功后）
+            // 清除已删除的歌单ID列表（同步成功后）
             storage.clearDeletedPlaylistIds()
 
             Result.success(mergeResult.syncResult)
@@ -320,9 +337,9 @@ class GitHubSyncManager(private val context: Context) {
     /**
      * 三路合并算法
      * 自动解决冲突
-     * @param remoteHasChanged 远程文件是否有变化（通过SHA检测）
+     * @param isFirstSync 是否首次同步（首次同步时优先使用远程数据）
      */
-    private fun performThreeWayMerge(local: SyncData, remote: SyncData, remoteHasChanged: Boolean = false): MergeResult {
+    private fun performThreeWayMerge(local: SyncData, remote: SyncData, isFirstSync: Boolean = false): MergeResult {
         val conflicts = mutableListOf<SyncConflict>()
         var playlistsAdded = 0
         var playlistsUpdated = 0
@@ -369,7 +386,7 @@ class GitHubSyncManager(private val context: Context) {
                     if (localPlaylist.isDeleted || remotePlaylist.isDeleted) {
                         playlistsDeleted++
                     } else {
-                        val merged = mergePlaylist(localPlaylist, remotePlaylist, remoteHasChanged)
+                        val merged = mergePlaylist(localPlaylist, remotePlaylist, isFirstSync)
                         mergedPlaylists.add(merged.playlist)
 
                         if (merged.hasConflict) {
@@ -415,11 +432,11 @@ class GitHubSyncManager(private val context: Context) {
 
     /**
      * 合并单个歌单
-     * 策略：远程变化优先 > 最后修改时间优先
-     * - 如果远程文件有变化（SHA不同），优先使用远程数据
+     * 策略：首次同步优先远程 > 最后修改时间优先
+     * - 如果是首次同步，优先使用远程数据（避免覆盖其他设备的数据）
      * - 否则使用修改时间更新的一端
      */
-    private fun mergePlaylist(local: SyncPlaylist, remote: SyncPlaylist, remoteHasChanged: Boolean = false): PlaylistMergeResult {
+    private fun mergePlaylist(local: SyncPlaylist, remote: SyncPlaylist, isFirstSync: Boolean = false): PlaylistMergeResult {
         var hasConflict = false
         var conflict: SyncConflict? = null
         var songsAdded = 0
@@ -454,53 +471,53 @@ class GitHubSyncManager(private val context: Context) {
             local.name
         }
 
-        // 合并歌曲列表 - 远程变化优先 > 最后修改时间优先
+        // 合并歌曲列表 - 首次同步优先远程 > 最后修改时间
         val localSongIds = local.songs.map { it.id }.toSet()
         val remoteSongIds = remote.songs.map { it.id }.toSet()
 
         // 智能合并策略：
         // 1. 如果远程为空而本地有数据 -> 保留本地数据（防止初始化时数据丢失）
         // 2. 如果本地为空而远程有数据 -> 使用远程数据
-        // 3. 如果远程文件有变化（SHA不同）-> 优先使用远程数据（尊重手动编辑）
-        // 4. 如果两端都有数据 -> 使用最后修改时间更新的一端
-        val mergedSongs = when {
+        // 3. 如果是首次同步且远程有数据 -> 优先使用远程数据（避免覆盖其他设备的数据）
+        // 4. 如果两端都有数据 -> 使用最后修改时间更新的一端（尊重用户操作）
+        val (mergedSongs, finalModifiedAt) = when {
             remoteSongIds.isEmpty() && localSongIds.isNotEmpty() -> {
                 // 远程为空，本地有数据 -> 保留本地（防止数据丢失）
                 NPLogger.d(TAG, "Remote playlist '${local.name}' is empty, keeping local songs (${localSongIds.size} songs)")
-                local.songs
+                Pair(local.songs, local.modifiedAt)
             }
             localSongIds.isEmpty() && remoteSongIds.isNotEmpty() -> {
                 // 本地为空，远程有数据 -> 使用远程
                 isUpdated = true
                 songsAdded = remoteSongIds.size
-                remote.songs
+                Pair(remote.songs, remote.modifiedAt)
             }
-            remoteHasChanged -> {
-                // 远程文件有变化（用户手动编辑了GitHub文件）-> 优先使用远程数据
-                NPLogger.d(TAG, "Remote file has changed, using remote playlist '${local.name}' (${remoteSongIds.size} songs)")
+            isFirstSync && remoteSongIds.isNotEmpty() -> {
+                // 首次同步且远程有数据 -> 优先使用远程数据
+                NPLogger.d(TAG, "First sync: using remote playlist '${local.name}' (${remoteSongIds.size} songs)")
                 isUpdated = true
                 songsAdded = (remoteSongIds - localSongIds).size
                 songsRemoved = (localSongIds - remoteSongIds).size
-                remote.songs
+                Pair(remote.songs, remote.modifiedAt)
             }
             else -> {
-                // 两端都有数据且远程无变化 -> 使用最后修改时间更新的一端
+                // 两端都有数据 -> 使用最后修改时间更新的一端
                 if (remote.modifiedAt > local.modifiedAt) {
                     // 远程更新，使用远程数据
-                    NPLogger.d(TAG, "Remote playlist '${local.name}' is newer, using remote songs")
+                    NPLogger.d(TAG, "Remote playlist '${local.name}' is newer (remote=${remote.modifiedAt}, local=${local.modifiedAt}), using remote songs")
                     isUpdated = true
                     songsAdded = (remoteSongIds - localSongIds).size
                     songsRemoved = (localSongIds - remoteSongIds).size
-                    remote.songs
+                    Pair(remote.songs, remote.modifiedAt)
                 } else {
                     // 本地更新或相同，使用本地数据
-                    NPLogger.d(TAG, "Local playlist '${local.name}' is newer or same, using local songs")
+                    NPLogger.d(TAG, "Local playlist '${local.name}' is newer or same (local=${local.modifiedAt}, remote=${remote.modifiedAt}), using local songs")
                     songsAdded = (remoteSongIds - localSongIds).size
                     songsRemoved = (localSongIds - remoteSongIds).size
                     if (songsAdded > 0 || songsRemoved > 0) {
                         isUpdated = true
                     }
-                    local.songs
+                    Pair(local.songs, local.modifiedAt)
                 }
             }
         }
@@ -510,7 +527,7 @@ class GitHubSyncManager(private val context: Context) {
             name = finalName,
             songs = mergedSongs,
             createdAt = local.createdAt,
-            modifiedAt = maxOf(local.modifiedAt, remote.modifiedAt)
+            modifiedAt = finalModifiedAt
         )
 
         return PlaylistMergeResult(
@@ -735,10 +752,18 @@ class GitHubSyncManager(private val context: Context) {
         owner: String,
         repo: String,
         data: SyncData,
-        sha: String?
+        sha: String?,
+        fileName: String
     ): Result<String> {
-        val json = gson.toJson(data)
-        val uploadResult = apiClient.updateFileContent(owner, repo, json, sha)
+        // 根据省流模式选择序列化方式
+        val useDataSaver = storage.isDataSaverMode()
+        val content = SyncDataSerializer.serialize(data, useDataSaver)
+
+        // 记录数据大小
+        val dataSize = SyncDataSerializer.getDataSize(data, useDataSaver)
+        NPLogger.d(TAG, "Upload data size: $dataSize bytes (DataSaver: $useDataSaver, File: $fileName)")
+
+        val uploadResult = apiClient.updateFileContent(owner, repo, content, sha, fileName)
 
         return if (uploadResult.isSuccess) {
             val newSha = uploadResult.getOrNull() ?: ""
