@@ -937,6 +937,7 @@
     <string name="home_unfavorite_playlist">Unfavorite</string>
     <string name="home_favorite_playlist">Favorite Playlist</string>
     <string name="home_unfavorited">Unfavorited</string>
+    <string name="continue_playing_remove">Remove</string>
     <string name="library_create_playlist_default">New Playlist</string>
     <string name="library_video_count">%d videos</string>
     <string name="library_name_reserved">This name is reserved for \"%s\", please choose another name~</string>

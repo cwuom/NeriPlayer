@@ -75,4 +75,32 @@ class PlaylistUsageRepository(private val app: Context) {
         _flow.value = out
         saveAsync(out)
     }
+
+    /** 只更新歌单信息，不改变打开时间和顺序 */
+    fun updateInfo(
+        id: Long, name: String, picUrl: String?, trackCount: Int, fid: Long = 0, mid: Long = 0, source: String
+    ) {
+        val data = _flow.value.toMutableList()
+        val idx = data.indexOfFirst { it.id == id && it.source == source }
+        if (idx >= 0) {
+            val old = data[idx]
+            data[idx] = old.copy(
+                name = name,
+                picUrl = picUrl,
+                trackCount = trackCount,
+                fid = fid,
+                mid = mid
+            )
+            _flow.value = data
+            saveAsync(data)
+        }
+    }
+
+    /** 从继续播放列表中移除指定项 */
+    fun removeEntry(id: Long, source: String) {
+        val data = _flow.value.toMutableList()
+        data.removeAll { it.id == id && it.source == source }
+        _flow.value = data
+        saveAsync(data)
+    }
 }

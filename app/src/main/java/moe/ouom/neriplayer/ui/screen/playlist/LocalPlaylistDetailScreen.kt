@@ -92,6 +92,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -124,6 +125,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.ui.viewmodel.DownloadManagerViewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
@@ -161,6 +163,27 @@ fun LocalPlaylistDetailScreen(
     val vm: LocalPlaylistDetailViewModel = viewModel()
     val ui = vm.uiState.collectAsState()
     LaunchedEffect(playlistId) { vm.start(playlistId) }
+
+    // 保存最新的歌单数据，用于在Screen销毁时更新使用记录
+    var latestPlaylist by remember { mutableStateOf<moe.ouom.neriplayer.data.LocalPlaylist?>(null) }
+    LaunchedEffect(ui.value.playlist) {
+        ui.value.playlist?.let { latestPlaylist = it }
+    }
+
+    // 在Screen销毁时更新使用记录，确保返回主页时卡片显示最新信息
+    DisposableEffect(Unit) {
+        onDispose {
+            latestPlaylist?.let { playlist ->
+                AppContainer.playlistUsageRepo.updateInfo(
+                    id = playlist.id,
+                    name = playlist.name,
+                    picUrl = playlist.songs.lastOrNull()?.coverUrl,
+                    trackCount = playlist.songs.size,
+                    source = "local"
+                )
+            }
+        }
+    }
 
     val playlistOrNull = ui.value.playlist
 

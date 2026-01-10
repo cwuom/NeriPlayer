@@ -84,6 +84,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -113,6 +114,7 @@ import coil.request.CachePolicy
 import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.FavoritePlaylistRepository
@@ -120,6 +122,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.PlaylistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.PlaylistDetailUiState
+import moe.ouom.neriplayer.ui.viewmodel.playlist.PlaylistHeader
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import androidx.compose.animation.core.animateFloatAsState
@@ -165,7 +168,30 @@ fun NeteasePlaylistDetailScreen(
     )
 
     val ui by vm.uiState.collectAsState()
-    LaunchedEffect(playlist.id) { vm.startPlaylist(playlist) }
+    // 使用Unit作为key，确保每次进入都重新加载最新数据
+    LaunchedEffect(Unit) { vm.startPlaylist(playlist) }
+
+    // 保存最新的header数据，用于在Screen销毁时更新使用记录
+    var latestHeader by remember { mutableStateOf<PlaylistHeader?>(null) }
+    LaunchedEffect(ui.header) {
+        ui.header?.let { latestHeader = it }
+    }
+
+    // 在Screen销毁时更新使用记录，确保返回主页时卡片显示最新信息
+    DisposableEffect(Unit) {
+        onDispose {
+            latestHeader?.let { header ->
+                AppContainer.playlistUsageRepo.updateInfo(
+                    id = header.id,
+                    name = header.name,
+                    picUrl = header.coverUrl,
+                    trackCount = header.trackCount,
+                    source = "netease"
+                )
+            }
+        }
+    }
+
     DetailScreen(
         vm = vm,
         ui = ui,
@@ -194,7 +220,30 @@ fun NeteaseAlbumDetailScreen(
     )
 
     val ui by vm.uiState.collectAsState()
-    LaunchedEffect(album.id) { vm.startAlbum(album) }
+    // 使用Unit作为key，确保每次进入都重新加载最新数据
+    LaunchedEffect(Unit) { vm.startAlbum(album) }
+
+    // 保存最新的header数据，用于在Screen销毁时更新使用记录
+    var latestHeader by remember { mutableStateOf<PlaylistHeader?>(null) }
+    LaunchedEffect(ui.header) {
+        ui.header?.let { latestHeader = it }
+    }
+
+    // 在Screen销毁时更新使用记录，确保返回主页时卡片显示最新信息
+    DisposableEffect(Unit) {
+        onDispose {
+            latestHeader?.let { header ->
+                AppContainer.playlistUsageRepo.updateInfo(
+                    id = header.id,
+                    name = header.name,
+                    picUrl = header.coverUrl,
+                    trackCount = header.trackCount,
+                    source = "neteaseAlbum"
+                )
+            }
+        }
+    }
+
     DetailScreen(
         vm = vm,
         ui = ui,

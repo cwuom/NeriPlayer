@@ -66,7 +66,7 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
     private var mediaId: Long = 0L
 
     fun start(playlist: BiliPlaylist) {
-        if (mediaId == playlist.mediaId && uiState.value.videos.isNotEmpty()) return
+        // 移除缓存检查，确保每次进入都能获取最新数据
         mediaId = playlist.mediaId
 
         _uiState.value = BiliPlaylistDetailUiState(

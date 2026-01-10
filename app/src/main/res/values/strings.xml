@@ -941,6 +941,7 @@
     <string name="home_unfavorite_playlist">取消收藏</string>
     <string name="home_favorite_playlist">收藏歌单</string>
     <string name="home_unfavorited">已取消收藏</string>
+    <string name="continue_playing_remove">移除</string>
 
     <!-- Library Screen -->
     <string name="library_tab_local">本地</string>

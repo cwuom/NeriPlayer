@@ -469,22 +469,39 @@ private fun ContinueSection(items: List<UsageEntry>, onClick: (UsageEntry) -> Un
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             items(items, key = { it.source + ":" + it.id }) { entry ->
-                ContinueCard(entry) { onClick(entry) }
+                ContinueCard(
+                    entry = entry,
+                    onClick = { onClick(entry) },
+                    onRemove = {
+                        AppContainer.playlistUsageRepo.removeEntry(entry.id, entry.source)
+                    }
+                )
             }
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ContinueCard(entry: UsageEntry, onClick: () -> Unit) {
+private fun ContinueCard(entry: UsageEntry, onClick: () -> Unit, onRemove: () -> Unit) {
+    val context = LocalContext.current
+    val view = androidx.compose.ui.platform.LocalView.current
+    var showMenu by remember { mutableStateOf(false) }
+
     Column(
         modifier = Modifier
             .clip(RoundedCornerShape(16.dp))
-            .clickable { onClick() }
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = {
+                    view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                    showMenu = true
+                }
+            )
             .width(150.dp)
     ) {
         AsyncImage(
-            model = ImageRequest.Builder(LocalContext.current).data(entry.picUrl).build(),
+            model = ImageRequest.Builder(context).data(entry.picUrl).build(),
             contentDescription = entry.name,
             contentScale = ContentScale.Crop,
             modifier = Modifier
@@ -496,6 +513,19 @@ private fun ContinueCard(entry: UsageEntry, onClick: () -> Unit) {
             Text(text = entry.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
             Text(text = stringResource(R.string.home_song_count_format, entry.trackCount), style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+        }
+
+        DropdownMenu(
+            expanded = showMenu,
+            onDismissRequest = { showMenu = false }
+        ) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.continue_playing_remove)) },
+                onClick = {
+                    showMenu = false
+                    onRemove()
+                }
+            )
         }
     }
 }

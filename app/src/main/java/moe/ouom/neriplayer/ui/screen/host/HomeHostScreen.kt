@@ -216,15 +216,17 @@ private fun openRecent(
                 )
             )
         }
-        "local" -> onSelected(HomeSelectedItem.Local(entry.id))
+        "local" -> {
+            onSelected(HomeSelectedItem.Local(entry.id))
+        }
         "bili" -> {
             val bili = BiliPlaylist(
                 mediaId = entry.id,
                 title = entry.name,
                 coverUrl = entry.picUrl ?: "",
                 count = entry.trackCount,
-                fid = 0L,
-                mid = 0L
+                fid = entry.fid ?: 0L,
+                mid = entry.mid ?: 0L
             )
             onSelected(HomeSelectedItem.Bili(bili))
         }

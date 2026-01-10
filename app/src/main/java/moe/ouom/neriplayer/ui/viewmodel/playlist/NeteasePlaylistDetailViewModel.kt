@@ -108,7 +108,7 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
     }
 
     fun startPlaylist(playlist: NeteasePlaylist) {
-        if (playlistId == playlist.id && _uiState.value.header != null && _uiState.value.tracks.isNotEmpty()) return
+        // 移除缓存检查，确保每次进入都能获取最新数据
         playlistId = playlist.id
 
         // 用入口数据把 header 预填
@@ -159,7 +159,7 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
     }
     
     fun startAlbum(album: NeteaseAlbum) {
-        if (playlistId == album.id && _uiState.value.header != null && _uiState.value.tracks.isNotEmpty()) return
+        // 移除缓存检查，确保每次进入都能获取最新数据
         playlistId = album.id
 
         // 用入口数据把 header 预填

@@ -71,6 +71,7 @@ import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
@@ -108,7 +109,33 @@ fun BiliPlaylistDetailScreen(
         }
     )
     val ui by vm.uiState.collectAsState()
-    LaunchedEffect(playlist.mediaId) { vm.start(playlist) }
+    // 使用Unit作为key，确保每次进入都重新加载最新数据
+    LaunchedEffect(Unit) { vm.start(playlist) }
+
+    // 保存最新的header和videos数据，用于在Screen销毁时更新使用记录
+    var latestHeader by remember { mutableStateOf<BiliPlaylist?>(null) }
+    var latestVideosSize by remember { mutableStateOf(0) }
+    LaunchedEffect(ui.header, ui.videos.size) {
+        ui.header?.let { latestHeader = it }
+        latestVideosSize = ui.videos.size
+    }
+
+    // 在Screen销毁时更新使用记录，确保返回主页时卡片显示最新信息
+    DisposableEffect(Unit) {
+        onDispose {
+            latestHeader?.let { header ->
+                AppContainer.playlistUsageRepo.updateInfo(
+                    id = header.mediaId,
+                    name = header.title,
+                    picUrl = header.coverUrl,
+                    trackCount = latestVideosSize,
+                    fid = header.fid,
+                    mid = header.mid,
+                    source = "bili"
+                )
+            }
+        }
+    }
 
     // 下载进度
     var showDownloadManager by remember { mutableStateOf(false) }
