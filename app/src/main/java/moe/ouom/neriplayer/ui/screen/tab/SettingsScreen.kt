@@ -286,6 +286,8 @@ fun SettingsScreen(
     onRemoveColorFromPalette: (String) -> Unit,
     lyricBlurEnabled: Boolean,
     onLyricBlurEnabledChange: (Boolean) -> Unit,
+    lyricBlurAmount: Float,
+    onLyricBlurAmountChange: (Float) -> Unit,
     lyricFontScale: Float,
     onLyricFontScaleChange: (Float) -> Unit,
     uiDensityScale: Float,
@@ -745,6 +747,38 @@ fun SettingsScreen(
                             },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
+
+                        AnimatedVisibility(visible = lyricBlurEnabled) {
+                            ListItem(
+                                headlineContent = { Text(stringResource(R.string.lyrics_blur_amount)) },
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                supportingContent = {
+                                    var pendingBlurAmount by remember { mutableFloatStateOf(lyricBlurAmount) }
+                                    LaunchedEffect(lyricBlurAmount) {
+                                        if ((pendingBlurAmount - lyricBlurAmount).absoluteValue > 0.1f) {
+                                            pendingBlurAmount = lyricBlurAmount
+                                        }
+                                    }
+
+                                    Column(Modifier.fillMaxWidth()) {
+                                        Text(
+                                            text = stringResource(R.string.lyrics_blur_current, pendingBlurAmount.roundToInt()),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Slider(
+                                            value = pendingBlurAmount,
+                                            onValueChange = { pendingBlurAmount = it },
+                                            onValueChangeFinished = {
+                                                onLyricBlurAmountChange(pendingBlurAmount)
+                                            },
+                                            valueRange = 0f..25f,
+                                            steps = 24
+                                        )
+                                    }
+                                }
+                            )
+                        }
 
                         ListItem(
                             leadingContent = {

@@ -169,6 +169,8 @@
     <string name="lyrics_blur">歌词模糊</string>
     <string name="lyrics_blur_effect">歌词模糊效果</string>
     <string name="lyrics_blur_desc">为非当前行歌词添加景深模糊</string>
+    <string name="lyrics_blur_amount">模糊强度</string>
+    <string name="lyrics_blur_current">当前模糊度:%d</string>
     <string name="lyrics_font_size">歌词字体大小</string>
     <string name="lyrics_offset">歌词偏移调整</string>
     <string name="lyrics_adjust_offset">调整歌词偏移</string>

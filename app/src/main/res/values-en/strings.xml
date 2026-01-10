@@ -169,6 +169,8 @@
     <string name="lyrics_blur">Blur</string>
     <string name="lyrics_blur_effect">Blur Effect</string>
     <string name="lyrics_blur_desc">Blur inactive lines</string>
+    <string name="lyrics_blur_amount">Blur Intensity</string>
+    <string name="lyrics_blur_current">Current Blur: %d</string>
     <string name="lyrics_font_size">Lyrics Font Size</string>
     <string name="lyrics_offset">Lyrics Offset</string>
     <string name="lyrics_adjust_offset">Adjust Lyrics Offset</string>

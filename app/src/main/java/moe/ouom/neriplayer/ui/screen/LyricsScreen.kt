@@ -113,6 +113,7 @@ import kotlinx.coroutines.delay
 fun LyricsScreen(
     lyrics: List<LyricEntry>,
     lyricBlurEnabled: Boolean,
+    lyricBlurAmount: Float,
     lyricFontScale: Float,
     onLyricFontScaleChange: (Float) -> Unit,
     onEnterAlbum: (NeteaseAlbum) -> Unit,
@@ -305,11 +306,12 @@ fun LyricsScreen(
                         activeScale = 1.06f,
                         nearScale = 0.95f,
                         farScale = 0.88f,
-                        inactiveBlurNear = if (lyricBlurEnabled) 2.dp else 0.dp,
-                        inactiveBlurFar = if (lyricBlurEnabled) 4.dp else 0.dp
+                        inactiveBlurNear = 0.dp,
+                        inactiveBlurFar = 0.dp
                     ),
                     lyricOffsetMs = lyricOffsetMs,
                     lyricBlurEnabled = lyricBlurEnabled,
+                    lyricBlurAmount = lyricBlurAmount,
                     onLyricClick = { lyricEntry ->
                         onSeekTo(lyricEntry.startTimeMs)
                     },

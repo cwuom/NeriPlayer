@@ -269,6 +269,7 @@ fun NeriApp(
     val themeSeedColor by repo.themeSeedColorFlow.collectAsState(initial = ThemeDefaults.DEFAULT_SEED_COLOR_HEX)
     val themeColorPalette by repo.themeColorPaletteFlow.collectAsState(initial = ThemeDefaults.PRESET_COLORS)
     val lyricBlurEnabled by repo.lyricBlurEnabledFlow.collectAsState(initial = true)
+    val lyricBlurAmount by repo.lyricBlurAmountFlow.collectAsState(initial = 10f)
     val lyricFontScale by repo.lyricFontScaleFlow.collectAsState(initial = 1.0f)
     val uiDensityScale by repo.uiDensityScaleFlow.collectAsState(initial = 1.0f)
     val bypassProxy by repo.bypassProxyFlow.collectAsState(initial = true)
@@ -860,6 +861,10 @@ fun NeriApp(
                                         onLyricBlurEnabledChange = { enabled ->
                                             scope.launch { repo.setLyricBlurEnabled(enabled) }
                                         },
+                                        lyricBlurAmount = lyricBlurAmount,
+                                        onLyricBlurAmountChange = { amount ->
+                                            scope.launch { repo.setLyricBlurAmount(amount) }
+                                        },
                                         lyricFontScale = lyricFontScale,
                                         onLyricFontScaleChange = { scale ->
                                             scope.launch { repo.setLyricFontScale(scale) }
@@ -1094,6 +1099,7 @@ fun NeriApp(
                                     navController.navigate("netease_album_detail/$json")
                                 },
                                 lyricBlurEnabled = lyricBlurEnabled,
+                                lyricBlurAmount = lyricBlurAmount,
                                 lyricFontScale = lyricFontScale,
                                 onLyricFontScaleChange = { scale ->
                                     scope.launch { repo.setLyricFontScale(scale) }

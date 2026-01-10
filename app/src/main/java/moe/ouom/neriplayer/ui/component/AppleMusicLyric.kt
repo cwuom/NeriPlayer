@@ -212,6 +212,7 @@ fun AppleMusicLyric(
     visualSpec: LyricVisualSpec = LyricVisualSpec(),
     lyricOffsetMs: Long = 0L,
     lyricBlurEnabled: Boolean = true,
+    lyricBlurAmount: Float = 10f,
     onLyricClick: ((LyricEntry) -> Unit)? = null,
     translatedLyrics: List<LyricEntry>? = null,
     translationFontSize: TextUnit = 14.sp
@@ -316,8 +317,7 @@ fun AppleMusicLyric(
                         )
 
                         val blurRadiusDp = if (isActive || !lyricBlurEnabled) 0.dp else {
-                            val t = ((distance - 1).coerceAtLeast(0) / 3f).coerceIn(0f, 1f)
-                            lerp(spec.inactiveBlurNear, spec.inactiveBlurFar, t)
+                            lyricBlurAmount.dp
                         }
                         val blurRadiusPx = with(density) { blurRadiusDp.toPx() }
 

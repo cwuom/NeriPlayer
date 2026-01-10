@@ -180,6 +180,7 @@ fun NowPlayingScreen(
     onNavigateUp: () -> Unit,
     onEnterAlbum: (NeteaseAlbum) -> Unit,
     lyricBlurEnabled: Boolean,
+    lyricBlurAmount: Float,
     lyricFontScale: Float,
     onLyricFontScaleChange: (Float) -> Unit,
     showLyricTranslation: Boolean = true,
@@ -339,6 +340,7 @@ fun NowPlayingScreen(
                 LyricsScreen(
                     lyrics = lyrics,
                     lyricBlurEnabled = lyricBlurEnabled,
+                    lyricBlurAmount = lyricBlurAmount,
                     lyricFontScale = lyricFontScale,
                     onEnterAlbum = onEnterAlbum,
                     onLyricFontScaleChange = onLyricFontScaleChange,
