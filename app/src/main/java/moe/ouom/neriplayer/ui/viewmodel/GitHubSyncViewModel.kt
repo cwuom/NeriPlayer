@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.ui.viewmodel
+﻿package moe.ouom.neriplayer.ui.viewmodel
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -71,7 +71,7 @@ class GitHubSyncViewModel : ViewModel() {
         _uiState.value = _uiState.value.copy(isValidating = true, errorMessage = null)
 
         viewModelScope.launch {
-            val apiClient = GitHubApiClient(token)
+            val apiClient = GitHubApiClient(context, token)
             val result = apiClient.validateToken()
 
             if (result.isSuccess) {
@@ -81,13 +81,13 @@ class GitHubSyncViewModel : ViewModel() {
                     isValidating = false,
                     tokenValid = true,
                     username = username,
-                    successMessage = "Token验证成功: $username"
+                    successMessage = "Token verified: $username"  // Localized in UI
                 )
             } else {
                 _uiState.value = _uiState.value.copy(
                     isValidating = false,
                     tokenValid = false,
-                    errorMessage = "Token验证失败: ${result.exceptionOrNull()?.message}"
+                    errorMessage = "Token verification failed: ${result.exceptionOrNull()?.message}"  // Localized in UI
                 )
             }
         }
@@ -99,14 +99,14 @@ class GitHubSyncViewModel : ViewModel() {
     fun createRepository(context: Context, repoName: String) {
         val token = storage?.getToken()
         if (token == null) {
-            _uiState.value = _uiState.value.copy(errorMessage = "请先配置Token")
+            _uiState.value = _uiState.value.copy(errorMessage = "Please configure Token first")  // Localized in UI
             return
         }
 
         _uiState.value = _uiState.value.copy(isCreatingRepo = true, errorMessage = null)
 
         viewModelScope.launch {
-            val apiClient = GitHubApiClient(token)
+            val apiClient = GitHubApiClient(context, token)
             val result = apiClient.createRepository(repoName)
 
             if (result.isSuccess) {
@@ -117,12 +117,12 @@ class GitHubSyncViewModel : ViewModel() {
                     repoOwner = repo.fullName.split("/")[0],
                     repoName = repo.name,
                     isConfigured = true,
-                    successMessage = "仓库创建成功: ${repo.fullName}"
+                    successMessage = "Repository created: ${repo.fullName}"  // Localized in UI
                 )
             } else {
                 _uiState.value = _uiState.value.copy(
                     isCreatingRepo = false,
-                    errorMessage = "仓库创建失败: ${result.exceptionOrNull()?.message}"
+                    errorMessage = "Repository creation failed: ${result.exceptionOrNull()?.message}"  // Localized in UI
                 )
             }
         }
@@ -134,13 +134,13 @@ class GitHubSyncViewModel : ViewModel() {
     fun useExistingRepository(context: Context, fullRepoName: String) {
         val token = storage?.getToken()
         if (token == null) {
-            _uiState.value = _uiState.value.copy(errorMessage = "请先配置Token")
+            _uiState.value = _uiState.value.copy(errorMessage = "Please configure Token first")  // Localized in UI
             return
         }
 
         val parts = fullRepoName.split("/")
         if (parts.size != 2) {
-            _uiState.value = _uiState.value.copy(errorMessage = "仓库格式错误,应为: owner/repo")
+            _uiState.value = _uiState.value.copy(errorMessage = "Repository format error, should be: owner/repo")  // Localized in UI
             return
         }
 
@@ -150,7 +150,7 @@ class GitHubSyncViewModel : ViewModel() {
         _uiState.value = _uiState.value.copy(isCheckingRepo = true, errorMessage = null)
 
         viewModelScope.launch {
-            val apiClient = GitHubApiClient(token)
+            val apiClient = GitHubApiClient(context, token)
             val result = apiClient.checkRepository(owner, repo)
 
             if (result.isSuccess) {
@@ -160,12 +160,12 @@ class GitHubSyncViewModel : ViewModel() {
                     repoOwner = owner,
                     repoName = repo,
                     isConfigured = true,
-                    successMessage = "仓库配置成功: $fullRepoName"
+                    successMessage = "Repository configured: $fullRepoName"  // Localized in UI
                 )
             } else {
                 _uiState.value = _uiState.value.copy(
                     isCheckingRepo = false,
-                    errorMessage = "仓库不存在或无权访问: ${result.exceptionOrNull()?.message}"
+                    errorMessage = "Repository not found or no access: ${result.exceptionOrNull()?.message}"  // Localized in UI
                 )
             }
         }
@@ -203,12 +203,12 @@ class GitHubSyncViewModel : ViewModel() {
                     clearConfiguration(context)
                     _uiState.value = _uiState.value.copy(
                         isSyncing = false,
-                        errorMessage = "GitHub Token 已过期，请重新配置"
+                        errorMessage = "GitHub Token expired, please reconfigure"  // Localized in UI
                     )
                 } else {
                     _uiState.value = _uiState.value.copy(
                         isSyncing = false,
-                        errorMessage = "同步失败: ${error?.message}"
+                        errorMessage = "Sync failed: ${error?.message}"  // Localized in UI
                     )
                 }
             }

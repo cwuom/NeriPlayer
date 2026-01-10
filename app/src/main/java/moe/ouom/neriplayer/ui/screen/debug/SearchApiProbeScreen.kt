@@ -34,11 +34,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.ui.viewmodel.debug.SearchApiProbeViewModel
 
@@ -67,18 +69,18 @@ fun SearchApiProbeScreen() {
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
-            text = "多平台搜索接口探针",
+            text = stringResource(R.string.debug_search_probe),
             style = MaterialTheme.typography.titleLarge
         )
         Text(
-            text = "输入关键词，点击平台按钮将真实请求搜索接口，并把原始 JSON 结果复制到剪贴板。",
+            text = stringResource(R.string.debug_search_desc),
             style = MaterialTheme.typography.bodyMedium
         )
 
         OutlinedTextField(
             value = ui.keyword,
             onValueChange = vm::onKeywordChange,
-            label = { Text("搜索关键词") },
+            label = { Text(stringResource(R.string.debug_search_keyword_label)) },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true
         )
@@ -98,13 +100,13 @@ fun SearchApiProbeScreen() {
                     onClick = { vm.callSearchAndCopy(MusicPlatform.CLOUD_MUSIC) },
                     enabled = buttonEnabled,
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("搜索网易云") }
+                ) { Text(stringResource(R.string.debug_search_netease)) }
 
                 Button(
                     onClick = { vm.callSearchAndCopy(MusicPlatform.QQ_MUSIC) },
                     enabled = buttonEnabled,
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("搜索QQ") }
+                ) { Text(stringResource(R.string.debug_search_qq)) }
 
 
                 if (ui.running) {
@@ -124,9 +126,9 @@ fun SearchApiProbeScreen() {
                 Modifier.fillMaxWidth().padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("状态：${ui.lastMessage}", style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.debug_status, ui.lastMessage), style = MaterialTheme.typography.bodyMedium)
                 Text(
-                    text = ui.lastJsonPreview.ifBlank { "（暂无预览，先输入关键词再点上面的按钮~）" },
+                    text = ui.lastJsonPreview.ifBlank { stringResource(R.string.debug_search_preview_hint) },
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace
                 )

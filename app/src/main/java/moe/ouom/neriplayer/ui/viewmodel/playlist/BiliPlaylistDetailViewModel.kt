@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.ui.viewmodel.playlist
+﻿package moe.ouom.neriplayer.ui.viewmodel.playlist
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -125,12 +125,12 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
             } catch (e: IOException) {
                 _uiState.value = _uiState.value.copy(
                     loading = false,
-                    error = "网络异常: ${e.message}"
+                    error = "Network error: ${e.message}"  // Localized in UI
                 )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     loading = false,
-                    error = "加载失败: ${e.message}"
+                    error = "Load failed: ${e.message}"  // Localized in UI
                 )
             }
         }

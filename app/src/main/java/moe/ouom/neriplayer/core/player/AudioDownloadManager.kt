@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.BiliAudioStreamInfo
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
@@ -101,14 +102,14 @@ object AudioDownloadManager {
                 // 检查文件是否已存在
                 val existingFile = getLocalFilePath(context, song)
                 if (existingFile != null) {
-                    NPLogger.d(TAG, "文件已存在，跳过下载: ${song.name}")
+                    NPLogger.d(TAG, context.getString(R.string.download_file_exists, song.name))
                     return@withContext
                 }
 
                 val isBili = song.album.startsWith(PlayerManager.BILI_SOURCE_TAG)
                 val resolved = if (isBili) resolveBili(song) else resolveNetease(song.id)
                 if (resolved == null) {
-                    NPLogger.e(TAG, "无法获取下载链接: ${song.name}")
+                    NPLogger.e(TAG, context.getString(R.string.download_no_url, song.name))
                     return@withContext
                 }
 
@@ -200,7 +201,7 @@ object AudioDownloadManager {
                     val song = songs[index]
                     // 检查是否被取消
                     if (_isCancelled.value) {
-                        NPLogger.d(TAG, "下载已取消")
+                        NPLogger.d(TAG, context.getString(R.string.download_cancelled_message))
                         break
                     }
                     
@@ -232,13 +233,13 @@ object AudioDownloadManager {
                             )
                         }
                     } catch (e: Exception) {
-                        NPLogger.e(TAG, "批量下载失败: ${song.name} - ${e.message}", e)
+                        NPLogger.e(TAG, context.getString(R.string.download_batch_failed_song, song.name, e.message ?: ""), e)
                     }
                 }
 
                 _batchProgressFlow.value = null
             } catch (e: Exception) {
-                NPLogger.e(TAG, "批量下载失败: ${e.message}", e)
+                NPLogger.e(TAG, context.getString(R.string.download_batch_failed, e.message ?: ""), e)
                 _batchProgressFlow.value = null
             }
         }
@@ -266,7 +267,7 @@ object AudioDownloadManager {
             if (!song.matchedLyric.isNullOrBlank()) {
                 lyricFile.writeText(song.matchedLyric)
                 baseNameLyricFile.writeText(song.matchedLyric)
-                NPLogger.d(TAG, "使用匹配的歌词保存: ${song.name}")
+                NPLogger.d(TAG, context.getString(R.string.download_lyrics_matched, song.name))
                 // 不要return，继续尝试获取翻译歌词
             }
 
@@ -284,7 +285,7 @@ object AudioDownloadManager {
                         if (tlyric.isNotBlank()) {
                             transLyricFile.writeText(tlyric)
                             baseNameTransLyricFile.writeText(tlyric)
-                            NPLogger.d(TAG, "从API获取翻译歌词保存: ${song.name}")
+                            NPLogger.d(TAG, context.getString(R.string.download_lyrics_api, song.name))
                         }
                     }
                 } catch (e: Exception) {

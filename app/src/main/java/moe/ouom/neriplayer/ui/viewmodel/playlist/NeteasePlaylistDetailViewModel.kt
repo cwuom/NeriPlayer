@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.ui.viewmodel.playlist
+﻿package moe.ouom.neriplayer.ui.viewmodel.playlist
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -34,6 +34,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.parcelize.Parcelize
+import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
@@ -145,13 +146,13 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
                 Log.e(TAG_PD, "Network/Server error", e)
                 _uiState.value = _uiState.value.copy(
                     loading = false,
-                    error = "网络异常或服务器异常：${e.message ?: e.javaClass.simpleName}"
+                    error = "Network or server error: ${e.message ?: e.javaClass.simpleName}"  // Localized in UI
                 )
             } catch (e: Exception) {
                 Log.e(TAG_PD, "Unexpected error", e)
                 _uiState.value = _uiState.value.copy(
                     loading = false,
-                    error = "解析/未知错误：${e.message ?: e.javaClass.simpleName}"
+                    error = "Parse/unknown error: ${e.message ?: e.javaClass.simpleName}"  // Localized in UI
                 )
             }
         }
@@ -196,13 +197,13 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
                 Log.e(TAG_PD, "Network/Server error", e)
                 _uiState.value = _uiState.value.copy(
                     loading = false,
-                    error = "网络异常或服务器异常：${e.message ?: e.javaClass.simpleName}"
+                    error = "Network or server error: ${e.message ?: e.javaClass.simpleName}"  // Localized in UI
                 )
             } catch (e: Exception) {
                 Log.e(TAG_PD, "Unexpected error", e)
                 _uiState.value = _uiState.value.copy(
                     loading = false,
-                    error = "解析/未知错误：${e.message ?: e.javaClass.simpleName}"
+                    error = "Parse/unknown error: ${e.message ?: e.javaClass.simpleName}"  // Localized in UI
                 )
             }
         }
@@ -238,9 +239,9 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
     private fun parseDetailFromPlaylist(raw: String): ParsedDetail {
         val root = JSONObject(raw)
         val code = root.optInt("code", -1)
-        require(code == 200) { "接口返回异常 code=$code" }
+        require(code == 200) { getApplication<Application>().getString(R.string.error_api_code, code) }
 
-        val pl = root.optJSONObject("playlist") ?: error("缺少 playlist 节点")
+        val pl = root.optJSONObject("playlist") ?: error(getApplication<Application>().getString(R.string.error_missing_node, "playlist"))
 
         val header = PlaylistHeader(
             id = pl.optLong("id"),
@@ -295,9 +296,9 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
     private fun parseDetailFromAlbum(raw: String): ParsedDetail {
         val root = JSONObject(raw)
         val code = root.optInt("code", -1)
-        require(code == 200) { "接口返回异常 code=$code" }
+        require(code == 200) { getApplication<Application>().getString(R.string.error_api_code, code) }
 
-        val al = root.optJSONObject("album") ?: error("缺少 album 节点")
+        val al = root.optJSONObject("album") ?: error(getApplication<Application>().getString(R.string.error_missing_node, "album"))
         val cover = toHttps(al.optString("picUrl", "")) ?: ""
 
         val header = PlaylistHeader(

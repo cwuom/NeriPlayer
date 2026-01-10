@@ -187,21 +187,21 @@ class GitHubSyncWorker(
         // 创建通知渠道（Android 8.0+）
         val channel = NotificationChannel(
             NOTIFICATION_CHANNEL_ID,
-            "GitHub同步",
+            applicationContext.getString(R.string.github_sync_channel_name),
             NotificationManager.IMPORTANCE_DEFAULT
         ).apply {
-            description = "GitHub同步状态通知"
+            description = applicationContext.getString(R.string.github_sync_channel_desc)
         }
         notificationManager.createNotificationChannel(channel)
 
         val errorMessage = when (error) {
-            is TokenExpiredException -> "Token 已过期，请重新配置"
-            else -> error?.message ?: "同步失败"
+            is TokenExpiredException -> applicationContext.getString(R.string.github_sync_token_expired)
+            else -> error?.message ?: applicationContext.getString(R.string.github_sync_failed_message)
         }
 
         val notification = NotificationCompat.Builder(applicationContext, NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle("GitHub 同步失败")
+            .setContentTitle(applicationContext.getString(R.string.github_sync_failed_title))
             .setContentText(errorMessage)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)

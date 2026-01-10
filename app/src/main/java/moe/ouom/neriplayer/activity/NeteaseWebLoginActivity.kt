@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.activity
+﻿package moe.ouom.neriplayer.activity
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -93,7 +93,7 @@ class NeteaseWebLoginActivity : ComponentActivity() {
             )
         }
         toolbar = MaterialToolbar(this).apply {
-            title = "网易云登录"
+            title = getString(R.string.netease_web_login)
             setNavigationIcon(R.drawable.ic_arrow_back_24)
             setNavigationOnClickListener { finish() }
             inflateMenu(R.menu.menu_netease_web_login)
@@ -172,7 +172,7 @@ class NeteaseWebLoginActivity : ComponentActivity() {
             val api = cm.getCookie("https://interface.music.163.com") ?: ""
             val merged = listOf(main, api).filter { it.isNotBlank() }.joinToString("; ")
             if (merged.isBlank()) {
-                Snackbar.make(webView, "未读取到 Cookie，请确认已完成登录", Snackbar.LENGTH_SHORT).show()
+                Snackbar.make(webView, getString(R.string.snackbar_cookie_empty), Snackbar.LENGTH_SHORT).show()
                 return
             }
             val map = cookieStringToMap(merged)
@@ -185,7 +185,7 @@ class NeteaseWebLoginActivity : ComponentActivity() {
         } catch (e: Throwable) {
             Snackbar.make(
                 webView,
-                "读取失败：${e.message ?: e.javaClass.simpleName}",
+                getString(R.string.snackbar_read_failed, e.message ?: e.javaClass.simpleName),
                 Snackbar.LENGTH_LONG
             ).show()
         }

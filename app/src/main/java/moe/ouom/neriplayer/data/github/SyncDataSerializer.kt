@@ -106,13 +106,13 @@ object SyncDataSerializer {
      * ProtoBuf + GZIP压缩序列化
      */
     private fun serializeCompressed(data: SyncData): String {
-        // 1. ProtoBuf序列化
+        // ProtoBuf序列化
         val protoBytes = protoBuf.encodeToByteArray(data)
 
-        // 2. GZIP压缩
+        // GZIP压缩
         val compressedBytes = compress(protoBytes)
 
-        // 3. Base64编码（直接编码，无前缀）
+        // Base64编码（直接编码，无前缀）
         return android.util.Base64.encodeToString(
             compressedBytes,
             android.util.Base64.NO_WRAP
@@ -123,13 +123,13 @@ object SyncDataSerializer {
      * ProtoBuf + GZIP解压反序列化
      */
     private fun deserializeCompressed(content: String): SyncData {
-        // 1. Base64解码
+        // Base64解码
         val compressedBytes = android.util.Base64.decode(content, android.util.Base64.NO_WRAP)
 
-        // 2. GZIP解压
+        // GZIP解压
         val protoBytes = decompress(compressedBytes)
 
-        // 3. ProtoBuf反序列化
+        // ProtoBuf反序列化
         return protoBuf.decodeFromByteArray(protoBytes)
     }
 

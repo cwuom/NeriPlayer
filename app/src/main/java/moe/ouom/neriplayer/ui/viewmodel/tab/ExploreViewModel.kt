@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.ui.viewmodel.tab
+﻿package moe.ouom.neriplayer.ui.viewmodel.tab
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -42,12 +42,44 @@ import org.json.JSONObject
 private const val TAG = "NERI-ExploreVM"
 
 /**
+ * Tag key to Chinese API category mapping
+ */
+val TAG_TO_API_CATEGORY = mapOf(
+    "tag_all" to "全部",
+    "tag_pop" to "流行",
+    "tag_soundtrack" to "影视原声",
+    "tag_chinese" to "华语",
+    "tag_nostalgia" to "怀旧",
+    "tag_rock" to "摇滚",
+    "tag_acg" to "ACG",
+    "tag_western" to "欧美",
+    "tag_fresh" to "清新",
+    "tag_night" to "夜晚",
+    "tag_children" to "儿童",
+    "tag_folk" to "民谣",
+    "tag_japanese" to "日语",
+    "tag_romantic" to "浪漫",
+    "tag_study" to "学习",
+    "tag_korean" to "韩语",
+    "tag_work" to "工作",
+    "tag_electronic" to "电子",
+    "tag_cantonese" to "粤语",
+    "tag_dance" to "舞曲",
+    "tag_sad" to "伤感",
+    "tag_game" to "游戏",
+    "tag_afternoon_tea" to "下午茶",
+    "tag_healing" to "治愈",
+    "tag_rap" to "说唱",
+    "tag_light_music" to "轻音乐"
+)
+
+/**
  * 定义搜索源
  * @param displayName 用于在UI上显示的名称
  */
 enum class SearchSource(val displayName: String) {
-    NETEASE("网易云"),
-    BILIBILI("哔哩哔哩")
+    NETEASE("Netease"),  // Will use string resource in UI
+    BILIBILI("Bilibili")  // Will use string resource in UI
 }
 
 data class ExploreUiState(
@@ -55,7 +87,7 @@ data class ExploreUiState(
     val loading: Boolean = false,
     val error: String? = null,
     val playlists: List<NeteasePlaylist> = emptyList(),
-    val selectedTag: String = "全部",
+    val selectedTag: String = "tag_all",  // String resource key
     val searching: Boolean = false,
     val searchError: String? = null,
     val searchResults: List<SongItem> = emptyList(),
@@ -116,7 +148,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     searching = false,
-                    searchError = "Bilibili 搜索失败: ${e.message}",
+                    searchError = "Bilibili search failed: ${e.message}",  // Localized in UI
                     searchResults = emptyList()
                 )
             }
@@ -132,8 +164,10 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         _uiState.value = _uiState.value.copy(loading = true, error = null)
         viewModelScope.launch {
             try {
+                // Convert tag key to Chinese API category
+                val apiCategory = TAG_TO_API_CATEGORY[realCat] ?: realCat
                 val raw = withContext(Dispatchers.IO) {
-                    neteaseClient.getHighQualityPlaylists(realCat, 50, 0L)
+                    neteaseClient.getHighQualityPlaylists(apiCategory, 50, 0L)
                 }
                 val mapped = parsePlaylists(raw)
 
@@ -146,7 +180,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     loading = false,
-                    error = "加载歌单失败: ${e.message}"
+                    error = "Load playlist failed: ${e.message}"  // Localized in UI
                 )
             }
         }
@@ -187,7 +221,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     searching = false,
-                    searchError = "网易云搜索失败: ${e.message}",
+                    searchError = "Netease search failed: ${e.message}",  // Localized in UI
                     searchResults = emptyList()
                 )
             }

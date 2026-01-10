@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.ui.viewmodel.tab
+﻿package moe.ouom.neriplayer.ui.viewmodel.tab
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.LocalPlaylist
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
@@ -130,7 +131,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             try {
                 val mid = biliCookieRepo.getCookiesOnce()["DedeUserID"]?.toLongOrNull() ?: 0L
                 if (mid == 0L) {
-                    _uiState.value = _uiState.value.copy(biliError = "无法获取用户ID，请重新登录")
+                    _uiState.value = _uiState.value.copy(biliError = getApplication<Application>().getString(R.string.error_get_user_id))
                     return@launch
                 }
                 val rawList = withContext(Dispatchers.IO) { biliClient.getUserCreatedFavFolders(mid) }
@@ -151,7 +152,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                                 )
                             } catch (e: Exception) {
                                 // 获取详情失败，使用原始数据并提供一个空的封面URL
-                                NPLogger.e("LibraryViewModel-Bili", "获取详情失败",e)
+                                NPLogger.e("LibraryViewModel-Bili", getApplication<Application>().getString(R.string.music_get_detail_failed), e)
                                 BiliPlaylist(
                                     mediaId = folder.mediaId,
                                     fid = folder.fid,

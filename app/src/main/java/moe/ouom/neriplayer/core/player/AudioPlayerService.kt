@@ -259,7 +259,7 @@ class AudioPlayerService : Service() {
             )
 
         val isFav = PlayerManager.playlistsFlow.value
-            .firstOrNull { it.name == "我喜欢的音乐" }
+            .firstOrNull { it.name == "我喜欢的音乐" || it.name == "My Favorite Music" }
             ?.songs?.any { it.id == song?.id } == true
 
         val favIcon = IconCompat.createWithResource(
@@ -268,18 +268,18 @@ class AudioPlayerService : Service() {
         )
         val favAction = NotificationCompat.Action.Builder(
             favIcon,
-            if (isFav) "取消收藏" else "收藏",
+            if (isFav) getString(R.string.favorite_remove) else getString(R.string.favorite_add),
             toggleFavIntent
         ).build()
 
-        builder.addAction(R.drawable.round_skip_previous_24, "上一首", prevIntent)
+        builder.addAction(R.drawable.round_skip_previous_24, getString(R.string.player_previous), prevIntent)
         builder.addAction(
             if (isPlaying) R.drawable.round_pause_24 else R.drawable.round_play_arrow_24,
-            if (isPlaying) "暂停" else "播放",
+            if (isPlaying) getString(R.string.player_pause) else getString(R.string.player_play),
             if (isPlaying) pauseIntent else playIntent
         )
         builder.addAction(favAction)
-        builder.addAction(R.drawable.round_skip_next_24, "下一首", nextIntent)
+        builder.addAction(R.drawable.round_skip_next_24, getString(R.string.player_next), nextIntent)
 
         // 设置标题和副标题
         builder.setContentTitle(song?.name ?: "NeriPlayer")
@@ -292,8 +292,8 @@ class AudioPlayerService : Service() {
                     val remaining = PlayerManager.sleepTimerManager.formatRemainingTime()
                     "⏱ $remaining"
                 }
-                SleepTimerMode.FINISH_CURRENT -> "⏱ 播完当前停止"
-                SleepTimerMode.FINISH_PLAYLIST -> "⏱ 播完列表停止"
+                SleepTimerMode.FINISH_CURRENT -> getString(R.string.notification_stop_after_current)
+                SleepTimerMode.FINISH_PLAYLIST -> getString(R.string.notification_stop_after_playlist)
             }
             "${song?.artist ?: ""} • $timerInfo"
         } else {
@@ -357,12 +357,12 @@ class AudioPlayerService : Service() {
 
         val song = PlayerManager.currentSongFlow.value
         val isFav = PlayerManager.playlistsFlow.value
-            .firstOrNull { it.name == "我喜欢的音乐" }
+            .firstOrNull { it.name == "我喜欢的音乐" || it.name == "My Favorite Music" }
             ?.songs?.any { it.id == song?.id } == true
 
         val favIconRes = if (isFav) R.drawable.ic_baseline_favorite_24
         else R.drawable.ic_outline_favorite_24
-        val favText = if (isFav) "取消收藏" else "收藏"
+        val favText = if (isFav) getString(R.string.favorite_remove) else getString(R.string.favorite_add)
 
         val favCustom = PlaybackStateCompat.CustomAction.Builder(
             ACTION_TOGGLE_FAV, favText, favIconRes

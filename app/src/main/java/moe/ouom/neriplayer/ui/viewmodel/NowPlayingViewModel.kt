@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.ui.viewmodel
+﻿package moe.ouom.neriplayer.ui.viewmodel
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -95,7 +95,7 @@ class NowPlayingViewModel : ViewModel() {
                 _manualSearchState.update { it.copy(isLoading = false, searchResults = results) }
 
             } catch (e: Exception) {
-                _manualSearchState.update { it.copy(isLoading = false, error = "搜索失败: ${e.message}") }
+                _manualSearchState.update { it.copy(isLoading = false, error = "Search failed: ${e.message}") }  // Localized in UI
             }
         }
     }

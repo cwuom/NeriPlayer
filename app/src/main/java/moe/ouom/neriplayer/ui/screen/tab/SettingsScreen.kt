@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.ui.screen.tab
+﻿package moe.ouom.neriplayer.ui.screen.tab
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -79,6 +79,7 @@ import androidx.compose.material.icons.outlined.ColorLens
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Router
+import androidx.compose.material.icons.outlined.Subtitles
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Update
@@ -142,6 +143,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -179,6 +181,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.SdStorage
 import moe.ouom.neriplayer.ui.component.HsvPicker
+import moe.ouom.neriplayer.ui.component.LanguageSettingItem
 import android.graphics.Color as AndroidColor
 
 
@@ -206,7 +209,7 @@ private fun ExpandableHeader(
         trailingContent = {
             Icon(
                 imageVector = Icons.Filled.ExpandMore,
-                contentDescription = if (expanded) "收起" else "展开",
+                contentDescription = if (expanded) stringResource(R.string.action_collapse) else stringResource(R.string.action_expand),
                 modifier = Modifier.rotate(arrowRotation.takeIf { it != 0f } ?: if (expanded) 180f else 0f),
                 tint = MaterialTheme.colorScheme.onSurface
             )
@@ -224,12 +227,12 @@ private fun ThemeSeedListItem(seedColorHex: String, onClick: () -> Unit) {
         leadingContent = {
             Icon(
                 imageVector = Icons.Outlined.ColorLens,
-                contentDescription = "主题色",
+                contentDescription = stringResource(R.string.settings_theme_color),
                 tint = MaterialTheme.colorScheme.onSurface
             )
         },
-        headlineContent = { Text("主题色") },
-        supportingContent = { Text("选择一个你喜欢的颜色作为主色调") },
+        headlineContent = { Text(stringResource(R.string.settings_theme_color)) },
+        supportingContent = { Text(stringResource(R.string.settings_theme_color_desc)) },
         trailingContent = {
             Box(
                 modifier = Modifier
@@ -250,13 +253,13 @@ private fun UiScaleListItem(currentScale: Float, onClick: () -> Unit) {
         leadingContent = {
             Icon(
                 imageVector = Icons.Outlined.ZoomInMap,
-                contentDescription = "UI 缩放",
+                contentDescription = stringResource(R.string.settings_ui_scale),
                 modifier = Modifier.size(24.dp),
                 tint = MaterialTheme.colorScheme.onSurface
             )
         },
-        headlineContent = { Text("UI 缩放 (DPI)") },
-        supportingContent = { Text("当前: ${"%.2f".format(currentScale)}x (默认 1.00x)") },
+        headlineContent = { Text(stringResource(R.string.settings_ui_scale_dpi)) },
+        supportingContent = { Text(stringResource(R.string.settings_ui_scale_current, "%.2f".format(currentScale))) },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
     )
 }
@@ -297,6 +300,8 @@ fun SettingsScreen(
     onBackgroundImageAlphaChange: (Float) -> Unit,
     hapticFeedbackEnabled: Boolean,
     onHapticFeedbackEnabledChange: (Boolean) -> Unit,
+    showLyricTranslation: Boolean,
+    onShowLyricTranslationChange: (Boolean) -> Unit,
     onNavigateToDownloadManager: () -> Unit = {},
     maxCacheSizeBytes: Long,
     onMaxCacheSizeBytesChange: (Long) -> Unit,
@@ -317,6 +322,10 @@ fun SettingsScreen(
     // 网络配置菜单的状态
     var networkExpanded by remember { mutableStateOf(false) }
     val networkArrowRotation by animateFloatAsState(targetValue = if (networkExpanded) 180f else 0f, label = "network_arrow")
+
+    // 音质设置菜单的状态
+    var audioQualityExpanded by remember { mutableStateOf(false) }
+    val audioQualityArrowRotation by animateFloatAsState(targetValue = if (audioQualityExpanded) 180f else 0f, label = "audio_quality_arrow")
 
     // 下载管理菜单的状态
     var downloadManagerExpanded by remember { mutableStateOf(false) }
@@ -379,7 +388,7 @@ fun SettingsScreen(
             val map = biliVm.parseJsonToMap(json)
             biliVm.importCookiesFromMap(map)
         } else {
-            inlineMsg = "已取消读取 B 站 Cookie"
+            inlineMsg = context.getString(R.string.settings_bili_cookie_cancelled)
         }
     }
 
@@ -414,26 +423,26 @@ fun SettingsScreen(
     // 当前所选音质对应的中文标签
     val qualityLabel = remember(preferredQuality) {
         when (preferredQuality) {
-            "standard" -> "标准"
-            "higher" -> "较高"
-            "exhigh" -> "极高"
-            "lossless" -> "无损"
+            "standard" -> context.getString(R.string.settings_audio_quality_standard)
+            "higher" -> context.getString(R.string.settings_audio_quality_higher)
+            "exhigh" -> context.getString(R.string.settings_audio_quality_exhigh)
+            "lossless" -> context.getString(R.string.settings_audio_quality_lossless)
             "hires" -> "Hi-Res"
-            "jyeffect" -> "高清环绕声"
-            "sky" -> "沉浸环绕声"
-            "jymaster" -> "超清母带"
+            "jyeffect" -> context.getString(R.string.settings_audio_quality_jyeffect)
+            "sky" -> context.getString(R.string.settings_audio_quality_sky)
+            "jymaster" -> context.getString(R.string.settings_audio_quality_jymaster)
             else -> preferredQuality
         }
     }
 
     val biliQualityLabel = remember(biliPreferredQuality) {
         when (biliPreferredQuality) {
-            "dolby"   -> "杜比全景声"
+            "dolby"   -> context.getString(R.string.settings_audio_quality_dolby)
             "hires"   -> "Hi-Res"
-            "lossless"-> "无损"
-            "high"    -> "高（约192kbps）"
-            "medium"  -> "中（约128kbps）"
-            "low"     -> "低（约64kbps）"
+            "lossless"-> context.getString(R.string.settings_audio_quality_lossless)
+            "high"    -> context.getString(R.string.settings_audio_quality_high)
+            "medium"  -> context.getString(R.string.settings_audio_quality_medium)
+            "low"     -> context.getString(R.string.settings_audio_quality_low)
             else -> biliPreferredQuality
         }
     }
@@ -469,7 +478,7 @@ fun SettingsScreen(
                     showBiliCookieDialog = true
                 }
                 BiliAuthEvent.LoginSuccess -> {
-                    inlineMsg = "B 站登录成功"
+                    inlineMsg = context.getString(R.string.settings_bili_login_success)
                 }
             }
         }
@@ -485,7 +494,7 @@ fun SettingsScreen(
         contentColor = Color.Transparent,
         topBar = {
             LargeTopAppBar(
-                title = { Text("设置") },
+                title = { Text(stringResource(R.string.settings_title)) },
                 scrollBehavior = scrollBehavior,
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent,
@@ -517,12 +526,12 @@ fun SettingsScreen(
                     leadingContent = {
                         Icon(
                             imageVector = Icons.Outlined.Brightness4,
-                            contentDescription = "动态取色",
+                            contentDescription = stringResource(R.string.settings_dynamic_color),
                             tint = MaterialTheme.colorScheme.onSurface
                         )
                     },
-                    headlineContent = { Text("动态取色") },
-                    supportingContent = { Text("跟随封面主题色") },
+                    headlineContent = { Text(stringResource(R.string.settings_dynamic_color)) },
+                    supportingContent = { Text(stringResource(R.string.settings_dynamic_color_desc)) },
                     trailingContent = {
                         Switch(checked = dynamicColor, onCheckedChange = onDynamicColorChange)
                     },
@@ -546,12 +555,12 @@ fun SettingsScreen(
                     leadingContent = {
                         Icon(
                             imageVector = Icons.Outlined.DarkMode,
-                            contentDescription = "强制深色",
+                            contentDescription = stringResource(R.string.settings_force_dark),
                             tint = MaterialTheme.colorScheme.onSurface
                         )
                     },
-                    headlineContent = { Text("强制深色") },
-                    supportingContent = { Text("不跟随系统时可手动指定") },
+                    headlineContent = { Text(stringResource(R.string.settings_force_dark)) },
+                    supportingContent = { Text(stringResource(R.string.settings_force_dark_desc)) },
                     trailingContent = {
                         Switch(
                             checked = forceDark,
@@ -574,13 +583,13 @@ fun SettingsScreen(
                     leadingContent = {
                         Icon(
                             imageVector = Icons.Outlined.AdsClick,
-                            contentDescription = "触感反馈",
+                            contentDescription = stringResource(R.string.settings_haptic_feedback),
                             modifier = Modifier.size(24.dp),
                             tint = MaterialTheme.colorScheme.onSurface
                         )
                     },
-                    headlineContent = { Text("触感反馈") },
-                    supportingContent = { Text("开启后点击按钮时会有震动反馈") },
+                    headlineContent = { Text(stringResource(R.string.settings_haptic)) },
+                    supportingContent = { Text(stringResource(R.string.settings_haptic_desc)) },
                     trailingContent = {
                         Switch(checked = hapticFeedbackEnabled, onCheckedChange = onHapticFeedbackEnabledChange)
                     },
@@ -588,13 +597,18 @@ fun SettingsScreen(
                 )
             }
 
+            // 语言设置
+            item {
+                LanguageSettingItem()
+            }
+
             // 登录三方平台
             item {
                 ExpandableHeader(
                     icon = Icons.Filled.AccountCircle,
-                    title = "登录三方平台",
-                    subtitleCollapsed = "展开以选择登录平台",
-                    subtitleExpanded = "收起",
+                    title = stringResource(R.string.settings_login_platforms),
+                    subtitleCollapsed = stringResource(R.string.settings_login_platforms_expand),
+                    subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
                     expanded = loginExpanded,
                     onToggle = { loginExpanded = !loginExpanded },
                     arrowRotation = arrowRotation
@@ -619,13 +633,13 @@ fun SettingsScreen(
                             leadingContent = {
                                 Icon(
                                     painter = painterResource(id = R.drawable.ic_bilibili),
-                                    contentDescription = "哔哩哔哩",
+                                    contentDescription = stringResource(R.string.settings_bilibili),
                                     modifier = Modifier.size(24.dp),
                                     tint = MaterialTheme.colorScheme.onSurface
                                 )
                             },
-                            headlineContent = { Text("哔哩哔哩") },
-                            supportingContent = { Text("浏览器登录") },
+                            headlineContent = { Text(stringResource(R.string.platform_bilibili)) },
+                            supportingContent = { Text(stringResource(R.string.login_browser)) },
                             modifier = Modifier.clickable {
                                 inlineMsg = null
                                 biliWebLoginLauncher.launch(
@@ -647,7 +661,7 @@ fun SettingsScreen(
                                 )
                             },
                             headlineContent = { Text("YouTube") },
-                            supportingContent = { Text("暂未实现") },
+                            supportingContent = { Text(stringResource(R.string.common_not_implemented)) },
                             modifier = Modifier.clickable { },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
@@ -657,13 +671,13 @@ fun SettingsScreen(
                             leadingContent = {
                                 Icon(
                                     painter = painterResource(id = R.drawable.ic_netease_cloud_music),
-                                    contentDescription = "网易云音乐",
+                                    contentDescription = stringResource(R.string.settings_netease),
                                     modifier = Modifier.size(24.dp),
                                     tint = MaterialTheme.colorScheme.onSurface
                                 )
                             },
-                            headlineContent = { Text("网易云音乐") },
-                            supportingContent = { Text("浏览器/验证码/Cookie 登录") },
+                            headlineContent = { Text(stringResource(R.string.platform_netease)) },
+                            supportingContent = { Text(stringResource(R.string.login_methods)) },
                             modifier = Modifier.clickable {
                                 inlineMsg = null
                                 showNeteaseSheet = true
@@ -676,13 +690,13 @@ fun SettingsScreen(
                             leadingContent = {
                                 Icon(
                                     painter = painterResource(id = R.drawable.ic_qq_music),
-                                    contentDescription = "QQ 音乐",
+                                    contentDescription = stringResource(R.string.settings_qq_music),
                                     modifier = Modifier.size(24.dp),
                                     tint = MaterialTheme.colorScheme.onSurface
                                 )
                             },
-                            headlineContent = { Text("QQ 音乐") },
-                            supportingContent = { Text("咕咕咕，先观望一会") },
+                            headlineContent = { Text(stringResource(R.string.settings_qq_music)) },
+                            supportingContent = { Text(stringResource(R.string.common_coming_soon)) },
                             modifier = Modifier.clickable { },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
@@ -693,9 +707,9 @@ fun SettingsScreen(
             item {
                 ExpandableHeader(
                     icon = Icons.Outlined.Tune,
-                    title = "个性化",
-                    subtitleCollapsed = "展开以调整视觉效果",
-                    subtitleExpanded = "收起",
+                    title = stringResource(R.string.settings_personalization),
+                    subtitleCollapsed = stringResource(R.string.settings_personalization_expand),
+                    subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
                     expanded = personalizationExpanded,
                     onToggle = { personalizationExpanded = !personalizationExpanded },
                     arrowRotation = personalizationArrowRotation
@@ -719,13 +733,13 @@ fun SettingsScreen(
                             leadingContent = {
                                 Icon(
                                     imageVector = Icons.Outlined.BlurOn,
-                                    contentDescription = "歌词模糊",
+                                    contentDescription = stringResource(R.string.settings_lyrics_blur),
                                     modifier = Modifier.size(24.dp),
                                     tint = MaterialTheme.colorScheme.onSurface
                                 )
                             },
-                            headlineContent = { Text("歌词模糊效果") },
-                            supportingContent = { Text("为非当前行歌词添加景深模糊") },
+                            headlineContent = { Text(stringResource(R.string.lyrics_blur_effect)) },
+                            supportingContent = { Text(stringResource(R.string.lyrics_blur_desc)) },
                             trailingContent = {
                                 Switch(checked = lyricBlurEnabled, onCheckedChange = onLyricBlurEnabledChange)
                             },
@@ -735,13 +749,30 @@ fun SettingsScreen(
                         ListItem(
                             leadingContent = {
                                 Icon(
-                                    imageVector = Icons.Outlined.FormatSize,
-                                    contentDescription = "歌词字体大小",
+                                    imageVector = Icons.Outlined.Subtitles,
+                                    contentDescription = stringResource(R.string.settings_show_lyric_translation),
                                     modifier = Modifier.size(24.dp),
                                     tint = MaterialTheme.colorScheme.onSurface
                                 )
                             },
-                            headlineContent = { Text("歌词字体大小") },
+                            headlineContent = { Text(stringResource(R.string.settings_show_lyric_translation)) },
+                            supportingContent = { Text(stringResource(R.string.settings_show_lyric_translation_desc)) },
+                            trailingContent = {
+                                Switch(checked = showLyricTranslation, onCheckedChange = onShowLyricTranslationChange)
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+
+                        ListItem(
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Outlined.FormatSize,
+                                    contentDescription = stringResource(R.string.settings_lyrics_font_size),
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = { Text(stringResource(R.string.lyrics_font_size)) },
                             supportingContent = {
                                 var pendingLyricFontScale by remember { mutableFloatStateOf(lyricFontScale) }
                                 LaunchedEffect(lyricFontScale) {
@@ -752,7 +783,7 @@ fun SettingsScreen(
 
                                 Column(Modifier.fillMaxWidth()) {
                                     Text(
-                                        text = "当前：${(pendingLyricFontScale * 100).roundToInt()}%",
+                                        text = stringResource(R.string.settings_lyrics_font_current, (pendingLyricFontScale * 100).roundToInt()),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -766,7 +797,7 @@ fun SettingsScreen(
                                         steps = 10
                                     )
                                     Text(
-                                        text = "示例歌词：昨夜小楼又东风",
+                                        text = stringResource(R.string.settings_lyrics_sample),
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .padding(top = 4.dp),
@@ -794,11 +825,11 @@ fun SettingsScreen(
                             leadingContent = {
                                 Icon(
                                     imageVector = Icons.Outlined.Wallpaper,
-                                    contentDescription = "自定义背景图"
+                                    contentDescription = stringResource(R.string.settings_custom_background)
                                 )
                             },
-                            headlineContent = { Text("自定义背景图") },
-                            supportingContent = { Text(if (backgroundImageUri != null) "点击更换" else "选择一张图片") }
+                            headlineContent = { Text(stringResource(R.string.background_custom)) },
+                            supportingContent = { Text(if (backgroundImageUri != null) stringResource(R.string.settings_background_change) else stringResource(R.string.settings_background_select)) }
                         )
 
                         // 展开区域
@@ -806,12 +837,12 @@ fun SettingsScreen(
                             Column {
                                 // 清除背景图按钮
                                 TextButton(onClick = { onBackgroundImageChange(null) }) {
-                                    Text("清除背景图")
+                                    Text(stringResource(R.string.background_clear))
                                 }
 
                                 // 模糊度调节
                                 ListItem(
-                                    headlineContent = { Text("背景模糊度") },
+                                    headlineContent = { Text(stringResource(R.string.background_blur)) },
                                     colors = ListItemDefaults.colors(
                                         containerColor = Color.Transparent
                                     ),
@@ -826,7 +857,7 @@ fun SettingsScreen(
 
                                 // 透明度调节
                                 ListItem(
-                                    headlineContent = { Text("背景透明度") },
+                                    headlineContent = { Text(stringResource(R.string.background_opacity)) },
                                     colors = ListItemDefaults.colors(
                                         containerColor = Color.Transparent
                                     ),
@@ -847,9 +878,9 @@ fun SettingsScreen(
             item {
                 ExpandableHeader(
                     icon = Icons.Outlined.Router,
-                    title = "网络设置",
-                    subtitleCollapsed = "展开以配置网络选项",
-                    subtitleExpanded = "收起",
+                    title = stringResource(R.string.settings_network),
+                    subtitleCollapsed = stringResource(R.string.settings_network_expand),
+                    subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
                     expanded = networkExpanded,
                     onToggle = { networkExpanded = !networkExpanded },
                     arrowRotation = networkArrowRotation
@@ -873,13 +904,13 @@ fun SettingsScreen(
                             leadingContent = {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Outlined.AltRoute,
-                                    contentDescription = "绕过系统代理",
+                                    contentDescription = stringResource(R.string.settings_bypass_proxy),
                                     modifier = Modifier.size(24.dp),
                                     tint = MaterialTheme.colorScheme.onSurface
                                 )
                             },
-                            headlineContent = { Text("绕过系统代理") },
-                            supportingContent = { Text("应用内网络请求不走系统代理") },
+                            headlineContent = { Text(stringResource(R.string.settings_bypass_proxy)) },
+                            supportingContent = { Text(stringResource(R.string.settings_bypass_proxy_desc)) },
                             trailingContent = {
                                 Switch(checked = bypassProxy, onCheckedChange = onBypassProxyChange)
                             },
@@ -891,45 +922,69 @@ fun SettingsScreen(
 
 
             item {
-                ListItem(
-                    leadingContent = {
-                        Icon(
-                            imageVector = Icons.Filled.Audiotrack,
-                            contentDescription = "网易云默认音质",
-                            modifier = Modifier.size(24.dp),
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
-                    },
-                    headlineContent = { Text("网易云默认音质", style = MaterialTheme.typography.titleMedium) },
-                    supportingContent = { Text("$qualityLabel - $preferredQuality") },
-                    modifier = Modifier.clickable { showQualityDialog = true },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                ExpandableHeader(
+                    icon = Icons.Filled.Audiotrack,
+                    title = stringResource(R.string.settings_audio_quality),
+                    subtitleCollapsed = stringResource(R.string.settings_audio_quality_expand),
+                    subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
+                    expanded = audioQualityExpanded,
+                    onToggle = { audioQualityExpanded = !audioQualityExpanded },
+                    arrowRotation = audioQualityArrowRotation
                 )
             }
 
+            // 展开区域
             item {
-                ListItem(
-                    leadingContent = {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_bilibili),
-                            contentDescription = "B 站默认音质",
-                            modifier = Modifier.size(24.dp),
-                            tint = MaterialTheme.colorScheme.onSurface
+                AnimatedVisibility(
+                    visible = audioQualityExpanded,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.Transparent)
+                            .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
+                    ) {
+                        ListItem(
+                            leadingContent = {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_netease_cloud_music),
+                                    contentDescription = stringResource(R.string.settings_netease_quality),
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = { Text(stringResource(R.string.quality_netease_default)) },
+                            supportingContent = { Text("$qualityLabel - $preferredQuality") },
+                            modifier = Modifier.clickable { showQualityDialog = true },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
-                    },
-                    headlineContent = { Text("B 站默认音质", style = MaterialTheme.typography.titleMedium) },
-                    supportingContent = { Text("$biliQualityLabel - $biliPreferredQuality") },
-                    modifier = Modifier.clickable { showBiliQualityDialog = true },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                )
+
+                        ListItem(
+                            leadingContent = {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_bilibili),
+                                    contentDescription = stringResource(R.string.settings_bili_quality),
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = { Text(stringResource(R.string.quality_bili_default)) },
+                            supportingContent = { Text("$biliQualityLabel - $biliPreferredQuality") },
+                            modifier = Modifier.clickable { showBiliQualityDialog = true },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+                    }
+                }
             }
 
             item {
                 ExpandableHeader(
                     icon = Icons.Outlined.SdStorage,
-                    title = "存储与缓存",
-                    subtitleCollapsed = "管理缓存大小与清理",
-                    subtitleExpanded = "收起",
+                    title = stringResource(R.string.settings_storage_cache),
+                    subtitleCollapsed = stringResource(R.string.settings_storage_expand),
+                    subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
                     expanded = cacheExpanded,
                     onToggle = { cacheExpanded = !cacheExpanded },
                     arrowRotation = cacheArrowRotation
@@ -949,7 +1004,7 @@ fun SettingsScreen(
                     ) {
                         // 缓存大小滑块
                         ListItem(
-                            headlineContent = { Text("音乐缓存上限") },
+                            headlineContent = { Text(stringResource(R.string.settings_cache_limit)) },
                             supportingContent = {
                                 // 计算当前 MB 值
                                 val sizeMb = maxCacheSizeBytes / (1024 * 1024).toFloat()
@@ -965,7 +1020,7 @@ fun SettingsScreen(
 
                                 Column {
                                     Text(
-                                        text = if (sliderValue < 10f) "不缓存 (0 MB)" else displaySize,
+                                        text = if (sliderValue < 10f) stringResource(R.string.settings_no_cache) else displaySize,
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -982,7 +1037,7 @@ fun SettingsScreen(
                                         steps = 0
                                     )
                                     Text(
-                                        "设置为 0 MB 即禁用缓存。修改上限后需重启应用生效。",
+                                        stringResource(R.string.settings_cache_notice),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.outline
                                     )
@@ -993,13 +1048,13 @@ fun SettingsScreen(
 
                         // 清除缓存按钮
                         ListItem(
-                            headlineContent = { Text("清除缓存") },
-                            supportingContent = { Text("释放本地存储空间") },
+                            headlineContent = { Text(stringResource(R.string.settings_clear_cache)) },
+                            supportingContent = { Text(stringResource(R.string.settings_clear_cache_desc)) },
                             trailingContent = {
                                 OutlinedButton(onClick = { showClearCacheDialog = true }) {
                                     Icon(Icons.Outlined.DeleteForever, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(Modifier.width(4.dp))
-                                    Text("清除")
+                                    Text(stringResource(R.string.action_clear))
                                 }
                             },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
@@ -1012,9 +1067,9 @@ fun SettingsScreen(
             item {
                 ExpandableHeader(
                     icon = Icons.Outlined.Download,
-                    title = "下载管理",
-                    subtitleCollapsed = "展开以管理下载任务",
-                    subtitleExpanded = "收起",
+                    title = stringResource(R.string.settings_download_management),
+                    subtitleCollapsed = stringResource(R.string.settings_download_expand),
+                    subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
                     expanded = downloadManagerExpanded,
                     onToggle = { downloadManagerExpanded = !downloadManagerExpanded },
                     arrowRotation = downloadManagerArrowRotation
@@ -1042,13 +1097,13 @@ fun SettingsScreen(
                                 leadingContent = {
                                     Icon(
                                         Icons.Outlined.Download,
-                                        contentDescription = "下载进度",
+                                        contentDescription = stringResource(R.string.settings_download_progress),
                                         tint = MaterialTheme.colorScheme.primary
                                     )
                                 },
-                                headlineContent = { Text("下载进度") },
+                                headlineContent = { Text(stringResource(R.string.download_progress)) },
                                 supportingContent = {
-                                    Text("${progress.completedSongs}/${progress.totalSongs} 首歌曲")
+                                    Text(stringResource(R.string.settings_download_songs_count, progress.completedSongs, progress.totalSongs))
                                 },
                                 trailingContent = {
                                     HapticTextButton(
@@ -1056,7 +1111,7 @@ fun SettingsScreen(
                                             AudioDownloadManager.cancelDownload()
                                         }
                                     ) {
-                                        Text("取消", color = MaterialTheme.colorScheme.error)
+                                        Text(stringResource(R.string.action_cancel), color = MaterialTheme.colorScheme.error)
                                     }
                                 },
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent)
@@ -1073,7 +1128,7 @@ fun SettingsScreen(
                             if (progress.currentSong.isNotBlank()) {
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
-                                    "正在下载: ${progress.currentSong}",
+                                    stringResource(R.string.settings_downloading, progress.currentSong),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(start = 16.dp)
@@ -1086,12 +1141,12 @@ fun SettingsScreen(
                                 leadingContent = {
                                     Icon(
                                         Icons.Outlined.Download,
-                                        contentDescription = "下载管理",
+                                        contentDescription = stringResource(R.string.settings_download_manager),
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 },
-                                headlineContent = { Text("下载管理") },
-                                supportingContent = { Text("管理下载任务和本地文件") },
+                                headlineContent = { Text(stringResource(R.string.download_title)) },
+                                supportingContent = { Text(stringResource(R.string.download_desc)) },
                                 modifier = Modifier.clickable {
                                     onNavigateToDownloadManager()
                                 },
@@ -1106,9 +1161,9 @@ fun SettingsScreen(
             item {
                 ExpandableHeader(
                     icon = Icons.Outlined.Backup,
-                    title = "备份与恢复",
-                    subtitleCollapsed = "展开以管理歌单备份",
-                    subtitleExpanded = "收起",
+                    title = stringResource(R.string.settings_backup_restore),
+                    subtitleCollapsed = stringResource(R.string.settings_backup_expand),
+                    subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
                     expanded = backupRestoreExpanded,
                     onToggle = { backupRestoreExpanded = !backupRestoreExpanded },
                     arrowRotation = backupRestoreArrowRotation
@@ -1134,12 +1189,12 @@ fun SettingsScreen(
                             leadingContent = {
                                 Icon(
                                     Icons.Outlined.PlaylistPlay,
-                                    contentDescription = "当前歌单",
+                                    contentDescription = stringResource(R.string.settings_current_playlist),
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             },
-                            headlineContent = { Text("当前歌单数量") },
-                            supportingContent = { Text("$currentPlaylistCount 个歌单") },
+                            headlineContent = { Text(stringResource(R.string.playlist_count)) },
+                            supportingContent = { Text(stringResource(R.string.playlist_count_format, currentPlaylistCount)) },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
 
@@ -1148,12 +1203,12 @@ fun SettingsScreen(
                             leadingContent = {
                                 Icon(
                                     Icons.Outlined.Upload,
-                                    contentDescription = "导出歌单",
+                                    contentDescription = stringResource(R.string.settings_export_playlist),
                                     tint = MaterialTheme.colorScheme.primary
                                 )
                             },
-                            headlineContent = { Text("导出歌单") },
-                            supportingContent = { Text("将歌单导出为备份文件") },
+                            headlineContent = { Text(stringResource(R.string.playlist_export)) },
+                            supportingContent = { Text(stringResource(R.string.playlist_export_desc)) },
                             modifier = Modifier.clickable {
                                 if (!backupRestoreUiState.isExporting) {
                                     exportPlaylistLauncher.launch(backupRestoreVm.generateBackupFileName())
@@ -1167,12 +1222,12 @@ fun SettingsScreen(
                             leadingContent = {
                                 Icon(
                                     Icons.Outlined.Download,
-                                    contentDescription = "导入歌单",
+                                    contentDescription = stringResource(R.string.settings_import_playlist),
                                     tint = MaterialTheme.colorScheme.primary
                                 )
                             },
-                            headlineContent = { Text("导入歌单") },
-                            supportingContent = { Text("从备份文件恢复歌单") },
+                            headlineContent = { Text(stringResource(R.string.playlist_import)) },
+                            supportingContent = { Text(stringResource(R.string.playlist_import_desc)) },
                             modifier = Modifier.clickable {
                                 if (!backupRestoreUiState.isImporting) {
                                     importPlaylistLauncher.launch(arrayOf("*/*"))
@@ -1184,7 +1239,7 @@ fun SettingsScreen(
                         // 导出进度
                         backupRestoreUiState.exportProgress?.let { progress ->
                             ListItem(
-                                headlineContent = { Text("导出进度") },
+                                headlineContent = { Text(stringResource(R.string.playlist_export_progress)) },
                                 supportingContent = { Text(progress) },
                                 trailingContent = {
                                     CircularProgressIndicator(
@@ -1199,7 +1254,7 @@ fun SettingsScreen(
                         // 导入进度
                         backupRestoreUiState.importProgress?.let { progress ->
                             ListItem(
-                                headlineContent = { Text("导入进度") },
+                                headlineContent = { Text(stringResource(R.string.playlist_import_progress)) },
                                 supportingContent = { Text(progress) },
                                 trailingContent = {
                                     CircularProgressIndicator(
@@ -1214,7 +1269,7 @@ fun SettingsScreen(
                         // 分析进度
                         backupRestoreUiState.analysisProgress?.let { progress ->
                             ListItem(
-                                headlineContent = { Text("分析进度") },
+                                headlineContent = { Text(stringResource(R.string.sync_analysis_progress)) },
                                 supportingContent = { Text(progress) },
                                 trailingContent = {
                                     CircularProgressIndicator(
@@ -1256,13 +1311,13 @@ fun SettingsScreen(
                                     tonalElevation = 2.dp
                                 ) {
                                     ListItem(
-                                        headlineContent = { Text(if (isSuccess) "导出成功" else "导出失败") },
+                                        headlineContent = { Text(if (isSuccess) stringResource(R.string.settings_export_success) else stringResource(R.string.settings_export_failed)) },
                                         supportingContent = { Text(message) },
                                         trailingContent = {
                                             HapticTextButton(
                                                 onClick = { backupRestoreVm.clearExportStatus() }
                                             ) {
-                                                Text("关闭", color = MaterialTheme.colorScheme.primary)
+                                                Text(stringResource(R.string.action_close), color = MaterialTheme.colorScheme.primary)
                                             }
                                         },
                                         colors = ListItemDefaults.colors(
@@ -1303,13 +1358,13 @@ fun SettingsScreen(
                                     tonalElevation = 2.dp
                                 ) {
                                     ListItem(
-                                        headlineContent = { Text(if (isSuccess) "导入成功" else "导入失败") },
+                                        headlineContent = { Text(if (isSuccess) stringResource(R.string.settings_import_success) else stringResource(R.string.settings_import_failed)) },
                                         supportingContent = { Text(message) },
                                         trailingContent = {
                                             HapticTextButton(
                                                 onClick = { backupRestoreVm.clearImportStatus() }
                                             ) {
-                                                Text("关闭", color = MaterialTheme.colorScheme.primary)
+                                                Text(stringResource(R.string.action_close), color = MaterialTheme.colorScheme.primary)
                                             }
                                         },
                                         colors = ListItemDefaults.colors(
@@ -1337,13 +1392,13 @@ fun SettingsScreen(
                             leadingContent = {
                                 Icon(
                                     Icons.Outlined.CloudSync,
-                                    contentDescription = "GitHub同步",
+                                    contentDescription = stringResource(R.string.github_auto_sync),
                                     tint = MaterialTheme.colorScheme.primary
                                 )
                             },
-                            headlineContent = { Text("GitHub 自动同步") },
+                            headlineContent = { Text(stringResource(R.string.github_auto_sync)) },
                             supportingContent = {
-                                Text(if (githubState.isConfigured) "已配置" else "未配置")
+                                Text(if (githubState.isConfigured) stringResource(R.string.settings_configured) else stringResource(R.string.settings_not_configured))
                             },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
@@ -1353,12 +1408,12 @@ fun SettingsScreen(
                                 leadingContent = {
                                     Icon(
                                         Icons.Outlined.Settings,
-                                        contentDescription = "配置",
+                                        contentDescription = stringResource(R.string.settings_configure),
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 },
-                                headlineContent = { Text("配置 GitHub 同步") },
-                                supportingContent = { Text("点击配置 Token 和仓库") },
+                                headlineContent = { Text(stringResource(R.string.sync_config)) },
+                                supportingContent = { Text(stringResource(R.string.sync_config_desc)) },
                                 modifier = Modifier.clickable {
                                     showGitHubConfigDialog = true
                                 },
@@ -1369,12 +1424,12 @@ fun SettingsScreen(
                                 leadingContent = {
                                     Icon(
                                         Icons.Outlined.Sync,
-                                        contentDescription = "自动同步",
+                                        contentDescription = stringResource(R.string.settings_auto_sync),
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 },
-                                headlineContent = { Text("自动同步") },
-                                supportingContent = { Text("修改后自动同步到 GitHub") },
+                                headlineContent = { Text(stringResource(R.string.sync_auto)) },
+                                supportingContent = { Text(stringResource(R.string.sync_auto_desc)) },
                                 trailingContent = {
                                     Switch(
                                         checked = githubState.autoSyncEnabled,
@@ -1388,16 +1443,16 @@ fun SettingsScreen(
                                 leadingContent = {
                                     Icon(
                                         Icons.Outlined.CloudUpload,
-                                        contentDescription = "立即同步",
+                                        contentDescription = stringResource(R.string.settings_sync_now),
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 },
-                                headlineContent = { Text("立即同步") },
+                                headlineContent = { Text(stringResource(R.string.sync_now)) },
                                 supportingContent = {
                                     if (githubState.lastSyncTime > 0) {
-                                        Text("上次同步: ${formatSyncTime(githubState.lastSyncTime)}")
+                                        Text(stringResource(R.string.sync_last_time, formatSyncTime(githubState.lastSyncTime)))
                                     } else {
-                                        Text("尚未同步")
+                                        Text(stringResource(R.string.sync_not_synced))
                                     }
                                 },
                                 trailingContent = {
@@ -1408,7 +1463,7 @@ fun SettingsScreen(
                                         )
                                     } else {
                                         HapticTextButton(onClick = { githubVm.performSync(context) }) {
-                                            Text("同步")
+                                            Text(stringResource(R.string.sync_title))
                                         }
                                     }
                                 },
@@ -1424,16 +1479,16 @@ fun SettingsScreen(
                                 leadingContent = {
                                     Icon(
                                         Icons.Outlined.Timer,
-                                        contentDescription = "播放历史更新频率",
+                                        contentDescription = stringResource(R.string.settings_play_history_update_freq),
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 },
-                                headlineContent = { Text("播放历史更新频率") },
+                                headlineContent = { Text(stringResource(R.string.sync_history_frequency)) },
                                 supportingContent = {
                                     Text(
                                         when (currentMode.value) {
-                                            SecureTokenStorage.PlayHistoryUpdateMode.IMMEDIATE -> "立即更新"
-                                            SecureTokenStorage.PlayHistoryUpdateMode.BATCHED -> "每10分钟更新"
+                                            SecureTokenStorage.PlayHistoryUpdateMode.IMMEDIATE -> stringResource(R.string.settings_update_immediate)
+                                            SecureTokenStorage.PlayHistoryUpdateMode.BATCHED -> stringResource(R.string.settings_sync_batch_update_time)
                                         }
                                     )
                                 },
@@ -1447,10 +1502,10 @@ fun SettingsScreen(
                             if (showPlayHistoryModeDialog) {
                                 AlertDialog(
                                     onDismissRequest = { showPlayHistoryModeDialog = false },
-                                    title = { Text("播放历史更新频率") },
+                                    title = { Text(stringResource(R.string.sync_history_frequency)) },
                                     text = {
                                         Column {
-                                            Text("选择播放历史同步到云端的频率：", style = MaterialTheme.typography.bodyMedium)
+                                            Text(stringResource(R.string.sync_frequency_desc), style = MaterialTheme.typography.bodyMedium)
                                             Spacer(modifier = Modifier.height(16.dp))
 
                                             // 立即更新选项
@@ -1474,8 +1529,8 @@ fun SettingsScreen(
                                                     }
                                                 )
                                                 Column(modifier = Modifier.padding(start = 8.dp)) {
-                                                    Text("立即更新", style = MaterialTheme.typography.bodyLarge)
-                                                    Text("每次播放后立即同步", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                    Text(stringResource(R.string.sync_after_play), style = MaterialTheme.typography.bodyLarge)
+                                                    Text(stringResource(R.string.sync_after_play_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                                 }
                                             }
 
@@ -1500,15 +1555,15 @@ fun SettingsScreen(
                                                     }
                                                 )
                                                 Column(modifier = Modifier.padding(start = 8.dp)) {
-                                                    Text("批量更新", style = MaterialTheme.typography.bodyLarge)
-                                                    Text("每10分钟同步一次（节省流量）", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                    Text(stringResource(R.string.sync_batch_update), style = MaterialTheme.typography.bodyLarge)
+                                                    Text(stringResource(R.string.sync_batch_update_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                                 }
                                             }
                                         }
                                     },
                                     confirmButton = {
                                         HapticTextButton(onClick = { showPlayHistoryModeDialog = false }) {
-                                            Text("关闭")
+                                            Text(stringResource(R.string.action_close))
                                         }
                                     }
                                 )
@@ -1521,12 +1576,12 @@ fun SettingsScreen(
                                 leadingContent = {
                                     Icon(
                                         Icons.Outlined.Download,
-                                        contentDescription = "省流通道",
+                                        contentDescription = stringResource(R.string.settings_data_saver),
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 },
-                                headlineContent = { Text("省流通道") },
-                                supportingContent = { Text("若无特殊需求，十分推荐打开此选项\n切换通道可能导致数据丢失，请确保所有平台的设置保持一致，请勿随意切换") },
+                                headlineContent = { Text(stringResource(R.string.sync_data_saver)) },
+                                supportingContent = { Text(stringResource(R.string.sync_data_saver_desc)) },
                                 trailingContent = {
                                     Switch(
                                         checked = dataSaverMode,
@@ -1543,7 +1598,7 @@ fun SettingsScreen(
                                 onClick = { showClearGitHubConfigDialog = true },
                                 modifier = Modifier.padding(start = 16.dp)
                             ) {
-                                Text("清除配置", color = MaterialTheme.colorScheme.error)
+                                Text(stringResource(R.string.settings_clear_config), color = MaterialTheme.colorScheme.error)
                             }
                         }
 
@@ -1573,7 +1628,7 @@ fun SettingsScreen(
                                         modifier = Modifier.weight(1f)
                                     )
                                     IconButton(onClick = { githubVm.clearMessages() }) {
-                                        Icon(Icons.Default.Close, contentDescription = "关闭")
+                                        Icon(Icons.Default.Close, contentDescription = stringResource(R.string.settings_close))
                                     }
                                 }
                             }
@@ -1605,7 +1660,7 @@ fun SettingsScreen(
                                         modifier = Modifier.weight(1f)
                                     )
                                     IconButton(onClick = { githubVm.clearMessages() }) {
-                                        Icon(Icons.Default.Close, contentDescription = "关闭")
+                                        Icon(Icons.Default.Close, contentDescription = stringResource(R.string.settings_close))
                                     }
                                 }
                             }
@@ -1620,12 +1675,12 @@ fun SettingsScreen(
                     leadingContent = {
                         Icon(
                             imageVector = Icons.Outlined.Info,
-                            contentDescription = "关于",
+                            contentDescription = stringResource(R.string.settings_about),
                             tint = MaterialTheme.colorScheme.onSurface
                         )
                     },
-                    headlineContent = { Text("关于", style = MaterialTheme.typography.titleMedium) },
-                    supportingContent = { Text("NeriPlayer • GPLv3 • 由你可爱地驱动") },
+                    headlineContent = { Text(stringResource(R.string.nav_about), style = MaterialTheme.typography.titleMedium) },
+                    supportingContent = { Text(stringResource(R.string.about_app_footer)) },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
             }
@@ -1652,11 +1707,11 @@ fun SettingsScreen(
                     leadingContent = {
                         Icon(
                             imageVector = Icons.Outlined.Update,
-                            contentDescription = "版本",
+                            contentDescription = stringResource(R.string.settings_version),
                             tint = MaterialTheme.colorScheme.onSurface
                         )
                     },
-                    headlineContent = { Text("版本", style = MaterialTheme.typography.titleMedium) },
+                    headlineContent = { Text(stringResource(R.string.common_version), style = MaterialTheme.typography.titleMedium) },
                     supportingContent = {
                         val hint = if (!devModeEnabled) "" else "（DEBUG MODE）"
                         Text("${BuildConfig.VERSION_NAME} $hint")
@@ -1666,11 +1721,11 @@ fun SettingsScreen(
                             versionTapCount++
                             if (versionTapCount >= 7) {
                                 onDevModeChange(true)
-                                inlineMsg = "已开启调试模式"
+                                inlineMsg = context.getString(R.string.debug_mode_opened)
                                 versionTapCount = 0
                             }
                         } else {
-                            inlineMsg = "调试模式已开启"
+                            inlineMsg = context.getString(R.string.debug_mode_enabled)
                         }
                     },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
@@ -1683,11 +1738,11 @@ fun SettingsScreen(
                     leadingContent = {
                         Icon(
                             imageVector = Icons.Outlined.Timer,
-                            contentDescription = "编译时间",
+                            contentDescription = stringResource(R.string.settings_build_time),
                             tint = MaterialTheme.colorScheme.onSurface
                         )
                     },
-                    headlineContent = { Text("编译时间", style = MaterialTheme.typography.titleMedium) },
+                    headlineContent = { Text(stringResource(R.string.common_build_time), style = MaterialTheme.typography.titleMedium) },
                     supportingContent = { Text(convertTimestampToDate(BuildConfig.BUILD_TIMESTAMP)) },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
@@ -1721,16 +1776,16 @@ fun SettingsScreen(
     if (showBiliQualityDialog) {
         AlertDialog(
             onDismissRequest = { showBiliQualityDialog = false },
-            title = { Text("选择 B 站默认音质") },
+            title = { Text(stringResource(R.string.quality_bili_default)) },
             text = {
                 Column {
                     val options = listOf(
-                        "dolby" to "杜比全景声",
+                        "dolby" to stringResource(R.string.settings_dolby),
                         "hires" to "Hi-Res",
-                        "lossless" to "无损",
-                        "high" to "高（约192kbps）",
-                        "medium" to "中（约128kbps）",
-                        "low" to "低（约64kbps）"
+                        "lossless" to stringResource(R.string.quality_lossless),
+                        "high" to stringResource(R.string.settings_audio_quality_high),
+                        "medium" to stringResource(R.string.settings_audio_quality_medium),
+                        "low" to stringResource(R.string.settings_audio_quality_low)
                     )
                     options.forEach { (level, label) ->
                         ListItem(
@@ -1755,7 +1810,7 @@ fun SettingsScreen(
             },
             confirmButton = {
                 HapticTextButton(onClick = { showBiliQualityDialog = false }) {
-                    Text("关闭")
+                    Text(stringResource(R.string.action_close))
                 }
             }
         )
@@ -1769,19 +1824,19 @@ fun SettingsScreen(
         if (showConfirmDialog) {
             AlertDialog(
                 onDismissRequest = { showConfirmDialog = false },
-                title = { Text("确认发送验证码？") },
-                text = { Text("将发送验证码到 >${confirmPhoneMasked ?: ""}<") },
+                title = { Text(stringResource(R.string.login_confirm_send_code)) },
+                text = { Text(stringResource(R.string.login_send_code_to, confirmPhoneMasked ?: "")) },
                 confirmButton = {
                     HapticTextButton(onClick = {
                         showConfirmDialog = false
                         neteaseVm.sendCaptcha(ctcode = "86")
-                    }) { Text("发送") }
+                    }) { Text(stringResource(R.string.action_send)) }
                 },
                 dismissButton = {
                     HapticTextButton(onClick = {
                         showConfirmDialog = false
-                        inlineMsg = "已取消发送"
-                    }) { Text("取消") }
+                        inlineMsg = context.getString(R.string.sync_send_cancelled)
+                    }) { Text(stringResource(R.string.action_cancel)) }
                 }
             )
         }
@@ -1808,7 +1863,7 @@ fun SettingsScreen(
                 // 保存
                 neteaseVm.importCookiesFromMap(map)
             } else {
-                inlineMsg = "已取消读取 Cookie"
+                inlineMsg = context.getString(R.string.settings_bili_cookie_cancelled)
             }
         }
 
@@ -1822,7 +1877,7 @@ fun SettingsScreen(
                     .padding(start = 16.dp, end = 16.dp, bottom = 48.dp, top = 12.dp)
             ) {
                 Column {
-                    Text(text = "网易云音乐登录", style = MaterialTheme.typography.titleLarge)
+                    Text(text = stringResource(R.string.login_netease), style = MaterialTheme.typography.titleLarge)
                     Spacer(modifier = Modifier.height(8.dp))
 
                     // 内嵌提示条
@@ -1834,9 +1889,9 @@ fun SettingsScreen(
                     }
 
                     androidx.compose.material3.PrimaryTabRow(selectedTabIndex = selectedTab) {
-                        Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("浏览器登录") })
-                        Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("粘贴 Cookie") })
-                        Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }, text = { Text("验证码登录") })
+                        Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text(stringResource(R.string.login_browser)) })
+                        Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text(stringResource(R.string.login_paste_cookie)) })
+                        Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }, text = { Text(stringResource(R.string.login_verification_code)) })
                     }
 
                     Spacer(Modifier.height(12.dp))
@@ -1844,7 +1899,7 @@ fun SettingsScreen(
                     when (selectedTab) {
                         0 -> {
                             Text(
-                                "将打开内置浏览器（桌面UA）访问 music.163.com，登录成功后点击右上角 “完成”。",
+                                stringResource(R.string.settings_netease_login_browser_hint),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1858,7 +1913,7 @@ fun SettingsScreen(
                                     )
                                 )
                             }) {
-                                Text("开始浏览器登录")
+                                Text(stringResource(R.string.login_start_browser))
                             }
                         }
 
@@ -1866,7 +1921,7 @@ fun SettingsScreen(
                             OutlinedTextField(
                                 value = rawCookie,
                                 onValueChange = { rawCookie = it },
-                                label = { Text("粘贴 Cookie（例如：MUSIC_U=...; __csrf=...）") },
+                                label = { Text(stringResource(R.string.login_paste_cookie_hint)) },
                                 minLines = 6,
                                 maxLines = 10,
                                 modifier = Modifier.fillMaxWidth()
@@ -1874,11 +1929,11 @@ fun SettingsScreen(
                             Spacer(Modifier.height(8.dp))
                             HapticButton(onClick = {
                                 if (rawCookie.isBlank()) {
-                                    inlineMsg = "请输入 Cookie"
+                                    inlineMsg = context.getString(R.string.settings_cookie_input_hint)
                                 } else {
                                     neteaseVm.importCookiesFromRaw(rawCookie)
                                 }
-                            }) { Text("保存 Cookie 并登录") }
+                            }) { Text(stringResource(R.string.login_save_cookie)) }
                         }
 
                         2 -> {
@@ -1897,7 +1952,7 @@ fun SettingsScreen(
     if (showBiliCookieDialog) {
         AlertDialog(
             onDismissRequest = { showBiliCookieDialog = false },
-            title = { Text("B 站登录成功") },
+            title = { Text(stringResource(R.string.settings_bili_login_success)) },
             text = {
                 Column(
                     modifier = Modifier
@@ -1905,13 +1960,13 @@ fun SettingsScreen(
                         .verticalScroll(rememberScrollState())
                 ) {
                     Text(
-                        text = biliCookieText.ifBlank { "(空)" },
+                        text = biliCookieText.ifBlank { stringResource(R.string.settings_empty_placeholder) },
                         fontFamily = FontFamily.Monospace
                     )
                 }
             },
             confirmButton = {
-                HapticTextButton(onClick = { showBiliCookieDialog = false }) { Text("好的") }
+                HapticTextButton(onClick = { showBiliCookieDialog = false }) { Text(stringResource(R.string.action_ok)) }
             }
         )
     }
@@ -1920,18 +1975,18 @@ fun SettingsScreen(
     if (showQualityDialog) {
         AlertDialog(
             onDismissRequest = { showQualityDialog = false },
-            title = { Text("选择默认音质") },
+            title = { Text(stringResource(R.string.quality_default)) },
             text = {
                 Column {
                     val qualityOptions = listOf(
-                        "standard" to "标准",
-                        "higher" to "较高",
-                        "exhigh" to "极高",
-                        "lossless" to "无损",
+                        "standard" to stringResource(R.string.quality_standard),
+                        "higher" to stringResource(R.string.quality_high),
+                        "exhigh" to stringResource(R.string.quality_very_high),
+                        "lossless" to stringResource(R.string.quality_lossless),
                         "hires" to "Hi-Res",
-                        "jyeffect" to "高清环绕声",
-                        "sky" to "沉浸环绕声",
-                        "jymaster" to "超清母带"
+                        "jyeffect" to stringResource(R.string.quality_hd_surround),
+                        "sky" to stringResource(R.string.quality_surround),
+                        "jymaster" to stringResource(R.string.quality_hires)
                     )
                     qualityOptions.forEach { (level, label) ->
                         ListItem(
@@ -1956,7 +2011,7 @@ fun SettingsScreen(
             },
             confirmButton = {
                 HapticTextButton(onClick = { showQualityDialog = false }) {
-                    Text("关闭")
+                    Text(stringResource(R.string.action_close))
                 }
             }
         )
@@ -1966,7 +2021,7 @@ fun SettingsScreen(
     if (showCookieDialog) {
         AlertDialog(
             onDismissRequest = { showCookieDialog = false },
-            title = { Text("登录成功") },
+            title = { Text(stringResource(R.string.login_success)) },
             text = {
                 Column(
                     modifier = Modifier
@@ -1974,13 +2029,13 @@ fun SettingsScreen(
                         .verticalScroll(cookieScroll)
                 ) {
                     Text(
-                        text = cookieText.ifBlank { "(空)" },
+                        text = cookieText.ifBlank { stringResource(R.string.settings_empty_placeholder) },
                         fontFamily = FontFamily.Monospace
                     )
                 }
             },
             confirmButton = {
-                HapticTextButton(onClick = { showCookieDialog = false }) { Text("好的") }
+                HapticTextButton(onClick = { showCookieDialog = false }) { Text(stringResource(R.string.action_ok)) }
             }
         )
     }
@@ -2022,14 +2077,14 @@ fun SettingsScreen(
 
         AlertDialog(
             onDismissRequest = { showGitHubConfigDialog = false },
-            title = { Text("配置 GitHub 同步") },
+            title = { Text(stringResource(R.string.sync_config)) },
             text = {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .verticalScroll(rememberScrollState())
                 ) {
-                    Text("步骤1: 输入 GitHub Token", style = MaterialTheme.typography.titleSmall)
+                    Text(stringResource(R.string.sync_step1_token), style = MaterialTheme.typography.titleSmall)
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         value = githubToken,
@@ -2041,7 +2096,7 @@ fun SettingsScreen(
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "需要权限: repo (完整仓库访问)",
+                        stringResource(R.string.settings_github_token_permission),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -2054,12 +2109,12 @@ fun SettingsScreen(
                             context.startActivity(intent)
                         }
                     ) {
-                        Text("在 GitHub 创建 Token")
+                        Text(stringResource(R.string.sync_create_token))
                     }
 
                     if (githubState.tokenValid) {
                         Spacer(Modifier.height(16.dp))
-                        Text("步骤2: 选择仓库", style = MaterialTheme.typography.titleSmall)
+                        Text(stringResource(R.string.sync_step2_repo), style = MaterialTheme.typography.titleSmall)
                         Spacer(Modifier.height(8.dp))
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2067,14 +2122,14 @@ fun SettingsScreen(
                                 selected = !useExistingRepo,
                                 onClick = { useExistingRepo = false }
                             )
-                            Text("创建新仓库")
+                            Text(stringResource(R.string.sync_create_new_repo))
                         }
 
                         if (!useExistingRepo) {
                             OutlinedTextField(
                                 value = githubRepoName,
                                 onValueChange = { githubRepoName = it },
-                                label = { Text("仓库名称") },
+                                label = { Text(stringResource(R.string.sync_repo_name)) },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -2085,14 +2140,14 @@ fun SettingsScreen(
                                 selected = useExistingRepo,
                                 onClick = { useExistingRepo = true }
                             )
-                            Text("使用现有仓库")
+                            Text(stringResource(R.string.sync_use_existing_repo))
                         }
 
                         if (useExistingRepo) {
                             OutlinedTextField(
                                 value = existingRepoName,
                                 onValueChange = { existingRepoName = it },
-                                label = { Text("仓库全名") },
+                                label = { Text(stringResource(R.string.sync_repo_full_name)) },
                                 placeholder = { Text("username/repo-name") },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
@@ -2114,7 +2169,7 @@ fun SettingsScreen(
                             )
                             Spacer(Modifier.width(8.dp))
                         }
-                        Text("验证Token")
+                        Text(stringResource(R.string.sync_verify_token))
                     }
                 } else {
                     HapticButton(
@@ -2135,13 +2190,13 @@ fun SettingsScreen(
                             )
                             Spacer(Modifier.width(8.dp))
                         }
-                        Text("完成")
+                        Text(stringResource(R.string.action_done))
                     }
                 }
             },
             dismissButton = {
                 HapticTextButton(onClick = { showGitHubConfigDialog = false }) {
-                    Text("取消")
+                    Text(stringResource(R.string.action_cancel))
                 }
             }
         )
@@ -2153,8 +2208,8 @@ fun SettingsScreen(
 
         AlertDialog(
             onDismissRequest = { showClearGitHubConfigDialog = false },
-            title = { Text("清除 GitHub 配置") },
-            text = { Text("这将清除所有 GitHub 同步配置,包括 Token 和仓库信息。本地数据不会被删除。") },
+            title = { Text(stringResource(R.string.sync_clear_config)) },
+            text = { Text(stringResource(R.string.sync_clear_config_desc)) },
             confirmButton = {
                 HapticTextButton(
                     onClick = {
@@ -2162,12 +2217,12 @@ fun SettingsScreen(
                         showClearGitHubConfigDialog = false
                     }
                 ) {
-                    Text("确认清除", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.action_confirm_clear), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
                 HapticTextButton(onClick = { showClearGitHubConfigDialog = false }) {
-                    Text("取消")
+                    Text(stringResource(R.string.action_cancel))
                 }
             }
         )
@@ -2176,18 +2231,18 @@ fun SettingsScreen(
     if (showClearCacheDialog) {
         AlertDialog(
             onDismissRequest = { showClearCacheDialog = false },
-            title = { Text("确认清除缓存？") },
-            text = { Text("这将删除所有已缓存的音乐文件，释放磁盘空间。") },
+            title = { Text(stringResource(R.string.settings_confirm_clear_cache)) },
+            text = { Text(stringResource(R.string.settings_clear_cache_warning)) },
             confirmButton = {
                 HapticTextButton(
                     onClick = {
                         onClearCacheClick()
                         showClearCacheDialog = false
                     }
-                ) { Text("确认清除", color = MaterialTheme.colorScheme.error) }
+                ) { Text(stringResource(R.string.action_confirm_clear), color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
-                HapticTextButton(onClick = { showClearCacheDialog = false }) { Text("取消") }
+                HapticTextButton(onClick = { showClearCacheDialog = false }) { Text(stringResource(R.string.action_cancel)) }
             }
         )
     }
@@ -2208,7 +2263,7 @@ private fun ColorPickerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("选择主题色") },
+        title = { Text(stringResource(R.string.settings_select_color)) },
         text = {
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
@@ -2236,7 +2291,7 @@ private fun ColorPickerDialog(
 
                 // 滑动取色
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("自定义颜色（滑动选择）", style = MaterialTheme.typography.titleSmall)
+                    Text(stringResource(R.string.settings_custom_color), style = MaterialTheme.typography.titleSmall)
                     HsvPicker(
                         initialHex = currentHex,
                         onColorChanged = { pickedHex = it.uppercase(Locale.ROOT) }
@@ -2255,13 +2310,13 @@ private fun ColorPickerDialog(
                         enabled = !existsInPalette && !ThemeDefaults.PRESET_SET.contains(pickedHex),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("添加到取色盘")
+                        Text(stringResource(R.string.settings_add_to_palette))
                     }
                     Button(
                         onClick = { onColorSelected(pickedHex) },
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("应用颜色")
+                        Text(stringResource(R.string.settings_apply_color))
                     }
                 }
 
@@ -2269,7 +2324,7 @@ private fun ColorPickerDialog(
                 val deletableCount = palette.count { !ThemeDefaults.PRESET_SET.contains(it.uppercase(Locale.ROOT)) }
                 if (deletableCount > 0) {
                     Text(
-                        text = "长按颜色或点击 × 可删除自定义颜色",
+                        text = stringResource(R.string.settings_color_picker_hint),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -2277,7 +2332,7 @@ private fun ColorPickerDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("关闭") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) }
         }
     )
 }
@@ -2336,7 +2391,7 @@ private fun ColorPickerItem(
             ) {
                 Icon(
                     imageVector = Icons.Filled.Close,
-                    contentDescription = "删除该颜色",
+                    contentDescription = stringResource(R.string.settings_delete_color),
                     tint = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(12.dp)
                 )
@@ -2367,7 +2422,7 @@ private fun NeteaseLoginContent(
         OutlinedTextField(
             value = state.phone,
             onValueChange = vm::onPhoneChange,
-            label = { Text("+86 手机号") },
+            label = { Text(stringResource(R.string.settings_phone_number_hint)) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
@@ -2378,7 +2433,7 @@ private fun NeteaseLoginContent(
         OutlinedTextField(
             value = state.captcha,
             onValueChange = vm::onCaptchaChange,
-            label = { Text("短信验证码") },
+            label = { Text(stringResource(R.string.login_sms_code)) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
@@ -2394,9 +2449,9 @@ private fun NeteaseLoginContent(
             if (state.sending) {
                 CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                 Spacer(modifier = Modifier.size(8.dp))
-                Text("发送中...")
+                Text(stringResource(R.string.login_sending))
             } else {
-                Text(if (state.countdownSec > 0) "重新获取（${state.countdownSec}s）" else "发送验证码")
+                Text(if (state.countdownSec > 0) stringResource(R.string.settings_resend_code_countdown, state.countdownSec) else stringResource(R.string.login_send_code))
             }
         }
 
@@ -2410,9 +2465,9 @@ private fun NeteaseLoginContent(
             if (state.loggingIn) {
                 CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                 Spacer(modifier = Modifier.size(8.dp))
-                Text("登录中...")
+                Text(stringResource(R.string.login_logging_in))
             } else {
-                Text("登录")
+                Text(stringResource(R.string.login_title))
             }
         }
     }
@@ -2445,7 +2500,7 @@ private fun InlineMessage(
                 modifier = Modifier.weight(1f)
             )
             HapticIconButton(onClick = onClose) {
-                Icon(imageVector = Icons.Filled.Close, contentDescription = "关闭")
+                Icon(imageVector = Icons.Filled.Close, contentDescription = stringResource(R.string.action_close))
             }
         }
     }
@@ -2464,7 +2519,7 @@ private fun DpiSettingDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("修改 UI 缩放比例") },
+        title = { Text(stringResource(R.string.settings_ui_scale)) },
         text = {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
@@ -2482,14 +2537,14 @@ private fun DpiSettingDialog(
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "修改后可能需要重启应用以获得最佳效果",
+                    stringResource(R.string.settings_restart_hint),
                     style = MaterialTheme.typography.bodySmall
                 )
             }
         },
         confirmButton = {
             HapticTextButton(onClick = { onApply(sliderValue) }) {
-                Text("应用")
+                Text(stringResource(R.string.action_apply))
             }
         },
         dismissButton = {
@@ -2497,10 +2552,10 @@ private fun DpiSettingDialog(
                 HapticTextButton(onClick = {
                     sliderValue = 1.0f // 仅重置滑块状态，不应用
                 }) {
-                    Text("重置")
+                    Text(stringResource(R.string.action_reset))
                 }
                 HapticTextButton(onClick = onDismiss) {
-                    Text("取消")
+                    Text(stringResource(R.string.action_cancel))
                 }
             }
         }
@@ -2521,14 +2576,16 @@ private fun <T> StateFlow<T>.collectAsStateWithLifecycleCompat(): State<T> {
 /**
  * 格式化同步时间
  */
+@Composable
 private fun formatSyncTime(timestamp: Long): String {
+    val context = LocalContext.current
     val now = System.currentTimeMillis()
     val diff = now - timestamp
 
     return when {
-        diff < 60_000 -> "刚刚"
-        diff < 3600_000 -> "${diff / 60_000}分钟前"
-        diff < 86400_000 -> "${diff / 3600_000}小时前"
-        else -> "${diff / 86400_000}天前"
+        diff < 60_000 -> stringResource(R.string.time_just_now)
+        diff < 3600_000 -> stringResource(R.string.time_minutes_ago, diff / 60_000)
+        diff < 86400_000 -> stringResource(R.string.time_hours_ago, diff / 3600_000)
+        else -> stringResource(R.string.time_days_ago, diff / 86400_000)
     }
 }

@@ -23,12 +23,14 @@ package moe.ouom.neriplayer.data.github
  * Created: 2025/1/7
  */
 
+import android.content.Context
 import android.util.Base64
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.annotations.SerializedName
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.util.NPLogger
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -45,7 +47,7 @@ class TokenExpiredException(message: String) : IOException(message)
  * GitHub API客户端
  * 使用GitHub Contents API进行文件读写
  */
-class GitHubApiClient(private val token: String) {
+class GitHubApiClient(private val context: Context, private val token: String) {
 
     private val client = OkHttpClient.Builder().build()
     private val gson = Gson()
@@ -109,7 +111,7 @@ class GitHubApiClient(private val token: String) {
                 Result.success(username)
             } else if (response.code == 401) {
                 // Token过期或无效
-                Result.failure(TokenExpiredException("GitHub Token 已过期或无效，请重新配置"))
+                Result.failure(TokenExpiredException(context.getString(R.string.github_token_expired_message)))
             } else {
                 Result.failure(IOException("Token validation failed: ${response.code}"))
             }
@@ -257,7 +259,7 @@ class GitHubApiClient(private val token: String) {
                 Result.success(newSha)
             } else if (response.code == 401) {
                 // Token过期或无效
-                Result.failure(TokenExpiredException("GitHub Token 已过期或无效，请重新配置"))
+                Result.failure(TokenExpiredException(context.getString(R.string.github_token_expired_message)))
             } else {
                 val errorBody = response.body?.string() ?: "Unknown error"
                 Result.failure(IOException("Failed to update file: ${response.code} - $errorBody"))

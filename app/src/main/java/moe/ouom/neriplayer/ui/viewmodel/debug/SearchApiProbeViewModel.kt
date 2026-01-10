@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.di.AppContainer
 
@@ -70,12 +71,16 @@ class SearchApiProbeViewModel(app: Application) : AndroidViewModel(app) {
     fun callSearchAndCopy(platform: MusicPlatform) {
         val keyword = _ui.value.keyword
         if (keyword.isBlank()) {
-            _ui.value = _ui.value.copy(lastMessage = "错误：关键词不能为空")
+            _ui.value = _ui.value.copy(lastMessage = getApplication<Application>().getString(R.string.debug_error_keyword_empty))
             return
         }
 
         viewModelScope.launch {
-            _ui.value = _ui.value.copy(running = true, lastMessage = "正在搜索 [${platform.name}]：$keyword ...", lastJsonPreview = "")
+            _ui.value = _ui.value.copy(
+                running = true,
+                lastMessage = getApplication<Application>().getString(R.string.debug_searching, platform.name, keyword),
+                lastJsonPreview = ""
+            )
             try {
                 if (platform == MusicPlatform.CLOUD_MUSIC) {
                     ensureCookies()
@@ -92,13 +97,13 @@ class SearchApiProbeViewModel(app: Application) : AndroidViewModel(app) {
                 copyToClipboard("search_api_${platform.name}", resultJson)
                 _ui.value = _ui.value.copy(
                     running = false,
-                    lastMessage = "OK，[${platform.name}] 搜索完成并复制到剪贴板",
+                    lastMessage = getApplication<Application>().getString(R.string.debug_search_ok, platform.name),
                     lastJsonPreview = resultJson
                 )
             } catch (e: Exception) {
                 _ui.value = _ui.value.copy(
                     running = false,
-                    lastMessage = "调用/解析失败：${e.message ?: e.javaClass.simpleName}"
+                    lastMessage = getApplication<Application>().getString(R.string.debug_call_failed, e.message ?: e.javaClass.simpleName)
                 )
             }
         }

@@ -1,3 +1,1032 @@
-<resources>
+﻿<resources>
     <string name="app_name">音理音理!</string>
+
+    <!-- Common Actions -->
+    <string name="action_confirm">确定</string>
+    <string name="action_cancel">取消</string>
+    <string name="action_close">关闭</string>
+    <string name="action_ok">好的</string>
+    <string name="action_done">完成</string>
+    <string name="action_apply">应用</string>
+    <string name="action_send">发送</string>
+    <string name="action_delete">删除</string>
+    <string name="action_share">分享</string>
+    <string name="action_refresh">刷新</string>
+    <string name="action_search">搜索</string>
+    <string name="action_create">创建</string>
+    <string name="action_reset">重置</string>
+    <string name="action_retry">点我重试</string>
+    <string name="action_back">返回</string>
+    <string name="action_hide">隐藏</string>
+    <string name="action_expand">展开</string>
+    <string name="action_collapse">收起</string>
+    <string name="action_more">更多</string>
+    <string name="action_clear">清空</string>
+    <string name="action_select_all">全选</string>
+    <string name="action_deselect_all">取消全选</string>
+    <string name="action_multi_select">多选</string>
+    <string name="action_exit_multi_select">退出多选</string>
+
+    <!-- Navigation -->
+    <string name="nav_home">首页</string>
+    <string name="nav_explore">探索</string>
+    <string name="nav_library">媒体库</string>
+    <string name="nav_settings">设置</string>
+    <string name="nav_about">关于</string>
+
+    <!-- Player Controls -->
+    <string name="player_play">播放</string>
+    <string name="player_pause">暂停</string>
+    <string name="player_previous">上一首</string>
+    <string name="player_next">下一首</string>
+    <string name="player_shuffle">随机</string>
+    <string name="player_repeat">循环</string>
+    <string name="player_now_playing">正在播放</string>
+    <string name="player_no_playback">暂无播放</string>
+    <string name="player_continue">继续播放</string>
+    <string name="player_locate_current">定位到正在播放</string>
+    <string name="player_shuffle_play">随机播放</string>
+    <string name="player_play_all">全部播放</string>
+    <string name="player_play_selected">播放所选</string>
+
+    <!-- Playlist -->
+    <string name="playlist_title">歌单</string>
+    <string name="playlist_current">当前歌单</string>
+    <string name="playlist_create">新建歌单</string>
+    <string name="playlist_create_name">新建歌单名称</string>
+    <string name="playlist_rename">重命名歌单</string>
+    <string name="playlist_delete">删除歌单</string>
+    <string name="playlist_detail">歌单详情</string>
+    <string name="playlist_local_detail">本地歌单详情</string>
+    <string name="playlist_favorite">收藏歌单</string>
+    <string name="playlist_no_favorite">暂无收藏的歌单</string>
+    <string name="playlist_count">当前歌单数量</string>
+    <string name="playlist_add_to">添加到歌单</string>
+    <string name="playlist_export">导出歌单</string>
+    <string name="playlist_import">导入歌单</string>
+    <string name="playlist_export_desc">将歌单导出为备份文件</string>
+    <string name="playlist_import_desc">从备份文件恢复歌单</string>
+    <string name="playlist_export_success">导出成功</string>
+    <string name="playlist_export_failed">导出失败</string>
+    <string name="playlist_import_success">导入成功</string>
+    <string name="playlist_import_failed">导入失败</string>
+    <string name="playlist_export_progress">导出进度</string>
+    <string name="playlist_import_progress">导入进度</string>
+    <string name="playlist_exporting">正在导出歌单...</string>
+    <string name="playlist_importing">正在导入歌单...</string>
+    <string name="playlist_import_complete">导入完成！</string>
+    <string name="playlist_import_count">成功导入: %d 个歌单</string>
+    <string name="playlist_merge_count">智能合并: %d 个歌单</string>
+    <string name="playlist_skip_count">跳过重复: %d 个歌单</string>
+    <string name="playlist_backup_date">备份时间: %s</string>
+    <string name="playlist_analyzing">正在分析差异...</string>
+    <string name="playlist_analysis_failed">分析失败: %s</string>
+    <string name="playlist_export_to_local">导出到本地歌单</string>
+    <string name="playlist_export_to">导出到歌单</string>
+    <string name="playlist_create_and_export">新建并导出</string>
+    <string name="playlist_name_empty">名称不能为空哦</string>
+    <string name="playlist_enter_name">输入歌单名称</string>
+    <string name="playlist_queue">播放列表</string>
+    <string name="playlist_add_to_queue">添加到播放队列末尾</string>
+    <string name="playlist_add_to_end">添加到队尾</string>
+    <string name="playlist_search_hint">搜索歌单内歌曲</string>
+
+    <!-- Download -->
+    <string name="download_title">下载管理</string>
+    <string name="download_manager">下载管理器</string>
+    <string name="download_to_local">下载到本地</string>
+    <string name="download_selected_songs">下载所选歌曲</string>
+    <string name="download_selected_videos">下载选中视频</string>
+    <string name="download_progress">下载进度</string>
+    <string name="download_failed">下载失败</string>
+    <string name="download_cancelled">下载已取消</string>
+    <string name="download_no_tasks">暂无下载任务</string>
+    <string name="download_empty">暂无已下载歌曲</string>
+    <string name="download_desc">管理下载任务和本地文件</string>
+    <string name="download_manage_desc">管理音乐下载和本地文件</string>
+    <string name="download_expand_hint">展开以管理下载任务</string>
+    <string name="download_select_hint">选择歌曲后点击下载按钮开始下载</string>
+    <string name="downloaded">已下载</string>
+    <string name="downloaded_songs">已下载歌曲</string>
+    <string name="download_songs_display">下载的歌曲会显示在这里</string>
+
+    <!-- Search -->
+    <string name="search_keyword">搜索关键词</string>
+    <string name="search_keywords">搜索关键字</string>
+    <string name="search_song">搜索歌曲</string>
+    <string name="search_video">搜索视频</string>
+    <string name="search_netease">搜索网易云</string>
+    <string name="search_playlist">搜索歌单内歌曲</string>
+    <string name="search_favorite">搜索收藏夹内视频</string>
+    <string name="search_recent">搜索最近播放</string>
+    <string name="search_no_result">无搜索结果</string>
+    <string name="search_not_found">未找到结果</string>
+    <string name="search_no_match">未找到匹配的歌曲</string>
+    <string name="search_try_other">尝试使用其他关键词搜索</string>
+    <string name="search_error">处理搜索结果时出错</string>
+
+    <!-- Settings -->
+    <string name="settings_title">设置</string>
+    <string name="settings_theme_color">主题色</string>
+    <string name="settings_theme_color_desc">选择一个你喜欢的颜色作为主色调</string>
+    <string name="settings_dynamic_color">动态取色</string>
+    <string name="settings_dynamic_color_desc">跟随封面主题色</string>
+    <string name="settings_force_dark">强制深色</string>
+    <string name="settings_force_dark_desc">不跟随系统时可手动指定</string>
+    <string name="settings_haptic">触感反馈</string>
+    <string name="settings_haptic_desc">开启后点击按钮时会有震动反馈</string>
+    <string name="settings_personalization">个性化</string>
+    <string name="settings_audio_quality">音质设置</string>
+    <string name="settings_audio_quality_expand">展开以配置音质选项</string>
+    <string name="settings_show_lyric_translation">显示歌词翻译</string>
+    <string name="settings_show_lyric_translation_desc">开启后将显示歌词的翻译内容</string>
+    <string name="settings_network">网络设置</string>
+    <string name="settings_bypass_proxy">绕过系统代理</string>
+    <string name="settings_bypass_proxy_desc">应用内网络请求不走系统代理</string>
+    <string name="settings_storage">存储与缓存</string>
+    <string name="settings_cache_limit">音乐缓存上限</string>
+    <string name="settings_clear_cache">清除缓存</string>
+    <string name="settings_clear_cache_desc">释放本地存储空间</string>
+    <string name="settings_cache_empty">缓存已为空</string>
+    <string name="settings_clear_complete">清理完成</string>
+    <string name="settings_storage_used">占用空间</string>
+    <string name="settings_cache_desc">管理缓存大小与清理</string>
+    <string name="settings_select_color">选择主题色</string>
+    <string name="settings_apply_color">应用颜色</string>
+    <string name="settings_add_to_palette">添加到取色盘</string>
+    <string name="settings_delete_color">删除该颜色</string>
+    <string name="settings_restart_hint">修改后可能需要重启应用以获得最佳效果</string>
+    <string name="settings_expand_network">展开以配置网络选项</string>
+    <string name="settings_confirm_clear_cache">确认清除缓存？</string>
+    <string name="settings_clear_cache_warning">这将删除所有已缓存的音乐文件，释放磁盘空间。</string>
+    <string name="settings_custom_color">自定义颜色（滑动选择）</string>
+    <string name="settings_expand_visual">展开以调整视觉效果</string>
+    <string name="settings_expand_more">展开更多</string>
+
+    <!-- Lyrics -->
+    <string name="lyrics_title">歌词</string>
+    <string name="lyrics_no_lyrics">暂无歌词</string>
+    <string name="lyrics_blur">歌词模糊</string>
+    <string name="lyrics_blur_effect">歌词模糊效果</string>
+    <string name="lyrics_blur_desc">为非当前行歌词添加景深模糊</string>
+    <string name="lyrics_font_size">歌词字体大小</string>
+    <string name="lyrics_offset">歌词偏移调整</string>
+    <string name="lyrics_adjust_offset">调整歌词偏移</string>
+
+    <!-- Background -->
+    <string name="background_custom">自定义背景图</string>
+    <string name="background_select">选择一张图片</string>
+    <string name="background_change">点击更换</string>
+    <string name="background_clear">清除背景图</string>
+    <string name="background_blur">背景模糊度</string>
+    <string name="background_opacity">背景透明度</string>
+    <string name="background_back_to_cover">返回封面</string>
+    <string name="background_clear_preview">清空预览</string>
+
+    <!-- Login -->
+    <string name="login_title">登录</string>
+    <string name="login_third_party">登录三方平台</string>
+    <string name="login_browser">浏览器登录</string>
+    <string name="login_start_browser">开始浏览器登录</string>
+    <string name="login_success">登录成功</string>
+    <string name="login_netease">网易云音乐登录</string>
+    <string name="login_verification_code">验证码登录</string>
+    <string name="login_sms_code">短信验证码</string>
+    <string name="login_send_code">发送验证码</string>
+    <string name="login_code_sent">验证码已发送</string>
+    <string name="login_enter_code">请输入验证码</string>
+    <string name="login_code_error">验证码错误</string>
+    <string name="login_phone_invalid">手机号无效</string>
+    <string name="login_expand_platforms">展开以选择登录平台</string>
+
+    <!-- Platform Names -->
+    <string name="platform_bilibili">哔哩哔哩</string>
+    <string name="platform_netease">网易云音乐</string>
+    <string name="platform_netease_short">网易云</string>
+
+    <!-- Sync -->
+    <string name="sync_title">同步</string>
+    <string name="sync_auto">自动同步</string>
+    <string name="sync_now">立即同步</string>
+    <string name="sync_not_synced">尚未同步</string>
+    <string name="sync_success">同步成功</string>
+    <string name="sync_failed">同步失败</string>
+    <string name="sync_upload_failed">上传失败</string>
+    <string name="sync_send_failed">发送失败</string>
+    <string name="sync_send_cancelled">已取消发送</string>
+    <string name="sync_initial_uploaded">初始数据已上传</string>
+    <string name="sync_history_frequency">播放历史更新频率</string>
+    <string name="sync_after_play">每次播放后立即同步</string>
+    <string name="sync_batch_update">批量更新</string>
+    <string name="sync_configured">已配置</string>
+    <string name="sync_not_configured">未配置</string>
+    <string name="sync_config">配置</string>
+    <string name="sync_clear_config">清除配置</string>
+    <string name="sync_repo_name">仓库名称</string>
+    <string name="sync_repo_full_name">仓库全名</string>
+    <string name="sync_create_new_repo">创建新仓库</string>
+    <string name="sync_use_existing_repo">使用现有仓库</string>
+    <string name="sync_data_saver">省流通道</string>
+    <string name="sync_data_saver_desc">若无特殊需求，十分推荐打开此选项\n切换通道可能导致数据丢失，请确保所有平台的设置保持一致，请勿随意切换</string>
+    <string name="sync_diff_failed">差异分析失败</string>
+    <string name="sync_analysis_progress">分析进度</string>
+
+    <!-- Backup -->
+    <string name="backup_title">备份与恢复</string>
+    <string name="backup_expand_hint">展开以管理歌单备份</string>
+    <string name="backup_no_playlist_data">备份文件中没有歌单数据</string>
+    <string name="backup_import_failed">歌单导入失败</string>
+    <string name="backup_export_failed">歌单导出失败</string>
+
+    <!-- Sleep Timer -->
+    <string name="sleep_timer_title">睡眠定时器</string>
+    <string name="sleep_timer_short">定时器</string>
+    <string name="sleep_timer_running">定时器运行中</string>
+    <string name="sleep_timer_cancel">取消定时器</string>
+    <string name="sleep_timer_countdown">倒计时</string>
+    <string name="sleep_timer_start">开始倒计时</string>
+    <string name="sleep_timer_stop_after_current">播放完当前歌曲后停止</string>
+    <string name="sleep_timer_stop_after_playlist">播放完播放列表后停止</string>
+
+    <!-- Audio Quality -->
+    <string name="quality_standard">标准</string>
+    <string name="quality_high">较高</string>
+    <string name="quality_very_high">极高</string>
+    <string name="quality_lossless">无损</string>
+    <string name="quality_hires">超清母带</string>
+    <string name="quality_dolby">杜比全景声</string>
+    <string name="quality_surround">沉浸环绕声</string>
+    <string name="quality_hd_surround">高清环绕声</string>
+    <string name="quality_default">选择默认音质</string>
+    <string name="quality_netease_default">网易云默认音质</string>
+
+    <!-- Playback Device -->
+    <string name="device_speaker">手机扬声器</string>
+    <string name="device_wired_headset">有线耳机</string>
+    <string name="device_bluetooth_headset">蓝牙耳机</string>
+    <string name="device_bluetooth">蓝牙设备</string>
+    <string name="device_playback">播放设备</string>
+
+    <!-- Music Info -->
+    <string name="music_unknown_song">未知歌曲</string>
+    <string name="music_unknown_artist">未知艺术家</string>
+    <string name="music_get_info">获取歌曲信息</string>
+    <string name="music_get_detail_failed">获取详情失败</string>
+    <string name="music_no_playback_url">无法获取播放地址</string>
+
+    <!-- Recent -->
+    <string name="recent_title">最近播放</string>
+    <string name="recent_no_history">暂无最近播放</string>
+    <string name="recent_clear">清空最近播放</string>
+    <string name="recent_just_now">刚刚</string>
+
+    <!-- Favorite -->
+    <string name="favorite_title">收藏</string>
+    <string name="favorite_add">收藏</string>
+    <string name="favorite_remove">取消收藏</string>
+    <string name="favorite_success">收藏成功</string>
+    <string name="favorite_added">已收藏</string>
+    <string name="favorite_removed">已取消收藏</string>
+    <string name="favorite_my_music">我喜欢的音乐</string>
+
+    <!-- Local Files -->
+    <string name="local_title">本地</string>
+    <string name="local_files">本地文件</string>
+
+    <!-- Recommendations -->
+    <string name="recommend_for_you">为你推荐</string>
+    <string name="recommend_refresh">刷新推荐</string>
+    <string name="recommend_hot">热歌</string>
+    <string name="recommend_trending">热力飙升</string>
+    <string name="recommend_radar">私人雷达</string>
+
+    <!-- Music Genres -->
+    <string name="genre_pop">流行</string>
+    <string name="genre_rock">摇滚</string>
+    <string name="genre_electronic">电子</string>
+    <string name="genre_folk">民谣</string>
+    <string name="genre_rap">说唱</string>
+    <string name="genre_dance">舞曲</string>
+    <string name="genre_light">轻音乐</string>
+    <string name="genre_soundtrack">影视原声</string>
+
+    <!-- Music Moods -->
+    <string name="mood_healing">治愈</string>
+    <string name="mood_sad">伤感</string>
+    <string name="mood_romantic">浪漫</string>
+    <string name="mood_fresh">清新</string>
+    <string name="mood_nostalgic">怀旧</string>
+
+    <!-- Music Scenes -->
+    <string name="scene_work">工作</string>
+    <string name="scene_study">学习</string>
+    <string name="scene_game">游戏</string>
+    <string name="scene_afternoon">下午茶</string>
+    <string name="scene_night">夜晚</string>
+    <string name="scene_children">儿童</string>
+
+    <!-- Languages -->
+    <string name="language_chinese">华语</string>
+    <string name="language_western">欧美</string>
+    <string name="language_japanese">日语</string>
+    <string name="language_korean">韩语</string>
+    <string name="language_cantonese">粤语</string>
+
+    <!-- Debug -->
+    <string name="debug_title">调试</string>
+    <string name="debug_tools">调试工具</string>
+    <string name="debug_mode_enabled">调试模式已开启</string>
+    <string name="debug_mode_opened">已开启调试模式</string>
+    <string name="debug_hide">隐藏调试模式</string>
+    <string name="debug_select_platform">选择要调试的平台或隐藏调试模式</string>
+    <string name="debug_search">搜索调试</string>
+    <string name="debug_search_api">多平台搜索接口调试</string>
+    <string name="debug_search_probe">多平台搜索接口探针</string>
+    <string name="debug_netease">网易云调试</string>
+    <string name="debug_netease_api">网易云接口调试</string>
+    <string name="debug_netease_probe">网易云接口探针</string>
+    <string name="debug_bili_api">哔哩哔哩接口调试</string>
+    <string name="debug_copy_all">复制全部</string>
+    <string name="debug_call_all_copy">一键调用全部并复制到剪贴板</string>
+    <string name="debug_copied">已复制到剪贴板</string>
+    <string name="debug_bili_probe_title">B 站接口探针</string>
+    <string name="debug_bili_api_desc">搜索 / 取封面简介 / 统计 / 取流 / 收藏夹</string>
+    <string name="debug_netease_api_desc">账户 / 歌单 / 歌曲 URL / 歌词</string>
+    <string name="debug_search_api_desc">QQ / 网易云</string>
+    <string name="debug_view_logs">查看应用日志</string>
+    <string name="debug_view_logs_desc">查看、复制和导出本次运行的日志</string>
+    <string name="debug_test_exception">测试异常处理器</string>
+    <string name="debug_test_exception_desc">测试异常捕获、日志记录和弹窗显示</string>
+    <string name="debug_hide_hint">隐藏后底部栏将移除"调试",可在设置页点击版本号 7 次再次开启</string>
+    <string name="debug_search_keyword">搜索关键字</string>
+    <string name="debug_search_copy_json">搜索(复制 JSON)</string>
+    <string name="debug_bvid_hint">BV 号(例如:BV1xx...)</string>
+    <string name="debug_get_info_copy">获取封面/简介/统计(复制 JSON)</string>
+    <string name="debug_page_setting">分P 设置(二选一)</string>
+    <string name="debug_page_hint">分P(默认1)</string>
+    <string name="debug_cid_hint">CID(数字)</string>
+    <string name="debug_get_stream_by">获取取流(通过%s,DASH/Dolby/Flac,复制 JSON)</string>
+    <string name="debug_get_stream_by_page">通过分P获取取流(第%sP,包含解析的CID)</string>
+    <string name="debug_get_audio_by">获取所有音频直链(通过%s,DASH/Dolby/Flac)</string>
+    <string name="debug_get_audio_by_page">通过分P获取所有音频直链(第%sP,包含解析的CID)</string>
+    <string name="debug_get_mp4_by">仅 MP4 直链 durl(通过%s)</string>
+    <string name="debug_get_mp4_by_page">通过分P获取 MP4 直链(第%sP,包含解析的CID)</string>
+    <string name="debug_has_liked">是否近期点过赞(复制 JSON)</string>
+    <string name="debug_up_mid_hint">UP 主 mid(数字)</string>
+    <string name="debug_get_fav_list">获取用户创建的收藏夹(复制 JSON)</string>
+    <string name="debug_media_id_hint">收藏夹 media_id(数字)</string>
+    <string name="debug_fav_info">收藏夹信息(复制 JSON)</string>
+    <string name="debug_fav_contents">收藏夹内容(复制 JSON)</string>
+    <string name="debug_get_by_avid">通过 avid+cid/page 获取取流(复制 JSON)</string>
+    <string name="debug_status">状态:%s</string>
+    <string name="debug_preview_empty">(暂无预览,上面执行一次试试)</string>
+    <string name="debug_clear_preview">清空预览</string>
+    <string name="debug_netease_desc">点击按钮将真实请求接口,并把原始 JSON 复制到剪贴板:\n包含:Account、UserId、我创建的歌单、我收藏的歌单、我喜欢的音乐歌单ID、歌词(33894312);不包含 liked songs</string>
+    <string name="debug_account_only">仅 Account(账户信息)</string>
+    <string name="debug_userid_only">仅 UserId(当前登录用户 id)</string>
+    <string name="debug_created_playlists">仅 我创建的歌单</string>
+    <string name="debug_stared_albums">仅 我收藏的专辑</string>
+    <string name="debug_subscribed_playlists">仅 我收藏的歌单</string>
+    <string name="debug_liked_playlist_id">仅 我喜欢的音乐 歌单ID</string>
+    <string name="debug_lyric_sample">仅 歌词(33894312)</string>
+    <string name="debug_preview_hint">(暂无预览,先点上面的按钮试试~)</string>
+    <string name="debug_search_desc">输入关键词,点击平台按钮将真实请求搜索接口,并把原始 JSON 结果复制到剪贴板。</string>
+    <string name="debug_search_keyword_label">搜索关键词</string>
+    <string name="debug_search_netease">搜索网易云</string>
+    <string name="debug_search_qq">搜索QQ</string>
+    <string name="debug_search_preview_hint">(暂无预览,先输入关键词再点上面的按钮~)</string>
+    <string name="debug_error_keyword_empty">错误:关键词不能为空</string>
+    <string name="debug_searching">正在搜索 [%1$s]:%2$s ...</string>
+    <string name="debug_search_ok">OK,[%s] 搜索完成并复制到剪贴板</string>
+    <string name="debug_call_failed">调用/解析失败:%s</string>
+    <string name="debug_calling">调用中:%s ...</string>
+    <string name="debug_copied_label">已复制到剪贴板:%s</string>
+    <string name="debug_network_error">网络/服务器异常:%s</string>
+    <string name="debug_all_api_calling">正在调用所有接口...</string>
+    <string name="debug_all_api_ok">OK,所有接口已调用完成并复制到剪贴板</string>
+    <string name="debug_page_not_found">找不到第 %d P</string>
+
+    <!-- Logs -->
+    <string name="log_title">日志</string>
+    <string name="log_app">应用日志</string>
+    <string name="log_list">日志列表</string>
+    <string name="log_view">日志查看</string>
+    <string name="log_export">导出日志</string>
+    <string name="log_exported">日志已导出</string>
+    <string name="log_clear">清空日志</string>
+    <string name="log_no_file">没有找到日志文件</string>
+    <string name="log_cannot_read">无法读取日志文件</string>
+    <string name="log_view_hint">查看应用日志</string>
+    <string name="log_enable_hint">请确保已在设置中开启文件日志记录</string>
+
+    <!-- Errors -->
+    <string name="error_network">网络错误</string>
+    <string name="error_app_exception">应用异常</string>
+    <string name="error_test_handler">测试异常处理器</string>
+    <string name="error_test">异常测试</string>
+    <string name="error_cannot_open_input">无法打开输入流</string>
+    <string name="error_cannot_open_output">无法打开输出流</string>
+    <string name="error_no_play_url">无法获取播放地址</string>
+    <string name="cache_clear_complete">清理完成</string>
+
+    <!-- Content Descriptions -->
+    <string name="cd_back">返回</string>
+    <string name="cd_netease">网易云音乐</string>
+    <string name="cd_bilibili">哔哩哔哩</string>
+    <string name="cd_audio_device">播放设备</string>
+    <string name="cd_search">搜索</string>
+    <string name="cd_play_all">全部播放</string>
+    <string name="cd_shuffle">随机播放</string>
+    <string name="cd_clear">清空</string>
+    <string name="cd_exit_select">退出多选</string>
+    <string name="cd_more">更多</string>
+    <string name="cd_downloaded">已下载</string>
+    <string name="cd_more_actions">更多操作</string>
+    <string name="cd_search_songs">搜索歌曲</string>
+    <string name="cd_download_manager">下载管理器</string>
+    <string name="cd_export_playlist">导出到歌单</string>
+    <string name="cd_download_selected">下载选中歌曲</string>
+    <string name="cd_locate_playing">定位到正在播放</string>
+    <string name="cd_close">关闭</string>
+    <string name="cd_recent">最近播放</string>
+
+    <!-- Dialogs -->
+    <string name="dialog_confirm_delete">确认删除</string>
+    <string name="dialog_confirm_clear">确认清除</string>
+    <string name="dialog_hint">提示</string>
+    <string name="dialog_no_detail">无详细信息</string>
+    <string name="dialog_disclaimer">免责声明与隐私说明</string>
+    <string name="dialog_agree">我已知晓并同意</string>
+    <string name="dialog_no_remind">不再提醒</string>
+
+    <!-- Common -->
+    <string name="common_all">全部</string>
+    <string name="common_clear_all">全部清空</string>
+    <string name="common_delete_selected">删除所选</string>
+    <string name="common_delete_selected_songs">删除所选歌曲</string>
+    <string name="common_download_selected">下载选中歌曲</string>
+    <string name="common_more_options">更多选项</string>
+    <string name="common_more_actions">更多操作</string>
+    <string name="common_version">版本</string>
+    <string name="common_build_time">编译时间</string>
+    <string name="common_update_now">立即更新</string>
+    <string name="common_coming_soon">敬请期待</string>
+    <string name="common_not_implemented">暂未实现</string>
+    <string name="common_other_modes">其他模式</string>
+    <string name="common_drag_handle">拖拽手柄</string>
+    <string name="common_album_detail">专辑详情</string>
+
+    <!-- Additional Settings Strings -->
+    <string name="login_methods">浏览器/验证码/Cookie 登录</string>
+    <string name="quality_bili_default">B 站默认音质</string>
+    <string name="settings_clear_config">清除配置</string>
+    <string name="backup_restore_title">备份与恢复</string>
+    <string name="settings_ui_scale">UI 缩放</string>
+    <string name="settings_ui_scale_dpi">UI 缩放 (DPI)</string>
+    <string name="settings_ui_scale_current">当前: %sx (默认 1.00x)</string>
+    <string name="settings_expand_login">展开以选择登录平台</string>
+    <string name="settings_expand_personalization">展开以调整视觉效果</string>
+    <string name="settings_expand_download">展开以管理下载任务</string>
+    <string name="settings_expand_backup">展开以管理歌单备份</string>
+    <string name="settings_cache_manage">管理缓存大小与清理</string>
+    <string name="action_confirm_clear">确认清除</string>
+
+    <!-- Sync Settings -->
+    <string name="sync_config_desc">点击配置 Token 和仓库</string>
+    <string name="sync_auto_desc">修改后自动同步到 GitHub</string>
+    <string name="sync_last_time">上次同步: %s</string>
+    <string name="sync_frequency_desc">选择播放历史同步到云端的频率：</string>
+    <string name="sync_after_play_desc">每次播放后立即同步</string>
+    <string name="sync_batch_update_desc">每10分钟同步一次（节省流量）</string>
+    <string name="sync_step1_token">步骤1: 输入 GitHub Token</string>
+    <string name="sync_create_token">在 GitHub 创建 Token</string>
+    <string name="sync_step2_repo">步骤2: 选择仓库</string>
+    <string name="sync_verify_token">验证Token</string>
+    <string name="sync_clear_config_desc">这将清除所有 GitHub 同步配置,包括 Token 和仓库信息。本地数据不会被删除。</string>
+
+    <!-- Login -->
+    <string name="login_confirm_send_code">确认发送验证码？</string>
+    <string name="login_send_code_to">将发送验证码到 &gt;%s&lt;</string>
+    <string name="login_paste_cookie">粘贴 Cookie</string>
+    <string name="login_paste_cookie_hint">粘贴 Cookie（例如：MUSIC_U=...; __csrf=...）</string>
+    <string name="login_save_cookie">保存 Cookie 并登录</string>
+    <string name="login_sending">发送中...</string>
+    <string name="login_logging_in">登录中...</string>
+
+    <!-- Library & Playlist -->
+    <string name="playlist_favorite_hint">在歌单详情页点击收藏按钮，或长按首页推荐歌单收藏</string>
+    <string name="common_selected_count">已选 %d 项</string>
+
+    <!-- Explore -->
+    <string name="explore_bili_desc">在 Bilibili 中发现更多精彩视频</string>
+
+    <!-- Recent -->
+    <string name="recent_clear_confirm">确定要清空全部最近播放记录吗？此操作不可恢复。</string>
+
+    <!-- Download -->
+    <string name="download_search_hint">搜索已下载的歌曲...</string>
+    <string name="download_delete_confirm">确定要删除歌曲 "%s" 吗？此操作不可撤销。</string>
+    <string name="download_delete_selected_confirm">确定要删除选中的 %d 首歌曲吗？此操作不可撤销。</string>
+
+    <!-- Now Playing -->
+    <string name="music_view_album">查看专辑 %s</string>
+    <string name="lyrics_offset_hint">向右滑动歌词快进，向左滑动歌词延后</string>
+
+    <!-- Sleep Timer -->
+    <string name="sleep_timer_finish_current">播放完当前歌曲后停止</string>
+    <string name="sleep_timer_finish_playlist">播放完播放列表后停止</string>
+    <string name="sleep_timer_minutes">%d 分钟</string>
+    <string name="sleep_timer_start_countdown">开始倒计时</string>
+    <string name="sleep_timer_other_modes">其他模式</string>
+    <string name="sleep_timer_close">关闭</string>
+
+    <!-- Toast/Snackbar Messages -->
+    <string name="toast_cache_cleared">已清理 %d MB 缓存</string>
+    <string name="toast_cache_clear_error">清理出错: %s</string>
+    <string name="toast_playback_stopped">多首歌曲无法播放，已停止</string>
+    <string name="toast_match_failed">匹配失败: %s</string>
+    <string name="snackbar_cookie_empty">未读取到 Cookie，请确认已完成登录</string>
+    <string name="snackbar_read_failed">读取失败：%s</string>
+
+    <!-- Explore Tags -->
+    <string name="explore_tag_netease">网易云</string>
+    <string name="explore_tag_bilibili">哔哩哔哩</string>
+    <string name="explore_tag_all">全部</string>
+
+    <!-- Error Messages -->
+    <string name="error_parse">解析/未知错误：%s</string>
+    <string name="error_bilibili_search">Bilibili 搜索失败: %s</string>
+    <string name="error_netease_search">网易云搜索失败: %s</string>
+    <string name="error_load_playlist">加载歌单失败: %s</string>
+    <string name="error_search_failed">搜索失败: %s</string>
+    <string name="error_get_user_id">无法获取用户ID，请重新登录</string>
+    <string name="error_api_code">接口返回异常 code=%d</string>
+    <string name="error_missing_node">缺少 %s 节点</string>
+
+    <!-- GitHub Sync Messages -->
+    <string name="github_token_verify_success">Token验证成功: %s</string>
+    <string name="github_token_verify_failed">Token验证失败: %s</string>
+    <string name="github_token_required">请先配置Token</string>
+    <string name="github_repo_create_success">仓库创建成功: %s</string>
+    <string name="github_repo_create_failed">仓库创建失败: %s</string>
+    <string name="github_repo_format_error">仓库格式错误,应为: owner/repo</string>
+    <string name="github_repo_config_success">仓库配置成功: %s</string>
+    <string name="github_repo_not_found">仓库不存在或无权访问: %s</string>
+    <string name="github_token_expired">GitHub Token 已过期，请重新配置</string>
+    <string name="github_token_expired_message">GitHub Token 已过期或无效，请重新配置</string>
+    <string name="github_sync_failed">同步失败: %s</string>
+
+    <!-- LyricsScreen -->
+    <string name="lyrics_unknown_song">未知歌曲</string>
+    <string name="lyrics_unknown_artist">未知艺术家</string>
+    <string name="lyrics_favorite_playlist">我喜欢的音乐</string>
+    <string name="lyrics_favorited">已收藏</string>
+    <string name="lyrics_favorite">收藏</string>
+    <string name="lyrics_more_options">更多选项</string>
+    <string name="lyrics_previous">上一首</string>
+    <string name="lyrics_pause">暂停</string>
+    <string name="lyrics_play">播放</string>
+    <string name="lyrics_next">下一首</string>
+    <string name="lyrics_playlist">播放列表</string>
+    <string name="lyrics_timer">定时器</string>
+    <string name="lyrics_back_to_cover">返回封面</string>
+    <string name="lyrics_add_to_playlist">添加到歌单</string>
+    <string name="lyrics_song_count">%d 首</string>
+    <string name="lyrics_bluetooth_device">蓝牙设备</string>
+    <string name="lyrics_wired_headset">有线耳机</string>
+    <string name="lyrics_phone_speaker">手机扬声器</string>
+
+    <!-- Settings -->
+    <string name="settings_bili_cookie_cancelled">已取消读取 B 站 Cookie</string>
+    <string name="settings_audio_quality_standard">标准</string>
+    <string name="settings_audio_quality_higher">较高</string>
+    <string name="settings_audio_quality_exhigh">极高</string>
+    <string name="settings_audio_quality_lossless">无损</string>
+    <string name="settings_audio_quality_jyeffect">高清环绕声</string>
+    <string name="settings_audio_quality_sky">沉浸环绕声</string>
+    <string name="settings_audio_quality_jymaster">超清母带</string>
+    <string name="settings_audio_quality_dolby">杜比全景声</string>
+    <string name="settings_audio_quality_high">高（约192kbps）</string>
+    <string name="settings_audio_quality_medium">中（约128kbps）</string>
+    <string name="settings_audio_quality_low">低（约64kbps）</string>
+    <string name="settings_bili_login_success">B 站登录成功</string>
+    <string name="settings_haptic_feedback">触感反馈</string>
+    <string name="settings_login_platforms">登录三方平台</string>
+    <string name="settings_login_platforms_expand">展开以选择登录平台</string>
+    <string name="settings_login_platforms_collapse">收起</string>
+
+    <!-- NowPlayingScreen -->
+    <string name="nowplaying_no_playback">暂无播放</string>
+
+    <!-- Auth Messages -->
+    <string name="auth_phone_invalid">请输入 11 位大陆手机号</string>
+    <string name="auth_phone_format_error">手机号无效</string>
+    <string name="auth_code_sent">验证码已发送</string>
+    <string name="auth_send_failed">发送失败</string>
+    <string name="auth_send_failed_msg">发送失败：%s</string>
+    <string name="auth_network_error">网络错误</string>
+    <string name="auth_code_required">请输入验证码</string>
+    <string name="auth_verify_failed">验证码错误</string>
+    <string name="auth_login_failed">登录失败</string>
+    <string name="auth_login_failed_msg">登录失败：%s</string>
+    <string name="auth_login_success">登录成功</string>
+    <string name="auth_cookie_saved">Cookie 已保存</string>
+    <string name="auth_cookie_invalid">未解析到合法 Cookie 项</string>
+    <string name="auth_cookie_empty">Cookie 为空</string>
+
+    <!-- Debug/Probe Messages -->
+    <string name="probe_keyword_empty">错误：关键词不能为空</string>
+    <string name="probe_searching" formatted="false">正在搜索 [%s]：%s ...</string>
+    <string name="probe_search_complete">OK，[%s] 搜索完成并复制到剪贴板</string>
+    <string name="probe_call_failed">调用/解析失败：%s</string>
+    <string name="probe_calling">调用中：%s ...</string>
+    <string name="probe_copied">已复制到剪贴板：%s</string>
+    <string name="probe_network_error">网络/服务器异常：%s</string>
+    <string name="probe_all_calling">正在调用所有接口...</string>
+    <string name="probe_all_complete">OK，所有接口已调用完成并复制到剪贴板</string>
+    <string name="probe_invalid_avid">请输入有效 avid（数字）到 BV 输入框</string>
+    <string name="probe_page_not_found">找不到第 %d P</string>
+
+    <!-- Log Messages -->
+    <string name="log_export_failed">导出失败: %s</string>
+    <string name="log_copied">已复制到剪贴板</string>
+    <string name="log_delete_confirm">此操作将删除所有本地日志文件且无法恢复。</string>
+
+    <!-- Home Search Keywords -->
+    <string name="home_search_hot">热歌</string>
+    <string name="home_search_radar">私人雷达</string>
+
+    <!-- Backup Manager -->
+    <string name="backup_no_playlists">备份文件中没有歌单数据</string>
+
+    <!-- Exception Handler -->
+    <string name="exception_title">应用异常</string>
+    <string name="exception_occurred">发生了一个异常：</string>
+    <string name="exception_source">来源：%s</string>
+    <string name="exception_type">类型：%s</string>
+    <string name="exception_message">信息：%s</string>
+    <string name="exception_no_detail">无详细信息</string>
+    <string name="exception_logged">详细错误信息已记录到日志文件中。</string>
+    <string name="exception_contact">如果问题持续存在，请重启应用或联系开发者。</string>
+    <string name="exception_test">这是一个测试异常，用于验证异常处理器的功能</string>
+
+
+    <!-- Explore Tags -->
+    <string name="tag_all">全部</string>
+    <string name="tag_pop">流行</string>
+    <string name="tag_soundtrack">影视原声</string>
+    <string name="tag_chinese">华语</string>
+    <string name="tag_nostalgia">怀旧</string>
+    <string name="tag_rock">摇滚</string>
+    <string name="tag_acg">ACG</string>
+    <string name="tag_western">欧美</string>
+    <string name="tag_fresh">清新</string>
+    <string name="tag_night">夜晚</string>
+    <string name="tag_children">儿童</string>
+    <string name="tag_folk">民谣</string>
+    <string name="tag_japanese">日语</string>
+    <string name="tag_romantic">浪漫</string>
+    <string name="tag_study">学习</string>
+    <string name="tag_korean">韩语</string>
+    <string name="tag_work">工作</string>
+    <string name="tag_electronic">电子</string>
+    <string name="tag_cantonese">粤语</string>
+    <string name="tag_dance">舞曲</string>
+    <string name="tag_sad">伤感</string>
+    <string name="tag_game">游戏</string>
+    <string name="tag_afternoon_tea">下午茶</string>
+    <string name="tag_healing">治愈</string>
+    <string name="tag_rap">说唱</string>
+    <string name="tag_light_music">轻音乐</string>
+
+    <!-- Settings Additional -->
+    <string name="settings_bilibili">哔哩哔哩</string>
+    <string name="settings_netease">网易云音乐</string>
+    <string name="settings_qq_music">QQ 音乐</string>
+    <string name="settings_personalization_expand">展开以调整视觉效果</string>
+    <string name="settings_lyrics_blur">歌词模糊</string>
+    <string name="settings_lyrics_font_size">歌词字体大小</string>
+    <string name="settings_lyrics_font_current">当前：%d%%</string>
+    <string name="settings_lyrics_sample">示例歌词：昨夜小楼又东风</string>
+    <string name="settings_custom_background">自定义背景图</string>
+    <string name="settings_background_change">点击更换</string>
+    <string name="settings_background_select">选择一张图片</string>
+    <string name="settings_network_expand">展开以配置网络选项</string>
+    <string name="settings_netease_quality">网易云默认音质</string>
+    <string name="settings_bili_quality">B 站默认音质</string>
+    <string name="settings_storage_cache">存储与缓存</string>
+    <string name="settings_storage_expand">管理缓存大小与清理</string>
+    <string name="settings_no_cache">不缓存 (0 MB)</string>
+    <string name="settings_cache_notice">设置为 0 MB 即禁用缓存。修改上限后需重启应用生效。</string>
+    <string name="settings_download_management">下载管理</string>
+    <string name="settings_download_expand">展开以管理下载任务</string>
+    <string name="settings_download_progress">下载进度</string>
+    <string name="settings_download_songs_count" formatted="false">%d/%d 首歌曲</string>
+    <string name="settings_downloading">正在下载: %s</string>
+    <string name="settings_download_manager">下载管理</string>
+    <string name="settings_backup_restore">备份与恢复</string>
+    <string name="settings_backup_expand">展开以管理歌单备份</string>
+
+    <!-- Explore Screen -->
+    <string name="explore_exit_selection">退出多选</string>
+    <string name="explore_select_all">全选</string>
+    <string name="explore_deselect_all">取消全选</string>
+    <string name="explore_export_to_playlist">导出到歌单</string>
+    <string name="explore_song_count">%d 首</string>
+    <string name="explore_collapse">收起</string>
+    <string name="explore_expand">展开更多</string>
+
+    <!-- Color Picker -->
+    <string name="color_hue">色相 Hue</string>
+    <string name="color_saturation">饱和度 Saturation</string>
+    <string name="color_value">明度 Value</string>
+
+
+    <!-- Settings - Additional -->
+    <string name="settings_current_playlist">当前歌单</string>
+    <string name="settings_export_playlist">导出歌单</string>
+    <string name="settings_import_playlist">导入歌单</string>
+    <string name="settings_export_success">导出成功</string>
+    <string name="settings_export_failed">导出失败</string>
+    <string name="settings_import_success">导入成功</string>
+    <string name="settings_import_failed">导入失败</string>
+    <string name="settings_configured">已配置</string>
+    <string name="settings_not_configured">未配置</string>
+    <string name="settings_configure">配置</string>
+    <string name="settings_auto_sync">自动同步</string>
+    <string name="settings_sync_now">立即同步</string>
+    <string name="settings_play_history_update_freq">播放历史更新频率</string>
+    <string name="settings_update_immediate">立即更新</string>
+    <string name="settings_data_saver">省流通道</string>
+    <string name="settings_close">关闭</string>
+    <string name="settings_about">关于</string>
+    <string name="settings_version">版本</string>
+    <string name="settings_debug_enabled">已开启调试模式</string>
+    <string name="settings_debug_mode_on">调试模式已开启</string>
+    <string name="settings_build_time">编译时间</string>
+    <string name="settings_dolby">杜比全景声</string>
+
+    <!-- Time Relative Strings -->
+    <string name="time_just_now">刚刚</string>
+    <string name="time_minutes_ago">%d分钟前</string>
+    <string name="time_hours_ago">%d小时前</string>
+    <string name="time_days_ago">%d天前</string>
+
+    <!-- Download Messages -->
+    <string name="download_starting">开始下载：%s</string>
+
+    <!-- Log Messages Additional -->
+    <string name="log_cleared_count">已清空 %d 个日志文件</string>
+
+    <!-- Playlist Count -->
+    <string name="playlist_count_format">%d 个歌单</string>
+
+    <!-- GitHub Sync -->
+    <string name="github_auto_sync">GitHub 自动同步</string>
+
+    <!-- Netease Login -->
+    <string name="netease_web_login">网易云登录</string>
+
+    <!-- MainActivity Disclaimer -->
+    <string name="disclaimer_title">免责声明与隐私说明</string>
+    <string name="disclaimer_section1_title">1. 软件性质说明</string>
+    <string name="disclaimer_section1_content">本软件(音理音理!)为跨平台音视频播放工具,仅提供技术框架和播放功能,不存储、不提供任何音视频内容。</string>
+    <string name="disclaimer_section2_title">2. 内容来源与版权归属</string>
+    <string name="disclaimer_section2_content">所有可播放内容均由用户自行从第三方平台访问获取,版权归原内容提供方所有。本软件不对第三方平台的内容合法性、准确性或可用性承担任何责任。</string>
+    <string name="disclaimer_section3_title">3. 使用者责任</string>
+    <string name="disclaimer_section3_content">用户应遵守所在地区法律法规及第三方平台的服务条款,自行承担因使用本软件访问第三方内容而产生的一切法律责任。</string>
+    <string name="disclaimer_section4_title">4. 第三方服务与政策</string>
+    <string name="disclaimer_section4_content">本软件可能集成第三方平台的API或服务,这些服务受其各自的服务条款和隐私政策约束。用户在使用相关功能时,应自行了解并同意第三方的政策。</string>
+    <string name="disclaimer_section5_title">5. 隐私说明(无数据收集)</string>
+    <string name="disclaimer_section5_content">本软件不收集任何个人身份信息,不追踪用户行为,不向任何第三方传输用户数据。所有用户数据(如播放历史、收藏列表)仅存储在用户设备本地或用户自主选择的云存储服务中。</string>
+    <string name="disclaimer_section6_title">6. 免责与责任限制</string>
+    <string name="disclaimer_section6_content">本软件按"现状"提供,不提供任何明示或暗示的保证。开发者不对因使用本软件而导致的任何直接、间接、偶然或后果性损失承担责任。</string>
+    <string name="disclaimer_section7_title">7. 合规与地区差异</string>
+    <string name="disclaimer_section7_content">用户应确保其使用本软件的行为符合所在地区的法律法规。部分功能可能因地区政策差异而不可用。</string>
+    <string name="disclaimer_section8_title">8. 条款更新</string>
+    <string name="disclaimer_section8_content">本声明可能不定期更新,更新后的版本将在软件中公布。继续使用本软件即表示接受更新后的条款。</string>
+    <string name="disclaimer_section9_title">9. 同意条款</string>
+    <string name="disclaimer_section9_content">使用本软件即表示您已阅读、理解并同意本页面全部内容。如不同意,请立即停止使用并卸载本软件。</string>
+    <string name="disclaimer_agree_countdown">我已知晓并同意</string>
+    <string name="disclaimer_read_countdown">请阅读(%ds)</string>
+    <string name="github_sync_warning_title">GitHub 同步配置警告</string>
+    <string name="github_sync_warning_message">检测到 GitHub 同步配置不完整。Token 可能已过期或被删除,请在设置中重新配置。</string>
+    <string name="github_sync_no_remind_countdown">不再提醒 (%d)</string>
+    <string name="github_sync_no_remind">不再提醒</string>
+
+    <!-- Language Settings -->
+    <string name="language_simplified_chinese">简体中文</string>
+    <string name="language_follow_system">跟随系统 / Follow System</string>
+    <string name="language_setting_title">语言 / Language</string>
+    <string name="language_select_title">选择语言 / Select Language</string>
+    <string name="language_restart_title">重启应用 / Restart App</string>
+    <string name="language_restart_message">语言已更改,需要重启应用以完全生效\n\nLanguage changed. App restart required for full effect.</string>
+    <string name="language_restart_now">立即重启 / Restart Now</string>
+    <string name="language_restart_later">稍后 / Later</string>
+
+    <!-- Time Format -->
+    <string name="time_zero_minutes">0分钟</string>
+    <string name="time_hours_minutes">%1$d小时%2$d分钟</string>
+    <string name="time_minutes_only">%d分钟</string>
+
+    <!-- Number Format -->
+    <string name="number_hundred_million">%.1f亿</string>
+    <string name="number_ten_thousand">%.1f万</string>
+    <string name="number_billion">%.1f亿</string>
+    <string name="number_million">%.1f百万</string>
+    <string name="number_thousand">%.1f千</string>
+
+    <!-- Backup Messages -->
+    <string name="backup_export_success_file">歌单导出成功: %s</string>
+    <string name="backup_import_success_detail">歌单导入成功: %s</string>
+    <string name="backup_playlist_merged">歌单 \'%1$s\' 已合并,新增 %2$d 首歌曲</string>
+    <string name="backup_playlist_no_update">歌单 \'%s\' 无需更新</string>
+    <string name="backup_playlist_created">歌单 \'%1$s\' 已创建,包含 %2$d 首歌曲</string>
+
+    <!-- GitHub Sync Messages -->
+    <string name="github_sync_in_progress">同步正在进行中,已跳过</string>
+    <string name="github_not_configured">GitHub未配置</string>
+    <string name="github_sync_no_change">同步成功(无变化)</string>
+    <string name="github_sync_success_detail">同步成功</string>
+    <string name="github_playlist_renamed_local">歌单在两端都被重命名,使用本地名称: %s</string>
+    <string name="github_playlist_renamed_remote">歌单在两端都被重命名,使用远程名称: %s</string>
+    <string name="github_sync_channel_name">GitHub同步</string>
+    <string name="github_sync_channel_desc">GitHub同步状态通知</string>
+    <string name="github_sync_failed_title">GitHub 同步失败</string>
+    <string name="github_sync_token_expired">Token 已过期,请重新配置</string>
+    <string name="github_sync_failed_message">同步失败</string>
+
+    <!-- Download Messages -->
+    <string name="download_file_exists">文件已存在,跳过下载: %s</string>
+    <string name="download_no_url">无法获取下载链接: %s</string>
+    <string name="download_batch_failed_song">批量下载失败: %1$s - %2$s</string>
+    <string name="download_batch_failed">批量下载失败: %s</string>
+    <string name="download_lyrics_matched">使用匹配的歌词保存: %s</string>
+    <string name="download_lyrics_api">从API获取翻译歌词保存: %s</string>
+    <string name="download_local_file">本地文件</string>
+
+    <!-- Notification Messages -->
+    <string name="notification_stop_after_current">⏱ 播完当前停止</string>
+    <string name="notification_stop_after_playlist">⏱ 播完列表停止</string>
+
+    <!-- Settings Messages -->
+    <string name="settings_sync_batch_update_time">每10分钟更新</string>
+    <string name="settings_color_picker_hint">长按颜色或点击 × 可删除自定义颜色</string>
+    <string name="settings_phone_number_hint">+86 手机号</string>
+    <string name="settings_resend_code_countdown">重新获取(%ds)</string>
+    <string name="settings_empty_placeholder">(空)</string>
+    <string name="settings_netease_login_browser_hint">将打开内置浏览器(桌面UA)访问 music.163.com,登录成功后点击右上角 \"完成\"。</string>
+    <string name="settings_cookie_input_hint">请输入 Cookie</string>
+    <string name="settings_github_token_permission">需要权限: repo (完整仓库访问)</string>
+
+    <!-- Theme Colors -->
+    <string name="theme_color_tech_blue">科技·蓝</string>
+    <string name="theme_color_soft_purple">柔和·紫</string>
+    <string name="theme_color_passion_red">热情·红</string>
+    <string name="theme_color_romantic_pink">浪漫·粉</string>
+    <string name="theme_color_forest_cyan">森系·青</string>
+    <string name="theme_color_vibrant_green">活力·绿</string>
+    <string name="theme_color_bright_yellow">明亮·黄</string>
+    <string name="theme_color_warm_orange">温暖·橙</string>
+
+    <!-- NeriApp Test -->
+    <string name="test_exception_message">这是一个测试异常,用于验证异常处理器的功能</string>
+
+    <!-- About -->
+    <string name="about_app_footer">NeriPlayer • GPLv3 • 由你可爱地驱动</string>
+
+    <!-- NowPlayingScreen Additional -->
+    <string name="nowplaying_favorited">已收藏</string>
+    <string name="nowplaying_favorite">收藏</string>
+    <string name="nowplaying_more_options">更多选项</string>
+    <string name="nowplaying_netease_cloud">网易云</string>
+    <string name="nowplaying_bilibili">哔哩哔哩</string>
+    <string name="nowplaying_bluetooth_device">蓝牙设备</string>
+    <string name="nowplaying_wired_headset">有线耳机</string>
+    <string name="nowplaying_phone_speaker">手机扬声器</string>
+    <string name="nowplaying_no_search_result">无搜索结果</string>
+    <string name="nowplaying_share_song">分享歌曲：%1$s - %2$s\n%3$s</string>
+    <string name="nowplaying_font_size_hint">向左减小，向右增大</string>
+    <string name="nowplaying_lyrics_sample">示例歌词：春风十里不如你</string>
+    <string name="nowplaying_song_count_format">%d 首</string>
+
+    <!-- DownloadManagerScreen -->
+    <string name="download_manager_title">下载管理</string>
+    <string name="download_manager_subtitle">管理音乐下载和本地文件</string>
+    <string name="download_selected_count">已选 %d 首</string>
+    <string name="download_delete_selected">删除所选</string>
+    <string name="download_exit_selection">退出多选</string>
+    <string name="download_no_songs">暂无已下载歌曲</string>
+    <string name="download_no_match">未找到匹配的歌曲</string>
+    <string name="download_songs_hint">下载的歌曲会显示在这里</string>
+    <string name="download_try_other_keywords">尝试使用其他关键词搜索</string>
+    <string name="download_space_used">占用空间</string>
+    <string name="download_play">播放</string>
+    <string name="download_delete">删除</string>
+
+    <!-- Home Screen -->
+    <string name="home_loading">正在为你加载首页推荐...</string>
+    <string name="home_load_failed">加载失败：%s</string>
+    <string name="home_retry_hint">点右上角刷新重试~</string>
+    <string name="home_song_count_format">%d首</string>
+    <string name="home_play_count_format" formatted="false">%s · %d首</string>
+    <string name="home_unfavorite_playlist">取消收藏</string>
+    <string name="home_favorite_playlist">收藏歌单</string>
+    <string name="home_unfavorited">已取消收藏</string>
+
+    <!-- Library Screen -->
+    <string name="library_tab_local">本地</string>
+    <string name="library_tab_favorite">收藏</string>
+    <string name="library_tab_netease_playlist">网易云 - 歌单</string>
+    <string name="library_tab_netease_album">网易云 - 专辑</string>
+    <string name="library_tab_bilibili">哔哩哔哩</string>
+    <string name="library_tab_qqmusic">QQ音乐</string>
+    <string name="library_create_playlist_default">新建歌单</string>
+    <string name="library_video_count">%d 个视频</string>
+    <string name="library_name_reserved">该名称已保留为\"%s\"，请换一个名称哦~</string>
+    <string name="library_name_exists">已存在同名歌单，请换一个名称</string>
+    <string name="library_create_new">＋ 新建歌单</string>
+    <string name="library_song_count_format">%d 首</string>
+    <plurals name="library_song_count">
+        <item quantity="other">%d 首</item>
+    </plurals>
+    <plurals name="library_video_count_plural">
+        <item quantity="other">%d 个视频</item>
+    </plurals>
+    <string name="library_qqmusic_coming">QQ音乐功能开发中...</string>
+    <string name="library_favorite_source_format" formatted="false">%d首 · %s</string>
+    <string name="library_title">媒体库</string>
+    <string name="library_coming_soon">敬请期待</string>
+
+    <!-- Bili Playlist Detail -->
+    <string name="bili_loading_favorites">正在加载收藏夹内容...</string>
+    <string name="bili_load_failed">加载失败: %s</string>
+    <string name="bili_get_parts_failed">获取分 P 失败</string>
+    <string name="bili_content_count">%d 个内容</string>
+    <string name="bili_download_progress_format" formatted="false">下载进度: %d/%d</string>
+    <string name="bili_downloading_current">正在下载: %s</string>
+    <string name="bili_overall_progress">总体进度: %d%%</string>
+    <string name="bili_current_file_progress" formatted="false">当前文件: %d%% (%d KB/s)</string>
+
+    <!-- Local Playlist Detail -->
+    <string name="local_playlist_rename">重命名歌单</string>
+    <string name="local_playlist_delete">删除歌单</string>
+    <string name="local_playlist_delete_confirm">确定要删除此歌单吗？此操作不可恢复！</string>
+    <string name="local_playlist_delete_songs">删除所选歌曲</string>
+    <string name="local_playlist_delete_songs_confirm">确定要从歌单移除所选的 %d 首歌曲吗？</string>
+    <string name="local_playlist_delete_count">删除（%d）</string>
+    <string name="local_playlist_export_to">导出到歌单</string>
+    <string name="local_playlist_total_duration" formatted="false">%s · %d 首</string>
+    <string name="local_playlist_play_next">接下来播放...</string>
+
+    <!-- Disclaimer Content -->
+    <string name="disclaimer_section1_body">本软件（音理音理!）为跨平台音视频播放工具，仅用于整合并播放来自多个第三方在线平台的公开内容。本软件本身不上传、分发或修改任何音视频文件；不在服务器侧存储任何用户内容或第三方内容。为便于离线播放，本软件提供"仅保存至本地设备"的下载功能，下载过程不经过开发者服务器，亦不会进行任何云端同步或备份。</string>
+    <string name="disclaimer_section2_bullet1">所有可播放内容均由用户自行从第三方平台访问，版权及相关权益归原作者或平台所有；</string>
+    <string name="disclaimer_section2_bullet2">用户使用时应遵守所在国家/地区的法律法规；</string>
+    <string name="disclaimer_section2_bullet3">软件支持将第三方平台的音视频内容下载至用户本地设备，但不会上传、同步或存储至任何服务器；</string>
+    <string name="disclaimer_section2_bullet4">不得以任何方式对第三方内容实施侵权。</string>
+    <string name="disclaimer_section3_bullet1">用户应自行确认访问与下载内容的合法来源与使用权限；</string>
+    <string name="disclaimer_section3_bullet2">开发者不承诺第三方平台内容的合法性或可用性；</string>
+    <string name="disclaimer_section3_bullet3">因用户行为（包括下载、分享、传播等）引发的法律风险由用户自行负责。</string>
+    <string name="disclaimer_section4_bullet1">本软件部分功能依赖第三方平台接口与服务；</string>
+    <string name="disclaimer_section4_bullet2">开发者不就第三方服务的稳定性、兼容性、时效性作出任何保证；</string>
+    <string name="disclaimer_section4_bullet3">用户应自行查阅并遵守各平台的使用条款与隐私政策。</string>
+    <string name="disclaimer_section5_bullet1">本软件不收集任何个人身份信息；</string>
+    <string name="disclaimer_section5_bullet2">本软件不收集任何设备信息；</string>
+    <string name="disclaimer_section5_bullet3">本软件不进行行为跟踪、分析或用户画像；</string>
+    <string name="disclaimer_section5_bullet4">播放记录、搜索记录等仅保留在本地；</string>
+    <string name="disclaimer_section5_bullet5">当用户发起下载时，文件仅保存至本地存储，不会回传开发者或任何第三方；</string>
+    <string name="disclaimer_section5_bullet6">不接入第三方统计、崩溃分析或广告SDK；</string>
+    <string name="disclaimer_section5_bullet7">第三方平台访问日志由该平台依据其隐私政策处理；</string>
+    <string name="disclaimer_section5_bullet8">GitHub 同步功能 (可选): 用户可选择将歌单数据备份到自己的 GitHub 私有仓库, Token 使用 Android Keystore 加密存储在本地, 开发者无法访问；</string>
+    <string name="disclaimer_section5_bullet9">本隐私说明更新日期：2025-01-07。</string>
+    <string name="disclaimer_section6_bullet1">本软件按"现状"提供，不对稳定性等作任何担保；</string>
+    <string name="disclaimer_section6_bullet2">在法律允许范围内，开发者不对因使用（包括下载行为）造成的损失负责；</string>
+    <string name="disclaimer_section6_bullet3">即便已被告知可能发生此类损失，上述限制仍适用。</string>
+    <string name="disclaimer_section7_body">用户应确保自身使用与下载行为符合所在法域的法律规定。</string>
+    <string name="disclaimer_section8_body">开发者可不时更新本免责声明与隐私说明，继续使用即视为接受更新。</string>
+    <string name="disclaimer_section9_body">使用本软件即表示您已阅读、理解并同意本页面全部内容，若不同意请卸载并停止使用。</string>
+
+    <!-- Download Messages Additional -->
+    <string name="download_cancelled_message">下载已取消</string>
+    <string name="download_failed_message">下载失败</string>
+
+    <!-- Playlist Actions (Additional) -->
+    <string name="action_unfavorite">取消收藏</string>
+    <string name="action_favorite_playlist">收藏歌单</string>
+
+    <!-- Playlist Info (Additional) -->
+    <string name="playlist_play_count_format" formatted="false">播放量 %1$s · %2$d 首</string>
+    <string name="playlist_loading_content">正在加载歌单内容...</string>
+    <string name="playlist_load_failed_format">加载失败：%s</string>
+
+    <!-- Count Format (Additional) -->
+    <string name="count_songs_format">%d 首</string>
+
+    <!-- Download Progress (Additional) -->
+    <string name="download_progress_format" formatted="false">下载进度: %1$d/%2$d</string>
+    <string name="download_current_song">正在下载: %s</string>
+    <string name="download_overall_progress">总体进度: %d%%</string>
+    <string name="download_current_file_progress" formatted="false">当前文件: %1$d%% (%2$d KB/s)</string>
+
 </resources>

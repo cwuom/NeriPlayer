@@ -1,9 +1,10 @@
-package moe.ouom.neriplayer.util
+﻿package moe.ouom.neriplayer.util
 
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import kotlinx.coroutines.CoroutineExceptionHandler
+import moe.ouom.neriplayer.R
 import java.io.PrintWriter
 import java.io.StringWriter
 import java.text.SimpleDateFormat
@@ -155,18 +156,50 @@ object ExceptionHandler {
      */
     private fun showErrorDialogOnMainThread(source: String, throwable: Throwable, exceptionInfo: String) {
         mainHandler.post {
-            val title = "应用异常"
-            val message = buildString {
-                appendLine("发生了一个异常：")
-                appendLine("来源：$source")
-                appendLine("类型：${throwable.javaClass.simpleName}")
-                appendLine("信息：${throwable.message ?: "无详细信息"}")
-                appendLine()
-                appendLine("详细错误信息已记录到日志文件中。")
-                appendLine("如果问题持续存在，请重启应用或联系开发者。")
+            val ctx = context ?: run {
+                NPLogger.e("ExceptionHandler", "Context is null, cannot show error dialog")
+                return@post
             }
-            
-            errorDialogCallback?.invoke(title, message)
+
+            try {
+                // Apply language settings to get localized strings
+                val localizedContext = LanguageManager.applyLanguage(ctx)
+                val title = localizedContext.getString(R.string.exception_title)
+                val message = buildString {
+                    appendLine(localizedContext.getString(R.string.exception_occurred))
+                    appendLine(localizedContext.getString(R.string.exception_source, source))
+                    appendLine(localizedContext.getString(R.string.exception_type, throwable.javaClass.simpleName))
+                    appendLine(localizedContext.getString(R.string.exception_message, throwable.message ?: localizedContext.getString(R.string.exception_no_detail)))
+                    appendLine()
+                    appendLine(localizedContext.getString(R.string.exception_logged))
+                    appendLine(localizedContext.getString(R.string.exception_contact))
+                }
+
+                NPLogger.d("ExceptionHandler", "Invoking error dialog callback")
+                errorDialogCallback?.invoke(title, message) ?: run {
+                    NPLogger.e("ExceptionHandler", "Error dialog callback is null")
+                }
+            } catch (e: Exception) {
+                // Fallback: use original context if language manager fails
+                NPLogger.e("ExceptionHandler", "Failed to apply language settings, using fallback", e)
+                try {
+                    val title = ctx.getString(R.string.exception_title)
+                    val message = buildString {
+                        appendLine(ctx.getString(R.string.exception_occurred))
+                        appendLine(ctx.getString(R.string.exception_source, source))
+                        appendLine(ctx.getString(R.string.exception_type, throwable.javaClass.simpleName))
+                        appendLine(ctx.getString(R.string.exception_message, throwable.message ?: ctx.getString(R.string.exception_no_detail)))
+                        appendLine()
+                        appendLine(ctx.getString(R.string.exception_logged))
+                        appendLine(ctx.getString(R.string.exception_contact))
+                    }
+
+                    NPLogger.d("ExceptionHandler", "Invoking error dialog callback (fallback)")
+                    errorDialogCallback?.invoke(title, message)
+                } catch (fallbackError: Exception) {
+                    NPLogger.e("ExceptionHandler", "Fallback also failed", fallbackError)
+                }
+            }
         }
     }
     

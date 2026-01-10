@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.ui.screen.tab
+﻿package moe.ouom.neriplayer.ui.screen.tab
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -97,6 +97,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -108,6 +109,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
@@ -176,10 +178,24 @@ fun ExploreScreen(
         }
     }
 
-    val tags = listOf(
-        "全部", "流行", "影视原声", "华语", "怀旧", "摇滚", "ACG", "欧美", "清新", "夜晚", "儿童", "民谣", "日语", "浪漫",
-        "学习", "韩语", "工作", "电子", "粤语", "舞曲", "伤感", "游戏", "下午茶", "治愈", "说唱", "轻音乐"
+    // Tag keys for API calls
+    val tagKeys = listOf(
+        "tag_all", "tag_pop", "tag_soundtrack", "tag_chinese", "tag_nostalgia", "tag_rock", "tag_acg", "tag_western", "tag_fresh", "tag_night", "tag_children", "tag_folk", "tag_japanese", "tag_romantic",
+        "tag_study", "tag_korean", "tag_work", "tag_electronic", "tag_cantonese", "tag_dance", "tag_sad", "tag_game", "tag_afternoon_tea", "tag_healing", "tag_rap", "tag_light_music"
     )
+
+    // Translated tag labels for display
+    val tagLabels = listOf(
+        stringResource(R.string.tag_all), stringResource(R.string.tag_pop), stringResource(R.string.tag_soundtrack), stringResource(R.string.tag_chinese), stringResource(R.string.tag_nostalgia), stringResource(R.string.tag_rock), stringResource(R.string.tag_acg), stringResource(R.string.tag_western), stringResource(R.string.tag_fresh), stringResource(R.string.tag_night), stringResource(R.string.tag_children), stringResource(R.string.tag_folk), stringResource(R.string.tag_japanese), stringResource(R.string.tag_romantic),
+        stringResource(R.string.tag_study), stringResource(R.string.tag_korean), stringResource(R.string.tag_work), stringResource(R.string.tag_electronic), stringResource(R.string.tag_cantonese), stringResource(R.string.tag_dance), stringResource(R.string.tag_sad), stringResource(R.string.tag_game), stringResource(R.string.tag_afternoon_tea), stringResource(R.string.tag_healing), stringResource(R.string.tag_rap), stringResource(R.string.tag_light_music)
+    )
+
+    // Initialize with default tag
+    LaunchedEffect(Unit) {
+        if (ui.selectedTag == "tag_all" && ui.playlists.isEmpty()) {
+            vm.loadHighQuality("tag_all")
+        }
+    }
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
@@ -190,7 +206,7 @@ fun ExploreScreen(
         containerColor = Color.Transparent,
         topBar = {
             LargeTopAppBar(
-                title = { Text("探索") },
+                title = { Text(stringResource(R.string.nav_explore)) },
                 scrollBehavior = scrollBehavior,
                 colors = TopAppBarDefaults.largeTopAppBarColors(
                     containerColor = Color.Transparent,
@@ -211,7 +227,7 @@ fun ExploreScreen(
                         searchQuery = it
                         vm.search(searchQuery)
                     },
-                    label = { Text("搜索...") },
+                    label = { Text(stringResource(R.string.search_keyword)) },
                     leadingIcon = { Icon(Icons.Default.Search, "Search") },
                     trailingIcon = {
                         if (searchQuery.isNotEmpty()) {
@@ -279,7 +295,7 @@ fun ExploreScreen(
                                     .fillMaxSize()
                                     .padding(bottom = miniPlayerHeight),
                                 Alignment.Center
-                            ) { Text("未找到结果") }
+                            ) { Text(stringResource(R.string.search_no_result)) }
                         }
                         else -> {
                             LazyColumn(
@@ -302,7 +318,7 @@ fun ExploreScreen(
                                                         showPartsSheet = true
                                                     }
                                                 } catch (e: Exception) {
-                                                    NPLogger.e("ExploreScreen", "处理搜索结果时出错", e)
+                                                    NPLogger.e("ExploreScreen", context.getString(R.string.search_error), e)
                                                 }
                                             }
                                         } else {
@@ -316,11 +332,11 @@ fun ExploreScreen(
                 } else {
                     when (currentSource) {
                         SearchSource.NETEASE -> {
-                            NeteaseDefaultContent(gridState, ui, tags, vm, onPlay)
+                            NeteaseDefaultContent(gridState, ui, tagKeys, tagLabels, vm, onPlay)
                         }
                         SearchSource.BILIBILI -> {
                             Box(Modifier.fillMaxSize(), Alignment.Center) {
-                                Text("在 Bilibili 中发现更多精彩视频", style = MaterialTheme.typography.bodyLarge)
+                                Text(stringResource(R.string.explore_bili_desc), style = MaterialTheme.typography.bodyLarge)
                             }
                         }
                     }
@@ -343,10 +359,10 @@ fun ExploreScreen(
                 AnimatedVisibility(visible = partsSelectionMode) {
                     val allSelected = selectedParts.size == currentPartsInfo.pages.size
                     TopAppBar(
-                        title = { Text("已选 ${selectedParts.size} 项") },
+                        title = { Text(stringResource(R.string.common_selected_count, selectedParts.size)) },
                         navigationIcon = {
                             HapticIconButton(onClick = { exitPartsSelection() }) {
-                                Icon(Icons.Filled.Close, contentDescription = "退出多选")
+                                Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.explore_exit_selection))
                             }
                         },
                         actions = {
@@ -359,7 +375,7 @@ fun ExploreScreen(
                             }) {
                                 Icon(
                                     imageVector = if (allSelected) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
-                                    contentDescription = if (allSelected) "取消全选" else "全选"
+                                    contentDescription = if (allSelected) stringResource(R.string.explore_deselect_all) else stringResource(R.string.explore_select_all)
                                 )
                             }
                             HapticIconButton(
@@ -375,7 +391,7 @@ fun ExploreScreen(
                                 },
                                 enabled = selectedParts.isNotEmpty()
                             ) {
-                                Icon(Icons.AutoMirrored.Outlined.PlaylistAdd, contentDescription = "导出到歌单")
+                                Icon(Icons.AutoMirrored.Outlined.PlaylistAdd, contentDescription = stringResource(R.string.explore_export_to_playlist))
                             }
                         },
                         colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
@@ -460,7 +476,7 @@ fun ExploreScreen(
             sheetState = exportSheetState
         ) {
             Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
-                Text("导出到本地歌单", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.playlist_export_to_local), style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(8.dp))
 
                 LazyColumn {
@@ -484,7 +500,7 @@ fun ExploreScreen(
                         ) {
                             Text(pl.name, style = MaterialTheme.typography.bodyLarge)
                             Spacer(Modifier.weight(1f))
-                            Text("${pl.songs.size} 首", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(R.string.explore_song_count, pl.songs.size), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -499,7 +515,7 @@ fun ExploreScreen(
                         value = newName,
                         onValueChange = { newName = it },
                         modifier = Modifier.weight(1f),
-                        placeholder = { Text("新建歌单名称") },
+                        placeholder = { Text(stringResource(R.string.playlist_create_name)) },
                         singleLine = true
                     )
                     Spacer(Modifier.width(12.dp))
@@ -523,7 +539,7 @@ fun ExploreScreen(
                                 exitPartsSelection()
                             }
                         }
-                    ) { Text("新建并导出") }
+                    ) { Text(stringResource(R.string.playlist_create_and_export)) }
                 }
                 Spacer(Modifier.height(12.dp))
             }
@@ -536,7 +552,8 @@ fun ExploreScreen(
 private fun NeteaseDefaultContent(
     gridState: LazyGridState,
     ui: ExploreUiState,
-    tags: List<String>,
+    tagKeys: List<String>,
+    tagLabels: List<String>,
     vm: ExploreViewModel,
     onPlay: (NeteasePlaylist) -> Unit
 ) {
@@ -555,17 +572,19 @@ private fun NeteaseDefaultContent(
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) {
             Column(Modifier.fillMaxWidth()) {
-                val display = if (ui.expanded) tags else tags.take(12)
+                val displayCount = if (ui.expanded) tagKeys.size else 12
+                val displayKeys = tagKeys.take(displayCount)
+                val displayLabels = tagLabels.take(displayCount)
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    display.forEach { tag ->
-                        val selected = (ui.selectedTag == tag)
+                    displayKeys.forEachIndexed { index, tagKey ->
+                        val selected = (ui.selectedTag == tagKey)
                         FilterChip(
                             selected = selected,
-                            onClick = { if (!selected) vm.loadHighQuality(tag) },
-                            label = { Text(tag) },
+                            onClick = { if (!selected) vm.loadHighQuality(tagKey) },
+                            label = { Text(displayLabels[index]) },
                             border = FilterChipDefaults.filterChipBorder(
                                 borderColor = MaterialTheme.colorScheme.outline,
                                 selected = selected,
@@ -576,7 +595,7 @@ private fun NeteaseDefaultContent(
                 }
                 Box(Modifier.fillMaxWidth(), Alignment.Center) {
                     HapticTextButton(onClick = { vm.toggleExpanded() }) {
-                        Text(if (ui.expanded) "收起" else "展开更多")
+                        Text(if (ui.expanded) stringResource(R.string.explore_collapse) else stringResource(R.string.explore_expand))
                     }
                 }
             }

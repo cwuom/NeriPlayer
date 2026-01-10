@@ -79,9 +79,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import moe.ouom.neriplayer.R
 import androidx.core.graphics.drawable.toDrawable
 import androidx.core.graphics.toColorInt
 import androidx.core.view.WindowCompat
@@ -99,11 +101,17 @@ import moe.ouom.neriplayer.util.HapticButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.ExceptionHandler
+import moe.ouom.neriplayer.util.LanguageManager
+import android.content.Context
 
 private enum class AppStage { Loading, Disclaimer, Main }
 
 class MainActivity : ComponentActivity() {
     private val settingsRepository by lazy { SettingsRepository(applicationContext) }
+
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(LanguageManager.applyLanguage(newBase))
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -270,11 +278,11 @@ class MainActivity : ComponentActivity() {
                             if (showDialog) {
                                 AlertDialog(
                                     onDismissRequest = { showDialog = false },
-                                    title = { Text("提示") },
+                                    title = { Text(stringResource(R.string.dialog_hint)) },
                                     text = { Text(dialogMessage) },
                                     confirmButton = {
                                         HapticTextButton(onClick = { showDialog = false }) {
-                                            Text("确定")
+                                            Text(stringResource(R.string.action_confirm))
                                         }
                                     }
                                 )
@@ -288,7 +296,7 @@ class MainActivity : ComponentActivity() {
                                     text = { Text(errorMessage) },
                                     confirmButton = {
                                         HapticTextButton(onClick = { showErrorDialog = false }) {
-                                            Text("确定")
+                                            Text(stringResource(R.string.action_confirm))
                                         }
                                     }
                                 )
@@ -306,11 +314,11 @@ class MainActivity : ComponentActivity() {
 
                                 AlertDialog(
                                     onDismissRequest = { showTokenWarningDialog = false },
-                                    title = { Text("GitHub 同步配置警告") },
-                                    text = { Text("检测到 GitHub 同步配置不完整。Token 可能已过期或被删除，请在设置中重新配置。") },
+                                    title = { Text(stringResource(R.string.github_sync_warning_title)) },
+                                    text = { Text(stringResource(R.string.github_sync_warning_message)) },
                                     confirmButton = {
                                         HapticTextButton(onClick = { showTokenWarningDialog = false }) {
-                                            Text("确定")
+                                            Text(stringResource(R.string.action_confirm))
                                         }
                                     },
                                     dismissButton = {
@@ -322,7 +330,7 @@ class MainActivity : ComponentActivity() {
                                             },
                                             enabled = countdown == 0
                                         ) {
-                                            Text(if (countdown > 0) "不再提醒 ($countdown)" else "不再提醒")
+                                            Text(if (countdown > 0) stringResource(R.string.github_sync_no_remind_countdown, countdown) else stringResource(R.string.github_sync_no_remind))
                                         }
                                     }
                                 )
@@ -409,7 +417,7 @@ fun DisclaimerScreen(onAgree: () -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "免责声明与隐私说明",
+                    text = stringResource(R.string.disclaimer_title),
                     style = MaterialTheme.typography.headlineMedium,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth()
@@ -426,73 +434,69 @@ fun DisclaimerScreen(onAgree: () -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                     horizontalAlignment = Alignment.Start
                 ) {
-                    SectionTitle("1. 软件性质说明")
-                    BodyText(
-                        "本软件（音理音理!）为跨平台音视频播放工具，仅用于整合并播放来自多个第三方在线平台的公开内容。" +
-                                "本软件本身不上传、分发或修改任何音视频文件；不在服务器侧存储任何用户内容或第三方内容。" +
-                                "为便于离线播放，本软件提供“仅保存至本地设备”的下载功能，下载过程不经过开发者服务器，亦不会进行任何云端同步或备份。"
-                    )
+                    SectionTitle(stringResource(R.string.disclaimer_section1_title))
+                    BodyText(stringResource(R.string.disclaimer_section1_body))
 
-                    SectionTitle("2. 内容来源与版权归属")
+                    SectionTitle(stringResource(R.string.disclaimer_section2_title))
                     Bullets(
                         listOf(
-                            "所有可播放内容均由用户自行从第三方平台访问，版权及相关权益归原作者或平台所有；",
-                            "用户使用时应遵守所在国家/地区的法律法规；",
-                            "软件支持将第三方平台的音视频内容下载至用户本地设备，但不会上传、同步或存储至任何服务器；",
-                            "不得以任何方式对第三方内容实施侵权。"
+                            stringResource(R.string.disclaimer_section2_bullet1),
+                            stringResource(R.string.disclaimer_section2_bullet2),
+                            stringResource(R.string.disclaimer_section2_bullet3),
+                            stringResource(R.string.disclaimer_section2_bullet4)
                         )
                     )
 
-                    SectionTitle("3. 使用者责任")
+                    SectionTitle(stringResource(R.string.disclaimer_section3_title))
                     Bullets(
                         listOf(
-                            "用户应自行确认访问与下载内容的合法来源与使用权限；",
-                            "开发者不承诺第三方平台内容的合法性或可用性；",
-                            "因用户行为（包括下载、分享、传播等）引发的法律风险由用户自行负责。"
+                            stringResource(R.string.disclaimer_section3_bullet1),
+                            stringResource(R.string.disclaimer_section3_bullet2),
+                            stringResource(R.string.disclaimer_section3_bullet3)
                         )
                     )
 
-                    SectionTitle("4. 第三方服务与政策")
+                    SectionTitle(stringResource(R.string.disclaimer_section4_title))
                     Bullets(
                         listOf(
-                            "本软件部分功能依赖第三方平台接口与服务；",
-                            "开发者不就第三方服务的稳定性、兼容性、时效性作出任何保证；",
-                            "用户应自行查阅并遵守各平台的使用条款与隐私政策。"
+                            stringResource(R.string.disclaimer_section4_bullet1),
+                            stringResource(R.string.disclaimer_section4_bullet2),
+                            stringResource(R.string.disclaimer_section4_bullet3)
                         )
                     )
 
-                    SectionTitle("5. 隐私说明（无数据收集）")
+                    SectionTitle(stringResource(R.string.disclaimer_section5_title))
                     Bullets(
                         listOf(
-                            "本软件不收集任何个人身份信息；",
-                            "本软件不收集任何设备信息；",
-                            "本软件不进行行为跟踪、分析或用户画像；",
-                            "播放记录、搜索记录等仅保留在本地；",
-                            "当用户发起下载时，文件仅保存至本地存储，不会回传开发者或任何第三方；",
-                            "不接入第三方统计、崩溃分析或广告SDK；",
-                            "第三方平台访问日志由该平台依据其隐私政策处理；",
-                            "GitHub 同步功能 (可选): 用户可选择将歌单数据备份到自己的 GitHub 私有仓库, Token 使用 Android Keystore 加密存储在本地, 开发者无法访问；",
-                            "本隐私说明更新日期：2025-01-07。"
+                            stringResource(R.string.disclaimer_section5_bullet1),
+                            stringResource(R.string.disclaimer_section5_bullet2),
+                            stringResource(R.string.disclaimer_section5_bullet3),
+                            stringResource(R.string.disclaimer_section5_bullet4),
+                            stringResource(R.string.disclaimer_section5_bullet5),
+                            stringResource(R.string.disclaimer_section5_bullet6),
+                            stringResource(R.string.disclaimer_section5_bullet7),
+                            stringResource(R.string.disclaimer_section5_bullet8),
+                            stringResource(R.string.disclaimer_section5_bullet9)
                         )
                     )
 
-                    SectionTitle("6. 免责与责任限制")
+                    SectionTitle(stringResource(R.string.disclaimer_section6_title))
                     Bullets(
                         listOf(
-                            "本软件按“现状”提供，不对稳定性等作任何担保；",
-                            "在法律允许范围内，开发者不对因使用（包括下载行为）造成的损失负责；",
-                            "即便已被告知可能发生此类损失，上述限制仍适用。"
+                            stringResource(R.string.disclaimer_section6_bullet1),
+                            stringResource(R.string.disclaimer_section6_bullet2),
+                            stringResource(R.string.disclaimer_section6_bullet3)
                         )
                     )
 
-                    SectionTitle("7. 合规与地区差异")
-                    BodyText("用户应确保自身使用与下载行为符合所在法域的法律规定。")
+                    SectionTitle(stringResource(R.string.disclaimer_section7_title))
+                    BodyText(stringResource(R.string.disclaimer_section7_body))
 
-                    SectionTitle("8. 条款更新")
-                    BodyText("开发者可不时更新本免责声明与隐私说明，继续使用即视为接受更新。")
+                    SectionTitle(stringResource(R.string.disclaimer_section8_title))
+                    BodyText(stringResource(R.string.disclaimer_section8_body))
 
-                    SectionTitle("9. 同意条款")
-                    EmphasisText("使用本软件即表示您已阅读、理解并同意本页面全部内容，若不同意请卸载并停止使用。")
+                    SectionTitle(stringResource(R.string.disclaimer_section9_title))
+                    EmphasisText(stringResource(R.string.disclaimer_section9_body))
                 }
 
                 Spacer(Modifier.height(16.dp))
@@ -504,7 +508,7 @@ fun DisclaimerScreen(onAgree: () -> Unit) {
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = if (countdown == 0) "我已知晓并同意" else "请阅读（${countdown}s）",
+                        text = if (countdown == 0) stringResource(R.string.disclaimer_agree_countdown) else stringResource(R.string.disclaimer_read_countdown, countdown),
                         style = MaterialTheme.typography.titleMedium,
                         textAlign = TextAlign.Center
                     )

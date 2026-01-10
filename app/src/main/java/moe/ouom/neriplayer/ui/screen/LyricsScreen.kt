@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.ui.screen
+﻿package moe.ouom.neriplayer.ui.screen
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -87,11 +87,13 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.ui.component.AppleMusicLyric
 import moe.ouom.neriplayer.ui.component.LyricEntry
@@ -114,6 +116,7 @@ fun LyricsScreen(
     onSeekTo: (Long) -> Unit,
     translatedLyrics: List<LyricEntry>? = null,
     lyricOffsetMs: Long,
+    showLyricTranslation: Boolean = true,
 ) {
     // 处理返回键
     androidx.activity.compose.BackHandler(onBack = onNavigateBack)
@@ -180,7 +183,7 @@ fun LyricsScreen(
             horizontalArrangement = Arrangement.Start
         ) {
             HapticIconButton(onClick = onNavigateBack) {
-                Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = "返回")
+                Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = stringResource(R.string.cd_back))
             }
 
             Spacer(modifier = Modifier.width(8.dp))
@@ -210,13 +213,13 @@ fun LyricsScreen(
                 horizontalAlignment = Alignment.Start
             ) {
                 Text(
-                    text = currentSong?.name ?: "未知歌曲",
+                    text = currentSong?.name ?: stringResource(R.string.lyrics_unknown_song),
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = currentSong?.artist ?: "未知艺术家",
+                    text = currentSong?.artist ?: stringResource(R.string.lyrics_unknown_artist),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -226,12 +229,13 @@ fun LyricsScreen(
 
             // 收藏按钮（与 NowPlaying 保持一致的逻辑）
             val playlists by PlayerManager.playlistsFlow.collectAsState()
-            val isFavoriteComputed = remember(currentSong, playlists) {
+            val favoritePlaylistName = stringResource(R.string.lyrics_favorite_playlist)
+            val isFavoriteComputed = remember(currentSong, playlists, favoritePlaylistName) {
                 val song = currentSong
                 if (song == null) {
                     false
                 } else {
-                    val fav = playlists.firstOrNull { it.name == "我喜欢的音乐" }
+                    val fav = playlists.firstOrNull { it.name == "我喜欢的音乐" || it.name == "My Favorite Music" }
                     fav?.songs?.any { it.id == song.id && it.album == song.album } == true
                 }
             }
@@ -246,7 +250,7 @@ fun LyricsScreen(
             }) {
                 Icon(
                     imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                    contentDescription = if (isFavorite) "已收藏" else "收藏",
+                    contentDescription = if (isFavorite) stringResource(R.string.lyrics_favorited) else stringResource(R.string.lyrics_favorite),
                     tint = if (isFavorite) Color.Red else MaterialTheme.colorScheme.onSurface
                 )
             }
@@ -256,7 +260,7 @@ fun LyricsScreen(
             // 更多按钮
             var showMoreOptions by remember { mutableStateOf(false) }
             HapticIconButton(onClick = { showMoreOptions = true }) {
-                Icon(Icons.Filled.MoreVert, contentDescription = "更多选项")
+                Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.lyrics_more_options))
             }
             if (showMoreOptions && currentSong != null) {
                 val queue by PlayerManager.currentQueueFlow.collectAsState()
@@ -305,7 +309,7 @@ fun LyricsScreen(
                     onLyricClick = { lyricEntry ->
                         onSeekTo(lyricEntry.startTimeMs)
                     },
-                    translatedLyrics = translatedLyrics,
+                    translatedLyrics = if (showLyricTranslation) translatedLyrics else null,
                     translationFontSize = (16 * lyricFontScale).coerceIn(12f, 26f).sp,
                 )
             } else {
@@ -313,7 +317,7 @@ fun LyricsScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("暂无歌词", style = MaterialTheme.typography.headlineSmall)
+                    Text(stringResource(R.string.lyrics_no_lyrics), style = MaterialTheme.typography.headlineSmall)
                 }
             }
         }
@@ -373,7 +377,7 @@ fun LyricsScreen(
                 HapticIconButton(onClick = { PlayerManager.previous() }) {
                     Icon(
                         Icons.Outlined.SkipPrevious,
-                        contentDescription = "上一首",
+                        contentDescription = stringResource(R.string.lyrics_previous),
                         modifier = Modifier.size(32.dp)
                     )
                 }
@@ -389,7 +393,7 @@ fun LyricsScreen(
                     ) { currentlyPlaying ->
                         Icon(
                             imageVector = if (currentlyPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                            contentDescription = if (currentlyPlaying) "暂停" else "播放",
+                            contentDescription = if (currentlyPlaying) stringResource(R.string.lyrics_pause) else stringResource(R.string.lyrics_play),
                             modifier = Modifier.size(36.dp)
                         )
                     }
@@ -398,7 +402,7 @@ fun LyricsScreen(
                 HapticIconButton(onClick = { PlayerManager.next() }) {
                     Icon(
                         Icons.Outlined.SkipNext,
-                        contentDescription = "下一首",
+                        contentDescription = stringResource(R.string.lyrics_next),
                         modifier = Modifier.size(32.dp)
                     )
                 }
@@ -421,7 +425,7 @@ fun LyricsScreen(
             HapticIconButton(onClick = { showQueueSheet = true }) {
                 Icon(
                     Icons.AutoMirrored.Outlined.QueueMusic,
-                    contentDescription = "播放列表",
+                    contentDescription = stringResource(R.string.lyrics_playlist),
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -432,7 +436,7 @@ fun LyricsScreen(
             HapticIconButton(onClick = { showSleepTimerDialog = true }) {
                 Icon(
                     Icons.Outlined.Timer,
-                    contentDescription = "定时器",
+                    contentDescription = stringResource(R.string.lyrics_timer),
                     tint = if (sleepTimerState.isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(20.dp)
                 )
@@ -460,7 +464,7 @@ fun LyricsScreen(
                 ) { _ ->
                     Icon(
                         imageVector = Icons.Outlined.LibraryMusic,
-                        contentDescription = "返回封面",
+                        contentDescription = stringResource(R.string.lyrics_back_to_cover),
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(20.dp)
                     )
@@ -472,7 +476,7 @@ fun LyricsScreen(
             HapticIconButton(onClick = { showAddSheet = true }) {
                 Icon(
                     Icons.AutoMirrored.Outlined.PlaylistAdd,
-                    contentDescription = "添加到歌单",
+                    contentDescription = stringResource(R.string.lyrics_add_to_playlist),
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -548,7 +552,7 @@ fun LyricsScreen(
                             ) {
                                 Text(pl.name, style = MaterialTheme.typography.bodyLarge)
                                 Spacer(modifier = Modifier.weight(1f))
-                                Text("${pl.songs.size} 首", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(stringResource(R.string.lyrics_song_count, pl.songs.size), color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -601,15 +605,15 @@ private fun VolumeControlSheetContent(deviceName: String) {
 private fun rememberAudioDeviceInfo(): Pair<String, androidx.compose.ui.graphics.vector.ImageVector> {
     val context = androidx.compose.ui.platform.LocalContext.current
     val audioManager = remember { context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager }
-    var deviceInfo by remember { mutableStateOf(getCurrentAudioDevice(audioManager)) }
+    var deviceInfo by remember { mutableStateOf(getCurrentAudioDevice(audioManager, context)) }
 
     androidx.compose.runtime.DisposableEffect(Unit) {
         val deviceCallback = object : android.media.AudioDeviceCallback() {
             override fun onAudioDevicesAdded(addedDevices: Array<out android.media.AudioDeviceInfo>?) {
-                deviceInfo = getCurrentAudioDevice(audioManager)
+                deviceInfo = getCurrentAudioDevice(audioManager, context)
             }
             override fun onAudioDevicesRemoved(removedDevices: Array<out android.media.AudioDeviceInfo>?) {
-                deviceInfo = getCurrentAudioDevice(audioManager)
+                deviceInfo = getCurrentAudioDevice(audioManager, context)
             }
         }
         audioManager.registerAudioDeviceCallback(deviceCallback, null)
@@ -619,18 +623,18 @@ private fun rememberAudioDeviceInfo(): Pair<String, androidx.compose.ui.graphics
     return deviceInfo
 }
 
-private fun getCurrentAudioDevice(audioManager: android.media.AudioManager): Pair<String, androidx.compose.ui.graphics.vector.ImageVector> {
+private fun getCurrentAudioDevice(audioManager: android.media.AudioManager, context: android.content.Context): Pair<String, androidx.compose.ui.graphics.vector.ImageVector> {
     val devices = audioManager.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS)
     val bluetoothDevice = devices.firstOrNull { it.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP }
     if (bluetoothDevice != null) {
         return try {
-            Pair(bluetoothDevice.productName.toString().ifBlank { "蓝牙设备" }, Icons.Default.Headset)
+            Pair(bluetoothDevice.productName.toString().ifBlank { context.getString(R.string.lyrics_bluetooth_device) }, Icons.Default.Headset)
         } catch (_: SecurityException) {
-            Pair("蓝牙设备", Icons.Default.Headset)
+            Pair(context.getString(R.string.lyrics_bluetooth_device), Icons.Default.Headset)
         }
     }
     val wiredHeadset =
         devices.firstOrNull { it.type == android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET || it.type == android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES }
-    if (wiredHeadset != null) return Pair("有线耳机", Icons.Default.Headset)
-    return Pair("手机扬声器", Icons.Default.SpeakerGroup)
+    if (wiredHeadset != null) return Pair(context.getString(R.string.lyrics_wired_headset), Icons.Default.Headset)
+    return Pair(context.getString(R.string.lyrics_phone_speaker), Icons.Default.SpeakerGroup)
 }

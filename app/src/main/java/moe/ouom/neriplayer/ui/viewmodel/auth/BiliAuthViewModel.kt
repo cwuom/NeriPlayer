@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.ui.viewmodel.auth
+﻿package moe.ouom.neriplayer.ui.viewmodel.auth
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -63,7 +63,7 @@ class BiliAuthViewModel(app: Application) : AndroidViewModel(app) {
     fun importCookiesFromMap(map: Map<String, String>) {
         viewModelScope.launch {
             if (map.isEmpty()) {
-                _events.send(BiliAuthEvent.ShowSnack("Cookie 为空"))
+                _events.send(BiliAuthEvent.ShowSnack("Cookie is empty"))  // Localized in UI
                 return@launch
             }
             repo.saveCookies(map)

@@ -30,9 +30,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.LocalPlaylist
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
-import moe.ouom.neriplayer.data.LocalPlaylistRepository.Companion.FAVORITES_NAME
 
 /** 本地歌单详情页面状态 */
 data class LocalPlaylistDetailUiState(
@@ -62,8 +62,9 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
     fun rename(newName: String) {
         viewModelScope.launch {
             var name = newName
-            if (newName == FAVORITES_NAME) {
-                name = FAVORITES_NAME + "_2"
+            val favoritesName = getApplication<Application>().getString(R.string.favorite_my_music)
+            if (newName == favoritesName) {
+                name = favoritesName + "_2"
             }
             repo.renamePlaylist(playlistId, name)
         }

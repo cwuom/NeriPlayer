@@ -29,11 +29,13 @@ import android.provider.Settings
 import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.LocalPlaylist
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.PlayedEntry
 import moe.ouom.neriplayer.data.PlayHistoryRepository
+import moe.ouom.neriplayer.util.LanguageManager
 import moe.ouom.neriplayer.util.NPLogger
 import java.util.UUID
 
@@ -97,12 +99,15 @@ class GitHubSyncManager(private val context: Context) {
      * 执行完整同步
      */
     suspend fun performSync(): Result<SyncResult> = withContext(Dispatchers.IO) {
+        // 应用语言设置到context
+        val localizedContext = LanguageManager.applyLanguage(context)
+
         // 使用锁防止并发同步
         if (!syncLock.tryLock()) {
             NPLogger.d(TAG, "Sync already in progress, skipping")
             return@withContext Result.success(SyncResult(
                 success = true,
-                message = "同步正在进行中，已跳过"
+                message = localizedContext.getString(R.string.github_sync_in_progress)
             ))
         }
 
@@ -112,10 +117,10 @@ class GitHubSyncManager(private val context: Context) {
             val repo = storage.getRepoName()
 
             if (token == null || owner == null || repo == null) {
-                return@withContext Result.failure(IllegalStateException("GitHub未配置"))
+                return@withContext Result.failure(IllegalStateException(localizedContext.getString(R.string.github_not_configured)))
             }
 
-            val apiClient = GitHubApiClient(token)
+            val apiClient = GitHubApiClient(context, token)
 
             // 获取本地数据
             val localData = buildLocalSyncData()
@@ -156,7 +161,7 @@ class GitHubSyncManager(private val context: Context) {
                         storage.saveLastRemoteSha(newSha)
                     }
                     storage.saveLastSyncTime(System.currentTimeMillis())
-                    Result.success(SyncResult(success = true, message = "初始数据已上传"))
+                    Result.success(SyncResult(success = true, message = localizedContext.getString(R.string.sync_initial_uploaded)))
                 } else {
                     val error = uploadResult.exceptionOrNull()
                     // 检查是否是Token过期
@@ -165,7 +170,7 @@ class GitHubSyncManager(private val context: Context) {
                         storage.clearToken()
                         return@withContext Result.failure(error)
                     }
-                    uploadResult.map { SyncResult(success = false, message = "上传失败") }
+                    uploadResult.map { SyncResult(success = false, message = localizedContext.getString(R.string.sync_upload_failed)) }
                 }
             }
 
@@ -180,7 +185,7 @@ class GitHubSyncManager(private val context: Context) {
                         storage.saveLastRemoteSha(newSha)
                     }
                     storage.saveLastSyncTime(System.currentTimeMillis())
-                    Result.success(SyncResult(success = true, message = "初始数据已上传"))
+                    Result.success(SyncResult(success = true, message = localizedContext.getString(R.string.sync_initial_uploaded)))
                 } else {
                     val error = uploadResult.exceptionOrNull()
                     // 检查是否是Token过期
@@ -189,7 +194,7 @@ class GitHubSyncManager(private val context: Context) {
                         storage.clearToken()
                         return@withContext Result.failure(error)
                     }
-                    uploadResult.map { SyncResult(success = false, message = "上传失败") }
+                    uploadResult.map { SyncResult(success = false, message = localizedContext.getString(R.string.sync_upload_failed)) }
                 }
             }
 
@@ -228,7 +233,7 @@ class GitHubSyncManager(private val context: Context) {
                 storage.saveLastSyncTime(System.currentTimeMillis())
                 return@withContext Result.success(SyncResult(
                     success = true,
-                    message = "同步成功（无变化）"
+                    message = localizedContext.getString(R.string.github_sync_no_change)
                 ))
             }
 
@@ -243,7 +248,7 @@ class GitHubSyncManager(private val context: Context) {
                     storage.clearToken()
                     return@withContext Result.failure(error)
                 }
-                return@withContext Result.failure(uploadResult.exceptionOrNull() ?: Exception("上传失败"))
+                return@withContext Result.failure(uploadResult.exceptionOrNull() ?: Exception(localizedContext.getString(R.string.sync_upload_failed)))
             }
 
             // 保存上传后的新SHA
@@ -340,6 +345,7 @@ class GitHubSyncManager(private val context: Context) {
      * @param isFirstSync 是否首次同步（首次同步时优先使用远程数据）
      */
     private fun performThreeWayMerge(local: SyncData, remote: SyncData, isFirstSync: Boolean = false): MergeResult {
+        val localizedContext = LanguageManager.applyLanguage(context)
         val conflicts = mutableListOf<SyncConflict>()
         var playlistsAdded = 0
         var playlistsUpdated = 0
@@ -418,7 +424,7 @@ class GitHubSyncManager(private val context: Context) {
 
         val syncResult = SyncResult(
             success = true,
-            message = "同步成功",
+            message = localizedContext.getString(R.string.github_sync_success_detail),
             playlistsAdded = playlistsAdded,
             playlistsUpdated = playlistsUpdated,
             playlistsDeleted = playlistsDeleted,
@@ -437,6 +443,7 @@ class GitHubSyncManager(private val context: Context) {
      * - 否则使用修改时间更新的一端
      */
     private fun mergePlaylist(local: SyncPlaylist, remote: SyncPlaylist, isFirstSync: Boolean = false): PlaylistMergeResult {
+        val localizedContext = LanguageManager.applyLanguage(context)
         var hasConflict = false
         var conflict: SyncConflict? = null
         var songsAdded = 0
@@ -452,7 +459,7 @@ class GitHubSyncManager(private val context: Context) {
                     type = ConflictType.PLAYLIST_RENAMED_BOTH_SIDES,
                     playlistId = local.id,
                     playlistName = local.name,
-                    description = "歌单在两端都被重命名,使用本地名称: ${local.name}",
+                    description = localizedContext.getString(R.string.github_playlist_renamed_local, local.name),
                     resolution = ConflictResolution.LOCAL_WINS
                 )
                 local.name
@@ -461,7 +468,7 @@ class GitHubSyncManager(private val context: Context) {
                     type = ConflictType.PLAYLIST_RENAMED_BOTH_SIDES,
                     playlistId = local.id,
                     playlistName = remote.name,
-                    description = "歌单在两端都被重命名,使用远程名称: ${remote.name}",
+                    description = localizedContext.getString(R.string.github_playlist_renamed_remote, remote.name),
                     resolution = ConflictResolution.REMOTE_WINS
                 )
                 isUpdated = true
@@ -563,16 +570,23 @@ class GitHubSyncManager(private val context: Context) {
      * @param remoteHasChanged 远程是否有变化，只有远程有变化时才应用播放历史
      */
     private suspend fun applyMergedDataToLocal(mergedData: SyncData, remoteHasChanged: Boolean) {
+        val localizedContext = LanguageManager.applyLanguage(context)
         // 应用本地歌单 - 只更新存在于mergedData中的歌单，不删除本地独有的歌单
         val currentPlaylists = playlistRepo.playlists.value.toMutableList()
         val currentPlaylistsById = currentPlaylists.associateBy { it.id }.toMutableMap()
         val currentPlaylistsByName = currentPlaylists.associateBy { it.name }.toMutableMap()
 
         // 更新或添加来自mergedData的歌单
+        val possibleFavoriteNames = listOf("我喜欢的音乐", "My Favorite Music")
+        val currentFavoritesName = localizedContext.getString(R.string.favorite_my_music)
+
         for (syncPlaylist in mergedData.playlists) {
-            // 优先按名称匹配系统歌单（"我喜欢的音乐"），然后按ID匹配
-            val existingPlaylist = if (syncPlaylist.name == LocalPlaylistRepository.FAVORITES_NAME) {
-                currentPlaylistsByName[LocalPlaylistRepository.FAVORITES_NAME]
+            // 优先按名称匹配系统歌单（"我喜欢的音乐"），支持跨语言匹配
+            val existingPlaylist = if (syncPlaylist.name in possibleFavoriteNames) {
+                // 这是收藏歌单，按所有可能的名称查找
+                possibleFavoriteNames.firstNotNullOfOrNull { name ->
+                    currentPlaylistsByName[name]
+                }
             } else {
                 currentPlaylistsById[syncPlaylist.id] ?: currentPlaylistsByName[syncPlaylist.name]
             }
@@ -584,7 +598,7 @@ class GitHubSyncManager(private val context: Context) {
                     existingPlaylist.songs.isEmpty() && syncPlaylist.songs.isNotEmpty() -> {
                         NPLogger.d(TAG, "Local playlist '${existingPlaylist.name}' is empty but remote has songs, using remote version")
                         existingPlaylist.copy(
-                            name = syncPlaylist.name,
+                            name = if (syncPlaylist.name in possibleFavoriteNames) currentFavoritesName else syncPlaylist.name,
                             songs = syncPlaylist.songs.map { it.toSongItem() }.toMutableList(),
                             modifiedAt = syncPlaylist.modifiedAt
                         )
@@ -602,7 +616,7 @@ class GitHubSyncManager(private val context: Context) {
                     // 使用合并后的数据
                     else -> {
                         existingPlaylist.copy(
-                            name = syncPlaylist.name,
+                            name = if (syncPlaylist.name in possibleFavoriteNames) currentFavoritesName else syncPlaylist.name,
                             songs = syncPlaylist.songs.map { it.toSongItem() }.toMutableList(),
                             modifiedAt = syncPlaylist.modifiedAt
                         )
@@ -623,7 +637,7 @@ class GitHubSyncManager(private val context: Context) {
 
         // 确保"我喜欢的音乐"存在且置顶
         val allPlaylists = currentPlaylistsById.values.toMutableList()
-        val favoritesPlaylist = allPlaylists.firstOrNull { it.name == LocalPlaylistRepository.FAVORITES_NAME }
+        val favoritesPlaylist = allPlaylists.firstOrNull { it.name == "我喜欢的音乐" || it.name == "My Favorite Music" }
 
         if (favoritesPlaylist != null) {
             // 移除"我喜欢的音乐"，然后添加到第一位
@@ -633,7 +647,7 @@ class GitHubSyncManager(private val context: Context) {
             // 如果不存在，创建一个新的"我喜欢的音乐"并置顶
             val newFavorites = LocalPlaylist(
                 id = System.currentTimeMillis(),
-                name = LocalPlaylistRepository.FAVORITES_NAME,
+                name = localizedContext.getString(R.string.favorite_my_music),
                 songs = mutableListOf()
             )
             allPlaylists.add(0, newFavorites)
@@ -755,6 +769,7 @@ class GitHubSyncManager(private val context: Context) {
         sha: String?,
         fileName: String
     ): Result<String> {
+        val localizedContext = LanguageManager.applyLanguage(context)
         // 根据省流模式选择序列化方式
         val useDataSaver = storage.isDataSaverMode()
         val content = SyncDataSerializer.serialize(data, useDataSaver)
@@ -769,7 +784,7 @@ class GitHubSyncManager(private val context: Context) {
             val newSha = uploadResult.getOrNull() ?: ""
             Result.success(newSha)
         } else {
-            Result.failure(uploadResult.exceptionOrNull() ?: Exception("上传失败"))
+            Result.failure(uploadResult.exceptionOrNull() ?: Exception(localizedContext.getString(R.string.sync_upload_failed)))
         }
     }
 

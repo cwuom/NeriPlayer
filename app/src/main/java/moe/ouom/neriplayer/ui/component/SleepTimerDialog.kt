@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.ui.component
+﻿package moe.ouom.neriplayer.ui.component
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -33,9 +33,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.SleepTimerMode
 import moe.ouom.neriplayer.core.player.SleepTimerState
+import moe.ouom.neriplayer.R
 
 @Composable
 fun SleepTimerDialog(
@@ -47,7 +49,7 @@ fun SleepTimerDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Default.Timer, contentDescription = null) },
-        title = { Text("睡眠定时器") },
+        title = { Text(stringResource(R.string.sleep_timer_title)) },
         text = {
             Column(
                 modifier = Modifier
@@ -69,7 +71,7 @@ fun SleepTimerDialog(
                             horizontalAlignment = Alignment.Start
                         ) {
                             Text(
-                                text = "定时器运行中",
+                                text = stringResource(R.string.sleep_timer_running),
                                 style = MaterialTheme.typography.labelMedium
                             )
                             Spacer(modifier = Modifier.height(8.dp))
@@ -82,13 +84,13 @@ fun SleepTimerDialog(
                                 }
                                 SleepTimerMode.FINISH_CURRENT -> {
                                     Text(
-                                        text = "播放完当前歌曲后停止",
+                                        text = stringResource(R.string.sleep_timer_finish_current),
                                         style = MaterialTheme.typography.bodyMedium
                                     )
                                 }
                                 SleepTimerMode.FINISH_PLAYLIST -> {
                                     Text(
-                                        text = "播放完播放列表后停止",
+                                        text = stringResource(R.string.sleep_timer_finish_playlist),
                                         style = MaterialTheme.typography.bodyMedium
                                     )
                                 }
@@ -100,13 +102,13 @@ fun SleepTimerDialog(
 
                 // 倒计时滑块
                 Text(
-                    text = "倒计时",
+                    text = stringResource(R.string.sleep_timer_countdown),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.primary
                 )
 
                 Text(
-                    text = "${sliderValue.toInt()} 分钟",
+                    text = stringResource(R.string.sleep_timer_minutes, sliderValue.toInt()),
                     style = MaterialTheme.typography.headlineSmall,
                     modifier = Modifier.align(Alignment.CenterHorizontally)
                 )
@@ -126,14 +128,14 @@ fun SleepTimerDialog(
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("开始倒计时")
+                    Text(stringResource(R.string.sleep_timer_start_countdown))
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
                 // 其他模式
                 Text(
-                    text = "其他模式",
+                    text = stringResource(R.string.sleep_timer_other_modes),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -151,7 +153,7 @@ fun SleepTimerDialog(
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("播放完当前歌曲后停止")
+                    Text(stringResource(R.string.sleep_timer_finish_current))
                 }
 
                 OutlinedButton(
@@ -167,7 +169,7 @@ fun SleepTimerDialog(
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("播放完播放列表后停止")
+                    Text(stringResource(R.string.sleep_timer_finish_playlist))
                 }
             }
         },
@@ -177,13 +179,13 @@ fun SleepTimerDialog(
                     PlayerManager.sleepTimerManager.cancel()
                     onDismiss()
                 }) {
-                    Text("取消定时器")
+                    Text(stringResource(R.string.sleep_timer_cancel))
                 }
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("关闭")
+                Text(stringResource(R.string.sleep_timer_close))
             }
         }
     )

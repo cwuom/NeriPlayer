@@ -43,12 +43,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import java.io.File
 import java.io.FileNotFoundException
@@ -80,11 +82,11 @@ fun LogViewerScreen(
                             File(decodedFilePath).inputStream().copyTo(outputStream)
                         }
                         withContext(Dispatchers.Main) {
-                            snackbarHostState.showSnackbar("日志已导出")
+                            snackbarHostState.showSnackbar(context.getString(R.string.log_exported))
                         }
                     } catch (e: Exception) {
                         withContext(Dispatchers.Main) {
-                            snackbarHostState.showSnackbar("导出失败: ${e.message}")
+                            snackbarHostState.showSnackbar(context.getString(R.string.log_export_failed, e.message))
                         }
                     }
                 }
@@ -101,7 +103,7 @@ fun LogViewerScreen(
                 }
             } catch (e: FileNotFoundException) {
                 withContext(Dispatchers.Main) {
-                    snackbarHostState.showSnackbar("无法读取日志文件")
+                    snackbarHostState.showSnackbar(context.getString(R.string.log_cannot_read))
                 }
             }
         }
@@ -123,7 +125,7 @@ fun LogViewerScreen(
                 title = { Text(File(decodedFilePath).name, style = MaterialTheme.typography.titleMedium) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(R.string.action_back))
                     }
                 },
                 actions = {
@@ -131,15 +133,15 @@ fun LogViewerScreen(
                         val fullText = logContent.joinToString("\n")
                         clipboardManager.setText(AnnotatedString(fullText))
                         coroutineScope.launch {
-                            snackbarHostState.showSnackbar("已复制到剪贴板")
+                            snackbarHostState.showSnackbar(context.getString(R.string.log_copied))
                         }
                     }) {
-                        Icon(Icons.Outlined.ContentCopy, contentDescription = "复制全部")
+                        Icon(Icons.Outlined.ContentCopy, contentDescription = stringResource(R.string.debug_copy_all))
                     }
                     IconButton(onClick = {
                         exportLogLauncher.launch(File(decodedFilePath).name)
                     }) {
-                        Icon(Icons.Outlined.Share, contentDescription = "导出日志")
+                        Icon(Icons.Outlined.Share, contentDescription = stringResource(R.string.log_export))
                     }
                 }
             )

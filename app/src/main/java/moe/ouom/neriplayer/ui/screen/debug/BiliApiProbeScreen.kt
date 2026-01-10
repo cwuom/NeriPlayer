@@ -50,11 +50,13 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.ui.viewmodel.debug.BiliApiProbeViewModel
 
 @Composable
@@ -80,7 +82,7 @@ fun BiliApiProbeScreen() {
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text(text = "B 站接口探针", style = MaterialTheme.typography.titleLarge)
+        Text(text = stringResource(R.string.debug_bili_probe_title), style = MaterialTheme.typography.titleLarge)
 
         Card(colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
@@ -93,7 +95,7 @@ fun BiliApiProbeScreen() {
                 OutlinedTextField(
                     value = ui.keyword,
                     onValueChange = vm::onKeywordChange,
-                    label = { Text("搜索关键字") },
+                    label = { Text(stringResource(R.string.debug_search_keyword)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -101,7 +103,7 @@ fun BiliApiProbeScreen() {
                     onClick = { vm.searchAndCopy() },
                     enabled = !ui.running,
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("搜索（复制 JSON）") }
+                ) { Text(stringResource(R.string.debug_search_copy_json)) }
 
                 Spacer(Modifier.height(8.dp))
 
@@ -109,7 +111,7 @@ fun BiliApiProbeScreen() {
                 OutlinedTextField(
                     value = ui.bvid,
                     onValueChange = vm::onBvidChange,
-                    label = { Text("BV 号（例如：BV1xx...）") },
+                    label = { Text(stringResource(R.string.debug_bvid_hint)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -117,26 +119,26 @@ fun BiliApiProbeScreen() {
                     onClick = { vm.viewByBvidAndCopy() },
                     enabled = !ui.running && ui.bvid.isNotBlank(),
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("获取封面/简介/统计（复制 JSON）") }
+                ) { Text(stringResource(R.string.debug_get_info_copy)) }
 
                 Spacer(Modifier.height(8.dp))
 
                 // 分P和CID输入
-                Text("分P 设置（二选一）", style = MaterialTheme.typography.labelMedium)
+                Text(stringResource(R.string.debug_page_setting), style = MaterialTheme.typography.labelMedium)
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     OutlinedTextField(
                         value = ui.page,
                         onValueChange = vm::onPageChange,
-                        label = { Text("分P（默认1）") },
+                        label = { Text(stringResource(R.string.debug_page_hint)) },
                         singleLine = true,
                         modifier = Modifier.weight(1f)
                     )
                     OutlinedTextField(
                         value = ui.cid,
                         onValueChange = vm::onCidChange,
-                        label = { Text("CID（数字）") },
+                        label = { Text(stringResource(R.string.debug_cid_hint)) },
                         singleLine = true,
                         modifier = Modifier.weight(1f)
                     )
@@ -148,45 +150,45 @@ fun BiliApiProbeScreen() {
                     enabled = !ui.running && ui.bvid.isNotBlank() && (ui.cid.isNotBlank() || ui.page.isNotBlank()),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    val method = if (ui.cid.isNotBlank()) "CID" else "第${ui.page.ifBlank { "1" }}P"
-                    Text("获取取流（通过$method，DASH/Dolby/Flac，复制 JSON）")
+                    val method = if (ui.cid.isNotBlank()) "CID" else stringResource(R.string.debug_get_stream_by_page, ui.page.ifBlank { "1" })
+                    Text(stringResource(R.string.debug_get_stream_by, method))
                 }
 
                 Button(
                     onClick = { vm.playInfoByBvidPageAndCopy() },
                     enabled = !ui.running && ui.bvid.isNotBlank(),
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("通过分P获取取流（第${ui.page.ifBlank { "1" }}P，包含解析的CID）") }
+                ) { Text(stringResource(R.string.debug_get_stream_by_page, ui.page.ifBlank { "1" })) }
 
                 Button(
                     onClick = { vm.allAudioStreamsByBvidCidAndCopy() },
                     enabled = !ui.running && ui.bvid.isNotBlank() && (ui.cid.isNotBlank() || ui.page.isNotBlank()),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    val method = if (ui.cid.isNotBlank()) "CID" else "第${ui.page.ifBlank { "1" }}P"
-                    Text("获取所有音频直链（通过$method，DASH/Dolby/Flac）")
+                    val method = if (ui.cid.isNotBlank()) "CID" else stringResource(R.string.debug_get_audio_by_page, ui.page.ifBlank { "1" })
+                    Text(stringResource(R.string.debug_get_audio_by, method))
                 }
 
                 Button(
                     onClick = { vm.allAudioStreamsByBvidPageAndCopy() },
                     enabled = !ui.running && ui.bvid.isNotBlank(),
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("通过分P获取所有音频直链（第${ui.page.ifBlank { "1" }}P，包含解析的CID）") }
+                ) { Text(stringResource(R.string.debug_get_audio_by_page, ui.page.ifBlank { "1" })) }
 
                 Button(
                     onClick = { vm.mp4DurlByBvidCidAndCopy() },
                     enabled = !ui.running && ui.bvid.isNotBlank() && (ui.cid.isNotBlank() || ui.page.isNotBlank()),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    val method = if (ui.cid.isNotBlank()) "CID" else "第${ui.page.ifBlank { "1" }}P"
-                    Text("仅 MP4 直链 durl（通过$method）")
+                    val method = if (ui.cid.isNotBlank()) "CID" else stringResource(R.string.debug_get_mp4_by_page, ui.page.ifBlank { "1" })
+                    Text(stringResource(R.string.debug_get_mp4_by, method))
                 }
 
                 Button(
                     onClick = { vm.mp4DurlByBvidPageAndCopy() },
                     enabled = !ui.running && ui.bvid.isNotBlank(),
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("通过分P获取 MP4 直链（第${ui.page.ifBlank { "1" }}P，包含解析的CID）") }
+                ) { Text(stringResource(R.string.debug_get_mp4_by_page, ui.page.ifBlank { "1" })) }
 
                 Spacer(Modifier.height(8.dp))
 
@@ -195,7 +197,7 @@ fun BiliApiProbeScreen() {
                     onClick = { vm.hasLikeByBvidAndCopy() },
                     enabled = !ui.running && ui.bvid.isNotBlank(),
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("是否近期点过赞（复制 JSON）") }
+                ) { Text(stringResource(R.string.debug_has_liked)) }
 
                 Spacer(Modifier.height(8.dp))
 
@@ -203,7 +205,7 @@ fun BiliApiProbeScreen() {
                 OutlinedTextField(
                     value = ui.upMid,
                     onValueChange = vm::onUpMidChange,
-                    label = { Text("UP 主 mid（数字）") },
+                    label = { Text(stringResource(R.string.debug_up_mid_hint)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -211,12 +213,12 @@ fun BiliApiProbeScreen() {
                     onClick = { vm.createdFavsAndCopy() },
                     enabled = !ui.running && ui.upMid.isNotBlank(),
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("获取用户创建的收藏夹（复制 JSON）") }
+                ) { Text(stringResource(R.string.debug_get_fav_list)) }
 
                 OutlinedTextField(
                     value = ui.mediaId,
                     onValueChange = vm::onMediaIdChange,
-                    label = { Text("收藏夹 media_id（数字）") },
+                    label = { Text(stringResource(R.string.debug_media_id_hint)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -224,19 +226,19 @@ fun BiliApiProbeScreen() {
                     onClick = { vm.favInfoAndCopy() },
                     enabled = !ui.running && ui.mediaId.isNotBlank(),
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("收藏夹信息（复制 JSON）") }
+                ) { Text(stringResource(R.string.debug_fav_info)) }
 
                 Button(
                     onClick = { vm.favContentsAndCopy() },
                     enabled = !ui.running && ui.mediaId.isNotBlank(),
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("收藏夹内容（复制 JSON）") }
+                ) { Text(stringResource(R.string.debug_fav_contents)) }
 
                 Button(
                     onClick = { vm.playInfoByAvidCidAndCopy() },
                     enabled = !ui.running && ui.bvid.isNotBlank() && (ui.cid.isNotBlank() || ui.page.isNotBlank()),
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("通过 avid+cid/page 获取取流（复制 JSON）") }
+                ) { Text(stringResource(R.string.debug_get_by_avid)) }
 
                 if (ui.running) {
                     Spacer(Modifier.height(8.dp))
@@ -255,15 +257,15 @@ fun BiliApiProbeScreen() {
                 Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("状态：${ui.lastMessage}", style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.debug_status, ui.lastMessage), style = MaterialTheme.typography.bodyMedium)
                 Text(
-                    text = ui.lastJsonPreview.ifBlank { "（暂无预览，上面执行一次试试）" },
+                    text = ui.lastJsonPreview.ifBlank { stringResource(R.string.debug_preview_empty) },
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace
                 )
 
                 TextButton(onClick = { vm.clearPreview() }, enabled = !ui.running) {
-                    Text("清空预览")
+                    Text(stringResource(R.string.debug_clear_preview))
                 }
             }
         }

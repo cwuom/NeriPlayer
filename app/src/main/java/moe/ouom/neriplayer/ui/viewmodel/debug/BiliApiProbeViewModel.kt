@@ -34,6 +34,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.di.AppContainer
 import org.json.JSONArray
@@ -76,24 +77,28 @@ class BiliApiProbeViewModel(app: Application) : AndroidViewModel(app) {
 
     private inline fun launchAndCopy(label: String, crossinline block: suspend () -> String) {
         viewModelScope.launch {
-            _ui.value = _ui.value.copy(running = true, lastMessage = "调用中：$label ...", lastJsonPreview = "")
+            _ui.value = _ui.value.copy(
+                running = true,
+                lastMessage = getApplication<Application>().getString(R.string.debug_calling, label),
+                lastJsonPreview = ""
+            )
             try {
                 val raw = withContext(Dispatchers.IO) { block() }
                 copyToClipboard("bili_api_$label", raw)
                 _ui.value = _ui.value.copy(
                     running = false,
-                    lastMessage = "已复制到剪贴板：$label",
+                    lastMessage = getApplication<Application>().getString(R.string.debug_copied_label, label),
                     lastJsonPreview = raw
                 )
             } catch (e: IOException) {
                 _ui.value = _ui.value.copy(
                     running = false,
-                    lastMessage = "网络/服务器异常：${e.message ?: e.javaClass.simpleName}"
+                    lastMessage = getApplication<Application>().getString(R.string.debug_network_error, e.message ?: e.javaClass.simpleName)
                 )
             } catch (e: Exception) {
                 _ui.value = _ui.value.copy(
                     running = false,
-                    lastMessage = "调用/解析失败：${e.message ?: e.javaClass.simpleName}"
+                    lastMessage = getApplication<Application>().getString(R.string.debug_call_failed, e.message ?: e.javaClass.simpleName)
                 )
             }
         }
@@ -104,7 +109,7 @@ class BiliApiProbeViewModel(app: Application) : AndroidViewModel(app) {
         val pages = client.getVideoPageList(bvid = bvid)
         val targetPage = pages.find { it.page == page }
             ?: pages.firstOrNull()
-            ?: throw IllegalArgumentException("找不到第 $page P")
+            ?: throw IllegalArgumentException(getApplication<Application>().getString(R.string.debug_page_not_found, page))
         return targetPage.cid
     }
 
@@ -113,7 +118,7 @@ class BiliApiProbeViewModel(app: Application) : AndroidViewModel(app) {
         val pages = client.getVideoPageList(aid = aid)
         val targetPage = pages.find { it.page == page }
             ?: pages.firstOrNull()
-            ?: throw IllegalArgumentException("找不到第 $page P")
+            ?: throw IllegalArgumentException(getApplication<Application>().getString(R.string.debug_page_not_found, page))
         return targetPage.cid
     }
 
@@ -286,7 +291,7 @@ class BiliApiProbeViewModel(app: Application) : AndroidViewModel(app) {
     // 支持通过 avid+page 获取 cid
     fun playInfoByAvidCidAndCopy() = launchAndCopy("playinfo_by_avid_cid") {
         val avid = ui.value.bvid.removePrefix("av").toLongOrNull()
-            ?: throw IllegalArgumentException("请输入有效 avid（数字）到 BV 输入框")
+            ?: throw IllegalArgumentException(getApplication<Application>().getString(R.string.probe_invalid_avid))
 
         val cid = if (ui.value.cid.isNotBlank()) {
             ui.value.cid.toLongOrNull() ?: 0L

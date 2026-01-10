@@ -86,6 +86,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -95,6 +96,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.UsageEntry
 import moe.ouom.neriplayer.data.FavoritePlaylistRepository
@@ -132,7 +134,12 @@ fun HomeScreen(
     val hotSongs by vm.hotSongsFlow.collectAsState()
     val radarSongs by vm.radarSongsFlow.collectAsState()
 
-    val titleOptions = listOf("音理音理音?", "音理音理!", "音理音理!!", "音理音理~", "喵~", "音理!", "NeriPlayer")
+    val isEnglish = context.resources.configuration.locales[0].language == "en"
+    val titleOptions = if (isEnglish) {
+        listOf("NeriPlayer")
+    } else {
+        listOf("音理音理音?", "音理音理!", "音理音理!!", "音理音理~", "喵~", "音理!", "NeriPlayer")
+    }
     val appBarTitle = rememberSaveable { titleOptions.random() }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
 
@@ -149,7 +156,7 @@ fun HomeScreen(
             title = { Text(appBarTitle) },
             actions = {
                 HapticIconButton(onClick = { vm.refreshRecommend(); vm.loadHomeRecommendations() }) {
-                    Icon(imageVector = Icons.Filled.Refresh, contentDescription = "刷新推荐")
+                    Icon(imageVector = Icons.Filled.Refresh, contentDescription = stringResource(R.string.recommend_refresh))
                 }
             },
             scrollBehavior = scrollBehavior,
@@ -179,7 +186,7 @@ fun HomeScreen(
                         horizontalArrangement = Arrangement.Center
                     ) {
                         CircularProgressIndicator()
-                        Text(text = "  正在为你加载首页推荐...", style = MaterialTheme.typography.bodyMedium)
+                        Text(text = stringResource(R.string.home_loading), style = MaterialTheme.typography.bodyMedium)
                     }
                 }
 
@@ -191,11 +198,11 @@ fun HomeScreen(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            text = "加载失败：${ui.error}",
+                            text = stringResource(R.string.home_load_failed, ui.error ?: ""),
                             color = MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.bodyMedium
                         )
-                        Text(text = "点右上角刷新重试~", style = MaterialTheme.typography.bodySmall)
+                        Text(text = stringResource(R.string.home_retry_hint), style = MaterialTheme.typography.bodySmall)
                     }
                 }
 
@@ -214,7 +221,7 @@ fun HomeScreen(
                         // 继续播放 //
                         if (usage.isNotEmpty()) {
                             item(span = { GridItemSpan(maxLineSpan) }) {
-                                SectionHeader(icon = Icons.Outlined.History, title = "继续播放")
+                                SectionHeader(icon = Icons.Outlined.History, title = stringResource(R.string.player_continue))
                             }
                             item(span = { GridItemSpan(maxLineSpan) }) {
                                 ContinueSection(
@@ -227,7 +234,7 @@ fun HomeScreen(
                         // 热力飙升 //
                         if (hotSongs.isNotEmpty()) {
                             item(span = { GridItemSpan(maxLineSpan) }) {
-                                SectionHeader(icon = Icons.Outlined.Bolt, title = "热力飙升")
+                                SectionHeader(icon = Icons.Outlined.Bolt, title = stringResource(R.string.recommend_trending))
                             }
                             item(span = { GridItemSpan(maxLineSpan) }) {
                                 ResponsiveSongPagerList(
@@ -240,7 +247,7 @@ fun HomeScreen(
                         // 私人雷达 //
                         if (radarSongs.isNotEmpty()) {
                             item(span = { GridItemSpan(maxLineSpan) }) {
-                                SectionHeader(icon = Icons.Outlined.Radar, title = "私人雷达")
+                                SectionHeader(icon = Icons.Outlined.Radar, title = stringResource(R.string.recommend_radar))
                             }
                             item(span = { GridItemSpan(maxLineSpan) }) {
                                 ResponsiveSongPagerList(
@@ -252,7 +259,7 @@ fun HomeScreen(
 
                         // 为你推荐//
                         item(span = { GridItemSpan(maxLineSpan) }) {
-                            SectionHeader(icon = Icons.Outlined.Star, title = "为你推荐")
+                            SectionHeader(icon = Icons.Outlined.Star, title = stringResource(R.string.recommend_for_you))
                         }
                         items(items = ui.playlists, key = { it.id }) { item ->
                             PlaylistCard(
@@ -386,6 +393,9 @@ fun PlaylistCard(
     }
     var showMenu by remember { mutableStateOf(false) }
 
+    val unfavoritedText = stringResource(R.string.home_unfavorited)
+    val favoriteSuccessText = stringResource(R.string.favorite_success)
+
     Column(
         modifier = Modifier
             .clip(RoundedCornerShape(12.dp))
@@ -411,7 +421,7 @@ fun PlaylistCard(
                 style = MaterialTheme.typography.titleSmall
             )
             Text(
-                text = "${formatPlayCount(playlist.playCount)} · ${playlist.trackCount}首",
+                text = stringResource(R.string.home_play_count_format, formatPlayCount(context, playlist.playCount), playlist.trackCount),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -424,13 +434,13 @@ fun PlaylistCard(
             onDismissRequest = { showMenu = false }
         ) {
             DropdownMenuItem(
-                text = { Text(if (isFavorite) "取消收藏" else "收藏歌单") },
+                text = { Text(if (isFavorite) stringResource(R.string.home_unfavorite_playlist) else stringResource(R.string.home_favorite_playlist)) },
                 onClick = {
                     showMenu = false
                     scope.launch {
                         if (isFavorite) {
                             favoriteRepo.removeFavorite(playlist.id, "netease")
-                            onShowSnackbar("已取消收藏")
+                            onShowSnackbar(unfavoritedText)
                         } else {
                             // 需要先获取歌单详情才能收藏
                             // 这里暂时只收藏基本信息，歌曲列表为空
@@ -442,7 +452,7 @@ fun PlaylistCard(
                                 source = "netease",
                                 songs = emptyList() // 长按收藏时不包含歌曲列表
                             )
-                            onShowSnackbar("收藏成功")
+                            onShowSnackbar(favoriteSuccessText)
                         }
                     }
                 }
@@ -484,7 +494,7 @@ private fun ContinueCard(entry: UsageEntry, onClick: () -> Unit) {
         )
         Column(modifier = Modifier.padding(6.dp)) {
             Text(text = entry.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
-            Text(text = "${entry.trackCount} 首", style = MaterialTheme.typography.bodySmall,
+            Text(text = stringResource(R.string.home_song_count_format, entry.trackCount), style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
         }
     }

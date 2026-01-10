@@ -30,6 +30,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.BackupManager
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
 
@@ -37,13 +38,15 @@ import moe.ouom.neriplayer.data.LocalPlaylistRepository
  * 备份与恢复的ViewModel
  */
 class BackupRestoreViewModel : ViewModel() {
-    
+
     private val _uiState = MutableStateFlow(BackupRestoreUiState())
     val uiState: StateFlow<BackupRestoreUiState> = _uiState
-    
+
     private var backupManager: BackupManager? = null
-    
+    private var context: Context? = null
+
     fun initialize(context: Context) {
+        this.context = context
         if (backupManager == null) {
             backupManager = BackupManager(context)
         }
@@ -54,22 +57,23 @@ class BackupRestoreViewModel : ViewModel() {
      */
     fun exportPlaylists(uri: Uri) {
         val manager = backupManager ?: return
-        
+        val ctx = context ?: return
+
         _uiState.value = _uiState.value.copy(
             isExporting = true,
-            exportProgress = "正在导出歌单..."
+            exportProgress = ctx.getString(R.string.playlist_export_progress)
         )
-        
+
         viewModelScope.launch {
             val result = manager.exportPlaylists(uri)
-            
+
             result.fold(
                 onSuccess = { fileName ->
                     _uiState.value = _uiState.value.copy(
                         isExporting = false,
                         exportProgress = null,
                         lastExportSuccess = true,
-                        lastExportMessage = "歌单导出成功: $fileName"
+                        lastExportMessage = "${ctx.getString(R.string.playlist_export_success)}: $fileName"
                     )
                 },
                 onFailure = { exception ->
@@ -77,7 +81,7 @@ class BackupRestoreViewModel : ViewModel() {
                         isExporting = false,
                         exportProgress = null,
                         lastExportSuccess = false,
-                        lastExportMessage = "导出失败: ${exception.message}"
+                        lastExportMessage = "${ctx.getString(R.string.playlist_export_failed)}: ${exception.message}"
                     )
                 }
             )
@@ -89,29 +93,30 @@ class BackupRestoreViewModel : ViewModel() {
      */
     fun importPlaylists(uri: Uri) {
         val manager = backupManager ?: return
-        
+        val ctx = context ?: return
+
         _uiState.value = _uiState.value.copy(
             isImporting = true,
-            importProgress = "正在导入歌单..."
+            importProgress = ctx.getString(R.string.playlist_importing)
         )
-        
+
         viewModelScope.launch {
             val result = manager.importPlaylists(uri)
-            
+
             result.fold(
                 onSuccess = { importResult ->
                     val message = buildString {
-                        append("导入完成！")
-                        append("\n成功导入: ${importResult.importedCount} 个歌单")
+                        append(ctx.getString(R.string.playlist_import_complete))
+                        append("\n${ctx.getString(R.string.playlist_import_count, importResult.importedCount)}")
                         if (importResult.hasMerged) {
-                            append("\n智能合并: ${importResult.mergedCount} 个歌单")
+                            append("\n${ctx.getString(R.string.playlist_merge_count, importResult.mergedCount)}")
                         }
                         if (importResult.hasSkipped) {
-                            append("\n跳过重复: ${importResult.skippedCount} 个歌单")
+                            append("\n${ctx.getString(R.string.playlist_skip_count, importResult.skippedCount)}")
                         }
-                        append("\n备份时间: ${importResult.backupDate}")
+                        append("\n${ctx.getString(R.string.playlist_backup_date, importResult.backupDate)}")
                     }
-                    
+
                     _uiState.value = _uiState.value.copy(
                         isImporting = false,
                         importProgress = null,
@@ -124,7 +129,7 @@ class BackupRestoreViewModel : ViewModel() {
                         isImporting = false,
                         importProgress = null,
                         lastImportSuccess = false,
-                        lastImportMessage = "导入失败: ${exception.message}"
+                        lastImportMessage = "${ctx.getString(R.string.playlist_import_failed)}: ${exception.message}"
                     )
                 }
             )
@@ -136,15 +141,16 @@ class BackupRestoreViewModel : ViewModel() {
      */
     fun analyzeDifferences(uri: Uri) {
         val manager = backupManager ?: return
-        
+        val ctx = context ?: return
+
         _uiState.value = _uiState.value.copy(
             isAnalyzing = true,
-            analysisProgress = "正在分析差异..."
+            analysisProgress = ctx.getString(R.string.playlist_analyzing)
         )
-        
+
         viewModelScope.launch {
             val result = manager.analyzeDifferences(uri)
-            
+
             result.fold(
                 onSuccess = { analysis ->
                     _uiState.value = _uiState.value.copy(
@@ -157,7 +163,7 @@ class BackupRestoreViewModel : ViewModel() {
                     _uiState.value = _uiState.value.copy(
                         isAnalyzing = false,
                         analysisProgress = null,
-                        lastAnalysisError = "分析失败: ${exception.message}"
+                        lastAnalysisError = ctx.getString(R.string.playlist_analysis_failed, exception.message ?: "")
                     )
                 }
             )

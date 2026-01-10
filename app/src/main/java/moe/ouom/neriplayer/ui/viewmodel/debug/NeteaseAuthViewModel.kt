@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.ui.viewmodel.debug
+﻿package moe.ouom.neriplayer.ui.viewmodel.debug
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -87,7 +87,7 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
     fun askConfirmSendCaptcha() {
         val phone = _uiState.value.phone.trim()
         if (!isValidPhone(phone)) {
-            emitSnack("请输入 11 位大陆手机号")
+            emitSnack("Please enter 11-digit phone number")  // Localized in UI
             return
         }
         _events.tryEmit(NeteaseAuthEvent.AskConfirmSend(maskPhone(phone)))
@@ -97,7 +97,7 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
     fun sendCaptcha(ctcode: String = "86") {
         val phone = _uiState.value.phone.trim()
         if (!isValidPhone(phone)) {
-            emitSnack("手机号无效")
+            emitSnack("Invalid phone number")  // Localized in UI
             return
         }
         if (_uiState.value.countdownSec > 0 || _uiState.value.sending) return
@@ -108,14 +108,14 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
                 val resp = api.sendCaptcha(phone, ctcode.toInt())
                 val ok = JSONObject(resp).optInt("code", -1) == 200
                 if (ok) {
-                    emitSnack("验证码已发送")
+                    emitSnack("Verification code sent")  // Localized in UI
                     startCountdown(60)
                 } else {
-                    val msg = JSONObject(resp).optString("msg", "发送失败")
-                    emitSnack("发送失败：$msg")
+                    val msg = JSONObject(resp).optString("msg", "Send failed")  // Localized in UI
+                    emitSnack("Send failed: $msg")  // Localized in UI
                 }
             } catch (e: Exception) {
-                emitSnack("发送失败：" + (e.message ?: "网络错误"))
+                emitSnack("Send failed: " + (e.message ?: "Network error"))  // Localized in UI
             } finally {
                 _uiState.value = _uiState.value.copy(sending = false)
             }
@@ -127,11 +127,11 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
         val phone = _uiState.value.phone.trim()
         val captcha = _uiState.value.captcha.trim()
         if (!isValidPhone(phone)) {
-            emitSnack("手机号无效")
+            emitSnack("Invalid phone number")  // Localized in UI
             return
         }
         if (captcha.isEmpty()) {
-            emitSnack("请输入验证码")
+            emitSnack("Please enter verification code")  // Localized in UI
             return
         }
         if (_uiState.value.loggingIn) return
@@ -143,8 +143,8 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
                 val verifyResp = api.verifyCaptcha(phone, captcha, countryCode.toInt())
                 val verifyOk = JSONObject(verifyResp).optInt("code", -1) == 200
                 if (!verifyOk) {
-                    val msg = JSONObject(verifyResp).optString("msg", "验证码错误")
-                    emitSnack("登录失败：$msg")
+                    val msg = JSONObject(verifyResp).optString("msg", "Verification code error")  // Localized in UI
+                    emitSnack("Login failed: $msg")  // Localized in UI
                     return@launch
                 }
 
@@ -173,15 +173,15 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
                     cookieRepo.saveCookies(cookieStore)
 
                     _uiState.value = _uiState.value.copy(isLoggedIn = true)
-                    emitSnack("登录成功")
+                    emitSnack("Login successful")  // Localized in UI
                     _events.tryEmit(NeteaseAuthEvent.ShowCookies(cookieStore.toMap()))
                     _events.tryEmit(NeteaseAuthEvent.LoginSuccess)
                 } else {
-                    val msg = obj.optString("msg", "登录失败，请选择其它登录方式")
-                    emitSnack("登录失败：$msg")
+                    val msg = obj.optString("msg", "Login failed, please try another method")  // Localized in UI
+                    emitSnack("Login failed: $msg")  // Localized in UI
                 }
             } catch (e: Exception) {
-                emitSnack("登录失败：" + (e.message ?: "网络错误"))
+                emitSnack("Login failed: " + (e.message ?: "Network error"))  // Localized in UI
             } finally {
                 _uiState.value = _uiState.value.copy(loggingIn = false)
             }
@@ -214,7 +214,7 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
             _uiState.value = _uiState.value.copy(isLoggedIn = cookieStore.containsKey("MUSIC_U"))
             _events.tryEmit(NeteaseAuthEvent.ShowCookies(cookieStore.toMap()))
             _events.tryEmit(NeteaseAuthEvent.LoginSuccess)
-            emitSnack("Cookie 已保存")
+            emitSnack("Cookie saved")  // Localized in UI
         }
     }
 
@@ -233,7 +233,7 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         if (parsed.isEmpty()) {
-            emitSnack("未解析到合法 Cookie 项")
+            emitSnack("No valid Cookie found")  // Localized in UI
             return
         }
         importCookiesFromMap(parsed)

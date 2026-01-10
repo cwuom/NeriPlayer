@@ -48,11 +48,13 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.ui.viewmodel.debug.NeteaseApiProbeViewModel
 
 @Composable
@@ -80,12 +82,11 @@ fun NeteaseApiProbeScreen() {
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
-            text = "网易云接口探针",
+            text = stringResource(R.string.debug_netease_probe),
             style = MaterialTheme.typography.titleLarge
         )
         Text(
-            text = "点击按钮将真实请求接口，并把原始 JSON 复制到剪贴板：\n" +
-                    "包含：Account、UserId、我创建的歌单、我收藏的歌单、我喜欢的音乐歌单ID、歌词（33894312）；不包含 liked songs",
+            text = stringResource(R.string.debug_netease_desc),
             style = MaterialTheme.typography.bodyMedium
         )
 
@@ -102,49 +103,49 @@ fun NeteaseApiProbeScreen() {
                     onClick = { vm.callAllAndCopy() },
                     enabled = !ui.running,
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("一键调用全部并复制到剪贴板") }
+                ) { Text(stringResource(R.string.debug_call_all_copy)) }
 
                 OutlinedButton(
                     onClick = { vm.callAccountAndCopy() },
                     enabled = !ui.running,
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("仅 Account（账户信息）") }
+                ) { Text(stringResource(R.string.debug_account_only)) }
 
                 OutlinedButton(
                     onClick = { vm.callUserIdAndCopy() },
                     enabled = !ui.running,
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("仅 UserId（当前登录用户 id）") }
+                ) { Text(stringResource(R.string.debug_userid_only)) }
 
                 OutlinedButton(
                     onClick = { vm.callCreatedPlaylistsAndCopy() },
                     enabled = !ui.running,
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("仅 我创建的歌单") }
+                ) { Text(stringResource(R.string.debug_created_playlists)) }
 
                 OutlinedButton(
                     onClick = { vm.callStaredAlbums() },
                     enabled = !ui.running,
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("仅 我收藏的专辑") }
-                
+                ) { Text(stringResource(R.string.debug_stared_albums)) }
+
                 OutlinedButton(
                     onClick = { vm.callSubscribedPlaylistsAndCopy() },
                     enabled = !ui.running,
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("仅 我收藏的歌单") }
+                ) { Text(stringResource(R.string.debug_subscribed_playlists)) }
 
                 OutlinedButton(
                     onClick = { vm.callLikedPlaylistIdAndCopy() },
                     enabled = !ui.running,
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("仅 我喜欢的音乐 歌单ID") }
+                ) { Text(stringResource(R.string.debug_liked_playlist_id)) }
 
                 OutlinedButton(
                     onClick = { vm.callLyric33894312AndCopy() },
                     enabled = !ui.running,
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("仅 歌词（33894312）") }
+                ) { Text(stringResource(R.string.debug_lyric_sample)) }
 
                 if (ui.running) {
                     Spacer(Modifier.height(8.dp))
@@ -163,9 +164,9 @@ fun NeteaseApiProbeScreen() {
                 Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("状态：${ui.lastMessage}", style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.debug_status, ui.lastMessage), style = MaterialTheme.typography.bodyMedium)
                 Text(
-                    text = ui.lastJsonPreview.ifBlank { "（暂无预览，先点上面的按钮试试~）" },
+                    text = ui.lastJsonPreview.ifBlank { stringResource(R.string.debug_preview_hint) },
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace
                 )

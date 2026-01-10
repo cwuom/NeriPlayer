@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.ui.screen
+﻿package moe.ouom.neriplayer.ui.screen
 
 import android.text.format.DateFormat
 import androidx.activity.compose.BackHandler
@@ -68,10 +68,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
@@ -138,17 +140,17 @@ fun RecentScreen(
         topBar = {
             if (!selectionMode) {
                 TopAppBar(
-                    title = { Text("最近播放") },
+                    title = { Text(stringResource(R.string.recent_title)) },
                     navigationIcon = {
                         HapticIconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
                         }
                     },
                     actions = {
                         HapticIconButton(onClick = {
                             showSearch = !showSearch
                             if (!showSearch) query = ""
-                        }) { Icon(Icons.Filled.Search, contentDescription = "搜索") }
+                        }) { Icon(Icons.Filled.Search, contentDescription = stringResource(R.string.cd_search)) }
 
                         // 全部播放
                         HapticIconButton(
@@ -156,7 +158,7 @@ fun RecentScreen(
                                 if (displayedSongs.isNotEmpty()) onSongClick(displayedSongs, 0)
                             },
                             enabled = displayedSongs.isNotEmpty()
-                        ) { Icon(Icons.Filled.PlayArrow, contentDescription = "全部播放") }
+                        ) { Icon(Icons.Filled.PlayArrow, contentDescription = stringResource(R.string.cd_play_all)) }
 
                         // 随机播放
                         HapticIconButton(
@@ -168,14 +170,14 @@ fun RecentScreen(
                             },
                             enabled = displayedSongs.isNotEmpty()
                         ) {
-                            Icon(Icons.AutoMirrored.Outlined.PlaylistPlay, contentDescription = "随机播放")
+                            Icon(Icons.AutoMirrored.Outlined.PlaylistPlay, contentDescription = stringResource(R.string.cd_shuffle))
                         }
 
                         // 清空
                         HapticIconButton(
                             onClick = { if (history.isNotEmpty()) showClearConfirm = true },
                             enabled = history.isNotEmpty()
-                        ) { Icon(Icons.Filled.ClearAll, contentDescription = "清空") }
+                        ) { Icon(Icons.Filled.ClearAll, contentDescription = stringResource(R.string.cd_clear)) }
                     },
                     windowInsets = WindowInsets.statusBars,
                     colors = TopAppBarDefaults.topAppBarColors(
@@ -186,10 +188,10 @@ fun RecentScreen(
             } else {
                 val allSelected = selectedIds.size == displayedSongs.size && displayedSongs.isNotEmpty()
                 TopAppBar(
-                    title = { Text("已选 ${selectedIds.size} 项") },
+                    title = { Text(stringResource(R.string.common_selected_count, selectedIds.size)) },
                     navigationIcon = {
                         HapticIconButton(onClick = { exitSelection() }) {
-                            Icon(Icons.Filled.Close, contentDescription = "退出多选")
+                            Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.cd_exit_select))
                         }
                     },
                     actions = {
@@ -197,7 +199,7 @@ fun RecentScreen(
                         HapticTextButton(onClick = {
                             selectedIds = if (allSelected) emptySet()
                             else displayedSongs.map { it.id }.toSet()
-                        }) { Text(if (allSelected) "取消全选" else "全选") }
+                        }) { Text(if (allSelected) stringResource(R.string.action_deselect_all) else stringResource(R.string.action_select_all)) }
 
                         Spacer(Modifier.width(8.dp))
 
@@ -211,7 +213,7 @@ fun RecentScreen(
                                     exitSelection()
                                 }
                             }
-                        ) { Text("播放所选") }
+                        ) { Text(stringResource(R.string.player_play_selected)) }
                     },
                     windowInsets = WindowInsets.statusBars,
                     colors = TopAppBarDefaults.topAppBarColors(
@@ -226,7 +228,7 @@ fun RecentScreen(
             Box(
                 Modifier.fillMaxSize().padding(padding),
                 contentAlignment = Alignment.Center
-            ) { Text("暂无最近播放") }
+            ) { Text(stringResource(R.string.recent_no_history)) }
             return@Scaffold
         }
 
@@ -242,7 +244,7 @@ fun RecentScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 8.dp),
-                    placeholder = { Text("搜索最近播放") },
+                    placeholder = { Text(stringResource(R.string.search_recent)) },
                     singleLine = true
                 )
             }
@@ -268,18 +270,18 @@ fun RecentScreen(
                             var showMenu by remember { mutableStateOf(false) }
                             Box {
                                 IconButton(onClick = { showMenu = true }) {
-                                    Icon(Icons.Filled.MoreVert, contentDescription = "更多")
+                                    Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.cd_more))
                                 }
                                 DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                                     DropdownMenuItem(
-                                        text = { Text("接下来播放…") },
+                                        text = { Text(stringResource(R.string.playlist_add_to_queue)) },
                                         onClick = {
                                             PlayerManager.addToQueueNext(song)
                                             showMenu = false
                                         }
                                     )
                                     DropdownMenuItem(
-                                        text = { Text("添加到队尾") },
+                                        text = { Text(stringResource(R.string.playlist_add_to_end)) },
                                         onClick = {
                                             PlayerManager.addToQueueEnd(song)
                                             showMenu = false
@@ -299,16 +301,16 @@ fun RecentScreen(
     if (showClearConfirm) {
         AlertDialog(
             onDismissRequest = { showClearConfirm = false },
-            title = { Text("清空最近播放") },
-            text = { Text("确定要清空全部最近播放记录吗？此操作不可恢复。") },
+            title = { Text(stringResource(R.string.recent_clear)) },
+            text = { Text(stringResource(R.string.recent_clear_confirm)) },
             confirmButton = {
                 HapticTextButton(onClick = {
                     repo.clear()
                     showClearConfirm = false
-                }) { Text("清空") }
+                }) { Text(stringResource(R.string.action_clear)) }
             },
             dismissButton = {
-                HapticTextButton(onClick = { showClearConfirm = false }) { Text("取消") }
+                HapticTextButton(onClick = { showClearConfirm = false }) { Text(stringResource(R.string.action_cancel)) }
             }
         )
     }
@@ -382,7 +384,7 @@ private fun RecentRowRich(
                     Spacer(Modifier.width(6.dp))
                     Icon(
                         imageVector = Icons.Outlined.DownloadDone,
-                        contentDescription = "已下载",
+                        contentDescription = stringResource(R.string.cd_downloaded),
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(16.dp)
                     )

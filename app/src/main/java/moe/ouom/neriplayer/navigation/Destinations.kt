@@ -26,45 +26,45 @@ import java.nio.charset.StandardCharsets
  * Created: 2025/8/8
  */
 
-sealed class Destinations(val route: String, val label: String) {
+sealed class Destinations(val route: String, val labelResId: Int) {
     // TAB
-    data object Home : Destinations("home", "首页")
-    data object Explore : Destinations("explore", "探索")
-    data object Library : Destinations("library", "媒体库")
-    data object Settings : Destinations("settings", "设置")
+    data object Home : Destinations("home", moe.ouom.neriplayer.R.string.nav_home)
+    data object Explore : Destinations("explore", moe.ouom.neriplayer.R.string.nav_explore)
+    data object Library : Destinations("library", moe.ouom.neriplayer.R.string.nav_library)
+    data object Settings : Destinations("settings", moe.ouom.neriplayer.R.string.nav_settings)
     object Recent { const val route = "recent" }
 
     // DEBUG
-    data object Debug : Destinations("debug", "调试")
-    data object DebugBili : Destinations("debug/bili", "B 站调试")
-    data object DebugNetease : Destinations("debug/netease", "网易云调试")
-    data object DebugSearch : Destinations("debug/search", "搜索调试")
-    data object DebugLogsList : Destinations("debug_logs_list", "日志列表")
+    data object Debug : Destinations("debug", moe.ouom.neriplayer.R.string.debug_title)
+    data object DebugBili : Destinations("debug/bili", moe.ouom.neriplayer.R.string.debug_bili_api)
+    data object DebugNetease : Destinations("debug/netease", moe.ouom.neriplayer.R.string.debug_netease_api)
+    data object DebugSearch : Destinations("debug/search", moe.ouom.neriplayer.R.string.debug_search_api)
+    data object DebugLogsList : Destinations("debug_logs_list", moe.ouom.neriplayer.R.string.log_list)
 
     // 网易云歌单详情路由
-    data object PlaylistDetail : Destinations("playlist_detail/{playlistJson}", "歌单详情") {
+    data object PlaylistDetail : Destinations("playlist_detail/{playlistJson}", moe.ouom.neriplayer.R.string.playlist_detail) {
         fun createRoute(playlistJson: String) = "playlist_detail/$playlistJson"
     }
-    
+
     // 网易云专辑详情路由
-    data object NeteaseAlbumDetail : Destinations("netease_album_detail/{playlistJson}", "专辑详情") {
+    data object NeteaseAlbumDetail : Destinations("netease_album_detail/{playlistJson}", moe.ouom.neriplayer.R.string.common_album_detail) {
         fun createRoute(playlistJson: String) = "netease_album_detail/$playlistJson"
     }
 
     // B 站收藏夹详情路由
-    data object BiliPlaylistDetail : Destinations("bili_playlist_detail/{playlistJson}", "B站收藏夹详情") {
+    data object BiliPlaylistDetail : Destinations("bili_playlist_detail/{playlistJson}", moe.ouom.neriplayer.R.string.playlist_detail) {
         fun createRoute(playlistJson: String) = "bili_playlist_detail/$playlistJson"
     }
 
     // 本地歌单详情路由
-    data object LocalPlaylistDetail : Destinations("local_playlist_detail/{playlistId}", "本地歌单详情") {
+    data object LocalPlaylistDetail : Destinations("local_playlist_detail/{playlistId}", moe.ouom.neriplayer.R.string.playlist_local_detail) {
         fun createRoute(playlistId: Long) = "local_playlist_detail/$playlistId"
     }
 
     // 下载管理器路由
-    data object DownloadManager : Destinations("download_manager", "下载管理")
+    data object DownloadManager : Destinations("download_manager", moe.ouom.neriplayer.R.string.download_manager)
 
-    data object DebugLogViewer : Destinations("debug_log_viewer/{filePath}", "日志查看") {
+    data object DebugLogViewer : Destinations("debug_log_viewer/{filePath}", moe.ouom.neriplayer.R.string.log_view) {
         fun createRoute(filePath: String): String {
             val encodedPath = URLEncoder.encode(filePath, StandardCharsets.UTF_8.name())
             return "debug_log_viewer/$encodedPath"

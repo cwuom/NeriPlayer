@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.ui.screen
+﻿package moe.ouom.neriplayer.ui.screen
 
 import android.app.Application
 import androidx.activity.compose.BackHandler
@@ -19,6 +19,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -73,11 +74,11 @@ fun DownloadManagerScreen(
             title = {
                 Column {
                     Text(
-                        "下载管理",
+                        stringResource(R.string.download_manager_title),
                         style = MaterialTheme.typography.titleLarge
                     )
                     Text(
-                        "管理音乐下载和本地文件",
+                        stringResource(R.string.download_manager_subtitle),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -85,7 +86,7 @@ fun DownloadManagerScreen(
             },
             navigationIcon = {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.Outlined.ArrowBack, contentDescription = "返回")
+                    Icon(Icons.Outlined.ArrowBack, contentDescription = stringResource(R.string.action_back))
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(
@@ -96,7 +97,7 @@ fun DownloadManagerScreen(
                 if (selectionMode) {
                     // 多选模式下的操作按钮
                     Text(
-                        text = "已选 ${selectedSongs.size} 首",
+                        text = stringResource(R.string.download_selected_count, selectedSongs.size),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(end = 8.dp)
@@ -116,7 +117,7 @@ fun DownloadManagerScreen(
                     ) {
                         Icon(
                             if (allSelected) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
-                            contentDescription = if (allSelected) "取消全选" else "全选"
+                            contentDescription = if (allSelected) stringResource(R.string.action_deselect_all) else stringResource(R.string.action_select_all)
                         )
                     }
                     IconButton(
@@ -127,7 +128,7 @@ fun DownloadManagerScreen(
                             }
                         }
                     ) {
-                        Icon(Icons.Default.Delete, contentDescription = "删除所选")
+                        Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.download_delete_selected))
                     }
                     IconButton(
                         onClick = {
@@ -136,7 +137,7 @@ fun DownloadManagerScreen(
                             selectionMode = false
                         }
                     ) {
-                        Icon(Icons.Default.Close, contentDescription = "退出多选")
+                        Icon(Icons.Default.Close, contentDescription = stringResource(R.string.download_exit_selection))
                     }
                 } else {
                     // 正常模式下的操作按钮
@@ -146,7 +147,7 @@ fun DownloadManagerScreen(
                             viewModel.refreshDownloadedSongs()
                         }
                     ) {
-                        Icon(Icons.Default.Refresh, contentDescription = "刷新")
+                        Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.action_refresh))
                     }
                     IconButton(
                         onClick = {
@@ -154,7 +155,7 @@ fun DownloadManagerScreen(
                             selectionMode = true
                         }
                     ) {
-                        Icon(Icons.Default.CheckBoxOutlineBlank, contentDescription = "多选")
+                        Icon(Icons.Default.CheckBoxOutlineBlank, contentDescription = stringResource(R.string.action_multi_select))
                     }
                 }
             }
@@ -191,7 +192,7 @@ fun DownloadManagerScreen(
                         color = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = "已下载歌曲",
+                        text = stringResource(R.string.downloaded_songs),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -213,7 +214,7 @@ fun DownloadManagerScreen(
                         color = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = "占用空间",
+                        text = stringResource(R.string.download_space_used),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -230,8 +231,8 @@ fun DownloadManagerScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
-            placeholder = { Text("搜索已下载的歌曲...") },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = "搜索") },
+            placeholder = { Text(stringResource(R.string.download_search_hint)) },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = stringResource(R.string.action_search)) },
             singleLine = true,
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = MaterialTheme.colorScheme.primary,
@@ -271,8 +272,8 @@ fun DownloadManagerScreen(
                 showSingleDeleteDialog = false
                 songToDelete = null
             },
-            title = { Text("确认删除") },
-            text = { Text("确定要删除歌曲 \"${songToDelete?.name}\" 吗？此操作不可撤销。") },
+            title = { Text(stringResource(R.string.dialog_confirm_delete)) },
+            text = { Text(stringResource(R.string.download_delete_confirm, songToDelete?.name ?: "")) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -281,7 +282,7 @@ fun DownloadManagerScreen(
                         songToDelete = null
                     }
                 ) {
-                    Text("删除")
+                    Text(stringResource(R.string.action_delete))
                 }
             },
             dismissButton = {
@@ -291,7 +292,7 @@ fun DownloadManagerScreen(
                         songToDelete = null
                     }
                 ) {
-                    Text("取消")
+                    Text(stringResource(R.string.action_cancel))
                 }
             }
         )
@@ -301,8 +302,8 @@ fun DownloadManagerScreen(
     if (showMultiDeleteDialog) {
         AlertDialog(
             onDismissRequest = { showMultiDeleteDialog = false },
-            title = { Text("确认删除") },
-            text = { Text("确定要删除选中的 ${selectedSongs.size} 首歌曲吗？此操作不可撤销。") },
+            title = { Text(stringResource(R.string.dialog_confirm_delete)) },
+            text = { Text(stringResource(R.string.download_delete_selected_confirm, selectedSongs.size)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -314,14 +315,14 @@ fun DownloadManagerScreen(
                         showMultiDeleteDialog = false
                     }
                 ) {
-                    Text("删除")
+                    Text(stringResource(R.string.action_delete))
                 }
             },
             dismissButton = {
                 TextButton(
                     onClick = { showMultiDeleteDialog = false }
                 ) {
-                    Text("取消")
+                    Text(stringResource(R.string.action_cancel))
                 }
             }
         )
@@ -373,13 +374,13 @@ private fun DownloadedSongsList(
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    if (searchQuery.isBlank()) "暂无已下载歌曲" else "未找到匹配的歌曲",
+                    if (searchQuery.isBlank()) stringResource(R.string.download_no_songs) else stringResource(R.string.download_no_match),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    if (searchQuery.isBlank()) "下载的歌曲会显示在这里" else "尝试使用其他关键词搜索",
+                    if (searchQuery.isBlank()) stringResource(R.string.download_songs_hint) else stringResource(R.string.download_try_other_keywords),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -553,7 +554,7 @@ private fun DownloadedSongItem(
                     IconButton(onClick = onPlay) {
                         Icon(
                             Icons.Default.PlayArrow,
-                            contentDescription = "播放",
+                            contentDescription = stringResource(R.string.download_play),
                             tint = MaterialTheme.colorScheme.primary
                         )
                     }
@@ -561,7 +562,7 @@ private fun DownloadedSongItem(
                     IconButton(onClick = onDelete) {
                         Icon(
                             Icons.Default.Delete,
-                            contentDescription = "删除",
+                            contentDescription = stringResource(R.string.download_delete),
                             tint = MaterialTheme.colorScheme.error
                         )
                     }

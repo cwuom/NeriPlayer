@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.ui.viewmodel.tab
+﻿package moe.ouom.neriplayer.ui.viewmodel.tab
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.parcelize.Parcelize
+import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
@@ -119,12 +120,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: IOException) {
                 _uiState.value = HomeUiState(
                     loading = false,
-                    error = "网络异常或服务器异常：${e.message ?: e.javaClass.simpleName}"
+                    error = "Network or server error: ${e.message ?: e.javaClass.simpleName}"  // Localized in UI
                 )
             } catch (e: Exception) {
                 _uiState.value = HomeUiState(
                     loading = false,
-                    error = "解析/未知错误：${e.message ?: e.javaClass.simpleName}"
+                    error = "Parse/unknown error: ${e.message ?: e.javaClass.simpleName}"  // Localized in UI
                 )
             }
         }
@@ -144,7 +145,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             launch {
                 runCatching {
                     val raw = withContext(Dispatchers.IO) {
-                        client.searchSongs(keyword = "热歌", limit = 30, offset = 0, type = 1)
+                        client.searchSongs(keyword = getApplication<Application>().getString(R.string.home_search_hot), limit = 30, offset = 0, type = 1)
                     }
                     parseSongs(raw)
                 }.onSuccess { _hotSongsFlow.value = it }
@@ -154,7 +155,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             launch {
                 runCatching {
                     val raw = withContext(Dispatchers.IO) {
-                        client.searchSongs(keyword = "私人雷达", limit = 30, offset = 0, type = 1)
+                        client.searchSongs(keyword = getApplication<Application>().getString(R.string.home_search_radar), limit = 30, offset = 0, type = 1)
                     }
                     parseSongs(raw)
                 }.onSuccess { _radarSongsFlow.value = it }
@@ -170,7 +171,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
         val code = root.optInt("code", -1)
         if (code != 200) {
-            throw IllegalStateException("接口返回异常 code=$code")
+            throw IllegalStateException(getApplication<Application>().getString(R.string.error_api_code, code))
         }
 
         val arr = root.optJSONArray("result") ?: return emptyList()

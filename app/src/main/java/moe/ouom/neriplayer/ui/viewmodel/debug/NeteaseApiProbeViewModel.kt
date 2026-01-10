@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
@@ -62,7 +63,7 @@ class NeteaseApiProbeViewModel(app: Application) : AndroidViewModel(app) {
     fun callStaredAlbums() = launchAndCopy("staredAlbums") {
         client.getUserStaredAlbums(0)
     }
-    
+
     fun callSubscribedPlaylistsAndCopy() = launchAndCopy("subscribedPlaylists") {
         client.getUserSubscribedPlaylists(0)
     }
@@ -77,7 +78,11 @@ class NeteaseApiProbeViewModel(app: Application) : AndroidViewModel(app) {
 
     fun callAllAndCopy() {
         viewModelScope.launch {
-            _ui.value = _ui.value.copy(running = true, lastMessage = "正在调用所有接口...", lastJsonPreview = "")
+            _ui.value = _ui.value.copy(
+                running = true,
+                lastMessage = getApplication<Application>().getString(R.string.debug_all_api_calling),
+                lastJsonPreview = ""
+            )
             try {
                 ensureCookies()
 
@@ -102,18 +107,18 @@ class NeteaseApiProbeViewModel(app: Application) : AndroidViewModel(app) {
                 copyToClipboard("netease_api_all", result)
                 _ui.value = _ui.value.copy(
                     running = false,
-                    lastMessage = "OK，所有接口已调用完成并复制到剪贴板",
+                    lastMessage = getApplication<Application>().getString(R.string.debug_all_api_ok),
                     lastJsonPreview = result
                 )
             } catch (e: IOException) {
                 _ui.value = _ui.value.copy(
                     running = false,
-                    lastMessage = "网络/服务器异常：${e.message ?: e.javaClass.simpleName}"
+                    lastMessage = getApplication<Application>().getString(R.string.debug_network_error, e.message ?: e.javaClass.simpleName)
                 )
             } catch (e: Exception) {
                 _ui.value = _ui.value.copy(
                     running = false,
-                    lastMessage = "调用/解析失败：${e.message ?: e.javaClass.simpleName}"
+                    lastMessage = getApplication<Application>().getString(R.string.debug_call_failed, e.message ?: e.javaClass.simpleName)
                 )
             }
         }
@@ -121,25 +126,29 @@ class NeteaseApiProbeViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun launchAndCopy(label: String, block: suspend () -> String) {
         viewModelScope.launch {
-            _ui.value = _ui.value.copy(running = true, lastMessage = "调用中：$label ...", lastJsonPreview = "")
+            _ui.value = _ui.value.copy(
+                running = true,
+                lastMessage = getApplication<Application>().getString(R.string.debug_calling, label),
+                lastJsonPreview = ""
+            )
             try {
                 ensureCookies()
                 val raw = withContext(Dispatchers.IO) { block() }
                 copyToClipboard("netease_api_$label", raw)
                 _ui.value = _ui.value.copy(
                     running = false,
-                    lastMessage = "已复制到剪贴板：$label",
+                    lastMessage = getApplication<Application>().getString(R.string.debug_copied_label, label),
                     lastJsonPreview = raw
                 )
             } catch (e: IOException) {
                 _ui.value = _ui.value.copy(
                     running = false,
-                    lastMessage = "网络/服务器异常：${e.message ?: e.javaClass.simpleName}"
+                    lastMessage = getApplication<Application>().getString(R.string.debug_network_error, e.message ?: e.javaClass.simpleName)
                 )
             } catch (e: Exception) {
                 _ui.value = _ui.value.copy(
                     running = false,
-                    lastMessage = "调用/解析失败：${e.message ?: e.javaClass.simpleName}"
+                    lastMessage = getApplication<Application>().getString(R.string.debug_call_failed, e.message ?: e.javaClass.simpleName)
                 )
             }
         }

@@ -52,6 +52,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.R
 
@@ -74,15 +75,15 @@ fun DebugHomeScreen(
             leadingContent = {
                 Icon(
                     imageVector = Icons.Outlined.BugReport,
-                    contentDescription = "调试",
+                    contentDescription = stringResource(R.string.debug_title),
                     tint = MaterialTheme.colorScheme.onSurface
                 )
             },
-            headlineContent = { Text("调试工具") },
+            headlineContent = { Text(stringResource(R.string.debug_tools)) },
             colors = ListItemDefaults.colors(
                 containerColor = Color.Transparent
             ),
-            supportingContent = { Text("选择要调试的平台或隐藏调试模式") },
+            supportingContent = { Text(stringResource(R.string.debug_select_platform)) },
         )
 
         Card(
@@ -95,13 +96,13 @@ fun DebugHomeScreen(
                     leadingContent = {
                         Icon(
                             painter = androidx.compose.ui.res.painterResource(id = R.drawable.ic_bilibili),
-                            contentDescription = "B 站",
+                            contentDescription = stringResource(R.string.platform_bilibili),
                             tint = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(24.dp),
                         )
                     },
-                    headlineContent = { Text("B 站接口调试") },
-                    supportingContent = { Text("搜索 / 取封面简介 / 统计 / 取流 / 收藏夹") },
+                    headlineContent = { Text(stringResource(R.string.debug_bili_api)) },
+                    supportingContent = { Text(stringResource(R.string.debug_bili_api_desc)) },
                     modifier = Modifier.clickable(onClick = onOpenBiliDebug),
                     colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
                 )
@@ -110,13 +111,13 @@ fun DebugHomeScreen(
                     leadingContent = {
                         Icon(
                             painter = androidx.compose.ui.res.painterResource(id = R.drawable.ic_netease_cloud_music),
-                            contentDescription = "网易云",
+                            contentDescription = stringResource(R.string.platform_netease_short),
                             tint = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(24.dp),
                         )
                     },
-                    headlineContent = { Text("网易云接口调试") },
-                    supportingContent = { Text("账户 / 歌单 / 歌曲 URL / 歌词") },
+                    headlineContent = { Text(stringResource(R.string.debug_netease_api)) },
+                    supportingContent = { Text(stringResource(R.string.debug_netease_api_desc)) },
                     modifier = Modifier.clickable(onClick = onOpenNeteaseDebug),
                     colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
                 )
@@ -125,13 +126,13 @@ fun DebugHomeScreen(
                     leadingContent = {
                         Icon(
                             imageVector = Icons.Outlined.Search,
-                            contentDescription = "搜索",
+                            contentDescription = stringResource(R.string.action_search),
                             tint = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(24.dp),
                         )
                     },
-                    headlineContent = { Text("多平台搜索接口调试") },
-                    supportingContent = { Text("QQ / 网易云") },
+                    headlineContent = { Text(stringResource(R.string.debug_search_api)) },
+                    supportingContent = { Text(stringResource(R.string.debug_search_api_desc)) },
                     modifier = Modifier.clickable(onClick = onOpenSearchDebug),
                     colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
                 )
@@ -140,14 +141,14 @@ fun DebugHomeScreen(
                     leadingContent = {
                         Icon(
                             imageVector = Icons.Outlined.Description,
-                            contentDescription = "日志",
+                            contentDescription = stringResource(R.string.log_title),
                             tint = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(24.dp),
                         )
                     },
-                    headlineContent = { Text("查看应用日志") },
-                    supportingContent = { Text("查看、复制和导出本次运行的日志") },
-                    modifier = Modifier.clickable(onClick = onOpenLogs), // 使用新回调
+                    headlineContent = { Text(stringResource(R.string.debug_view_logs)) },
+                    supportingContent = { Text(stringResource(R.string.debug_view_logs_desc)) },
+                    modifier = Modifier.clickable(onClick = onOpenLogs),
                     colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
                 )
 
@@ -155,13 +156,13 @@ fun DebugHomeScreen(
                     leadingContent = {
                         Icon(
                             imageVector = Icons.Outlined.Warning,
-                            contentDescription = "异常测试",
+                            contentDescription = stringResource(R.string.error_test),
                             tint = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(24.dp),
                         )
                     },
-                    headlineContent = { Text("测试异常处理器") },
-                    supportingContent = { Text("测试异常捕获、日志记录和弹窗显示") },
+                    headlineContent = { Text(stringResource(R.string.debug_test_exception)) },
+                    supportingContent = { Text(stringResource(R.string.debug_test_exception_desc)) },
                     modifier = Modifier.clickable(onClick = onTestExceptionHandler),
                     colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
                 )
@@ -172,23 +173,23 @@ fun DebugHomeScreen(
         Button(onClick = onHideDebugMode) {
             Icon(
                 imageVector = Icons.Outlined.SettingsBackupRestore,
-                contentDescription = "隐藏"
+                contentDescription = stringResource(R.string.action_hide)
             )
-            Spacer(Modifier.height(0.dp)) // 占位，避免排版抖动
-            Text("隐藏调试模式")
+            Spacer(Modifier.height(0.dp))
+            Text(stringResource(R.string.debug_hide))
         }
 
         ListItem(
             leadingContent = {
                 Icon(
                     imageVector = Icons.Outlined.Build,
-                    contentDescription = "提示",
+                    contentDescription = stringResource(R.string.dialog_hint),
                     tint = MaterialTheme.colorScheme.onSurface
                 )
             },
-            headlineContent = { Text("提示") },
+            headlineContent = { Text(stringResource(R.string.dialog_hint)) },
             supportingContent = {
-                Text("隐藏后底部栏将移除“调试”，可在设置页点击版本号 7 次再次开启")
+                Text(stringResource(R.string.debug_hide_hint))
             },
             colors = ListItemDefaults.colors(
                 containerColor = Color.Transparent

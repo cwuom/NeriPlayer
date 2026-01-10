@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.ui.component
+﻿package moe.ouom.neriplayer.ui.component
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -23,10 +23,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.toColorInt
 import android.graphics.Color as AndroidColor
+import moe.ouom.neriplayer.R
 
 @Composable
 fun HsvPicker(
@@ -76,7 +78,7 @@ fun HsvPicker(
         }
 
         // Hue 0..360
-        Text("色相 Hue")
+        Text(stringResource(R.string.color_hue))
         Slider(
             value = hsv[0],
             onValueChange = { hsv = floatArrayOf(it, hsv[1], hsv[2]) },
@@ -84,7 +86,7 @@ fun HsvPicker(
         )
 
         // Saturation 0..1
-        Text("饱和度 Saturation")
+        Text(stringResource(R.string.color_saturation))
         Slider(
             value = hsv[1],
             onValueChange = { hsv = floatArrayOf(hsv[0], it, hsv[2]) },
@@ -92,7 +94,7 @@ fun HsvPicker(
         )
 
         // Value 0..1
-        Text("明度 Value")
+        Text(stringResource(R.string.color_value))
         Slider(
             value = hsv[2],
             onValueChange = { hsv = floatArrayOf(hsv[0], hsv[1], it) },

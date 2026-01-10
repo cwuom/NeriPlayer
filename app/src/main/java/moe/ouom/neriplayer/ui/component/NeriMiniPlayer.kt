@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.ui.component
+﻿package moe.ouom.neriplayer.ui.component
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -58,11 +58,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeChild
+import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.offlineCachedImageRequest
 
@@ -174,7 +176,7 @@ fun NeriMiniPlayer(
                 ) { currentlyPlaying ->
                     Icon(
                         imageVector = if (currentlyPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                        contentDescription = if (currentlyPlaying) "暂停" else "播放",
+                        contentDescription = if (currentlyPlaying) stringResource(R.string.lyrics_pause) else stringResource(R.string.lyrics_play),
                         tint = MaterialTheme.colorScheme.onSecondaryContainer
                     )
                 }

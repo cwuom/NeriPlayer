@@ -16,3 +16,4 @@ local.properties
 /.idea/deviceManager.xml
 /app/release
 /.idea/.name
+/.spec-workflow/

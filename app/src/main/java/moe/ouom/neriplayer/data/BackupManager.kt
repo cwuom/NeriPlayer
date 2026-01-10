@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.data
+﻿package moe.ouom.neriplayer.data
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -30,6 +30,7 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import java.io.IOException
 import java.io.InputStream
@@ -78,14 +79,14 @@ class BackupManager(private val context: Context) {
             
             context.contentResolver.openOutputStream(uri)?.use { outputStream ->
                 outputStream.write(json.toByteArray(Charsets.UTF_8))
-            } ?: throw IOException("无法打开输出流")
-            
+            } ?: throw IOException(context.getString(R.string.error_cannot_open_output))
+
             val fileName = "${BACKUP_FILE_PREFIX}_${dateFormat.format(Date())}$BACKUP_FILE_EXTENSION"
-            Log.d(TAG, "歌单导出成功: $fileName")
+            Log.d(TAG, context.getString(R.string.backup_export_success_file, fileName))
             Result.success(fileName)
             
         } catch (e: Exception) {
-            Log.e(TAG, "歌单导出失败", e)
+            Log.e(TAG, context.getString(R.string.backup_export_failed), e)
             Result.failure(e)
         }
     }
@@ -96,13 +97,13 @@ class BackupManager(private val context: Context) {
     suspend fun importPlaylists(uri: Uri): Result<ImportResult> = withContext(Dispatchers.IO) {
         try {
             val inputStream: InputStream = context.contentResolver.openInputStream(uri)
-                ?: throw IOException("无法打开输入流")
+                ?: throw IOException(context.getString(R.string.error_cannot_open_input))
             
             val json = inputStream.bufferedReader().use { it.readText() }
             val backupData = gson.fromJson<BackupData>(json, object : TypeToken<BackupData>() {}.type)
             
             if (backupData.playlists.isEmpty()) {
-                return@withContext Result.failure(IllegalArgumentException("备份文件中没有歌单数据"))
+                return@withContext Result.failure(IllegalArgumentException("No playlist data in backup file"))  // Localized
             }
             
             val playlistRepo = LocalPlaylistRepository.getInstance(context)
@@ -124,10 +125,10 @@ class BackupManager(private val context: Context) {
                     if (mergeResult.hasChanges) {
                         currentPlaylists[existingIndex] = mergeResult.mergedPlaylist
                         mergedCount++
-                        Log.d(TAG, "歌单 '${importedPlaylist.name}' 已合并，新增 ${mergeResult.addedSongs} 首歌曲")
+                        Log.d(TAG, context.getString(R.string.backup_playlist_merged, importedPlaylist.name, mergeResult.addedSongs))
                     } else {
                         skippedCount++
-                        Log.d(TAG, "歌单 '${importedPlaylist.name}' 无需更新")
+                        Log.d(TAG, context.getString(R.string.backup_playlist_no_update, importedPlaylist.name))
                     }
                 } else {
                     // 创建新的歌单
@@ -139,7 +140,7 @@ class BackupManager(private val context: Context) {
                     
                     currentPlaylists.add(newPlaylist)
                     importedCount++
-                    Log.d(TAG, "歌单 '${importedPlaylist.name}' 已创建，包含 ${newPlaylist.songs.size} 首歌曲")
+                    Log.d(TAG, context.getString(R.string.backup_playlist_created, importedPlaylist.name, newPlaylist.songs.size))
                 }
             }
             
@@ -154,11 +155,11 @@ class BackupManager(private val context: Context) {
                 backupDate = backupData.exportDate
             )
             
-            Log.d(TAG, "歌单导入成功: $result")
+            Log.d(TAG, context.getString(R.string.backup_import_success_detail, result))
             Result.success(result)
-            
+
         } catch (e: Exception) {
-            Log.e(TAG, "歌单导入失败", e)
+            Log.e(TAG, context.getString(R.string.backup_import_failed), e)
             Result.failure(e)
         }
     }
@@ -194,7 +195,7 @@ class BackupManager(private val context: Context) {
     suspend fun analyzeDifferences(uri: Uri): Result<DifferenceAnalysis> = withContext(Dispatchers.IO) {
         try {
             val inputStream: InputStream = context.contentResolver.openInputStream(uri)
-                ?: throw IOException("无法打开输入流")
+                ?: throw IOException(context.getString(R.string.error_cannot_open_input))
             
             val json = inputStream.bufferedReader().use { it.readText() }
             val backupData = gson.fromJson<BackupData>(json, object : TypeToken<BackupData>() {}.type)
@@ -242,7 +243,7 @@ class BackupManager(private val context: Context) {
             Result.success(analysis)
             
         } catch (e: Exception) {
-            Log.e(TAG, "差异分析失败", e)
+            Log.e(TAG, context.getString(R.string.sync_diff_failed), e)
             Result.failure(e)
         }
     }

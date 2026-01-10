@@ -24,16 +24,32 @@ package moe.ouom.neriplayer.util
  */
 
 import android.annotation.SuppressLint
+import android.content.Context
+import moe.ouom.neriplayer.R
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.TimeUnit
 
 @SuppressLint("DefaultLocale")
-fun formatPlayCount(count: Long): String {
-    return when {
-        count >= 100_000_000L -> String.format("%.1f亿", count / 100_000_000f)
-        count >= 10_000L      -> String.format("%.1f万", count / 10_000f)
-        else                  -> count.toString()
+fun formatPlayCount(context: Context, count: Long): String {
+    val locale = context.resources.configuration.locales[0]
+    val isChinese = locale.language.startsWith("zh")
+    
+    return if (isChinese) {
+        // 中文：使用亿、万
+        when {
+            count >= 100_000_000L -> context.getString(R.string.number_hundred_million, count / 100_000_000.0)
+            count >= 10_000L      -> context.getString(R.string.number_ten_thousand, count / 10_000.0)
+            else                  -> count.toString()
+        }
+    } else {
+        // 英文：使用 B (billion)、M (million)、K (thousand)
+        when {
+            count >= 1_000_000_000L -> context.getString(R.string.number_billion, count / 1_000_000_000.0)
+            count >= 1_000_000L     -> context.getString(R.string.number_million, count / 1_000_000.0)
+            count >= 1_000L         -> context.getString(R.string.number_thousand, count / 1_000.0)
+            else                    -> count.toString()
+        }
     }
 }
 

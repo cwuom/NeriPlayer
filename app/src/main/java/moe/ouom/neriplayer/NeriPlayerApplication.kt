@@ -26,6 +26,7 @@ package moe.ouom.neriplayer
 import android.app.Application
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.util.LanguageManager
 import coil.Coil
 import coil.ImageLoader
 import coil.disk.DiskCache
@@ -35,6 +36,10 @@ import coil.request.CachePolicy
 class NeriPlayerApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+
+        // 初始化语言设置
+        LanguageManager.init(this)
+
         AppContainer.initialize(this)
 
         // 初始化全局下载管理器

@@ -23,11 +23,14 @@ package moe.ouom.neriplayer
  * Created: 2025/8/20
  */
 
+import android.content.Context
 import moe.ouom.neriplayer.util.formatDurationSec
 import moe.ouom.neriplayer.util.formatFileSize
 import moe.ouom.neriplayer.util.formatPlayCount
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.`when`
 
 /**
  * Unit tests covering core formatter helpers.
@@ -36,9 +39,13 @@ class ExampleUnitTest {
 
     @Test
     fun `formatPlayCount rounds to friendly units`() {
-        assertEquals("9.9万", formatPlayCount(99_000))
-        assertEquals("1.0亿", formatPlayCount(100_000_000))
-        assertEquals("500", formatPlayCount(500))
+        val context = mock(Context::class.java)
+        `when`(context.getString(R.string.number_ten_thousand, 9.9)).thenReturn("9.9万")
+        `when`(context.getString(R.string.number_hundred_million, 1.0)).thenReturn("1.0亿")
+
+        assertEquals("9.9万", formatPlayCount(context, 99_000))
+        assertEquals("1.0亿", formatPlayCount(context, 100_000_000))
+        assertEquals("500", formatPlayCount(context, 500))
     }
 
     @Test

@@ -81,15 +81,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.LocalPlaylist
 import moe.ouom.neriplayer.data.FavoritePlaylistRepository
-import moe.ouom.neriplayer.data.LocalPlaylistRepository.Companion.FAVORITES_NAME
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.LibraryViewModel
@@ -100,13 +102,13 @@ import moe.ouom.neriplayer.util.formatPlayCount
 import androidx.compose.material.icons.outlined.History
 import moe.ouom.neriplayer.util.HapticIconButton
 
-enum class LibraryTab(val label: String) {
-    LOCAL("本地"),
-    FAVORITE("收藏"),
-    NETEASE("网易云 - 歌单"),
-    NETEASEALBUM("网易云 - 专辑"),
-    BILI("哔哩哔哩"),
-    QQMUSIC("QQ音乐")
+enum class LibraryTab(val labelResId: Int) {
+    LOCAL(R.string.library_tab_local),
+    FAVORITE(R.string.library_tab_favorite),
+    NETEASE(R.string.library_tab_netease_playlist),
+    NETEASEALBUM(R.string.library_tab_netease_album),
+    BILI(R.string.library_tab_bilibili),
+    QQMUSIC(R.string.library_tab_qqmusic)
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -153,7 +155,7 @@ fun LibraryScreen(
     ) {
         // 大标题 AppBar
         LargeTopAppBar(
-            title = { Text("媒体库") },
+            title = { Text(stringResource(R.string.library_title)) },
             scrollBehavior = scrollBehavior,
             colors = TopAppBarDefaults.largeTopAppBarColors(
                 containerColor = Color.Transparent,
@@ -184,7 +186,7 @@ fun LibraryScreen(
                     },
                     selectedContentColor = MaterialTheme.colorScheme.primary,
                     unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    text = { Text(tab.label) }
+                    text = { Text(stringResource(tab.labelResId)) }
                 )
             }
         }
@@ -266,7 +268,7 @@ private fun BiliPlaylistList(
                 ListItem(
                     headlineContent = { Text(pl.title) },
                     supportingContent = {
-                        Text("${pl.count} 个视频", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(pluralStringResource(R.plurals.library_video_count_plural, pl.count, pl.count), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     },
                     colors = ListItemDefaults.colors(
                         containerColor = Color.Transparent
@@ -307,6 +309,7 @@ private fun LocalPlaylistList(
     var newName by rememberSaveable { mutableStateOf("") }
     var nameError by rememberSaveable { mutableStateOf<String?>(null) }
     val focusRequester = remember { FocusRequester() }
+    val context = LocalContext.current
 
     LaunchedEffect(showDialog) {
         if (showDialog) focusRequester.requestFocus()
@@ -316,12 +319,13 @@ private fun LocalPlaylistList(
         val trimmedInput = newName.trim()
         val finalName = trimmedInput.ifBlank { "新建歌单" }
 
-        if (finalName.equals(FAVORITES_NAME, ignoreCase = true)) {
-            nameError = "该名称已保留为\"$FAVORITES_NAME\"，请换一个名称哦~"
+        val favoritesName = context.getString(R.string.favorite_my_music)
+        if (finalName.equals(favoritesName, ignoreCase = true)) {
+            nameError = context.getString(R.string.library_name_reserved, favoritesName)
             return false
         }
         if (playlists.any { it.name.equals(finalName, ignoreCase = true) }) {
-            nameError = "已存在同名歌单，请换一个名称"
+            nameError = context.getString(R.string.library_name_exists)
             return false
         }
 
@@ -351,7 +355,7 @@ private fun LocalPlaylistList(
                     .animateItem()
                     .clickable { showDialog = true }
             ) {
-                ListItem(headlineContent = { Text("＋ 新建歌单") },
+                ListItem(headlineContent = { Text(stringResource(R.string.library_create_new)) },
                 colors = ListItemDefaults.colors(
                     containerColor = Color.Transparent
                 ),)
@@ -364,7 +368,7 @@ private fun LocalPlaylistList(
                         newName = ""
                         nameError = null
                     },
-                    title = { Text("新建歌单") },
+                    title = { Text(stringResource(R.string.playlist_create)) },
                     text = {
                         Column {
                             OutlinedTextField(
@@ -373,7 +377,7 @@ private fun LocalPlaylistList(
                                     newName = it
                                     if (nameError != null) nameError = null
                                 },
-                                placeholder = { Text("输入歌单名称") },
+                                placeholder = { Text(stringResource(R.string.playlist_enter_name)) },
                                 singleLine = true,
                                 isError = nameError != null,
                                 supportingText = {
@@ -393,7 +397,7 @@ private fun LocalPlaylistList(
                     confirmButton = {
                         HapticTextButton(
                             onClick = { tryCreate() }
-                        ) { Text("创建") }
+                        ) { Text(stringResource(R.string.action_create)) }
                     },
                     dismissButton = {
                         HapticTextButton(
@@ -402,7 +406,7 @@ private fun LocalPlaylistList(
                                 newName = ""
                                 nameError = null
                             }
-                        ) { Text("取消") }
+                        ) { Text(stringResource(R.string.action_cancel)) }
                     }
                 )
             }
@@ -412,6 +416,7 @@ private fun LocalPlaylistList(
             key = { it.id }
         ) { pl ->
             val isListEmpty = pl.songs.isEmpty()
+            val displayName = if (pl.name == "我喜欢的音乐" || pl.name == "My Favorite Music") stringResource(R.string.favorite_my_music) else pl.name
             Card(
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(
@@ -424,9 +429,9 @@ private fun LocalPlaylistList(
                     .clickable(enabled = !isListEmpty) { onClick(pl) }
             ) {
                 ListItem(
-                    headlineContent = { Text(pl.name) },
+                    headlineContent = { Text(displayName) },
                     supportingContent = {
-                        Text("${pl.songs.size} 首", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(pluralStringResource(R.plurals.library_song_count, pl.songs.size, pl.songs.size), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     },
                     colors = ListItemDefaults.colors(
                         containerColor = Color.Transparent
@@ -463,6 +468,7 @@ private fun NeteasePlaylistList(
     listState: LazyListState,
     onClick: (NeteasePlaylist) -> Unit
 ) {
+    val context = LocalContext.current
     val miniPlayerHeight = LocalMiniPlayerHeight.current
 
     LazyColumn(
@@ -490,7 +496,7 @@ private fun NeteasePlaylistList(
                     headlineContent = { Text(pl.name) },
                     supportingContent = {
                         Text(
-                            "${formatPlayCount(pl.playCount)} · ${pl.trackCount}首",
+                            stringResource(R.string.home_play_count_format, formatPlayCount(context, pl.playCount), pl.trackCount),
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     },
@@ -546,7 +552,7 @@ private fun NeteaseAlbumList(
                     headlineContent = { Text(pl.name) },
                     supportingContent = {
                         Text(
-                            "${pl.size}首",
+                            pluralStringResource(R.plurals.library_song_count, pl.size, pl.size),
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     },
@@ -596,9 +602,9 @@ private fun FavoritePlaylistList(
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                 ) {
                     ListItem(
-                        headlineContent = { Text("暂无收藏的歌单") },
+                        headlineContent = { Text(stringResource(R.string.playlist_no_favorite)) },
                         supportingContent = {
-                            Text("在歌单详情页点击收藏按钮，或长按首页推荐歌单收藏", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(R.string.playlist_favorite_hint), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         },
                         colors = ListItemDefaults.colors(
                             containerColor = Color.Transparent
@@ -647,7 +653,7 @@ private fun FavoritePlaylistList(
                     ListItem(
                         headlineContent = { Text(favorite.name) },
                         supportingContent = {
-                            Text("${favorite.trackCount}首 · ${favorite.source}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(R.string.library_favorite_source_format, favorite.trackCount, favorite.source), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         },
                         colors = ListItemDefaults.colors(
                             containerColor = Color.Transparent
@@ -704,9 +710,9 @@ private fun QqMusicPlaylistList(
                     .padding(horizontal = 8.dp, vertical = 4.dp)
             ) {
                 ListItem(
-                    headlineContent = { Text("QQ音乐功能开发中...") },
+                    headlineContent = { Text(stringResource(R.string.library_qqmusic_coming)) },
                     supportingContent = {
-                        Text("敬请期待", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.library_coming_soon), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     },
                     colors = ListItemDefaults.colors(
                         containerColor = Color.Transparent

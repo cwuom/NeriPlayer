@@ -39,10 +39,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.util.NPLogger
 import java.io.File
@@ -72,8 +74,8 @@ fun LogListScreen(
     if (showClearConfirmDialog.value) {
         AlertDialog(
             onDismissRequest = { showClearConfirmDialog.value = false },
-            title = { Text("确认清空？") },
-            text = { Text("此操作将删除所有本地日志文件且无法恢复。") },
+            title = { Text(stringResource(R.string.dialog_confirm_clear)) },
+            text = { Text(stringResource(R.string.log_delete_confirm)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -92,16 +94,16 @@ fun LogListScreen(
                             }
                             // 更新UI
                             logFilesState.value = emptyList()
-                            snackbarHostState.showSnackbar("已清空 $clearedCount 个日志文件")
+                            snackbarHostState.showSnackbar(context.getString(R.string.log_cleared_count, clearedCount))
                         }
                     }
                 ) {
-                    Text("全部清空", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.common_clear_all), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showClearConfirmDialog.value = false }) {
-                    Text("取消")
+                    Text(stringResource(R.string.action_cancel))
                 }
             }
         )
@@ -120,16 +122,16 @@ fun LogListScreen(
         },
         topBar = {
             TopAppBar(
-                title = { Text("应用日志") },
+                title = { Text(stringResource(R.string.log_app)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(R.string.action_back))
                     }
                 },
                 actions = {
                     if (logFilesState.value.isNotEmpty()) {
                         IconButton(onClick = { showClearConfirmDialog.value = true }) {
-                            Icon(Icons.Outlined.DeleteOutline, contentDescription = "清空日志")
+                            Icon(Icons.Outlined.DeleteOutline, contentDescription = stringResource(R.string.log_clear))
                         }
                     }
                 }
@@ -145,8 +147,8 @@ fun LogListScreen(
             if (logFilesState.value.isEmpty()) {
                 item {
                     ListItem(
-                        headlineContent = { Text("没有找到日志文件") },
-                        supportingContent = { Text("请确保已在设置中开启文件日志记录") }
+                        headlineContent = { Text(stringResource(R.string.log_no_file)) },
+                        supportingContent = { Text(stringResource(R.string.log_enable_hint)) }
                     )
                 }
             } else {

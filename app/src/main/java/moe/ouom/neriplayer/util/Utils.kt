@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.util
 
 import android.annotation.SuppressLint
+import android.content.Context
+import moe.ouom.neriplayer.R
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.concurrent.TimeUnit
@@ -42,12 +44,12 @@ fun convertTimestampToDate(timestamp: Long): String {
  * Formats a long duration millis to a human readable string in Chinese.
  * Example: 90min -> "1小时30分钟"; 45min -> "45分钟".
  */
-fun formatTotalDuration(ms: Long): String {
-    if (ms <= 0) return "0分钟"
+fun formatTotalDuration(context: Context, ms: Long): String {
+    if (ms <= 0) return context.getString(R.string.time_zero_minutes)
     val totalSec = ms / 1000
     val h = totalSec / 3600
     val m = (totalSec % 3600) / 60
-    return if (h > 0) "${h}小时${m}分钟" else "${m}分钟"
+    return if (h > 0) context.getString(R.string.time_hours_minutes, h, m) else context.getString(R.string.time_minutes_only, m)
 }
 
 /**

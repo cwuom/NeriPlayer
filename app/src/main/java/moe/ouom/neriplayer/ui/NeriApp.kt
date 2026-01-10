@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.ui
+﻿package moe.ouom.neriplayer.ui
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -140,6 +140,7 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import moe.ouom.neriplayer.ui.screen.RecentScreen
+import moe.ouom.neriplayer.R
 
 private fun adjustAccent(base: Color, isDark: Boolean): Color {
     val r = (base.red * 255).toInt().coerceIn(0, 255)
@@ -274,6 +275,7 @@ fun NeriApp(
     val backgroundImageBlur by repo.backgroundImageBlurFlow.collectAsState(initial = 10f)
     val backgroundImageAlpha by repo.backgroundImageAlphaFlow.collectAsState(initial = 0.3f)
     val hapticFeedbackEnabled by repo.hapticFeedbackEnabledFlow.collectAsState(initial = true)
+    val showLyricTranslation by repo.showLyricTranslationFlow.collectAsState(initial = true)
     val maxCacheSizeBytes by repo.maxCacheSizeBytesFlow.collectAsState(initial = 1024L * 1024 * 1024)
     val hazeState = remember { HazeState() }
 
@@ -886,11 +888,20 @@ fun NeriApp(
                                                 syncHapticFeedbackSetting(enabled)
                                             }
                                         },
+                                        showLyricTranslation = showLyricTranslation,
+                                        onShowLyricTranslationChange = { enabled ->
+                                            scope.launch { repo.setShowLyricTranslation(enabled) }
+                                        },
                                         maxCacheSizeBytes = maxCacheSizeBytes,
                                         onMaxCacheSizeBytesChange = { size ->
                                             scope.launch { repo.setMaxCacheSizeBytes(size) }
                                         },
-                                        onClearCacheClick = { PlayerManager.clearCache() }
+                                        onClearCacheClick = {
+                                            scope.launch {
+                                                val (success, message) = PlayerManager.clearCache()
+                                                snackbarHostState.showSnackbar(message)
+                                            }
+                                        }
                                     )
                                 }
 
@@ -950,7 +961,7 @@ fun NeriApp(
                                         onOpenLogs = { navController.navigate(Destinations.DebugLogsList.route) },
                                         onTestExceptionHandler = {
                                             ExceptionHandler.safeExecute("DebugTest") {
-                                                throw RuntimeException("这是一个测试异常，用于验证异常处理器的功能")
+                                                throw RuntimeException(context.getString(R.string.test_exception_message))
                                             }
                                         },
                                         onHideDebugMode = {
@@ -1007,7 +1018,7 @@ fun NeriApp(
                                 )
                             ) {
                                 NeriMiniPlayer(
-                                    title = currentSong?.name ?: "暂无播放",
+                                    title = currentSong?.name ?: context.getString(R.string.nowplaying_no_playback),
                                     artist = currentSong?.artist ?: "",
                                     coverUrl = currentSong?.coverUrl,
                                     isPlaying = isPlaying,
@@ -1071,7 +1082,8 @@ fun NeriApp(
                                 lyricFontScale = lyricFontScale,
                                 onLyricFontScaleChange = { scale ->
                                     scope.launch { repo.setLyricFontScale(scale) }
-                                }
+                                },
+                                showLyricTranslation = showLyricTranslation
                             )
                         }
                     }

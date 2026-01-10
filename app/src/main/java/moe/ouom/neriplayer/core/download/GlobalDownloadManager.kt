@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
@@ -193,7 +194,7 @@ object GlobalDownloadManager {
                                     id = songId,
                                     name = title,
                                     artist = artist,
-                                    album = "本地文件",
+                                    album = context.getString(R.string.local_files),
                                     filePath = file.absolutePath,
                                     fileSize = file.length(),
                                     downloadTime = file.lastModified(),
@@ -307,7 +308,7 @@ object GlobalDownloadManager {
                     id = song.id,
                     name = song.name,
                     artist = song.artist,
-                    album = "本地文件",
+                    album = context.getString(R.string.local_files),
                     albumId = 0L,
                     durationMs = durationMs,
                     coverUrl = song.coverPath,

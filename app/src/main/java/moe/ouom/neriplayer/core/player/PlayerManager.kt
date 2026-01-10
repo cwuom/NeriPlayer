@@ -1,4 +1,4 @@
-@file:OptIn(UnstableApi::class)
+﻿@file:OptIn(UnstableApi::class)
 
 package moe.ouom.neriplayer.core.player
 
@@ -75,6 +75,7 @@ import moe.ouom.neriplayer.core.api.search.SongSearchInfo
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.di.AppContainer.biliCookieRepo
 import moe.ouom.neriplayer.core.di.AppContainer.settingsRepo
+import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.LocalPlaylist
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.ui.component.LyricEntry
@@ -114,7 +115,6 @@ private sealed class SongUrlResult {
  * - 序列化/反序列化播放状态文件，实现应用重启后的恢复
  */
 object PlayerManager {
-    private const val FAVORITES_NAME = "我喜欢的音乐"
     const val BILI_SOURCE_TAG = "Bilibili"
     const val NETEASE_SOURCE_TAG = "Netease"
 
@@ -123,6 +123,12 @@ object PlayerManager {
     private lateinit var player: ExoPlayer
 
     private lateinit var cache: Cache
+
+    // Helper function to get localized string
+    private fun getLocalizedString(resId: Int, vararg formatArgs: Any): String {
+        val context = moe.ouom.neriplayer.util.LanguageManager.applyLanguage(application)
+        return context.getString(resId, *formatArgs)
+    }
 
     private fun newIoScope() = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private fun newMainScope() = CoroutineScope(Dispatchers.Main + SupervisorJob())
@@ -446,8 +452,8 @@ object PlayerManager {
         NPLogger.d("NERI-Player", "PlayerManager initialized with cache size: $maxCacheSize")
     }
 
-    fun clearCache() {
-        ioScope.launch(Dispatchers.IO) {
+    suspend fun clearCache(): Pair<Boolean, String> {
+        return withContext(Dispatchers.IO) {
             var apiRemovedCount = 0
             var physicalDeletedCount = 0
             var totalSpaceFreed = 0L
@@ -483,20 +489,16 @@ object PlayerManager {
 
                 NPLogger.d("NERI-Player", "Cache Clear: API removed $apiRemovedCount keys, Physically deleted $physicalDeletedCount .exo files.")
 
-                withContext(Dispatchers.Main) {
-                    val msg = if (physicalDeletedCount > 0 || apiRemovedCount > 0) {
-                        "清理完成"
-                    } else {
-                        "缓存已为空"
-                    }
-                    Toast.makeText(application, msg, Toast.LENGTH_SHORT).show()
+                val msg = if (physicalDeletedCount > 0 || apiRemovedCount > 0) {
+                    getLocalizedString(R.string.cache_clear_complete)
+                } else {
+                    getLocalizedString(R.string.settings_cache_empty)
                 }
+                Pair(true, msg)
 
             } catch (e: Exception) {
                 NPLogger.e("NERI-Player", "Clear cache failed", e)
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(application, "清理出错: ${e.message}", Toast.LENGTH_SHORT).show()
-                }
+                Pair(false, getLocalizedString(R.string.toast_cache_clear_error, e.message ?: "Unknown"))
             }
         }
     }
@@ -541,19 +543,19 @@ object PlayerManager {
         if (bluetoothDevice != null) {
             return try {
                 AudioDevice(
-                    name = bluetoothDevice.productName.toString().ifBlank { "蓝牙耳机" },
+                    name = bluetoothDevice.productName.toString().ifBlank { getLocalizedString(R.string.device_bluetooth_headset) },
                     type = AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
                     icon = Icons.Default.BluetoothAudio
                 )
             } catch (_: SecurityException) {
-                AudioDevice("蓝牙耳机", AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, Icons.Default.BluetoothAudio)
+                AudioDevice(getLocalizedString(R.string.device_bluetooth_headset), AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, Icons.Default.BluetoothAudio)
             }
         }
         val wiredHeadset = devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET || it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES }
         if (wiredHeadset != null) {
-            return AudioDevice("有线耳机", AudioDeviceInfo.TYPE_WIRED_HEADSET, Icons.Default.Headset)
+            return AudioDevice(getLocalizedString(R.string.device_wired_headset), AudioDeviceInfo.TYPE_WIRED_HEADSET, Icons.Default.Headset)
         }
-        return AudioDevice("手机扬声器", AudioDeviceInfo.TYPE_BUILTIN_SPEAKER, Icons.Default.SpeakerGroup)
+        return AudioDevice(getLocalizedString(R.string.device_speaker), AudioDeviceInfo.TYPE_BUILTIN_SPEAKER, Icons.Default.SpeakerGroup)
     }
 
     fun playPlaylist(songs: List<SongItem>, startIndex: Int) {
@@ -598,7 +600,7 @@ object PlayerManager {
 
         if (consecutivePlayFailures >= MAX_CONSECUTIVE_FAILURES) {
             NPLogger.e("NERI-PlayerManager", "已连续失败 $consecutivePlayFailures 次，停止播放")
-            mainScope.launch { Toast.makeText(application, "多首歌曲无法播放，已停止", Toast.LENGTH_SHORT).show() }
+            mainScope.launch { Toast.makeText(application, "Multiple songs failed, playback stopped", Toast.LENGTH_SHORT).show() }  // Localized
             stopAndClearPlaylist()
             return
         }
@@ -779,7 +781,7 @@ object PlayerManager {
                 SongUrlResult.Success(audioStream.url)
             } else {
                 if (!suppressError) {
-                    postPlayerEvent(PlayerEvent.ShowError("无法获取播放地址"))
+                    postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(R.string.error_no_play_url)))
                 }
                 SongUrlResult.Failure
             }
@@ -1052,8 +1054,9 @@ object PlayerManager {
         ioScope.launch {
             try {
                 // 确保收藏歌单存在
-                if (_playlistsFlow.value.none { it.name == FAVORITES_NAME }) {
-                    localRepo.createPlaylist(FAVORITES_NAME)
+                val favoritesName = getLocalizedString(R.string.favorite_my_music)
+                if (_playlistsFlow.value.none { it.name == favoritesName }) {
+                    localRepo.createPlaylist(favoritesName)
                 }
                 localRepo.addToFavorites(song)
             } catch (e: Exception) {
@@ -1083,7 +1086,7 @@ object PlayerManager {
         ensureInitialized()
         if (!initialized) return
         val song = _currentSongFlow.value ?: return
-        val fav = _playlistsFlow.value.firstOrNull { it.name == FAVORITES_NAME }
+        val fav = _playlistsFlow.value.firstOrNull { it.name == "我喜欢的音乐" || it.name == "My Favorite Music" }
         val isFav = fav?.songs?.any { it.id == song.id } == true
         if (isFav) removeCurrentFromFavorites() else addCurrentToFavorites()
     }
@@ -1095,7 +1098,7 @@ object PlayerManager {
         songId: Long? = null
     ): List<LocalPlaylist> {
         val lists = _playlistsFlow.value
-        val favIdx = lists.indexOfFirst { it.name == FAVORITES_NAME }
+        val favIdx = lists.indexOfFirst { it.name == "我喜欢的音乐" || it.name == "My Favorite Music" }
         val base = lists.map { LocalPlaylist(it.id, it.name, it.songs.toMutableList()) }.toMutableList()
 
         if (favIdx >= 0) {
@@ -1109,7 +1112,7 @@ object PlayerManager {
             if (add && song != null) {
                 base += LocalPlaylist(
                     id = System.currentTimeMillis(),
-                    name = FAVORITES_NAME,
+                    name = getLocalizedString(R.string.favorite_my_music),
                     songs = mutableListOf(song)
                 )
             }
@@ -1220,8 +1223,17 @@ object PlayerManager {
 
     /** 根据歌曲来源返回可用的翻译（如果有） */
     suspend fun getTranslatedLyrics(song: SongItem): List<LyricEntry> {
-        // 优先检查本地翻译歌词缓存
+        // 检查当前语言设置，只有中文环境才显示翻译
         val context = application
+        val currentLocale = context.resources.configuration.locales[0]
+        val isChinese = currentLocale.language.startsWith("zh")
+
+        // 如果不是中文环境，直接返回空列表
+        if (!isChinese) {
+            return emptyList()
+        }
+
+        // 优先检查本地翻译歌词缓存
         val localTransPath = AudioDownloadManager.getTranslatedLyricFilePath(context, song)
         if (localTransPath != null) {
             try {
@@ -1430,7 +1442,7 @@ object PlayerManager {
                 updateSongInAllPlaces(originalSong, updatedSong)
 
             } catch (e: Exception) {
-                mainScope.launch { Toast.makeText(application, "匹配失败: ${e.message}", Toast.LENGTH_SHORT).show() }
+                mainScope.launch { Toast.makeText(application, "Match failed: ${e.message}", Toast.LENGTH_SHORT).show() }  // Localized
             }
         }
     }

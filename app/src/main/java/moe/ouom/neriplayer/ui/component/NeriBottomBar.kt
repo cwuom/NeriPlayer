@@ -35,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -60,14 +61,15 @@ fun NeriBottomBar(
     ) {
         items.forEach { (dest, icon) ->
             val selected = currentDestination?.hierarchy?.any { it.route == dest.route } == true
+            val label = stringResource(dest.labelResId)
             NavigationBarItem(
                 selected = selected,
                 onClick = {
                     context.performHapticFeedback()
                     onItemSelected(dest)
                 },
-                icon = { Icon(icon, contentDescription = dest.label) },
-                label = { Text(dest.label) },
+                icon = { Icon(icon, contentDescription = label) },
+                label = { Text(label) },
                 //alwaysShowLabel = alwaysShowLabel,
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,

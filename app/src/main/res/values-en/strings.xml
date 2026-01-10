@@ -1,0 +1,1019 @@
+﻿<resources>
+    <string name="app_name">NeriPlayer</string>
+
+    <!-- Common Actions -->
+    <string name="action_confirm">Confirm</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_close">Close</string>
+    <string name="action_ok">OK</string>
+    <string name="action_done">Done</string>
+    <string name="action_apply">Apply</string>
+    <string name="action_send">Send</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_share">Share</string>
+    <string name="action_refresh">Refresh</string>
+    <string name="action_search">Search</string>
+    <string name="action_create">Create</string>
+    <string name="action_reset">Reset</string>
+    <string name="action_retry">Tap to Retry</string>
+    <string name="action_back">Back</string>
+    <string name="action_hide">Hide</string>
+    <string name="action_expand">Expand</string>
+    <string name="action_collapse">Collapse</string>
+    <string name="action_more">More</string>
+    <string name="action_clear">Clear</string>
+    <string name="action_select_all">Select All</string>
+    <string name="action_deselect_all">Deselect All</string>
+    <string name="action_multi_select">Multi-select</string>
+    <string name="action_exit_multi_select">Exit Multi-select</string>
+
+    <!-- Navigation -->
+    <string name="nav_home">Home</string>
+    <string name="nav_explore">Explore</string>
+    <string name="nav_library">Library</string>
+    <string name="nav_settings">Settings</string>
+    <string name="nav_about">About</string>
+
+    <!-- Player Controls -->
+    <string name="player_play">Play</string>
+    <string name="player_pause">Pause</string>
+    <string name="player_previous">Previous</string>
+    <string name="player_next">Next</string>
+    <string name="player_shuffle">Shuffle</string>
+    <string name="player_repeat">Repeat</string>
+    <string name="player_now_playing">Now Playing</string>
+    <string name="player_no_playback">No Playback</string>
+    <string name="player_continue">Continue</string>
+    <string name="player_locate_current">Locate Current</string>
+    <string name="player_shuffle_play">Shuffle Play</string>
+    <string name="player_play_all">Play All</string>
+    <string name="player_play_selected">Play Selected</string>
+
+    <!-- Playlist -->
+    <string name="playlist_title">Playlist</string>
+    <string name="playlist_current">Current Playlist</string>
+    <string name="playlist_create">New Playlist</string>
+    <string name="playlist_create_name">New Playlist Name</string>
+    <string name="playlist_rename">Rename Playlist</string>
+    <string name="playlist_delete">Delete Playlist</string>
+    <string name="playlist_detail">Playlist Details</string>
+    <string name="playlist_local_detail">Local Playlist Details</string>
+    <string name="playlist_favorite">Favorite Playlists</string>
+    <string name="playlist_no_favorite">No Favorites</string>
+    <string name="playlist_count">Playlist Count</string>
+    <string name="playlist_add_to">Add to Playlist</string>
+    <string name="playlist_export">Export Playlist</string>
+    <string name="playlist_import">Import Playlist</string>
+    <string name="playlist_export_desc">Export as backup</string>
+    <string name="playlist_import_desc">Restore from backup</string>
+    <string name="playlist_export_success">Export Successful</string>
+    <string name="playlist_export_failed">Export Failed</string>
+    <string name="playlist_import_success">Import Successful</string>
+    <string name="playlist_import_failed">Import Failed</string>
+    <string name="playlist_export_progress">Export Progress</string>
+    <string name="playlist_import_progress">Import Progress</string>
+    <string name="playlist_exporting">Exporting playlists...</string>
+    <string name="playlist_importing">Importing playlists...</string>
+    <string name="playlist_import_complete">Import Complete!</string>
+    <string name="playlist_import_count">Successfully imported: %d playlists</string>
+    <string name="playlist_merge_count">Smart merged: %d playlists</string>
+    <string name="playlist_skip_count">Skipped duplicates: %d playlists</string>
+    <string name="playlist_backup_date">Backup date: %s</string>
+    <string name="playlist_analyzing">Analyzing differences...</string>
+    <string name="playlist_analysis_failed">Analysis failed: %s</string>
+    <string name="playlist_export_to_local">Export to Local</string>
+    <string name="playlist_export_to">Export to Playlist</string>
+    <string name="playlist_create_and_export">Create and Export</string>
+    <string name="playlist_name_empty">Name cannot be empty</string>
+    <string name="playlist_enter_name">Enter Playlist Name</string>
+    <string name="playlist_queue">Play Queue</string>
+    <string name="playlist_add_to_queue">Add to Queue</string>
+    <string name="playlist_add_to_end">Add to End</string>
+    <string name="playlist_search_hint">Search songs in playlist</string>
+
+    <!-- Download -->
+    <string name="download_title">Downloads</string>
+    <string name="download_manager">Download Manager</string>
+    <string name="download_to_local">Download</string>
+    <string name="download_selected_songs">Download Selected</string>
+    <string name="download_selected_videos">Download Selected</string>
+    <string name="download_progress">Download Progress</string>
+    <string name="download_failed">Download Failed</string>
+    <string name="download_cancelled">Download Cancelled</string>
+    <string name="download_no_tasks">No Download Tasks</string>
+    <string name="download_empty">No Downloads</string>
+    <string name="download_desc">Manage downloads</string>
+    <string name="download_manage_desc">Manage downloads</string>
+    <string name="download_expand_hint">Manage downloads</string>
+    <string name="download_select_hint">Select songs and tap download button</string>
+    <string name="downloaded">Downloaded</string>
+    <string name="downloaded_songs">Downloaded Songs</string>
+    <string name="download_songs_display">Downloaded songs will appear here</string>
+
+    <!-- Search -->
+    <string name="search_keyword">Search Keyword</string>
+    <string name="search_keywords">Search Keywords</string>
+    <string name="search_song">Search Songs</string>
+    <string name="search_video">Search Videos</string>
+    <string name="search_netease">Search NetEase</string>
+    <string name="search_playlist">Search in Playlist</string>
+    <string name="search_favorite">Search in Favorites</string>
+    <string name="search_recent">Search Recent</string>
+    <string name="search_no_result">No Results</string>
+    <string name="search_not_found">Not Found</string>
+    <string name="search_no_match">No Matching Songs</string>
+    <string name="search_try_other">Try other keywords</string>
+    <string name="search_error">Error processing results</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_theme_color">Theme Color</string>
+    <string name="settings_theme_color_desc">Choose your favorite color</string>
+    <string name="settings_dynamic_color">Dynamic Color</string>
+    <string name="settings_dynamic_color_desc">Follow cover theme color</string>
+    <string name="settings_force_dark">Force Dark Mode</string>
+    <string name="settings_force_dark_desc">Manually specify when not following system</string>
+    <string name="settings_haptic">Haptic Feedback</string>
+    <string name="settings_haptic_desc">Vibrate on button press</string>
+    <string name="settings_personalization">Personalization</string>
+    <string name="settings_audio_quality">Audio Quality</string>
+    <string name="settings_audio_quality_expand">Configure audio quality</string>
+    <string name="settings_show_lyric_translation">Show Translation</string>
+    <string name="settings_show_lyric_translation_desc">Show translated lyrics</string>
+    <string name="settings_network">Network</string>
+    <string name="settings_bypass_proxy">Bypass System Proxy</string>
+    <string name="settings_bypass_proxy_desc">Don\'t use system proxy for app requests</string>
+    <string name="settings_storage">Storage &amp; Cache</string>
+    <string name="settings_cache_limit">Cache Limit</string>
+    <string name="settings_clear_cache">Clear</string>
+    <string name="settings_clear_cache_desc">Free up space</string>
+    <string name="settings_cache_empty">Cache is empty</string>
+    <string name="settings_clear_complete">Cleared</string>
+    <string name="settings_storage_used">Storage Used</string>
+    <string name="settings_cache_desc">Manage cache</string>
+    <string name="settings_select_color">Select Color</string>
+    <string name="settings_apply_color">Apply Color</string>
+    <string name="settings_add_to_palette">Add to Palette</string>
+    <string name="settings_delete_color">Delete Color</string>
+    <string name="settings_restart_hint">May need to restart app for best effect</string>
+    <string name="settings_expand_network">Network options</string>
+    <string name="settings_confirm_clear_cache">Clear cache?</string>
+    <string name="settings_clear_cache_warning">This will delete all cached music files and free up disk space.</string>
+    <string name="settings_custom_color">Custom Color</string>
+    <string name="settings_expand_visual">Visual effects</string>
+    <string name="settings_expand_more">More</string>
+
+    <!-- Lyrics -->
+    <string name="lyrics_title">Lyrics</string>
+    <string name="lyrics_no_lyrics">No Lyrics</string>
+    <string name="lyrics_blur">Blur</string>
+    <string name="lyrics_blur_effect">Blur Effect</string>
+    <string name="lyrics_blur_desc">Blur inactive lines</string>
+    <string name="lyrics_font_size">Lyrics Font Size</string>
+    <string name="lyrics_offset">Lyrics Offset</string>
+    <string name="lyrics_adjust_offset">Adjust Lyrics Offset</string>
+
+    <!-- Background -->
+    <string name="background_custom">Custom</string>
+    <string name="background_select">Select Image</string>
+    <string name="background_change">Change</string>
+    <string name="background_clear">Clear</string>
+    <string name="background_blur">Background Blur</string>
+    <string name="background_opacity">Background Opacity</string>
+    <string name="background_back_to_cover">Use Cover</string>
+    <string name="background_clear_preview">Clear</string>
+
+    <!-- Login -->
+    <string name="login_title">Login</string>
+    <string name="login_third_party">Third-party Login</string>
+    <string name="login_browser">Browser Login</string>
+    <string name="login_start_browser">Login via Browser</string>
+    <string name="login_success">Login Successful</string>
+    <string name="login_netease">NetEase Login</string>
+    <string name="login_verification_code">SMS Login</string>
+    <string name="login_sms_code">SMS Code</string>
+    <string name="login_send_code">Send Code</string>
+    <string name="login_code_sent">Code Sent</string>
+    <string name="login_enter_code">Enter verification code</string>
+    <string name="login_code_error">Invalid Code</string>
+    <string name="login_phone_invalid">Invalid Phone Number</string>
+    <string name="login_expand_platforms">Select platform</string>
+
+    <!-- Platform Names -->
+    <string name="platform_bilibili">Bilibili</string>
+    <string name="platform_netease">NetEase Cloud Music</string>
+    <string name="platform_netease_short">NetEase</string>
+
+    <!-- Sync -->
+    <string name="sync_title">Sync</string>
+    <string name="sync_auto">Auto Sync</string>
+    <string name="sync_now">Sync Now</string>
+    <string name="sync_not_synced">Not Synced</string>
+    <string name="sync_success">Sync Successful</string>
+    <string name="sync_failed">Sync Failed</string>
+    <string name="sync_upload_failed">Upload Failed</string>
+    <string name="sync_send_failed">Send Failed</string>
+    <string name="sync_send_cancelled">Send Cancelled</string>
+    <string name="sync_initial_uploaded">Initial Data Uploaded</string>
+    <string name="sync_history_frequency">Sync Frequency</string>
+    <string name="sync_after_play">After Each Play</string>
+    <string name="sync_batch_update">Batch Update</string>
+    <string name="sync_configured">Configured</string>
+    <string name="sync_not_configured">Not Configured</string>
+    <string name="sync_config">Configure</string>
+    <string name="sync_clear_config">Clear Configuration</string>
+    <string name="sync_repo_name">Repository Name</string>
+    <string name="sync_repo_full_name">Full Repository Name</string>
+    <string name="sync_create_new_repo">Create New</string>
+    <string name="sync_use_existing_repo">Use Existing</string>
+    <string name="sync_data_saver">Data Saver</string>
+    <string name="sync_data_saver_desc">Highly recommended if no special requirements\nSwitching modes may cause data loss. Ensure all platform settings are consistent. Do not switch casually</string>
+    <string name="sync_diff_failed">Diff Analysis Failed</string>
+    <string name="sync_analysis_progress">Analysis Progress</string>
+
+    <!-- Backup -->
+    <string name="backup_title">Backup &amp; Restore</string>
+    <string name="backup_expand_hint">Manage backups</string>
+    <string name="backup_no_playlist_data">No playlist data in backup</string>
+    <string name="backup_import_failed">Playlist import failed</string>
+    <string name="backup_export_failed">Playlist export failed</string>
+
+    <!-- Sleep Timer -->
+    <string name="sleep_timer_title">Sleep Timer</string>
+    <string name="sleep_timer_short">Timer</string>
+    <string name="sleep_timer_running">Timer Running</string>
+    <string name="sleep_timer_cancel">Cancel Timer</string>
+    <string name="sleep_timer_countdown">Countdown</string>
+    <string name="sleep_timer_start">Start Countdown</string>
+    <string name="sleep_timer_stop_after_current">After current song</string>
+    <string name="sleep_timer_stop_after_playlist">After playlist</string>
+
+    <!-- Audio Quality -->
+    <string name="quality_standard">Standard</string>
+    <string name="quality_high">High</string>
+    <string name="quality_very_high">Very High</string>
+    <string name="quality_lossless">Lossless</string>
+    <string name="quality_hires">Hi-Res</string>
+    <string name="quality_dolby">Dolby Atmos</string>
+    <string name="quality_surround">Immersive Surround</string>
+    <string name="quality_hd_surround">HD Surround</string>
+    <string name="quality_default">Select Default Quality</string>
+    <string name="quality_netease_default">NetEase Default Quality</string>
+
+    <!-- Playback Device -->
+    <string name="device_speaker">Speaker</string>
+    <string name="device_wired_headset">Wired</string>
+    <string name="device_bluetooth_headset">Bluetooth</string>
+    <string name="device_bluetooth">Bluetooth</string>
+    <string name="device_playback">Playback Device</string>
+
+    <!-- Music Info -->
+    <string name="music_unknown_song">Unknown Song</string>
+    <string name="music_unknown_artist">Unknown Artist</string>
+    <string name="music_get_info">Get Song Info</string>
+    <string name="music_get_detail_failed">Failed to get details</string>
+    <string name="music_no_playback_url">Cannot get playback URL</string>
+
+    <!-- Recent -->
+    <string name="recent_title">Recent</string>
+    <string name="recent_no_history">No Recent Plays</string>
+    <string name="recent_clear">Clear</string>
+    <string name="recent_just_now">Just Now</string>
+
+    <!-- Favorite -->
+    <string name="favorite_title">Favorites</string>
+    <string name="favorite_add">Favorite</string>
+    <string name="favorite_remove">Unfavorite</string>
+    <string name="favorite_success">Favorited</string>
+    <string name="favorite_added">Favorited</string>
+    <string name="favorite_removed">Unfavorited</string>
+    <string name="favorite_my_music">My Favorite Music</string>
+
+    <!-- Local Files -->
+    <string name="local_title">Local</string>
+    <string name="local_files">Local Files</string>
+
+    <!-- Recommendations -->
+    <string name="recommend_for_you">For You</string>
+    <string name="recommend_refresh">Refresh</string>
+    <string name="recommend_hot">Hot</string>
+    <string name="recommend_trending">Trending</string>
+    <string name="recommend_radar">Personal Radar</string>
+
+    <!-- Music Genres -->
+    <string name="genre_pop">Pop</string>
+    <string name="genre_rock">Rock</string>
+    <string name="genre_electronic">Electronic</string>
+    <string name="genre_folk">Folk</string>
+    <string name="genre_rap">Rap</string>
+    <string name="genre_dance">Dance</string>
+    <string name="genre_light">Light Music</string>
+    <string name="genre_soundtrack">Soundtrack</string>
+
+    <!-- Music Moods -->
+    <string name="mood_healing">Healing</string>
+    <string name="mood_sad">Sad</string>
+    <string name="mood_romantic">Romantic</string>
+    <string name="mood_fresh">Fresh</string>
+    <string name="mood_nostalgic">Nostalgic</string>
+
+    <!-- Music Scenes -->
+    <string name="scene_work">Work</string>
+    <string name="scene_study">Study</string>
+    <string name="scene_game">Gaming</string>
+    <string name="scene_afternoon">Afternoon Tea</string>
+    <string name="scene_night">Night</string>
+    <string name="scene_children">Children</string>
+
+    <!-- Languages -->
+    <string name="language_chinese">Chinese</string>
+    <string name="language_western">Western</string>
+    <string name="language_japanese">Japanese</string>
+    <string name="language_korean">Korean</string>
+    <string name="language_cantonese">Cantonese</string>
+
+    <!-- Debug -->
+    <string name="debug_title">Debug</string>
+    <string name="debug_tools">Debug Tools</string>
+    <string name="debug_mode_enabled">Debug Mode Enabled</string>
+    <string name="debug_mode_opened">Debug Mode Opened</string>
+    <string name="debug_hide">Hide Debug Mode</string>
+    <string name="debug_select_platform">Select platform or hide debug</string>
+    <string name="debug_search">Search Debug</string>
+    <string name="debug_search_api">Multi-platform Search API Debug</string>
+    <string name="debug_search_probe">Multi-platform Search Probe</string>
+    <string name="debug_netease">NetEase Debug</string>
+    <string name="debug_netease_api">NetEase API Debug</string>
+    <string name="debug_netease_probe">NetEase API Probe</string>
+    <string name="debug_bili_api">Bilibili API Debug</string>
+    <string name="debug_copy_all">Copy All</string>
+    <string name="debug_call_all_copy">Call all and copy to clipboard</string>
+    <string name="debug_copied">Copied to Clipboard</string>
+    <string name="debug_bili_probe_title">Bilibili API Probe</string>
+    <string name="debug_bili_api_desc">Search / Info / Stats / Stream / Favorites</string>
+    <string name="debug_netease_api_desc">Account / Playlists / Song URL / Lyrics</string>
+    <string name="debug_search_api_desc">QQ / NetEase Cloud</string>
+    <string name="debug_view_logs">View App Logs</string>
+    <string name="debug_view_logs_desc">View, copy and export runtime logs</string>
+    <string name="debug_test_exception">Test Exception Handler</string>
+    <string name="debug_test_exception_desc">Test exception capture, logging and dialog display</string>
+    <string name="debug_hide_hint">After hiding, \"Debug\" will be removed from bottom bar. Tap version 7 times in settings to re-enable</string>
+    <string name="debug_search_keyword">Search Keyword</string>
+    <string name="debug_search_copy_json">Search (Copy JSON)</string>
+    <string name="debug_bvid_hint">BV ID (e.g.: BV1xx...)</string>
+    <string name="debug_get_info_copy">Get Info/Cover/Stats (Copy JSON)</string>
+    <string name="debug_page_setting">Page Setting (Choose One)</string>
+    <string name="debug_page_hint">Page (Default 1)</string>
+    <string name="debug_cid_hint">CID (Number)</string>
+    <string name="debug_get_stream_by">Get Stream (By %s, DASH/Dolby/Flac, Copy JSON)</string>
+    <string name="debug_get_stream_by_page">Get Stream by Page (Page %s, with resolved CID)</string>
+    <string name="debug_get_audio_by">Get All Audio Streams (By %s, DASH/Dolby/Flac)</string>
+    <string name="debug_get_audio_by_page">Get All Audio Streams by Page (Page %s, with resolved CID)</string>
+    <string name="debug_get_mp4_by">MP4 Direct URL durl Only (By %s)</string>
+    <string name="debug_get_mp4_by_page">Get MP4 Direct URL by Page (Page %s, with resolved CID)</string>
+    <string name="debug_has_liked">Has Liked Recently (Copy JSON)</string>
+    <string name="debug_up_mid_hint">UP mid (Number)</string>
+    <string name="debug_get_fav_list">Get User Created Favorites (Copy JSON)</string>
+    <string name="debug_media_id_hint">Favorite media_id (Number)</string>
+    <string name="debug_fav_info">Favorite Info (Copy JSON)</string>
+    <string name="debug_fav_contents">Favorite Contents (Copy JSON)</string>
+    <string name="debug_get_by_avid">Get Stream by avid+cid/page (Copy JSON)</string>
+    <string name="debug_status">Status: %s</string>
+    <string name="debug_preview_empty">(No preview, try executing above)</string>
+    <string name="debug_clear_preview">Clear Preview</string>
+    <string name="debug_netease_desc">Click button to call API and copy raw JSON to clipboard:\\nIncludes: Account, UserId, Created Playlists, Subscribed Playlists, Liked Playlist ID, Lyrics(33894312); Excludes liked songs</string>
+    <string name="debug_account_only">Account Only (Account Info)</string>
+    <string name="debug_userid_only">UserId Only (Current User ID)</string>
+    <string name="debug_created_playlists">Created Playlists Only</string>
+    <string name="debug_stared_albums">Starred Albums Only</string>
+    <string name="debug_subscribed_playlists">Subscribed Playlists Only</string>
+    <string name="debug_liked_playlist_id">Liked Playlist ID Only</string>
+    <string name="debug_lyric_sample">Lyrics Only (33894312)</string>
+    <string name="debug_preview_hint">(No preview, try clicking buttons above~)</string>
+    <string name="debug_search_desc">Enter keyword, click platform button to call search API and copy raw JSON result to clipboard.</string>
+    <string name="debug_search_keyword_label">Search Keyword</string>
+    <string name="debug_search_netease">Search NetEase</string>
+    <string name="debug_search_qq">Search QQ</string>
+    <string name="debug_search_preview_hint">(No preview, enter keyword and click button above~)</string>
+    <string name="debug_error_keyword_empty">Error: Keyword cannot be empty</string>
+    <string name="debug_searching">Searching [%1$s]: %2$s ...</string>
+    <string name="debug_search_ok">OK, [%s] search complete and copied to clipboard</string>
+    <string name="debug_call_failed">Call/Parse failed: %s</string>
+    <string name="debug_calling">Calling: %s ...</string>
+    <string name="debug_copied_label">Copied to clipboard: %s</string>
+    <string name="debug_network_error">Network/Server error: %s</string>
+    <string name="debug_all_api_calling">Calling all APIs...</string>
+    <string name="debug_all_api_ok">OK, all APIs called and copied to clipboard</string>
+    <string name="debug_page_not_found">Page %d not found</string>
+
+    <!-- Logs -->
+    <string name="log_title">Logs</string>
+    <string name="log_app">App Logs</string>
+    <string name="log_list">Log List</string>
+    <string name="log_view">View Logs</string>
+    <string name="log_export">Export</string>
+    <string name="log_exported">Logs Exported</string>
+    <string name="log_clear">Clear</string>
+    <string name="log_no_file">No log files found</string>
+    <string name="log_cannot_read">Cannot read log file</string>
+    <string name="log_view_hint">View app logs</string>
+    <string name="log_enable_hint">Please enable file logging in settings</string>
+
+    <!-- Errors -->
+    <string name="error_network">Network Error</string>
+    <string name="error_app_exception">App Exception</string>
+    <string name="error_test_handler">Test Exception Handler</string>
+    <string name="error_test">Exception Test</string>
+    <string name="error_cannot_open_input">Cannot open input stream</string>
+    <string name="error_cannot_open_output">Cannot open output stream</string>
+    <string name="error_no_play_url">Cannot get play URL</string>
+    <string name="cache_clear_complete">Cache cleared</string>
+
+    <!-- Content Descriptions -->
+    <string name="cd_back">Back</string>
+    <string name="cd_netease">Netease Cloud Music</string>
+    <string name="cd_bilibili">Bilibili</string>
+    <string name="cd_audio_device">Audio Device</string>
+    <string name="cd_search">Search</string>
+    <string name="cd_play_all">Play All</string>
+    <string name="cd_shuffle">Shuffle</string>
+    <string name="cd_clear">Clear</string>
+    <string name="cd_exit_select">Exit Selection</string>
+    <string name="cd_more">More</string>
+    <string name="cd_downloaded">Downloaded</string>
+    <string name="cd_more_actions">More Actions</string>
+    <string name="cd_search_songs">Search Songs</string>
+    <string name="cd_download_manager">Download Manager</string>
+    <string name="cd_export_playlist">Export to Playlist</string>
+    <string name="cd_download_selected">Download Selected</string>
+    <string name="cd_locate_playing">Locate Now Playing</string>
+    <string name="cd_close">Close</string>
+    <string name="cd_recent">Recent Plays</string>
+
+    <!-- Dialogs -->
+    <string name="dialog_confirm_delete">Confirm Delete</string>
+    <string name="dialog_confirm_clear">Confirm Clear</string>
+    <string name="dialog_hint">Hint</string>
+    <string name="dialog_no_detail">No Details</string>
+    <string name="dialog_disclaimer">Disclaimer &amp; Privacy</string>
+    <string name="dialog_agree">I Agree</string>
+    <string name="dialog_no_remind">Don\'t Remind Again</string>
+
+    <!-- Common -->
+    <string name="common_all">All</string>
+    <string name="common_clear_all">Clear All</string>
+    <string name="common_delete_selected">Delete Selected</string>
+    <string name="common_delete_selected_songs">Delete Selected Songs</string>
+    <string name="common_download_selected">Download Selected</string>
+    <string name="common_more_options">More Options</string>
+    <string name="common_more_actions">More Actions</string>
+    <string name="common_version">Version</string>
+    <string name="common_build_time">Build Time</string>
+    <string name="common_update_now">Update Now</string>
+    <string name="common_coming_soon">Coming Soon</string>
+    <string name="common_not_implemented">Not Implemented</string>
+    <string name="common_other_modes">Other Modes</string>
+    <string name="common_drag_handle">Drag Handle</string>
+    <string name="common_album_detail">Album Details</string>
+
+    <!-- Additional Settings Strings -->
+    <string name="login_methods">Browser/SMS/Cookie Login</string>
+    <string name="quality_bili_default">Bilibili Default Quality</string>
+    <string name="settings_clear_config">Clear Configuration</string>
+    <string name="backup_restore_title">Backup &amp; Restore</string>
+    <string name="settings_ui_scale">UI Scale</string>
+    <string name="settings_ui_scale_dpi">UI Scale (DPI)</string>
+    <string name="settings_ui_scale_current">Current: %sx (Default 1.00x)</string>
+    <string name="settings_expand_login">Select platform</string>
+    <string name="settings_expand_personalization">Adjust visuals</string>
+    <string name="settings_expand_download">Manage downloads</string>
+    <string name="settings_expand_backup">Manage backups</string>
+    <string name="settings_cache_manage">Manage cache</string>
+    <string name="action_confirm_clear">Confirm Clear</string>
+
+    <!-- Sync Settings -->
+    <string name="sync_config_desc">Configure sync</string>
+    <string name="sync_auto_desc">Auto sync after changes</string>
+    <string name="sync_last_time">Last sync: %s</string>
+    <string name="sync_frequency_desc">Sync frequency:</string>
+    <string name="sync_after_play_desc">After each play</string>
+    <string name="sync_batch_update_desc">Every 10 minutes</string>
+    <string name="sync_step1_token">Step 1: Enter GitHub Token</string>
+    <string name="sync_create_token">Create Token on GitHub</string>
+    <string name="sync_step2_repo">Step 2: Select Repository</string>
+    <string name="sync_verify_token">Verify Token</string>
+    <string name="sync_clear_config_desc">Clear sync configuration. Local data won\'t be deleted.</string>
+
+    <!-- Login -->
+    <string name="login_confirm_send_code">Confirm send verification code?</string>
+    <string name="login_send_code_to">Will send code to &gt;%s&lt;</string>
+    <string name="login_paste_cookie">Paste Cookie</string>
+    <string name="login_paste_cookie_hint">Paste Cookie (e.g.: MUSIC_U=...; __csrf=...)</string>
+    <string name="login_save_cookie">Save Cookie and Login</string>
+    <string name="login_sending">Sending...</string>
+    <string name="login_logging_in">Logging in...</string>
+
+    <!-- Library & Playlist -->
+    <string name="library_tab_local">Local</string>
+    <string name="library_tab_favorite">Favorites</string>
+    <string name="library_tab_netease_playlist">Netease - Playlists</string>
+    <string name="library_tab_netease_album">Netease - Albums</string>
+    <string name="library_tab_bilibili">Bilibili</string>
+    <string name="library_tab_qqmusic">QQ Music</string>
+    <string name="playlist_favorite_hint">Tap favorite button in playlist details, or long press recommended playlists on home page</string>
+    <string name="common_selected_count">%d selected</string>
+
+    <!-- Explore -->
+    <string name="explore_bili_desc">Discover more exciting videos on Bilibili</string>
+
+    <!-- Recent -->
+    <string name="recent_clear_confirm">Are you sure you want to clear all recent play history? This action cannot be undone.</string>
+
+    <!-- Download -->
+    <string name="download_search_hint">Search downloaded songs...</string>
+    <string name="download_delete_confirm">Are you sure you want to delete song "%s"? This action cannot be undone.</string>
+    <string name="download_delete_selected_confirm">Are you sure you want to delete %d selected songs? This action cannot be undone.</string>
+
+    <!-- Now Playing -->
+    <string name="music_view_album">View Album %s</string>
+    <string name="lyrics_offset_hint">Swipe right to advance lyrics, swipe left to delay</string>
+
+    <!-- Sleep Timer -->
+    <string name="sleep_timer_finish_current">Stop after current song</string>
+    <string name="sleep_timer_finish_playlist">Stop after playlist</string>
+    <string name="sleep_timer_minutes">%d minutes</string>
+    <string name="sleep_timer_start_countdown">Start Countdown</string>
+    <string name="sleep_timer_other_modes">Other Modes</string>
+    <string name="sleep_timer_close">Close</string>
+
+    <!-- Toast/Snackbar Messages -->
+    <string name="toast_cache_cleared">Cleared %d MB cache</string>
+    <string name="toast_cache_clear_error">Clear error: %s</string>
+    <string name="toast_playback_stopped">Multiple songs failed, playback stopped</string>
+    <string name="toast_match_failed">Match failed: %s</string>
+    <string name="snackbar_cookie_empty">No Cookie found, please confirm login</string>
+    <string name="snackbar_read_failed">Read failed: %s</string>
+
+    <!-- Explore Tags -->
+    <string name="explore_tag_netease">Netease</string>
+    <string name="explore_tag_bilibili">Bilibili</string>
+    <string name="explore_tag_all">All</string>
+
+    <!-- Error Messages -->
+    <string name="error_parse">Parse/unknown error: %s</string>
+    <string name="error_bilibili_search">Bilibili search failed: %s</string>
+    <string name="error_netease_search">Netease search failed: %s</string>
+    <string name="error_load_playlist">Load playlist failed: %s</string>
+    <string name="error_search_failed">Search failed: %s</string>
+    <string name="error_get_user_id">Cannot get user ID, please login again</string>
+    <string name="error_api_code">API returned error code=%d</string>
+    <string name="error_missing_node">Missing %s node</string>
+
+    <!-- GitHub Sync Messages -->
+    <string name="github_token_verify_success">Token verified: %s</string>
+    <string name="github_token_verify_failed">Token verification failed: %s</string>
+    <string name="github_token_required">Please configure Token first</string>
+    <string name="github_repo_create_success">Repository created: %s</string>
+    <string name="github_repo_create_failed">Repository creation failed: %s</string>
+    <string name="github_repo_format_error">Repository format error, should be: owner/repo</string>
+    <string name="github_repo_config_success">Repository configured: %s</string>
+    <string name="github_repo_not_found">Repository not found or no access: %s</string>
+    <string name="github_token_expired">GitHub Token expired, please reconfigure</string>
+    <string name="github_token_expired_message">GitHub Token expired or invalid, please reconfigure</string>
+    <string name="github_sync_failed">Sync failed: %s</string>
+
+    <!-- LyricsScreen -->
+    <string name="lyrics_unknown_song">Unknown Song</string>
+    <string name="lyrics_unknown_artist">Unknown Artist</string>
+    <string name="lyrics_favorite_playlist">My Favorites</string>
+    <string name="lyrics_favorited">Favorited</string>
+    <string name="lyrics_favorite">Favorite</string>
+    <string name="lyrics_more_options">More Options</string>
+    <string name="lyrics_previous">Previous</string>
+    <string name="lyrics_pause">Pause</string>
+    <string name="lyrics_play">Play</string>
+    <string name="lyrics_next">Next</string>
+    <string name="lyrics_playlist">Playlist</string>
+    <string name="lyrics_timer">Timer</string>
+    <string name="lyrics_back_to_cover">Back to Cover</string>
+    <string name="lyrics_add_to_playlist">Add to Playlist</string>
+    <string name="lyrics_song_count">%d songs</string>
+    <string name="lyrics_bluetooth_device">Bluetooth Device</string>
+    <string name="lyrics_wired_headset">Wired Headset</string>
+    <string name="lyrics_phone_speaker">Phone Speaker</string>
+
+    <!-- Settings -->
+    <string name="settings_bili_cookie_cancelled">Bilibili Cookie read cancelled</string>
+    <string name="settings_audio_quality_standard">Standard</string>
+    <string name="settings_audio_quality_higher">Higher</string>
+    <string name="settings_audio_quality_exhigh">Extremely High</string>
+    <string name="settings_audio_quality_lossless">Lossless</string>
+    <string name="settings_audio_quality_jyeffect">HD Surround</string>
+    <string name="settings_audio_quality_sky">Immersive Surround</string>
+    <string name="settings_audio_quality_jymaster">Ultra HD Master</string>
+    <string name="settings_audio_quality_dolby">Dolby Atmos</string>
+    <string name="settings_audio_quality_high">High (~192kbps)</string>
+    <string name="settings_audio_quality_medium">Medium (~128kbps)</string>
+    <string name="settings_audio_quality_low">Low (~64kbps)</string>
+    <string name="settings_bili_login_success">Bilibili login successful</string>
+    <string name="settings_haptic_feedback">Haptic Feedback</string>
+    <string name="settings_login_platforms">Login Platforms</string>
+    <string name="settings_login_platforms_expand">Select platform</string>
+    <string name="settings_login_platforms_collapse">Collapse</string>
+
+    <!-- NowPlayingScreen -->
+    <string name="nowplaying_no_playback">No Playback</string>
+
+    <!-- Auth Messages -->
+    <string name="auth_phone_invalid">Please enter 11-digit phone number</string>
+    <string name="auth_phone_format_error">Invalid phone number</string>
+    <string name="auth_code_sent">Verification code sent</string>
+    <string name="auth_send_failed">Send failed</string>
+    <string name="auth_send_failed_msg">Send failed: %s</string>
+    <string name="auth_network_error">Network error</string>
+    <string name="auth_code_required">Please enter verification code</string>
+    <string name="auth_verify_failed">Verification code error</string>
+    <string name="auth_login_failed">Login failed</string>
+    <string name="auth_login_failed_msg">Login failed: %s</string>
+    <string name="auth_login_success">Login successful</string>
+    <string name="auth_cookie_saved">Cookie saved</string>
+    <string name="auth_cookie_invalid">No valid Cookie found</string>
+    <string name="auth_cookie_empty">Cookie is empty</string>
+
+    <!-- Debug/Probe Messages -->
+    <string name="probe_keyword_empty">Error: Keyword cannot be empty</string>
+    <string name="probe_searching" formatted="false">Searching [%s]: %s ...</string>
+    <string name="probe_search_complete">OK, [%s] search complete and copied</string>
+    <string name="probe_call_failed">Call/parse failed: %s</string>
+    <string name="probe_calling">Calling: %s ...</string>
+    <string name="probe_copied">Copied to clipboard: %s</string>
+    <string name="probe_network_error">Network/server error: %s</string>
+    <string name="probe_all_calling">Calling all APIs...</string>
+    <string name="probe_all_complete">OK, all APIs called and copied</string>
+    <string name="probe_invalid_avid">Please enter valid avid (number) in BV field</string>
+    <string name="probe_page_not_found">Cannot find page %d</string>
+
+    <!-- Log Messages -->
+    <string name="log_export_failed">Export failed: %s</string>
+    <string name="log_copied">Copied to clipboard</string>
+    <string name="log_delete_confirm">This will delete all local log files and cannot be undone.</string>
+
+    <!-- Home Search Keywords -->
+    <string name="home_search_hot">Hot Songs</string>
+    <string name="home_search_radar">Personal Radar</string>
+
+    <!-- Backup Manager -->
+    <string name="backup_no_playlists">No playlist data in backup file</string>
+
+    <!-- Exception Handler -->
+    <string name="exception_title">Application Error</string>
+    <string name="exception_occurred">An exception occurred:</string>
+    <string name="exception_source">Source: %s</string>
+    <string name="exception_type">Type: %s</string>
+    <string name="exception_message">Message: %s</string>
+    <string name="exception_no_detail">No details</string>
+    <string name="exception_logged">Detailed error logged to file.</string>
+    <string name="exception_contact">If problem persists, please restart app or contact developer.</string>
+    <string name="exception_test">This is a test exception to verify exception handler</string>
+
+
+    <!-- Explore Tags -->
+    <string name="tag_all">All</string>
+    <string name="tag_pop">Pop</string>
+    <string name="tag_soundtrack">Soundtrack</string>
+    <string name="tag_chinese">Chinese</string>
+    <string name="tag_nostalgia">Nostalgia</string>
+    <string name="tag_rock">Rock</string>
+    <string name="tag_acg">ACG</string>
+    <string name="tag_western">Western</string>
+    <string name="tag_fresh">Fresh</string>
+    <string name="tag_night">Night</string>
+    <string name="tag_children">Children</string>
+    <string name="tag_folk">Folk</string>
+    <string name="tag_japanese">Japanese</string>
+    <string name="tag_romantic">Romantic</string>
+    <string name="tag_study">Study</string>
+    <string name="tag_korean">Korean</string>
+    <string name="tag_work">Work</string>
+    <string name="tag_electronic">Electronic</string>
+    <string name="tag_cantonese">Cantonese</string>
+    <string name="tag_dance">Dance</string>
+    <string name="tag_sad">Sad</string>
+    <string name="tag_game">Game</string>
+    <string name="tag_afternoon_tea">Afternoon Tea</string>
+    <string name="tag_healing">Healing</string>
+    <string name="tag_rap">Rap</string>
+    <string name="tag_light_music">Light Music</string>
+
+    <!-- Settings Additional -->
+    <string name="settings_bilibili">Bilibili</string>
+    <string name="settings_netease">Netease Music</string>
+    <string name="settings_qq_music">QQ Music</string>
+    <string name="settings_personalization_expand">Adjust visuals</string>
+    <string name="settings_lyrics_blur">Blur</string>
+    <string name="settings_lyrics_font_size">Lyrics Font Size</string>
+    <string name="settings_lyrics_font_current">Current: %d%%</string>
+    <string name="settings_lyrics_sample">Sample lyrics: Last night the east wind blew</string>
+    <string name="settings_custom_background">Custom Background</string>
+    <string name="settings_background_change">Change</string>
+    <string name="settings_background_select">Select image</string>
+    <string name="settings_network_expand">Configure network</string>
+    <string name="settings_netease_quality">Netease Default Quality</string>
+    <string name="settings_bili_quality">Bilibili Default Quality</string>
+    <string name="settings_storage_cache">Storage &amp; Cache</string>
+    <string name="settings_storage_expand">Manage cache</string>
+    <string name="settings_no_cache">No cache</string>
+    <string name="settings_cache_notice">Set to 0 MB to disable cache. Restart required after changing limit.</string>
+    <string name="settings_download_management">Download Management</string>
+    <string name="settings_download_expand">Manage downloads</string>
+    <string name="settings_download_progress">Download Progress</string>
+    <string name="settings_download_songs_count" formatted="false">%d/%d songs</string>
+    <string name="settings_downloading">Downloading: %s</string>
+    <string name="settings_download_manager">Download Manager</string>
+    <string name="settings_backup_restore">Backup &amp; Restore</string>
+    <string name="settings_backup_expand">Manage backups</string>
+
+    <!-- Explore Screen -->
+    <string name="explore_exit_selection">Exit Selection</string>
+    <string name="explore_select_all">Select All</string>
+    <string name="explore_deselect_all">Deselect All</string>
+    <string name="explore_export_to_playlist">Export to Playlist</string>
+    <string name="explore_song_count">%d songs</string>
+    <string name="explore_collapse">Collapse</string>
+    <string name="explore_expand">Expand More</string>
+
+    <!-- Color Picker -->
+    <string name="color_hue">Hue</string>
+    <string name="color_saturation">Saturation</string>
+    <string name="color_value">Value</string>
+
+
+    <!-- Settings - Additional -->
+    <string name="settings_current_playlist">Current Playlist</string>
+    <string name="settings_export_playlist">Export Playlist</string>
+    <string name="settings_import_playlist">Import Playlist</string>
+    <string name="settings_export_success">Export Successful</string>
+    <string name="settings_export_failed">Export Failed</string>
+    <string name="settings_import_success">Import Successful</string>
+    <string name="settings_import_failed">Import Failed</string>
+    <string name="settings_configured">Configured</string>
+    <string name="settings_not_configured">Not Configured</string>
+    <string name="settings_configure">Configure</string>
+    <string name="settings_auto_sync">Auto Sync</string>
+    <string name="settings_sync_now">Sync Now</string>
+    <string name="settings_play_history_update_freq">Play History Update Frequency</string>
+    <string name="settings_update_immediate">Immediate Update</string>
+    <string name="settings_data_saver">Data Saver</string>
+    <string name="settings_close">Close</string>
+    <string name="settings_about">About</string>
+    <string name="settings_version">Version</string>
+    <string name="settings_debug_enabled">Debug mode enabled</string>
+    <string name="settings_debug_mode_on">Debug mode is on</string>
+    <string name="settings_build_time">Build Time</string>
+    <string name="settings_dolby">Dolby Atmos</string>
+
+    <!-- Time Relative Strings -->
+    <string name="time_just_now">Just now</string>
+    <string name="time_minutes_ago">%d minutes ago</string>
+    <string name="time_hours_ago">%d hours ago</string>
+    <string name="time_days_ago">%d days ago</string>
+
+    <!-- Download Messages -->
+    <string name="download_starting">Starting download: %s</string>
+
+    <!-- Log Messages Additional -->
+    <string name="log_cleared_count">Cleared %d log files</string>
+
+    <!-- Playlist Count -->
+    <string name="playlist_count_format">%d playlists</string>
+
+    <!-- GitHub Sync -->
+    <string name="github_auto_sync">GitHub Auto Sync</string>
+
+    <!-- Netease Login -->
+    <string name="netease_web_login">NetEase Login</string>
+
+    <!-- MainActivity Disclaimer -->
+    <string name="disclaimer_title">Disclaimer &amp; Privacy Policy</string>
+    <string name="disclaimer_section1_title">1. Software Nature</string>
+    <string name="disclaimer_section1_content">This software (NeriPlayer) is a cross-platform audio/video player tool that only provides technical framework and playback functions. It does not store or provide any audio/video content.</string>
+    <string name="disclaimer_section2_title">2. Content Source &amp; Copyright</string>
+    <string name="disclaimer_section2_content">All playable content is accessed by users from third-party platforms. Copyright belongs to the original content providers. This software assumes no responsibility for the legality, accuracy, or availability of third-party platform content.</string>
+    <string name="disclaimer_section3_title">3. User Responsibility</string>
+    <string name="disclaimer_section3_content">Users must comply with local laws and regulations and third-party platform terms of service, and assume all legal responsibilities arising from using this software to access third-party content.</string>
+    <string name="disclaimer_section4_title">4. Third-party Services &amp; Policies</string>
+    <string name="disclaimer_section4_content">This software may integrate third-party platform APIs or services, which are subject to their respective terms of service and privacy policies. Users should understand and agree to third-party policies when using related functions.</string>
+    <string name="disclaimer_section5_title">5. Privacy Statement (No Data Collection)</string>
+    <string name="disclaimer_section5_content">This software does not collect any personal information, does not track user behavior, and does not transmit user data to any third party. All user data (such as play history, favorites) is stored only on the user\'s device or in cloud storage services chosen by the user.</string>
+    <string name="disclaimer_section6_title">6. Disclaimer &amp; Limitation of Liability</string>
+    <string name="disclaimer_section6_content">This software is provided \"as is\" without any express or implied warranties. The developer assumes no responsibility for any direct, indirect, incidental, or consequential damages resulting from the use of this software.</string>
+    <string name="disclaimer_section7_title">7. Compliance &amp; Regional Differences</string>
+    <string name="disclaimer_section7_content">Users must ensure their use of this software complies with local laws and regulations. Some features may be unavailable due to regional policy differences.</string>
+    <string name="disclaimer_section8_title">8. Terms Update</string>
+    <string name="disclaimer_section8_content">This statement may be updated from time to time, and the updated version will be published in the software. Continued use of this software indicates acceptance of the updated terms.</string>
+    <string name="disclaimer_section9_title">9. Agreement to Terms</string>
+    <string name="disclaimer_section9_content">By using this software, you indicate that you have read, understood, and agreed to all content on this page. If you do not agree, please stop using and uninstall this software immediately.</string>
+    <string name="disclaimer_agree_countdown">I Acknowledge and Agree</string>
+    <string name="disclaimer_read_countdown">Please Read (%ds)</string>
+    <string name="github_sync_warning_title">GitHub Sync Configuration Warning</string>
+    <string name="github_sync_warning_message">Incomplete GitHub sync configuration detected. Token may have expired or been deleted. Please reconfigure in settings.</string>
+    <string name="github_sync_no_remind_countdown">Don\'t Remind (%d)</string>
+    <string name="github_sync_no_remind">Don\'t Remind</string>
+
+    <!-- Language Settings -->
+    <string name="language_simplified_chinese">Simplified Chinese</string>
+    <string name="language_follow_system">Follow System</string>
+
+    <!-- Time Format -->
+    <string name="time_zero_minutes">0 minutes</string>
+    <string name="time_hours_minutes">%1$d hours %2$d minutes</string>
+    <string name="time_minutes_only">%d minutes</string>
+
+    <!-- Number Format -->
+    <string name="number_hundred_million">%.1fM</string>
+    <string name="number_ten_thousand">%.1fK</string>
+    <string name="number_billion">%.1fB</string>
+    <string name="number_million">%.1fM</string>
+    <string name="number_thousand">%.1fK</string>
+
+    <!-- Backup Messages -->
+    <string name="backup_export_success_file">Playlist exported successfully: %s</string>
+    <string name="backup_import_success_detail">Playlist imported successfully: %s</string>
+    <string name="backup_playlist_merged">Playlist \'%1$s\' merged, added %2$d songs</string>
+    <string name="backup_playlist_no_update">Playlist \'%s\' needs no update</string>
+    <string name="backup_playlist_created">Playlist \'%1$s\' created with %2$d songs</string>
+
+    <!-- GitHub Sync Messages -->
+    <string name="github_sync_in_progress">Sync in progress, skipped</string>
+    <string name="github_not_configured">GitHub not configured</string>
+    <string name="github_sync_no_change">Sync successful (no changes)</string>
+    <string name="github_sync_success_detail">Sync successful</string>
+    <string name="github_playlist_renamed_local">Playlist renamed on both sides, using local name: %s</string>
+    <string name="github_playlist_renamed_remote">Playlist renamed on both sides, using remote name: %s</string>
+
+    <!-- Download Messages -->
+    <string name="download_file_exists">File exists, skipping download: %s</string>
+    <string name="download_no_url">Cannot get download URL: %s</string>
+    <string name="download_batch_failed_song">Batch download failed: %1$s - %2$s</string>
+    <string name="download_batch_failed">Batch download failed: %s</string>
+    <string name="download_lyrics_matched">Saved with matched lyrics: %s</string>
+    <string name="download_lyrics_api">Saved with translated lyrics from API: %s</string>
+    <string name="download_local_file">Local File</string>
+
+    <!-- Notification Messages -->
+    <string name="notification_stop_after_current">⏱ Stop After Current</string>
+    <string name="notification_stop_after_playlist">⏱ Stop After Playlist</string>
+
+    <!-- Settings Messages -->
+    <string name="settings_sync_batch_update_time">Update every 10 minutes</string>
+    <string name="settings_color_picker_hint">Long press color or tap × to delete custom color</string>
+    <string name="settings_phone_number_hint">+86 Phone Number</string>
+    <string name="settings_resend_code_countdown">Resend (%ds)</string>
+    <string name="settings_empty_placeholder">(Empty)</string>
+    <string name="settings_netease_login_browser_hint">Will open built-in browser (desktop UA) to visit music.163.com. After successful login, tap \"Done\" in the upper right corner.</string>
+    <string name="settings_cookie_input_hint">Please enter Cookie</string>
+    <string name="settings_github_token_permission">Required permission: repo (full repository access)</string>
+
+    <!-- Theme Colors -->
+    <string name="theme_color_tech_blue">Tech Blue</string>
+    <string name="theme_color_soft_purple">Soft Purple</string>
+    <string name="theme_color_passion_red">Passion Red</string>
+    <string name="theme_color_romantic_pink">Romantic Pink</string>
+    <string name="theme_color_forest_cyan">Forest Cyan</string>
+    <string name="theme_color_vibrant_green">Vibrant Green</string>
+    <string name="theme_color_bright_yellow">Bright Yellow</string>
+    <string name="theme_color_warm_orange">Warm Orange</string>
+
+    <!-- NeriApp Test -->
+    <string name="test_exception_message">This is a test exception to verify exception handler functionality</string>
+
+    <!-- About -->
+    <string name="about_app_footer">NeriPlayer • GPLv3 • Powered by You</string>
+
+    <!-- Playlist Actions (Additional) -->
+    <string name="action_unfavorite">Unfavorite</string>
+    <string name="action_favorite_playlist">Favorite Playlist</string>
+
+    <!-- Playlist Info (Additional) -->
+    <string name="playlist_play_count_format" formatted="false">%1$s plays · %2$d tracks</string>
+    <string name="playlist_loading_content">Loading playlist content...</string>
+    <string name="playlist_load_failed_format">Load failed: %s</string>
+
+    <!-- Count Format (Additional) -->
+    <string name="count_songs_format">%d songs</string>
+
+    <!-- Download Progress (Additional) -->
+    <string name="download_progress_format" formatted="false">Download progress: %1$d/%2$d</string>
+    <string name="download_current_song">Downloading: %s</string>
+    <string name="download_overall_progress">Overall progress: %d%%</string>
+    <string name="download_current_file_progress" formatted="false">Current file: %1$d%% (%2$d KB/s)</string>
+
+    <!-- Missing Translations -->\n    <string name="local_playlist_play_next">Play Next...</string>
+    <string name="download_manager_title">Download Manager</string>
+    <string name="download_manager_subtitle">Manage downloads</string>
+    <string name="download_selected_count">%d selected</string>
+    <string name="download_delete_selected">Delete Selected</string>
+    <string name="download_exit_selection">Exit Selection</string>
+    <string name="download_no_songs">No Downloaded Songs</string>
+    <string name="download_no_match">No Matching Songs</string>
+    <string name="download_songs_hint">Downloaded songs will appear here</string>
+    <string name="download_try_other_keywords">Try other keywords</string>
+    <string name="download_space_used">Storage Used</string>
+    <string name="download_play">Play</string>
+    <string name="download_delete">Delete</string>
+    <string name="home_loading">Loading recommendations for you...</string>
+    <string name="home_load_failed">Load failed: %s</string>
+    <string name="home_retry_hint">Tap refresh in the upper right to retry~</string>
+    <string name="home_song_count_format">%d songs</string>
+    <string name="home_play_count_format" formatted="false">%s · %d songs</string>
+    <string name="home_unfavorite_playlist">Unfavorite</string>
+    <string name="home_favorite_playlist">Favorite Playlist</string>
+    <string name="home_unfavorited">Unfavorited</string>
+    <string name="library_create_playlist_default">New Playlist</string>
+    <string name="library_video_count">%d videos</string>
+    <string name="library_name_reserved">This name is reserved for \"%s\", please choose another name~</string>
+    <string name="library_name_exists">A playlist with this name already exists, please choose another name</string>
+    <string name="library_create_new">+ Create Playlist</string>
+    <string name="library_song_count_format" formatted="false">%d song</string>
+    <plurals name="library_song_count">
+        <item quantity="one">%d song</item>
+        <item quantity="other">%d songs</item>
+    </plurals>
+    <plurals name="library_video_count_plural">
+        <item quantity="one">%d video</item>
+        <item quantity="other">%d videos</item>
+    </plurals>
+    <string name="library_qqmusic_coming">Coming Soon</string>
+    <string name="library_favorite_source_format" formatted="false">%d songs · %s</string>
+    <string name="library_title">Library</string>
+    <string name="library_coming_soon">Coming Soon</string>
+    <string name="bili_loading_favorites">Loading favorites...</string>
+    <string name="bili_load_failed">Load failed: %s</string>
+    <string name="bili_get_parts_failed">Failed to get parts</string>
+    <string name="bili_content_count">%d items</string>
+    <string name="bili_download_progress_format" formatted="false">Download progress: %d/%d</string>
+    <string name="bili_downloading_current">Downloading: %s</string>
+    <string name="bili_overall_progress">Overall progress: %d%%</string>
+    <string name="bili_current_file_progress" formatted="false">Current file: %d%% (%d KB/s)</string>
+    <string name="local_playlist_rename">Rename Playlist</string>
+    <string name="local_playlist_delete">Delete Playlist</string>
+    <string name="local_playlist_delete_confirm">Are you sure you want to delete this playlist? This action cannot be undone!</string>
+    <string name="local_playlist_delete_songs">Delete Selected Songs</string>
+    <string name="local_playlist_delete_songs_confirm">Are you sure you want to remove %d selected songs from the playlist?</string>
+    <string name="local_playlist_delete_count">Delete (%d)</string>
+    <string name="local_playlist_export_to">Export to Playlist</string>
+    <string name="local_playlist_total_duration" formatted="false">%s · %d songs</string>
+    <string name="disclaimer_section1_body">This software (NeriPlayer) is a cross-platform audio/video player tool, used only to integrate and play public content from multiple third-party online platforms. The software itself does not upload, distribute, or modify any audio/video files; it does not store any user content or third-party content on the server side. For offline playback convenience, this software provides a &quot;save to local device only&quot; download function. The download process does not go through the developer\'s server and will not perform any cloud sync or backup.</string>
+    <string name="disclaimer_section2_bullet1">All playable content is accessed by users from third-party platforms, and copyright and related rights belong to the original author or platform;</string>
+    <string name="disclaimer_section2_bullet2">Users should comply with the laws and regulations of their country/region when using;</string>
+    <string name="disclaimer_section2_bullet3">The software supports downloading audio/video content from third-party platforms to the user\'s local device, but will not upload, sync, or store to any server;</string>
+    <string name="disclaimer_section2_bullet4">Do not infringe on third-party content in any way.</string>
+    <string name="disclaimer_section3_bullet1">Users should confirm the legal source and usage rights of accessed and downloaded content;</string>
+    <string name="disclaimer_section3_bullet2">The developer does not guarantee the legality or availability of third-party platform content;</string>
+    <string name="disclaimer_section3_bullet3">Legal risks arising from user actions (including downloading, sharing, distributing, etc.) are the user\'s own responsibility.</string>
+    <string name="disclaimer_section4_bullet1">Some functions of this software rely on third-party platform interfaces and services;</string>
+    <string name="disclaimer_section4_bullet2">The developer makes no guarantees regarding the stability, compatibility, or timeliness of third-party services;</string>
+    <string name="disclaimer_section4_bullet3">Users should review and comply with the terms of use and privacy policies of each platform.</string>
+    <string name="disclaimer_section5_bullet1">This software does not collect any personal information;</string>
+    <string name="disclaimer_section5_bullet2">This software does not collect any device information;</string>
+    <string name="disclaimer_section5_bullet3">This software does not perform behavior tracking, analysis, or user profiling;</string>
+    <string name="disclaimer_section5_bullet4">Play records, search records, etc. are only kept locally;</string>
+    <string name="disclaimer_section5_bullet5">When users initiate downloads, files are only saved to local storage and will not be sent back to the developer or any third party;</string>
+    <string name="disclaimer_section5_bullet6">No third-party statistics, crash analysis, or advertising SDKs are integrated;</string>
+    <string name="disclaimer_section5_bullet7">Third-party platform access logs are handled by that platform according to its privacy policy;</string>
+    <string name="disclaimer_section5_bullet8">GitHub Sync Feature (Optional): Users can choose to back up playlist data to their own GitHub private repository. Tokens are encrypted and stored locally using Android Keystore, and developers cannot access them;</string>
+    <string name="disclaimer_section5_bullet9">This privacy statement was last updated: 2025-01-07.</string>
+    <string name="disclaimer_section6_bullet1">This software is provided &quot;as is&quot; without any warranty regarding stability, etc.;</string>
+    <string name="disclaimer_section6_bullet2">To the extent permitted by law, the developer is not responsible for losses caused by use (including download actions);</string>
+    <string name="disclaimer_section6_bullet3">The above limitations apply even if the developer has been advised of the possibility of such losses.</string>
+    <string name="disclaimer_section7_body">Users should ensure that their use and download actions comply with the laws of their jurisdiction.</string>
+    <string name="disclaimer_section8_body">The developer may update this disclaimer and privacy statement from time to time. Continued use indicates acceptance of the updates.</string>
+    <string name="disclaimer_section9_body">By using this software, you indicate that you have read, understood, and agreed to all content on this page. If you do not agree, please uninstall and stop using.</string>
+    <string name="download_cancelled_message">Download cancelled</string>
+    <string name="download_failed_message">Download failed</string>
+    <string name="github_sync_channel_name">GitHub Sync</string>
+    <string name="github_sync_channel_desc">GitHub sync status notifications</string>
+    <string name="github_sync_failed_title">GitHub Sync Failed</string>
+    <string name="github_sync_token_expired">Token expired, please reconfigure</string>
+    <string name="github_sync_failed_message">Sync failed</string>
+    <string name="nowplaying_favorited">Favorited</string>
+    <string name="nowplaying_favorite">Favorite</string>
+    <string name="nowplaying_more_options">More Options</string>
+    <string name="nowplaying_netease_cloud">NetEase Cloud</string>
+    <string name="nowplaying_bilibili">Bilibili</string>
+    <string name="nowplaying_bluetooth_device">Bluetooth Device</string>
+    <string name="nowplaying_wired_headset">Wired Headset</string>
+    <string name="nowplaying_phone_speaker">Phone Speaker</string>
+    <string name="nowplaying_no_search_result">No Search Results</string>
+    <string name="nowplaying_share_song">Share song: %1$s - %2$s\\n%3$s</string>
+    <string name="nowplaying_font_size_hint">Swipe left to decrease, right to increase</string>
+    <string name="nowplaying_lyrics_sample">Sample lyrics: Spring breeze is not as good as you</string>
+    <string name="nowplaying_song_count_format">%d songs</string>
+    <string name="language_setting_title">Language</string>
+    <string name="language_select_title">Select Language</string>
+    <string name="language_restart_title">Restart App</string>
+    <string name="language_restart_message">Language changed. App restart required for full effect.</string>
+    <string name="language_restart_now">Restart Now</string>
+    <string name="language_restart_later">Later</string>
+
+</resources>
