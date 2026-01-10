@@ -529,7 +529,12 @@ fun Modifier.multilineGradientReveal(
                 val frac = (currentIdxInLine - floor(currentIdxInLine)).coerceIn(0f, 1f)
 
                 // 计算当前字符和下一个字符的X坐标
-                val x0 = layout.getHorizontalPosition(currentCharIdx, usePrimaryDirection = true)
+                // 使用 getBoundingBox 获取更准确的字符边界，避免字体渲染偏移
+                val x0 = try {
+                    layout.getBoundingBox(currentCharIdx).left
+                } catch (e: Exception) {
+                    layout.getHorizontalPosition(currentCharIdx, usePrimaryDirection = true)
+                }
                 val nextCharIdx = if (currentCharIdx >= lineEndIdx - 1) {
                     lineEndIdx // 该行最后一个字符，下一个字符指向行尾
                 } else {
@@ -538,7 +543,11 @@ fun Modifier.multilineGradientReveal(
                 val x1 = if (currentCharIdx >= lineEndIdx - 1) {
                     layout.getLineRight(lineIndex) // 该行最后一个字符，X1取行右边界
                 } else {
-                    layout.getHorizontalPosition(nextCharIdx, usePrimaryDirection = true)
+                    try {
+                        layout.getBoundingBox(nextCharIdx).left
+                    } catch (e: Exception) {
+                        layout.getHorizontalPosition(nextCharIdx, usePrimaryDirection = true)
+                    }
                 }
 
                 // 确保X坐标在当前行范围内
@@ -638,8 +647,9 @@ fun AppleMusicActiveLine(
 
     val textStyle = TextStyle(
         fontSize = fontSize,
-        fontWeight = FontWeight.SemiBold,
-        textAlign = TextAlign.Center
+        fontWeight = FontWeight.Medium,
+        textAlign = TextAlign.Center,
+        letterSpacing = 0.sp  // 禁用字符间距调整，确保测量和渲染一致
     )
 
     Box(
@@ -658,7 +668,7 @@ fun AppleMusicActiveLine(
         // 底版文本
         Text(
             text = line.text,
-            style = textStyle.copy(color = inactiveColor, fontWeight = FontWeight.Medium),
+            style = textStyle.copy(color = inactiveColor),
             maxLines = Int.MAX_VALUE,
             softWrap = true,
             onTextLayout = { newLayout ->
@@ -752,7 +762,11 @@ private fun DrawScope.drawRadialHeadGlow(
     val currentLineTop = layout.getLineTop(currentLine)
     val currentLineBottom = layout.getLineBottom(currentLine)
     val y0 = (currentLineTop + currentLineBottom) * 0.5f
-    val x0 = layout.getHorizontalPosition(currentIndex, true)
+    val x0 = try {
+        layout.getBoundingBox(currentIndex).left
+    } catch (e: Exception) {
+        layout.getHorizontalPosition(currentIndex, true)
+    }
 
     val nextLine = layout.getLineForOffset(nextIndex)
     val nextLineTop = layout.getLineTop(nextLine)
@@ -761,7 +775,11 @@ private fun DrawScope.drawRadialHeadGlow(
     val x1 = if (nextLine == currentLine && nextIndex >= layout.getLineEnd(currentLine, true) - 1) {
         layout.getLineRight(currentLine)
     } else {
-        layout.getHorizontalPosition(nextIndex, true)
+        try {
+            layout.getBoundingBox(nextIndex).left
+        } catch (e: Exception) {
+            layout.getHorizontalPosition(nextIndex, true)
+        }
     }
 
     val cx = x0 + (x1 - x0) * fraction
