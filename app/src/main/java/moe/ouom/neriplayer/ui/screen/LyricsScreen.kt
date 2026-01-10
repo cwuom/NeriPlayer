@@ -49,6 +49,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
@@ -91,6 +92,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.font.FontFamily
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import moe.ouom.neriplayer.R
@@ -103,6 +106,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
 import moe.ouom.neriplayer.util.HapticFilledIconButton
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.formatDuration
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -500,22 +504,41 @@ fun LyricsScreen(
             // 播放队列弹窗
             if (showQueueSheet) {
                 val queue by PlayerManager.currentQueueFlow.collectAsState()
+                val displayedQueue = remember(queue) { queue }
+                val currentIndexInDisplay = displayedQueue.indexOfFirst {
+                    it.id == currentSong?.id && it.album == currentSong?.album
+                }
+                val initialIndex = (currentIndexInDisplay - 4).coerceAtLeast(0)
+                val listState = androidx.compose.foundation.lazy.rememberLazyListState(initialFirstVisibleItemIndex = initialIndex)
+
+                LaunchedEffect(showQueueSheet, currentIndexInDisplay) {
+                    if (showQueueSheet && currentIndexInDisplay >= 0) {
+                        kotlinx.coroutines.delay(150)
+                        listState.animateScrollToItem(currentIndexInDisplay)
+                    }
+                }
+
                 androidx.compose.material3.ModalBottomSheet(
                     onDismissRequest = { showQueueSheet = false }
                 ) {
-                    androidx.compose.foundation.lazy.LazyColumn {
-                        itemsIndexed(queue) { index, song ->
+                    androidx.compose.foundation.lazy.LazyColumn(state = listState) {
+                        itemsIndexed(displayedQueue) { index, song ->
                             androidx.compose.foundation.layout.Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { /* TODO: 需要公开的playAtIndex方法 */ }
-                                    .padding(16.dp),
+                                    .clickable {
+                                        PlayerManager.playFromQueue(index)
+                                        showQueueSheet = false
+                                    }
+                                    .padding(horizontal = 24.dp, vertical = 16.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
                                     text = "${index + 1}",
                                     style = MaterialTheme.typography.bodySmall,
-                                    modifier = Modifier.width(32.dp)
+                                    modifier = Modifier.width(48.dp),
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Start,
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
                                 )
                                 androidx.compose.foundation.layout.Column(modifier = Modifier.weight(1f)) {
                                     Text(song.name, maxLines = 1)
@@ -526,7 +549,52 @@ fun LyricsScreen(
                                         maxLines = 1
                                     )
                                 }
+
+                                androidx.compose.foundation.layout.Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    if (index == currentIndexInDisplay) {
+                                        Icon(
+                                            Icons.Outlined.PlayArrow,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+
+                                    var showMoreMenu by remember { mutableStateOf(false) }
+                                    Box {
+                                        androidx.compose.material3.IconButton(onClick = { showMoreMenu = true }) {
+                                            Icon(
+                                                Icons.Filled.MoreVert,
+                                                contentDescription = stringResource(R.string.common_more_actions),
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+
+                                        androidx.compose.material3.DropdownMenu(
+                                            expanded = showMoreMenu,
+                                            onDismissRequest = { showMoreMenu = false }
+                                        ) {
+                                            androidx.compose.material3.DropdownMenuItem(
+                                                text = { Text(stringResource(R.string.playlist_add_to_queue)) },
+                                                onClick = {
+                                                    PlayerManager.addToQueueNext(song)
+                                                    showMoreMenu = false
+                                                }
+                                            )
+                                            androidx.compose.material3.DropdownMenuItem(
+                                                text = { Text(stringResource(R.string.playlist_add_to_end)) },
+                                                onClick = {
+                                                    PlayerManager.addToQueueEnd(song)
+                                                    showMoreMenu = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
                             }
+                            Spacer(modifier = Modifier.height(4.dp))
                         }
                     }
                 }
