@@ -90,6 +90,10 @@
     <string name="playlist_add_to_queue">添加到播放队列末尾</string>
     <string name="playlist_add_to_end">添加到队尾</string>
     <string name="playlist_search_hint">搜索歌单内歌曲</string>
+    <string name="action_copy_song_name">复制歌曲名</string>
+    <string name="action_copy_artist">复制歌手信息</string>
+    <string name="action_copy_song_info">复制歌曲信息</string>
+    <string name="toast_copied">已复制</string>
 
     <!-- Download -->
     <string name="download_title">下载管理</string>

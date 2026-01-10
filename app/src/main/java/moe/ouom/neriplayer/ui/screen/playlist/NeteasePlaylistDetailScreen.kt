@@ -100,6 +100,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -609,7 +611,8 @@ fun DetailScreen(
                                                 val full = ui.tracks
                                                 val pos = full.indexOfFirst { it.id == item.id }
                                                 if (pos >= 0) onSongClick(full, pos)
-                                            }
+                                            },
+                                            snackbarHostState = snackbarHostState
                                         )
                                     }
                                 }
@@ -893,11 +896,14 @@ private fun SongRow(
     onToggleSelect: () -> Unit,
     onLongPress: () -> Unit,
     onClick: () -> Unit,
-    indexWidth: Dp = 48.dp
+    indexWidth: Dp = 48.dp,
+    snackbarHostState: SnackbarHostState
 ) {
     val current by PlayerManager.currentSongFlow.collectAsState()
     val isPlayingSong = current?.id == song.id
     val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+    val scope = rememberCoroutineScope()
 
     Row(
         modifier = Modifier
@@ -1012,6 +1018,17 @@ private fun SongRow(
                         text = { Text(stringResource(R.string.playlist_add_to_queue)) },
                         onClick = {
                             PlayerManager.addToQueueEnd(song)
+                            showMoreMenu = false
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.action_copy_song_info)) },
+                        onClick = {
+                            val songInfo = "${song.name}-${song.artist}"
+                            clipboardManager.setText(AnnotatedString(songInfo))
+                            scope.launch {
+                                snackbarHostState.showSnackbar(context.getString(R.string.toast_copied))
+                            }
                             showMoreMenu = false
                         }
                     )

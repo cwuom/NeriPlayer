@@ -114,6 +114,8 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
@@ -232,6 +234,7 @@ fun LocalPlaylistDetailScreen(
             }
 
             val context = LocalContext.current
+            val clipboardManager = LocalClipboardManager.current
             val playlist = playlistOrNull
             val isFavorites = playlist.name == "我喜欢的音乐" || playlist.name == "My Favorite Music"
 
@@ -803,6 +806,17 @@ fun LocalPlaylistDetailScreen(
                                                                 text = { Text(stringResource(R.string.playlist_add_to_queue)) },
                                                                 onClick = {
                                                                     PlayerManager.addToQueueEnd(song)
+                                                                    showMoreMenu = false
+                                                                }
+                                                            )
+                                                            DropdownMenuItem(
+                                                                text = { Text(stringResource(R.string.action_copy_song_info)) },
+                                                                onClick = {
+                                                                    val songInfo = "${song.name}-${song.artist}"
+                                                                    clipboardManager.setText(AnnotatedString(songInfo))
+                                                                    scope.launch {
+                                                                        snackbarHostState.showSnackbar(context.getString(R.string.toast_copied))
+                                                                    }
                                                                     showMoreMenu = false
                                                                 }
                                                             )

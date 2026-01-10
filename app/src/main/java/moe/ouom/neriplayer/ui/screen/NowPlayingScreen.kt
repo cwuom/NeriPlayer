@@ -44,7 +44,9 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -137,6 +139,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
@@ -174,7 +178,7 @@ import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.formatDuration
 import kotlin.math.roundToInt
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun NowPlayingScreen(
     onNavigateUp: () -> Unit,
@@ -236,11 +240,15 @@ fun NowPlayingScreen(
     var showQueueSheet by remember { mutableStateOf(false) }
     var showLyricsScreen by remember { mutableStateOf(false) }
     var showSleepTimerDialog by remember { mutableStateOf(false) }
+    var showSongNameMenu by remember { mutableStateOf(false) }
+    var showArtistMenu by remember { mutableStateOf(false) }
     val addSheetState = rememberModalBottomSheetState()
     val queueSheetState = rememberModalBottomSheetState()
 
     // Snackbar状态
     val snackbarHostState = remember { SnackbarHostState() }
+
+    val clipboardManager = LocalClipboardManager.current
 
     // 是否拖拽进度条
     var isUserDraggingSlider by remember(currentSong?.id) { mutableStateOf(false) }
@@ -532,12 +540,55 @@ fun NowPlayingScreen(
                         ) + fadeIn(animationSpec = tween(durationMillis = 400, delayMillis = 150))
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(currentSong?.name ?: "", style = MaterialTheme.typography.headlineSmall)
-                            Text(
-                                currentSong?.artist ?: "",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Box {
+                                Text(
+                                    text = currentSong?.name ?: "",
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .combinedClickable(
+                                            onClick = {},
+                                            onLongClick = { showSongNameMenu = true }
+                                        )
+                                )
+                                DropdownMenu(
+                                    expanded = showSongNameMenu,
+                                    onDismissRequest = { showSongNameMenu = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.action_copy_song_name)) },
+                                        onClick = {
+                                            currentSong?.name?.let { clipboardManager.setText(AnnotatedString(it)) }
+                                            showSongNameMenu = false
+                                        }
+                                    )
+                                }
+                            }
+                            Box {
+                                Text(
+                                    text = currentSong?.artist ?: "",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .combinedClickable(
+                                            onClick = {},
+                                            onLongClick = { showArtistMenu = true }
+                                        )
+                                )
+                                DropdownMenu(
+                                    expanded = showArtistMenu,
+                                    onDismissRequest = { showArtistMenu = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.action_copy_artist)) },
+                                        onClick = {
+                                            currentSong?.artist?.let { clipboardManager.setText(AnnotatedString(it)) }
+                                            showArtistMenu = false
+                                        }
+                                    )
+                                }
+                            }
                         }
                     }
 

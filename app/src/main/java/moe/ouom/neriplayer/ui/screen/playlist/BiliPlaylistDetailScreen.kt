@@ -58,6 +58,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -100,6 +102,7 @@ fun BiliPlaylistDetailScreen(
     onPlayParts: (BiliClient.VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> }
 ) {
     val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
     val vm: BiliPlaylistDetailViewModel = viewModel(
         factory = viewModelFactory {
             initializer {
@@ -368,7 +371,8 @@ fun BiliPlaylistDetailScreen(
                                                     NPLogger.e("BiliPlaylistDetail", context.getString(R.string.bili_get_parts_failed), e)
                                                 }
                                             }
-                                        }
+                                        },
+                                        snackbarHostState = snackbarHostState
                                     )
                                 }
                             }
@@ -817,9 +821,12 @@ private fun VideoRow(
     selected: Boolean,
     onToggleSelect: () -> Unit,
     onLongPress: () -> Unit,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    snackbarHostState: SnackbarHostState
 ) {
     val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+    val scope = rememberCoroutineScope()
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -915,6 +922,17 @@ private fun VideoRow(
                         onClick = {
                             val songItem = video.toSongItem()
                             PlayerManager.addToQueueEnd(songItem)
+                            showMoreMenu = false
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.action_copy_song_info)) },
+                        onClick = {
+                            val songInfo = "${video.title}-${video.uploader}"
+                            clipboardManager.setText(AnnotatedString(songInfo))
+                            scope.launch {
+                                snackbarHostState.showSnackbar(context.getString(R.string.toast_copied))
+                            }
                             showMoreMenu = false
                         }
                     )

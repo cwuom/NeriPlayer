@@ -90,6 +90,10 @@
     <string name="playlist_add_to_queue">Add to Queue</string>
     <string name="playlist_add_to_end">Add to End</string>
     <string name="playlist_search_hint">Search songs in playlist</string>
+    <string name="action_copy_song_name">Copy Song Name</string>
+    <string name="action_copy_artist">Copy Artist</string>
+    <string name="action_copy_song_info">Copy Song Info</string>
+    <string name="toast_copied">Copied</string>
 
     <!-- Download -->
     <string name="download_title">Downloads</string>

@@ -31,7 +31,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -68,6 +70,8 @@ import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
@@ -88,6 +92,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -108,7 +114,7 @@ import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.formatDuration
 import kotlinx.coroutines.delay
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun LyricsScreen(
     lyrics: List<LyricEntry>,
@@ -130,6 +136,12 @@ fun LyricsScreen(
     val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
     val currentPosition by PlayerManager.playbackPositionFlow.collectAsState()
     val durationMs = currentSong?.durationMs ?: 0L
+
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+
+    var showSongNameMenu by remember { mutableStateOf(false) }
+    var showArtistMenu by remember { mutableStateOf(false) }
 
     // 动画状态
     var isLyricsMode by remember { mutableStateOf(false) }
@@ -217,19 +229,59 @@ fun LyricsScreen(
                 modifier = Modifier.weight(1f),
                 horizontalAlignment = Alignment.Start
             ) {
-                Text(
-                    text = currentSong?.name ?: stringResource(R.string.lyrics_unknown_song),
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = currentSong?.artist ?: stringResource(R.string.lyrics_unknown_artist),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Box {
+                    Text(
+                        text = currentSong?.name ?: stringResource(R.string.lyrics_unknown_song),
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .combinedClickable(
+                                onClick = {},
+                                onLongClick = { showSongNameMenu = true }
+                            )
+                    )
+                    DropdownMenu(
+                        expanded = showSongNameMenu,
+                        onDismissRequest = { showSongNameMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.action_copy_song_name)) },
+                            onClick = {
+                                currentSong?.name?.let { clipboardManager.setText(AnnotatedString(it)) }
+                                showSongNameMenu = false
+                            }
+                        )
+                    }
+                }
+                Box {
+                    Text(
+                        text = currentSong?.artist ?: stringResource(R.string.lyrics_unknown_artist),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .combinedClickable(
+                                onClick = {},
+                                onLongClick = { showArtistMenu = true }
+                            )
+                    )
+                    DropdownMenu(
+                        expanded = showArtistMenu,
+                        onDismissRequest = { showArtistMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.action_copy_artist)) },
+                            onClick = {
+                                currentSong?.artist?.let { clipboardManager.setText(AnnotatedString(it)) }
+                                showArtistMenu = false
+                            }
+                        )
+                    }
+                }
             }
 
             // 收藏按钮（与 NowPlaying 保持一致的逻辑）
