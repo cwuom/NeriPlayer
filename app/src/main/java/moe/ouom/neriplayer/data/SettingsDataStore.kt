@@ -112,7 +112,7 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.data.map { it[SettingsKeys.LYRIC_BLUR_ENABLED] ?: true }
 
     val lyricBlurAmountFlow: Flow<Float> =
-        context.dataStore.data.map { it[SettingsKeys.LYRIC_BLUR_AMOUNT] ?: 10f }
+        context.dataStore.data.map { it[SettingsKeys.LYRIC_BLUR_AMOUNT] ?: 3f }
 
     val lyricFontScaleFlow: Flow<Float> =
         context.dataStore.data.map { it[SettingsKeys.LYRIC_FONT_SCALE] ?: 1.0f }

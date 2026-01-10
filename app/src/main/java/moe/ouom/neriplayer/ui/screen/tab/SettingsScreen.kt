@@ -755,14 +755,14 @@ fun SettingsScreen(
                                 supportingContent = {
                                     var pendingBlurAmount by remember { mutableFloatStateOf(lyricBlurAmount) }
                                     LaunchedEffect(lyricBlurAmount) {
-                                        if ((pendingBlurAmount - lyricBlurAmount).absoluteValue > 0.1f) {
+                                        if ((pendingBlurAmount - lyricBlurAmount).absoluteValue > 0.01f) {
                                             pendingBlurAmount = lyricBlurAmount
                                         }
                                     }
 
                                     Column(Modifier.fillMaxWidth()) {
                                         Text(
-                                            text = stringResource(R.string.lyrics_blur_current, pendingBlurAmount.roundToInt()),
+                                            text = stringResource(R.string.lyrics_blur_current, pendingBlurAmount),
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -772,8 +772,8 @@ fun SettingsScreen(
                                             onValueChangeFinished = {
                                                 onLyricBlurAmountChange(pendingBlurAmount)
                                             },
-                                            valueRange = 0f..25f,
-                                            steps = 24
+                                            valueRange = 0f..8f,
+                                            steps = 79
                                         )
                                     }
                                 }

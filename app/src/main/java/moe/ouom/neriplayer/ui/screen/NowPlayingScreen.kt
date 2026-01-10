@@ -634,6 +634,7 @@ fun NowPlayingScreen(
                             visualSpec = LyricVisualSpec(),
                             lyricOffsetMs = totalOffset,
                             lyricBlurEnabled = lyricBlurEnabled,
+                            lyricBlurAmount = lyricBlurAmount,
                             onLyricClick = { entry -> PlayerManager.seekTo(entry.startTimeMs) },
                             translatedLyrics = if (showLyricTranslation) translatedLyrics else null
                         )
@@ -742,6 +743,7 @@ fun NowPlayingScreen(
                                 visualSpec = LyricVisualSpec(),
                                 lyricOffsetMs = totalOffset,
                                 lyricBlurEnabled = lyricBlurEnabled,
+                                lyricBlurAmount = lyricBlurAmount,
                                 onLyricClick = { entry -> PlayerManager.seekTo(entry.startTimeMs) },
                                 translatedLyrics = if (showLyricTranslation) translatedLyrics else null
                             )

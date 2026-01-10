@@ -316,10 +316,9 @@ fun AppleMusicLyric(
                             label = "lyric_flip"
                         )
 
-                        val blurRadiusDp = if (isActive || !lyricBlurEnabled) 0.dp else {
-                            lyricBlurAmount.dp
+                        val blurRadiusPx = if (isActive || !lyricBlurEnabled) 0f else {
+                            blurForDistance(distance, lyricBlurAmount)
                         }
-                        val blurRadiusPx = with(density) { blurRadiusDp.toPx() }
 
                         var blurEffect: androidx.compose.ui.graphics.RenderEffect? = null
                         var shadowEffect: Shadow? = null
@@ -915,4 +914,13 @@ private fun alphaForDistance(d: Int, near: Float, far: Float): Float =
         1 -> near
         2 -> far
         else -> (far - 0.08f * (d - 2)).coerceIn(0.16f, far)
+    }
+
+private fun blurForDistance(d: Int, maxBlur: Float): Float =
+    when (d) {
+        1 -> maxBlur * 1.0f
+        2 -> maxBlur * 1.5f
+        3 -> maxBlur * 2.0f
+        4 -> maxBlur * 2.5f
+        else -> maxBlur * 4.0f
     }
