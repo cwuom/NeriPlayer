@@ -4,7 +4,12 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
+import java.io.File
+import java.io.FileOutputStream
 import java.io.PrintWriter
 import java.io.StringWriter
 import java.text.SimpleDateFormat
@@ -39,10 +44,12 @@ import java.util.Locale
  * 使用NPLogger记录异常信息，并在主线程显示错误弹窗
  */
 object ExceptionHandler {
-    
+
     private var context: Context? = null
     private var errorDialogCallback: ((String, String) -> Unit)? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var crashLogFile: File? = null
+    private val crashLogScope = CoroutineScope(Dispatchers.IO)
     
     /**
      * 初始化异常处理器
@@ -52,13 +59,19 @@ object ExceptionHandler {
     fun init(appContext: Context, showErrorDialog: (String, String) -> Unit) {
         context = appContext.applicationContext
         errorDialogCallback = showErrorDialog
-        
+
+        // 设置崩溃日志文件
+        setupCrashLogFile(appContext)
+
         // 设置全局未捕获异常处理器
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             handleException(thread.name, throwable, isUncaught = true)
         }
-        
+
         NPLogger.i("ExceptionHandler", "Global exception handler initialized")
+        crashLogFile?.let {
+            NPLogger.i("ExceptionHandler", "Crash logs will be saved to: ${it.absolutePath}")
+        }
     }
     
     /**
@@ -94,7 +107,10 @@ object ExceptionHandler {
         // 使用NPLogger记录异常
         NPLogger.e("ExceptionHandler", "Exception occurred in $source", throwable)
         NPLogger.e("ExceptionHandler", exceptionInfo)
-        
+
+        // 独立写入崩溃日志文件（不依赖NPLogger的开关）
+        writeCrashLogToFile(exceptionInfo)
+
         // 在主线程显示错误弹窗
         showErrorDialogOnMainThread(source, throwable, exceptionInfo)
     }
@@ -202,7 +218,43 @@ object ExceptionHandler {
             }
         }
     }
-    
+
+    /**
+     * 设置崩溃日志文件
+     */
+    private fun setupCrashLogFile(context: Context) {
+        try {
+            val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
+            val crashDir = File(baseDir, "crashes")
+            if (!crashDir.exists() && !crashDir.mkdirs()) {
+                NPLogger.e("ExceptionHandler", "Failed to create crash log directory")
+                return
+            }
+            val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+            crashLogFile = File(crashDir, "crash_$timestamp.txt")
+        } catch (e: Exception) {
+            NPLogger.e("ExceptionHandler", "Failed to setup crash log file", e)
+        }
+    }
+
+    /**
+     * 写入崩溃日志到文件（独立于NPLogger，始终执行）
+     */
+    private fun writeCrashLogToFile(exceptionInfo: String) {
+        val logFile = crashLogFile ?: return
+
+        crashLogScope.launch {
+            try {
+                FileOutputStream(logFile, true).use { fos ->
+                    fos.write(exceptionInfo.toByteArray())
+                    fos.write("\n\n".toByteArray())
+                }
+            } catch (e: Exception) {
+                NPLogger.e("ExceptionHandler", "Failed to write crash log to file", e)
+            }
+        }
+    }
+
     /**
      * 清理资源
      */

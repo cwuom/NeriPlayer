@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
@@ -55,6 +56,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.debug.NeteaseApiProbeViewModel
 
 @Composable
@@ -72,13 +74,16 @@ fun NeteaseApiProbeScreen() {
 
     val ui by vm.ui.collectAsState()
     val scroll = rememberScrollState()
+    val miniH = LocalMiniPlayerHeight.current
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .windowInsetsPadding(WindowInsets.safeDrawing)
             .imePadding()
-            .verticalScroll(scroll),
+            .verticalScroll(scroll)
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .padding(bottom = miniH),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(

@@ -419,6 +419,14 @@
     <string name="log_view_hint">查看应用日志</string>
     <string name="log_enable_hint">请确保已在设置中开启文件日志记录</string>
 
+    <!-- Crash Logs -->
+    <string name="crash_log_title">崩溃日志</string>
+    <string name="crash_log_desc">查看应用崩溃记录</string>
+    <string name="crash_log_no_file">暂无崩溃日志</string>
+    <string name="crash_log_hint">应用崩溃时会自动记录日志</string>
+    <string name="crash_log_clear_confirm">确认清空所有崩溃日志？</string>
+    <string name="crash_log_cleared">已清空 %d 个崩溃日志</string>
+
     <!-- Errors -->
     <string name="error_network">网络错误</string>
     <string name="error_app_exception">应用异常</string>

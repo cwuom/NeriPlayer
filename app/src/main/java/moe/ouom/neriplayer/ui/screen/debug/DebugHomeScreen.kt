@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -38,6 +39,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Error
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SettingsBackupRestore
 import androidx.compose.material.icons.outlined.Warning
@@ -55,6 +57,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 
 @Composable
 fun DebugHomeScreen(
@@ -62,13 +65,17 @@ fun DebugHomeScreen(
     onOpenNeteaseDebug: () -> Unit,
     onOpenSearchDebug: () -> Unit,
     onOpenLogs: () -> Unit,
+    onOpenCrashLogs: () -> Unit,
     onHideDebugMode: () -> Unit,
     onTestExceptionHandler: () -> Unit = {},
 ) {
+    val miniH = LocalMiniPlayerHeight.current
     Column(
         modifier = Modifier
             .windowInsetsPadding(WindowInsets.safeDrawing)
-            .imePadding(),
+            .imePadding()
+            .padding(horizontal = 16.dp)
+            .padding(bottom = miniH),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         ListItem(
@@ -149,6 +156,21 @@ fun DebugHomeScreen(
                     headlineContent = { Text(stringResource(R.string.debug_view_logs)) },
                     supportingContent = { Text(stringResource(R.string.debug_view_logs_desc)) },
                     modifier = Modifier.clickable(onClick = onOpenLogs),
+                    colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                )
+
+                ListItem(
+                    leadingContent = {
+                        Icon(
+                            imageVector = Icons.Outlined.Error,
+                            contentDescription = stringResource(R.string.crash_log_title),
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    },
+                    headlineContent = { Text(stringResource(R.string.crash_log_title)) },
+                    supportingContent = { Text(stringResource(R.string.crash_log_desc)) },
+                    modifier = Modifier.clickable(onClick = onOpenCrashLogs),
                     colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
                 )
 

@@ -57,6 +57,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.debug.BiliApiProbeViewModel
 
 @Composable
@@ -72,6 +73,7 @@ fun BiliApiProbeScreen() {
 
     val ui by vm.ui.collectAsState()
     val scroll = rememberScrollState()
+    val miniH = LocalMiniPlayerHeight.current
 
     Column(
         modifier = Modifier
@@ -79,7 +81,8 @@ fun BiliApiProbeScreen() {
             .verticalScroll(scroll)
             .windowInsetsPadding(WindowInsets.safeDrawing)
             .imePadding()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .padding(bottom = miniH),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(text = stringResource(R.string.debug_bili_probe_title), style = MaterialTheme.typography.titleLarge)

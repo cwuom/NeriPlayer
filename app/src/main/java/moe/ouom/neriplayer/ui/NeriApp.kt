@@ -116,6 +116,7 @@ import moe.ouom.neriplayer.ui.screen.NowPlayingScreen
 import moe.ouom.neriplayer.ui.screen.debug.BiliApiProbeScreen
 import moe.ouom.neriplayer.ui.screen.debug.DebugHomeScreen
 import moe.ouom.neriplayer.ui.screen.debug.LogListScreen
+import moe.ouom.neriplayer.ui.screen.debug.CrashLogListScreen
 import moe.ouom.neriplayer.ui.screen.debug.NeteaseApiProbeScreen
 import moe.ouom.neriplayer.ui.screen.debug.SearchApiProbeScreen
 import moe.ouom.neriplayer.ui.screen.host.ExploreHostScreen
@@ -959,6 +960,7 @@ fun NeriApp(
                                         onOpenNeteaseDebug = { navController.navigate(Destinations.DebugNetease.route) },
                                         onOpenSearchDebug = { navController.navigate(Destinations.DebugSearch.route) },
                                         onOpenLogs = { navController.navigate(Destinations.DebugLogsList.route) },
+                                        onOpenCrashLogs = { navController.navigate(Destinations.DebugCrashLogsList.route) },
                                         onTestExceptionHandler = {
                                             ExceptionHandler.safeExecute("DebugTest") {
                                                 throw RuntimeException(context.getString(R.string.test_exception_message))
@@ -978,6 +980,17 @@ fun NeriApp(
                                 composable(Destinations.DebugSearch.route) { SearchApiProbeScreen() }
                                 composable(Destinations.DebugLogsList.route) {
                                     LogListScreen(
+                                        onBack = { navController.popBackStack() },
+                                        onLogFileClick = { filePath ->
+                                            navController.navigate(
+                                                Destinations.DebugLogViewer.createRoute(filePath)
+                                            )
+                                        }
+                                    )
+                                }
+
+                                composable(Destinations.DebugCrashLogsList.route) {
+                                    CrashLogListScreen(
                                         onBack = { navController.popBackStack() },
                                         onLogFileClick = { filePath ->
                                             navController.navigate(

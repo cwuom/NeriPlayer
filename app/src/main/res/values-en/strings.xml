@@ -419,6 +419,14 @@
     <string name="log_view_hint">View app logs</string>
     <string name="log_enable_hint">Please enable file logging in settings</string>
 
+    <!-- Crash Logs -->
+    <string name="crash_log_title">Crash Logs</string>
+    <string name="crash_log_desc">View app crash records</string>
+    <string name="crash_log_no_file">No crash logs</string>
+    <string name="crash_log_hint">Crash logs are automatically recorded when app crashes</string>
+    <string name="crash_log_clear_confirm">Clear all crash logs?</string>
+    <string name="crash_log_cleared">Cleared %d crash logs</string>
+
     <!-- Errors -->
     <string name="error_network">Network Error</string>
     <string name="error_app_exception">App Exception</string>

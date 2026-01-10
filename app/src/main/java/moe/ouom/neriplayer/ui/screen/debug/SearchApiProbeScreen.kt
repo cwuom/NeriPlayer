@@ -42,6 +42,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
+import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.debug.SearchApiProbeViewModel
 
 @Composable
@@ -58,6 +59,7 @@ fun SearchApiProbeScreen() {
 
     val ui by vm.ui.collectAsState()
     val scroll = rememberScrollState()
+    val miniH = LocalMiniPlayerHeight.current
 
     Column(
         modifier = Modifier
@@ -65,7 +67,8 @@ fun SearchApiProbeScreen() {
             .verticalScroll(scroll)
             .windowInsetsPadding(WindowInsets.safeDrawing)
             .imePadding()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .padding(bottom = miniH),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
