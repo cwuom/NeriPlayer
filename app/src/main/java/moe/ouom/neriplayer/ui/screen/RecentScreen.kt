@@ -291,7 +291,6 @@ fun RecentScreen(
                             }
                         }
                     )
-                    HorizontalDivider()
                 }
             }
         }
