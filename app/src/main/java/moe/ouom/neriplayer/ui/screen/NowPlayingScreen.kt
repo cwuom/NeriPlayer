@@ -31,6 +31,12 @@ import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.BoundsTransform
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -97,7 +103,6 @@ import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material.icons.outlined.Timer
-import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -114,7 +119,6 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -147,8 +151,10 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.rememberNavController
 import androidx.media3.common.Player
@@ -178,7 +184,7 @@ import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.formatDuration
 import kotlin.math.roundToInt
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalSharedTransitionApi::class)
 @Composable
 fun NowPlayingScreen(
     onNavigateUp: () -> Unit,
@@ -189,8 +195,6 @@ fun NowPlayingScreen(
     onLyricFontScaleChange: (Float) -> Unit,
     showLyricTranslation: Boolean = true,
 ) {
-    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
-
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
     val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
     val shuffleEnabled by PlayerManager.shuffleModeFlow.collectAsState()
@@ -314,51 +318,37 @@ fun NowPlayingScreen(
     val totalOffset = platformOffset + userOffset
 
     CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
-        AnimatedContent(
-            targetState = showLyricsScreen,
-            transitionSpec = {
-                slideInHorizontally(
-                    initialOffsetX = { if (targetState) it else -it },
-                    animationSpec = spring(
-                        dampingRatio = 0.85f,
-                        stiffness = 380f
-                    )
-                ) + fadeIn(
-                    animationSpec = spring(
-                        dampingRatio = 0.85f,
-                        stiffness = 380f
-                    )
-                ) togetherWith slideOutHorizontally(
-                    targetOffsetX = { if (targetState) -it else it },
-                    animationSpec = spring(
-                        dampingRatio = 0.85f,
-                        stiffness = 380f
-                    )
-                ) + fadeOut(
-                    animationSpec = spring(
-                        dampingRatio = 0.85f,
-                        stiffness = 380f
-                    )
-                )
-            },
-            label = "lyrics_transition"
-        ) { isLyricsMode ->
-            if (isLyricsMode) {
-                // 歌词全屏页面
-                LyricsScreen(
-                    lyrics = lyrics,
-                    lyricBlurEnabled = lyricBlurEnabled,
-                    lyricBlurAmount = lyricBlurAmount,
-                    lyricFontScale = lyricFontScale,
-                    onEnterAlbum = onEnterAlbum,
-                    onLyricFontScaleChange = onLyricFontScaleChange,
-                    onNavigateBack = { showLyricsScreen = false },
-                    onSeekTo = { position -> PlayerManager.seekTo(position) },
-                    translatedLyrics = translatedLyrics,
-                    lyricOffsetMs = totalOffset,
-                    showLyricTranslation = showLyricTranslation
-                )
-            } else {
+        SharedTransitionLayout {
+            Box(modifier = Modifier.fillMaxSize()) {
+                AnimatedContent(
+                    targetState = showLyricsScreen,
+                    transitionSpec = {
+                        fadeIn(
+                            animationSpec = tween(durationMillis = 300, easing = LinearEasing)
+                        ) togetherWith fadeOut(
+                            animationSpec = tween(durationMillis = 300, easing = LinearEasing)
+                        )
+                    },
+                    label = "lyrics_transition"
+                ) { isLyricsMode ->
+                    if (isLyricsMode) {
+                        // 歌词全屏页面
+                        LyricsScreen(
+                            lyrics = lyrics,
+                            lyricBlurEnabled = lyricBlurEnabled,
+                            lyricBlurAmount = lyricBlurAmount,
+                            lyricFontScale = lyricFontScale,
+                            onEnterAlbum = onEnterAlbum,
+                            onLyricFontScaleChange = onLyricFontScaleChange,
+                            onNavigateBack = { showLyricsScreen = false },
+                            onSeekTo = { position -> PlayerManager.seekTo(position) },
+                            translatedLyrics = translatedLyrics,
+                            lyricOffsetMs = totalOffset,
+                            showLyricTranslation = showLyricTranslation,
+                            sharedTransitionScope = this@SharedTransitionLayout,
+                            animatedContentScope = this@AnimatedContent
+                        )
+                    } else {
                 // 播放页面
                 var contentModifier = Modifier
                     .fillMaxSize()
@@ -380,45 +370,74 @@ fun NowPlayingScreen(
 
                 // 主列内容
                 val mainColumnContent: @Composable ColumnScope.() -> Unit = {
-                    CenterAlignedTopAppBar(
-                        title = { Text(stringResource(R.string.player_now_playing)) },
-                        navigationIcon = {
-                            HapticIconButton(onClick = onNavigateUp) {
-                                Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = stringResource(R.string.action_back))
-                            }
-                        },
-                        actions = {
-                            HapticIconButton(onClick = {
-                                if (currentSong == null) return@HapticIconButton
-                                val willFav = !isFavorite
-                                favOverride = willFav
-                                if (willFav) PlayerManager.addCurrentToFavorites() else PlayerManager.removeCurrentFromFavorites()
-                                bumpKey++
-                            }) {
-                                AnimatedContent(
-                                    targetState = isFavorite,
-                                    transitionSpec = {
-                                        (scaleIn(animationSpec = tween(160), initialScale = 0.85f) + fadeIn()) togetherWith
-                                                (scaleOut(animationSpec = tween(140), targetScale = 0.85f) + fadeOut())
-                                    },
-                                    label = "favorite_icon_anim"
-                                ) { fav ->
-                                    Icon(
-                                        imageVector = if (fav) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                                        contentDescription = if (fav) stringResource(R.string.nowplaying_favorited) else stringResource(R.string.nowplaying_favorite),
-                                        tint = if (fav) Color.Red else LocalContentColor.current,
-                                        modifier = Modifier.graphicsLayer {
-                                            val s = if (bumpKey == 0) 1f else scale
-                                            scaleX = s
-                                            scaleY = s
-                                        }
-                                    )
-                                }
+                    // 顶部栏
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp)
+                    ) {
+                        // 返回按钮 - 左侧
+                        HapticIconButton(
+                            onClick = onNavigateUp,
+                            modifier = Modifier.align(Alignment.CenterStart)
+                                .size(48.dp)
+                                .sharedBounds(
+                                    rememberSharedContentState(key = "btn_back"),
+                                    animatedVisibilityScope = this@AnimatedContent,
+                                    enter = EnterTransition.None,
+                                    exit = ExitTransition.None,
+                                ).zIndex(1f)
+                        ) {
+                            Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = stringResource(R.string.action_back))
+                        }
+
+                        // 标题 - 居中
+                        Text(
+                            text = stringResource(R.string.player_now_playing),
+                            style = MaterialTheme.typography.titleLarge,
+                            modifier = Modifier.align(Alignment.Center)
+                        )
+
+                        // 收藏和更多按钮 - 右侧
+                        Row(
+                            modifier = Modifier.align(Alignment.CenterEnd)
+                        ) {
+                            HapticIconButton(
+                                onClick = {
+                                    if (currentSong == null) return@HapticIconButton
+                                    val willFav = !isFavorite
+                                    favOverride = willFav
+                                    if (willFav) PlayerManager.addCurrentToFavorites() else PlayerManager.removeCurrentFromFavorites()
+                                },
+                                modifier = Modifier.size(48.dp)
+                                    .sharedBounds(
+                                        rememberSharedContentState(key = "btn_favorite"),
+                                        animatedVisibilityScope = this@AnimatedContent,
+                                        enter = EnterTransition.None,
+                                        exit = ExitTransition.None,
+                                    ).zIndex(1f)
+                            ) {
+                                Icon(
+                                    imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                                    contentDescription = if (isFavorite) stringResource(R.string.nowplaying_favorited) else stringResource(R.string.nowplaying_favorite),
+                                    tint = if (isFavorite) Color.Red else MaterialTheme.colorScheme.onSurface
+                                )
                             }
 
+                            Spacer(modifier = Modifier.width(6.dp))
+
                             var showMoreOptions by remember { mutableStateOf(false) }
-                            HapticIconButton(onClick = { showMoreOptions = true }) {
-                                Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.nowplaying_more_options))
+                            HapticIconButton(
+                                onClick = { showMoreOptions = true },
+                                modifier = Modifier.size(48.dp)
+                                    .sharedBounds(
+                                        rememberSharedContentState(key = "btn_more"),
+                                        animatedVisibilityScope = this@AnimatedContent,
+                                        enter = EnterTransition.None,
+                                        exit = ExitTransition.None,
+                                    ).zIndex(1f)
+                            ) {
+                                Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.nowplaying_more_options))
                             }
                             if (showMoreOptions && currentSong != null) {
                                 MoreOptionsSheet(
@@ -433,97 +452,83 @@ fun NowPlayingScreen(
                                     onLyricFontScaleChange = onLyricFontScaleChange
                                 )
                             }
-                        },
-                        scrollBehavior = scrollBehavior,
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = Color.Transparent,
-                            scrolledContainerColor = Color.Transparent,
-                            navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
-                            titleContentColor = MaterialTheme.colorScheme.onSurface,
-                            actionIconContentColor = MaterialTheme.colorScheme.onSurface
-                        )
-                    )
+                        }
+                    }
 
                     Spacer(Modifier.height(8.dp))
 
                     // 封面
-                    AnimatedVisibility(
-                        visible = contentVisible,
-                        modifier = Modifier.align(Alignment.CenterHorizontally),
-                        enter = slideInVertically(
-                            animationSpec = tween(durationMillis = 400, delayMillis = 100),
-                            initialOffsetY = { it / 5 }
-                        ) + fadeIn(animationSpec = tween(durationMillis = 400, delayMillis = 100))
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.CenterHorizontally)
+                            .size(240.dp)
+                            .sharedElement(
+                                rememberSharedContentState(key = "cover_image"),
+                                animatedVisibilityScope = this@AnimatedContent
+                            )
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(
+                                color = if (currentSong?.coverUrl != null) Color.Transparent else MaterialTheme.colorScheme.primaryContainer
+                            )
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(240.dp)
-                                .background(
-                                    color = if (currentSong?.coverUrl != null) Color.Transparent else MaterialTheme.colorScheme.primaryContainer,
-                                    shape = RoundedCornerShape(24.dp)
+                        currentSong?.coverUrl?.let { cover ->
+                            val context = LocalContext.current
+                            AsyncImage(
+                                model = offlineCachedImageRequest(context, cover),
+                                contentDescription = currentSong?.name ?: "",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+
+                        // 右下角来源徽标
+                        if (isFromNetease) {
+                            Row(
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(10.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
+                                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_netease_cloud_music),
+                                    contentDescription = stringResource(R.string.cd_netease),
+                                    tint = LocalContentColor.current,
+                                    modifier = Modifier.size(16.dp)
                                 )
-                        ) {
-                            currentSong?.coverUrl?.let { cover ->
-                                val context = LocalContext.current
-                                AsyncImage(
-                                    model = offlineCachedImageRequest(context, cover),
-                                    contentDescription = currentSong?.name ?: "",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier
-                                        .matchParentSize()
-                                        .clip(RoundedCornerShape(24.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = stringResource(R.string.nowplaying_netease_cloud),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
+                        }
 
-                            // 右下角来源徽标
-                            if (isFromNetease) {
-                                Row(
-                                    modifier = Modifier
-                                        .align(Alignment.BottomEnd)
-                                        .padding(10.dp)
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
-                                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        painter = painterResource(id = R.drawable.ic_netease_cloud_music),
-                                        contentDescription = stringResource(R.string.cd_netease),
-                                        tint = LocalContentColor.current,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = stringResource(R.string.nowplaying_netease_cloud),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                }
-                            }
-
-                            if (isFromBili) {
-                                Row(
-                                    modifier = Modifier
-                                        .align(Alignment.BottomEnd)
-                                        .padding(10.dp)
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
-                                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        painter = painterResource(id = R.drawable.ic_bilibili),
-                                        contentDescription = stringResource(R.string.cd_bilibili),
-                                        tint = LocalContentColor.current,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = stringResource(R.string.nowplaying_bilibili),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                }
+                        if (isFromBili) {
+                            Row(
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(10.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
+                                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_bilibili),
+                                    contentDescription = stringResource(R.string.cd_bilibili),
+                                    tint = LocalContentColor.current,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = stringResource(R.string.nowplaying_bilibili),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
                             }
                         }
                     }
@@ -544,6 +549,8 @@ fun NowPlayingScreen(
                                 Text(
                                     text = currentSong?.name ?: "",
                                     style = MaterialTheme.typography.headlineSmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(8.dp))
                                         .combinedClickable(
@@ -569,7 +576,13 @@ fun NowPlayingScreen(
                                     text = currentSong?.artist ?: "",
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier
+                                        .sharedElement(
+                                            rememberSharedContentState(key = "song_artist"),
+                                            animatedVisibilityScope = this@AnimatedContent
+                                        )
                                         .clip(RoundedCornerShape(8.dp))
                                         .combinedClickable(
                                             onClick = {},
@@ -596,7 +609,12 @@ fun NowPlayingScreen(
 
                     // 进度条
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .sharedBounds(
+                                rememberSharedContentState(key = "progress_bar"),
+                                animatedVisibilityScope = this@AnimatedContent
+                            ),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
@@ -634,18 +652,37 @@ fun NowPlayingScreen(
                         horizontalArrangement = Arrangement.spacedBy(20.dp),
                         modifier = Modifier.align(Alignment.CenterHorizontally)
                     ) {
-                        HapticIconButton(onClick = { PlayerManager.setShuffle(!shuffleEnabled) }) {
+                        HapticIconButton(onClick = { PlayerManager.setShuffle(!shuffleEnabled) },
+                            modifier = Modifier
+                                .size(42.dp)
+                        ) {
                             Icon(
                                 Icons.Outlined.Shuffle,
                                 contentDescription = stringResource(R.string.player_shuffle),
                                 tint = if (shuffleEnabled) MaterialTheme.colorScheme.primary else LocalContentColor.current
                             )
                         }
-                        HapticIconButton(onClick = { PlayerManager.previous() }) {
+
+                        HapticIconButton(onClick = { PlayerManager.previous() },
+                            modifier = Modifier
+                            .sharedElement(
+                                rememberSharedContentState(key = "player_previous"),
+                                animatedVisibilityScope = this@AnimatedContent
+                            )
+                            .size(42.dp)
+                        ) {
                             Icon(Icons.Outlined.SkipPrevious, contentDescription = stringResource(R.string.player_previous))
                         }
 
-                        HapticFilledIconButton(onClick = { PlayerManager.togglePlayPause() }) {
+                        HapticFilledIconButton(
+                            onClick = { PlayerManager.togglePlayPause() },
+                            modifier = Modifier
+                                .sharedElement(
+                                    rememberSharedContentState(key = "play_button"),
+                                    animatedVisibilityScope = this@AnimatedContent
+                                )
+                                .size(42.dp)
+                        ) {
                             AnimatedContent(
                                 targetState = isPlaying,
                                 label = "play_pause_icon",
@@ -657,10 +694,20 @@ fun NowPlayingScreen(
                                 )
                             }
                         }
-                        HapticIconButton(onClick = { PlayerManager.next() }) {
+                        HapticIconButton(onClick = { PlayerManager.next() },
+                            modifier = Modifier
+                            .sharedElement(
+                                rememberSharedContentState(key = "player_next"),
+                                animatedVisibilityScope = this@AnimatedContent
+                            )
+                            .size(42.dp)
+                        ) {
                             Icon(Icons.Outlined.SkipNext, contentDescription = stringResource(R.string.player_next))
                         }
-                        HapticIconButton(onClick = { PlayerManager.cycleRepeatMode() }) {
+                        HapticIconButton(onClick = { PlayerManager.cycleRepeatMode() },
+                            modifier = Modifier
+                                .size(42.dp)
+                        ) {
                             Icon(
                                 imageVector = if (repeatMode == Player.REPEAT_MODE_ONE) Icons.Filled.RepeatOne else Icons.Outlined.Repeat,
                                 contentDescription = stringResource(R.string.player_repeat),
@@ -703,7 +750,15 @@ fun NowPlayingScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        HapticIconButton(onClick = { showQueueSheet = true }) {
+                        // 播放队列
+                        HapticIconButton(onClick = { showQueueSheet = true },
+                            modifier = Modifier
+                                .sharedBounds(
+                                    rememberSharedContentState(key = "btn_queue"),
+                                    animatedVisibilityScope = this@AnimatedContent,
+                                    enter = EnterTransition.None,
+                                    exit = ExitTransition.None,
+                                ).zIndex(1f)) {
                             Icon(
                                 Icons.AutoMirrored.Outlined.QueueMusic,
                                 contentDescription = stringResource(R.string.playlist_queue),
@@ -712,7 +767,14 @@ fun NowPlayingScreen(
                         }
 
                         // 定时器按钮
-                        HapticIconButton(onClick = { showSleepTimerDialog = true }) {
+                        HapticIconButton(onClick = { showSleepTimerDialog = true },
+                            modifier = Modifier
+                            .sharedBounds(
+                                rememberSharedContentState(key = "btn_timer"),
+                                animatedVisibilityScope = this@AnimatedContent,
+                                enter = EnterTransition.None,
+                                exit = ExitTransition.None,
+                            ).zIndex(1f)) {
                             Icon(
                                 Icons.Outlined.Timer,
                                 contentDescription = stringResource(R.string.sleep_timer_short),
@@ -723,7 +785,15 @@ fun NowPlayingScreen(
 
                         // 音量按钮（根据设备显示不同图标，居中）
                         val audioDeviceInfo = rememberAudioDeviceInfo()
-                        HapticIconButton(onClick = { showVolumeSheet = true }) {
+                        HapticIconButton(onClick = { showVolumeSheet = true },
+                            modifier = Modifier
+                            .sharedBounds(
+                                rememberSharedContentState(key = "btn_volume"),
+                                animatedVisibilityScope = this@AnimatedContent,
+                                enter = EnterTransition.None,
+                                exit = ExitTransition.None,
+                            ).zIndex(1f)
+                        ) {
                             Icon(
                                 audioDeviceInfo.second,
                                 contentDescription = audioDeviceInfo.first,
@@ -731,16 +801,20 @@ fun NowPlayingScreen(
                             )
                         }
 
-                        // 歌词按钮（有动画）
+                        // 歌词按钮
                         HapticIconButton(
                             onClick = { showLyricsScreen = !showLyricsScreen },
-                            enabled = lyrics.isNotEmpty()
+                            enabled = lyrics.isNotEmpty(),
+                            modifier = Modifier
+                                .sharedBounds(
+                                    rememberSharedContentState(key = "btn_lyrics"),
+                                    animatedVisibilityScope = this@AnimatedContent,
+                                    enter = EnterTransition.None,
+                                    exit = ExitTransition.None,
+                                ).zIndex(1f)
                         ) {
                             AnimatedContent(
                                 targetState = showLyricsScreen,
-                                transitionSpec = {
-                                    (scaleIn() + fadeIn()) togetherWith (scaleOut() + fadeOut())
-                                },
                                 label = "lyrics_icon"
                             ) { isShowingLyrics ->
                                 Icon(
@@ -758,7 +832,16 @@ fun NowPlayingScreen(
                             }
                         }
 
-                        HapticIconButton(onClick = { showAddSheet = true }) {
+                        // 添加到歌单
+                        HapticIconButton(onClick = { showAddSheet = true },
+                            modifier = Modifier
+                                .sharedBounds(
+                                    rememberSharedContentState(key = "btn_add"),
+                                    animatedVisibilityScope = this@AnimatedContent,
+                                    enter = EnterTransition.None,
+                                    exit = ExitTransition.None,
+                                ).zIndex(1f)
+                        ) {
                             Icon(
                                 Icons.AutoMirrored.Outlined.PlaylistAdd,
                                 contentDescription = stringResource(R.string.playlist_add_to),
@@ -956,9 +1039,11 @@ fun NowPlayingScreen(
         }
     }
 }
+}
+}
 
 @Composable
-private fun rememberAudioDeviceInfo(): Pair<String, ImageVector> {
+fun rememberAudioDeviceInfo(): Pair<String, ImageVector> {
     val context = LocalContext.current
     val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     var deviceInfo by remember { mutableStateOf(getCurrentAudioDevice(audioManager, context)) }
@@ -980,7 +1065,7 @@ private fun rememberAudioDeviceInfo(): Pair<String, ImageVector> {
 }
 
 @Composable
-private fun AudioDeviceHandler() {
+fun AudioDeviceHandler() {
     val context = LocalContext.current
     val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
 
@@ -1017,7 +1102,7 @@ private fun AudioDeviceHandler() {
     }
 }
 
-private fun getCurrentAudioDevice(audioManager: AudioManager, context: Context): Pair<String, ImageVector> {
+fun getCurrentAudioDevice(audioManager: AudioManager, context: Context): Pair<String, ImageVector> {
     val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
     val bluetoothDevice = devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP }
     if (bluetoothDevice != null) {
@@ -1063,7 +1148,7 @@ fun MoreOptionsSheet(
             viewModel.performSearch()
         }
     }
-    
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -1290,7 +1375,7 @@ fun MoreOptionsSheet(
 }
 
 @Composable
-private fun VolumeControlSheetContent() {
+fun VolumeControlSheetContent() {
     val context = LocalContext.current
     val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
@@ -1329,7 +1414,7 @@ private fun VolumeControlSheetContent() {
 }
 
 @Composable
-private fun LyricOffsetSheet(song: SongItem, onDismiss: () -> Unit) {
+fun LyricOffsetSheet(song: SongItem, onDismiss: () -> Unit) {
     var currentOffset by remember { mutableLongStateOf(song.userLyricOffsetMs) }
     val scope = rememberCoroutineScope()
 
@@ -1374,7 +1459,7 @@ private fun LyricOffsetSheet(song: SongItem, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun LyricFontSizeSheet(
+fun LyricFontSizeSheet(
     currentScale: Float,
     onScaleCommit: (Float) -> Unit,
     onDismiss: () -> Unit

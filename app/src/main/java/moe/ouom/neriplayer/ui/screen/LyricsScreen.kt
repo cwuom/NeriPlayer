@@ -23,7 +23,10 @@
  * Created: 2025/8/13
  */
 
+import android.annotation.SuppressLint
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
@@ -100,6 +103,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import moe.ouom.neriplayer.R
@@ -114,7 +118,7 @@ import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.formatDuration
 import kotlinx.coroutines.delay
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, androidx.compose.animation.ExperimentalSharedTransitionApi::class)
 @Composable
 fun LyricsScreen(
     lyrics: List<LyricEntry>,
@@ -128,6 +132,8 @@ fun LyricsScreen(
     translatedLyrics: List<LyricEntry>? = null,
     lyricOffsetMs: Long,
     showLyricTranslation: Boolean = true,
+    sharedTransitionScope: androidx.compose.animation.SharedTransitionScope? = null,
+    animatedContentScope: androidx.compose.animation.AnimatedContentScope? = null,
 ) {
     // 处理返回键
     androidx.activity.compose.BackHandler(onBack = onNavigateBack)
@@ -150,7 +156,7 @@ fun LyricsScreen(
     LaunchedEffect(Unit) {
         isLyricsMode = true
     }
-    
+
     // 封面动画
     val coverScale by animateFloatAsState(
         targetValue = if (isLyricsMode) 0.6f else 1f,
@@ -163,14 +169,14 @@ fun LyricsScreen(
         animationSpec = spring(dampingRatio = 0.8f),
         label = "cover_offset_y"
     )
-    
+
     // 播放控件动画 - 轻微上浮/下沉，保持常驻在安全区域内
     val controlsOffsetY by animateFloatAsState(
         targetValue = if (isLyricsMode) 0f else 0f,
         animationSpec = spring(dampingRatio = 0.85f),
         label = "controls_offset_y"
     )
-    
+
     // 进度条拖拽状态
     var isUserDraggingSlider by remember(currentSong?.id) { mutableStateOf(false) }
     var sliderPosition by remember(currentSong?.id) {
@@ -195,7 +201,9 @@ fun LyricsScreen(
     ) {
         // 顶部区域 - 包含缩小的封面 + 收藏 + 更多
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Start
         ) {
@@ -209,6 +217,16 @@ fun LyricsScreen(
             Box(
                 modifier = Modifier
                     .size((64 * coverScale).dp)
+                    .then(
+                        if (sharedTransitionScope != null && animatedContentScope != null) {
+                            with(sharedTransitionScope) {
+                                Modifier.sharedElement(
+                                    rememberSharedContentState(key = "cover_image"),
+                                    animatedVisibilityScope = animatedContentScope
+                                )
+                            }
+                        } else Modifier
+                    )
                     .graphicsLayer { translationY = coverOffsetY }
                     .clip(RoundedCornerShape(10.dp))
             ) {
@@ -263,6 +281,16 @@ fun LyricsScreen(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier
+                            .then(
+                                if (sharedTransitionScope != null && animatedContentScope != null) {
+                                    with(sharedTransitionScope) {
+                                        Modifier.sharedElement(
+                                            rememberSharedContentState(key = "song_artist"),
+                                            animatedVisibilityScope = animatedContentScope
+                                        )
+                                    }
+                                } else Modifier
+                            )
                             .clip(RoundedCornerShape(6.dp))
                             .combinedClickable(
                                 onClick = {},
@@ -299,12 +327,27 @@ fun LyricsScreen(
             var favOverride by remember(currentSong) { mutableStateOf<Boolean?>(null) }
             val isFavorite = favOverride ?: isFavoriteComputed
 
-            HapticIconButton(onClick = {
-                if (currentSong == null) return@HapticIconButton
-                val willFav = !isFavorite
-                favOverride = willFav
-                if (willFav) PlayerManager.addCurrentToFavorites() else PlayerManager.removeCurrentFromFavorites()
-            }) {
+            HapticIconButton(
+                onClick = {
+                    if (currentSong == null) return@HapticIconButton
+                    val willFav = !isFavorite
+                    favOverride = willFav
+                    if (willFav) PlayerManager.addCurrentToFavorites() else PlayerManager.removeCurrentFromFavorites()
+                },
+                modifier = Modifier.size(48.dp)
+                    .then(
+                        if (sharedTransitionScope != null && animatedContentScope != null) {
+                            with(sharedTransitionScope) {
+                                Modifier.sharedBounds(
+                                    rememberSharedContentState(key = "btn_favorite"),
+                                    animatedVisibilityScope = animatedContentScope,
+                                    enter = EnterTransition.None,
+                                    exit = ExitTransition.None,
+                                ).zIndex(1f)
+                            }
+                        } else Modifier
+                    )
+            ) {
                 Icon(
                     imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
                     contentDescription = if (isFavorite) stringResource(R.string.lyrics_favorited) else stringResource(R.string.lyrics_favorite),
@@ -316,7 +359,22 @@ fun LyricsScreen(
 
             // 更多按钮
             var showMoreOptions by remember { mutableStateOf(false) }
-            HapticIconButton(onClick = { showMoreOptions = true }) {
+            HapticIconButton(
+                onClick = { showMoreOptions = true },
+                modifier = Modifier.size(48.dp)
+                    .then(
+                        if (sharedTransitionScope != null && animatedContentScope != null) {
+                            with(sharedTransitionScope) {
+                                Modifier.sharedBounds(
+                                    rememberSharedContentState(key = "btn_more"),
+                                    animatedVisibilityScope = animatedContentScope,
+                                    enter = EnterTransition.None,
+                                    exit = ExitTransition.None,
+                                ).zIndex(1f)
+                            }
+                        } else Modifier
+                    )
+            ) {
                 Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.lyrics_more_options))
             }
             if (showMoreOptions && currentSong != null) {
@@ -337,9 +395,9 @@ fun LyricsScreen(
                 )
             }
         }
-        
+
         Spacer(modifier = Modifier.height(16.dp))
-        
+
         // 歌词区域
         Box(
             modifier = Modifier.weight(1f)
@@ -379,7 +437,7 @@ fun LyricsScreen(
                 }
             }
         }
-        
+
         // 底部控件 - 使用共享元素动画
         Column(
             modifier = Modifier
@@ -389,7 +447,18 @@ fun LyricsScreen(
         ) {
             // 进度条
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(
+                        if (sharedTransitionScope != null && animatedContentScope != null) {
+                            with(sharedTransitionScope) {
+                                Modifier.sharedBounds(
+                                    rememberSharedContentState(key = "progress_bar"),
+                                    animatedVisibilityScope = animatedContentScope
+                                ).zIndex(1f)
+                            }
+                        } else Modifier
+                    ),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -400,7 +469,7 @@ fun LyricsScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                
+
                 WaveformSlider(
                     modifier = Modifier.weight(1f),
                     value = if (durationMs > 0) {
@@ -416,33 +485,57 @@ fun LyricsScreen(
                     },
                     isPlaying = isPlaying
                 )
-                
+
                 Text(
                     text = formatDuration(durationMs),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            
+
             Spacer(modifier = Modifier.height(12.dp))
-            
+
             // 播放控制按钮
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                HapticIconButton(onClick = { PlayerManager.previous() }) {
+                HapticIconButton(onClick = { PlayerManager.previous() },
+                    modifier = Modifier
+                    .then(
+                        if (sharedTransitionScope != null && animatedContentScope != null) {
+                            with(sharedTransitionScope) {
+                                Modifier.sharedElement(
+                                    rememberSharedContentState(key = "player_previous"),
+                                    animatedVisibilityScope = animatedContentScope
+                                )
+                            }
+                        } else Modifier
+                    )
+                    .size(42.dp)
+                ) {
                     Icon(
                         Icons.Outlined.SkipPrevious,
                         contentDescription = stringResource(R.string.lyrics_previous),
                         modifier = Modifier.size(32.dp)
                     )
                 }
-                
+
                 HapticFilledIconButton(
                     onClick = { PlayerManager.togglePlayPause() },
-                    modifier = Modifier.size(64.dp)
+                    modifier = Modifier
+                        .then(
+                            if (sharedTransitionScope != null && animatedContentScope != null) {
+                                with(sharedTransitionScope) {
+                                    Modifier.sharedElement(
+                                        rememberSharedContentState(key = "play_button"),
+                                        animatedVisibilityScope = animatedContentScope
+                                    )
+                                }
+                            } else Modifier
+                        )
+                        .size(42.dp)
                 ) {
                     AnimatedContent(
                         targetState = isPlaying,
@@ -451,13 +544,25 @@ fun LyricsScreen(
                     ) { currentlyPlaying ->
                         Icon(
                             imageVector = if (currentlyPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                            contentDescription = if (currentlyPlaying) stringResource(R.string.lyrics_pause) else stringResource(R.string.lyrics_play),
-                            modifier = Modifier.size(36.dp)
+                            contentDescription = if (currentlyPlaying) stringResource(R.string.lyrics_pause) else stringResource(R.string.lyrics_play)
                         )
                     }
                 }
 
-                HapticIconButton(onClick = { PlayerManager.next() }) {
+                HapticIconButton(onClick = { PlayerManager.next() },
+                    modifier = Modifier
+                        .then(
+                            if (sharedTransitionScope != null && animatedContentScope != null) {
+                                with(sharedTransitionScope) {
+                                    Modifier.sharedElement(
+                                        rememberSharedContentState(key = "player_next"),
+                                        animatedVisibilityScope = animatedContentScope
+                                    )
+                                }
+                            } else Modifier
+                        )
+                        .size(42.dp)
+                ) {
                     Icon(
                         Icons.Outlined.SkipNext,
                         contentDescription = stringResource(R.string.lyrics_next),
@@ -480,7 +585,18 @@ fun LyricsScreen(
         ) {
             // 播放队列按钮
             var showQueueSheet by remember { mutableStateOf(false) }
-            HapticIconButton(onClick = { showQueueSheet = true }) {
+            HapticIconButton(onClick = { showQueueSheet = true },  modifier = Modifier.then(
+                if (sharedTransitionScope != null && animatedContentScope != null) {
+                    with(sharedTransitionScope) {
+                        Modifier.sharedBounds(
+                            rememberSharedContentState(key = "btn_queue"),
+                            animatedVisibilityScope = animatedContentScope,
+                            enter = EnterTransition.None,
+                            exit = ExitTransition.None,
+                        ).zIndex(1f)
+                    }
+                } else Modifier
+            )) {
                 Icon(
                     Icons.AutoMirrored.Outlined.QueueMusic,
                     contentDescription = stringResource(R.string.lyrics_playlist),
@@ -491,7 +607,19 @@ fun LyricsScreen(
             // 定时器按钮
             val sleepTimerState by PlayerManager.sleepTimerManager.timerState.collectAsState()
             var showSleepTimerDialog by remember { mutableStateOf(false) }
-            HapticIconButton(onClick = { showSleepTimerDialog = true }) {
+            HapticIconButton(onClick = { showSleepTimerDialog = true },
+                modifier = Modifier.then(
+                    if (sharedTransitionScope != null && animatedContentScope != null) {
+                        with(sharedTransitionScope) {
+                            Modifier.sharedBounds(
+                                rememberSharedContentState(key = "btn_timer"),
+                                animatedVisibilityScope = animatedContentScope,
+                                enter = EnterTransition.None,
+                                exit = ExitTransition.None,
+                            ).zIndex(1f)
+                        }
+                    } else Modifier
+                )) {
                 Icon(
                     Icons.Outlined.Timer,
                     contentDescription = stringResource(R.string.lyrics_timer),
@@ -501,18 +629,52 @@ fun LyricsScreen(
             }
 
             // 音量按钮（根据设备显示不同图标，居中）
-            val audioDeviceInfo = rememberAudioDeviceInfo()
+            val context = LocalContext.current
+            val audioManager = remember { context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager }
+            val devices = audioManager.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS)
+            val audioDeviceIcon = remember(devices) {
+                when {
+                    devices.any { it.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP } -> Icons.Default.Headset
+                    devices.any { it.type == android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET || it.type == android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES } -> Icons.Default.Headset
+                    else -> Icons.Default.SpeakerGroup
+                }
+            }
             var showVolumeSheet by remember { mutableStateOf(false) }
-            HapticIconButton(onClick = { showVolumeSheet = true }) {
+            HapticIconButton(onClick = { showVolumeSheet = true },
+                modifier = Modifier.then(
+                    if (sharedTransitionScope != null && animatedContentScope != null) {
+                        with(sharedTransitionScope) {
+                            Modifier.sharedBounds(
+                                rememberSharedContentState(key = "btn_volume"),
+                                animatedVisibilityScope = animatedContentScope,
+                                enter = EnterTransition.None,
+                                exit = ExitTransition.None,
+                            ).zIndex(1f)
+                        }
+                    } else Modifier
+                )) {
                 Icon(
-                    audioDeviceInfo.second,
-                    contentDescription = audioDeviceInfo.first,
+                    audioDeviceIcon,
+                    contentDescription = stringResource(R.string.cd_audio_device),
                     modifier = Modifier.size(20.dp)
                 )
             }
 
             // 歌词按钮（返回封面页，高亮显示）
-            HapticIconButton(onClick = onNavigateBack) {
+            @SuppressLint("UnusedContentLambdaTargetStateParameter")
+            HapticIconButton(onClick = onNavigateBack,
+                modifier = Modifier.then(
+                if (sharedTransitionScope != null && animatedContentScope != null) {
+                    with(sharedTransitionScope) {
+                        Modifier.sharedBounds(
+                            rememberSharedContentState(key = "btn_lyrics"),
+                            animatedVisibilityScope = animatedContentScope,
+                            enter = EnterTransition.None,
+                            exit = ExitTransition.None,
+                        ).zIndex(1f)
+                    }
+                } else Modifier
+            )) {
                 AnimatedContent(
                     targetState = true,
                     transitionSpec = {
@@ -531,7 +693,19 @@ fun LyricsScreen(
 
             // 添加到歌单按钮
             var showAddSheet by remember { mutableStateOf(false) }
-            HapticIconButton(onClick = { showAddSheet = true }) {
+            HapticIconButton(onClick = { showAddSheet = true },
+                modifier = Modifier.then(
+                if (sharedTransitionScope != null && animatedContentScope != null) {
+                    with(sharedTransitionScope) {
+                        Modifier.sharedBounds(
+                            rememberSharedContentState(key = "btn_add"),
+                            animatedVisibilityScope = animatedContentScope,
+                            enter = EnterTransition.None,
+                            exit = ExitTransition.None,
+                        ).zIndex(1f)
+                    }
+                } else Modifier
+            )) {
                 Icon(
                     Icons.AutoMirrored.Outlined.PlaylistAdd,
                     contentDescription = stringResource(R.string.lyrics_add_to_playlist),
@@ -551,7 +725,7 @@ fun LyricsScreen(
                 androidx.compose.material3.ModalBottomSheet(
                     onDismissRequest = { showVolumeSheet = false }
                 ) {
-                    VolumeControlSheetContent(audioDeviceInfo.first)
+                    VolumeControlSheetContent()
                 }
             }
 
@@ -721,42 +895,4 @@ private fun VolumeControlSheetContent(deviceName: String) {
             steps = maxVolume - 1
         )
     }
-}
-
-@Composable
-private fun rememberAudioDeviceInfo(): Pair<String, androidx.compose.ui.graphics.vector.ImageVector> {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val audioManager = remember { context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager }
-    var deviceInfo by remember { mutableStateOf(getCurrentAudioDevice(audioManager, context)) }
-
-    androidx.compose.runtime.DisposableEffect(Unit) {
-        val deviceCallback = object : android.media.AudioDeviceCallback() {
-            override fun onAudioDevicesAdded(addedDevices: Array<out android.media.AudioDeviceInfo>?) {
-                deviceInfo = getCurrentAudioDevice(audioManager, context)
-            }
-            override fun onAudioDevicesRemoved(removedDevices: Array<out android.media.AudioDeviceInfo>?) {
-                deviceInfo = getCurrentAudioDevice(audioManager, context)
-            }
-        }
-        audioManager.registerAudioDeviceCallback(deviceCallback, null)
-        onDispose { audioManager.unregisterAudioDeviceCallback(deviceCallback) }
-    }
-
-    return deviceInfo
-}
-
-private fun getCurrentAudioDevice(audioManager: android.media.AudioManager, context: android.content.Context): Pair<String, androidx.compose.ui.graphics.vector.ImageVector> {
-    val devices = audioManager.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS)
-    val bluetoothDevice = devices.firstOrNull { it.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP }
-    if (bluetoothDevice != null) {
-        return try {
-            Pair(bluetoothDevice.productName.toString().ifBlank { context.getString(R.string.lyrics_bluetooth_device) }, Icons.Default.Headset)
-        } catch (_: SecurityException) {
-            Pair(context.getString(R.string.lyrics_bluetooth_device), Icons.Default.Headset)
-        }
-    }
-    val wiredHeadset =
-        devices.firstOrNull { it.type == android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET || it.type == android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES }
-    if (wiredHeadset != null) return Pair(context.getString(R.string.lyrics_wired_headset), Icons.Default.Headset)
-    return Pair(context.getString(R.string.lyrics_phone_speaker), Icons.Default.SpeakerGroup)
 }
