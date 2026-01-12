@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.data.github
  * Created: 2025/1/7
  */
 
+import android.content.Context
 import kotlinx.serialization.Serializable
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.data.FavoritePlaylist
@@ -59,11 +60,11 @@ data class SyncPlaylist(
     val isDeleted: Boolean = false
 ) {
     companion object {
-        fun fromLocalPlaylist(playlist: LocalPlaylist, modifiedAt: Long = System.currentTimeMillis()): SyncPlaylist {
+        fun fromLocalPlaylist(playlist: LocalPlaylist, modifiedAt: Long = System.currentTimeMillis(), context: Context? = null): SyncPlaylist {
             return SyncPlaylist(
                 id = playlist.id,
                 name = playlist.name,
-                songs = playlist.songs.map { SyncSong.fromSongItem(it) },
+                songs = playlist.songs.map { SyncSong.fromSongItem(it, context) },
                 createdAt = playlist.id, // 使用ID作为创建时间
                 modifiedAt = modifiedAt
             )
@@ -105,7 +106,13 @@ data class SyncSong(
     val originalCoverUrl: String? = null
 ) {
     companion object {
-        fun fromSongItem(song: SongItem): SyncSong {
+        fun fromSongItem(song: SongItem, context: Context? = null): SyncSong {
+            // 使用网络地址进行同步
+            val mapper = context?.let { CoverUrlMapper.getInstance(it) }
+            val syncCoverUrl = mapper?.getNetworkUrl(song.coverUrl) ?: song.coverUrl
+            val syncCustomCoverUrl = mapper?.getNetworkUrl(song.customCoverUrl) ?: song.customCoverUrl
+            val syncOriginalCoverUrl = mapper?.getNetworkUrl(song.originalCoverUrl) ?: song.originalCoverUrl
+
             return SyncSong(
                 id = song.id,
                 name = song.name,
@@ -113,17 +120,17 @@ data class SyncSong(
                 album = song.album,
                 albumId = song.albumId,
                 durationMs = song.durationMs,
-                coverUrl = song.coverUrl,
+                coverUrl = syncCoverUrl,
                 matchedLyric = song.matchedLyric,
                 matchedLyricSource = song.matchedLyricSource?.name,
                 matchedSongId = song.matchedSongId,
                 userLyricOffsetMs = song.userLyricOffsetMs,
-                customCoverUrl = song.customCoverUrl,
+                customCoverUrl = syncCustomCoverUrl,
                 customName = song.customName,
                 customArtist = song.customArtist,
                 originalName = song.originalName,
                 originalArtist = song.originalArtist,
-                originalCoverUrl = song.originalCoverUrl
+                originalCoverUrl = syncOriginalCoverUrl
             )
         }
     }
@@ -178,14 +185,14 @@ data class SyncFavoritePlaylist(
     val addedTime: Long
 ) {
     companion object {
-        fun fromFavoritePlaylist(playlist: FavoritePlaylist): SyncFavoritePlaylist {
+        fun fromFavoritePlaylist(playlist: FavoritePlaylist, context: Context? = null): SyncFavoritePlaylist {
             return SyncFavoritePlaylist(
                 id = playlist.id,
                 name = playlist.name,
                 coverUrl = playlist.coverUrl,
                 trackCount = playlist.trackCount,
                 source = playlist.source,
-                songs = playlist.songs.map { SyncSong.fromSongItem(it) },
+                songs = playlist.songs.map { SyncSong.fromSongItem(it, context) },
                 addedTime = playlist.addedTime
             )
         }

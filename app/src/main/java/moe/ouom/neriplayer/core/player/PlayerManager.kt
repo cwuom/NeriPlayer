@@ -1463,9 +1463,14 @@ object PlayerManager {
     ) {
         ioScope.launch {
             val updatedSong = originalSong.copy(
-                customCoverUrl = customCoverUrl,
-                customName = customName,
-                customArtist = customArtist
+                // 直接修改本质属性
+                name = customName ?: originalSong.name,
+                artist = customArtist ?: originalSong.artist,
+                coverUrl = customCoverUrl,
+                // 保存原始值（如果还没有保存）
+                originalName = originalSong.originalName ?: originalSong.name,
+                originalArtist = originalSong.originalArtist ?: originalSong.artist,
+                originalCoverUrl = originalSong.originalCoverUrl ?: originalSong.coverUrl
             )
             updateSongInAllPlaces(originalSong, updatedSong)
         }
@@ -1480,9 +1485,6 @@ object PlayerManager {
                 matchedLyric = null,
                 matchedLyricSource = null,
                 matchedSongId = null,
-                customCoverUrl = null,
-                customName = null,
-                customArtist = null,
                 originalName = null,
                 originalArtist = null,
                 originalCoverUrl = null

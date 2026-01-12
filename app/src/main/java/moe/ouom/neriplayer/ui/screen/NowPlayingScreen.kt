@@ -1607,6 +1607,9 @@ fun EditSongInfoSheet(
     var lyricsToEdit by remember { mutableStateOf<String?>(null) }
     var translatedLyricsToEdit by remember { mutableStateOf<String?>(null) }
 
+    // 标记用户是否手动编辑过，避免自动重置
+    var userHasEdited by remember { mutableStateOf(false) }
+
     val searchState by viewModel.manualSearchState.collectAsState()
 
     // 创建嵌套滚动连接来消费滚动事件，防止传递给 ModalBottomSheet
@@ -1635,11 +1638,13 @@ fun EditSongInfoSheet(
         }
     }
 
-    // 当歌曲信息更新时，同步更新UI
+    // 当歌曲信息更新时，同步更新UI（仅在用户未手动编辑时）
     LaunchedEffect(actualSong) {
-        coverUrl = actualSong.customCoverUrl ?: actualSong.coverUrl ?: ""
-        songName = actualSong.customName ?: actualSong.name
-        artistName = actualSong.customArtist ?: actualSong.artist
+        if (!userHasEdited) {
+            coverUrl = actualSong.customCoverUrl ?: actualSong.coverUrl ?: ""
+            songName = actualSong.customName ?: actualSong.name
+            artistName = actualSong.customArtist ?: actualSong.artist
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -1809,6 +1814,8 @@ fun EditSongInfoSheet(
             HapticTextButton(
                 onClick = {
                     viewModel.restoreOriginalInfo(actualSong)
+                    // 重置编辑标志，允许自动更新
+                    userHasEdited = false
                 },
                 modifier = Modifier.weight(1f)
             ) {
@@ -1826,6 +1833,8 @@ fun EditSongInfoSheet(
                             newName = songName,
                             newArtist = artistName
                         )
+                        // 重置编辑标志，允许自动更新
+                        userHasEdited = false
                         onDismiss()
                     }
                 },
@@ -1843,6 +1852,9 @@ fun EditSongInfoSheet(
             songResult = selectedSongForFill!!,
             onDismiss = { selectedSongForFill = null },
             onConfirm = { fillCover, fillTitle, fillArtist, fillLyrics ->
+                // 标记用户已编辑，防止自动重置
+                userHasEdited = true
+
                 if (fillCover) {
                     coverUrl = selectedSongForFill!!.coverUrl?.replaceFirst("http://", "https://") ?: ""
                 }

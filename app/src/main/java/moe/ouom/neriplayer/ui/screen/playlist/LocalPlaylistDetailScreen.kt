@@ -580,7 +580,7 @@ fun LocalPlaylistDetailScreen(
                                         .fillMaxWidth()
                                         .height(headerHeight)
                                 ) {
-                                    // 头图取“展示顺序”的第一张有封面的
+                                    // 头图取"展示顺序"的第一张有封面的
                                     val baseQueue = localSongs.asReversed()
                                     val headerCover = baseQueue.firstOrNull { !it.coverUrl.isNullOrBlank() }?.coverUrl
                                     AsyncImage(

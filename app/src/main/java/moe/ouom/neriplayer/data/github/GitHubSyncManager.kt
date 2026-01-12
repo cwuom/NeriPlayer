@@ -279,7 +279,7 @@ class GitHubSyncManager(private val context: Context) {
     private fun buildLocalSyncData(): SyncData {
         val playlists = playlistRepo.playlists.value
         val syncPlaylists = playlists.map { playlist ->
-            SyncPlaylist.fromLocalPlaylist(playlist, playlist.modifiedAt)
+            SyncPlaylist.fromLocalPlaylist(playlist, playlist.modifiedAt, context)
         }.toMutableList()
 
         // 添加已删除的歌单（标记为已删除）
@@ -302,7 +302,7 @@ class GitHubSyncManager(private val context: Context) {
 
         val favoritePlaylists = favoriteRepo.favorites.value
         val syncFavoritePlaylists = favoritePlaylists.map { playlist ->
-            SyncFavoritePlaylist.fromFavoritePlaylist(playlist)
+            SyncFavoritePlaylist.fromFavoritePlaylist(playlist, context)
         }
 
         // 获取播放历史（限制最多500条）

@@ -338,6 +338,23 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
 
     suspend fun updateSongMetadata(songId: Long, albumIdentifier: String, newSongInfo: SongItem) {
         withContext(Dispatchers.IO) {
+            // 保存封面地址映射（如果新封面是本地地址）
+            try {
+                val mapper = moe.ouom.neriplayer.data.github.CoverUrlMapper.getInstance(context)
+
+                // 保存主封面映射
+                if (newSongInfo.coverUrl != null && newSongInfo.originalCoverUrl != null) {
+                    mapper.saveCoverMapping(newSongInfo.coverUrl, newSongInfo.originalCoverUrl)
+                }
+
+                // 保存自定义封面映射
+                if (newSongInfo.customCoverUrl != null && newSongInfo.originalCoverUrl != null) {
+                    mapper.saveCoverMapping(newSongInfo.customCoverUrl, newSongInfo.originalCoverUrl)
+                }
+            } catch (e: Exception) {
+                NPLogger.e("LocalPlaylistRepo", "Failed to save cover mapping", e)
+            }
+
             val updatedPlaylists = _playlists.value.map { playlist ->
                 val songIndex = playlist.songs.indexOfFirst { it.id == songId && it.album == albumIdentifier }
 
@@ -345,7 +362,7 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
                     val updatedSongs = playlist.songs.toMutableList().apply {
                         this[songIndex] = newSongInfo
                     }
-                    playlist.copy(songs = updatedSongs)
+                    playlist.copy(songs = updatedSongs, modifiedAt = System.currentTimeMillis())
                 } else {
                     playlist
                 }
