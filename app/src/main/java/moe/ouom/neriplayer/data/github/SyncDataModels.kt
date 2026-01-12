@@ -96,7 +96,13 @@ data class SyncSong(
     val matchedLyric: String? = null,
     val matchedLyricSource: String? = null,
     val matchedSongId: String? = null,
-    val userLyricOffsetMs: Long = 0L
+    val userLyricOffsetMs: Long = 0L,
+    val customCoverUrl: String? = null,
+    val customName: String? = null,
+    val customArtist: String? = null,
+    val originalName: String? = null,
+    val originalArtist: String? = null,
+    val originalCoverUrl: String? = null
 ) {
     companion object {
         fun fromSongItem(song: SongItem): SyncSong {
@@ -111,7 +117,13 @@ data class SyncSong(
                 matchedLyric = song.matchedLyric,
                 matchedLyricSource = song.matchedLyricSource?.name,
                 matchedSongId = song.matchedSongId,
-                userLyricOffsetMs = song.userLyricOffsetMs
+                userLyricOffsetMs = song.userLyricOffsetMs,
+                customCoverUrl = song.customCoverUrl,
+                customName = song.customName,
+                customArtist = song.customArtist,
+                originalName = song.originalName,
+                originalArtist = song.originalArtist,
+                originalCoverUrl = song.originalCoverUrl
             )
         }
     }
@@ -130,7 +142,13 @@ data class SyncSong(
                 try { MusicPlatform.valueOf(it) } catch (e: Exception) { null }
             },
             matchedSongId = matchedSongId,
-            userLyricOffsetMs = userLyricOffsetMs
+            userLyricOffsetMs = userLyricOffsetMs,
+            customCoverUrl = customCoverUrl,
+            customName = customName,
+            customArtist = customArtist,
+            originalName = originalName,
+            originalArtist = originalArtist,
+            originalCoverUrl = originalCoverUrl
         )
     }
 }

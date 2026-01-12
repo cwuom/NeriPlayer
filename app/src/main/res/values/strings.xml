@@ -22,6 +22,7 @@
     <string name="action_collapse">收起</string>
     <string name="action_more">更多</string>
     <string name="action_clear">清空</string>
+    <string name="action_paste">粘贴</string>
     <string name="action_select_all">全选</string>
     <string name="action_deselect_all">取消全选</string>
     <string name="action_multi_select">多选</string>
@@ -87,7 +88,7 @@
     <string name="playlist_name_empty">名称不能为空哦</string>
     <string name="playlist_enter_name">输入歌单名称</string>
     <string name="playlist_queue">播放列表</string>
-    <string name="playlist_add_to_queue">添加到播放队列末尾</string>
+    <string name="playlist_add_to_queue">接下来播放...</string>
     <string name="playlist_add_to_end">添加到队尾</string>
     <string name="playlist_search_hint">搜索歌单内歌曲</string>
     <string name="action_copy_song_name">复制歌曲名</string>
@@ -279,6 +280,25 @@
     <string name="music_get_info">获取歌曲信息</string>
     <string name="music_get_detail_failed">获取详情失败</string>
     <string name="music_no_playback_url">无法获取播放地址</string>
+    <string name="music_edit_info">编辑歌曲信息</string>
+    <string name="music_edit_cover">编辑封面</string>
+    <string name="music_edit_title">编辑标题</string>
+    <string name="music_edit_artist">编辑艺术家</string>
+    <string name="music_cover_url">封面链接</string>
+    <string name="music_cover_url_hint">输入封面图片链接</string>
+    <string name="music_search_cover">搜索封面</string>
+    <string name="music_auto_fill">自动填充</string>
+    <string name="music_auto_fill_hint">从搜索结果自动填充信息</string>
+    <string name="music_save_changes">保存修改</string>
+    <string name="music_info_saved">歌曲信息已保存</string>
+    <string name="music_select_result">选择搜索结果</string>
+    <string name="music_manual_edit">手动编辑</string>
+    <string name="music_edit_lyrics">编辑歌词</string>
+    <string name="music_auto_fill_select">选择填充项</string>
+    <string name="music_auto_fill_lyrics">填充歌词</string>
+    <string name="music_auto_fill_cover">填充封面</string>
+    <string name="music_auto_fill_title">填充标题</string>
+    <string name="music_auto_fill_artist">填充歌手</string>
 
     <!-- Recent -->
     <string name="recent_title">最近播放</string>
@@ -1043,5 +1063,15 @@
     <string name="download_current_song">正在下载: %s</string>
     <string name="download_overall_progress">总体进度: %d%%</string>
     <string name="download_current_file_progress" formatted="false">当前文件: %1$d%% (%2$d KB/s)</string>
+
+    <!-- Lyrics Editor -->
+    <string name="lyrics_original">原文</string>
+    <string name="lyrics_translation">翻译</string>
+    <string name="music_restore_original">恢复原信息</string>
+    <string name="music_lyrics_filled_success">歌词填充成功</string>
+    <string name="music_lyrics_empty">该歌曲暂无歌词</string>
+    <string name="music_lyrics_fill_failed">歌词填充失败</string>
+    <string name="lyrics_editor_hint_original">[00:00.00]在这里输入歌词\n[00:05.00]支持LRC格式\n[00:10.00]格式: [分:秒.毫秒]歌词内容</string>
+    <string name="lyrics_editor_hint_translation">[00:00.00]在这里输入翻译歌词\n[00:05.00]支持LRC格式\n[00:10.00]格式: [分:秒.毫秒]翻译内容</string>
 
 </resources>

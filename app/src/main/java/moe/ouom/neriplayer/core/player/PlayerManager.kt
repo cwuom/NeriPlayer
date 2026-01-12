@@ -1436,7 +1436,15 @@ object PlayerManager {
                     coverUrl = newDetails.coverUrl,
                     matchedLyric = newDetails.lyric,
                     matchedLyricSource = selectedSong.source,
-                    matchedSongId = selectedSong.id
+                    matchedSongId = selectedSong.id,
+                    // 清除所有自定义字段，强制使用获取的信息
+                    customCoverUrl = null,
+                    customName = null,
+                    customArtist = null,
+                    // 保存原始值以便还原
+                    originalName = originalSong.originalName ?: originalSong.name,
+                    originalArtist = originalSong.originalArtist ?: originalSong.artist,
+                    originalCoverUrl = originalSong.originalCoverUrl ?: originalSong.coverUrl
                 )
 
                 updateSongInAllPlaces(originalSong, updatedSong)
@@ -1444,6 +1452,42 @@ object PlayerManager {
             } catch (e: Exception) {
                 mainScope.launch { Toast.makeText(application, "Match failed: ${e.message}", Toast.LENGTH_SHORT).show() }  // Localized
             }
+        }
+    }
+
+    fun updateSongCustomInfo(
+        originalSong: SongItem,
+        customCoverUrl: String?,
+        customName: String?,
+        customArtist: String?
+    ) {
+        ioScope.launch {
+            val updatedSong = originalSong.copy(
+                customCoverUrl = customCoverUrl,
+                customName = customName,
+                customArtist = customArtist
+            )
+            updateSongInAllPlaces(originalSong, updatedSong)
+        }
+    }
+
+    fun restoreToOriginalMetadata(originalSong: SongItem) {
+        ioScope.launch {
+            val updatedSong = originalSong.copy(
+                name = originalSong.originalName ?: originalSong.name,
+                artist = originalSong.originalArtist ?: originalSong.artist,
+                coverUrl = originalSong.originalCoverUrl ?: originalSong.coverUrl,
+                matchedLyric = null,
+                matchedLyricSource = null,
+                matchedSongId = null,
+                customCoverUrl = null,
+                customName = null,
+                customArtist = null,
+                originalName = null,
+                originalArtist = null,
+                originalCoverUrl = null
+            )
+            updateSongInAllPlaces(originalSong, updatedSong)
         }
     }
 
@@ -1466,6 +1510,31 @@ object PlayerManager {
                 songToUpdate.id,
                 songToUpdate.album,
                 songToUpdate.copy(userLyricOffsetMs = newOffset)
+            )
+        }
+
+        persistState()
+    }
+
+    suspend fun updateSongLyrics(songToUpdate: SongItem, newLyrics: String) {
+        val queueIndex = currentPlaylist.indexOfFirst { it.id == songToUpdate.id && it.album == songToUpdate.album }
+        if (queueIndex != -1) {
+            val updatedSong = currentPlaylist[queueIndex].copy(matchedLyric = newLyrics)
+            val newList = currentPlaylist.toMutableList()
+            newList[queueIndex] = updatedSong
+            currentPlaylist = newList
+            _currentQueueFlow.value = currentPlaylist
+        }
+
+        if (_currentSongFlow.value?.id == songToUpdate.id && _currentSongFlow.value?.album == songToUpdate.album) {
+            _currentSongFlow.value = _currentSongFlow.value?.copy(matchedLyric = newLyrics)
+        }
+
+        withContext(Dispatchers.IO) {
+            localRepo.updateSongMetadata(
+                songToUpdate.id,
+                songToUpdate.album,
+                songToUpdate.copy(matchedLyric = newLyrics)
             )
         }
 

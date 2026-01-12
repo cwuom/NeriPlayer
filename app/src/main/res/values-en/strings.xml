@@ -22,6 +22,7 @@
     <string name="action_collapse">Collapse</string>
     <string name="action_more">More</string>
     <string name="action_clear">Clear</string>
+    <string name="action_paste">Paste</string>
     <string name="action_select_all">Select All</string>
     <string name="action_deselect_all">Deselect All</string>
     <string name="action_multi_select">Multi-select</string>
@@ -87,7 +88,7 @@
     <string name="playlist_name_empty">Name cannot be empty</string>
     <string name="playlist_enter_name">Enter Playlist Name</string>
     <string name="playlist_queue">Play Queue</string>
-    <string name="playlist_add_to_queue">Add to Queue</string>
+    <string name="playlist_add_to_queue">Play Next...</string>
     <string name="playlist_add_to_end">Add to End</string>
     <string name="playlist_search_hint">Search songs in playlist</string>
     <string name="action_copy_song_name">Copy Song Name</string>
@@ -279,6 +280,25 @@
     <string name="music_get_info">Get Song Info</string>
     <string name="music_get_detail_failed">Failed to get details</string>
     <string name="music_no_playback_url">Cannot get playback URL</string>
+    <string name="music_edit_info">Edit Song Info</string>
+    <string name="music_edit_cover">Edit Cover</string>
+    <string name="music_edit_title">Edit Title</string>
+    <string name="music_edit_artist">Edit Artist</string>
+    <string name="music_cover_url">Cover URL</string>
+    <string name="music_cover_url_hint">Enter cover image URL</string>
+    <string name="music_search_cover">Search Cover</string>
+    <string name="music_auto_fill">Auto Fill</string>
+    <string name="music_auto_fill_hint">Auto fill info from search results</string>
+    <string name="music_save_changes">Save Changes</string>
+    <string name="music_info_saved">Song info saved</string>
+    <string name="music_select_result">Select search result</string>
+    <string name="music_manual_edit">Manual Edit</string>
+    <string name="music_edit_lyrics">Edit Lyrics</string>
+    <string name="music_auto_fill_select">Select Fill Options</string>
+    <string name="music_auto_fill_lyrics">Fill Lyrics</string>
+    <string name="music_auto_fill_cover">Fill Cover</string>
+    <string name="music_auto_fill_title">Fill Title</string>
+    <string name="music_auto_fill_artist">Fill Artist</string>
 
     <!-- Recent -->
     <string name="recent_title">Recent</string>
@@ -922,7 +942,8 @@
     <string name="download_overall_progress">Overall progress: %d%%</string>
     <string name="download_current_file_progress" formatted="false">Current file: %1$d%% (%2$d KB/s)</string>
 
-    <!-- Missing Translations -->\n    <string name="local_playlist_play_next">Play Next...</string>
+    <!-- Other Translations -->
+    <string name="local_playlist_play_next">Play Next...</string>
     <string name="download_manager_title">Download Manager</string>
     <string name="download_manager_subtitle">Manage downloads</string>
     <string name="download_selected_count">%d selected</string>
@@ -978,6 +999,8 @@
     <string name="local_playlist_delete_count">Delete (%d)</string>
     <string name="local_playlist_export_to">Export to Playlist</string>
     <string name="local_playlist_total_duration" formatted="false">%s · %d songs</string>
+
+    <!-- Disclaimer Content -->
     <string name="disclaimer_section1_body">This software (NeriPlayer) is a cross-platform audio/video player tool, used only to integrate and play public content from multiple third-party online platforms. The software itself does not upload, distribute, or modify any audio/video files; it does not store any user content or third-party content on the server side. For offline playback convenience, this software provides a &quot;save to local device only&quot; download function. The download process does not go through the developer\'s server and will not perform any cloud sync or backup.</string>
     <string name="disclaimer_section2_bullet1">All playable content is accessed by users from third-party platforms, and copyright and related rights belong to the original author or platform;</string>
     <string name="disclaimer_section2_bullet2">Users should comply with the laws and regulations of their country/region when using;</string>
@@ -1004,6 +1027,8 @@
     <string name="disclaimer_section7_body">Users should ensure that their use and download actions comply with the laws of their jurisdiction.</string>
     <string name="disclaimer_section8_body">The developer may update this disclaimer and privacy statement from time to time. Continued use indicates acceptance of the updates.</string>
     <string name="disclaimer_section9_body">By using this software, you indicate that you have read, understood, and agreed to all content on this page. If you do not agree, please uninstall and stop using.</string>
+
+
     <string name="download_cancelled_message">Download cancelled</string>
     <string name="download_failed_message">Download failed</string>
     <string name="github_sync_channel_name">GitHub Sync</string>
@@ -1030,5 +1055,15 @@
     <string name="language_restart_message">Language changed. App restart required for full effect.</string>
     <string name="language_restart_now">Restart Now</string>
     <string name="language_restart_later">Later</string>
+
+    <!-- Lyrics Editor -->
+    <string name="lyrics_original">Original</string>
+    <string name="lyrics_translation">Translation</string>
+    <string name="music_restore_original">Restore</string>
+    <string name="music_lyrics_filled_success">Lyrics filled successfully</string>
+    <string name="music_lyrics_empty">No lyrics available for this song</string>
+    <string name="music_lyrics_fill_failed">Failed to fill lyrics</string>
+    <string name="lyrics_editor_hint_original">[00:00.00]Enter lyrics here\n[00:05.00]Supports LRC format\n[00:10.00]Format: [mm:ss.xx]Lyrics content</string>
+    <string name="lyrics_editor_hint_translation">[00:00.00]Enter translated lyrics here\n[00:05.00]Supports LRC format\n[00:10.00]Format: [mm:ss.xx]Translation content</string>
 
 </resources>
