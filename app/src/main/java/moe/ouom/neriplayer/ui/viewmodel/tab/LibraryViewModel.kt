@@ -222,6 +222,14 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch { localRepo.addToFavorites(song) }
     }
 
+    fun renameLocalPlaylist(playlistId: Long, newName: String) {
+        viewModelScope.launch { localRepo.renamePlaylist(playlistId, newName) }
+    }
+
+    fun deleteLocalPlaylist(playlistId: Long) {
+        viewModelScope.launch { localRepo.deletePlaylist(playlistId) }
+    }
+
     private fun parseNeteasePlaylists(raw: String): List<NeteasePlaylist> {
         val result = mutableListOf<NeteasePlaylist>()
         val root = JSONObject(raw)

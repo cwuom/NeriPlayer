@@ -33,6 +33,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -53,6 +54,8 @@ import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeTopAppBar
@@ -205,7 +208,13 @@ fun LibraryScreen(
                         val finalName = name.trim().ifBlank { "新建歌单" }
                         vm.createLocalPlaylist(finalName)
                     },
-                    onClick = onLocalPlaylistClick
+                    onClick = onLocalPlaylistClick,
+                    onRename = { playlistId, newName ->
+                        vm.renameLocalPlaylist(playlistId, newName)
+                    },
+                    onDelete = { playlistId ->
+                        vm.deleteLocalPlaylist(playlistId)
+                    }
                 )
                 LibraryTab.FAVORITE -> FavoritePlaylistList(
                     listState = favoriteListState,
@@ -303,7 +312,9 @@ private fun LocalPlaylistList(
     playlists: List<LocalPlaylist>,
     listState: LazyListState,
     onCreate: (String) -> Unit,
-    onClick: (LocalPlaylist) -> Unit
+    onClick: (LocalPlaylist) -> Unit,
+    onRename: (Long, String) -> Unit = { _, _ -> },
+    onDelete: (Long) -> Unit = {}
 ) {
     var showDialog by rememberSaveable { mutableStateOf(false) }
     var newName by rememberSaveable { mutableStateOf("") }
@@ -417,6 +428,13 @@ private fun LocalPlaylistList(
         ) { pl ->
             val isListEmpty = pl.songs.isEmpty()
             val displayName = if (pl.name == "我喜欢的音乐" || pl.name == "My Favorite Music") stringResource(R.string.favorite_my_music) else pl.name
+            val isFavorite = pl.name == stringResource(R.string.favorite_my_music) || pl.name == "我喜欢的音乐" || pl.name == "My Favorite Music"
+
+            var showMenu by remember { mutableStateOf(false) }
+            var showRenameDialog by remember { mutableStateOf(false) }
+            var showDeleteDialog by remember { mutableStateOf(false) }
+            var renameText by remember { mutableStateOf(pl.name) }
+
             Card(
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(
@@ -426,7 +444,16 @@ private fun LocalPlaylistList(
                 modifier = Modifier
                     .padding(horizontal = 8.dp, vertical = 4.dp)
                     .animateItem()
-                    .clickable(enabled = !isListEmpty) { onClick(pl) }
+                    .combinedClickable(
+                        onClick = {
+                            if (!isListEmpty) onClick(pl)
+                        },
+                        onLongClick = {
+                            if (!isFavorite) {
+                                showMenu = true
+                            }
+                        }
+                    )
             ) {
                 ListItem(
                     headlineContent = { Text(displayName) },
@@ -455,6 +482,78 @@ private fun LocalPlaylistList(
                                 modifier = Modifier.size(56.dp)
                             )
                         }
+                    }
+                )
+
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.action_rename)) },
+                        onClick = {
+                            showMenu = false
+                            renameText = pl.name
+                            showRenameDialog = true
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.action_delete)) },
+                        onClick = {
+                            showMenu = false
+                            showDeleteDialog = true
+                        }
+                    )
+                }
+            }
+
+            if (showRenameDialog) {
+                AlertDialog(
+                    onDismissRequest = { showRenameDialog = false },
+                    title = { Text(stringResource(R.string.action_rename)) },
+                    text = {
+                        OutlinedTextField(
+                            value = renameText,
+                            onValueChange = { renameText = it },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    },
+                    confirmButton = {
+                        HapticTextButton(
+                            onClick = {
+                                if (renameText.isNotBlank()) {
+                                    onRename(pl.id, renameText.trim())
+                                    showRenameDialog = false
+                                }
+                            }
+                        ) { Text(stringResource(R.string.action_confirm)) }
+                    },
+                    dismissButton = {
+                        HapticTextButton(
+                            onClick = { showRenameDialog = false }
+                        ) { Text(stringResource(R.string.action_cancel)) }
+                    }
+                )
+            }
+
+            if (showDeleteDialog) {
+                AlertDialog(
+                    onDismissRequest = { showDeleteDialog = false },
+                    title = { Text(stringResource(R.string.action_delete)) },
+                    text = { Text("确定要删除歌单 \"${displayName}\" 吗?") },
+                    confirmButton = {
+                        HapticTextButton(
+                            onClick = {
+                                onDelete(pl.id)
+                                showDeleteDialog = false
+                            }
+                        ) { Text(stringResource(R.string.action_delete)) }
+                    },
+                    dismissButton = {
+                        HapticTextButton(
+                            onClick = { showDeleteDialog = false }
+                        ) { Text(stringResource(R.string.action_cancel)) }
                     }
                 )
             }

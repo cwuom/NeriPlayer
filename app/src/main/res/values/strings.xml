@@ -10,6 +10,7 @@
     <string name="action_apply">应用</string>
     <string name="action_send">发送</string>
     <string name="action_delete">删除</string>
+    <string name="action_rename">重命名</string>
     <string name="action_share">分享</string>
     <string name="action_refresh">刷新</string>
     <string name="action_search">搜索</string>
