@@ -24,7 +24,6 @@ package moe.ouom.neriplayer.core.api.search
  */
 
 import android.annotation.SuppressLint
-import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -68,7 +67,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 )
 @Serializable private data class QQMusicAlbum(val name: String, val mid: String)
 
-@Serializable private data class QQMusicLyricResponse(val lyric: String?)
+@Serializable private data class QQMusicLyricResponse(val lyric: String?, val trans: String?)
 
 
 class QQMusicSearchApi : SearchApi {
@@ -133,19 +132,21 @@ class QQMusicSearchApi : SearchApi {
             coroutineScope {
                 val lyricDeferred = async { fetchQQMusicLyric(id) }
 
+                val (lyric, translatedLyric) = lyricDeferred.await()
                 SongDetails(
                     id = songData.mid,
                     songName = songData.name,
                     singer = songData.singer.joinToString("/") { it.name },
                     album = songData.album.name,
                     coverUrl = "https://y.qq.com/music/photo_new/T002R800x800M000${songData.album.mid}.jpg",
-                    lyric = lyricDeferred.await()
+                    lyric = lyric,
+                    translatedLyric = translatedLyric
                 )
             }
         }
     }
 
-    private fun fetchQQMusicLyric(songMid: String): String? {
+    private fun fetchQQMusicLyric(songMid: String): Pair<String?, String?> {
         return try {
             val url = "https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg".toHttpUrl().newBuilder()
                 .addQueryParameter("songmid", songMid)
@@ -159,16 +160,24 @@ class QQMusicSearchApi : SearchApi {
                 .build()
 
             val responseJson = executeRequest(request) as String
-            val base64Lyric = json.decodeFromString<QQMusicLyricResponse>(responseJson).lyric
+            val lyricResponse = json.decodeFromString<QQMusicLyricResponse>(responseJson)
 
-            if (base64Lyric != null) {
-                String(Base64.getDecoder().decode(base64Lyric))
+            val lyric = if (lyricResponse.lyric != null) {
+                String(Base64.getDecoder().decode(lyricResponse.lyric))
             } else {
                 null
             }
+
+            val translatedLyric = if (lyricResponse.trans != null) {
+                String(Base64.getDecoder().decode(lyricResponse.trans))
+            } else {
+                null
+            }
+
+            Pair(lyric, translatedLyric)
         } catch (e: Exception) {
-            Log.e(TAG, "获取QQ音乐歌词失败", e)
-            null
+            NPLogger.e(TAG, "获取QQ音乐歌词失败", e)
+            Pair(null, null)
         }
     }
 

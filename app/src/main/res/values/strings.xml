@@ -1068,6 +1068,8 @@
     <string name="lyrics_original">原文</string>
     <string name="lyrics_translation">翻译</string>
     <string name="music_restore_original">恢复原信息</string>
+    <string name="music_restore_success">已获取原始信息，请点击保存应用</string>
+    <string name="music_restore_failed">获取原始信息失败</string>
     <string name="music_lyrics_filled_success">歌词填充成功</string>
     <string name="music_lyrics_empty">该歌曲暂无歌词</string>
     <string name="music_lyrics_fill_failed">歌词填充失败</string>

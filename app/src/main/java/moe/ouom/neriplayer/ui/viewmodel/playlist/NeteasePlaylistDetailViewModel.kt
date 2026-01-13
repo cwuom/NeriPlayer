@@ -25,7 +25,6 @@
 
 import android.app.Application
 import android.os.Parcelable
-import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -64,6 +63,7 @@ data class SongItem(
     val durationMs: Long,
     val coverUrl: String?,
     val matchedLyric: String? = null,
+    val matchedTranslatedLyric: String? = null,
     val matchedLyricSource: MusicPlatform? = null,
     val matchedSongId: String? = null,
     val userLyricOffsetMs: Long = 0L,
@@ -72,7 +72,9 @@ data class SongItem(
     val customArtist: String? = null,
     val originalName: String? = null,
     val originalArtist: String? = null,
-    val originalCoverUrl: String? = null
+    val originalCoverUrl: String? = null,
+    val originalLyric: String? = null,
+    val originalTranslatedLyric: String? = null
 ) : Parcelable
 
 data class PlaylistDetailUiState(
@@ -149,13 +151,13 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
                     tracks = tracks
                 )
             } catch (e: IOException) {
-                Log.e(TAG_PD, "Network/Server error", e)
+                NPLogger.e(TAG_PD, "Network/Server error", e)
                 _uiState.value = _uiState.value.copy(
                     loading = false,
                     error = "Network or server error: ${e.message ?: e.javaClass.simpleName}"  // Localized in UI
                 )
             } catch (e: Exception) {
-                Log.e(TAG_PD, "Unexpected error", e)
+                NPLogger.e(TAG_PD, "Unexpected error", e)
                 _uiState.value = _uiState.value.copy(
                     loading = false,
                     error = "Parse/unknown error: ${e.message ?: e.javaClass.simpleName}"  // Localized in UI
@@ -200,13 +202,13 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
                     tracks = tracks
                 )
             } catch (e: IOException) {
-                Log.e(TAG_PD, "Network/Server error", e)
+                NPLogger.e(TAG_PD, "Network/Server error", e)
                 _uiState.value = _uiState.value.copy(
                     loading = false,
                     error = "Network or server error: ${e.message ?: e.javaClass.simpleName}"  // Localized in UI
                 )
             } catch (e: Exception) {
-                Log.e(TAG_PD, "Unexpected error", e)
+                NPLogger.e(TAG_PD, "Unexpected error", e)
                 _uiState.value = _uiState.value.copy(
                     loading = false,
                     error = "Parse/unknown error: ${e.message ?: e.javaClass.simpleName}"  // Localized in UI

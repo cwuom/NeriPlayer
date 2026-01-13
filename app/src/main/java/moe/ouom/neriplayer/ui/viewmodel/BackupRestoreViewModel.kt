@@ -33,6 +33,7 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.BackupManager
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
+import moe.ouom.neriplayer.util.NPLogger
 
 /**
  * 备份与恢复的ViewModel
@@ -185,7 +186,7 @@ class BackupRestoreViewModel : ViewModel() {
      * 清除导入状态
      */
     fun clearImportStatus() {
-        android.util.Log.d("BackupRestoreViewModel", "clearImportStatus called")
+        NPLogger.d("BackupRestoreViewModel", "clearImportStatus called")
         _uiState.value = _uiState.value.copy(
             lastImportSuccess = null,
             lastImportMessage = null

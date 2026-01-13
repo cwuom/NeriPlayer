@@ -25,13 +25,13 @@
 
 import android.content.Context
 import android.net.Uri
-import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.util.NPLogger
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -82,11 +82,11 @@ class BackupManager(private val context: Context) {
             } ?: throw IOException(context.getString(R.string.error_cannot_open_output))
 
             val fileName = "${BACKUP_FILE_PREFIX}_${dateFormat.format(Date())}$BACKUP_FILE_EXTENSION"
-            Log.d(TAG, context.getString(R.string.backup_export_success_file, fileName))
+            NPLogger.d(TAG, context.getString(R.string.backup_export_success_file, fileName))
             Result.success(fileName)
             
         } catch (e: Exception) {
-            Log.e(TAG, context.getString(R.string.backup_export_failed), e)
+            NPLogger.e(TAG, context.getString(R.string.backup_export_failed), e)
             Result.failure(e)
         }
     }
@@ -125,10 +125,10 @@ class BackupManager(private val context: Context) {
                     if (mergeResult.hasChanges) {
                         currentPlaylists[existingIndex] = mergeResult.mergedPlaylist
                         mergedCount++
-                        Log.d(TAG, context.getString(R.string.backup_playlist_merged, importedPlaylist.name, mergeResult.addedSongs))
+                        NPLogger.d(TAG, context.getString(R.string.backup_playlist_merged, importedPlaylist.name, mergeResult.addedSongs))
                     } else {
                         skippedCount++
-                        Log.d(TAG, context.getString(R.string.backup_playlist_no_update, importedPlaylist.name))
+                        NPLogger.d(TAG, context.getString(R.string.backup_playlist_no_update, importedPlaylist.name))
                     }
                 } else {
                     // 创建新的歌单
@@ -140,7 +140,7 @@ class BackupManager(private val context: Context) {
                     
                     currentPlaylists.add(newPlaylist)
                     importedCount++
-                    Log.d(TAG, context.getString(R.string.backup_playlist_created, importedPlaylist.name, newPlaylist.songs.size))
+                    NPLogger.d(TAG, context.getString(R.string.backup_playlist_created, importedPlaylist.name, newPlaylist.songs.size))
                 }
             }
             
@@ -155,11 +155,11 @@ class BackupManager(private val context: Context) {
                 backupDate = backupData.exportDate
             )
             
-            Log.d(TAG, context.getString(R.string.backup_import_success_detail, result))
+            NPLogger.d(TAG, context.getString(R.string.backup_import_success_detail, result))
             Result.success(result)
 
         } catch (e: Exception) {
-            Log.e(TAG, context.getString(R.string.backup_import_failed), e)
+            NPLogger.e(TAG, context.getString(R.string.backup_import_failed), e)
             Result.failure(e)
         }
     }
@@ -243,7 +243,7 @@ class BackupManager(private val context: Context) {
             Result.success(analysis)
             
         } catch (e: Exception) {
-            Log.e(TAG, context.getString(R.string.sync_diff_failed), e)
+            NPLogger.e(TAG, context.getString(R.string.sync_diff_failed), e)
             Result.failure(e)
         }
     }

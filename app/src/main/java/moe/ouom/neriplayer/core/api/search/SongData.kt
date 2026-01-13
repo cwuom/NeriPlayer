@@ -47,7 +47,8 @@ data class SongDetails(
     val singer: String,
     val album: String,
     val coverUrl: String?,
-    val lyric: String?
+    val lyric: String?,
+    val translatedLyric: String? = null
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true

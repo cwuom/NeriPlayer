@@ -1063,6 +1063,8 @@
     <string name="music_lyrics_filled_success">Lyrics filled successfully</string>
     <string name="music_lyrics_empty">No lyrics available for this song</string>
     <string name="music_lyrics_fill_failed">Failed to fill lyrics</string>
+    <string name="music_restore_success">Original info retrieved, please click save to apply</string>
+    <string name="music_restore_failed">Failed to retrieve original info</string>
     <string name="lyrics_editor_hint_original">[00:00.00]Enter lyrics here\n[00:05.00]Supports LRC format\n[00:10.00]Format: [mm:ss.xx]Lyrics content</string>
     <string name="lyrics_editor_hint_translation">[00:00.00]Enter translated lyrics here\n[00:05.00]Supports LRC format\n[00:10.00]Format: [mm:ss.xx]Translation content</string>
 

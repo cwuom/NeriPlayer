@@ -29,6 +29,7 @@ import android.content.res.Configuration
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
+import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.BoundsTransform
@@ -283,7 +284,7 @@ fun NowPlayingScreen(
 
     val nowPlayingViewModel: NowPlayingViewModel = viewModel()
 
-    LaunchedEffect(currentSong?.id, currentSong?.matchedLyric, isFromNetease) {
+    LaunchedEffect(currentSong?.id, currentSong?.matchedLyric, currentSong?.matchedTranslatedLyric, isFromNetease) {
         val song = currentSong
         lyrics = when {
             // 优先使用匹配到的歌词
@@ -305,7 +306,16 @@ fun NowPlayingScreen(
 
         // 同步尝试拉取翻译（仅云音乐有）
         translatedLyrics = try {
-            if (song != null) PlayerManager.getTranslatedLyrics(song) else emptyList()
+            when {
+                // 优先使用存储的翻译歌词
+                song?.matchedTranslatedLyric != null -> {
+                    parseNeteaseLrc(song.matchedTranslatedLyric)
+                }
+                song != null -> {
+                    PlayerManager.getTranslatedLyrics(song)
+                }
+                else -> emptyList()
+            }
         } catch (_: Exception) {
             emptyList()
         }
@@ -1606,6 +1616,10 @@ fun EditSongInfoSheet(
     var showLyricsEditor by remember { mutableStateOf(false) }
     var lyricsToEdit by remember { mutableStateOf<String?>(null) }
     var translatedLyricsToEdit by remember { mutableStateOf<String?>(null) }
+    var shouldClearLyrics by remember { mutableStateOf(false) }  // 标记是否应该清除歌词(B站)
+    var shouldRestoreLyrics by remember { mutableStateOf(false) }  // 标记是否应该恢复歌词(网易云)
+    var originalLyric by remember { mutableStateOf<String?>(null) }  // 保存要恢复的原始歌词
+    var originalTranslatedLyric by remember { mutableStateOf<String?>(null) }  // 保存要恢复的原始翻译歌词
 
     // 标记用户是否手动编辑过，避免自动重置
     var userHasEdited by remember { mutableStateOf(false) }
@@ -1759,16 +1773,20 @@ fun EditSongInfoSheet(
 
                             // 获取翻译歌词
                             val translatedLyrics = try {
-                                val translatedEntries = PlayerManager.getTranslatedLyrics(actualSong)
-                                if (translatedEntries.isNotEmpty()) {
-                                    translatedEntries.joinToString("\n") { entry ->
-                                        val minutes = entry.startTimeMs / 60000
-                                        val seconds = (entry.startTimeMs % 60000) / 1000
-                                        val millis = entry.startTimeMs % 1000
-                                        "[%02d:%02d.%02d]%s".format(minutes, seconds, millis / 10, entry.text)
-                                    }
+                                if (actualSong.matchedTranslatedLyric != null) {
+                                    actualSong.matchedTranslatedLyric
                                 } else {
-                                    ""
+                                    val translatedEntries = PlayerManager.getTranslatedLyrics(actualSong)
+                                    if (translatedEntries.isNotEmpty()) {
+                                        translatedEntries.joinToString("\n") { entry ->
+                                            val minutes = entry.startTimeMs / 60000
+                                            val seconds = (entry.startTimeMs % 60000) / 1000
+                                            val millis = entry.startTimeMs % 1000
+                                            "[%02d:%02d.%02d]%s".format(minutes, seconds, millis / 10, entry.text)
+                                        }
+                                    } else {
+                                        ""
+                                    }
                                 }
                             } catch (e: Exception) {
                                 ""
@@ -1813,9 +1831,35 @@ fun EditSongInfoSheet(
 
             HapticTextButton(
                 onClick = {
-                    viewModel.restoreOriginalInfo(actualSong)
-                    // 重置编辑标志，允许自动更新
-                    userHasEdited = false
+                    viewModel.fetchOriginalInfo(context, actualSong) { success, info, message ->
+                        if (success && info != null) {
+                            // 填充到编辑框，但不保存
+                            songName = info.name
+                            artistName = info.artist
+                            coverUrl = info.coverUrl ?: ""
+
+                            // 根据音源类型设置不同的标志
+                            if (info.shouldClearLyrics) {
+                                // B站音源：标记需要清除歌词
+                                shouldClearLyrics = true
+                                shouldRestoreLyrics = false
+                                android.util.Log.d("NowPlayingScreen", "B站音源恢复: 将清除歌词")
+                            } else {
+                                // 网易云音源：保存原始歌词，标记需要恢复
+                                shouldClearLyrics = false
+                                shouldRestoreLyrics = info.lyric != null || info.translatedLyric != null
+                                originalLyric = info.lyric
+                                originalTranslatedLyric = info.translatedLyric
+                                android.util.Log.d("NowPlayingScreen", "网易云音源恢复: 将恢复歌词, hasLyric=${info.lyric != null}, hasTranslation=${info.translatedLyric != null}")
+                            }
+
+                            // 标记用户已编辑，防止自动更新覆盖
+                            userHasEdited = true
+                            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 },
                 modifier = Modifier.weight(1f)
             ) {
@@ -1827,15 +1871,57 @@ fun EditSongInfoSheet(
             HapticTextButton(
                 onClick = {
                     coroutineScope.launch {
-                        viewModel.updateSongInfo(
-                            originalSong = actualSong,
-                            newCoverUrl = coverUrl.ifBlank { null },
-                            newName = songName,
-                            newArtist = artistName
-                        )
-                        // 重置编辑标志，允许自动更新
-                        userHasEdited = false
-                        onDismiss()
+                        try {
+                            // 处理歌词：清除(B站)或恢复(网易云)
+                            if (shouldClearLyrics) {
+                                // B站音源：清除歌词
+                                android.util.Log.d("NowPlayingScreen", "=== 开始清除歌词流程 ===")
+                                android.util.Log.d("NowPlayingScreen", "actualSong详情: id=${actualSong.id}, album='${actualSong.album}', name='${actualSong.name}', artist='${actualSong.artist}'")
+                                android.util.Log.d("NowPlayingScreen", "当前歌词状态: matchedLyric=${actualSong.matchedLyric?.take(50)}, matchedTranslatedLyric=${actualSong.matchedTranslatedLyric?.take(50)}")
+
+                                android.util.Log.d("NowPlayingScreen", "准备调用PlayerManager.updateSongLyricsAndTranslation清除歌词")
+                                PlayerManager.updateSongLyricsAndTranslation(
+                                    actualSong,
+                                    null,  // 清空歌词
+                                    null  // 清空翻译歌词
+                                )
+                                android.util.Log.d("NowPlayingScreen", "PlayerManager.updateSongLyricsAndTranslation调用完成")
+                                shouldClearLyrics = false  // 重置标志
+                                android.util.Log.d("NowPlayingScreen", "=== 清除歌词流程完成 ===")
+                            } else if (shouldRestoreLyrics) {
+                                // 网易云音源：恢复歌词
+                                android.util.Log.d("NowPlayingScreen", "=== 开始恢复歌词流程 ===")
+                                android.util.Log.d("NowPlayingScreen", "actualSong详情: id=${actualSong.id}, album='${actualSong.album}'")
+                                android.util.Log.d("NowPlayingScreen", "原始歌词: lyric=${originalLyric?.take(50)}, translatedLyric=${originalTranslatedLyric?.take(50)}")
+
+                                android.util.Log.d("NowPlayingScreen", "准备调用PlayerManager.updateSongLyricsAndTranslation恢复歌词")
+                                PlayerManager.updateSongLyricsAndTranslation(
+                                    actualSong,
+                                    originalLyric,  // 恢复原始歌词
+                                    originalTranslatedLyric  // 恢复原始翻译歌词
+                                )
+                                android.util.Log.d("NowPlayingScreen", "PlayerManager.updateSongLyricsAndTranslation调用完成")
+                                shouldRestoreLyrics = false  // 重置标志
+                                originalLyric = null
+                                originalTranslatedLyric = null
+                                android.util.Log.d("NowPlayingScreen", "=== 恢复歌词流程完成 ===")
+                            }
+
+                            // 然后更新歌曲信息
+                            viewModel.updateSongInfo(
+                                originalSong = actualSong,
+                                newCoverUrl = coverUrl.ifBlank { null },
+                                newName = songName,
+                                newArtist = artistName
+                            )
+
+                            // 重置编辑标志，允许自动更新
+                            userHasEdited = false
+                            onDismiss()
+                        } catch (e: Exception) {
+                            android.util.Log.e("NowPlayingScreen", "保存歌曲信息失败", e)
+                            Toast.makeText(context, "保存失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 },
                 modifier = Modifier.weight(1f)
@@ -2172,8 +2258,8 @@ fun LyricsEditorSheet(
                         try {
                             // 保存原文歌词
                             PlayerManager.updateSongLyrics(originalSong, lyricsText)
-                            // TODO: 添加保存翻译歌词的方法
-                            // PlayerManager.updateSongTranslatedLyrics(originalSong, translatedLyricsText)
+                            // 保存翻译歌词
+                            PlayerManager.updateSongTranslatedLyrics(originalSong, translatedLyricsText)
                             onDismiss()
                         } catch (e: Exception) {
                             e.printStackTrace()

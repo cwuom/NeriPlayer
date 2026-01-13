@@ -57,7 +57,7 @@ import java.io.IOException
 @Serializable private data class CloudMusicSongDetailResponse(val songs: List<CloudMusicSongDetail>)
 @Serializable private data class CloudMusicArtist(val name: String)
 @Serializable private data class CloudMusicAlbum(val name: String, val picUrl: String?)
-@Serializable private data class CloudMusicLyricResponse(val lrc: CloudMusicLrc?)
+@Serializable private data class CloudMusicLyricResponse(val lrc: CloudMusicLrc?, val tlyric: CloudMusicLrc? = null)
 @Serializable private data class CloudMusicLrc(val lyric: String?)
 
 class CloudMusicSearchApi(private val neteaseClient: NeteaseClient) : SearchApi {
@@ -102,16 +102,19 @@ class CloudMusicSearchApi(private val neteaseClient: NeteaseClient) : SearchApi 
                 val lyricDeferred = async {
                     val lyricUrl = "https://music.163.com/api/song/lyric?id=${id}&lv=-1"
                     val lyricJson = executeRequest(lyricUrl) as String
-                    json.decodeFromString<CloudMusicLyricResponse>(lyricJson).lrc?.lyric
+                    val lyricResponse = json.decodeFromString<CloudMusicLyricResponse>(lyricJson)
+                    Pair(lyricResponse.lrc?.lyric, lyricResponse.tlyric?.lyric)
                 }
 
+                val (lyric, translatedLyric) = lyricDeferred.await()
                 SongDetails(
                     id = id,
                     songName = songData.name,
                     singer = songData.artists.joinToString("/") { it.name },
                     album = songData.album.name,
                     coverUrl = songData.album.picUrl,
-                    lyric = lyricDeferred.await()
+                    lyric = lyric,
+                    translatedLyric = translatedLyric
                 )
             }
         }

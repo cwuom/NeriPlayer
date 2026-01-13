@@ -1434,7 +1434,9 @@ object PlayerManager {
                     name = newDetails.songName,
                     artist = newDetails.singer,
                     coverUrl = newDetails.coverUrl,
+                    // 直接使用获取的歌词，如果为null则清除现有歌词（B站音源默认无歌词）
                     matchedLyric = newDetails.lyric,
+                    matchedTranslatedLyric = newDetails.translatedLyric,
                     matchedLyricSource = selectedSong.source,
                     matchedSongId = selectedSong.id,
                     // 清除所有自定义字段，强制使用获取的信息
@@ -1444,13 +1446,18 @@ object PlayerManager {
                     // 保存原始值以便还原
                     originalName = originalSong.originalName ?: originalSong.name,
                     originalArtist = originalSong.originalArtist ?: originalSong.artist,
-                    originalCoverUrl = originalSong.originalCoverUrl ?: originalSong.coverUrl
+                    originalCoverUrl = originalSong.originalCoverUrl ?: originalSong.coverUrl,
+                    originalLyric = originalSong.originalLyric ?: originalSong.matchedLyric,
+                    originalTranslatedLyric = originalSong.originalTranslatedLyric ?: originalSong.matchedTranslatedLyric
                 )
 
                 updateSongInAllPlaces(originalSong, updatedSong)
 
             } catch (e: Exception) {
-                mainScope.launch { Toast.makeText(application, "Match failed: ${e.message}", Toast.LENGTH_SHORT).show() }  // Localized
+                mainScope.launch {
+                    Toast.makeText(application, "Match failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                    NPLogger.e("NERI-PlayerManager", "replaceMetadataFromSearch failed: ${e.message}", e)
+                }  // Localized
             }
         }
     }
@@ -1462,34 +1469,125 @@ object PlayerManager {
         customArtist: String?
     ) {
         ioScope.launch {
-            val updatedSong = originalSong.copy(
-                // 直接修改本质属性
-                name = customName ?: originalSong.name,
-                artist = customArtist ?: originalSong.artist,
-                coverUrl = customCoverUrl,
-                // 保存原始值（如果还没有保存）
-                originalName = originalSong.originalName ?: originalSong.name,
-                originalArtist = originalSong.originalArtist ?: originalSong.artist,
-                originalCoverUrl = originalSong.originalCoverUrl ?: originalSong.coverUrl
+            NPLogger.e("PlayerManager", "=== updateSongCustomInfo start ===")
+            NPLogger.e("PlayerManager", "originalSong: id=${originalSong.id}, album='${originalSong.album}', matchedLyric=${originalSong.matchedLyric?.take(50)}")
+
+            // 从当前播放列表中获取最新的歌曲状态,保留歌词等字段
+            val currentSong = currentPlaylist.firstOrNull {
+                it.id == originalSong.id && it.album == originalSong.album
+            } ?: originalSong
+
+            NPLogger.e("PlayerManager", "currentSong from playlist: matchedLyric=${currentSong.matchedLyric?.take(50)}, matchedTranslatedLyric=${currentSong.matchedTranslatedLyric?.take(50)}")
+
+            val updatedSong = currentSong.copy(
+                // 只更新名称、歌手和封面,保留其他字段(包括歌词)
+                name = customName ?: currentSong.name,
+                artist = customArtist ?: currentSong.artist,
+                coverUrl = customCoverUrl
             )
+
+            NPLogger.e("PlayerManager", "updatedSong after copy: matchedLyric=${updatedSong.matchedLyric?.take(50)}, matchedTranslatedLyric=${updatedSong.matchedTranslatedLyric?.take(50)}")
+
             updateSongInAllPlaces(originalSong, updatedSong)
+
+            NPLogger.e("PlayerManager", "=== updateSongCustomInfo over ===")
         }
     }
 
     fun restoreToOriginalMetadata(originalSong: SongItem) {
         ioScope.launch {
-            val updatedSong = originalSong.copy(
-                name = originalSong.originalName ?: originalSong.name,
-                artist = originalSong.originalArtist ?: originalSong.artist,
-                coverUrl = originalSong.originalCoverUrl ?: originalSong.coverUrl,
-                matchedLyric = null,
-                matchedLyricSource = null,
-                matchedSongId = null,
-                originalName = null,
-                originalArtist = null,
-                originalCoverUrl = null
-            )
-            updateSongInAllPlaces(originalSong, updatedSong)
+            try {
+                val isBili = originalSong.album.startsWith(BILI_SOURCE_TAG)
+
+                if (isBili) {
+                    // B站视频：从B站重新获取原始信息
+                    val videoInfo = biliClient.getVideoBasicInfoByAvid(originalSong.id)
+
+                    // 获取对应的分P信息（如果有）
+                    val parts = originalSong.album.split('|')
+                    val targetCid = if (parts.size > 1) parts[1].toLongOrNull() else null
+                    val pageInfo = if (targetCid != null) {
+                        videoInfo.pages.firstOrNull { it.cid == targetCid }
+                    } else {
+                        videoInfo.pages.firstOrNull()
+                    }
+
+                    // HTTP自动转HTTPS
+                    val coverUrl = videoInfo.coverUrl.let {
+                        if (it.startsWith("http://")) it.replaceFirst("http://", "https://") else it
+                    }
+
+                    val updatedSong = originalSong.copy(
+                        name = pageInfo?.part ?: videoInfo.title,
+                        artist = videoInfo.ownerName,
+                        coverUrl = coverUrl,
+                        matchedLyric = null, // B站视频清空歌词
+                        matchedTranslatedLyric = null,
+                        matchedLyricSource = null,
+                        matchedSongId = null,
+                        customCoverUrl = null,
+                        customName = null,
+                        customArtist = null,
+                        originalName = null,
+                        originalArtist = null,
+                        originalCoverUrl = null,
+                        originalLyric = null,
+                        originalTranslatedLyric = null
+                    )
+                    updateSongInAllPlaces(originalSong, updatedSong)
+                } else {
+                    // 网易云音乐：从网易云重新获取原始信息
+                    val songDetails = cloudMusicSearchApi?.getSongInfo(originalSong.id.toString())
+
+                    if (songDetails != null) {
+                        // HTTP自动转HTTPS
+                        val coverUrl = songDetails.coverUrl?.let {
+                            if (it.startsWith("http://")) it.replaceFirst("http://", "https://") else it
+                        }
+
+                        val updatedSong = originalSong.copy(
+                            name = songDetails.songName,
+                            artist = songDetails.singer,
+                            coverUrl = coverUrl,
+                            matchedLyric = null,
+                            matchedTranslatedLyric = null,
+                            matchedLyricSource = null,
+                            matchedSongId = null,
+                            customCoverUrl = null,
+                            customName = null,
+                            customArtist = null,
+                            originalName = null,
+                            originalArtist = null,
+                            originalCoverUrl = null,
+                            originalLyric = null,
+                            originalTranslatedLyric = null
+                        )
+                        updateSongInAllPlaces(originalSong, updatedSong)
+                    } else {
+                        // 如果API调用失败，至少清除自定义字段
+                        val updatedSong = originalSong.copy(
+                            matchedLyric = null,
+                            matchedTranslatedLyric = null,
+                            matchedLyricSource = null,
+                            matchedSongId = null,
+                            customCoverUrl = null,
+                            customName = null,
+                            customArtist = null,
+                            originalName = null,
+                            originalArtist = null,
+                            originalCoverUrl = null,
+                            originalLyric = null,
+                            originalTranslatedLyric = null
+                        )
+                        updateSongInAllPlaces(originalSong, updatedSong)
+                    }
+                }
+            } catch (e: Exception) {
+                NPLogger.e("NERI-PlayerManager", "恢复原始信息失败", e)
+                mainScope.launch {
+                    postPlayerEvent(PlayerEvent.ShowError("恢复失败：${e.message}"))
+                }
+            }
         }
     }
 
@@ -1518,7 +1616,7 @@ object PlayerManager {
         persistState()
     }
 
-    suspend fun updateSongLyrics(songToUpdate: SongItem, newLyrics: String) {
+    suspend fun updateSongLyrics(songToUpdate: SongItem, newLyrics: String?) {
         val queueIndex = currentPlaylist.indexOfFirst { it.id == songToUpdate.id && it.album == songToUpdate.album }
         if (queueIndex != -1) {
             val updatedSong = currentPlaylist[queueIndex].copy(matchedLyric = newLyrics)
@@ -1532,15 +1630,110 @@ object PlayerManager {
             _currentSongFlow.value = _currentSongFlow.value?.copy(matchedLyric = newLyrics)
         }
 
-        withContext(Dispatchers.IO) {
-            localRepo.updateSongMetadata(
-                songToUpdate.id,
-                songToUpdate.album,
-                songToUpdate.copy(matchedLyric = newLyrics)
-            )
+        // 从队列中获取最新的歌曲信息，避免覆盖其他字段
+        val latestSong = currentPlaylist.firstOrNull { it.id == songToUpdate.id && it.album == songToUpdate.album }
+        if (latestSong != null) {
+            withContext(Dispatchers.IO) {
+                localRepo.updateSongMetadata(
+                    songToUpdate.id,
+                    songToUpdate.album,
+                    latestSong
+                )
+            }
         }
 
         persistState()
+    }
+
+    suspend fun updateSongTranslatedLyrics(songToUpdate: SongItem, newTranslatedLyrics: String?) {
+        val queueIndex = currentPlaylist.indexOfFirst { it.id == songToUpdate.id && it.album == songToUpdate.album }
+        if (queueIndex != -1) {
+            val updatedSong = currentPlaylist[queueIndex].copy(matchedTranslatedLyric = newTranslatedLyrics)
+            val newList = currentPlaylist.toMutableList()
+            newList[queueIndex] = updatedSong
+            currentPlaylist = newList
+            _currentQueueFlow.value = currentPlaylist
+        }
+
+        if (_currentSongFlow.value?.id == songToUpdate.id && _currentSongFlow.value?.album == songToUpdate.album) {
+            _currentSongFlow.value = _currentSongFlow.value?.copy(matchedTranslatedLyric = newTranslatedLyrics)
+        }
+
+        // 从队列中获取最新的歌曲信息，避免覆盖其他字段
+        val latestSong = currentPlaylist.firstOrNull { it.id == songToUpdate.id && it.album == songToUpdate.album }
+        if (latestSong != null) {
+            withContext(Dispatchers.IO) {
+                localRepo.updateSongMetadata(
+                    songToUpdate.id,
+                    songToUpdate.album,
+                    latestSong
+                )
+            }
+        }
+
+        persistState()
+    }
+
+    suspend fun updateSongLyricsAndTranslation(songToUpdate: SongItem, newLyrics: String?, newTranslatedLyrics: String?) {
+//        NPLogger.e("PlayerManager", "!!! FUNCTION CALLED !!! updateSongLyricsAndTranslation")
+//        NPLogger.e("PlayerManager", "songId=${songToUpdate.id}, album='${songToUpdate.album}'")
+//        NPLogger.e("PlayerManager", "newLyrics=${newLyrics?.take(50)}, newTranslatedLyrics=${newTranslatedLyrics?.take(50)}")
+
+        // 打印播放列表中所有歌曲的ID和album，帮助调试匹配问题
+//        NPLogger.e("PlayerManager", "=== 当前播放列表中的所有歌曲 ===")
+//        currentPlaylist.forEachIndexed { index, song ->
+//            NPLogger.e("PlayerManager", "[$index] id=${song.id}, album='${song.album}', name='${song.name}', hasLyric=${song.matchedLyric != null}")
+//        }
+//        NPLogger.e("PlayerManager", "=== 播放列表打印完毕 ===")
+
+        val queueIndex = currentPlaylist.indexOfFirst { it.id == songToUpdate.id && it.album == songToUpdate.album }
+//        NPLogger.e("PlayerManager", "queueIndex=$queueIndex, currentPlaylist.size=${currentPlaylist.size}")
+
+        if (queueIndex != -1) {
+            val updatedSong = currentPlaylist[queueIndex].copy(
+                matchedLyric = newLyrics,
+                matchedTranslatedLyric = newTranslatedLyrics
+            )
+//            NPLogger.e("PlayerManager", "更新前: matchedLyric=${currentPlaylist[queueIndex].matchedLyric?.take(50)}")
+//            NPLogger.e("PlayerManager", "更新后: matchedLyric=${updatedSong.matchedLyric?.take(50)}")
+            val newList = currentPlaylist.toMutableList()
+            newList[queueIndex] = updatedSong
+            currentPlaylist = newList
+            _currentQueueFlow.value = currentPlaylist
+            NPLogger.e("PlayerManager", "已更新队列中的歌曲")
+        } else {
+            NPLogger.e("PlayerManager", "未找到歌曲在队列中！")
+        }
+
+        NPLogger.e("PlayerManager", "当前播放歌曲: id=${_currentSongFlow.value?.id}, album='${_currentSongFlow.value?.album}'")
+        if (_currentSongFlow.value?.id == songToUpdate.id && _currentSongFlow.value?.album == songToUpdate.album) {
+            val beforeUpdate = _currentSongFlow.value?.matchedLyric
+            _currentSongFlow.value = _currentSongFlow.value?.copy(
+                matchedLyric = newLyrics,
+                matchedTranslatedLyric = newTranslatedLyrics
+            )
+            NPLogger.e("PlayerManager", "已更新当前播放歌曲: 更新前=${beforeUpdate?.take(50)}, 更新后=${_currentSongFlow.value?.matchedLyric?.take(50)}")
+        } else {
+            NPLogger.e("PlayerManager", "当前播放歌曲不匹配！")
+        }
+
+        // 从队列中获取最新的歌曲信息，避免覆盖其他字段
+        val latestSong = currentPlaylist.firstOrNull { it.id == songToUpdate.id && it.album == songToUpdate.album }
+        if (latestSong != null) {
+            withContext(Dispatchers.IO) {
+                localRepo.updateSongMetadata(
+                    songToUpdate.id,
+                    songToUpdate.album,
+                    latestSong
+                )
+            }
+            NPLogger.d("PlayerManager", "已持久化到数据库")
+        } else {
+            NPLogger.e("PlayerManager", "未找到最新歌曲！")
+        }
+
+        persistState()
+        NPLogger.d("PlayerManager", "updateSongLyricsAndTranslation完成")
     }
 
     private suspend fun updateSongInAllPlaces(originalSong: SongItem, updatedSong: SongItem) {
