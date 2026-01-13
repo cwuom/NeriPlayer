@@ -592,29 +592,16 @@ class GitHubSyncManager(private val context: Context) {
             }
 
             if (existingPlaylist != null) {
-                // 歌单已存在，检查是否在同步期间被修改
+                // 歌单已存在，统一按时间戳判断使用哪个版本
                 val updatedPlaylist = when {
-                    // 本地为空但远程有歌曲 -> 使用远程数据（恢复云端备份）
-                    existingPlaylist.songs.isEmpty() && syncPlaylist.songs.isNotEmpty() -> {
-                        NPLogger.d(TAG, "Local playlist '${existingPlaylist.name}' is empty but remote has songs, using remote version")
-                        existingPlaylist.copy(
-                            name = if (syncPlaylist.name in possibleFavoriteNames) currentFavoritesName else syncPlaylist.name,
-                            songs = syncPlaylist.songs.map { it.toSongItem() }.toMutableList(),
-                            modifiedAt = syncPlaylist.modifiedAt
-                        )
-                    }
-                    // 本地有歌曲但远程为空 -> 保留本地数据
-                    existingPlaylist.songs.isNotEmpty() && syncPlaylist.songs.isEmpty() -> {
-                        NPLogger.d(TAG, "Local playlist '${existingPlaylist.name}' has songs but remote is empty, keeping local version")
-                        existingPlaylist
-                    }
-                    // 两边都有内容，按时间戳判断
+                    // 本地时间戳更新 -> 保留本地版本（包括清空歌单的情况）
                     existingPlaylist.modifiedAt > syncPlaylist.modifiedAt -> {
-                        NPLogger.d(TAG, "Local playlist '${existingPlaylist.name}' was modified during sync, keeping local version")
+                        NPLogger.d(TAG, "Local playlist '${existingPlaylist.name}' is newer (local=${existingPlaylist.modifiedAt}, remote=${syncPlaylist.modifiedAt}), keeping local version (${existingPlaylist.songs.size} songs)")
                         existingPlaylist
                     }
-                    // 使用合并后的数据
+                    // 远程时间戳更新或相同 -> 使用远程版本
                     else -> {
+                        NPLogger.d(TAG, "Remote playlist '${syncPlaylist.name}' is newer or same (local=${existingPlaylist.modifiedAt}, remote=${syncPlaylist.modifiedAt}), using remote version (${syncPlaylist.songs.size} songs)")
                         existingPlaylist.copy(
                             name = if (syncPlaylist.name in possibleFavoriteNames) currentFavoritesName else syncPlaylist.name,
                             songs = syncPlaylist.songs.map { it.toSongItem() }.toMutableList(),
