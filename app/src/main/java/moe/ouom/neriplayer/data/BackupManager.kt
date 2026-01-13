@@ -30,6 +30,8 @@ import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.data.github.CoverUrlMapper
+import moe.ouom.neriplayer.data.github.SyncPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import java.io.IOException
@@ -56,9 +58,9 @@ class BackupManager(private val context: Context) {
      * 备份数据结构
      */
     data class BackupData(
-        val version: String = "1.0",
+        val version: String = "2.0",
         val timestamp: Long = System.currentTimeMillis(),
-        val playlists: List<LocalPlaylist>,
+        val playlists: List<SyncPlaylist>,
         val exportDate: String = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.getDefault()).format(Date())
     )
     
@@ -69,14 +71,19 @@ class BackupManager(private val context: Context) {
         try {
             val playlistRepo = LocalPlaylistRepository.getInstance(context)
             val playlists = playlistRepo.playlists.value
-            
+
+            // 使用SyncPlaylist转换，确保使用网络地址
+            val syncPlaylists = playlists.map { playlist ->
+                SyncPlaylist.fromLocalPlaylist(playlist, System.currentTimeMillis(), context)
+            }
+
             val backupData = BackupData(
-                playlists = playlists,
+                playlists = syncPlaylists,
                 exportDate = dateFormat.format(Date())
             )
-            
+
             val json = gson.toJson(backupData)
-            
+
             context.contentResolver.openOutputStream(uri)?.use { outputStream ->
                 outputStream.write(json.toByteArray(Charsets.UTF_8))
             } ?: throw IOException(context.getString(R.string.error_cannot_open_output))
@@ -84,7 +91,7 @@ class BackupManager(private val context: Context) {
             val fileName = "${BACKUP_FILE_PREFIX}_${dateFormat.format(Date())}$BACKUP_FILE_EXTENSION"
             NPLogger.d(TAG, context.getString(R.string.backup_export_success_file, fileName))
             Result.success(fileName)
-            
+
         } catch (e: Exception) {
             NPLogger.e(TAG, context.getString(R.string.backup_export_failed), e)
             Result.failure(e)
@@ -98,30 +105,33 @@ class BackupManager(private val context: Context) {
         try {
             val inputStream: InputStream = context.contentResolver.openInputStream(uri)
                 ?: throw IOException(context.getString(R.string.error_cannot_open_input))
-            
+
             val json = inputStream.bufferedReader().use { it.readText() }
             val backupData = gson.fromJson<BackupData>(json, object : TypeToken<BackupData>() {}.type)
-            
+
             if (backupData.playlists.isEmpty()) {
                 return@withContext Result.failure(IllegalArgumentException("No playlist data in backup file"))  // Localized
             }
-            
+
             val playlistRepo = LocalPlaylistRepository.getInstance(context)
             val currentPlaylists = playlistRepo.playlists.value.toMutableList()
-            
+
             var importedCount = 0
             var skippedCount = 0
             var mergedCount = 0
-            
-            for (importedPlaylist in backupData.playlists) {
+
+            for (syncPlaylist in backupData.playlists) {
+                // 转换为LocalPlaylist
+                val importedPlaylist = syncPlaylist.toLocalPlaylist()
+
                 // 检查是否已存在同名歌单
                 val existingIndex = currentPlaylists.indexOfFirst { it.name == importedPlaylist.name }
-                
+
                 if (existingIndex != -1) {
                     // 如果存在同名歌单，进行智能合并
                     val existingPlaylist = currentPlaylists[existingIndex]
                     val mergeResult = mergePlaylists(existingPlaylist, importedPlaylist)
-                    
+
                     if (mergeResult.hasChanges) {
                         currentPlaylists[existingIndex] = mergeResult.mergedPlaylist
                         mergedCount++
@@ -137,16 +147,16 @@ class BackupManager(private val context: Context) {
                         name = importedPlaylist.name,
                         songs = importedPlaylist.songs.toMutableList()
                     )
-                    
+
                     currentPlaylists.add(newPlaylist)
                     importedCount++
                     NPLogger.d(TAG, context.getString(R.string.backup_playlist_created, importedPlaylist.name, newPlaylist.songs.size))
                 }
             }
-            
+
             // 更新仓库
             playlistRepo.updatePlaylists(currentPlaylists)
-            
+
             val result = ImportResult(
                 importedCount = importedCount,
                 skippedCount = skippedCount,
@@ -154,7 +164,7 @@ class BackupManager(private val context: Context) {
                 totalCount = backupData.playlists.size,
                 backupDate = backupData.exportDate
             )
-            
+
             NPLogger.d(TAG, context.getString(R.string.backup_import_success_detail, result))
             Result.success(result)
 
@@ -163,7 +173,7 @@ class BackupManager(private val context: Context) {
             Result.failure(e)
         }
     }
-    
+
     /**
      * 智能合并歌单，只添加缺失的歌曲
      */
@@ -196,50 +206,50 @@ class BackupManager(private val context: Context) {
         try {
             val inputStream: InputStream = context.contentResolver.openInputStream(uri)
                 ?: throw IOException(context.getString(R.string.error_cannot_open_input))
-            
+
             val json = inputStream.bufferedReader().use { it.readText() }
             val backupData = gson.fromJson<BackupData>(json, object : TypeToken<BackupData>() {}.type)
-            
+
             val playlistRepo = LocalPlaylistRepository.getInstance(context)
             val currentPlaylists = playlistRepo.playlists.value
-            
+
             val differences = mutableListOf<PlaylistDifference>()
-            
-            for (backupPlaylist in backupData.playlists) {
-                val currentPlaylist = currentPlaylists.find { it.name == backupPlaylist.name }
-                
+
+            for (syncPlaylist in backupData.playlists) {
+                val currentPlaylist = currentPlaylists.find { it.name == syncPlaylist.name }
+
                 if (currentPlaylist == null) {
                     // 新歌单
                     differences.add(PlaylistDifference(
-                        playlistName = backupPlaylist.name,
+                        playlistName = syncPlaylist.name,
                         type = DifferenceType.NEW_PLAYLIST,
-                        missingSongs = backupPlaylist.songs.size,
+                        missingSongs = syncPlaylist.songs.size,
                         existingSongs = 0,
-                        totalSongs = backupPlaylist.songs.size
+                        totalSongs = syncPlaylist.songs.size
                     ))
                 } else {
                     // 现有歌单，分析差异
                     val currentSongIds = currentPlaylist.songs.map { it.id }.toSet()
-                    val missingSongs = backupPlaylist.songs.filter { it.id !in currentSongIds }
-                    
+                    val missingSongs = syncPlaylist.songs.filter { it.id !in currentSongIds }
+
                     if (missingSongs.isNotEmpty()) {
                         differences.add(PlaylistDifference(
-                            playlistName = backupPlaylist.name,
+                            playlistName = syncPlaylist.name,
                             type = DifferenceType.MISSING_SONGS,
                             missingSongs = missingSongs.size,
                             existingSongs = currentPlaylist.songs.size,
-                            totalSongs = backupPlaylist.songs.size
+                            totalSongs = syncPlaylist.songs.size
                         ))
                     }
                 }
             }
-            
+
             val analysis = DifferenceAnalysis(
                 backupDate = backupData.exportDate,
                 differences = differences,
                 totalMissingSongs = differences.sumOf { it.missingSongs }
             )
-            
+
             Result.success(analysis)
             
         } catch (e: Exception) {

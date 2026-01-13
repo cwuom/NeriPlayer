@@ -149,7 +149,14 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
     /** 将歌曲添加到"我喜欢的音乐" */
     suspend fun addToFavorites(song: SongItem) {
         val favoritesName = context.getString(R.string.favorite_my_music)
-        val fav = _playlists.value.firstOrNull { it.name == "我喜欢的音乐" || it.name == "My Favorite Music" } ?: return
+        // 尝试多种可能的收藏夹名称
+        val fav = _playlists.value.firstOrNull {
+            it.name == favoritesName ||
+            it.name == "我喜欢的音乐" ||
+            it.name == "My Favorite Music" ||
+            it.name.contains("Favorite", ignoreCase = true) ||
+            it.name.contains("喜欢", ignoreCase = true)
+        } ?: return
         addSongToPlaylist(fav.id, song)
     }
 
@@ -327,7 +334,12 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
             val now = System.currentTimeMillis()
             val favoritesName = context.getString(R.string.favorite_my_music)
             val updated = _playlists.value.map { pl ->
-                if (pl.name == favoritesName)
+                // 尝试多种可能的收藏夹名称
+                if (pl.name == favoritesName ||
+                    pl.name == "我喜欢的音乐" ||
+                    pl.name == "My Favorite Music" ||
+                    pl.name.contains("Favorite", ignoreCase = true) ||
+                    pl.name.contains("喜欢", ignoreCase = true))
                     pl.copy(songs = pl.songs.filter { it.id != songId }.toMutableList(), modifiedAt = now)
                 else pl
             }

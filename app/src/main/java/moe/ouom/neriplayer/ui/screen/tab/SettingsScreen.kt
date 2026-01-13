@@ -1897,7 +1897,7 @@ fun SettingsScreen(
                 // 保存
                 neteaseVm.importCookiesFromMap(map)
             } else {
-                inlineMsg = context.getString(R.string.settings_bili_cookie_cancelled)
+                inlineMsg = context.getString(R.string.settings_cookie_cancelled)
             }
         }
 

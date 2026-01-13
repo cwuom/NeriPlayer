@@ -637,7 +637,7 @@
     <string name="lyrics_phone_speaker">Phone Speaker</string>
 
     <!-- Settings -->
-    <string name="settings_bili_cookie_cancelled">Bilibili Cookie read cancelled</string>
+    <string name="settings_cookie_cancelled">Cookie read cancelled</string>
     <string name="settings_audio_quality_standard">Standard</string>
     <string name="settings_audio_quality_higher">Higher</string>
     <string name="settings_audio_quality_exhigh">Extremely High</string>
@@ -693,8 +693,8 @@
     <string name="log_delete_confirm">This will delete all local log files and cannot be undone.</string>
 
     <!-- Home Search Keywords -->
-    <string name="home_search_hot">Hot Songs</string>
-    <string name="home_search_radar">Personal Radar</string>
+    <string name="home_search_hot">热歌</string>
+    <string name="home_search_radar">私人雷达</string>
 
     <!-- Backup Manager -->
     <string name="backup_no_playlists">No playlist data in backup file</string>

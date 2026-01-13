@@ -49,8 +49,8 @@ object SearchManager {
             api.search(keyword, page = 1).take(10)
         } catch (e: Exception) {
             NPLogger.e("SearchManager", "Failed to find match", e)
-            null
-        }!!
+            emptyList()
+        }
     }
 
     suspend fun findBestMatch(

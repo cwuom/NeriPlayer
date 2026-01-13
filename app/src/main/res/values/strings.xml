@@ -631,7 +631,7 @@
     <string name="lyrics_phone_speaker">手机扬声器</string>
 
     <!-- Settings -->
-    <string name="settings_bili_cookie_cancelled">已取消读取 B 站 Cookie</string>
+    <string name="settings_cookie_cancelled">已取消读取 Cookie</string>
     <string name="settings_audio_quality_standard">标准</string>
     <string name="settings_audio_quality_higher">较高</string>
     <string name="settings_audio_quality_exhigh">极高</string>

@@ -39,7 +39,7 @@ import okhttp3.Request
 import java.io.IOException
 
 @Serializable private data class CloudMusicSearchResponse(val result: CloudMusicSearchResult?)
-@Serializable private data class CloudMusicSearchResult(val songs: List<CloudMusicSongSummary>?)
+@Serializable private data class CloudMusicSearchResult(val songs: List<CloudMusicSongSummary>? = null)
 @Serializable private data class CloudMusicSongSummary(
     val id: Long,
     val name: String,

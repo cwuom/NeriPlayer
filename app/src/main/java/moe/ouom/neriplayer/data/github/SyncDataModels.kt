@@ -95,6 +95,7 @@ data class SyncSong(
     val coverUrl: String?,
     val addedAt: Long = System.currentTimeMillis(),
     val matchedLyric: String? = null,
+    val matchedTranslatedLyric: String? = null,
     val matchedLyricSource: String? = null,
     val matchedSongId: String? = null,
     val userLyricOffsetMs: Long = 0L,
@@ -103,7 +104,9 @@ data class SyncSong(
     val customArtist: String? = null,
     val originalName: String? = null,
     val originalArtist: String? = null,
-    val originalCoverUrl: String? = null
+    val originalCoverUrl: String? = null,
+    val originalLyric: String? = null,
+    val originalTranslatedLyric: String? = null
 ) {
     companion object {
         fun fromSongItem(song: SongItem, context: Context? = null): SyncSong {
@@ -122,6 +125,7 @@ data class SyncSong(
                 durationMs = song.durationMs,
                 coverUrl = syncCoverUrl,
                 matchedLyric = song.matchedLyric,
+                matchedTranslatedLyric = song.matchedTranslatedLyric,
                 matchedLyricSource = song.matchedLyricSource?.name,
                 matchedSongId = song.matchedSongId,
                 userLyricOffsetMs = song.userLyricOffsetMs,
@@ -130,7 +134,9 @@ data class SyncSong(
                 customArtist = song.customArtist,
                 originalName = song.originalName,
                 originalArtist = song.originalArtist,
-                originalCoverUrl = syncOriginalCoverUrl
+                originalCoverUrl = syncOriginalCoverUrl,
+                originalLyric = song.originalLyric,
+                originalTranslatedLyric = song.originalTranslatedLyric
             )
         }
     }
@@ -145,6 +151,7 @@ data class SyncSong(
             durationMs = durationMs,
             coverUrl = coverUrl,
             matchedLyric = matchedLyric,
+            matchedTranslatedLyric = matchedTranslatedLyric,
             matchedLyricSource = matchedLyricSource?.let {
                 try { MusicPlatform.valueOf(it) } catch (e: Exception) { null }
             },
@@ -155,7 +162,9 @@ data class SyncSong(
             customArtist = customArtist,
             originalName = originalName,
             originalArtist = originalArtist,
-            originalCoverUrl = originalCoverUrl
+            originalCoverUrl = originalCoverUrl,
+            originalLyric = originalLyric,
+            originalTranslatedLyric = originalTranslatedLyric
         )
     }
 }
