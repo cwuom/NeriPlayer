@@ -350,9 +350,10 @@ fun NeriApp(
         else -> false
     }
     LaunchedEffect(Unit) {
-        // 确保 PlayerManager 初始化完成后再检查播放队列
-        // 这个调用是幂等的，即使在其他地方已经初始化也不会重复执行
-        PlayerManager.initialize(context.applicationContext as Application)
+        // 确保 PlayerManager 使用正确的缓存大小初始化
+        // 由于 initialize() 是幂等的，如果已经初始化过，这个调用不会改变设置
+        val cacheSize = repo.maxCacheSizeBytesFlow.first()
+        PlayerManager.initialize(context.applicationContext as Application, cacheSize)
         NPLogger.d("NERI-App", "PlayerManager.initialize called")
         NPLogger.d("PlayerManager.hasItems()", PlayerManager.hasItems().toString())
         if (PlayerManager.hasItems()) {

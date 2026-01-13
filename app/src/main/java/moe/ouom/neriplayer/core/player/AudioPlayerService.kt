@@ -56,10 +56,13 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.MainActivity
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import androidx.core.graphics.createBitmap
@@ -105,7 +108,12 @@ class AudioPlayerService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        PlayerManager.initialize(application as Application)
+        // PlayerManager 应该已经在 NeriApp 中初始化（带正确的缓存大小参数）
+        // 这里的调用是为了确保初始化，使用 AppContainer 读取缓存设置
+        val cacheSize = runBlocking {
+            AppContainer.settingsRepo.maxCacheSizeBytesFlow.first()
+        }
+        PlayerManager.initialize(application as Application, cacheSize)
 
         mediaSession = MediaSessionCompat(this, "NeriPlayerSession").apply {
             setCallback(mediaSessionCallback)
