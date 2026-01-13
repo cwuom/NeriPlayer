@@ -904,9 +904,9 @@ fun NeriApp(
                                         onMaxCacheSizeBytesChange = { size ->
                                             scope.launch { repo.setMaxCacheSizeBytes(size) }
                                         },
-                                        onClearCacheClick = {
+                                        onClearCacheClick = { clearAudio, clearImage ->
                                             scope.launch {
-                                                val (success, message) = PlayerManager.clearCache()
+                                                val (success, message) = PlayerManager.clearCache(clearAudio, clearImage)
                                                 snackbarHostState.showSnackbar(message)
                                             }
                                         }

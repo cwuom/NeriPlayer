@@ -175,7 +175,7 @@ class BackupRestoreViewModel : ViewModel() {
      * 清除导出状态
      */
     fun clearExportStatus() {
-        android.util.Log.d("BackupRestoreViewModel", "clearExportStatus called")
+        NPLogger.d("BackupRestoreViewModel", "clearExportStatus called")
         _uiState.value = _uiState.value.copy(
             lastExportSuccess = null,
             lastExportMessage = null
@@ -197,7 +197,7 @@ class BackupRestoreViewModel : ViewModel() {
      * 清除分析状态
      */
     fun clearAnalysisStatus() {
-        android.util.Log.d("BackupRestoreViewModel", "clearAnalysisStatus called")
+        NPLogger.d("BackupRestoreViewModel", "clearAnalysisStatus called")
         _uiState.value = _uiState.value.copy(
             differenceAnalysis = null,
             lastAnalysisError = null

@@ -85,7 +85,7 @@ fun SettingsHostScreen(
     onShowLyricTranslationChange: (Boolean) -> Unit,
     maxCacheSizeBytes: Long,
     onMaxCacheSizeBytesChange: (Long) -> Unit,
-    onClearCacheClick: () -> Unit,
+    onClearCacheClick: (clearAudio: Boolean, clearImage: Boolean) -> Unit,
 ) {
     var showDownloadManager by rememberSaveable { mutableStateOf(false) }
     

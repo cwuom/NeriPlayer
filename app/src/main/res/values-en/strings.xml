@@ -163,7 +163,31 @@
     <string name="settings_restart_hint">May need to restart app for best effect</string>
     <string name="settings_expand_network">Network options</string>
     <string name="settings_confirm_clear_cache">Clear cache?</string>
-    <string name="settings_clear_cache_warning">This will delete all cached music files and free up disk space.</string>
+    <string name="settings_clear_cache_warning">This will delete selected cache files and free up disk space.</string>
+    <string name="settings_select_cache_types">Select cache types to clear:</string>
+    <string name="settings_audio_cache">Audio Cache</string>
+    <string name="settings_audio_cache_desc">Cached music files</string>
+    <string name="settings_image_cache">Image Cache</string>
+    <string name="settings_image_cache_desc">Covers, avatars, etc.</string>
+
+    <!-- Storage Details -->
+    <string name="storage_details_title">Storage Details</string>
+    <string name="storage_details_subtitle">Actual space used by directories:</string>
+    <string name="storage_details_total">Total</string>
+    <string name="storage_details_warning_title">⚠️ System Settings Inaccurate?</string>
+    <string name="storage_details_warning_message">If system shows much more than here, it\'s an Android cache issue.\n\nSolutions:\n1. Restart device\n2. Wait for system update\n3. Open system settings</string>
+    <string name="storage_open_system_settings">Open System Settings</string>
+    <string name="action_details">Details</string>
+
+    <!-- Storage Type Names -->
+    <string name="storage_type_audio_cache">Audio Cache</string>
+    <string name="storage_type_image_cache">Image Cache</string>
+    <string name="storage_type_downloaded_music">Downloaded Music</string>
+    <string name="storage_type_log_files">Log Files</string>
+    <string name="storage_type_crash_logs">Crash Logs</string>
+    <string name="storage_type_other_cache">Other Cache</string>
+    <string name="storage_type_app_data">App Data</string>
+    <string name="storage_type_error">Error</string>
     <string name="settings_custom_color">Custom Color</string>
     <string name="settings_expand_visual">Visual effects</string>
     <string name="settings_expand_more">More</string>

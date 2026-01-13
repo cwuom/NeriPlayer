@@ -452,44 +452,59 @@ object PlayerManager {
         NPLogger.d("NERI-Player", "PlayerManager initialized with cache size: $maxCacheSize")
     }
 
-    suspend fun clearCache(): Pair<Boolean, String> {
+    suspend fun clearCache(clearAudio: Boolean = true, clearImage: Boolean = true): Pair<Boolean, String> {
         return withContext(Dispatchers.IO) {
             var apiRemovedCount = 0
             var physicalDeletedCount = 0
             var totalSpaceFreed = 0L
 
             try {
-                if (::cache.isInitialized) {
-                    val keysSnapshot = HashSet(cache.keys)
-                    keysSnapshot.forEach { key ->
-                        try {
-                            val resource = cache.getCachedSpans(key)
-                            resource.forEach { totalSpaceFreed += it.length }
+                // 清理音频缓存
+                if (clearAudio) {
+                    if (::cache.isInitialized) {
+                        val keysSnapshot = HashSet(cache.keys)
+                        keysSnapshot.forEach { key ->
+                            try {
+                                val resource = cache.getCachedSpans(key)
+                                resource.forEach { totalSpaceFreed += it.length }
 
-                            cache.removeResource(key)
-                            apiRemovedCount++
-                        } catch (e: Exception) { /* 忽略单个失败 */ }
+                                cache.removeResource(key)
+                                apiRemovedCount++
+                            } catch (e: Exception) { /* 忽略单个失败 */ }
+                        }
+                    }
+
+                    val cacheDir = File(application.cacheDir, "media_cache")
+
+                    if (cacheDir.exists() && cacheDir.isDirectory) {
+                        val files = cacheDir.listFiles() ?: emptyArray()
+
+                        files.forEach { file ->
+                            if (file.isFile && file.name.endsWith(".exo")) {
+                                val length = file.length()
+                                if (file.delete()) {
+                                    physicalDeletedCount++
+                                }
+                            }
+                        }
                     }
                 }
 
-                val cacheDir = File(application.cacheDir, "media_cache")
-
-                if (cacheDir.exists() && cacheDir.isDirectory) {
-                    val files = cacheDir.listFiles() ?: emptyArray()
-
-                    files.forEach { file ->
-                        if (file.isFile && file.name.endsWith(".exo")) {
-                            val length = file.length()
-                            if (file.delete()) {
-                                physicalDeletedCount++
-                            }
+                // 清理图片缓存
+                if (clearImage) {
+                    val imageCacheDir = File(application.cacheDir, "image_cache")
+                    if (imageCacheDir.exists() && imageCacheDir.isDirectory) {
+                        val deleted = imageCacheDir.deleteRecursively()
+                        if (deleted) {
+                            // 重新创建目录
+                            imageCacheDir.mkdirs()
                         }
                     }
                 }
 
                 NPLogger.d("NERI-Player", "Cache Clear: API removed $apiRemovedCount keys, Physically deleted $physicalDeletedCount .exo files.")
 
-                val msg = if (physicalDeletedCount > 0 || apiRemovedCount > 0) {
+                val msg = if (physicalDeletedCount > 0 || apiRemovedCount > 0 || clearImage) {
                     getLocalizedString(R.string.cache_clear_complete)
                 } else {
                     getLocalizedString(R.string.settings_cache_empty)

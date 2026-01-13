@@ -1843,14 +1843,14 @@ fun EditSongInfoSheet(
                                 // B站音源：标记需要清除歌词
                                 shouldClearLyrics = true
                                 shouldRestoreLyrics = false
-                                android.util.Log.d("NowPlayingScreen", "B站音源恢复: 将清除歌词")
+                                NPLogger.d("NowPlayingScreen", "B站音源恢复: 将清除歌词")
                             } else {
                                 // 网易云音源：保存原始歌词，标记需要恢复
                                 shouldClearLyrics = false
                                 shouldRestoreLyrics = info.lyric != null || info.translatedLyric != null
                                 originalLyric = info.lyric
                                 originalTranslatedLyric = info.translatedLyric
-                                android.util.Log.d("NowPlayingScreen", "网易云音源恢复: 将恢复歌词, hasLyric=${info.lyric != null}, hasTranslation=${info.translatedLyric != null}")
+                                NPLogger.d("NowPlayingScreen", "网易云音源恢复: 将恢复歌词, hasLyric=${info.lyric != null}, hasTranslation=${info.translatedLyric != null}")
                             }
 
                             // 标记用户已编辑，防止自动更新覆盖
@@ -1875,36 +1875,36 @@ fun EditSongInfoSheet(
                             // 处理歌词：清除(B站)或恢复(网易云)
                             if (shouldClearLyrics) {
                                 // B站音源：清除歌词
-                                android.util.Log.d("NowPlayingScreen", "=== 开始清除歌词流程 ===")
-                                android.util.Log.d("NowPlayingScreen", "actualSong详情: id=${actualSong.id}, album='${actualSong.album}', name='${actualSong.name}', artist='${actualSong.artist}'")
-                                android.util.Log.d("NowPlayingScreen", "当前歌词状态: matchedLyric=${actualSong.matchedLyric?.take(50)}, matchedTranslatedLyric=${actualSong.matchedTranslatedLyric?.take(50)}")
+                                NPLogger.d("NowPlayingScreen", "=== 开始清除歌词流程 ===")
+                                NPLogger.d("NowPlayingScreen", "actualSong详情: id=${actualSong.id}, album='${actualSong.album}', name='${actualSong.name}', artist='${actualSong.artist}'")
+                                NPLogger.d("NowPlayingScreen", "当前歌词状态: matchedLyric=${actualSong.matchedLyric?.take(50)}, matchedTranslatedLyric=${actualSong.matchedTranslatedLyric?.take(50)}")
 
-                                android.util.Log.d("NowPlayingScreen", "准备调用PlayerManager.updateSongLyricsAndTranslation清除歌词")
+                                NPLogger.d("NowPlayingScreen", "准备调用PlayerManager.updateSongLyricsAndTranslation清除歌词")
                                 PlayerManager.updateSongLyricsAndTranslation(
                                     actualSong,
                                     null,  // 清空歌词
                                     null  // 清空翻译歌词
                                 )
-                                android.util.Log.d("NowPlayingScreen", "PlayerManager.updateSongLyricsAndTranslation调用完成")
+                                NPLogger.d("NowPlayingScreen", "PlayerManager.updateSongLyricsAndTranslation调用完成")
                                 shouldClearLyrics = false  // 重置标志
-                                android.util.Log.d("NowPlayingScreen", "=== 清除歌词流程完成 ===")
+                                NPLogger.d("NowPlayingScreen", "=== 清除歌词流程完成 ===")
                             } else if (shouldRestoreLyrics) {
                                 // 网易云音源：恢复歌词
-                                android.util.Log.d("NowPlayingScreen", "=== 开始恢复歌词流程 ===")
-                                android.util.Log.d("NowPlayingScreen", "actualSong详情: id=${actualSong.id}, album='${actualSong.album}'")
-                                android.util.Log.d("NowPlayingScreen", "原始歌词: lyric=${originalLyric?.take(50)}, translatedLyric=${originalTranslatedLyric?.take(50)}")
+                                NPLogger.d("NowPlayingScreen", "=== 开始恢复歌词流程 ===")
+                                NPLogger.d("NowPlayingScreen", "actualSong详情: id=${actualSong.id}, album='${actualSong.album}'")
+                                NPLogger.d("NowPlayingScreen", "原始歌词: lyric=${originalLyric?.take(50)}, translatedLyric=${originalTranslatedLyric?.take(50)}")
 
-                                android.util.Log.d("NowPlayingScreen", "准备调用PlayerManager.updateSongLyricsAndTranslation恢复歌词")
+                                NPLogger.d("NowPlayingScreen", "准备调用PlayerManager.updateSongLyricsAndTranslation恢复歌词")
                                 PlayerManager.updateSongLyricsAndTranslation(
                                     actualSong,
                                     originalLyric,  // 恢复原始歌词
                                     originalTranslatedLyric  // 恢复原始翻译歌词
                                 )
-                                android.util.Log.d("NowPlayingScreen", "PlayerManager.updateSongLyricsAndTranslation调用完成")
+                                NPLogger.d("NowPlayingScreen", "PlayerManager.updateSongLyricsAndTranslation调用完成")
                                 shouldRestoreLyrics = false  // 重置标志
                                 originalLyric = null
                                 originalTranslatedLyric = null
-                                android.util.Log.d("NowPlayingScreen", "=== 恢复歌词流程完成 ===")
+                                NPLogger.d("NowPlayingScreen", "=== 恢复歌词流程完成 ===")
                             }
 
                             // 然后更新歌曲信息
@@ -1919,7 +1919,7 @@ fun EditSongInfoSheet(
                             userHasEdited = false
                             onDismiss()
                         } catch (e: Exception) {
-                            android.util.Log.e("NowPlayingScreen", "保存歌曲信息失败", e)
+                            NPLogger.e("NowPlayingScreen", "保存歌曲信息失败", e)
                             Toast.makeText(context, "保存失败: ${e.message}", Toast.LENGTH_SHORT).show()
                         }
                     }

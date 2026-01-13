@@ -23,7 +23,6 @@ package moe.ouom.neriplayer.core.api.bili
  * Updated: 2025/08/14
  */
 
-import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -47,6 +46,7 @@ import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 import kotlin.math.max
 import moe.ouom.neriplayer.util.DynamicProxySelector
+import moe.ouom.neriplayer.util.NPLogger
 
 /**
  * B 站 Web 端 API 客户端
@@ -653,7 +653,7 @@ class BiliClient(
                     // 将页码与请求结果配对，以便后续排序
                     page to getFavFolderContents(mediaId, page = page, pageSize = pageSize).items
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed to fetch page $page for mediaId $mediaId", e)
+                    NPLogger.e(TAG, "Failed to fetch page $page for mediaId $mediaId", e)
                     page to emptyList() // 出错时返回空列表，但页码保留
                 }
             }
@@ -693,7 +693,7 @@ class BiliClient(
         val code = root.optInt("code", -1)
         val msg = root.optString("message", "")
         if (code != 0) {
-            Log.w(TAG, "requestPlayUrl failed: code=$code, message=$msg")
+            NPLogger.w(TAG, "requestPlayUrl failed: code=$code, message=$msg")
         }
 
         val data = root.optJSONObject("data") ?: JSONObject()
@@ -884,7 +884,7 @@ class BiliClient(
         return try {
             fetchMixinKeyFromNav()
         } catch (e: Exception) {
-            Log.w(TAG, "Fetch Wbi key from nav failed, fallback to ticket", e)
+            NPLogger.w(TAG, "Fetch Wbi key from nav failed, fallback to ticket", e)
             fetchMixinKeyFromTicket()
         }
     }
@@ -951,7 +951,7 @@ class BiliClient(
             if (idx < raw.length) mixed.append(raw[idx])
         }
         val result = if (mixed.length >= 32) mixed.substring(0, 32) else mixed.toString()
-        Log.d(TAG, "Refreshed Wbi mixin key: $result")
+        NPLogger.d(TAG, "Refreshed Wbi mixin key: $result")
         return result
     }
 

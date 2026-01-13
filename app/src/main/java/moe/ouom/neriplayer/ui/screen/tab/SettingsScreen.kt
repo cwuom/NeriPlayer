@@ -100,6 +100,7 @@ import androidx.compose.material.icons.outlined.Error
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -173,6 +174,8 @@ import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.NightModeHelper
 import moe.ouom.neriplayer.util.convertTimestampToDate
+import moe.ouom.neriplayer.util.formatFileSize
+import java.io.File
 import java.util.Locale
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
@@ -318,7 +321,7 @@ fun SettingsScreen(
     onNavigateToDownloadManager: () -> Unit = {},
     maxCacheSizeBytes: Long,
     onMaxCacheSizeBytesChange: (Long) -> Unit,
-    onClearCacheClick: () -> Unit,
+    onClearCacheClick: (clearAudio: Boolean, clearImage: Boolean) -> Unit,
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val context = LocalContext.current
@@ -352,6 +355,14 @@ fun SettingsScreen(
     var showClearCacheDialog by remember { mutableStateOf(false) }
     var cacheExpanded by remember { mutableStateOf(false) }
     val cacheArrowRotation by animateFloatAsState(targetValue = if (cacheExpanded) 180f else 0f, label = "backup_restore_arrow")
+
+    // 缓存类型选择状态
+    var clearAudioCache by remember { mutableStateOf(true) }
+    var clearImageCache by remember { mutableStateOf(true) }
+
+    // 存储占用详情状态
+    var showStorageDetails by remember { mutableStateOf(false) }
+    var storageDetails by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
 
 
     // 各种对话框和弹窗的显示状态 //
@@ -1096,10 +1107,60 @@ fun SettingsScreen(
                             headlineContent = { Text(stringResource(R.string.settings_clear_cache)) },
                             supportingContent = { Text(stringResource(R.string.settings_clear_cache_desc)) },
                             trailingContent = {
-                                OutlinedButton(onClick = { showClearCacheDialog = true }) {
-                                    Icon(Icons.Outlined.DeleteForever, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(Modifier.width(4.dp))
-                                    Text(stringResource(R.string.action_clear))
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    // 查看详情按钮
+                                    OutlinedButton(onClick = {
+                                        showStorageDetails = true
+                                        // 计算存储占用
+                                        val details = mutableMapOf<String, Long>()
+                                        try {
+                                            // 音频缓存
+                                            val mediaCacheDir = File(context.cacheDir, "media_cache")
+                                            details[context.getString(R.string.storage_type_audio_cache)] = mediaCacheDir.walkTopDown().filter { it.isFile }.map { it.length() }.sum()
+
+                                            // 图片缓存
+                                            val imageCacheDir = File(context.cacheDir, "image_cache")
+                                            details[context.getString(R.string.storage_type_image_cache)] = imageCacheDir.walkTopDown().filter { it.isFile }.map { it.length() }.sum()
+
+                                            // 下载的音乐
+                                            val musicDir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_MUSIC)?.let { File(it, "NeriPlayer") }
+                                            details[context.getString(R.string.storage_type_downloaded_music)] = musicDir?.walkTopDown()?.filter { it.isFile && !it.name.endsWith(".downloading") }?.map { it.length() }?.sum() ?: 0L
+
+                                            // 日志文件
+                                            val logDir = context.getExternalFilesDir(null)?.let { File(it, "logs") }
+                                            details[context.getString(R.string.storage_type_log_files)] = logDir?.walkTopDown()?.filter { it.isFile }?.map { it.length() }?.sum() ?: 0L
+
+                                            // 崩溃日志
+                                            val crashDir = context.getExternalFilesDir(null)?.let { File(it, "crashes") }
+                                            details[context.getString(R.string.storage_type_crash_logs)] = crashDir?.walkTopDown()?.filter { it.isFile }?.map { it.length() }?.sum() ?: 0L
+
+                                            // 其他缓存
+                                            val otherCache = context.cacheDir.walkTopDown()
+                                                .filter { it.isFile && !it.path.contains("media_cache") && !it.path.contains("image_cache") }
+                                                .map { it.length() }.sum()
+                                            details[context.getString(R.string.storage_type_other_cache)] = otherCache
+
+                                            // 应用数据
+                                            val dataDir = context.filesDir
+                                            val dataSize = dataDir.walkTopDown().filter { it.isFile }.map { it.length() }.sum()
+                                            details[context.getString(R.string.storage_type_app_data)] = dataSize
+
+                                        } catch (e: Exception) {
+                                            details[context.getString(R.string.storage_type_error)] = 0L
+                                        }
+                                        storageDetails = details
+                                    }) {
+                                        Icon(Icons.Outlined.Info, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text(stringResource(R.string.action_details))
+                                    }
+
+                                    // 清除按钮
+                                    OutlinedButton(onClick = { showClearCacheDialog = true }) {
+                                        Icon(Icons.Outlined.DeleteForever, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text(stringResource(R.string.action_clear))
+                                    }
                                 }
                             },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
@@ -2273,18 +2334,152 @@ fun SettingsScreen(
         )
     }
 
+    if (showStorageDetails) {
+        AlertDialog(
+            onDismissRequest = { showStorageDetails = false },
+            title = { Text(stringResource(R.string.storage_details_title)) },
+            text = {
+                Column {
+                    Text(stringResource(R.string.storage_details_subtitle), style = MaterialTheme.typography.titleSmall)
+                    Spacer(Modifier.height(12.dp))
+
+                    storageDetails.forEach { (name, size) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(name, style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                formatFileSize(size),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+                    HorizontalDivider()
+                    Spacer(Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(stringResource(R.string.storage_details_total), style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            formatFileSize(storageDetails.values.sum()),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    HapticTextButton(onClick = {
+                        // 打开系统应用详情页面
+                        try {
+                            val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                            intent.data = "package:${context.packageName}".toUri()
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            // 忽略错误
+                        }
+                    }) {
+                        Text(stringResource(R.string.storage_open_system_settings))
+                    }
+                    HapticTextButton(onClick = { showStorageDetails = false }) {
+                        Text(stringResource(R.string.action_close))
+                    }
+                }
+            }
+        )
+    }
+
     if (showClearCacheDialog) {
         AlertDialog(
             onDismissRequest = { showClearCacheDialog = false },
             title = { Text(stringResource(R.string.settings_confirm_clear_cache)) },
-            text = { Text(stringResource(R.string.settings_clear_cache_warning)) },
+            text = {
+                Column {
+                    Text(stringResource(R.string.settings_clear_cache_warning))
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        stringResource(R.string.settings_select_cache_types),
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    Spacer(Modifier.height(8.dp))
+
+                    // 音频缓存选项
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { clearAudioCache = !clearAudioCache }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = clearAudioCache,
+                            onCheckedChange = { clearAudioCache = it }
+                        )
+                        Column(modifier = Modifier.padding(start = 8.dp)) {
+                            Text(
+                                stringResource(R.string.settings_audio_cache),
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                            Text(
+                                stringResource(R.string.settings_audio_cache_desc),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    // 图片缓存选项
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { clearImageCache = !clearImageCache }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        androidx.compose.material3.Checkbox(
+                            checked = clearImageCache,
+                            onCheckedChange = { clearImageCache = it }
+                        )
+                        Column(modifier = Modifier.padding(start = 8.dp)) {
+                            Text(
+                                stringResource(R.string.settings_image_cache),
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                            Text(
+                                stringResource(R.string.settings_image_cache_desc),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            },
             confirmButton = {
                 HapticTextButton(
                     onClick = {
-                        onClearCacheClick()
+                        onClearCacheClick(clearAudioCache, clearImageCache)
                         showClearCacheDialog = false
-                    }
-                ) { Text(stringResource(R.string.action_confirm_clear), color = MaterialTheme.colorScheme.error) }
+                    },
+                    enabled = clearAudioCache || clearImageCache
+                ) {
+                    Text(
+                        stringResource(R.string.action_confirm_clear),
+                        color = if (clearAudioCache || clearImageCache)
+                            MaterialTheme.colorScheme.error
+                        else
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                    )
+                }
             },
             dismissButton = {
                 HapticTextButton(onClick = { showClearCacheDialog = false }) { Text(stringResource(R.string.action_cancel)) }

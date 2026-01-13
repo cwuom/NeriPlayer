@@ -163,7 +163,31 @@
     <string name="settings_restart_hint">修改后可能需要重启应用以获得最佳效果</string>
     <string name="settings_expand_network">展开以配置网络选项</string>
     <string name="settings_confirm_clear_cache">确认清除缓存？</string>
-    <string name="settings_clear_cache_warning">这将删除所有已缓存的音乐文件，释放磁盘空间。</string>
+    <string name="settings_clear_cache_warning">这将删除已选择的缓存文件，释放磁盘空间。</string>
+    <string name="settings_select_cache_types">选择要清除的缓存类型：</string>
+    <string name="settings_audio_cache">音频缓存</string>
+    <string name="settings_audio_cache_desc">已缓存的音乐文件</string>
+    <string name="settings_image_cache">图片缓存</string>
+    <string name="settings_image_cache_desc">封面、头像等图片</string>
+
+    <!-- 存储详情 -->
+    <string name="storage_details_title">存储占用详情</string>
+    <string name="storage_details_subtitle">各目录实际占用空间：</string>
+    <string name="storage_details_total">总计</string>
+    <string name="storage_details_warning_title">⚠️ 系统设置显示不准确？</string>
+    <string name="storage_details_warning_message">如果系统显示的占用远大于此处统计，这是 Android 系统缓存问题。\n\n解决方法：\n1. 重启手机\n2. 等待系统自动更新\n3. 打开系统设置查看</string>
+    <string name="storage_open_system_settings">打开系统设置</string>
+    <string name="action_details">详情</string>
+
+    <!-- 存储类型名称 -->
+    <string name="storage_type_audio_cache">音频缓存</string>
+    <string name="storage_type_image_cache">图片缓存</string>
+    <string name="storage_type_downloaded_music">下载的音乐</string>
+    <string name="storage_type_log_files">日志文件</string>
+    <string name="storage_type_crash_logs">崩溃日志</string>
+    <string name="storage_type_other_cache">其他缓存</string>
+    <string name="storage_type_app_data">应用数据</string>
+    <string name="storage_type_error">错误</string>
     <string name="settings_custom_color">自定义颜色（滑动选择）</string>
     <string name="settings_expand_visual">展开以调整视觉效果</string>
     <string name="settings_expand_more">展开更多</string>
