@@ -185,6 +185,17 @@ import moe.ouom.neriplayer.ui.component.LanguageSettingItem
 import android.graphics.Color as AndroidColor
 
 
+/**
+ * 脱敏处理cookie值，只显示首尾各2个字符，中间用***代替
+ * 例如: "abcde" -> "ab***de"
+ */
+private fun maskCookieValue(value: String): String {
+    return when {
+        value.length <= 4 -> "***"
+        else -> "${value.take(2)}***${value.takeLast(2)}"
+    }
+}
+
 /** 可复用的折叠区头部 */
 @Composable
 private fun ExpandableHeader(
@@ -390,7 +401,7 @@ fun SettingsScreen(
             val map = biliVm.parseJsonToMap(json)
             biliVm.importCookiesFromMap(map)
         } else {
-            inlineMsg = context.getString(R.string.settings_bili_cookie_cancelled)
+            inlineMsg = context.getString(R.string.settings_cookie_cancelled)
         }
     }
 
@@ -464,7 +475,7 @@ fun SettingsScreen(
                     showNeteaseSheet = false
                 }
                 is NeteaseAuthEvent.ShowCookies -> {
-                    cookieText = e.cookies.entries.joinToString("\n") { (k, v) -> "$k=$v" }
+                    cookieText = e.cookies.entries.joinToString("\n") { (k, v) -> "$k=${maskCookieValue(v)}" }
                     showCookieDialog = true
                 }
             }
@@ -476,7 +487,7 @@ fun SettingsScreen(
             when (e) {
                 is BiliAuthEvent.ShowSnack -> inlineMsg = e.message
                 is BiliAuthEvent.ShowCookies -> {
-                    biliCookieText = e.cookies.entries.joinToString("\n") { (k, v) -> "$k=$v" }
+                    biliCookieText = e.cookies.entries.joinToString("\n") { (k, v) -> "$k=${maskCookieValue(v)}" }
                     showBiliCookieDialog = true
                 }
                 BiliAuthEvent.LoginSuccess -> {
