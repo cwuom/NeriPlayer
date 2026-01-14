@@ -46,6 +46,7 @@ import moe.ouom.neriplayer.util.SearchManager
 import moe.ouom.neriplayer.navigation.Destinations
 import androidx.core.content.ContextCompat
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
+import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.AudioPlayerService
 import moe.ouom.neriplayer.ui.NeriApp
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -107,9 +108,7 @@ class NowPlayingViewModel : ViewModel() {
     }
 
     fun downloadSong(context: Context, song: SongItem) {
-        viewModelScope.launch {
-            AudioDownloadManager.downloadSong(context, song)
-        }
+        GlobalDownloadManager.startDownload(context, song)
     }
 
     fun fillLyrics(context: Context, song: SongItem, selectedSong: SongSearchInfo, onComplete: (Boolean, String) -> Unit) {

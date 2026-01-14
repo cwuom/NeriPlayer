@@ -115,6 +115,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -1231,15 +1232,36 @@ fun MoreOptionsSheet(
                             modifier = Modifier.clickable { showEditInfoSheet = true }
                         )
                         if (AudioDownloadManager.getLocalFilePath(context, originalSong) == null) {
+                            // 监听下载进度
+                            val downloadProgress by AudioDownloadManager.progressFlow.collectAsState()
+                            val isDownloading = downloadProgress != null
+
                             ListItem(
-                                headlineContent = { Text(stringResource(R.string.download_to_local)) },
+                                headlineContent = {
+                                    Text(
+                                        if (isDownloading) stringResource(R.string.download_progress)
+                                        else stringResource(R.string.download_to_local)
+                                    )
+                                },
                                 leadingContent = { Icon(Icons.Outlined.Download, null) },
-                                modifier = Modifier.clickable {
-                                    viewModel.downloadSong(context, originalSong)
-                                    coroutineScope.launch {
-                                        snackbarHostState.showSnackbar(context.getString(R.string.download_starting, originalSong.name))
+                                supportingContent = downloadProgress?.let { progress ->
+                                    {
+                                        Column {
+                                            Text("${progress.percentage}% - ${progress.fileName}")
+                                            LinearProgressIndicator(
+                                                progress = { progress.bytesRead.toFloat() / progress.totalBytes.toFloat() },
+                                                modifier = Modifier.fillMaxWidth()
+                                            )
+                                        }
                                     }
-                                    onDismiss()
+                                },
+                                modifier = Modifier.clickable {
+                                    if (!isDownloading) {
+                                        viewModel.downloadSong(context, originalSong)
+                                        coroutineScope.launch {
+//                                            snackbarHostState.showSnackbar(context.getString(R.string.download_starting, originalSong.name))
+                                        }
+                                    }
                                 }
                             )
                         }

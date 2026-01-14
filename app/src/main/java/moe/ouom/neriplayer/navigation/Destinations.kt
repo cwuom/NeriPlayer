@@ -65,6 +65,9 @@ sealed class Destinations(val route: String, val labelResId: Int) {
     // 下载管理器路由
     data object DownloadManager : Destinations("download_manager", moe.ouom.neriplayer.R.string.download_manager)
 
+    // 下载进度路由
+    data object DownloadProgress : Destinations("download_progress", moe.ouom.neriplayer.R.string.download_progress)
+
     data object DebugLogViewer : Destinations("debug_log_viewer/{filePath}", moe.ouom.neriplayer.R.string.log_view) {
         fun createRoute(filePath: String): String {
             val encodedPath = URLEncoder.encode(filePath, StandardCharsets.UTF_8.name())

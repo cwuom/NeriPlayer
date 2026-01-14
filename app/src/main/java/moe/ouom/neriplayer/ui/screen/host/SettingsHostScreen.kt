@@ -44,7 +44,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import moe.ouom.neriplayer.ui.screen.DownloadManagerScreen
+import moe.ouom.neriplayer.ui.screen.DownloadProgressScreen
 import moe.ouom.neriplayer.ui.screen.tab.SettingsScreen
+
+private sealed class SettingsScreenState {
+    data object Settings : SettingsScreenState()
+    data object DownloadManager : SettingsScreenState()
+    data object DownloadProgress : SettingsScreenState()
+}
 
 @Composable
 fun SettingsHostScreen(
@@ -87,31 +94,45 @@ fun SettingsHostScreen(
     onMaxCacheSizeBytesChange: (Long) -> Unit,
     onClearCacheClick: (clearAudio: Boolean, clearImage: Boolean) -> Unit,
 ) {
-    var showDownloadManager by rememberSaveable { mutableStateOf(false) }
-    
+    var screenState by remember { mutableStateOf<SettingsScreenState>(SettingsScreenState.Settings) }
+
     // 保存设置页面的滚动状态，使用正确的Saver
     val settingsListSaver: Saver<LazyListState, *> = LazyListState.Saver
     val settingsListState = rememberSaveable(saver = settingsListSaver) {
         LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
     }
-    
-    BackHandler(enabled = showDownloadManager) { showDownloadManager = false }
+
+    BackHandler(enabled = screenState != SettingsScreenState.Settings) {
+        screenState = when (screenState) {
+            SettingsScreenState.DownloadProgress -> SettingsScreenState.DownloadManager
+            SettingsScreenState.DownloadManager -> SettingsScreenState.Settings
+            SettingsScreenState.Settings -> SettingsScreenState.Settings
+        }
+    }
 
     Surface(color = Color.Transparent) {
         AnimatedContent(
-            targetState = showDownloadManager,
-            label = "settings_download_manager_switch",
+            targetState = screenState,
+            label = "settings_screen_switch",
             transitionSpec = {
-                if (initialState == false && targetState == true) {
-                    (slideInVertically(animationSpec = tween(220)) { it } + fadeIn()) togetherWith
-                            (fadeOut(animationSpec = tween(160)))
-                } else {
-                    (slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn()) togetherWith
-                            (slideOutVertically(animationSpec = tween(240)) { it } + fadeOut())
+                when {
+                    initialState == SettingsScreenState.Settings && targetState != SettingsScreenState.Settings -> {
+                        (slideInVertically(animationSpec = tween(220)) { it } + fadeIn()) togetherWith
+                                (fadeOut(animationSpec = tween(160)))
+                    }
+                    initialState != SettingsScreenState.Settings && targetState == SettingsScreenState.Settings -> {
+                        (slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn()) togetherWith
+                                (slideOutVertically(animationSpec = tween(240)) { it } + fadeOut())
+                    }
+                    else -> {
+                        (slideInVertically(animationSpec = tween(220)) { it } + fadeIn()) togetherWith
+                                (slideOutVertically(animationSpec = tween(220)) { -it } + fadeOut())
+                    }
                 }.using(SizeTransform(clip = false))
             }
-        ) { current ->
-            if (!current) {
+        ) { state ->
+            when (state) {
+                SettingsScreenState.Settings -> {
                 SettingsScreen(
                     listState = settingsListState,
                     dynamicColor = dynamicColor,
@@ -149,15 +170,23 @@ fun SettingsHostScreen(
                     onHapticFeedbackEnabledChange = onHapticFeedbackEnabledChange,
                     showLyricTranslation = showLyricTranslation,
                     onShowLyricTranslationChange = onShowLyricTranslationChange,
-                    onNavigateToDownloadManager = { showDownloadManager = true },
+                    onNavigateToDownloadManager = { screenState = SettingsScreenState.DownloadManager },
                     maxCacheSizeBytes = maxCacheSizeBytes,
                     onMaxCacheSizeBytesChange = onMaxCacheSizeBytesChange,
                     onClearCacheClick = onClearCacheClick
                 )
-            } else {
-                DownloadManagerScreen(
-                    onBack = { showDownloadManager = false }
-                )
+                }
+                SettingsScreenState.DownloadManager -> {
+                    DownloadManagerScreen(
+                        onBack = { screenState = SettingsScreenState.Settings },
+                        onOpenDownloadProgress = { screenState = SettingsScreenState.DownloadProgress }
+                    )
+                }
+                SettingsScreenState.DownloadProgress -> {
+                    DownloadProgressScreen(
+                        onBack = { screenState = SettingsScreenState.DownloadManager }
+                    )
+                }
             }
         }
     }

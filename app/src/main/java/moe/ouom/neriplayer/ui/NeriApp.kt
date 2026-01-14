@@ -112,6 +112,7 @@ import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.ui.component.NeriBottomBar
 import moe.ouom.neriplayer.ui.component.NeriMiniPlayer
 import moe.ouom.neriplayer.ui.screen.DownloadManagerScreen
+import moe.ouom.neriplayer.ui.screen.DownloadProgressScreen
 import moe.ouom.neriplayer.ui.screen.NowPlayingScreen
 import moe.ouom.neriplayer.ui.screen.debug.BiliApiProbeScreen
 import moe.ouom.neriplayer.ui.screen.debug.DebugHomeScreen
@@ -927,7 +928,26 @@ fun NeriApp(
                                         slideOutVertically(animationSpec = tween(240)) { it } + fadeOut()
                                     }
                                 ) {
-                                    DownloadManagerScreen(onBack = { navController.popBackStack() })
+                                    DownloadManagerScreen(
+                                        onBack = { navController.popBackStack() },
+                                        onOpenDownloadProgress = { navController.navigate(Destinations.DownloadProgress.route) }
+                                    )
+                                }
+
+                                composable(
+                                    route = Destinations.DownloadProgress.route,
+                                    enterTransition = {
+                                        slideInVertically(animationSpec = tween(220)) { it } + fadeIn()
+                                    },
+                                    exitTransition = { fadeOut(animationSpec = tween(160)) },
+                                    popEnterTransition = {
+                                        slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn()
+                                    },
+                                    popExitTransition = {
+                                        slideOutVertically(animationSpec = tween(240)) { it } + fadeOut()
+                                    }
+                                ) {
+                                    DownloadProgressScreen(onBack = { navController.popBackStack() })
                                 }
 
                                 composable(

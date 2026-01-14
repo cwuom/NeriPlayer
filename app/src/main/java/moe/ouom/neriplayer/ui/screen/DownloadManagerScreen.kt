@@ -39,7 +39,8 @@ import moe.ouom.neriplayer.util.performHapticFeedback
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DownloadManagerScreen(
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onOpenDownloadProgress: () -> Unit
 ) {
     val context = LocalContext.current
     val viewModel: DownloadManagerViewModel = viewModel(
@@ -141,6 +142,14 @@ fun DownloadManagerScreen(
                     }
                 } else {
                     // 正常模式下的操作按钮
+                    IconButton(
+                        onClick = {
+                            context.performHapticFeedback()
+                            onOpenDownloadProgress()
+                        }
+                    ) {
+                        Icon(Icons.Default.CloudDownload, contentDescription = stringResource(R.string.download_progress))
+                    }
                     IconButton(
                         onClick = {
                             context.performHapticFeedback()

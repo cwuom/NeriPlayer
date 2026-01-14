@@ -1220,6 +1220,9 @@ fun SettingsScreen(
                                         Text(stringResource(R.string.action_cancel), color = MaterialTheme.colorScheme.error)
                                     }
                                 },
+                                modifier = Modifier.clickable {
+                                    onNavigateToDownloadManager()
+                                },
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                             )
 

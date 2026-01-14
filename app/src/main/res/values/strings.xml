@@ -115,6 +115,16 @@
     <string name="downloaded">已下载</string>
     <string name="downloaded_songs">已下载歌曲</string>
     <string name="download_songs_display">下载的歌曲会显示在这里</string>
+    <string name="download_tasks_count">%d 个任务</string>
+    <string name="download_clear_completed">清除已完成</string>
+    <string name="download_clear_confirm_title">清除下载任务</string>
+    <string name="download_clear_confirm_message">确定要清除所有已完成和已取消的下载任务吗？</string>
+    <string name="download_confirm">确定</string>
+    <string name="download_cancel_action">取消</string>
+    <string name="download_resume">恢复下载</string>
+    <string name="download_completed">下载完成</string>
+    <string name="download_cancel_download">取消下载</string>
+    <string name="download_cancelled_status">已取消</string>
 
     <!-- Search -->
     <string name="search_keyword">搜索关键词</string>

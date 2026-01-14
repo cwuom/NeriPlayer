@@ -70,6 +70,7 @@ object AudioDownloadManager {
     val isCancelledFlow: StateFlow<Boolean> = _isCancelled
 
     data class DownloadProgress(
+        val songId: Long,
         val fileName: String,
         val bytesRead: Long,
         val totalBytes: Long,
@@ -100,9 +101,11 @@ object AudioDownloadManager {
         withContext(Dispatchers.IO) {
             try {
                 // 检查文件是否已存在
-                val existingFile = getLocalFilePath(context, song)
-                if (existingFile != null) {
+                val existingFilePath = getLocalFilePath(context, song)
+                if (existingFilePath != null) {
                     NPLogger.d(TAG, context.getString(R.string.download_file_exists, song.name))
+                    // 文件已存在，设置进度为null触发任务完成
+                    _progressFlow.value = null
                     return@withContext
                 }
 
@@ -166,7 +169,7 @@ object AudioDownloadManager {
 
                 // 貌似很多平台都不支持多线程下载(x  所以采用单线程
                 // 传入临时文件
-                singleThreadDownload(client, request, tempFile)
+                singleThreadDownload(client, request, tempFile, song.id)
 
                 // 下载完成后，重命名为正式文件
                 val destFile = File(downloadDir, fileName)
@@ -179,8 +182,9 @@ object AudioDownloadManager {
                 } catch (_: Exception) { }
 
             } catch (e: Exception) {
-                NPLogger.e(TAG, "下载失败", e)
+                NPLogger.e(TAG, "下载失败: ${song.name}, 错误: ${e.javaClass.simpleName} - ${e.message}", e)
                 _progressFlow.value = null
+                throw e  // 重新抛出异常，让调用方知道下载失败
             }
         }
     }
@@ -199,12 +203,24 @@ object AudioDownloadManager {
 
                 for (index in songs.indices) {
                     val song = songs[index]
-                    // 检查是否被取消
+                    // 检查是否被全局取消
                     if (_isCancelled.value) {
                         NPLogger.d(TAG, context.getString(R.string.download_cancelled_message))
                         break
                     }
-                    
+
+                    // 检查当前歌曲是否被单独取消
+                    if (moe.ouom.neriplayer.core.download.GlobalDownloadManager.isSongCancelled(song.id)) {
+                        NPLogger.d(TAG, "跳过已取消的歌曲: ${song.name}")
+                        _batchProgressFlow.value?.let { current ->
+                            _batchProgressFlow.value = current.copy(
+                                completedSongs = index + 1,
+                                currentProgress = null
+                            )
+                        }
+                        continue
+                    }
+
                     try {
                         _batchProgressFlow.value = _batchProgressFlow.value?.copy(
                             currentSong = song.name,
@@ -222,10 +238,25 @@ object AudioDownloadManager {
                         }
 
                         downloadSong(context, song)
-                        
+
                         // 停止监听进度
                         progressJob.cancel()
 
+                        // 下载成功，直接标记任务为完成
+                        moe.ouom.neriplayer.core.download.GlobalDownloadManager.updateTaskStatus(
+                            song.id,
+                            moe.ouom.neriplayer.core.download.DownloadStatus.COMPLETED
+                        )
+
+                        _batchProgressFlow.value?.let { current ->
+                            _batchProgressFlow.value = current.copy(
+                                completedSongs = index + 1,
+                                currentProgress = null
+                            )
+                        }
+                    } catch (e: java.util.concurrent.CancellationException) {
+                        // 下载被取消，继续下一首
+                        NPLogger.d(TAG, "歌曲下载被取消: ${song.name}")
                         _batchProgressFlow.value?.let { current ->
                             _batchProgressFlow.value = current.copy(
                                 completedSongs = index + 1,
@@ -234,6 +265,8 @@ object AudioDownloadManager {
                         }
                     } catch (e: Exception) {
                         NPLogger.e(TAG, context.getString(R.string.download_batch_failed_song, song.name, e.message ?: ""), e)
+                        // 标记任务失败
+                        moe.ouom.neriplayer.core.download.GlobalDownloadManager.updateTaskStatus(song.id, moe.ouom.neriplayer.core.download.DownloadStatus.FAILED)
                     }
                 }
 
@@ -250,6 +283,11 @@ object AudioDownloadManager {
         _isCancelled.value = true
         _progressFlow.value = null
         _batchProgressFlow.value = null
+    }
+
+    /** 重置取消标志 */
+    fun resetCancelFlag() {
+        _isCancelled.value = false
     }
 
     /** 下载歌词文件 */
@@ -477,28 +515,40 @@ object AudioDownloadManager {
     private suspend fun singleThreadDownload(
         client: okhttp3.OkHttpClient,
         request: Request,
-        destFile: File
+        destFile: File,
+        songId: Long
     ) = withContext(Dispatchers.IO) {
         val startNs = System.nanoTime()
+        NPLogger.d(TAG, "开始下载文件: ${destFile.name}, songId=$songId")
         client.newCall(request).execute().use { resp ->
             if (!resp.isSuccessful) throw IllegalStateException("HTTP ${resp.code}")
 
             val total = resp.body.contentLength()
+            NPLogger.d(TAG, "文件总大小: ${total} bytes, songId=$songId")
             val source = resp.body.source()
             destFile.sink().buffer().use { sink ->
                 var readSoFar = 0L
                 val buffer = okio.Buffer()
                 while (true) {
+                    // 检查是否被取消
+                    if (moe.ouom.neriplayer.core.download.GlobalDownloadManager.isSongCancelled(songId)) {
+                        NPLogger.d(TAG, "下载被取消，停止下载: songId=$songId")
+                        destFile.delete() // 删除临时文件
+                        _progressFlow.value = null
+                        throw java.util.concurrent.CancellationException("下载已取消")
+                    }
+
                     val read = source.read(buffer, 8L * 1024L)
                     if (read == -1L) break
                     sink.write(buffer, read)
                     readSoFar += read
                     val elapsedSec = ((System.nanoTime() - startNs) / 1_000_000_000.0).coerceAtLeast(0.001)
                     val speed = (readSoFar / elapsedSec).toLong()
-                    val progress = DownloadProgress(destFile.name, readSoFar, total, speed)
+                    val progress = DownloadProgress(songId, destFile.name, readSoFar, total, speed)
                     _progressFlow.value = progress
                 }
                 sink.flush()
+                NPLogger.d(TAG, "文件下载完成: ${destFile.name}, 实际大小: $readSoFar bytes, songId=$songId")
             }
         }
     }

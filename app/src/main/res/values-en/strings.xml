@@ -114,6 +114,16 @@
     <string name="downloaded">Downloaded</string>
     <string name="downloaded_songs">Downloaded Songs</string>
     <string name="download_songs_display">Downloaded songs will appear here</string>
+    <string name="download_tasks_count">%d tasks</string>
+    <string name="download_clear_completed">Clear Completed</string>
+    <string name="download_clear_confirm_title">Clear Download Tasks</string>
+    <string name="download_clear_confirm_message">Are you sure you want to clear all completed and cancelled download tasks?</string>
+    <string name="download_confirm">Confirm</string>
+    <string name="download_cancel_action">Cancel</string>
+    <string name="download_resume">Resume Download</string>
+    <string name="download_completed">Completed</string>
+    <string name="download_cancel_download">Cancel Download</string>
+    <string name="download_cancelled_status">Cancelled</string>
 
     <!-- Search -->
     <string name="search_keyword">Search Keyword</string>
