@@ -481,7 +481,6 @@ object PlayerManager {
 
                         files.forEach { file ->
                             if (file.isFile && file.name.endsWith(".exo")) {
-                                val length = file.length()
                                 if (file.delete()) {
                                     physicalDeletedCount++
                                 }

@@ -52,7 +52,7 @@ class PlaylistUsageRepository(private val app: Context) {
     ) {
         val data = _flow.value.toMutableList()
         val idx = data.indexOfFirst { it.id == id && it.source == source }
-        val updated = if (idx >= 0) {
+        if (idx >= 0) {
             val old = data[idx]
             old.copy(
                 name = name,

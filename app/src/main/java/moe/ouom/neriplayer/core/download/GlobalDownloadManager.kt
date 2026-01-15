@@ -546,7 +546,7 @@ object GlobalDownloadManager {
 
         // 重置取消标志，允许用户立即开始新的下载
         scope.launch {
-            kotlinx.coroutines.delay(100) // 短暂延迟，确保取消操作完成
+            delay(100) // 短暂延迟，确保取消操作完成
             AudioDownloadManager.resetCancelFlag()
         }
 

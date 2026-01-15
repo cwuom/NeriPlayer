@@ -2227,7 +2227,7 @@ fun SettingsScreen(
                         Spacer(Modifier.height(8.dp))
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            androidx.compose.material3.RadioButton(
+                            RadioButton(
                                 selected = !useExistingRepo,
                                 onClick = { useExistingRepo = false }
                             )
@@ -2245,7 +2245,7 @@ fun SettingsScreen(
                         }
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            androidx.compose.material3.RadioButton(
+                            RadioButton(
                                 selected = useExistingRepo,
                                 onClick = { useExistingRepo = true }
                             )
@@ -2449,7 +2449,7 @@ fun SettingsScreen(
                             .padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        androidx.compose.material3.Checkbox(
+                        Checkbox(
                             checked = clearImageCache,
                             onCheckedChange = { clearImageCache = it }
                         )

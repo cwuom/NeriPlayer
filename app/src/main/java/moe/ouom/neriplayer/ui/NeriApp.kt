@@ -908,7 +908,7 @@ fun NeriApp(
                                         },
                                         onClearCacheClick = { clearAudio, clearImage ->
                                             scope.launch {
-                                                val (success, message) = PlayerManager.clearCache(clearAudio, clearImage)
+                                                val (_, message) = PlayerManager.clearCache(clearAudio, clearImage)
                                                 snackbarHostState.showSnackbar(message)
                                             }
                                         }

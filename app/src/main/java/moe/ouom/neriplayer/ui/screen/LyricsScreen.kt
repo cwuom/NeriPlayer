@@ -138,7 +138,7 @@ fun LyricsScreen(
     val currentPosition by PlayerManager.playbackPositionFlow.collectAsState()
     val durationMs = currentSong?.durationMs ?: 0L
 
-    val context = LocalContext.current
+    LocalContext.current
     val clipboardManager = LocalClipboardManager.current
 
     var showSongNameMenu by remember { mutableStateOf(false) }
@@ -166,11 +166,6 @@ fun LyricsScreen(
     )
 
     // 播放控件动画 - 轻微上浮/下沉，保持常驻在安全区域内
-    val controlsOffsetY by animateFloatAsState(
-        targetValue = if (isLyricsMode) 0f else 0f,
-        animationSpec = spring(dampingRatio = 0.85f),
-        label = "controls_offset_y"
-    )
 
     // 进度条拖拽状态
     var isUserDraggingSlider by remember(currentSong?.id) { mutableStateOf(false) }

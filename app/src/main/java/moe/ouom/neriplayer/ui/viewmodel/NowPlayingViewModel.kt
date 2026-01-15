@@ -180,7 +180,7 @@ class NowPlayingViewModel : ViewModel() {
 
                 if (isBili) {
                     // B站视频：从B站获取原始信息
-                    val appContainer = moe.ouom.neriplayer.core.di.AppContainer
+                    val appContainer = AppContainer
                     val videoInfo = appContainer.biliClient.getVideoBasicInfoByAvid(originalSong.id)
 
                     val parts = originalSong.album.split('|')
@@ -204,7 +204,7 @@ class NowPlayingViewModel : ViewModel() {
                     onResult(true, info, context.getString(R.string.music_restore_success))
                 } else {
                     // 网易云音乐：从网易云获取原始信息
-                    val appContainer = moe.ouom.neriplayer.core.di.AppContainer
+                    val appContainer = AppContainer
                     val songDetails = appContainer.cloudMusicSearchApi?.getSongInfo(originalSong.id.toString())
 
                     if (songDetails != null) {
