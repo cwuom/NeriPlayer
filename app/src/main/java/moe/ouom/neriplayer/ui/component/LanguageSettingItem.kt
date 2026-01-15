@@ -38,7 +38,8 @@ fun LanguageSettingItem(
                 imageVector = Icons.Outlined.Language,
                 contentDescription = null
             )
-        }
+        },
+        colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent)
     )
 
     if (showDialog) {
