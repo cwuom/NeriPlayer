@@ -274,7 +274,7 @@ fun RecentScreen(
                                 }
                                 DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                                     DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.playlist_add_to_queue)) },
+                                        text = { Text(stringResource(R.string.local_playlist_play_next)) },
                                         onClick = {
                                             PlayerManager.addToQueueNext(song)
                                             showMenu = false

@@ -54,12 +54,10 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.automirrored.outlined.QueueMusic
-import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.MoreVert
@@ -72,9 +70,9 @@ import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material.icons.outlined.Timer
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
@@ -94,15 +92,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
@@ -116,7 +112,6 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
 import moe.ouom.neriplayer.util.HapticFilledIconButton
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.formatDuration
-import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, androidx.compose.animation.ExperimentalSharedTransitionApi::class)
 @Composable
@@ -751,7 +746,7 @@ fun LyricsScreen(
                 ) {
                     androidx.compose.foundation.lazy.LazyColumn(state = listState) {
                         itemsIndexed(displayedQueue) { index, song ->
-                            androidx.compose.foundation.layout.Row(
+                            Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
@@ -768,7 +763,7 @@ fun LyricsScreen(
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Start,
                                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
                                 )
-                                androidx.compose.foundation.layout.Column(modifier = Modifier.weight(1f)) {
+                                Column(modifier = Modifier.weight(1f)) {
                                     Text(song.name, maxLines = 1)
                                     Text(
                                         song.artist,
@@ -778,7 +773,7 @@ fun LyricsScreen(
                                     )
                                 }
 
-                                androidx.compose.foundation.layout.Row(
+                                Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
@@ -800,18 +795,18 @@ fun LyricsScreen(
                                             )
                                         }
 
-                                        androidx.compose.material3.DropdownMenu(
+                                        DropdownMenu(
                                             expanded = showMoreMenu,
                                             onDismissRequest = { showMoreMenu = false }
                                         ) {
-                                            androidx.compose.material3.DropdownMenuItem(
-                                                text = { Text(stringResource(R.string.playlist_add_to_queue)) },
+                                            DropdownMenuItem(
+                                                text = { Text(stringResource(R.string.local_playlist_play_next)) },
                                                 onClick = {
                                                     PlayerManager.addToQueueNext(song)
                                                     showMoreMenu = false
                                                 }
                                             )
-                                            androidx.compose.material3.DropdownMenuItem(
+                                            DropdownMenuItem(
                                                 text = { Text(stringResource(R.string.playlist_add_to_end)) },
                                                 onClick = {
                                                     PlayerManager.addToQueueEnd(song)
@@ -836,7 +831,7 @@ fun LyricsScreen(
                 ) {
                     androidx.compose.foundation.lazy.LazyColumn {
                         itemsIndexed(playlists) { _, pl ->
-                            androidx.compose.foundation.layout.Row(
+                            Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
@@ -859,40 +854,3 @@ fun LyricsScreen(
     }
 }
 
-@Composable
-private fun VolumeControlSheetContent(deviceName: String) {
-    androidx.compose.foundation.layout.Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 16.dp)
-            .windowInsetsPadding(WindowInsets.navigationBars),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            text = deviceName,
-            style = MaterialTheme.typography.titleMedium
-        )
-        androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(16.dp))
-        val context = androidx.compose.ui.platform.LocalContext.current
-        val audioManager = remember { context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager }
-        var volume by remember {
-            mutableFloatStateOf(
-                audioManager.getStreamVolume(android.media.AudioManager.STREAM_MUSIC).toFloat()
-            )
-        }
-        val maxVolume = remember { audioManager.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC) }
-        androidx.compose.material3.Slider(
-            value = volume,
-            onValueChange = {
-                volume = it
-                audioManager.setStreamVolume(
-                    android.media.AudioManager.STREAM_MUSIC,
-                    it.toInt(),
-                    0
-                )
-            },
-            valueRange = 0f..maxVolume.toFloat(),
-            steps = maxVolume - 1
-        )
-    }
-}

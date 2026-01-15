@@ -910,7 +910,7 @@ private fun VideoRow(
                     onDismissRequest = { showMoreMenu = false }
                 ) {
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.playlist_add_to_queue)) },
+                        text = { Text(stringResource(R.string.local_playlist_play_next)) },
                         onClick = {
                             val songItem = video.toSongItem()
                             PlayerManager.addToQueueNext(songItem)

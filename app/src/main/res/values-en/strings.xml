@@ -88,7 +88,6 @@
     <string name="playlist_name_empty">Name cannot be empty</string>
     <string name="playlist_enter_name">Enter Playlist Name</string>
     <string name="playlist_queue">Play Queue</string>
-    <string name="playlist_add_to_queue">Play Next...</string>
     <string name="playlist_add_to_end">Add to End</string>
     <string name="playlist_search_hint">Search songs in playlist</string>
     <string name="action_copy_song_name">Copy Song Name</string>

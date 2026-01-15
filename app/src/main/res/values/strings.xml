@@ -89,7 +89,6 @@
     <string name="playlist_name_empty">名称不能为空哦</string>
     <string name="playlist_enter_name">输入歌单名称</string>
     <string name="playlist_queue">播放列表</string>
-    <string name="playlist_add_to_queue">接下来播放...</string>
     <string name="playlist_add_to_end">添加到队尾</string>
     <string name="playlist_search_hint">搜索歌单内歌曲</string>
     <string name="action_copy_song_name">复制歌曲名</string>

@@ -1015,7 +1015,7 @@ private fun SongRow(
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.playlist_add_to_queue)) },
+                        text = { Text(stringResource(R.string.playlist_add_to_end)) },
                         onClick = {
                             PlayerManager.addToQueueEnd(song)
                             showMoreMenu = false
