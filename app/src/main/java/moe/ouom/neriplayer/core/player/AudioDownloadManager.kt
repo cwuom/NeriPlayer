@@ -530,8 +530,8 @@ object AudioDownloadManager {
                 var readSoFar = 0L
                 val buffer = okio.Buffer()
                 while (true) {
-                    // 检查是否被取消
-                    if (moe.ouom.neriplayer.core.download.GlobalDownloadManager.isSongCancelled(songId)) {
+                    // 检查是否被取消(全局取消或单个任务取消)
+                    if (_isCancelled.value || moe.ouom.neriplayer.core.download.GlobalDownloadManager.isSongCancelled(songId)) {
                         NPLogger.d(TAG, "下载被取消，停止下载: songId=$songId")
                         destFile.delete() // 删除临时文件
                         _progressFlow.value = null
