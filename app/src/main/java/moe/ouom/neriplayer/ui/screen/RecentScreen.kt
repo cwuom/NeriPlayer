@@ -133,6 +133,7 @@ fun RecentScreen(
     var showClearConfirm by remember { mutableStateOf(false) }
 
     Scaffold(
+        containerColor = Color.Transparent,
         topBar = {
             if (!selectionMode) {
                 TopAppBar(
