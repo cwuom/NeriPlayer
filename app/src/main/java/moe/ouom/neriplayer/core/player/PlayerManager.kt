@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.BluetoothAudio
 import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.SpeakerGroup
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -70,14 +71,18 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.api.bili.BiliClient
+import moe.ouom.neriplayer.core.api.bili.buildBiliPartSong
+import moe.ouom.neriplayer.core.api.bili.resolveBiliSong
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.search.SongSearchInfo
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.di.AppContainer.biliCookieRepo
 import moe.ouom.neriplayer.core.di.AppContainer.settingsRepo
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.data.FavoritesPlaylist
 import moe.ouom.neriplayer.data.LocalPlaylist
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.sameIdentityAs
 import moe.ouom.neriplayer.ui.component.LyricEntry
 import moe.ouom.neriplayer.ui.component.parseNeteaseLrc
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
@@ -117,6 +122,7 @@ private sealed class SongUrlResult {
 object PlayerManager {
     const val BILI_SOURCE_TAG = "Bilibili"
     const val NETEASE_SOURCE_TAG = "Netease"
+    const val LOCAL_SOURCE_TAG = "Local"
 
     private var initialized = false
     private lateinit var application: Application
@@ -212,6 +218,16 @@ object PlayerManager {
 
     private val gson = Gson()
 
+    private fun isLocalSong(song: SongItem): Boolean = !song.mediaUri.isNullOrBlank()
+
+    private fun queueIndexOf(song: SongItem, playlist: List<SongItem> = currentPlaylist): Int {
+        return playlist.indexOfFirst { it.sameIdentityAs(song) }
+    }
+
+    private fun isCurrentSong(song: SongItem): Boolean {
+        return _currentSongFlow.value?.sameIdentityAs(song) == true
+    }
+
     /** 在后台线程发布事件到 UI（非阻塞） */
     private fun postPlayerEvent(event: PlayerEvent) {
         ioScope.launch { _playerEventFlow.emit(event) }
@@ -237,8 +253,9 @@ object PlayerManager {
      * - 网易云：netease-songId-音质
      */
     private fun computeCacheKey(song: SongItem): String {
-        val isBili = song.album.startsWith(BILI_SOURCE_TAG)
-        return if (isBili) {
+        return when {
+            isLocalSong(song) -> "local-${song.mediaUri.hashCode()}"
+            song.album.startsWith(BILI_SOURCE_TAG) -> {
             val parts = song.album.split('|')
             val cidPart = if (parts.size > 1) parts[1] else null
             if (cidPart != null) {
@@ -246,15 +263,15 @@ object PlayerManager {
             } else {
                 "bili-${song.id}-$biliPreferredQuality"
             }
-        } else {
-            "netease-${song.id}-$preferredQuality"
+            }
+            else -> "netease-${song.id}-$preferredQuality"
         }
     }
 
     /** 基于 URL 与缓存键构建 MediaItem（含自定义缓存键，便于跨音质/来源复用/隔离） */
     private fun buildMediaItem(song: SongItem, url: String, cacheKey: String): MediaItem {
         return MediaItem.Builder()
-            .setMediaId(song.id.toString())
+            .setMediaId("${song.id}|${song.album}|${song.mediaUri.orEmpty()}")
             .setUri(Uri.parse(url))
             .setCustomCacheKey(cacheKey)
             .build()
@@ -352,6 +369,9 @@ object PlayerManager {
         player = ExoPlayer.Builder(app, renderersFactory)
             .setMediaSourceFactory(mediaSourceFactory)
             .build()
+            .apply {
+                setWakeMode(C.WAKE_MODE_NETWORK)
+            }
 
         val audioOffload = TrackSelectionParameters.AudioOffloadPreferences.Builder()
             .setAudioOffloadMode(
@@ -669,6 +689,10 @@ object PlayerManager {
     }
 
     private suspend fun resolveSongUrl(song: SongItem): SongUrlResult {
+        if (isLocalSong(song)) {
+            return SongUrlResult.Success(song.mediaUri.orEmpty())
+        }
+
         // 优先检查本地下载的文件
         val localResult = checkLocalCache(song)
         if (localResult != null) return localResult
@@ -678,9 +702,7 @@ object PlayerManager {
 
         // 尝试从网络获取URL，如果有缓存则抑制错误提示
         val result = if (song.album.startsWith(BILI_SOURCE_TAG)) {
-            val parts = song.album.split('|')
-            val cid = if (parts.size > 1) parts[1].toLongOrNull() ?: 0L else 0L
-            getBiliAudioUrl(song.id, cid, suppressError = hasCachedData)
+            getBiliAudioUrl(song, suppressError = hasCachedData)
         } else {
             getNeteaseSongUrl(song.id, suppressError = hasCachedData)
         }
@@ -770,25 +792,17 @@ object PlayerManager {
         }
     }
 
-    private suspend fun getBiliAudioUrl(avid: Long, cid: Long = 0, suppressError: Boolean = false): SongUrlResult = withContext(Dispatchers.IO) {
+    private suspend fun getBiliAudioUrl(song: SongItem, suppressError: Boolean = false): SongUrlResult = withContext(Dispatchers.IO) {
         try {
-            var finalCid = cid
-            val bvid: String
-            if (finalCid == 0L) {
-                val videoInfo = biliClient.getVideoBasicInfoByAvid(avid)
-                bvid = videoInfo.bvid
-                finalCid = videoInfo.pages.firstOrNull()?.cid ?: 0L
-                if (finalCid == 0L) {
-                    if (!suppressError) {
-                        postPlayerEvent(PlayerEvent.ShowError("无法获取视频信息 (cid)"))
-                    }
-                    return@withContext SongUrlResult.Failure
+            val resolved = resolveBiliSong(song, biliClient)
+            if (resolved == null || resolved.cid == 0L) {
+                if (!suppressError) {
+                    postPlayerEvent(PlayerEvent.ShowError("无法获取视频信息"))
                 }
-            } else {
-                bvid = biliClient.getVideoBasicInfoByAvid(avid).bvid
+                return@withContext SongUrlResult.Failure
             }
 
-            val audioStream = biliRepo.getBestPlayableAudio(bvid, finalCid)
+            val audioStream = biliRepo.getBestPlayableAudio(resolved.videoInfo.bvid, resolved.cid)
 
             if (audioStream?.url != null) {
                 NPLogger.d("NERI-PlayerManager-BiliAudioUrl", audioStream.url)
@@ -817,17 +831,7 @@ object PlayerManager {
     fun playBiliVideoParts(videoInfo: BiliClient.VideoBasicInfo, startIndex: Int, coverUrl: String) {
         ensureInitialized()
         check(initialized) { "Call PlayerManager.initialize(application) first." }
-        val songs = videoInfo.pages.map { page ->
-            SongItem(
-                id = videoInfo.aid,
-                name = page.part,
-                artist = videoInfo.ownerName,
-                album = "$BILI_SOURCE_TAG|${page.cid}",
-                albumId = 0,
-                durationMs = page.durationSec * 1000L,
-                coverUrl = coverUrl
-            )
-        }
+        val songs = videoInfo.pages.map { page -> buildBiliPartSong(page, videoInfo, coverUrl) }
         playPlaylist(songs, startIndex)
     }
 
@@ -1067,11 +1071,6 @@ object PlayerManager {
         _playlistsFlow.value = deepCopyPlaylists(updatedLists)
         ioScope.launch {
             try {
-                // 确保收藏歌单存在
-                val favoritesName = getLocalizedString(R.string.favorite_my_music)
-                if (_playlistsFlow.value.none { it.name == favoritesName }) {
-                    localRepo.createPlaylist(favoritesName)
-                }
                 localRepo.addToFavorites(song)
             } catch (e: Exception) {
                 NPLogger.e("NERI-PlayerManager", "addToFavorites failed: ${e.message}", e)
@@ -1083,12 +1082,12 @@ object PlayerManager {
     fun removeCurrentFromFavorites() {
         ensureInitialized()
         if (!initialized) return
-        val songId = _currentSongFlow.value?.id ?: return
-        val updatedLists = optimisticUpdateFavorites(add = false, songId = songId)
+        val song = _currentSongFlow.value ?: return
+        val updatedLists = optimisticUpdateFavorites(add = false, song = song)
         _playlistsFlow.value = deepCopyPlaylists(updatedLists)
         ioScope.launch {
             try {
-                localRepo.removeFromFavorites(songId)
+                localRepo.removeFromFavorites(song)
             } catch (e: Exception) {
                 NPLogger.e("NERI-PlayerManager", "removeFromFavorites failed: ${e.message}", e)
             }
@@ -1100,32 +1099,39 @@ object PlayerManager {
         ensureInitialized()
         if (!initialized) return
         val song = _currentSongFlow.value ?: return
-        val fav = _playlistsFlow.value.firstOrNull { it.name == "我喜欢的音乐" || it.name == "My Favorite Music" }
-        val isFav = fav?.songs?.any { it.id == song.id } == true
+        val fav = FavoritesPlaylist.firstOrNull(_playlistsFlow.value, application)
+        val isFav = fav?.songs?.any { it.sameIdentityAs(song) } == true
         if (isFav) removeCurrentFromFavorites() else addCurrentToFavorites()
     }
 
     /** 本地乐观修改收藏歌单 */
     private fun optimisticUpdateFavorites(
         add: Boolean,
-        song: SongItem? = null,
-        songId: Long? = null
+        song: SongItem? = null
     ): List<LocalPlaylist> {
         val lists = _playlistsFlow.value
-        val favIdx = lists.indexOfFirst { it.name == "我喜欢的音乐" || it.name == "My Favorite Music" }
-        val base = lists.map { LocalPlaylist(it.id, it.name, it.songs.toMutableList()) }.toMutableList()
+        val favIdx = lists.indexOfFirst { FavoritesPlaylist.isSystemPlaylist(it, application) }
+        val base = lists.map {
+            LocalPlaylist(
+                id = it.id,
+                name = it.name,
+                songs = it.songs.toMutableList(),
+                modifiedAt = it.modifiedAt,
+                customCoverUrl = it.customCoverUrl
+            )
+        }.toMutableList()
 
         if (favIdx >= 0) {
             val fav = base[favIdx]
             if (add && song != null) {
-                if (fav.songs.none { it.id == song.id }) fav.songs.add(song)
-            } else if (!add && songId != null) {
-                fav.songs.removeAll { it.id == songId }
+                if (fav.songs.none { it.sameIdentityAs(song) }) fav.songs.add(song)
+            } else if (!add && song != null) {
+                fav.songs.removeAll { it.sameIdentityAs(song) }
             }
         } else {
             if (add && song != null) {
                 base += LocalPlaylist(
-                    id = System.currentTimeMillis(),
+                    id = FavoritesPlaylist.SYSTEM_ID,
                     name = getLocalizedString(R.string.favorite_my_music),
                     songs = mutableListOf(song)
                 )
@@ -1140,7 +1146,9 @@ object PlayerManager {
             LocalPlaylist(
                 id = pl.id,
                 name = pl.name,
-                songs = pl.songs.toMutableList()
+                songs = pl.songs.toMutableList(),
+                modifiedAt = pl.modifiedAt,
+                customCoverUrl = pl.customCoverUrl
             )
         }
     }
@@ -1344,7 +1352,7 @@ object PlayerManager {
         var insertIndex = (currentIndex + 1).coerceIn(0, newPlaylist.size + 1)
 
         // 检查歌曲是否已存在
-        val existingIndex = newPlaylist.indexOfFirst { it.id == song.id && it.album == song.album }
+        val existingIndex = newPlaylist.indexOfFirst { it.sameIdentityAs(song) }
         if (existingIndex != -1) {
             newPlaylist.removeAt(existingIndex)
             // 如果移除的歌曲在插入位置之前，插入位置需要前移一位
@@ -1362,11 +1370,11 @@ object PlayerManager {
         _currentQueueFlow.value = currentPlaylist
 
         if (currentSong != null) {
-            currentIndex = newPlaylist.indexOfFirst { it.id == currentSong.id && it.album == currentSong.album }
+            currentIndex = queueIndexOf(currentSong, newPlaylist)
         }
 
         if (player.shuffleModeEnabled) {
-            val newSongRealIndex = newPlaylist.indexOfFirst { it.id == song.id && it.album == song.album }
+            val newSongRealIndex = queueIndexOf(song, newPlaylist)
 
             if (newSongRealIndex != -1) {
                 shuffleBag.remove(newSongRealIndex)
@@ -1396,7 +1404,7 @@ object PlayerManager {
         val newPlaylist = currentPlaylist.toMutableList()
 
         // 检查歌曲是否已存在于队列中
-        val existingIndex = newPlaylist.indexOfFirst { it.id == song.id && it.album == song.album }
+        val existingIndex = newPlaylist.indexOfFirst { it.sameIdentityAs(song) }
         if (existingIndex != -1) {
             newPlaylist.removeAt(existingIndex)
         }
@@ -1487,9 +1495,7 @@ object PlayerManager {
             NPLogger.e("PlayerManager", "originalSong: id=${originalSong.id}, album='${originalSong.album}', matchedLyric=${originalSong.matchedLyric?.take(50)}")
 
             // 从当前播放列表中获取最新的歌曲状态,保留歌词等字段
-            val currentSong = currentPlaylist.firstOrNull {
-                it.id == originalSong.id && it.album == originalSong.album
-            } ?: originalSong
+            val currentSong = currentPlaylist.firstOrNull { it.sameIdentityAs(originalSong) } ?: originalSong
 
             NPLogger.e("PlayerManager", "currentSong from playlist: matchedLyric=${currentSong.matchedLyric?.take(50)}, matchedTranslatedLyric=${currentSong.matchedTranslatedLyric?.take(50)}")
 
@@ -1513,29 +1519,38 @@ object PlayerManager {
             try {
                 val isBili = originalSong.album.startsWith(BILI_SOURCE_TAG)
 
-                if (isBili) {
-                    // B站视频：从B站重新获取原始信息
-                    val videoInfo = biliClient.getVideoBasicInfoByAvid(originalSong.id)
-
-                    // 获取对应的分P信息（如果有）
-                    val parts = originalSong.album.split('|')
-                    val targetCid = if (parts.size > 1) parts[1].toLongOrNull() else null
-                    val pageInfo = if (targetCid != null) {
-                        videoInfo.pages.firstOrNull { it.cid == targetCid }
-                    } else {
-                        videoInfo.pages.firstOrNull()
-                    }
-
-                    // HTTP自动转HTTPS
-                    val coverUrl = videoInfo.coverUrl.let {
+                if (isLocalSong(originalSong)) {
+                    val updatedSong = originalSong.copy(
+                        name = originalSong.originalName ?: originalSong.name,
+                        artist = originalSong.originalArtist ?: originalSong.artist,
+                        coverUrl = originalSong.originalCoverUrl ?: originalSong.coverUrl,
+                        matchedLyric = null,
+                        matchedTranslatedLyric = null,
+                        matchedLyricSource = null,
+                        matchedSongId = null,
+                        customCoverUrl = null,
+                        customName = null,
+                        customArtist = null,
+                        originalName = null,
+                        originalArtist = null,
+                        originalCoverUrl = null,
+                        originalLyric = null,
+                        originalTranslatedLyric = null
+                    )
+                    updateSongInAllPlaces(originalSong, updatedSong)
+                } else if (isBili) {
+                    val resolved = resolveBiliSong(originalSong, biliClient)
+                        ?: throw IllegalStateException("无法解析 B 站视频信息")
+                    val coverUrl = resolved.videoInfo.coverUrl.let {
                         if (it.startsWith("http://")) it.replaceFirst("http://", "https://") else it
                     }
 
                     val updatedSong = originalSong.copy(
-                        name = pageInfo?.part ?: videoInfo.title,
-                        artist = videoInfo.ownerName,
+                        name = resolved.pageInfo?.part ?: resolved.videoInfo.title,
+                        artist = resolved.videoInfo.ownerName,
+                        album = "$BILI_SOURCE_TAG|${resolved.cid}",
                         coverUrl = coverUrl,
-                        matchedLyric = null, // B站视频清空歌词
+                        matchedLyric = null,
                         matchedTranslatedLyric = null,
                         matchedLyricSource = null,
                         matchedSongId = null,
@@ -1550,11 +1565,9 @@ object PlayerManager {
                     )
                     updateSongInAllPlaces(originalSong, updatedSong)
                 } else {
-                    // 网易云音乐：从网易云重新获取原始信息
                     val songDetails = cloudMusicSearchApi?.getSongInfo(originalSong.id.toString())
 
                     if (songDetails != null) {
-                        // HTTP自动转HTTPS
                         val coverUrl = songDetails.coverUrl?.let {
                             if (it.startsWith("http://")) it.replaceFirst("http://", "https://") else it
                         }
@@ -1606,7 +1619,7 @@ object PlayerManager {
     }
 
     suspend fun updateUserLyricOffset(songToUpdate: SongItem, newOffset: Long) {
-        val queueIndex = currentPlaylist.indexOfFirst { it.id == songToUpdate.id && it.album == songToUpdate.album }
+        val queueIndex = queueIndexOf(songToUpdate)
         if (queueIndex != -1) {
             val updatedSong = currentPlaylist[queueIndex].copy(userLyricOffsetMs = newOffset)
             val newList = currentPlaylist.toMutableList()
@@ -1615,23 +1628,19 @@ object PlayerManager {
             _currentQueueFlow.value = currentPlaylist
         }
 
-        if (_currentSongFlow.value?.id == songToUpdate.id && _currentSongFlow.value?.album == songToUpdate.album) {
+        if (isCurrentSong(songToUpdate)) {
             _currentSongFlow.value = _currentSongFlow.value?.copy(userLyricOffsetMs = newOffset)
         }
 
         withContext(Dispatchers.IO) {
-            localRepo.updateSongMetadata(
-                songToUpdate.id,
-                songToUpdate.album,
-                songToUpdate.copy(userLyricOffsetMs = newOffset)
-            )
+            localRepo.updateSongMetadata(songToUpdate, songToUpdate.copy(userLyricOffsetMs = newOffset))
         }
 
         persistState()
     }
 
     suspend fun updateSongLyrics(songToUpdate: SongItem, newLyrics: String?) {
-        val queueIndex = currentPlaylist.indexOfFirst { it.id == songToUpdate.id && it.album == songToUpdate.album }
+        val queueIndex = queueIndexOf(songToUpdate)
         if (queueIndex != -1) {
             val updatedSong = currentPlaylist[queueIndex].copy(matchedLyric = newLyrics)
             val newList = currentPlaylist.toMutableList()
@@ -1640,19 +1649,15 @@ object PlayerManager {
             _currentQueueFlow.value = currentPlaylist
         }
 
-        if (_currentSongFlow.value?.id == songToUpdate.id && _currentSongFlow.value?.album == songToUpdate.album) {
+        if (isCurrentSong(songToUpdate)) {
             _currentSongFlow.value = _currentSongFlow.value?.copy(matchedLyric = newLyrics)
         }
 
         // 从队列中获取最新的歌曲信息，避免覆盖其他字段
-        val latestSong = currentPlaylist.firstOrNull { it.id == songToUpdate.id && it.album == songToUpdate.album }
+        val latestSong = currentPlaylist.firstOrNull { it.sameIdentityAs(songToUpdate) }
         if (latestSong != null) {
             withContext(Dispatchers.IO) {
-                localRepo.updateSongMetadata(
-                    songToUpdate.id,
-                    songToUpdate.album,
-                    latestSong
-                )
+                localRepo.updateSongMetadata(songToUpdate, latestSong)
             }
         }
 
@@ -1660,7 +1665,7 @@ object PlayerManager {
     }
 
     suspend fun updateSongTranslatedLyrics(songToUpdate: SongItem, newTranslatedLyrics: String?) {
-        val queueIndex = currentPlaylist.indexOfFirst { it.id == songToUpdate.id && it.album == songToUpdate.album }
+        val queueIndex = queueIndexOf(songToUpdate)
         if (queueIndex != -1) {
             val updatedSong = currentPlaylist[queueIndex].copy(matchedTranslatedLyric = newTranslatedLyrics)
             val newList = currentPlaylist.toMutableList()
@@ -1669,19 +1674,15 @@ object PlayerManager {
             _currentQueueFlow.value = currentPlaylist
         }
 
-        if (_currentSongFlow.value?.id == songToUpdate.id && _currentSongFlow.value?.album == songToUpdate.album) {
+        if (isCurrentSong(songToUpdate)) {
             _currentSongFlow.value = _currentSongFlow.value?.copy(matchedTranslatedLyric = newTranslatedLyrics)
         }
 
         // 从队列中获取最新的歌曲信息，避免覆盖其他字段
-        val latestSong = currentPlaylist.firstOrNull { it.id == songToUpdate.id && it.album == songToUpdate.album }
+        val latestSong = currentPlaylist.firstOrNull { it.sameIdentityAs(songToUpdate) }
         if (latestSong != null) {
             withContext(Dispatchers.IO) {
-                localRepo.updateSongMetadata(
-                    songToUpdate.id,
-                    songToUpdate.album,
-                    latestSong
-                )
+                localRepo.updateSongMetadata(songToUpdate, latestSong)
             }
         }
 
@@ -1700,7 +1701,7 @@ object PlayerManager {
 //        }
 //        NPLogger.e("PlayerManager", "=== 播放列表打印完毕 ===")
 
-        val queueIndex = currentPlaylist.indexOfFirst { it.id == songToUpdate.id && it.album == songToUpdate.album }
+        val queueIndex = queueIndexOf(songToUpdate)
 //        NPLogger.e("PlayerManager", "queueIndex=$queueIndex, currentPlaylist.size=${currentPlaylist.size}")
 
         if (queueIndex != -1) {
@@ -1720,7 +1721,7 @@ object PlayerManager {
         }
 
         NPLogger.e("PlayerManager", "当前播放歌曲: id=${_currentSongFlow.value?.id}, album='${_currentSongFlow.value?.album}'")
-        if (_currentSongFlow.value?.id == songToUpdate.id && _currentSongFlow.value?.album == songToUpdate.album) {
+        if (isCurrentSong(songToUpdate)) {
             val beforeUpdate = _currentSongFlow.value?.matchedLyric
             _currentSongFlow.value = _currentSongFlow.value?.copy(
                 matchedLyric = newLyrics,
@@ -1732,14 +1733,10 @@ object PlayerManager {
         }
 
         // 从队列中获取最新的歌曲信息，避免覆盖其他字段
-        val latestSong = currentPlaylist.firstOrNull { it.id == songToUpdate.id && it.album == songToUpdate.album }
+        val latestSong = currentPlaylist.firstOrNull { it.sameIdentityAs(songToUpdate) }
         if (latestSong != null) {
             withContext(Dispatchers.IO) {
-                localRepo.updateSongMetadata(
-                    songToUpdate.id,
-                    songToUpdate.album,
-                    latestSong
-                )
+                localRepo.updateSongMetadata(songToUpdate, latestSong)
             }
             NPLogger.d("PlayerManager", "已持久化到数据库")
         } else {
@@ -1751,10 +1748,7 @@ object PlayerManager {
     }
 
     private suspend fun updateSongInAllPlaces(originalSong: SongItem, updatedSong: SongItem) {
-        val originalId = originalSong.id
-        val originalAlbum = originalSong.album
-
-        val queueIndex = currentPlaylist.indexOfFirst { it.id == originalId && it.album == originalAlbum }
+        val queueIndex = queueIndexOf(originalSong)
         if (queueIndex != -1) {
             val newList = currentPlaylist.toMutableList()
             newList[queueIndex] = updatedSong
@@ -1762,12 +1756,12 @@ object PlayerManager {
             _currentQueueFlow.value = currentPlaylist
         }
 
-        if (_currentSongFlow.value?.id == originalId && _currentSongFlow.value?.album == originalAlbum) {
+        if (isCurrentSong(originalSong)) {
             _currentSongFlow.value = updatedSong
         }
 
         withContext(Dispatchers.IO) {
-            localRepo.updateSongMetadata(originalId, originalAlbum, updatedSong)
+            localRepo.updateSongMetadata(originalSong, updatedSong)
         }
 
         persistState()

@@ -36,6 +36,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.navigation.compose.rememberNavController
+import moe.ouom.neriplayer.core.api.bili.resolveBiliSong
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.search.SongSearchInfo
 import moe.ouom.neriplayer.core.player.PlayerManager
@@ -176,28 +177,27 @@ class NowPlayingViewModel : ViewModel() {
     fun fetchOriginalInfo(context: Context, originalSong: SongItem, onResult: (Boolean, OriginalSongInfo?, String) -> Unit) {
         viewModelScope.launch {
             try {
-                val isBili = originalSong.album.startsWith("Bilibili")
+                val isBili = originalSong.album.startsWith(PlayerManager.BILI_SOURCE_TAG)
 
-                if (isBili) {
-                    // B站视频：从B站获取原始信息
-                    val appContainer = AppContainer
-                    val videoInfo = appContainer.biliClient.getVideoBasicInfoByAvid(originalSong.id)
+                if (!originalSong.mediaUri.isNullOrBlank()) {
+                    val info = OriginalSongInfo(
+                        name = originalSong.originalName ?: originalSong.name,
+                        artist = originalSong.originalArtist ?: originalSong.artist,
+                        coverUrl = originalSong.originalCoverUrl ?: originalSong.coverUrl,
+                        shouldClearLyrics = true
+                    )
+                    onResult(true, info, context.getString(R.string.music_restore_success))
+                } else if (isBili) {
+                    val resolved = resolveBiliSong(originalSong, AppContainer.biliClient)
+                        ?: throw IllegalStateException("无法解析 B 站视频信息")
 
-                    val parts = originalSong.album.split('|')
-                    val targetCid = if (parts.size > 1) parts[1].toLongOrNull() else null
-                    val pageInfo = if (targetCid != null) {
-                        videoInfo.pages.firstOrNull { it.cid == targetCid }
-                    } else {
-                        videoInfo.pages.firstOrNull()
-                    }
-
-                    val coverUrl = videoInfo.coverUrl.let {
+                    val coverUrl = resolved.videoInfo.coverUrl.let {
                         if (it.startsWith("http://")) it.replaceFirst("http://", "https://") else it
                     }
 
                     val info = OriginalSongInfo(
-                        name = pageInfo?.part ?: videoInfo.title,
-                        artist = videoInfo.ownerName,
+                        name = resolved.pageInfo?.part ?: resolved.videoInfo.title,
+                        artist = resolved.videoInfo.ownerName,
                         coverUrl = coverUrl,
                         shouldClearLyrics = true  // B站音源应该清除歌词
                     )

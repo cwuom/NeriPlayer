@@ -1,29 +1,7 @@
 package moe.ouom.neriplayer.ui.viewmodel.playlist
 
-/*
- * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
- * Copyright (C) 2025-2025 NeriPlayer developers
- * https://github.com/cwuom/NeriPlayer
- *
- * This software is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
- *
- * This software is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See the GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this software.
- * If not, see <https://www.gnu.org/licenses/>.
- *
- * File: moe.ouom.neriplayer.ui.viewmodel.playlist/LocalPlaylistDetailViewModel
- * Created: 2025/8/11
- */
-
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
@@ -31,15 +9,22 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.data.LocalAudioImportManager
 import moe.ouom.neriplayer.data.LocalPlaylist
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.SongIdentity
 
-/** 本地歌单详情页面状态 */
 data class LocalPlaylistDetailUiState(
     val playlist: LocalPlaylist? = null
 )
 
+data class LocalAudioImportUiResult(
+    val importedCount: Int,
+    val failedCount: Int
+)
+
 class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(application) {
+    private val app = application
     private val repo = LocalPlaylistRepository.getInstance(application)
 
     private val _uiState = MutableStateFlow(LocalPlaylistDetailUiState())
@@ -62,22 +47,36 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
     fun rename(newName: String) {
         viewModelScope.launch {
             var name = newName
-            val favoritesName = getApplication<Application>().getString(R.string.favorite_my_music)
+            val favoritesName = app.getString(R.string.favorite_my_music)
             if (newName == favoritesName) {
-                name = favoritesName + "_2"
+                name = "${favoritesName}_2"
             }
             repo.renamePlaylist(playlistId, name)
         }
     }
 
-    fun removeSongs(ids: List<Long>) {
+    fun importSongs(uris: List<Uri>, onResult: (LocalAudioImportUiResult) -> Unit) {
         viewModelScope.launch {
-            val pid = uiState.value.playlist?.id ?: return@launch
-            repo.removeSongsFromPlaylist(pid, ids)
+            val result = LocalAudioImportManager.importSongs(app, uris)
+            if (result.songs.isNotEmpty()) {
+                repo.addSongsToPlaylist(playlistId, result.songs)
+            }
+            onResult(
+                LocalAudioImportUiResult(
+                    importedCount = result.songs.size,
+                    failedCount = result.failedCount
+                )
+            )
         }
     }
 
-    /** 删除：把结果回调给 UI */
+    fun removeSongs(songs: List<SongItem>) {
+        viewModelScope.launch {
+            if (songs.isEmpty()) return@launch
+            repo.removeSongsFromPlaylistByIdentity(playlistId, songs)
+        }
+    }
+
     fun delete(onResult: (Boolean) -> Unit) {
         viewModelScope.launch {
             val ok = repo.deletePlaylist(playlistId)
@@ -87,6 +86,10 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
 
     fun moveSong(from: Int, to: Int) {
         viewModelScope.launch { repo.moveSong(playlistId, from, to) }
+    }
+
+    fun reorderSongs(newOrder: List<SongIdentity>) {
+        viewModelScope.launch { repo.reorderSongs(playlistId, newOrder) }
     }
 
     fun removeSong(songId: Long) {

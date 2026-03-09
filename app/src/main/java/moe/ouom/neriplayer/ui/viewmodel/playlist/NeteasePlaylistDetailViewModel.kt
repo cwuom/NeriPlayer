@@ -62,6 +62,7 @@ data class SongItem(
     val albumId: Long,
     val durationMs: Long,
     val coverUrl: String?,
+    val mediaUri: String? = null,
     val matchedLyric: String? = null,
     val matchedTranslatedLyric: String? = null,
     val matchedLyricSource: MusicPlatform? = null,

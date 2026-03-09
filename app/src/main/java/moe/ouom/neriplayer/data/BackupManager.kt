@@ -30,13 +30,10 @@ import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.github.CoverUrlMapper
 import moe.ouom.neriplayer.data.github.SyncPlaylist
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import java.io.IOException
 import java.io.InputStream
-import java.io.OutputStream
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -122,10 +119,31 @@ class BackupManager(private val context: Context) {
 
             for (syncPlaylist in backupData.playlists) {
                 // 转换为LocalPlaylist
-                val importedPlaylist = syncPlaylist.toLocalPlaylist()
+                val importedPlaylist = syncPlaylist.toLocalPlaylist().copy(
+                    id = if (
+                        syncPlaylist.id == FavoritesPlaylist.SYSTEM_ID ||
+                        FavoritesPlaylist.matches(syncPlaylist.name, context)
+                    ) {
+                        FavoritesPlaylist.SYSTEM_ID
+                    } else {
+                        syncPlaylist.id
+                    },
+                    name = if (
+                        syncPlaylist.id == FavoritesPlaylist.SYSTEM_ID ||
+                        FavoritesPlaylist.matches(syncPlaylist.name, context)
+                    ) {
+                        FavoritesPlaylist.currentName(context)
+                    } else {
+                        syncPlaylist.name
+                    }
+                )
 
-                // 检查是否已存在同名歌单
-                val existingIndex = currentPlaylists.indexOfFirst { it.name == importedPlaylist.name }
+                val existingIndex = currentPlaylists.indexOfFirst { playlist ->
+                    playlist.id == importedPlaylist.id ||
+                        playlist.name == importedPlaylist.name ||
+                        (FavoritesPlaylist.isSystemPlaylist(playlist, context) &&
+                            FavoritesPlaylist.isSystemPlaylist(importedPlaylist, context))
+                }
 
                 if (existingIndex != -1) {
                     // 如果存在同名歌单，进行智能合并
@@ -178,8 +196,8 @@ class BackupManager(private val context: Context) {
      * 智能合并歌单，只添加缺失的歌曲
      */
     private fun mergePlaylists(existing: LocalPlaylist, imported: LocalPlaylist): MergeResult {
-        val existingSongIds = existing.songs.map { it.id }.toSet()
-        val newSongs = imported.songs.filter { it.id !in existingSongIds }
+        val existingSongIds = existing.songs.map { it.identity() }.toSet()
+        val newSongs = imported.songs.filter { it.identity() !in existingSongIds }
         
         if (newSongs.isEmpty()) {
             return MergeResult(
@@ -216,7 +234,13 @@ class BackupManager(private val context: Context) {
             val differences = mutableListOf<PlaylistDifference>()
 
             for (syncPlaylist in backupData.playlists) {
-                val currentPlaylist = currentPlaylists.find { it.name == syncPlaylist.name }
+                val currentPlaylist = currentPlaylists.find { playlist ->
+                    playlist.id == syncPlaylist.id ||
+                        playlist.name == syncPlaylist.name ||
+                        (FavoritesPlaylist.isSystemPlaylist(playlist, context) &&
+                            (syncPlaylist.id == FavoritesPlaylist.SYSTEM_ID ||
+                                FavoritesPlaylist.matches(syncPlaylist.name, context)))
+                }
 
                 if (currentPlaylist == null) {
                     // 新歌单
@@ -229,8 +253,8 @@ class BackupManager(private val context: Context) {
                     ))
                 } else {
                     // 现有歌单，分析差异
-                    val currentSongIds = currentPlaylist.songs.map { it.id }.toSet()
-                    val missingSongs = syncPlaylist.songs.filter { it.id !in currentSongIds }
+                    val currentSongIds = currentPlaylist.songs.map { it.identity() }.toSet()
+                    val missingSongs = syncPlaylist.songs.filter { it.identity() !in currentSongIds }
 
                     if (missingSongs.isNotEmpty()) {
                         differences.add(PlaylistDifference(

@@ -1,28 +1,4 @@
 ﻿package moe.ouom.neriplayer.ui.screen
-
-/*
- * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
- * Copyright (C) 2025-2025 NeriPlayer developers
- * https://github.com/cwuom/NeriPlayer
- *
- * This software is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
- *
- * This software is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See the GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this software.
- * If not, see <https://www.gnu.org/licenses/>.
- *
- * File: moe.ouom.neriplayer.ui.screen/NowPlayingScreen
- * Created: 2025/8/8
- */
-
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
@@ -146,6 +122,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -157,6 +135,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
@@ -178,6 +157,8 @@ import moe.ouom.neriplayer.core.api.search.SongSearchInfo
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.data.FavoritesPlaylist
+import moe.ouom.neriplayer.data.sameIdentityAs
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.AppleMusicLyric
 import moe.ouom.neriplayer.ui.component.LyricEntry
@@ -223,18 +204,16 @@ fun NowPlayingScreen(
 
     // 歌单&收藏
     val playlists by PlayerManager.playlistsFlow.collectAsState()
+    val context = LocalContext.current
 
     // 点击即切换，回流后撤销覆盖
     var favOverride by remember(currentSong) { mutableStateOf<Boolean?>(null) }
-    val favoritePlaylistName = stringResource(R.string.favorite_my_music)
-    val isFavoriteComputed = remember(currentSong, playlists, favoritePlaylistName) {
-        val song = currentSong
-        if (song == null) {
-            false
-        } else {
-            val fav = playlists.firstOrNull { it.name == "我喜欢的音乐" || it.name == "My Favorite Music" }
-            fav?.songs?.any { it.id == song.id && it.album == song.album } == true
-        }
+    val isFavoriteComputed = remember(currentSong, playlists) {
+        val song = currentSong ?: return@remember false
+        playlists
+            .firstOrNull { FavoritesPlaylist.matches(it.name, context) }
+            ?.songs
+            ?.any { it.sameIdentityAs(song) } == true
     }
     val isFavorite = favOverride ?: isFavoriteComputed
 
@@ -245,7 +224,7 @@ fun NowPlayingScreen(
     val queue by PlayerManager.currentQueueFlow.collectAsState()
     val displayedQueue = remember(queue) { queue }
     val currentIndexInDisplay = displayedQueue.indexOfFirst {
-        it.id == currentSong?.id && it.album == currentSong?.album
+        it.sameIdentityAs(currentSong)
     }
 
     var showAddSheet by remember { mutableStateOf(false) }
@@ -326,8 +305,8 @@ fun NowPlayingScreen(
     // 自适应布局判断
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-    val isTablet = configuration.smallestScreenWidthDp >= 600
-    val useTabletLandscapeLayout = isTablet && isLandscape
+    val isWideLayout = configuration.screenWidthDp >= 600
+    val useTabletLandscapeLayout = isWideLayout && isLandscape
 
     // 歌词偏移（平台 + 用户自定义）
     val platformOffset = if (currentSong?.matchedLyricSource == MusicPlatform.QQ_MUSIC) 500L else 1000L
@@ -1158,14 +1137,18 @@ fun MoreOptionsSheet(
     var showEditInfoSheet by remember { mutableStateOf(false) }
 
     val focusManager = LocalFocusManager.current
+    val searchFocusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    // 当弹窗打开时，如果需要，预填充搜索词
     LaunchedEffect(showSearchView) {
         if (showSearchView) {
             viewModel.prepareForSearch(originalSong.name)
             viewModel.performSearch()
+            delay(120)
+            searchFocusRequester.requestFocus()
+            keyboardController?.show()
         }
     }
 
@@ -1347,6 +1330,7 @@ fun MoreOptionsSheet(
                             label = { Text(stringResource(R.string.search_keywords)) },
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .focusRequester(searchFocusRequester)
                                 .padding(horizontal = 16.dp, vertical = 8.dp),
                             trailingIcon = {
                                 HapticIconButton(onClick = { viewModel.performSearch() }) {
@@ -1618,7 +1602,7 @@ fun EditSongInfoSheet(
 
     // 监听当前播放的歌曲，以便在"获取歌曲信息"后更新UI
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
-    val actualSong = if (currentSong?.id == originalSong.id && currentSong?.album == originalSong.album) {
+    val actualSong = if (currentSong?.sameIdentityAs(originalSong) == true) {
         currentSong!!
     } else {
         originalSong
@@ -1681,6 +1665,42 @@ fun EditSongInfoSheet(
         viewModel.prepareForSearch(originalSong.name)
     }
 
+    fun applyOriginalInfo(
+        restoreCover: Boolean,
+        restoreTitle: Boolean,
+        restoreArtist: Boolean,
+        restoreLyrics: Boolean
+    ) {
+        viewModel.fetchOriginalInfo(context, actualSong) { success, info, message ->
+            if (success && info != null) {
+                if (restoreTitle) {
+                    songName = info.name
+                }
+                if (restoreArtist) {
+                    artistName = info.artist
+                }
+                if (restoreCover) {
+                    coverUrl = info.coverUrl ?: ""
+                }
+                if (restoreLyrics) {
+                    if (info.shouldClearLyrics) {
+                        shouldClearLyrics = true
+                        shouldRestoreLyrics = false
+                        originalLyric = null
+                        originalTranslatedLyric = null
+                    } else {
+                        shouldClearLyrics = false
+                        shouldRestoreLyrics = info.lyric != null || info.translatedLyric != null
+                        originalLyric = info.lyric
+                        originalTranslatedLyric = info.translatedLyric
+                    }
+                }
+                userHasEdited = true
+            }
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
+
     // 使用 AnimatedVisibility 控制内容显示，避免重叠
     AnimatedVisibility(
         visible = !showLyricsEditor,
@@ -1725,7 +1745,24 @@ fun EditSongInfoSheet(
                 label = { Text(stringResource(R.string.music_cover_url)) },
                 placeholder = { Text(stringResource(R.string.music_cover_url_hint)) },
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true
+                singleLine = true,
+                trailingIcon = {
+                    HapticIconButton(
+                        onClick = {
+                            applyOriginalInfo(
+                                restoreCover = true,
+                                restoreTitle = false,
+                                restoreArtist = false,
+                                restoreLyrics = false
+                            )
+                        }
+                    ) {
+                        Icon(
+                            Icons.Outlined.Refresh,
+                            contentDescription = stringResource(R.string.music_restore_cover)
+                        )
+                    }
+                }
             )
 
             // 封面预览
@@ -1751,7 +1788,24 @@ fun EditSongInfoSheet(
                 onValueChange = { songName = it },
                 label = { Text(stringResource(R.string.music_edit_title)) },
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true
+                singleLine = true,
+                trailingIcon = {
+                    HapticIconButton(
+                        onClick = {
+                            applyOriginalInfo(
+                                restoreCover = false,
+                                restoreTitle = true,
+                                restoreArtist = false,
+                                restoreLyrics = false
+                            )
+                        }
+                    ) {
+                        Icon(
+                            Icons.Outlined.Refresh,
+                            contentDescription = stringResource(R.string.music_restore_title)
+                        )
+                    }
+                }
             )
 
             // 艺术家输入框
@@ -1760,7 +1814,24 @@ fun EditSongInfoSheet(
                 onValueChange = { artistName = it },
                 label = { Text(stringResource(R.string.music_edit_artist)) },
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true
+                singleLine = true,
+                trailingIcon = {
+                    HapticIconButton(
+                        onClick = {
+                            applyOriginalInfo(
+                                restoreCover = false,
+                                restoreTitle = false,
+                                restoreArtist = true,
+                                restoreLyrics = false
+                            )
+                        }
+                    ) {
+                        Icon(
+                            Icons.Outlined.Refresh,
+                            contentDescription = stringResource(R.string.music_restore_artist)
+                        )
+                    }
+                }
             )
 
             // 编辑歌词按钮
@@ -1847,35 +1918,12 @@ fun EditSongInfoSheet(
 
             HapticTextButton(
                 onClick = {
-                    viewModel.fetchOriginalInfo(context, actualSong) { success, info, message ->
-                        if (success && info != null) {
-                            // 填充到编辑框，但不保存
-                            songName = info.name
-                            artistName = info.artist
-                            coverUrl = info.coverUrl ?: ""
-
-                            // 根据音源类型设置不同的标志
-                            if (info.shouldClearLyrics) {
-                                // B站音源：标记需要清除歌词
-                                shouldClearLyrics = true
-                                shouldRestoreLyrics = false
-                                NPLogger.d("NowPlayingScreen", "B站音源恢复: 将清除歌词")
-                            } else {
-                                // 网易云音源：保存原始歌词，标记需要恢复
-                                shouldClearLyrics = false
-                                shouldRestoreLyrics = info.lyric != null || info.translatedLyric != null
-                                originalLyric = info.lyric
-                                originalTranslatedLyric = info.translatedLyric
-                                NPLogger.d("NowPlayingScreen", "网易云音源恢复: 将恢复歌词, hasLyric=${info.lyric != null}, hasTranslation=${info.translatedLyric != null}")
-                            }
-
-                            // 标记用户已编辑，防止自动更新覆盖
-                            userHasEdited = true
-                            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-                        } else {
-                            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-                        }
-                    }
+                    applyOriginalInfo(
+                        restoreCover = true,
+                        restoreTitle = true,
+                        restoreArtist = true,
+                        restoreLyrics = true
+                    )
                 },
                 modifier = Modifier.weight(1f)
             ) {

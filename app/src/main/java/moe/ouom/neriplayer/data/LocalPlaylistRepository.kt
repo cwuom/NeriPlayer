@@ -1,28 +1,5 @@
 package moe.ouom.neriplayer.data
 
-/*
- * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
- * Copyright (C) 2025-2025 NeriPlayer developers
- * https://github.com/cwuom/NeriPlayer
- *
- * This software is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
- *
- * This software is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See the GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this software.
- * If not, see <https://www.gnu.org/licenses/>.
- *
- * File: moe.ouom.neriplayer.data/LocalPlaylistRepository
- * Created: 2025/8/11
- */
-
 import android.annotation.SuppressLint
 import android.content.Context
 import com.google.gson.Gson
@@ -31,27 +8,25 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.data.github.CoverUrlMapper
 import moe.ouom.neriplayer.data.github.GitHubSyncWorker
+import moe.ouom.neriplayer.data.github.SecureTokenStorage
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
-import moe.ouom.neriplayer.R
 import java.io.File
 
-/** 本地歌单数据模型 */
 data class LocalPlaylist(
     val id: Long,
     val name: String,
     val songs: MutableList<SongItem> = mutableListOf(),
-    val modifiedAt: Long = System.currentTimeMillis()
+    val modifiedAt: Long = System.currentTimeMillis(),
+    val customCoverUrl: String? = null
 )
 
-/**
- * 管理本地歌单与收藏的仓库
- * 所有数据持久化到应用 filesDir 下的 JSON 文件中
- */
 class LocalPlaylistRepository private constructor(private val context: Context) {
     private val gson = Gson()
-    private val file: File = File(context.filesDir, "local_playlists.json")
+    private val file = File(context.filesDir, "local_playlists.json")
 
     private val _playlists = MutableStateFlow<List<LocalPlaylist>>(emptyList())
     val playlists: StateFlow<List<LocalPlaylist>> = _playlists
@@ -61,258 +36,308 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
     }
 
     private fun loadFromDisk() {
-        val list = try {
-            if (file.exists()) {
+        val loaded = try {
+            if (!file.exists()) {
+                emptyList()
+            } else {
                 val type = object : TypeToken<List<LocalPlaylist>>() {}.type
-                gson.fromJson<List<LocalPlaylist>>(file.readText(), type) ?: emptyList()
-            } else emptyList()
-        } catch (_: Exception) {
+                gson.fromJson<List<LocalPlaylist>>(file.readText(), type).orEmpty()
+            }
+        } catch (e: Exception) {
+            NPLogger.e("LocalPlaylistRepo", "Failed to read playlists", e)
             emptyList()
-        }.toMutableList()
-
-        val favoritesName = context.getString(R.string.favorite_my_music)
-
-        // 语言迁移：检查是否存在其他语言版本的"我喜欢的音乐"歌单
-        val possibleFavoriteNames = listOf("我喜欢的音乐", "My Favorite Music")
-        val existingFavorite = list.firstOrNull { it.name in possibleFavoriteNames }
-
-        if (existingFavorite != null && existingFavorite.name != favoritesName) {
-            // 找到了旧语言的收藏歌单，重命名为当前语言
-            val index = list.indexOf(existingFavorite)
-            list[index] = existingFavorite.copy(
-                name = favoritesName,
-                modifiedAt = System.currentTimeMillis()
-            )
-            NPLogger.i("LocalPlaylistRepo", "Migrated favorites playlist from '${existingFavorite.name}' to '$favoritesName'")
-        } else if (existingFavorite == null) {
-            // 不存在收藏歌单，创建一个新的
-            list.add(0, LocalPlaylist(
-                id = System.currentTimeMillis(),
-                name = favoritesName,
-                modifiedAt = System.currentTimeMillis()
-            ))
         }
 
-        _playlists.value = list
-        saveToDisk(triggerSync = false)  // 加载时不触发同步
+        _playlists.value = FavoritesPlaylist.normalize(loaded, context)
+        saveToDisk(triggerSync = false)
     }
 
-    // 原子写
     private fun saveToDisk(triggerSync: Boolean = true) {
         runCatching {
-            val json = gson.toJson(_playlists.value)
+            val json = gson.toJson(FavoritesPlaylist.normalize(_playlists.value, context))
             val parent = file.parentFile ?: context.filesDir
-            val tmp = File(parent, file.name + ".tmp")
+            val tmp = File(parent, "${file.name}.tmp")
             tmp.writeText(json)
             if (!tmp.renameTo(file)) {
                 file.writeText(json)
                 tmp.delete()
             }
+        }.onFailure {
+            NPLogger.e("LocalPlaylistRepo", "Failed to write playlists", it)
         }
-        // 触发自动同步
+
         if (triggerSync) {
             triggerAutoSync()
         }
     }
 
-    /** 触发自动同步（延迟5秒） */
+    private fun publish(playlists: List<LocalPlaylist>, triggerSync: Boolean = true) {
+        _playlists.value = FavoritesPlaylist.normalize(playlists, context)
+        saveToDisk(triggerSync)
+    }
+
     private fun triggerAutoSync() {
         try {
-            // 检查是否启用自动同步
-            val storage = moe.ouom.neriplayer.data.github.SecureTokenStorage(context)
+            val storage = SecureTokenStorage(context)
             if (!storage.isAutoSyncEnabled()) {
-                NPLogger.d("LocalPlaylistRepo", "Auto sync is disabled, skipping sync")
+                NPLogger.d("LocalPlaylistRepo", "Auto sync disabled, skip")
                 return
             }
-
             GitHubSyncWorker.scheduleDelayedSync(context, triggerByUserAction = false)
-            NPLogger.d("LocalPlaylistRepo", "Sync scheduled after playlist change")
         } catch (e: Exception) {
-            NPLogger.e("LocalPlaylistRepo", "Failed to trigger sync", e)
+            NPLogger.e("LocalPlaylistRepo", "Failed to schedule sync", e)
         }
     }
 
-    /** 创建一个新的本地歌单 */
+    private fun sanitizePlaylistName(name: String): String {
+        val trimmed = name.trim().ifBlank { context.getString(R.string.playlist_create) }
+        return if (FavoritesPlaylist.matches(trimmed, context)) {
+            "${trimmed}_2"
+        } else {
+            trimmed
+        }
+    }
+
+    private fun songSet(songs: List<SongItem>): Set<SongIdentity> = songs.map { it.identity() }.toSet()
+
     suspend fun createPlaylist(name: String) {
         withContext(Dispatchers.IO) {
             val list = _playlists.value.toMutableList()
-            list.add(LocalPlaylist(
-                id = System.currentTimeMillis(),
-                name = name,
-                modifiedAt = System.currentTimeMillis()
-            ))
-            _playlists.value = list
-            saveToDisk()
+            list.add(
+                LocalPlaylist(
+                    id = System.currentTimeMillis(),
+                    name = sanitizePlaylistName(name),
+                    modifiedAt = System.currentTimeMillis()
+                )
+            )
+            publish(list)
         }
     }
 
-    /** 将歌曲添加到"我喜欢的音乐" */
     suspend fun addToFavorites(song: SongItem) {
-        val favoritesName = context.getString(R.string.favorite_my_music)
-        // 尝试多种可能的收藏夹名称
-        val fav = _playlists.value.firstOrNull {
-            it.name == favoritesName ||
-            it.name == "我喜欢的音乐" ||
-            it.name == "My Favorite Music" ||
-            it.name.contains("Favorite", ignoreCase = true) ||
-            it.name.contains("喜欢", ignoreCase = true)
-        } ?: return
-        addSongToPlaylist(fav.id, song)
+        withContext(Dispatchers.IO) {
+            val list = _playlists.value.toMutableList()
+            val index = list.indexOfFirst { FavoritesPlaylist.isSystemPlaylist(it, context) }
+            if (index == -1) return@withContext
+
+            val favorites = list[index]
+            if (favorites.songs.any { it.sameIdentityAs(song) }) return@withContext
+
+            list[index] = favorites.copy(
+                songs = (favorites.songs + song).toMutableList(),
+                modifiedAt = System.currentTimeMillis()
+            )
+            publish(list)
+        }
     }
 
-    /** 重命名歌单（收藏夹禁止） */
+    suspend fun removeFromFavorites(song: SongItem) {
+        withContext(Dispatchers.IO) {
+            val list = _playlists.value.toMutableList()
+            val index = list.indexOfFirst { FavoritesPlaylist.isSystemPlaylist(it, context) }
+            if (index == -1) return@withContext
+
+            val favorites = list[index]
+            val updatedSongs = favorites.songs.filterNot { it.sameIdentityAs(song) }.toMutableList()
+            if (updatedSongs.size == favorites.songs.size) return@withContext
+
+            list[index] = favorites.copy(
+                songs = updatedSongs,
+                modifiedAt = System.currentTimeMillis()
+            )
+            publish(list)
+        }
+    }
+
     suspend fun renamePlaylist(playlistId: Long, newName: String) {
         withContext(Dispatchers.IO) {
-            val now = System.currentTimeMillis()
-            val favoritesName = context.getString(R.string.favorite_my_music)
-            val updated = _playlists.value.map { pl ->
-                if (pl.id == playlistId) {
-                    if (pl.name == favoritesName) pl else pl.copy(name = newName, modifiedAt = now)
-                } else pl
+            val updated = _playlists.value.map { playlist ->
+                if (playlist.id != playlistId || FavoritesPlaylist.isSystemPlaylist(playlist, context)) {
+                    playlist
+                } else {
+                    playlist.copy(
+                        name = sanitizePlaylistName(newName),
+                        modifiedAt = System.currentTimeMillis()
+                    )
+                }
             }
-            _playlists.value = updated
-            saveToDisk()
+            publish(updated)
         }
     }
 
-    /** 批量删除 */
-    suspend fun removeSongsFromPlaylist(playlistId: Long, songIds: List<Long>) {
+    suspend fun removeSongsFromPlaylistByIdentity(playlistId: Long, songs: List<SongItem>) {
+        withContext(Dispatchers.IO) {
+            if (songs.isEmpty()) return@withContext
+            val toRemove = songSet(songs)
+            val updated = _playlists.value.map { playlist ->
+                if (playlist.id != playlistId) return@map playlist
+                val filtered = playlist.songs.filterNot { it.identity() in toRemove }.toMutableList()
+                if (filtered.size == playlist.songs.size) {
+                    playlist
+                } else {
+                    playlist.copy(songs = filtered, modifiedAt = System.currentTimeMillis())
+                }
+            }
+            publish(updated)
+        }
+    }
+
+    suspend fun removeSongsFromPlaylistById(playlistId: Long, songIds: List<Long>) {
         withContext(Dispatchers.IO) {
             if (songIds.isEmpty()) return@withContext
-            val list = _playlists.value.toMutableList()
-            val plIndex = list.indexOfFirst { it.id == playlistId }
-            if (plIndex == -1) return@withContext
-
-            val pl = list[plIndex]
-            val idSet = songIds.toHashSet()
-            val newSongs = pl.songs.filterNot { it.id in idSet }.toMutableList()
-
-            if (newSongs.size != pl.songs.size) {
-                list[plIndex] = pl.copy(songs = newSongs, modifiedAt = System.currentTimeMillis())
-                _playlists.value = list
-                saveToDisk()
+            val updated = _playlists.value.map { playlist ->
+                if (playlist.id != playlistId) return@map playlist
+                val filtered = playlist.songs.filterNot { it.id in songIds }.toMutableList()
+                if (filtered.size == playlist.songs.size) {
+                    playlist
+                } else {
+                    playlist.copy(songs = filtered, modifiedAt = System.currentTimeMillis())
+                }
             }
+            publish(updated)
         }
     }
 
-    /** 删除指定歌单(收藏夹禁止) -> 返回是否删除成功 */
     suspend fun deletePlaylist(playlistId: Long): Boolean {
         return withContext(Dispatchers.IO) {
-            val list = _playlists.value.toMutableList()
-            val pl = list.find { it.id == playlistId } ?: return@withContext false
-            val favoritesName = context.getString(R.string.favorite_my_music)
-            if (pl.name == favoritesName) return@withContext false
-            list.remove(pl)
-            _playlists.value = list
+            val playlist = _playlists.value.firstOrNull { it.id == playlistId } ?: return@withContext false
+            if (FavoritesPlaylist.isSystemPlaylist(playlist, context)) return@withContext false
 
-            // 记录删除的歌单ID用于同步
-            try {
-                val storage = moe.ouom.neriplayer.data.github.SecureTokenStorage(context)
-                storage.addDeletedPlaylistId(playlistId)
-            } catch (e: Exception) {
-                NPLogger.e("LocalPlaylistRepo", "Failed to track deleted playlist", e)
+            val updated = _playlists.value.filterNot { it.id == playlistId }
+            runCatching {
+                SecureTokenStorage(context).addDeletedPlaylistId(playlistId)
+            }.onFailure {
+                NPLogger.e("LocalPlaylistRepo", "Failed to track deleted playlist", it)
             }
-
-            saveToDisk()
+            publish(updated)
             true
         }
     }
 
-    /** 按索引移动一首歌 */
     suspend fun moveSong(playlistId: Long, fromIndex: Int, toIndex: Int) {
         withContext(Dispatchers.IO) {
-            val now = System.currentTimeMillis()
-            val updated = _playlists.value.map { pl ->
-                if (pl.id != playlistId) return@map pl
-                val songs = pl.songs
-                if (fromIndex !in songs.indices || toIndex !in songs.indices) return@map pl
-                val newSongs = songs.toMutableList().apply {
-                    val s = removeAt(fromIndex)
-                    add(toIndex, s)
+            val updated = _playlists.value.map { playlist ->
+                if (playlist.id != playlistId) return@map playlist
+                if (fromIndex !in playlist.songs.indices || toIndex !in playlist.songs.indices) return@map playlist
+
+                val songs = playlist.songs.toMutableList().apply {
+                    val song = removeAt(fromIndex)
+                    add(toIndex, song)
                 }
-                pl.copy(songs = newSongs, modifiedAt = now)
+                playlist.copy(songs = songs, modifiedAt = System.currentTimeMillis())
             }
-            _playlists.value = updated
-            saveToDisk()
+            publish(updated)
         }
     }
 
-    /** 原子重排 */
-    suspend fun reorderSongs(playlistId: Long, newOrderIds: List<Long>) {
+    suspend fun reorderSongs(playlistId: Long, newOrder: List<SongIdentity>) {
         withContext(Dispatchers.IO) {
-            val list = _playlists.value.toMutableList()
-            val idx = list.indexOfFirst { it.id == playlistId }
-            if (idx == -1) return@withContext
-            val pl = list[idx]
-
-            val byId = pl.songs.associateBy { it.id }
-            val ordered = newOrderIds.mapNotNull { byId[it] }.toMutableList()
-            // 防御：把遗漏的旧歌拼回末尾，避免丢失
-            pl.songs.forEach { s -> if (ordered.none { it.id == s.id }) ordered.add(s) }
-
-            list[idx] = pl.copy(songs = ordered, modifiedAt = System.currentTimeMillis())
-            _playlists.value = list
-            saveToDisk()
+            val updated = _playlists.value.map { playlist ->
+                if (playlist.id != playlistId) return@map playlist
+                val byIdentity = playlist.songs.associateBy { it.identity() }
+                val ordered = newOrder.mapNotNull { byIdentity[it] }.toMutableList()
+                playlist.songs.forEach { song ->
+                    if (ordered.none { it.sameIdentityAs(song) }) {
+                        ordered += song
+                    }
+                }
+                playlist.copy(songs = ordered, modifiedAt = System.currentTimeMillis())
+            }
+            publish(updated)
         }
     }
 
-    /** 将歌曲添加到指定歌单 */
     suspend fun addSongsToPlaylist(playlistId: Long, songs: List<SongItem>) {
         withContext(Dispatchers.IO) {
-            val list = _playlists.value.toMutableList()
-            val idx = list.indexOfFirst { it.id == playlistId }
-            if (idx == -1) return@withContext
+            if (songs.isEmpty()) return@withContext
+            val updated = _playlists.value.map { playlist ->
+                if (playlist.id != playlistId) return@map playlist
 
-            val pl = list[idx]
-            val exists = pl.songs.asSequence().map { it.id }.toMutableSet()
-            val toAdd = songs.filter { exists.add(it.id) }
-            if (toAdd.isEmpty()) return@withContext
-
-            list[idx] = pl.copy(songs = (pl.songs + toAdd).toMutableList(), modifiedAt = System.currentTimeMillis())
-            _playlists.value = list
-            saveToDisk()
+                val existing = songSet(playlist.songs).toMutableSet()
+                val toAdd = songs.filter { existing.add(it.identity()) }
+                if (toAdd.isEmpty()) {
+                    playlist
+                } else {
+                    playlist.copy(
+                        songs = (playlist.songs + toAdd).toMutableList(),
+                        modifiedAt = System.currentTimeMillis()
+                    )
+                }
+            }
+            publish(updated)
         }
     }
 
-    /** 将“单首”添加到指定歌单 */
     suspend fun addSongToPlaylist(playlistId: Long, song: SongItem) {
         addSongsToPlaylist(playlistId, listOf(song))
     }
 
-    /** 从指定歌单移除歌曲 */
+    suspend fun removeSongFromPlaylist(playlistId: Long, song: SongItem) {
+        removeSongsFromPlaylistByIdentity(playlistId, listOf(song))
+    }
+
     suspend fun removeSongFromPlaylist(playlistId: Long, songId: Long) {
+        removeSongsFromPlaylistById(playlistId, listOf(songId))
+    }
+
+    suspend fun exportSongsToPlaylistByIdentity(sourcePlaylistId: Long, targetPlaylistId: Long, songs: List<SongItem>) {
         withContext(Dispatchers.IO) {
-            val list = _playlists.value.toMutableList()
-            val plIndex = list.indexOfFirst { it.id == playlistId }
-            if (plIndex == -1) return@withContext
-            val pl = list[plIndex]
-            val newSongs = pl.songs.filter { it.id != songId }.toMutableList()
-            if (newSongs.size != pl.songs.size) {
-                list[plIndex] = pl.copy(songs = newSongs, modifiedAt = System.currentTimeMillis())
-                _playlists.value = list
-                saveToDisk()
-            }
+            val source = _playlists.value.firstOrNull { it.id == sourcePlaylistId } ?: return@withContext
+            val wanted = songSet(songs)
+            val inSourceOrder = source.songs.filter { it.identity() in wanted }
+            addSongsToPlaylist(targetPlaylistId, inSourceOrder)
         }
     }
 
-    /** 从一个歌单导出（拷贝）多首歌到另一个歌单（保持源内相对顺序；自动去重） */
-    suspend fun exportSongsToPlaylist(sourcePlaylistId: Long, targetPlaylistId: Long, songIds: List<Long>) {
+    suspend fun exportSongsToPlaylistById(sourcePlaylistId: Long, targetPlaylistId: Long, songIds: List<Long>) {
         withContext(Dispatchers.IO) {
             val source = _playlists.value.firstOrNull { it.id == sourcePlaylistId } ?: return@withContext
-            val inSourceOrder = songIds.mapNotNull { id -> source.songs.firstOrNull { it.id == id } }
-            // 直接调用批量添加（会自动去重）
-            val list = _playlists.value.toMutableList()
-            val idx = list.indexOfFirst { it.id == targetPlaylistId }
-            if (idx == -1) return@withContext
-            val pl = list[idx]
+            val inSourceOrder = source.songs.filter { it.id in songIds }
+            addSongsToPlaylist(targetPlaylistId, inSourceOrder)
+        }
+    }
 
-            val exists = pl.songs.asSequence().map { it.id }.toMutableSet()
-            val toAdd = inSourceOrder.filter { exists.add(it.id) }
-            if (toAdd.isEmpty()) return@withContext
+    suspend fun updateSongMetadata(originalSong: SongItem, newSongInfo: SongItem) {
+        withContext(Dispatchers.IO) {
+            saveCoverMapping(newSongInfo)
+            val updated = _playlists.value.map { playlist ->
+                val songIndex = playlist.songs.indexOfFirst { it.sameIdentityAs(originalSong) }
+                if (songIndex == -1) {
+                    playlist
+                } else {
+                    val songs = playlist.songs.toMutableList()
+                    songs[songIndex] = newSongInfo
+                    playlist.copy(songs = songs, modifiedAt = System.currentTimeMillis())
+                }
+            }
+            publish(updated)
+        }
+    }
 
-            list[idx] = pl.copy(songs = (pl.songs + toAdd).toMutableList(), modifiedAt = System.currentTimeMillis())
-            _playlists.value = list
-            saveToDisk()
+    suspend fun updateSongMetadata(songId: Long, albumIdentifier: String, newSongInfo: SongItem) {
+        updateSongMetadata(
+            originalSong = newSongInfo.copy(id = songId, album = albumIdentifier),
+            newSongInfo = newSongInfo
+        )
+    }
+
+    private fun saveCoverMapping(newSongInfo: SongItem) {
+        runCatching {
+            val mapper = CoverUrlMapper.getInstance(context)
+            if (newSongInfo.coverUrl != null && newSongInfo.originalCoverUrl != null) {
+                mapper.saveCoverMapping(newSongInfo.coverUrl, newSongInfo.originalCoverUrl)
+            }
+            if (newSongInfo.customCoverUrl != null && newSongInfo.originalCoverUrl != null) {
+                mapper.saveCoverMapping(newSongInfo.customCoverUrl, newSongInfo.originalCoverUrl)
+            }
+        }.onFailure {
+            NPLogger.e("LocalPlaylistRepo", "Failed to save cover mapping", it)
+        }
+    }
+
+    suspend fun updatePlaylists(playlists: List<LocalPlaylist>) {
+        withContext(Dispatchers.IO) {
+            publish(playlists, triggerSync = false)
         }
     }
 
@@ -325,71 +350,6 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: LocalPlaylistRepository(context.applicationContext).also { INSTANCE = it }
             }
-        }
-    }
-
-    /** 从"我喜欢的音乐"移除歌曲 */
-    suspend fun removeFromFavorites(songId: Long) {
-        withContext(Dispatchers.IO) {
-            val now = System.currentTimeMillis()
-            val favoritesName = context.getString(R.string.favorite_my_music)
-            val updated = _playlists.value.map { pl ->
-                // 尝试多种可能的收藏夹名称
-                if (pl.name == favoritesName ||
-                    pl.name == "我喜欢的音乐" ||
-                    pl.name == "My Favorite Music" ||
-                    pl.name.contains("Favorite", ignoreCase = true) ||
-                    pl.name.contains("喜欢", ignoreCase = true))
-                    pl.copy(songs = pl.songs.filter { it.id != songId }.toMutableList(), modifiedAt = now)
-                else pl
-            }
-            _playlists.value = updated
-            saveToDisk()
-        }
-    }
-
-    suspend fun updateSongMetadata(songId: Long, albumIdentifier: String, newSongInfo: SongItem) {
-        withContext(Dispatchers.IO) {
-            // 保存封面地址映射（如果新封面是本地地址）
-            try {
-                val mapper = moe.ouom.neriplayer.data.github.CoverUrlMapper.getInstance(context)
-
-                // 保存主封面映射
-                if (newSongInfo.coverUrl != null && newSongInfo.originalCoverUrl != null) {
-                    mapper.saveCoverMapping(newSongInfo.coverUrl, newSongInfo.originalCoverUrl)
-                }
-
-                // 保存自定义封面映射
-                if (newSongInfo.customCoverUrl != null && newSongInfo.originalCoverUrl != null) {
-                    mapper.saveCoverMapping(newSongInfo.customCoverUrl, newSongInfo.originalCoverUrl)
-                }
-            } catch (e: Exception) {
-                NPLogger.e("LocalPlaylistRepo", "Failed to save cover mapping", e)
-            }
-
-            val updatedPlaylists = _playlists.value.map { playlist ->
-                val songIndex = playlist.songs.indexOfFirst { it.id == songId && it.album == albumIdentifier }
-
-                if (songIndex != -1) {
-                    val updatedSongs = playlist.songs.toMutableList().apply {
-                        this[songIndex] = newSongInfo
-                    }
-                    playlist.copy(songs = updatedSongs, modifiedAt = System.currentTimeMillis())
-                } else {
-                    playlist
-                }
-            }
-
-            _playlists.value = updatedPlaylists
-            saveToDisk()
-        }
-    }
-
-    /** 批量更新歌单列表（由同步管理器调用，不触发新的同步） */
-    suspend fun updatePlaylists(playlists: List<LocalPlaylist>) {
-        withContext(Dispatchers.IO) {
-            _playlists.value = playlists
-            saveToDisk(triggerSync = false)
         }
     }
 }

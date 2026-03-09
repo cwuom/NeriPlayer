@@ -34,6 +34,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.api.bili.resolveBiliSong
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.BiliAudioStreamInfo
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
@@ -452,16 +453,9 @@ object AudioDownloadManager {
 
     // 解析 B 站音频直链（按偏好选择）
     private suspend fun resolveBili(song: SongItem): Triple<String, String?, String?>? {
-        // album: "Bilibili" 或 "Bilibili|{cid}"
-        val parts = song.album.split('|')
-        val cid = if (parts.size > 1) parts[1].toLongOrNull() ?: 0L else 0L
-
-        val videoInfo = AppContainer.biliClient.getVideoBasicInfoByAvid(song.id)
-        val bvid = videoInfo.bvid
-        val finalCid = if (cid != 0L) cid else videoInfo.pages.firstOrNull()?.cid ?: 0L
-        if (finalCid == 0L) return null
-
-        val chosen: BiliAudioStreamInfo? = AppContainer.biliPlaybackRepository.getBestPlayableAudio(bvid, finalCid)
+        val resolved = resolveBiliSong(song, AppContainer.biliClient) ?: return null
+        val chosen: BiliAudioStreamInfo? = AppContainer.biliPlaybackRepository
+            .getBestPlayableAudio(resolved.videoInfo.bvid, resolved.cid)
         val url = chosen?.url ?: return null
         val mime = chosen.mimeType
         val ext = mimeToExt(mime)

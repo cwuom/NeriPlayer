@@ -25,6 +25,7 @@ data class PlayedEntry(
     val albumId: Long = 0L,
     val durationMs: Long,
     val coverUrl: String?,
+    val mediaUri: String? = null,
     val playedAt: Long // epoch millis
 )
 
@@ -44,7 +45,7 @@ class PlayHistoryRepository private constructor(private val app: Context) {
             val type = object : TypeToken<List<PlayedEntry>>() {}.type
             gson.fromJson<List<PlayedEntry>>(raw, type).orEmpty()
                 .sortedByDescending { it.playedAt }
-                .distinctBy { it.id to it.album }
+                .distinctBy { Triple(it.id, it.album, it.mediaUri) }
                 .take(1000)
         } catch (_: Throwable) { emptyList() }
     }
@@ -111,7 +112,9 @@ class PlayHistoryRepository private constructor(private val app: Context) {
             val current = _history.value
             NPLogger.d("PlayHistoryRepo", "Current history size: ${current.size}")
 
-            val idx = current.indexOfFirst { it.id == song.id && it.album == song.album }
+            val idx = current.indexOfFirst {
+                it.id == song.id && it.album == song.album && it.mediaUri == song.mediaUri
+            }
 
             val toHead = if (idx >= 0) {
                 NPLogger.d("PlayHistoryRepo", "Updating existing entry at index $idx")
@@ -122,6 +125,7 @@ class PlayHistoryRepository private constructor(private val app: Context) {
                     albumId = song.albumId,
                     durationMs = song.durationMs,
                     coverUrl = song.coverUrl,
+                    mediaUri = song.mediaUri,
                     playedAt = now
                 )
             } else {
@@ -134,6 +138,7 @@ class PlayHistoryRepository private constructor(private val app: Context) {
                     albumId = song.albumId,
                     durationMs = song.durationMs,
                     coverUrl = song.coverUrl,
+                    mediaUri = song.mediaUri,
                     playedAt = now
                 )
             }
@@ -149,7 +154,7 @@ class PlayHistoryRepository private constructor(private val app: Context) {
 
             val clipped = updated
                 .sortedByDescending { it.playedAt }
-                .distinctBy { it.id to it.album }
+                .distinctBy { Triple(it.id, it.album, it.mediaUri) }
                 .take(1000)
 
             NPLogger.d("PlayHistoryRepo", "Updated history size: ${clipped.size}, latest: ${clipped.firstOrNull()?.name}")
@@ -179,7 +184,7 @@ class PlayHistoryRepository private constructor(private val app: Context) {
         try {
             val clipped = entries
                 .sortedByDescending { it.playedAt }
-                .distinctBy { it.id to it.album }
+                .distinctBy { Triple(it.id, it.album, it.mediaUri) }
                 .take(1000)
             NPLogger.d("PlayHistoryRepo", "updateHistory() setting history to ${clipped.size} entries, latest: ${clipped.firstOrNull()?.name}")
             _history.value = clipped

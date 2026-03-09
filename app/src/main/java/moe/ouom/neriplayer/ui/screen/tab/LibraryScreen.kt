@@ -93,8 +93,10 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.LocalPlaylist
 import moe.ouom.neriplayer.data.FavoritePlaylistRepository
+import moe.ouom.neriplayer.data.FavoritesPlaylist
+import moe.ouom.neriplayer.data.displayCoverUrl
+import moe.ouom.neriplayer.data.LocalPlaylist
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.LibraryViewModel
@@ -426,9 +428,8 @@ private fun LocalPlaylistList(
             items = playlists,
             key = { it.id }
         ) { pl ->
-            val isListEmpty = pl.songs.isEmpty()
-            val displayName = if (pl.name == "我喜欢的音乐" || pl.name == "My Favorite Music") stringResource(R.string.favorite_my_music) else pl.name
-            val isFavorite = pl.name == stringResource(R.string.favorite_my_music) || pl.name == "我喜欢的音乐" || pl.name == "My Favorite Music"
+            val isFavorite = FavoritesPlaylist.matches(pl.name, LocalContext.current)
+            val displayName = if (isFavorite) stringResource(R.string.favorite_my_music) else pl.name
 
             var showMenu by remember { mutableStateOf(false) }
             var showRenameDialog by remember { mutableStateOf(false) }
@@ -445,9 +446,7 @@ private fun LocalPlaylistList(
                     .padding(horizontal = 8.dp, vertical = 4.dp)
                     .animateItem()
                     .combinedClickable(
-                        onClick = {
-                            if (!isListEmpty) onClick(pl)
-                        },
+                        onClick = { onClick(pl) },
                         onLongClick = {
                             if (!isFavorite) {
                                 showMenu = true
@@ -464,7 +463,7 @@ private fun LocalPlaylistList(
                         containerColor = Color.Transparent
                     ),
                     leadingContent = {
-                        val cover = pl.songs.lastOrNull()?.coverUrl
+                        val cover = pl.displayCoverUrl()
                         if (!cover.isNullOrEmpty()) {
                             AsyncImage(
                                 model = ImageRequest.Builder(LocalContext.current).data(cover).build(),

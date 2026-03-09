@@ -93,6 +93,7 @@ data class SyncSong(
     val albumId: Long,
     val durationMs: Long,
     val coverUrl: String?,
+    val mediaUri: String? = null,
     val addedAt: Long = System.currentTimeMillis(),
     val matchedLyric: String? = null,
     val matchedTranslatedLyric: String? = null,
@@ -124,6 +125,7 @@ data class SyncSong(
                 albumId = song.albumId,
                 durationMs = song.durationMs,
                 coverUrl = syncCoverUrl,
+                mediaUri = song.mediaUri,
                 matchedLyric = song.matchedLyric,
                 matchedTranslatedLyric = song.matchedTranslatedLyric,
                 matchedLyricSource = song.matchedLyricSource?.name,
@@ -150,6 +152,7 @@ data class SyncSong(
             albumId = albumId,
             durationMs = durationMs,
             coverUrl = coverUrl,
+            mediaUri = mediaUri,
             matchedLyric = matchedLyric,
             matchedTranslatedLyric = matchedTranslatedLyric,
             matchedLyricSource = matchedLyricSource?.let {

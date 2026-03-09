@@ -1,29 +1,4 @@
-package moe.ouom.neriplayer.core.player
-
-/*
- * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
- * Copyright (C) 2025-2025 NeriPlayer developers
- * https://github.com/cwuom/NeriPlayer
- *
- * This software is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
- *
- * This software is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See the GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this software.
- * If not, see <https://www.gnu.org/licenses/>.
- *
- * File: moe.ouom.neriplayer.core.player/AudioPlayerService
- * Created: 2025/8/11
- */
-
-
+﻿package moe.ouom.neriplayer.core.player
 import android.app.Application
 import android.app.Notification
 import android.app.NotificationChannel
@@ -46,6 +21,7 @@ import android.util.TypedValue
 import androidx.annotation.DrawableRes
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.DrawableCompat
 import androidx.core.graphics.drawable.IconCompat
 import androidx.core.graphics.drawable.toBitmap
@@ -63,6 +39,8 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.MainActivity
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.data.FavoritesPlaylist
+import moe.ouom.neriplayer.data.sameIdentityAs
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import androidx.core.graphics.createBitmap
@@ -86,17 +64,23 @@ class AudioPlayerService : Service() {
 
     private lateinit var mediaSession: MediaSessionCompat
 
-    // 封面缓存
+    // 灏侀潰缂撳瓨
     private var currentCoverUrl: String? = null
     private var currentLargeIcon: Bitmap? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var allowServiceRestart = true
 
     private val mediaSessionCallback = object : MediaSessionCompat.Callback() {
         override fun onPlay() { PlayerManager.play(); updateAll() }
         override fun onPause() { PlayerManager.pause(); updateAll() }
         override fun onSkipToNext() { PlayerManager.next(); updateAll() }
         override fun onSkipToPrevious() { PlayerManager.previous(); updateAll() }
-        override fun onStop() { PlayerManager.pause(); stopForeground(STOP_FOREGROUND_REMOVE); stopSelf() }
+        override fun onStop() {
+            allowServiceRestart = false
+            PlayerManager.pause()
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
         override fun onSeekTo(pos: Long) { PlayerManager.seekTo(pos); updatePlaybackState(); updateNotification() }
         override fun onCustomAction(action: String?, extras: Bundle?) {
             if (action == ACTION_TOGGLE_FAV) {
@@ -108,8 +92,8 @@ class AudioPlayerService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        // PlayerManager 应该已经在 NeriApp 中初始化（带正确的缓存大小参数）
-        // 这里的调用是为了确保初始化，使用 AppContainer 读取缓存设置
+        // PlayerManager 搴旇宸茬粡鍦?NeriApp 涓垵濮嬪寲锛堝甫姝ｇ‘鐨勭紦瀛樺ぇ灏忓弬鏁帮級
+        // 杩欓噷鐨勮皟鐢ㄦ槸涓轰簡纭繚鍒濆鍖栵紝浣跨敤 AppContainer 璇诲彇缂撳瓨璁剧疆
         val cacheSize = runBlocking {
             AppContainer.settingsRepo.maxCacheSizeBytesFlow.first()
         }
@@ -139,7 +123,7 @@ class AudioPlayerService : Service() {
             }
         }
 
-        // 监听定时器状态变化并更新通知
+        // 鐩戝惉瀹氭椂鍣ㄧ姸鎬佸彉鍖栧苟鏇存柊閫氱煡
         serviceScope.launch {
             PlayerManager.sleepTimerManager.timerState.collect {
                 updateNotification()
@@ -147,7 +131,7 @@ class AudioPlayerService : Service() {
         }
 
 
-        // 通知渠道
+        // 閫氱煡娓犻亾
         val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         val channel = NotificationChannel(
             CHANNEL_ID,
@@ -156,7 +140,7 @@ class AudioPlayerService : Service() {
         )
         nm.createNotificationChannel(channel)
 
-        // 拔出耳机自动暂停
+        // 鎷斿嚭鑰虫満鑷姩鏆傚仠
         becomingNoisyReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 if (intent.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
@@ -175,10 +159,11 @@ class AudioPlayerService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         NPLogger.d("NERI-APS", "onStartCommand action=${intent?.action}")
+        allowServiceRestart = true
 
         startForeground(NOTIFICATION_ID, buildNotification())
 
-        // 处理媒体按钮
+        // 澶勭悊濯掍綋鎸夐挳
         MediaButtonReceiver.handleIntent(mediaSession, intent)
 
         when (intent?.action) {
@@ -203,6 +188,7 @@ class AudioPlayerService : Service() {
                 updateAll()
             }
             ACTION_STOP -> {
+                allowServiceRestart = false
                 PlayerManager.pause()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
@@ -211,6 +197,7 @@ class AudioPlayerService : Service() {
 
             ACTION_SYNC -> {
                 if (!PlayerManager.hasItems()) {
+                    allowServiceRestart = false
                     stopForeground(STOP_FOREGROUND_REMOVE)
                     stopSelf()
                     return START_NOT_STICKY
@@ -224,16 +211,13 @@ class AudioPlayerService : Service() {
             }
         }
 
-//        val notif = buildNotification()
-//        startForeground(NOTIFICATION_ID, notif)
-
         return START_STICKY
     }
 
     /**
-     * 构建前台播放通知（媒体样式）
-     * - 根据 isPlaying 决定显示 播放/暂停 图标与意图
-     * - 收藏按钮使用自定义 Action
+     * 鏋勫缓鍓嶅彴鎾斁閫氱煡锛堝獟浣撴牱寮忥級
+     * - 鏍规嵁 isPlaying 鍐冲畾鏄剧ず 鎾斁/鏆傚仠 鍥炬爣涓庢剰鍥?
+     * - 鏀惰棌鎸夐挳浣跨敤鑷畾涔?Action
      */
     private fun buildNotification(): Notification {
         val isPlaying = PlayerManager.isPlayingFlow.value
@@ -266,9 +250,7 @@ class AudioPlayerService : Service() {
                     .setShowActionsInCompactView(0, 1, 3)
             )
 
-        val isFav = PlayerManager.playlistsFlow.value
-            .firstOrNull { it.name == "我喜欢的音乐" || it.name == "My Favorite Music" }
-            ?.songs?.any { it.id == song?.id } == true
+        val isFav = isFavoriteSong(song)
 
         val favIcon = IconCompat.createWithResource(
             this,
@@ -289,21 +271,21 @@ class AudioPlayerService : Service() {
         builder.addAction(favAction)
         builder.addAction(R.drawable.round_skip_next_24, getString(R.string.player_next), nextIntent)
 
-        // 设置标题和副标题
+        // 璁剧疆鏍囬鍜屽壇鏍囬
         builder.setContentTitle(song?.name ?: "NeriPlayer")
 
-        // 如果定时器激活，在副标题中显示剩余时间
+        // 濡傛灉瀹氭椂鍣ㄦ縺娲伙紝鍦ㄥ壇鏍囬涓樉绀哄墿浣欐椂闂?
         val timerState = PlayerManager.sleepTimerManager.timerState.value
         val contentText = if (timerState.isActive) {
             val timerInfo = when (timerState.mode) {
                 SleepTimerMode.COUNTDOWN -> {
                     val remaining = PlayerManager.sleepTimerManager.formatRemainingTime()
-                    "⏱ $remaining"
+                    "鈴?$remaining"
                 }
                 SleepTimerMode.FINISH_CURRENT -> getString(R.string.notification_stop_after_current)
                 SleepTimerMode.FINISH_PLAYLIST -> getString(R.string.notification_stop_after_playlist)
             }
-            "${song?.artist ?: ""} • $timerInfo"
+            "${song?.artist ?: ""} 鈥?$timerInfo"
         } else {
             song?.artist ?: ""
         }
@@ -315,15 +297,23 @@ class AudioPlayerService : Service() {
     }
 
     /**
-     * 聚合更新
+     * 鑱氬悎鏇存柊
      */
+    private fun isFavoriteSong(song: SongItem?): Boolean {
+        if (song == null) return false
+        val favorites = PlayerManager.playlistsFlow.value
+            .firstOrNull { FavoritesPlaylist.isSystemPlaylist(it, this) }
+            ?: return false
+        return favorites.songs.any { it.sameIdentityAs(song) }
+    }
+
     private fun updateAll() {
         updateMetadata()
         updatePlaybackState()
         updateNotification()
     }
 
-    /** 构建指向本 Service 的 PendingIntent */
+    /** 鏋勫缓鎸囧悜鏈?Service 鐨?PendingIntent */
     private fun servicePendingIntent(action: String, requestCode: Int): PendingIntent {
         return PendingIntent.getService(
             this,
@@ -342,7 +332,7 @@ class AudioPlayerService : Service() {
         val song = PlayerManager.currentSongFlow.value
         val duration = song?.durationMs ?: 0L
 
-        // 封面 URL 变更则异步加载
+        // 灏侀潰 URL 鍙樻洿鍒欏紓姝ュ姞杞?
         if (song?.coverUrl != currentCoverUrl) {
             currentCoverUrl = song?.coverUrl
             currentLargeIcon = null
@@ -364,9 +354,7 @@ class AudioPlayerService : Service() {
         val pos = PlayerManager.playbackPositionFlow.value
 
         val song = PlayerManager.currentSongFlow.value
-        val isFav = PlayerManager.playlistsFlow.value
-            .firstOrNull { it.name == "我喜欢的音乐" || it.name == "My Favorite Music" }
-            ?.songs?.any { it.id == song?.id } == true
+        val isFav = isFavoriteSong(song)
 
         val favIconRes = if (isFav) R.drawable.ic_baseline_favorite_24
         else R.drawable.ic_outline_favorite_24
@@ -398,12 +386,12 @@ class AudioPlayerService : Service() {
     }
 
     /**
-     * 使用 Coil 异步加载通知大图标封面
-     * 仅当回调时 URL 仍是当前曲目的封面时才应用，避免竞态导致的封面错位
+     * 浣跨敤 Coil 寮傛鍔犺浇閫氱煡澶у浘鏍囧皝闈?
+     * 浠呭綋鍥炶皟鏃?URL 浠嶆槸褰撳墠鏇茬洰鐨勫皝闈㈡椂鎵嶅簲鐢紝閬垮厤绔炴€佸鑷寸殑灏侀潰閿欎綅
      */
     private fun requestLargeIconAsync(url: String?) {
         if (url.isNullOrBlank()) {
-            // 清空封面 UI
+            // 娓呯┖灏侀潰 UI
             currentLargeIcon = null
             updateNotification()
             return
@@ -433,6 +421,13 @@ class AudioPlayerService : Service() {
         }
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        if (allowServiceRestart && PlayerManager.hasItems()) {
+            requestServiceRestart()
+        }
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
@@ -440,8 +435,26 @@ class AudioPlayerService : Service() {
         serviceScope.cancel()
         mediaSession.isActive = false
         mediaSession.release()
-        PlayerManager.release()
+        if (allowServiceRestart && PlayerManager.hasItems()) {
+            requestServiceRestart()
+        } else {
+            PlayerManager.release()
+        }
         super.onDestroy()
+    }
+
+
+    private fun requestServiceRestart() {
+        runCatching {
+            ContextCompat.startForegroundService(
+                this,
+                Intent(this, AudioPlayerService::class.java).apply {
+                    action = ACTION_SYNC
+                }
+            )
+        }.onFailure {
+            NPLogger.e("NERI-APS", "Failed to restart service", it)
+        }
     }
 
     private fun NotificationPaddedIcon(

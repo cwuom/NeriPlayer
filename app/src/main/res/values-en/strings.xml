@@ -1031,6 +1031,10 @@
     <string name="local_playlist_delete_songs_confirm">Are you sure you want to remove %d selected songs from the playlist?</string>
     <string name="local_playlist_delete_count">Delete (%d)</string>
     <string name="local_playlist_export_to">Export to Playlist</string>
+    <string name="local_playlist_import_audio">Import Local Audio</string>
+    <string name="local_playlist_import_audio_success">Imported %d local tracks</string>
+    <string name="local_playlist_import_audio_partial">Imported %1$d tracks, failed %2$d</string>
+    <string name="local_playlist_import_audio_failed">Import failed, %d tracks failed</string>
     <string name="local_playlist_total_duration" formatted="false">%s · %d songs</string>
 
     <!-- Disclaimer Content -->
@@ -1093,6 +1097,9 @@
     <string name="lyrics_original">Original</string>
     <string name="lyrics_translation">Translation</string>
     <string name="music_restore_original">Restore</string>
+    <string name="music_restore_cover">Restore cover</string>
+    <string name="music_restore_title">Restore title</string>
+    <string name="music_restore_artist">Restore artist</string>
     <string name="music_lyrics_filled_success">Lyrics filled successfully</string>
     <string name="music_lyrics_empty">No lyrics available for this song</string>
     <string name="music_lyrics_fill_failed">Failed to fill lyrics</string>
