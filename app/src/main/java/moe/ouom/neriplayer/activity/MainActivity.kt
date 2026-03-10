@@ -32,6 +32,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.lifecycleScope
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -88,6 +89,7 @@ import androidx.core.graphics.drawable.toDrawable
 import androidx.core.graphics.toColorInt
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
@@ -103,6 +105,12 @@ import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.ExceptionHandler
 import moe.ouom.neriplayer.util.LanguageManager
 import android.content.Context
+import android.net.Uri
+import moe.ouom.neriplayer.data.LocalAudioImportManager
+import moe.ouom.neriplayer.core.player.AudioPlayerService
+import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import kotlinx.coroutines.launch
 
 private enum class AppStage { Loading, Disclaimer, Main }
 
@@ -154,15 +162,18 @@ class MainActivity : ComponentActivity() {
                     if (storage.isConfigured()) {
                         moe.ouom.neriplayer.data.github.GitHubSyncWorker.syncNow(this@MainActivity)
                     }
-                }
-            }
+                        }
+                    }
 
-            NeriTheme(useDark = useDark, useDynamic = dynamicColor) {
-                SideEffect {
-                    applyWindowBackground(useDark)
-                    val controller = WindowInsetsControllerCompat(window, window.decorView)
-                    controller.isAppearanceLightStatusBars = !useDark
-                    controller.isAppearanceLightNavigationBars = !useDark
+                    NeriTheme(useDark = useDark, useDynamic = dynamicColor) {
+                        LaunchedEffect(Unit) {
+                            handleExternalAudioIntent(intent)
+                        }
+                        SideEffect {
+                            applyWindowBackground(useDark)
+                            val controller = WindowInsetsControllerCompat(window, window.decorView)
+                            controller.isAppearanceLightStatusBars = !useDark
+                            controller.isAppearanceLightNavigationBars = !useDark
                 }
 
                 // 入场动画状态
@@ -513,6 +524,30 @@ fun DisclaimerScreen(onAgree: () -> Unit) {
                         textAlign = TextAlign.Center
                     )
                 }
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        handleExternalAudioIntent(intent)
+    }
+
+    private fun handleExternalAudioIntent(intent: Intent?) {
+        val action = intent?.action ?: return
+        val uriList: List<Uri> = when (action) {
+            Intent.ACTION_VIEW -> intent.data?.let { listOf(it) } ?: emptyList()
+            Intent.ACTION_SEND -> intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)?.let { listOf(it) } ?: emptyList()
+            Intent.ACTION_SEND_MULTIPLE -> intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM) ?: emptyList()
+            else -> emptyList()
+        }
+        if (uriList.isEmpty()) return
+
+        lifecycleScope.launch {
+            val result = LocalAudioImportManager.importSongs(this@MainActivity, uriList)
+            if (result.songs.isNotEmpty()) {
+                PlayerManager.initialize(application)
+                PlayerManager.playPlaylist(result.songs, 0)
             }
         }
     }
