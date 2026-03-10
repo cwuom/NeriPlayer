@@ -45,6 +45,7 @@ import moe.ouom.neriplayer.util.DynamicProxySelector
 class NeteaseClient(bypassProxy: Boolean = true) {
     private val okHttpClient: OkHttpClient
     private val cookieStore: MutableMap<String, MutableList<Cookie>> = mutableMapOf()
+    private val cookieLock = Any()
 
     @Volatile
     private var persistedCookies: Map<String, String> = emptyMap()
@@ -54,13 +55,17 @@ class NeteaseClient(bypassProxy: Boolean = true) {
             .cookieJar(object : CookieJar {
                 override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
                     val host = url.host
-                    val list = cookieStore.getOrPut(host) { mutableListOf() }
-                    list.removeAll { c -> cookies.any { it.name == c.name } }
-                    list.addAll(cookies)
+                    synchronized(cookieLock) {
+                        val list = cookieStore.getOrPut(host) { mutableListOf() }
+                        list.removeAll { c -> cookies.any { it.name == c.name } }
+                        list.addAll(cookies)
+                    }
                 }
 
                 override fun loadForRequest(url: HttpUrl): List<Cookie> {
-                    return cookieStore[url.host] ?: emptyList()
+                    return synchronized(cookieLock) {
+                        cookieStore[url.host]?.toList() ?: emptyList()
+                    }
                 }
             })
             // use a dynamic ProxySelector so bypass can be toggled at runtime
@@ -84,16 +89,19 @@ class NeteaseClient(bypassProxy: Boolean = true) {
     }
 
     private fun seedCookieJarFromPersisted(host: String) {
-        val list = cookieStore.getOrPut(host) { mutableListOf() }
-        persistedCookies.forEach { (name, value) ->
-            val c = Cookie.Builder()
-                .name(name)
-                .value(value)
-                .domain(host)    // 域 Cookie
-                .path("/")
-                .build()
-            list.removeAll { it.name == name }
-            list.add(c)
+        val snapshot = persistedCookies
+        synchronized(cookieLock) {
+            val list = cookieStore.getOrPut(host) { mutableListOf() }
+            snapshot.forEach { (name, value) ->
+                val c = Cookie.Builder()
+                    .name(name)
+                    .value(value)
+                    .domain(host)    // 域 Cookie
+                    .path("/")
+                    .build()
+                list.removeAll { it.name == name }
+                list.add(c)
+            }
         }
     }
 
@@ -102,20 +110,27 @@ class NeteaseClient(bypassProxy: Boolean = true) {
      * Later occurrences override earlier ones.
      */
     fun getCookies(): Map<String, String> {
-        val result = LinkedHashMap<String, String>()
-        cookieStore.values.forEach { list -> list.forEach { cookie -> result[cookie.name] = cookie.value } }
-        return result
+        return synchronized(cookieLock) {
+            val result = LinkedHashMap<String, String>()
+            cookieStore.values.forEach { list -> list.forEach { cookie -> result[cookie.name] = cookie.value } }
+            result
+        }
     }
 
     fun logout() {
-        cookieStore.clear()
+        synchronized(cookieLock) {
+            cookieStore.clear()
+        }
+        persistedCookies = emptyMap()
     }
 
-    private fun getCookie(name: String): String? = cookieStore.values
-        .asSequence()
-        .flatMap { it.asSequence() }
-        .firstOrNull { it.name == name }
-        ?.value
+    private fun getCookie(name: String): String? = synchronized(cookieLock) {
+        cookieStore.values
+            .asSequence()
+            .flatMap { it.asSequence() }
+            .firstOrNull { it.name == name }
+            ?.value
+    }
 
     private fun buildPersistedCookieHeader(): String? {
         val map = persistedCookies.toMutableMap()
@@ -193,12 +208,16 @@ class NeteaseClient(bypassProxy: Boolean = true) {
         }
 
         okHttpClient.newCall(builder.build()).execute().use { resp ->
-            val responseBody = resp.body
+            val responseBody = resp.body ?: throw IOException("Empty response body")
             val encoding = resp.header("Content-Encoding")?.lowercase(Locale.getDefault())
             val bytes = when (encoding) {
                 "br"   -> BrotliInputStream(responseBody.byteStream()).use { it.readBytesCompat() }
                 "gzip" -> GZIPInputStream(responseBody.byteStream()).use { it.readBytesCompat() }
                 else   -> responseBody.bytes()
+            }
+            if (!resp.isSuccessful) {
+                val msg = String(bytes, StandardCharsets.UTF_8)
+                throw IOException("HTTP ${resp.code}: $msg")
             }
             return String(bytes, StandardCharsets.UTF_8)
         }
@@ -439,7 +458,7 @@ class NeteaseClient(bypassProxy: Boolean = true) {
                 { "code": 200, "playlists": [${items.joinToString(",")}] }
             """.trimIndent()
         } catch (e: Exception) {
-            """{ "code": 500, "msg": ${jsonQuote(e.stackTraceToString())} }"""
+            """{ "code": 500, "msg": ${jsonQuote(e.message ?: "error")} }"""
         }
     }
 

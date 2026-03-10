@@ -32,13 +32,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.MainActivity
-import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.FavoritesPlaylist
 import moe.ouom.neriplayer.data.sameIdentityAs
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
@@ -92,12 +89,8 @@ class AudioPlayerService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        // PlayerManager 搴旇宸茬粡鍦?NeriApp 涓垵濮嬪寲锛堝甫姝ｇ‘鐨勭紦瀛樺ぇ灏忓弬鏁帮級
-        // 杩欓噷鐨勮皟鐢ㄦ槸涓轰簡纭繚鍒濆鍖栵紝浣跨敤 AppContainer 璇诲彇缂撳瓨璁剧疆
-        val cacheSize = runBlocking {
-            AppContainer.settingsRepo.maxCacheSizeBytesFlow.first()
-        }
-        PlayerManager.initialize(application as Application, cacheSize)
+        // 确保 PlayerManager 已初始化（避免阻塞主线程读取 DataStore）
+        PlayerManager.initialize(application as Application)
 
         mediaSession = MediaSessionCompat(this, "NeriPlayerSession").apply {
             setCallback(mediaSessionCallback)
@@ -106,6 +99,11 @@ class AudioPlayerService : Service() {
 
         serviceScope.launch {
             PlayerManager.currentSongFlow.collect {
+                if (it == null && !PlayerManager.hasItems()) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                    return@collect
+                }
                 updateMetadata()
                 updateNotification()
             }
@@ -161,12 +159,18 @@ class AudioPlayerService : Service() {
         NPLogger.d("NERI-APS", "onStartCommand action=${intent?.action}")
         allowServiceRestart = true
 
-        startForeground(NOTIFICATION_ID, buildNotification())
+        val action = intent?.action
+        if (action == null && !PlayerManager.hasItems()) {
+            allowServiceRestart = false
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return START_NOT_STICKY
+        }
 
-        // 澶勭悊濯掍綋鎸夐挳
+        // 处理媒体按钮
         MediaButtonReceiver.handleIntent(mediaSession, intent)
 
-        when (intent?.action) {
+        when (action) {
             ACTION_PLAY -> {
                 @Suppress("DEPRECATION")
                 val songList = intent.getParcelableArrayListExtra<SongItem>("playlist")
@@ -178,7 +182,10 @@ class AudioPlayerService : Service() {
                 }
                 updateAll()
             }
-            ACTION_PAUSE -> PlayerManager.pause()
+            ACTION_PAUSE -> {
+                PlayerManager.pause()
+                updateAll()
+            }
             ACTION_NEXT -> {
                 PlayerManager.next()
                 updateAll()
@@ -209,6 +216,15 @@ class AudioPlayerService : Service() {
                 PlayerManager.toggleCurrentFavorite()
                 updateNotification()
             }
+        }
+
+        if (PlayerManager.hasItems()) {
+            startForeground(NOTIFICATION_ID, buildNotification())
+        } else if (action != ACTION_STOP) {
+            allowServiceRestart = false
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return START_NOT_STICKY
         }
 
         return START_STICKY

@@ -26,6 +26,7 @@ package moe.ouom.neriplayer
 import android.app.Application
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.util.ExceptionHandler
 import moe.ouom.neriplayer.util.LanguageManager
 import coil.Coil
 import coil.ImageLoader
@@ -39,6 +40,7 @@ class NeriPlayerApplication : Application() {
 
         // 初始化语言设置
         LanguageManager.init(this)
+        ExceptionHandler.init(this)
 
         AppContainer.initialize(this)
 

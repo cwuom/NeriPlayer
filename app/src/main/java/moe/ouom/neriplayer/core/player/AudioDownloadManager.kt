@@ -173,8 +173,17 @@ object AudioDownloadManager {
                 singleThreadDownload(client, request, tempFile, song.id)
 
                 // 下载完成后，重命名为正式文件
-                val destFile = File(downloadDir, fileName)
-                tempFile.renameTo(destFile)
+                val destFile = uniqueFile(downloadDir, fileName)
+                val renamed = tempFile.renameTo(destFile)
+                if (!renamed) {
+                    runCatching {
+                        tempFile.copyTo(destFile, overwrite = true)
+                        tempFile.delete()
+                    }.getOrElse {
+                        tempFile.delete()
+                        throw IllegalStateException("保存失败：无法重命名临时文件")
+                    }
+                }
 
                 _progressFlow.value = null
                 // 通知媒体库（仅当保存到公共目录时必要；App 专属目录通常播放器可直接访问）
@@ -238,10 +247,13 @@ object AudioDownloadManager {
                             }
                         }
 
-                        downloadSong(context, song)
+                        try {
+                            downloadSong(context, song)
 
                         // 停止监听进度
-                        progressJob.cancel()
+                        } finally {
+                            progressJob.cancel()
+                        }
 
                         // 下载成功，直接标记任务为完成
                         moe.ouom.neriplayer.core.download.GlobalDownloadManager.updateTaskStatus(
@@ -451,7 +463,7 @@ object AudioDownloadManager {
         } catch (_: Exception) { null }
     }
 
-    // 解析 B 站音频直链（按偏好选择）
+    // Resolve Bili audio direct url.
     private suspend fun resolveBili(song: SongItem): Triple<String, String?, String?>? {
         val resolved = resolveBiliSong(song, AppContainer.biliClient) ?: return null
         val chosen: BiliAudioStreamInfo? = AppContainer.biliPlaybackRepository
@@ -529,7 +541,7 @@ object AudioDownloadManager {
                         NPLogger.d(TAG, "下载被取消，停止下载: songId=$songId")
                         destFile.delete() // 删除临时文件
                         _progressFlow.value = null
-                        throw java.util.concurrent.CancellationException("下载已取消")
+                        throw java.util.concurrent.CancellationException("Download cancelled")
                     }
 
                     val read = source.read(buffer, 8L * 1024L)

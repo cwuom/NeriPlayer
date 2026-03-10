@@ -987,6 +987,7 @@
     <string name="download_scan_failed">扫描失败 %1$d 项</string>
     <string name="download_scan_empty">未找到本地音频文件</string>
     <string name="download_scan_add_selected">添加已选（%1$d）</string>
+    <string name="download_scan_permission_required">需要授予本地音频读取权限后才能扫描</string>
     <string name="download_selected_count">已选 %d 首</string>
     <string name="download_delete_selected">删除所选</string>
     <string name="download_exit_selection">退出多选</string>

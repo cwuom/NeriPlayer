@@ -7,7 +7,7 @@ import java.security.MessageDigest
 import java.security.spec.X509EncodedKeySpec
 import java.util.Base64
 import java.util.Locale
-import java.util.Random
+import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
@@ -52,10 +52,11 @@ object NeteaseCrypto {
         -----END PUBLIC KEY-----
     """
 
+    private val secureRandom = SecureRandom()
+
     fun randomKey(): String {
-        val random = Random()
         val sb = StringBuilder()
-        repeat(16) { sb.append(base62[random.nextInt(base62.length)]) }
+        repeat(16) { sb.append(base62[secureRandom.nextInt(base62.length)]) }
         return sb.toString()
     }
 
@@ -137,9 +138,14 @@ object NeteaseCrypto {
             val message = java.math.BigInteger(1, text.toByteArray(StandardCharsets.UTF_8))
             val result = message.modPow(pubKey.publicExponent, pubKey.modulus)
 
+            val keySize = (pubKey.modulus.bitLength() + 7) / 8
             var bytes = result.toByteArray()
-            if (bytes.isNotEmpty() && bytes[0] == 0.toByte()) {
-                bytes = bytes.copyOfRange(1, bytes.size)
+            if (bytes.size > keySize) {
+                bytes = bytes.copyOfRange(bytes.size - keySize, bytes.size)
+            } else if (bytes.size < keySize) {
+                val padded = ByteArray(keySize)
+                System.arraycopy(bytes, 0, padded, keySize - bytes.size, bytes.size)
+                bytes = padded
             }
             bytes.joinToString("") { "%02x".format(it) }
         } catch (e: Exception) {
@@ -194,7 +200,7 @@ object NeteaseCrypto {
     }
 
     fun generateWnmcId(): String {
-        val letters = CharArray(6) { ('a' + Random().nextInt(26)) }
+        val letters = CharArray(6) { ('a'.code + secureRandom.nextInt(26)).toChar() }
         val timestamp = System.currentTimeMillis()
         return "${letters.joinToString("")}.$timestamp.01.0"
     }

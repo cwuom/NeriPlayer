@@ -30,6 +30,7 @@ import androidx.media3.datasource.HttpDataSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.data.BiliCookieRepository
@@ -86,6 +87,10 @@ class ConditionalHttpDataSourceFactory(
     override fun setDefaultRequestProperties(defaultRequestProperties: Map<String, String>): HttpDataSource.Factory {
         baseFactory.setDefaultRequestProperties(defaultRequestProperties)
         return this
+    }
+
+    fun close() {
+        scope.cancel()
     }
 
     /**

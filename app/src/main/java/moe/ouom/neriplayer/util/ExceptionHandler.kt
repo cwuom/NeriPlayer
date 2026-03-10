@@ -47,6 +47,9 @@ object ExceptionHandler {
 
     private var context: Context? = null
     private var errorDialogCallback: ((String, String) -> Unit)? = null
+    private var previousHandler: Thread.UncaughtExceptionHandler? = null
+    @Volatile
+    private var initialized = false
     private val mainHandler = Handler(Looper.getMainLooper())
     private var crashLogFile: File? = null
     private val crashLogScope = CoroutineScope(Dispatchers.IO)
@@ -54,24 +57,33 @@ object ExceptionHandler {
     /**
      * 初始化异常处理器
      * @param appContext 应用上下文
-     * @param showErrorDialog 是否显示错误弹窗的回调函数
      */
-    fun init(appContext: Context, showErrorDialog: (String, String) -> Unit) {
+    fun init(appContext: Context) {
+        if (initialized) return
         context = appContext.applicationContext
-        errorDialogCallback = showErrorDialog
 
         // 设置崩溃日志文件
         setupCrashLogFile(appContext)
 
         // 设置全局未捕获异常处理器
+        previousHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             handleException(thread.name, throwable, isUncaught = true)
+            previousHandler?.uncaughtException(thread, throwable)
         }
+        initialized = true
 
         NPLogger.i("ExceptionHandler", "Global exception handler initialized")
         crashLogFile?.let {
             NPLogger.i("ExceptionHandler", "Crash logs will be saved to: ${it.absolutePath}")
         }
+    }
+
+    /**
+     * 设置或清除错误弹窗回调
+     */
+    fun setErrorDialogCallback(callback: ((String, String) -> Unit)?) {
+        errorDialogCallback = callback
     }
     
     /**
@@ -109,10 +121,16 @@ object ExceptionHandler {
         NPLogger.e("ExceptionHandler", exceptionInfo)
 
         // 独立写入崩溃日志文件（不依赖NPLogger的开关）
-        writeCrashLogToFile(exceptionInfo)
+        if (isUncaught) {
+            writeCrashLogSync(exceptionInfo)
+        } else {
+            writeCrashLogToFile(exceptionInfo)
+        }
 
-        // 在主线程显示错误弹窗
-        showErrorDialogOnMainThread(source, throwable, exceptionInfo)
+        // 在主线程显示错误弹窗（仅处理可恢复异常）
+        if (!isUncaught) {
+            showErrorDialogOnMainThread(source, throwable, exceptionInfo)
+        }
     }
     
     /**
@@ -256,10 +274,27 @@ object ExceptionHandler {
     }
 
     /**
+     * 同步写入崩溃日志（用于未捕获异常，确保落盘）
+     */
+    private fun writeCrashLogSync(exceptionInfo: String) {
+        if (crashLogFile == null) {
+            context?.let { setupCrashLogFile(it) }
+        }
+        val logFile = crashLogFile ?: return
+        try {
+            FileOutputStream(logFile, true).use { fos ->
+                fos.write(exceptionInfo.toByteArray())
+                fos.write("\n\n".toByteArray())
+            }
+        } catch (e: Exception) {
+            NPLogger.e("ExceptionHandler", "Failed to write crash log to file (sync)", e)
+        }
+    }
+
+    /**
      * 清理资源
      */
     fun cleanup() {
-        context = null
         errorDialogCallback = null
         NPLogger.i("ExceptionHandler", "Exception handler cleaned up")
     }

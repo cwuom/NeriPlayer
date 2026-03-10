@@ -14,6 +14,7 @@
     <string name="action_refresh">Refresh</string>
     <string name="action_search">Search</string>
     <string name="action_create">Create</string>
+    <string name="action_rename">Rename</string>
     <string name="action_reset">Reset</string>
     <string name="action_retry">Tap to Retry</string>
     <string name="action_back">Back</string>
@@ -985,6 +986,7 @@
     <string name="download_scan_failed">Scan failed: %1$d items</string>
     <string name="download_scan_empty">No local audio files found</string>
     <string name="download_scan_add_selected">Add selected (%1$d)</string>
+    <string name="download_scan_permission_required">Grant audio read permission before scanning local music</string>
     <string name="download_selected_count">%d selected</string>
     <string name="download_delete_selected">Delete Selected</string>
     <string name="download_exit_selection">Exit Selection</string>

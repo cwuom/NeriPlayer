@@ -134,7 +134,7 @@ fun HomeScreen(
     val hotSongs by vm.hotSongsFlow.collectAsState()
     val radarSongs by vm.radarSongsFlow.collectAsState()
 
-    val isEnglish = context.resources.configuration.locales[0].language == "en"
+    val isEnglish = LocalConfiguration.current.locales[0]?.language == "en"
     val titleOptions = if (isEnglish) {
         listOf("NeriPlayer")
     } else {

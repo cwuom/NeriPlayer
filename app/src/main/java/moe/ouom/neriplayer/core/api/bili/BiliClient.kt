@@ -610,10 +610,12 @@ class BiliClient(
             val m = medias.optJSONObject(i) ?: continue
             val upper = m.optJSONObject("upper") ?: JSONObject()
             val cnt = m.optJSONObject("cnt_info") ?: JSONObject()
+            val bvid = m.optString("bvid").takeIf { it.isNotBlank() }
+                ?: m.optString("bv_id").takeIf { it.isNotBlank() }
             items += FavResourceItem(
                 type = m.optInt("type"),
                 id = m.optLong("id"),
-                bvid = m.optString("bvid", m.optString("bv_id", null)),
+                bvid = bvid,
                 title = m.optString("title"),
                 coverUrl = ensureHttps(m.optString("cover")),
                 intro = m.optString("intro"),
@@ -693,12 +695,12 @@ class BiliClient(
         val code = root.optInt("code", -1)
         val msg = root.optString("message", "")
         if (code != 0) {
-            NPLogger.w(TAG, "requestPlayUrl failed: code=$code, message=$msg")
+            throw IOException("requestPlayUrl failed: code=$code, message=$msg")
         }
 
         val data = root.optJSONObject("data") ?: JSONObject()
         val qnSelected = if (data.has("quality")) data.optInt("quality") else null
-        val format = data.optString("format", null)
+        val format = if (data.has("format")) data.optString("format") else null
         val timeLengthMs = if (data.has("timelength")) data.optLong("timelength") else null
 
         val acceptDesc = data.optJSONArray("accept_description").toStringList()

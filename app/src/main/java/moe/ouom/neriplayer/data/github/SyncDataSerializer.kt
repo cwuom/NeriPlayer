@@ -24,12 +24,12 @@ package moe.ouom.neriplayer.data.github
  */
 
 import com.google.gson.Gson
-import kotlinx.serialization.encodeToByteArray
 import kotlinx.serialization.decodeFromByteArray
 import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToByteArray
 import kotlinx.serialization.protobuf.ProtoBuf
 import kotlinx.serialization.protobuf.ProtoNumber
-import kotlinx.serialization.protobuf.internal.ProtobufDecodingException
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.util.zip.GZIPInputStream
@@ -45,7 +45,7 @@ import java.util.zip.GZIPOutputStream
 object SyncDataSerializer {
 
     private val gson = Gson()
-    private val protoBuf = ProtoBuf { ignoreUnknownKeys = true }
+    private val protoBuf = ProtoBuf
 
     /**
      * 序列化数据为字符串（用于上传）

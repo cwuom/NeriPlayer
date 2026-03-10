@@ -151,7 +151,6 @@ import androidx.media3.common.Player
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.math.min
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.util.offlineCachedImageRequest
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
@@ -459,7 +458,7 @@ fun NowPlayingScreen(
                     BoxWithConstraints(
                         modifier = Modifier.align(Alignment.CenterHorizontally)
                     ) {
-                        val coverSize = min(maxWidth * 0.6f, maxHeight * 0.65f)
+                        val coverSize = minOf(maxWidth * 0.6f, maxHeight * 0.65f)
                         Box(
                             modifier = Modifier
                                 .size(coverSize)

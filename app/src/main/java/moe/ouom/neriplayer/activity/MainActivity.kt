@@ -25,14 +25,16 @@ package moe.ouom.neriplayer.activity
 
 
 import android.Manifest
+import android.content.Context
+import android.content.Intent
 import android.graphics.Color
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.lifecycle.lifecycleScope
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -67,6 +69,7 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
@@ -88,10 +91,9 @@ import moe.ouom.neriplayer.R
 import androidx.core.graphics.drawable.toDrawable
 import androidx.core.graphics.toColorInt
 import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsControllerCompat
-import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -101,16 +103,11 @@ import moe.ouom.neriplayer.data.SettingsRepository
 import moe.ouom.neriplayer.ui.NeriApp
 import moe.ouom.neriplayer.util.HapticButton
 import moe.ouom.neriplayer.util.HapticTextButton
-import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.ExceptionHandler
 import moe.ouom.neriplayer.util.LanguageManager
-import android.content.Context
-import android.net.Uri
+import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.data.LocalAudioImportManager
-import moe.ouom.neriplayer.core.player.AudioPlayerService
-import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
-import kotlinx.coroutines.launch
+import androidx.core.view.WindowInsetsControllerCompat
 
 private enum class AppStage { Loading, Disclaimer, Main }
 
@@ -156,16 +153,14 @@ class MainActivity : ComponentActivity() {
 
             // GitHub自动同步 - 应用启动时拉取最新数据(异步,不阻塞UI)
             LaunchedEffect(Unit) {
-                launch {
                     delay(1000) // 延迟1秒,避免阻塞启动
                     val storage = moe.ouom.neriplayer.data.github.SecureTokenStorage(this@MainActivity)
                     if (storage.isConfigured()) {
                         moe.ouom.neriplayer.data.github.GitHubSyncWorker.syncNow(this@MainActivity)
                     }
-                        }
-                    }
+            }
 
-                    NeriTheme(useDark = useDark, useDynamic = dynamicColor) {
+            NeriTheme(useDark = useDark, useDynamic = dynamicColor) {
                         LaunchedEffect(Unit) {
                             handleExternalAudioIntent(intent)
                         }
@@ -174,7 +169,7 @@ class MainActivity : ComponentActivity() {
                             val controller = WindowInsetsControllerCompat(window, window.decorView)
                             controller.isAppearanceLightStatusBars = !useDark
                             controller.isAppearanceLightNavigationBars = !useDark
-                }
+                        }
 
                 // 入场动画状态
                 var playedEntrance by rememberSaveable { mutableStateOf(false) }
@@ -230,12 +225,13 @@ class MainActivity : ComponentActivity() {
                             val lifecycleOwner = LocalLifecycleOwner.current
 
                             // 初始化异常处理器
-                            LaunchedEffect(Unit) {
-                                ExceptionHandler.init(this@MainActivity) { title, message ->
+                            DisposableEffect(Unit) {
+                                ExceptionHandler.setErrorDialogCallback { title, message ->
                                     errorTitle = title
                                     errorMessage = message
                                     showErrorDialog = true
                                 }
+                                onDispose { ExceptionHandler.setErrorDialogCallback(null) }
                             }
 
                             // GitHub同步配置检查（每次回到前台时检查，并定期轮询）
@@ -368,6 +364,31 @@ class MainActivity : ComponentActivity() {
         run {
             window.statusBarColor = Color.TRANSPARENT
             window.navigationBarColor = Color.TRANSPARENT
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleExternalAudioIntent(intent)
+    }
+
+    private fun handleExternalAudioIntent(intent: Intent?) {
+        val action = intent?.action ?: return
+        val uriList: List<Uri> = when (action) {
+            Intent.ACTION_VIEW -> intent.data?.let(::listOf) ?: emptyList()
+            Intent.ACTION_SEND -> intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)?.let(::listOf) ?: emptyList()
+            Intent.ACTION_SEND_MULTIPLE -> intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM) ?: emptyList()
+            else -> emptyList()
+        }
+        if (uriList.isEmpty()) return
+
+        lifecycleScope.launch {
+            val result = LocalAudioImportManager.importSongs(this@MainActivity, uriList)
+            if (result.songs.isNotEmpty()) {
+                PlayerManager.initialize(application)
+                PlayerManager.playPlaylist(result.songs, 0)
+            }
         }
     }
 
@@ -525,32 +546,8 @@ fun DisclaimerScreen(onAgree: () -> Unit) {
                     )
                 }
             }
-        }
     }
-
-    override fun onNewIntent(intent: Intent?) {
-        super.onNewIntent(intent)
-        handleExternalAudioIntent(intent)
-    }
-
-    private fun handleExternalAudioIntent(intent: Intent?) {
-        val action = intent?.action ?: return
-        val uriList: List<Uri> = when (action) {
-            Intent.ACTION_VIEW -> intent.data?.let { listOf(it) } ?: emptyList()
-            Intent.ACTION_SEND -> intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)?.let { listOf(it) } ?: emptyList()
-            Intent.ACTION_SEND_MULTIPLE -> intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM) ?: emptyList()
-            else -> emptyList()
-        }
-        if (uriList.isEmpty()) return
-
-        lifecycleScope.launch {
-            val result = LocalAudioImportManager.importSongs(this@MainActivity, uriList)
-            if (result.songs.isNotEmpty()) {
-                PlayerManager.initialize(application)
-                PlayerManager.playPlaylist(result.songs, 0)
-            }
-        }
-    }
+}
 }
 
 @Composable private fun SectionTitle(text: String) {

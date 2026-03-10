@@ -1,4 +1,4 @@
-﻿@file:OptIn(UnstableApi::class)
+@file:androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
 
 package moe.ouom.neriplayer.core.player
 
@@ -129,6 +129,7 @@ object PlayerManager {
     private lateinit var player: ExoPlayer
 
     private lateinit var cache: Cache
+    private var conditionalHttpFactory: ConditionalHttpDataSourceFactory? = null
 
     // Helper function to get localized string
     private fun getLocalizedString(resId: Int, vararg formatArgs: Any): String {
@@ -318,127 +319,134 @@ object PlayerManager {
 
     fun initialize(app: Application, maxCacheSize: Long = 1024L * 1024 * 1024) {
         if (initialized) return
-        initialized = true
         application = app
         currentCacheSize = maxCacheSize
 
         ioScope = newIoScope()
         mainScope = newMainScope()
 
-        localRepo = LocalPlaylistRepository.getInstance(app)
-        stateFile = File(app.filesDir, "last_playlist.json")
+        runCatching {
+            localRepo = LocalPlaylistRepository.getInstance(app)
+            stateFile = File(app.filesDir, "last_playlist.json")
 
-        // 基础网络请求工厂，支持 B 站 Cookie 注入
-        val okHttpClient = AppContainer.sharedOkHttpClient
-        val upstreamFactory: HttpDataSource.Factory = OkHttpDataSource.Factory(okHttpClient)
-        val conditionalHttpFactory = ConditionalHttpDataSourceFactory(upstreamFactory, biliCookieRepo)
+            // 基础网络请求工厂，支持 B 站 Cookie 注入
+            val okHttpClient = AppContainer.sharedOkHttpClient
+            val upstreamFactory: HttpDataSource.Factory = OkHttpDataSource.Factory(okHttpClient)
+            val conditionalFactory = ConditionalHttpDataSourceFactory(upstreamFactory, biliCookieRepo)
+            conditionalHttpFactory = conditionalFactory
 
-        // 默认数据源工厂
-        val defaultDsFactory = androidx.media3.datasource.DefaultDataSource.Factory(app, conditionalHttpFactory)
+            val defaultDsFactory = androidx.media3.datasource.DefaultDataSource.Factory(app, conditionalFactory)
 
-        // 决定是否启用缓存层
-        val finalDataSourceFactory: androidx.media3.datasource.DataSource.Factory = if (maxCacheSize > 0) {
-            val cacheDir = File(app.cacheDir, "media_cache")
-            val dbProvider = StandaloneDatabaseProvider(app)
+            val finalDataSourceFactory: androidx.media3.datasource.DataSource.Factory = if (maxCacheSize > 0) {
+                val cacheDir = File(app.cacheDir, "media_cache")
+                val dbProvider = StandaloneDatabaseProvider(app)
 
-            // 创建 LRU 缓存实例
-            cache = SimpleCache(
-                cacheDir,
-                LeastRecentlyUsedCacheEvictor(maxCacheSize),
-                dbProvider
-            )
+                cache = SimpleCache(
+                    cacheDir,
+                    LeastRecentlyUsedCacheEvictor(maxCacheSize),
+                    dbProvider
+                )
 
-            // 包裹成缓存数据源，配置为支持完整文件缓存
-            CacheDataSource.Factory()
-                .setCache(cache)
-                .setUpstreamDataSourceFactory(defaultDsFactory)
-                // 移除 FLAG_IGNORE_CACHE_ON_ERROR，确保缓存正常工作
-                // 添加 FLAG_BLOCK_ON_CACHE 以支持离线播放
-                .setFlags(CacheDataSource.FLAG_BLOCK_ON_CACHE)
-        } else {
-            // 缓存大小为 0，直接使用直连数据源
-            NPLogger.d("NERI-Player", "Cache disabled by user setting (size=0).")
-            defaultDsFactory
-        }
-
-        // 将最终的数据源工厂传给 MediaSourceFactory
-        val mediaSourceFactory = DefaultMediaSourceFactory(finalDataSourceFactory)
-
-        val renderersFactory = ReactiveRenderersFactory(app)
-            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
-
-        player = ExoPlayer.Builder(app, renderersFactory)
-            .setMediaSourceFactory(mediaSourceFactory)
-            .build()
-            .apply {
-                setWakeMode(C.WAKE_MODE_NETWORK)
+                CacheDataSource.Factory()
+                    .setCache(cache)
+                    .setUpstreamDataSourceFactory(defaultDsFactory)
+                    .setFlags(CacheDataSource.FLAG_BLOCK_ON_CACHE)
+            } else {
+                NPLogger.d("NERI-Player", "Cache disabled by user setting (size=0).")
+                defaultDsFactory
             }
 
-        val audioOffload = TrackSelectionParameters.AudioOffloadPreferences.Builder()
-            .setAudioOffloadMode(
-                TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_DISABLED
-            )
-            .build()
+            // 将最终的数据源工厂传给 MediaSourceFactory
+            val mediaSourceFactory = DefaultMediaSourceFactory(finalDataSourceFactory)
 
-        player.trackSelectionParameters = player.trackSelectionParameters
-            .buildUpon()
-            .setAudioOffloadPreferences(audioOffload)
-            .build()
+            val renderersFactory = ReactiveRenderersFactory(app)
+                .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
 
-        // 启动时就禁止 Exo 列表循环，由我们自己接管（仅单曲循环放给 Exo）
-        player.repeatMode = Player.REPEAT_MODE_OFF
+            player = ExoPlayer.Builder(app, renderersFactory)
+                .setMediaSourceFactory(mediaSourceFactory)
+                .build()
+                .apply {
+                    setWakeMode(C.WAKE_MODE_NETWORK)
+                }
 
-        player.addListener(object : Player.Listener {
-            override fun onPlayerError(error: PlaybackException) {
-                NPLogger.e("NERI-Player", "onPlayerError: ${error.errorCodeName}", error)
-                consecutivePlayFailures++
+            val audioOffload = TrackSelectionParameters.AudioOffloadPreferences.Builder()
+                .setAudioOffloadMode(
+                    TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_DISABLED
+                )
+                .build()
 
-                // 检查是否是离线缓存播放失败
-                val currentUrl = _currentMediaUrl.value
-                val isOfflineCache = currentUrl?.startsWith("http://offline.cache/") == true
+            player.trackSelectionParameters = player.trackSelectionParameters
+                .buildUpon()
+                .setAudioOffloadPreferences(audioOffload)
+                .build()
 
-                val cause = error.cause
-                val msg = when {
-                    isOfflineCache -> {
-                        // 离线缓存播放失败，可能是缓存不完整
-                        NPLogger.w("NERI-Player", "离线缓存播放失败，跳过该歌曲")
-                        null // 不显示错误提示，直接跳到下一首
+            // 启动时就禁止 Exo 列表循环，由我们自己接管（仅单曲循环放给 Exo）
+            player.repeatMode = Player.REPEAT_MODE_OFF
+
+            player.addListener(object : Player.Listener {
+                override fun onPlayerError(error: PlaybackException) {
+                    NPLogger.e("NERI-Player", "onPlayerError: ${error.errorCodeName}", error)
+                    consecutivePlayFailures++
+
+                    // 检查是否是离线缓存播放失败
+                    val currentUrl = _currentMediaUrl.value
+                    val isOfflineCache = currentUrl?.startsWith("http://offline.cache/") == true
+
+                    val cause = error.cause
+                    val msg = when {
+                        isOfflineCache -> {
+                            NPLogger.w("NERI-Player", "离线缓存播放失败，跳过该歌曲")
+                            null
+                        }
+                        cause?.message?.contains("no protocol: null", ignoreCase = true) == true ->
+                            "Playback url invalid. Please login or switch quality."
+                        error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ->
+                            "网络连接失败，请检查网络后重试"
+                        else ->
+                            "播放失败：${error.errorCodeName}"
                     }
-                    cause?.message?.contains("no protocol: null", ignoreCase = true) == true ->
-                        "播放地址无效\n请尝试登录或切换音质\n或检查你是否对此歌曲有访问权限"
-                    error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ->
-                        "网络连接失败，请检查网络后重试"
-                    else ->
-                        "播放失败：${error.errorCodeName}"
+
+                    if (msg != null) {
+                        postPlayerEvent(PlayerEvent.ShowError(msg))
+                    }
+
+                    if (consecutivePlayFailures >= MAX_CONSECUTIVE_FAILURES) {
+                        stopAndClearPlaylist()
+                        return
+                    }
+
+                    val shouldSkip = isOfflineCache ||
+                        error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
+                        error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ||
+                        error.errorCode == PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND ||
+                        cause?.message?.contains("no protocol: null", ignoreCase = true) == true
+
+                    if (shouldSkip) {
+                        mainScope.launch { handleTrackEnded() }
+                    } else {
+                        pause()
+                    }
                 }
 
-                if (msg != null) {
-                    postPlayerEvent(PlayerEvent.ShowError(msg))
+                override fun onPlaybackStateChanged(state: Int) {
+                    if (state == Player.STATE_ENDED) handleTrackEnded()
                 }
 
-                pause()
-            }
+                override fun onIsPlayingChanged(isPlaying: Boolean) {
+                    _isPlayingFlow.value = isPlaying
+                    if (isPlaying) startProgressUpdates() else stopProgressUpdates()
+                }
 
-            override fun onPlaybackStateChanged(state: Int) {
-                if (state == Player.STATE_ENDED) handleTrackEnded()
-            }
+                override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+                    _shuffleModeFlow.value = shuffleModeEnabled
+                }
 
-            override fun onIsPlayingChanged(isPlaying: Boolean) {
-                _isPlayingFlow.value = isPlaying
-                if (isPlaying) startProgressUpdates() else stopProgressUpdates()
-            }
-
-            override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
-                _shuffleModeFlow.value = shuffleModeEnabled
-            }
-
-            override fun onRepeatModeChanged(repeatMode: Int) {
-                // 不接受 Exo 的列表循环（ALL）；仅维持单曲循环或关闭
-                // 重申应用层的 repeat 状态，并钳制 Exo 的实际 repeat
-                syncExoRepeatMode()
-                _repeatModeFlow.value = repeatModeSetting
-            }
-        })
+                override fun onRepeatModeChanged(repeatMode: Int) {
+                    // 不接受 Exo 的列表循环（ALL）；仅维持单曲循环或关闭
+                    syncExoRepeatMode()
+                    _repeatModeFlow.value = repeatModeSetting
+                }
+            })
 
         player.playWhenReady = false
 
@@ -470,7 +478,18 @@ object PlayerManager {
         )
 
         // 初始化完成后检查是否有待播放项并尝试同步前台服务
+        initialized = true
         NPLogger.d("NERI-Player", "PlayerManager initialized with cache size: $maxCacheSize")
+        }.onFailure { e ->
+            NPLogger.e("NERI-Player", "PlayerManager initialize failed", e)
+            runCatching { conditionalHttpFactory?.close() }
+            conditionalHttpFactory = null
+            runCatching { if (::player.isInitialized) player.release() }
+            runCatching { if (::cache.isInitialized) cache.release() }
+            runCatching { mainScope.cancel() }
+            runCatching { ioScope.cancel() }
+            initialized = false
+        }
     }
 
     suspend fun clearCache(clearAudio: Boolean = true, clearImage: Boolean = true): Pair<Boolean, String> {
@@ -676,9 +695,9 @@ object PlayerManager {
                     }
                 }
                 is SongUrlResult.RequiresLogin -> {
-                    NPLogger.w("NERI-PlayerManager", "需要登录才能播放: id=${song.id}, source=${song.album}")
-                    postPlayerEvent(PlayerEvent.ShowLoginPrompt("播放失败，请尝试登录对应的平台"))
-                    withContext(Dispatchers.Main) { next() } // 自动跳到下一首
+                    NPLogger.w("NERI-PlayerManager", "Requires login to play: id=${song.id}, source=${song.album}")
+                    postPlayerEvent(PlayerEvent.ShowLoginPrompt("需要登录才能播放"))
+                    withContext(Dispatchers.Main) { next() }
                 }
                 is SongUrlResult.Failure -> {
                     NPLogger.e("NERI-PlayerManager", "获取播放 URL 失败, 跳过: id=${song.id}, source=${song.album}")
@@ -700,8 +719,6 @@ object PlayerManager {
 
         val cacheKey = computeCacheKey(song)
         val hasCachedData = checkExoPlayerCache(cacheKey)
-
-        // 尝试从网络获取URL，如果有缓存则抑制错误提示
         val result = if (song.album.startsWith(BILI_SOURCE_TAG)) {
             getBiliAudioUrl(song, suppressError = hasCachedData)
         } else {
@@ -769,7 +786,7 @@ object PlayerManager {
                     }
                     if (url.isNullOrBlank()) {
                         if (!suppressError) {
-                            postPlayerEvent(PlayerEvent.ShowError("该歌曲暂无可用播放地址（可能需要登录或版权限制）"))
+                            postPlayerEvent(PlayerEvent.ShowError("No playable url available. Please login or check rights."))
                         }
                         SongUrlResult.Failure
                     } else {
@@ -779,15 +796,15 @@ object PlayerManager {
                 }
                 else -> {
                     if (!suppressError) {
-                        postPlayerEvent(PlayerEvent.ShowError("获取播放地址失败（${root.optInt("code")}）"))
+                        postPlayerEvent(PlayerEvent.ShowError("Failed to get play url."))
                     }
                     SongUrlResult.Failure
                 }
             }
         } catch (e: Exception) {
-            NPLogger.e("NERI-PlayerManager", "获取URL时出错", e)
+            NPLogger.e("NERI-PlayerManager", "Failed to get url", e)
             if (!suppressError) {
-                postPlayerEvent(PlayerEvent.ShowError("获取播放地址失败：${e.message}"))
+                postPlayerEvent(PlayerEvent.ShowError("Failed to get play url: ${e.message}"))
             }
             SongUrlResult.Failure
         }
@@ -815,9 +832,9 @@ object PlayerManager {
                 SongUrlResult.Failure
             }
         } catch (e: Exception) {
-            NPLogger.e("NERI-PlayerManager", "获取B站音频URL时出错", e)
+            NPLogger.e("NERI-PlayerManager", "Failed to get Bili play url", e)
             if (!suppressError) {
-                postPlayerEvent(PlayerEvent.ShowError("获取播放地址失败: ${e.message}"))
+                postPlayerEvent(PlayerEvent.ShowError("Failed to get play url: ${e.message}"))
             }
             SongUrlResult.Failure
         }
@@ -880,7 +897,7 @@ object PlayerManager {
         if (isShuffle) {
             // 如果有预定下一首，优先走它
             if (shuffleFuture.isNotEmpty()) {
-                val nextIdx = shuffleFuture.removeLast()
+                val nextIdx = shuffleFuture.removeAt(shuffleFuture.lastIndex)
                 if (currentIndex != -1) shuffleHistory.add(currentIndex)
                 currentIndex = nextIdx
                 playAtIndex(currentIndex)
@@ -937,7 +954,7 @@ object PlayerManager {
             if (shuffleHistory.isNotEmpty()) {
                 // 回退一步，同时把当前曲放到未来栈，以便再前进能回到原来的下一首
                 if (currentIndex != -1) shuffleFuture.add(currentIndex)
-                val prev = shuffleHistory.removeLast()
+                val prev = shuffleHistory.removeAt(shuffleHistory.lastIndex)
                 currentIndex = prev
                 playAtIndex(currentIndex)
             } else {
@@ -993,6 +1010,8 @@ object PlayerManager {
         if (::cache.isInitialized) {
             cache.release()
         }
+        conditionalHttpFactory?.close()
+        conditionalHttpFactory = null
 
         mainScope.cancel()
         ioScope.cancel()

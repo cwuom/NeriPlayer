@@ -1,7 +1,13 @@
 ﻿package moe.ouom.neriplayer.ui.screen
 
+import android.Manifest
 import android.app.Application
+import android.content.pm.PackageManager
+import android.os.Build
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -25,18 +31,20 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
+import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.DownloadedSong
+import moe.ouom.neriplayer.data.stableKey
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.DownloadManagerViewModel
 import moe.ouom.neriplayer.util.formatDate
 import moe.ouom.neriplayer.util.formatFileSize
 import moe.ouom.neriplayer.util.performHapticFeedback
-import moe.ouom.neriplayer.data.PlaylistIdentity.stableKey
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -68,6 +76,42 @@ fun DownloadManagerScreen(
     var scannedSongs by remember { mutableStateOf<List<moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem>>(emptyList()) }
     var selectedScannedKeys by remember { mutableStateOf(setOf<String>()) }
     val scope = rememberCoroutineScope()
+    val readAudioPermission = remember {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.READ_MEDIA_AUDIO
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+    }
+
+    fun startLocalAudioScan() {
+        showScanSheet = true
+        scanning = true
+        scanFailed = 0
+        scannedSongs = emptyList()
+        selectedScannedKeys = emptySet()
+        scope.launch {
+            val result = viewModel.scanLocalAudio(context)
+            scannedSongs = result.songs
+            selectedScannedKeys = result.songs.map { it.stableKey() }.toSet()
+            scanFailed = result.failedCount
+            scanning = false
+        }
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            startLocalAudioScan()
+        } else {
+            Toast.makeText(
+                context,
+                context.getString(R.string.download_scan_permission_required),
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
 
     // State for deletion confirmation dialogs
     var showSingleDeleteDialog by remember { mutableStateOf(false) }
@@ -163,17 +207,12 @@ fun DownloadManagerScreen(
                     IconButton(
                         onClick = {
                             context.performHapticFeedback()
-                            showScanSheet = true
-                            scanning = true
-                            scanFailed = 0
-                            scannedSongs = emptyList()
-                            selectedScannedKeys = emptySet()
-                            scope.launch {
-                                val result = viewModel.scanLocalAudio(context)
-                                scannedSongs = result.songs
-                                selectedScannedKeys = result.songs.map { it.stableKey() }.toSet()
-                                scanFailed = result.failedCount
-                                scanning = false
+                            if (ContextCompat.checkSelfPermission(context, readAudioPermission) ==
+                                PackageManager.PERMISSION_GRANTED
+                            ) {
+                                startLocalAudioScan()
+                            } else {
+                                permissionLauncher.launch(readAudioPermission)
                             }
                         }
                     ) {
