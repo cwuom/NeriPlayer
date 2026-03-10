@@ -125,9 +125,9 @@ import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.FavoritesPlaylist
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
-import moe.ouom.neriplayer.data.SongIdentity
 import moe.ouom.neriplayer.data.identity
 import moe.ouom.neriplayer.data.sameIdentityAs
+import moe.ouom.neriplayer.data.stableKey
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.DownloadManagerViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.LocalPlaylistDetailViewModel
@@ -298,40 +298,40 @@ fun LocalPlaylistDetailScreen(
                 mutableStateListOf<SongItem>().also { it.addAll(playlist.songs) }
             }
 
-            // 阻断 VM->UI 同步；同时用 pendingOrder 兼容 重排/批删 两类操作
+            // 阻断 VM->UI 同步；同时用 pendingOrderKeys 兼容重排和批删
             var blockSync by remember(playlistId) { mutableStateOf(false) }
-            var pendingOrder by remember(playlistId) { mutableStateOf<List<SongIdentity>?>(null) }
-            LaunchedEffect(playlist.songs, blockSync, pendingOrder) {
-                val repoIds = playlist.songs.map { it.identity() }
-                val wanted = pendingOrder
+            var pendingOrderKeys by remember(playlistId) { mutableStateOf<List<String>?>(null) }
+            LaunchedEffect(playlist.songs, blockSync, pendingOrderKeys) {
+                val repoKeys = playlist.songs.map { it.stableKey() }
+                val wanted = pendingOrderKeys
                 if (!blockSync) {
                     localSongs.clear()
                     localSongs.addAll(playlist.songs)
-                } else if (wanted != null && wanted == repoIds) {
+                } else if (wanted != null && wanted == repoKeys) {
                     localSongs.clear()
                     localSongs.addAll(playlist.songs)
-                    pendingOrder = null
+                    pendingOrderKeys = null
                     blockSync = false
                 }
             }
 
             // 多选
             var selectionMode by remember(playlistId) { mutableStateOf(false) }
-            val selectedIdsState = remember(playlistId) { mutableStateOf<Set<SongIdentity>>(emptySet()) }
+            val selectedKeysState = remember(playlistId) { mutableStateOf<Set<String>>(emptySet()) }
 
             fun toggleSelect(song: SongItem) {
-                val identity = song.identity()
-                selectedIdsState.value =
-                    if (selectedIdsState.value.contains(identity)) selectedIdsState.value - identity
-                    else selectedIdsState.value + identity
+                val songKey = song.stableKey()
+                selectedKeysState.value =
+                    if (selectedKeysState.value.contains(songKey)) selectedKeysState.value - songKey
+                    else selectedKeysState.value + songKey
             }
 
             fun selectAll() {
-                selectedIdsState.value = localSongs.map { it.identity() }.toSet()
+                selectedKeysState.value = localSongs.map { it.stableKey() }.toSet()
             }
 
             fun clearSelection() {
-                selectedIdsState.value = emptySet()
+                selectedKeysState.value = emptySet()
             }
 
             fun exitSelectionMode() {
@@ -415,10 +415,10 @@ fun LocalPlaylistDetailScreen(
             val reorderState = rememberReorderableLazyListState(
                 onMove = { from: ItemPosition, to: ItemPosition ->
                     if (!blockSync) blockSync = true
-                    val fromKey = from.key as? SongIdentity ?: return@rememberReorderableLazyListState
-                    val toKey = to.key as? SongIdentity ?: return@rememberReorderableLazyListState
-                    val fromIdx = localSongs.indexOfFirst { it.identity() == fromKey }
-                    val toIdx = localSongs.indexOfFirst { it.identity() == toKey }
+                    val fromKey = from.key as? String ?: return@rememberReorderableLazyListState
+                    val toKey = to.key as? String ?: return@rememberReorderableLazyListState
+                    val fromIdx = localSongs.indexOfFirst { it.stableKey() == fromKey }
+                    val toIdx = localSongs.indexOfFirst { it.stableKey() == toKey }
                     if (fromIdx != -1 && toIdx != -1 && fromIdx != toIdx) {
                         localSongs.add(toIdx, localSongs.removeAt(fromIdx))
                     }
@@ -426,7 +426,7 @@ fun LocalPlaylistDetailScreen(
                 canDragOver = { _, over -> (over.key as? String) != headerKey },
                 onDragEnd = { _, _ ->
                     val newOrder = localSongs.map { it.identity() }
-                    pendingOrder = newOrder
+                    pendingOrderKeys = localSongs.map { it.stableKey() }
                     blockSync = true
                     scope.launch {
                         vm.reorderSongs(newOrder)
@@ -526,9 +526,9 @@ fun LocalPlaylistDetailScreen(
                         )
                     } else {
                         val allSelected =
-                            selectedIdsState.value.size == localSongs.size && localSongs.isNotEmpty()
+                            selectedKeysState.value.size == localSongs.size && localSongs.isNotEmpty()
                         TopAppBar(
-                            title = { Text(stringResource(R.string.common_selected_count, selectedIdsState.value.size)) },
+                            title = { Text(stringResource(R.string.common_selected_count, selectedKeysState.value.size)) },
                             navigationIcon = {
                                 HapticIconButton(onClick = { exitSelectionMode() }) {
                                     Icon(
@@ -546,10 +546,11 @@ fun LocalPlaylistDetailScreen(
                                 }
                                 HapticIconButton(
                                     onClick = {
-                                        if (selectedIdsState.value.isNotEmpty()) showExportSheet =
-                                            true
+                                        if (selectedKeysState.value.isNotEmpty()) {
+                                            showExportSheet = true
+                                        }
                                     },
-                                    enabled = selectedIdsState.value.isNotEmpty()
+                                    enabled = selectedKeysState.value.isNotEmpty()
                                 ) {
                                     Icon(
                                         Icons.AutoMirrored.Outlined.PlaylistAdd,
@@ -558,15 +559,15 @@ fun LocalPlaylistDetailScreen(
                                 }
                                 HapticIconButton(
                                     onClick = {
-                                        if (selectedIdsState.value.isNotEmpty()) {
+                                        if (selectedKeysState.value.isNotEmpty()) {
                                             val selectedSongs = localSongs.filter {
-                                                it.identity() in selectedIdsState.value
+                                                it.stableKey() in selectedKeysState.value
                                             }
                                             exitSelectionMode()
                                             GlobalDownloadManager.startBatchDownload(context, selectedSongs)
                                         }
                                     },
-                                    enabled = selectedIdsState.value.isNotEmpty()
+                                    enabled = selectedKeysState.value.isNotEmpty()
                                 ) {
                                     Icon(
                                         Icons.Outlined.Download,
@@ -575,10 +576,11 @@ fun LocalPlaylistDetailScreen(
                                 }
                                 HapticIconButton(
                                     onClick = {
-                                        if (selectedIdsState.value.isNotEmpty()) showDeleteMultiConfirm =
-                                            true
+                                        if (selectedKeysState.value.isNotEmpty()) {
+                                            showDeleteMultiConfirm = true
+                                        }
                                     },
-                                    enabled = selectedIdsState.value.isNotEmpty()
+                                    enabled = selectedKeysState.value.isNotEmpty()
                                 ) {
                                     Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.common_delete_selected))
                                 }
@@ -700,9 +702,9 @@ fun LocalPlaylistDetailScreen(
                             // 列表（倒序）
                             itemsIndexed(
                                 items = displayedSongs,
-                                key = { _, song -> song.identity() }
+                                key = { _, song -> song.stableKey() }
                             ) { revIndex, song ->
-                                ReorderableItem(state = reorderState, key = song.identity()) { isDragging ->
+                                ReorderableItem(state = reorderState, key = song.stableKey()) { isDragging ->
                                     val rowScale by animateFloatAsState(
                                         targetValue = if (isDragging) 1.02f else 1f,
                                         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
@@ -733,7 +735,7 @@ fun LocalPlaylistDetailScreen(
                                                     onLongClick = {
                                                         if (!selectionMode) {
                                                             selectionMode = true
-                                                            selectedIdsState.value = setOf(song.identity())
+                                                            selectedKeysState.value = setOf(song.stableKey())
                                                         } else {
                                                             toggleSelect(song)
                                                         }
@@ -748,7 +750,7 @@ fun LocalPlaylistDetailScreen(
                                             ) {
                                                 if (selectionMode) {
                                                     Checkbox(
-                                                        checked = selectedIdsState.value.contains(song.identity()),
+                                                        checked = selectedKeysState.value.contains(song.stableKey()),
                                                         onCheckedChange = { toggleSelect(song) }
                                                     )
                                                 } else {
@@ -954,7 +956,7 @@ fun LocalPlaylistDetailScreen(
 
                 // 多选删除确认
                 if (showDeleteMultiConfirm) {
-                    val count = selectedIdsState.value.size
+                    val count = selectedKeysState.value.size
                     AlertDialog(
                         onDismissRequest = { showDeleteMultiConfirm = false },
                         title = { Text(stringResource(R.string.local_playlist_delete_songs)) },
@@ -962,15 +964,15 @@ fun LocalPlaylistDetailScreen(
                         confirmButton = {
                             HapticTextButton(onClick = {
                                 val songsToRemove = localSongs.filter {
-                                    it.identity() in selectedIdsState.value
+                                    it.stableKey() in selectedKeysState.value
                                 }
                                 val expected = localSongs
-                                    .filterNot { it.identity() in selectedIdsState.value }
-                                    .map { it.identity() }
-                                pendingOrder = expected
+                                    .filterNot { it.stableKey() in selectedKeysState.value }
+                                    .map { it.stableKey() }
+                                pendingOrderKeys = expected
                                 blockSync = true
 
-                                localSongs.removeAll { it.identity() in selectedIdsState.value }
+                                localSongs.removeAll { it.stableKey() in selectedKeysState.value }
                                 showDeleteMultiConfirm = false
                                 exitSelectionMode()
 
@@ -1004,7 +1006,7 @@ fun LocalPlaylistDetailScreen(
                                             .combinedClickable(onClick = {
                                                 context.performHapticFeedback()
                                                 val songs = localSongs.filter {
-                                                    it.identity() in selectedIdsState.value
+                                                    it.stableKey() in selectedKeysState.value
                                                 }
                                                 scope.launch {
                                                     repo.addSongsToPlaylist(pl.id, songs)
@@ -1038,13 +1040,13 @@ fun LocalPlaylistDetailScreen(
                                 )
                                 Spacer(Modifier.width(12.dp))
                                 HapticTextButton(
-                                    enabled = newName.isNotBlank() && selectedIdsState.value.isNotEmpty(),
+                                    enabled = newName.isNotBlank() && selectedKeysState.value.isNotEmpty(),
                                     onClick = {
                                         val name = newName.trim()
                                         if (name.isBlank()) return@HapticTextButton
                                         val displayedSongs = localSongs.asReversed()
                                         val songs = displayedSongs.filter {
-                                            it.identity() in selectedIdsState.value
+                                            it.stableKey() in selectedKeysState.value
                                         }
                                         scope.launch {
                                             repo.createPlaylist(name)

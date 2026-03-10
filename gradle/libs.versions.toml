@@ -33,6 +33,7 @@ media = "1.7.0"
 media3Datasource = "1.8.0"
 media3DatasourceOkhttp = "1.8.0"
 media3Exoplayer = "1.8.0"
+mockito = "5.16.1"
 navigation = "2.9.3"
 lifecycle = "2.9.2"
 okhttp = "5.1.0"
@@ -84,6 +85,7 @@ androidx-lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-ru
 androidx-navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigation" }
 material-color-utilities-android = { module = "com.materialkolor:material-color-utilities-android", version.ref = "materialColorUtilitiesAndroid" }
 material-kolor = { module = "com.materialkolor:material-kolor", version.ref = "materialKolor" }
+mockito-core = { module = "org.mockito:mockito-core", version.ref = "mockito" }
 okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
 reorderable = { module = "org.burnoutcrew.composereorderable:reorderable", version.ref = "reorderable" }
 androidx-foundation-layout = { group = "androidx.compose.foundation", name = "foundation-layout", version.ref = "foundationLayout" }

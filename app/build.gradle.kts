@@ -165,6 +165,7 @@ dependencies {
     implementation(libs.androidx.foundation)
 
     testImplementation(libs.junit)
+    testImplementation(libs.mockito.core)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     implementation(libs.androidx.animation)

@@ -9,17 +9,29 @@ data class SongIdentity(
     val mediaUri: String?
 )
 
+fun SongIdentity.stableKey(): String = buildString {
+    append(id)
+    append('|')
+    append(album)
+    append('|')
+    append(mediaUri.orEmpty())
+}
+
 fun SongItem.identity(): SongIdentity = SongIdentity(
     id = id,
     album = album,
     mediaUri = mediaUri
 )
 
+fun SongItem.stableKey(): String = identity().stableKey()
+
 fun SyncSong.identity(): SongIdentity = SongIdentity(
     id = id,
     album = album,
     mediaUri = mediaUri
 )
+
+fun SyncSong.stableKey(): String = identity().stableKey()
 
 fun SongItem.sameIdentityAs(other: SongItem?): Boolean {
     return other != null && identity() == other.identity()
