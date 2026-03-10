@@ -3,6 +3,7 @@
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.os.Process
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -15,6 +16,7 @@ import java.io.StringWriter
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.system.exitProcess
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -68,8 +70,12 @@ object ExceptionHandler {
         // 设置全局未捕获异常处理器
         previousHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-            handleException(thread.name, throwable, isUncaught = true)
-            previousHandler?.uncaughtException(thread, throwable)
+            runCatching {
+                handleException(thread.name, throwable, isUncaught = true)
+            }.onFailure { loggingError ->
+                NPLogger.e("ExceptionHandler", "Failed while handling uncaught exception", loggingError)
+            }
+            delegateOrTerminate(thread, throwable)
         }
         initialized = true
 
@@ -235,6 +241,31 @@ object ExceptionHandler {
                 }
             }
         }
+    }
+
+    /**
+     * 尽量保持系统原始崩溃链路；若系统未提供默认处理器，则显式终止进程，
+     * 避免异常被吞掉后应用继续运行在损坏状态。
+     */
+    private fun delegateOrTerminate(thread: Thread, throwable: Throwable) {
+        val handler = previousHandler
+        if (handler != null) {
+            runCatching {
+                handler.uncaughtException(thread, throwable)
+            }.onFailure { delegateError ->
+                NPLogger.e("ExceptionHandler", "Previous uncaught exception handler failed", delegateError)
+                terminateProcess()
+            }
+            return
+        }
+
+        throwable.printStackTrace()
+        terminateProcess()
+    }
+
+    private fun terminateProcess() {
+        Process.killProcess(Process.myPid())
+        exitProcess(10)
     }
 
     /**

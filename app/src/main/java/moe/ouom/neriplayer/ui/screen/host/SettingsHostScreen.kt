@@ -42,6 +42,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import moe.ouom.neriplayer.ui.screen.DownloadManagerScreen
 import moe.ouom.neriplayer.ui.screen.DownloadProgressScreen
@@ -57,8 +58,8 @@ private sealed class SettingsScreenState {
 fun SettingsHostScreen(
     dynamicColor: Boolean,
     onDynamicColorChange: (Boolean) -> Unit,
-    forceDark: Boolean,
-    onForceDarkChange: (Boolean) -> Unit,
+    isDarkTheme: Boolean,
+    onThemeToggleRequest: (Offset) -> Unit,
     preferredQuality: String,
     onQualityChange: (String) -> Unit,
     biliPreferredQuality: String,
@@ -88,6 +89,10 @@ fun SettingsHostScreen(
     onBackgroundImageAlphaChange: (Float) -> Unit,
     hapticFeedbackEnabled: Boolean,
     onHapticFeedbackEnabledChange: (Boolean) -> Unit,
+    showCoverSourceBadge: Boolean,
+    onShowCoverSourceBadgeChange: (Boolean) -> Unit,
+    silentGitHubSyncFailure: Boolean,
+    onSilentGitHubSyncFailureChange: (Boolean) -> Unit,
     showLyricTranslation: Boolean,
     onShowLyricTranslationChange: (Boolean) -> Unit,
     maxCacheSizeBytes: Long,
@@ -137,8 +142,8 @@ fun SettingsHostScreen(
                     listState = settingsListState,
                     dynamicColor = dynamicColor,
                     onDynamicColorChange = onDynamicColorChange,
-                    forceDark = forceDark,
-                    onForceDarkChange = onForceDarkChange,
+                    isDarkTheme = isDarkTheme,
+                    onThemeToggleRequest = onThemeToggleRequest,
                     preferredQuality = preferredQuality,
                     onQualityChange = onQualityChange,
                     biliPreferredQuality = biliPreferredQuality,
@@ -168,6 +173,10 @@ fun SettingsHostScreen(
                     onBackgroundImageAlphaChange = onBackgroundImageAlphaChange,
                     hapticFeedbackEnabled = hapticFeedbackEnabled,
                     onHapticFeedbackEnabledChange = onHapticFeedbackEnabledChange,
+                    showCoverSourceBadge = showCoverSourceBadge,
+                    onShowCoverSourceBadgeChange = onShowCoverSourceBadgeChange,
+                    silentGitHubSyncFailure = silentGitHubSyncFailure,
+                    onSilentGitHubSyncFailureChange = onSilentGitHubSyncFailureChange,
                     showLyricTranslation = showLyricTranslation,
                     onShowLyricTranslationChange = onShowLyricTranslationChange,
                     onNavigateToDownloadManager = { screenState = SettingsScreenState.DownloadManager },

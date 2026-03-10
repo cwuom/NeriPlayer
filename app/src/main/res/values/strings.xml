@@ -147,8 +147,12 @@
     <string name="settings_theme_color_desc">选择一个你喜欢的颜色作为主色调</string>
     <string name="settings_dynamic_color">动态取色</string>
     <string name="settings_dynamic_color_desc">跟随封面主题色</string>
+    <string name="settings_theme_toggle_dark">切换到深色主题</string>
+    <string name="settings_theme_toggle_light">切换到浅色主题</string>
     <string name="settings_force_dark">强制深色</string>
     <string name="settings_force_dark_desc">不跟随系统时可手动指定</string>
+    <string name="settings_cover_source_badge">封面显示歌曲来源</string>
+    <string name="settings_cover_source_badge_desc">在封面区域显示当前歌曲的平台来源</string>
     <string name="settings_haptic">触感反馈</string>
     <string name="settings_haptic_desc">开启后点击按钮时会有震动反馈</string>
     <string name="settings_personalization">个性化</string>
@@ -614,6 +618,7 @@
     <string name="toast_cache_clear_error">清理出错: %s</string>
     <string name="toast_playback_stopped">多首歌曲无法播放，已停止</string>
     <string name="toast_match_failed">匹配失败: %s</string>
+    <string name="toast_save_failed">保存失败: %s</string>
     <string name="snackbar_cookie_empty">未读取到 Cookie，请确认已完成登录</string>
     <string name="snackbar_read_failed">读取失败：%s</string>
 
@@ -924,6 +929,8 @@
     <string name="github_sync_failed_title">GitHub 同步失败</string>
     <string name="github_sync_token_expired">Token 已过期,请重新配置</string>
     <string name="github_sync_failed_message">同步失败</string>
+    <string name="github_sync_silent_failure">同步失败不提示</string>
+    <string name="github_sync_silent_failure_desc">仅静默后台同步的常规失败通知，Token 失效仍会提示</string>
 
     <!-- Download Messages -->
     <string name="download_file_exists">文件已存在,跳过下载: %s</string>
@@ -1009,6 +1016,9 @@
     <string name="home_favorite_playlist">收藏歌单</string>
     <string name="home_unfavorited">已取消收藏</string>
     <string name="continue_playing_remove">移除</string>
+    <string name="home_title_brand_loud">音理音理!!</string>
+    <string name="home_title_brand_wave">音理音理~</string>
+    <string name="home_title_brand_call">NeriPlayer</string>
 
     <!-- Library Screen -->
     <string name="library_tab_local">本地</string>
@@ -1033,6 +1043,8 @@
     <string name="library_favorite_source_format" formatted="false">%d首 · %s</string>
     <string name="library_title">媒体库</string>
     <string name="library_coming_soon">敬请期待</string>
+    <string name="library_recent_played">最近播放</string>
+    <string name="library_delete_playlist_confirm">确定要删除歌单“%1$s”吗？</string>
 
     <!-- Bili Playlist Detail -->
     <string name="bili_loading_favorites">正在加载收藏夹内容...</string>
@@ -1123,5 +1135,18 @@
     <string name="music_lyrics_fill_failed">歌词填充失败</string>
     <string name="lyrics_editor_hint_original">[00:00.00]在这里输入歌词\n[00:05.00]支持LRC格式\n[00:10.00]格式: [分:秒.毫秒]歌词内容</string>
     <string name="lyrics_editor_hint_translation">[00:00.00]在这里输入翻译歌词\n[00:05.00]支持LRC格式\n[00:10.00]格式: [分:秒.毫秒]翻译内容</string>
+    <string name="common_selected">已选择</string>
+    <string name="common_youtube">YouTube</string>
+    <string name="common_github">GitHub</string>
+    <string name="settings_build_uuid">构建 UUID</string>
+    <string name="settings_version_debug_suffix">调试模式</string>
+    <string name="settings_github_repo_url">github.com/cwuom/NeriPlayer</string>
+    <string name="settings_github_token_label">GitHub Token</string>
+    <string name="settings_github_token_placeholder">ghp_xxxxxxxxxxxx</string>
+    <string name="settings_sync_repo_placeholder">username/repo-name</string>
+    <string name="cd_app_background">应用背景</string>
+    <string name="common_label_value_format">%1$s - %2$s</string>
+    <string name="common_percent_int">%1$d%%</string>
+    <string name="download_progress_file_label">%1$d%% - %2$s</string>
 
 </resources>

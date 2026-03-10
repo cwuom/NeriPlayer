@@ -75,12 +75,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -111,6 +114,7 @@ import moe.ouom.neriplayer.data.ThemeDefaults
 import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.ui.component.NeriBottomBar
 import moe.ouom.neriplayer.ui.component.NeriMiniPlayer
+import moe.ouom.neriplayer.ui.component.ThemeRevealOverlay
 import moe.ouom.neriplayer.ui.screen.DownloadManagerScreen
 import moe.ouom.neriplayer.ui.screen.DownloadProgressScreen
 import moe.ouom.neriplayer.ui.screen.NowPlayingScreen
@@ -143,6 +147,8 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import moe.ouom.neriplayer.ui.screen.RecentScreen
 import moe.ouom.neriplayer.R
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.core.view.drawToBitmap
 
 private fun adjustAccent(base: Color, isDark: Boolean): Color {
     val r = (base.red * 255).toInt().coerceIn(0, 255)
@@ -259,12 +265,13 @@ fun NeriApp(
     onIsDarkChanged: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
+    val rootView = LocalView.current
     val fallbackPrimary = MaterialTheme.colorScheme.primary.toArgb()
     val repo = remember { AppContainer.settingsRepo }
 
-    val followSystemDark by repo.followSystemDarkFlow.collectAsState(initial = true)
+    val storedFollowSystemDark by repo.followSystemDarkFlow.collectAsState(initial = true)
     val dynamicColorEnabled by repo.dynamicColorFlow.collectAsState(initial = true)
-    val forceDark by repo.forceDarkFlow.collectAsState(initial = false)
+    val storedForceDark by repo.forceDarkFlow.collectAsState(initial = false)
     var showNowPlaying by rememberSaveable { mutableStateOf(false) }
     val devModeEnabled by repo.devModeEnabledFlow.collectAsState(initial = false)
     val themeSeedColor by repo.themeSeedColorFlow.collectAsState(initial = ThemeDefaults.DEFAULT_SEED_COLOR_HEX)
@@ -278,9 +285,18 @@ fun NeriApp(
     val backgroundImageBlur by repo.backgroundImageBlurFlow.collectAsState(initial = 10f)
     val backgroundImageAlpha by repo.backgroundImageAlphaFlow.collectAsState(initial = 0.3f)
     val hapticFeedbackEnabled by repo.hapticFeedbackEnabledFlow.collectAsState(initial = true)
+    val showCoverSourceBadge by repo.showCoverSourceBadgeFlow.collectAsState(initial = true)
+    val silentGitHubSyncFailure by repo.silentGitHubSyncFailureFlow.collectAsState(initial = false)
     val showLyricTranslation by repo.showLyricTranslationFlow.collectAsState(initial = true)
     val maxCacheSizeBytes by repo.maxCacheSizeBytesFlow.collectAsState(initial = 1024L * 1024 * 1024)
     val hazeState = remember { HazeState() }
+    var pendingFollowSystemDark by remember { mutableStateOf<Boolean?>(null) }
+    var pendingForceDark by remember { mutableStateOf<Boolean?>(null) }
+    var themeRevealSnapshot by remember { mutableStateOf<ImageBitmap?>(null) }
+    var themeRevealOriginWindow by remember { mutableStateOf<Offset?>(null) }
+
+    val followSystemDark = pendingFollowSystemDark ?: storedFollowSystemDark
+    val forceDark = pendingForceDark ?: storedForceDark
 
     var coverSeedHex by remember { mutableStateOf<String?>(null) }   // 形如 "RRGGBB"
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
@@ -297,6 +313,18 @@ fun NeriApp(
             .collect { song ->
                 AppContainer.playHistoryRepo.record(song)
             }
+    }
+
+    LaunchedEffect(storedFollowSystemDark, pendingFollowSystemDark) {
+        if (pendingFollowSystemDark != null && pendingFollowSystemDark == storedFollowSystemDark) {
+            pendingFollowSystemDark = null
+        }
+    }
+
+    LaunchedEffect(storedForceDark, pendingForceDark) {
+        if (pendingForceDark != null && pendingForceDark == storedForceDark) {
+            pendingForceDark = null
+        }
     }
 
 
@@ -372,6 +400,31 @@ fun NeriApp(
     val scope = rememberCoroutineScope()
     val preferredQuality by repo.audioQualityFlow.collectAsState(initial = "exhigh")
     val biliPreferredQuality by repo.biliAudioQualityFlow.collectAsState(initial = "high")
+
+    fun requestThemeToggle(originInWindow: Offset) {
+        if (pendingFollowSystemDark != null || pendingForceDark != null || themeRevealSnapshot != null) {
+            return
+        }
+
+        val nextDark = !isDark
+        val snapshot = runCatching {
+            if (rootView.width > 0 && rootView.height > 0) {
+                rootView.drawToBitmap().asImageBitmap()
+            } else {
+                null
+            }
+        }.getOrNull()
+
+        themeRevealSnapshot = snapshot
+        themeRevealOriginWindow = originInWindow.takeIf { snapshot != null }
+        pendingFollowSystemDark = false
+        pendingForceDark = nextDark
+
+        scope.launch {
+            repo.setFollowSystemDark(false)
+            repo.setForceDark(nextDark)
+        }
+    }
 
     CompositionLocalProvider(LocalDensity provides finalDensity) {
         val effectiveSeedHex = coverSeedHex ?: themeSeedColor
@@ -846,8 +899,8 @@ fun NeriApp(
                                     SettingsHostScreen(
                                         dynamicColor = dynamicColorEnabled,
                                         onDynamicColorChange = { scope.launch { repo.setDynamicColor(it) } },
-                                        forceDark = forceDark,
-                                        onForceDarkChange = { scope.launch { repo.setForceDark(it) } },
+                                        isDarkTheme = isDark,
+                                        onThemeToggleRequest = ::requestThemeToggle,
                                         preferredQuality = preferredQuality,
                                         onQualityChange = { scope.launch { repo.setAudioQuality(it) } },
                                         biliPreferredQuality = biliPreferredQuality,
@@ -897,6 +950,14 @@ fun NeriApp(
                                                 repo.setHapticFeedbackEnabled(enabled)
                                                 syncHapticFeedbackSetting(enabled)
                                             }
+                                        },
+                                        showCoverSourceBadge = showCoverSourceBadge,
+                                        onShowCoverSourceBadgeChange = { enabled ->
+                                            scope.launch { repo.setShowCoverSourceBadge(enabled) }
+                                        },
+                                        silentGitHubSyncFailure = silentGitHubSyncFailure,
+                                        onSilentGitHubSyncFailureChange = { enabled ->
+                                            scope.launch { repo.setSilentGitHubSyncFailure(enabled) }
                                         },
                                         showLyricTranslation = showLyricTranslation,
                                         onShowLyricTranslationChange = { enabled ->
@@ -1069,6 +1130,21 @@ fun NeriApp(
                                     hazeState = hazeState,
                                 )
                             }
+
+                            val revealSnapshot = themeRevealSnapshot
+                            val revealOrigin = themeRevealOriginWindow
+                            if (revealSnapshot != null && revealOrigin != null) {
+                                ThemeRevealOverlay(
+                                    snapshot = revealSnapshot,
+                                    originInWindow = revealOrigin,
+                                    modifier = Modifier.fillMaxSize(),
+                                    durationMillis = 720,
+                                    onFinished = {
+                                        themeRevealSnapshot = null
+                                        themeRevealOriginWindow = null
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -1107,7 +1183,7 @@ fun NeriApp(
 
                             HyperBackground(
                                 modifier = Modifier
-                                    .matchParentSize()
+                                    .fillMaxSize()
                                     .graphicsLayer { alpha = 0.80f },
                                 isDark = true,
                                 coverUrl = currentSongNP?.coverUrl
@@ -1125,6 +1201,7 @@ fun NeriApp(
                                 onLyricFontScaleChange = { scale ->
                                     scope.launch { repo.setLyricFontScale(scale) }
                                 },
+                                showCoverSourceBadge = showCoverSourceBadge,
                                 showLyricTranslation = showLyricTranslation
                             )
                         }

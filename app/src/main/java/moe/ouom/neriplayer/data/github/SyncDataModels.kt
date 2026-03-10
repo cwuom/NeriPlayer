@@ -28,6 +28,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.protobuf.ProtoNumber
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.data.FavoritePlaylist
+import moe.ouom.neriplayer.data.LocalSongSupport
 import moe.ouom.neriplayer.data.LocalPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 
@@ -65,7 +66,7 @@ data class SyncPlaylist(
             return SyncPlaylist(
                 id = playlist.id,
                 name = playlist.name,
-                songs = playlist.songs.map { SyncSong.fromSongItem(it, context) },
+                songs = playlist.songs.mapNotNull { SyncSong.fromSongItemOrNull(it, context) },
                 createdAt = playlist.id, // 使用ID作为创建时间
                 modifiedAt = modifiedAt
             )
@@ -111,6 +112,13 @@ data class SyncSong(
     @ProtoNumber(22) val originalTranslatedLyric: String? = null
 ) {
     companion object {
+        fun fromSongItemOrNull(song: SongItem, context: Context? = null): SyncSong? {
+            if (LocalSongSupport.isLocalSong(song, context)) {
+                return null
+            }
+            return fromSongItem(song, context)
+        }
+
         fun fromSongItem(song: SongItem, context: Context? = null): SyncSong {
             // 使用网络地址进行同步
             val mapper = context?.let { CoverUrlMapper.getInstance(it) }
@@ -126,7 +134,7 @@ data class SyncSong(
                 albumId = song.albumId,
                 durationMs = song.durationMs,
                 coverUrl = syncCoverUrl,
-                mediaUri = song.mediaUri,
+                mediaUri = LocalSongSupport.sanitizeMediaUriForSync(song.mediaUri),
                 matchedLyric = song.matchedLyric,
                 matchedTranslatedLyric = song.matchedTranslatedLyric,
                 matchedLyricSource = song.matchedLyricSource?.name,
@@ -153,7 +161,7 @@ data class SyncSong(
             albumId = albumId,
             durationMs = durationMs,
             coverUrl = coverUrl,
-            mediaUri = mediaUri,
+            mediaUri = LocalSongSupport.sanitizeMediaUriForSync(mediaUri),
             matchedLyric = matchedLyric,
             matchedTranslatedLyric = matchedTranslatedLyric,
             matchedLyricSource = matchedLyricSource?.let {
@@ -205,7 +213,7 @@ data class SyncFavoritePlaylist(
                 coverUrl = playlist.coverUrl,
                 trackCount = playlist.trackCount,
                 source = playlist.source,
-                songs = playlist.songs.map { SyncSong.fromSongItem(it, context) },
+                songs = playlist.songs.mapNotNull { SyncSong.fromSongItemOrNull(it, context) },
                 addedTime = playlist.addedTime
             )
         }

@@ -147,8 +147,12 @@
     <string name="settings_theme_color_desc">Choose your favorite color</string>
     <string name="settings_dynamic_color">Dynamic Color</string>
     <string name="settings_dynamic_color_desc">Follow cover theme color</string>
+    <string name="settings_theme_toggle_dark">Switch to dark theme</string>
+    <string name="settings_theme_toggle_light">Switch to light theme</string>
     <string name="settings_force_dark">Force Dark Mode</string>
     <string name="settings_force_dark_desc">Manually specify when not following system</string>
+    <string name="settings_cover_source_badge">Show song source on cover</string>
+    <string name="settings_cover_source_badge_desc">Display the platform badge for the current song on the cover area</string>
     <string name="settings_haptic">Haptic Feedback</string>
     <string name="settings_haptic_desc">Vibrate on button press</string>
     <string name="settings_personalization">Personalization</string>
@@ -620,6 +624,7 @@
     <string name="toast_cache_clear_error">Clear error: %s</string>
     <string name="toast_playback_stopped">Multiple songs failed, playback stopped</string>
     <string name="toast_match_failed">Match failed: %s</string>
+    <string name="toast_save_failed">Save failed: %s</string>
     <string name="snackbar_cookie_empty">No Cookie found, please confirm login</string>
     <string name="snackbar_read_failed">Read failed: %s</string>
 
@@ -1006,6 +1011,9 @@
     <string name="home_favorite_playlist">Favorite Playlist</string>
     <string name="home_unfavorited">Unfavorited</string>
     <string name="continue_playing_remove">Remove</string>
+    <string name="home_title_brand_loud">NeriPlayer!</string>
+    <string name="home_title_brand_wave">NeriPlayer~</string>
+    <string name="home_title_brand_call">Hey, NeriPlayer</string>
     <string name="library_create_playlist_default">New Playlist</string>
     <string name="library_video_count">%d videos</string>
     <string name="library_name_reserved">This name is reserved for \"%s\", please choose another name~</string>
@@ -1024,6 +1032,8 @@
     <string name="library_favorite_source_format" formatted="false">%d songs · %s</string>
     <string name="library_title">Library</string>
     <string name="library_coming_soon">Coming Soon</string>
+    <string name="library_recent_played">Recent Plays</string>
+    <string name="library_delete_playlist_confirm">Delete playlist \"%1$s\"?</string>
     <string name="bili_loading_favorites">Loading favorites...</string>
     <string name="bili_load_failed">Load failed: %s</string>
     <string name="bili_get_parts_failed">Failed to get parts</string>
@@ -1081,6 +1091,8 @@
     <string name="github_sync_failed_title">GitHub Sync Failed</string>
     <string name="github_sync_token_expired">Token expired, please reconfigure</string>
     <string name="github_sync_failed_message">Sync failed</string>
+    <string name="github_sync_silent_failure">Silence Sync Failures</string>
+    <string name="github_sync_silent_failure_desc">Silence regular background sync failure notifications. Token expiry will still notify.</string>
     <string name="nowplaying_favorited">Favorited</string>
     <string name="nowplaying_favorite">Favorite</string>
     <string name="nowplaying_more_options">More Options</string>
@@ -1115,5 +1127,18 @@
     <string name="music_restore_failed">Failed to retrieve original info</string>
     <string name="lyrics_editor_hint_original">[00:00.00]Enter lyrics here\n[00:05.00]Supports LRC format\n[00:10.00]Format: [mm:ss.xx]Lyrics content</string>
     <string name="lyrics_editor_hint_translation">[00:00.00]Enter translated lyrics here\n[00:05.00]Supports LRC format\n[00:10.00]Format: [mm:ss.xx]Translation content</string>
+    <string name="common_selected">Selected</string>
+    <string name="common_youtube">YouTube</string>
+    <string name="common_github">GitHub</string>
+    <string name="settings_build_uuid">Build UUID</string>
+    <string name="settings_version_debug_suffix">DEBUG MODE</string>
+    <string name="settings_github_repo_url">github.com/cwuom/NeriPlayer</string>
+    <string name="settings_github_token_label">GitHub Token</string>
+    <string name="settings_github_token_placeholder">ghp_xxxxxxxxxxxx</string>
+    <string name="settings_sync_repo_placeholder">username/repo-name</string>
+    <string name="cd_app_background">App background</string>
+    <string name="common_label_value_format">%1$s - %2$s</string>
+    <string name="common_percent_int">%1$d%%</string>
+    <string name="download_progress_file_label">%1$d%% - %2$s</string>
 
 </resources>

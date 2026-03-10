@@ -44,6 +44,8 @@ object SettingsKeys {
     val DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
     val FORCE_DARK = booleanPreferencesKey("force_dark")
     val FOLLOW_SYSTEM_DARK = booleanPreferencesKey("follow_system_dark")
+    val SHOW_COVER_SOURCE_BADGE = booleanPreferencesKey("show_cover_source_badge")
+    val SILENT_GITHUB_SYNC_FAILURE = booleanPreferencesKey("silent_github_sync_failure")
     val DISCLAIMER_ACCEPTED_V2 = booleanPreferencesKey("disclaimer_accepted_v2")
     val AUDIO_QUALITY = stringPreferencesKey("audio_quality")
     val BILI_AUDIO_QUALITY = stringPreferencesKey("bili_audio_quality")
@@ -90,6 +92,12 @@ class SettingsRepository(private val context: Context) {
 
     val followSystemDarkFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.FOLLOW_SYSTEM_DARK] ?: true }
+
+    val showCoverSourceBadgeFlow: Flow<Boolean> =
+        context.dataStore.data.map { it[SettingsKeys.SHOW_COVER_SOURCE_BADGE] ?: true }
+
+    val silentGitHubSyncFailureFlow: Flow<Boolean> =
+        context.dataStore.data.map { it[SettingsKeys.SILENT_GITHUB_SYNC_FAILURE] ?: false }
 
     val audioQualityFlow: Flow<String> =
         context.dataStore.data.map { it[SettingsKeys.AUDIO_QUALITY] ?: "exhigh" }
@@ -166,6 +174,18 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setForceDark(value: Boolean) {
         context.dataStore.edit { it[SettingsKeys.FORCE_DARK] = value }
+    }
+
+    suspend fun setFollowSystemDark(value: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.FOLLOW_SYSTEM_DARK] = value }
+    }
+
+    suspend fun setShowCoverSourceBadge(enabled: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.SHOW_COVER_SOURCE_BADGE] = enabled }
+    }
+
+    suspend fun setSilentGitHubSyncFailure(enabled: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.SILENT_GITHUB_SYNC_FAILURE] = enabled }
     }
 
     suspend fun setDisclaimerAccepted(accepted: Boolean) {

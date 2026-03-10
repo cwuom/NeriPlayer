@@ -37,6 +37,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.resolveBiliSong
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.BiliAudioStreamInfo
+import moe.ouom.neriplayer.data.LocalSongSupport
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import okhttp3.Request
@@ -102,6 +103,12 @@ object AudioDownloadManager {
         withContext(Dispatchers.IO) {
             try {
                 // 检查文件是否已存在
+                if (LocalSongSupport.isLocalSong(song, context)) {
+                    NPLogger.d(TAG, "Skip local song download: ${song.name}")
+                    _progressFlow.value = null
+                    return@withContext
+                }
+
                 val existingFilePath = getLocalFilePath(context, song)
                 if (existingFilePath != null) {
                     NPLogger.d(TAG, context.getString(R.string.download_file_exists, song.name))
@@ -203,16 +210,23 @@ object AudioDownloadManager {
     suspend fun downloadPlaylist(context: Context, songs: List<SongItem>) {
         withContext(Dispatchers.IO) {
             try {
+                val remoteSongs = songs.filterNot { LocalSongSupport.isLocalSong(it, context) }
+                if (remoteSongs.isEmpty()) {
+                    NPLogger.d(TAG, "Skip batch download because all songs are local")
+                    _batchProgressFlow.value = null
+                    return@withContext
+                }
+
                 _isCancelled.value = false
                 _batchProgressFlow.value = BatchDownloadProgress(
-                    totalSongs = songs.size,
+                    totalSongs = remoteSongs.size,
                     completedSongs = 0,
                     currentSong = "",
                     currentProgress = null
                 )
 
-                for (index in songs.indices) {
-                    val song = songs[index]
+                for (index in remoteSongs.indices) {
+                    val song = remoteSongs[index]
                     // 检查是否被全局取消
                     if (_isCancelled.value) {
                         NPLogger.d(TAG, context.getString(R.string.download_cancelled_message))
@@ -306,13 +320,11 @@ object AudioDownloadManager {
     /** 下载歌词文件 */
     private fun downloadLyrics(context: Context, song: SongItem) {
         try {
-            val baseDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir
-            val lyricsDir = File(baseDir, "NeriPlayer/Lyrics").apply { mkdirs() }
-            val baseName = sanitizeFileName("${song.artist} - ${song.name}")
-            val lyricFile = File(lyricsDir, "${song.id}.lrc")
-            val baseNameLyricFile = File(lyricsDir, "$baseName.lrc")
-            val transLyricFile = File(lyricsDir, "${song.id}_trans.lrc")
-            val baseNameTransLyricFile = File(lyricsDir, "${baseName}_trans.lrc")
+            val lyricFiles = buildLyricFiles(context, song)
+            val lyricFile = lyricFiles.lyricById
+            val baseNameLyricFile = lyricFiles.lyricByName
+            val transLyricFile = lyricFiles.translatedById
+            val baseNameTransLyricFile = lyricFiles.translatedByName
 
             // 优先使用song.matchedLyric中的歌词
             if (!song.matchedLyric.isNullOrBlank()) {
@@ -391,27 +403,28 @@ object AudioDownloadManager {
 
     /** 获取本地歌词文件路径 */
     fun getLyricFilePath(context: Context, song: SongItem): String? {
-        val baseDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir
-        val lyricsDir = File(baseDir, "NeriPlayer/Lyrics")
-        val lyricFile = File(lyricsDir, "${song.id}.lrc")
-        return if (lyricFile.exists()) lyricFile.absolutePath else null
+        val files = buildLyricFiles(context, song)
+        return sequenceOf(files.lyricById, files.lyricByName)
+            .firstOrNull(File::exists)
+            ?.absolutePath
     }
 
     /** 获取本地翻译歌词文件路径 */
     fun getTranslatedLyricFilePath(context: Context, song: SongItem): String? {
-        val baseDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir
-        val lyricsDir = File(baseDir, "NeriPlayer/Lyrics")
+        val files = buildLyricFiles(context, song)
+        return sequenceOf(files.translatedById, files.translatedByName)
+            .firstOrNull(File::exists)
+            ?.absolutePath
+    }
 
-        // 优先按 song.id 查找
-        val transLyricFile = File(lyricsDir, "${song.id}_trans.lrc")
-        if (transLyricFile.exists()) return transLyricFile.absolutePath
-
-        // 其次按 baseName 查找
-        val baseName = sanitizeFileName("${song.artist} - ${song.name}")
-        val baseNameTransLyricFile = File(lyricsDir, "${baseName}_trans.lrc")
-        if (baseNameTransLyricFile.exists()) return baseNameTransLyricFile.absolutePath
-
-        return null
+    fun getManagedLyricFiles(context: Context, song: SongItem): List<File> {
+        val files = buildLyricFiles(context, song)
+        return listOf(
+            files.lyricById,
+            files.lyricByName,
+            files.translatedById,
+            files.translatedByName
+        )
     }
 
     // 解析网易云直链
@@ -478,6 +491,29 @@ object AudioDownloadManager {
         val n = Normalizer.normalize(name, Normalizer.Form.NFKD)
         return n.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().ifBlank { "audio" }
     }
+
+    private fun buildLyricFiles(context: Context, song: SongItem): LyricFiles {
+        val lyricsDir = getLyricsDirectory(context)
+        val baseName = sanitizeFileName("${song.artist} - ${song.name}")
+        return LyricFiles(
+            lyricById = File(lyricsDir, "${song.id}.lrc"),
+            lyricByName = File(lyricsDir, "$baseName.lrc"),
+            translatedById = File(lyricsDir, "${song.id}_trans.lrc"),
+            translatedByName = File(lyricsDir, "${baseName}_trans.lrc")
+        )
+    }
+
+    private fun getLyricsDirectory(context: Context): File {
+        val baseDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir
+        return File(baseDir, "NeriPlayer/Lyrics").apply { mkdirs() }
+    }
+
+    private data class LyricFiles(
+        val lyricById: File,
+        val lyricByName: File,
+        val translatedById: File,
+        val translatedByName: File
+    )
 
     private fun uniqueFile(dir: File, name: String): File {
         var f = File(dir, name)

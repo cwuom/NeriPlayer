@@ -15,7 +15,8 @@ import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.SongIdentity
 
 data class LocalPlaylistDetailUiState(
-    val playlist: LocalPlaylist? = null
+    val playlist: LocalPlaylist? = null,
+    val isResolved: Boolean = false
 )
 
 data class LocalAudioImportUiResult(
@@ -39,7 +40,10 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
         playlistCollectJob?.cancel()
         playlistCollectJob = viewModelScope.launch {
             repo.playlists.collect { list ->
-                _uiState.value = LocalPlaylistDetailUiState(list.firstOrNull { it.id == id })
+                _uiState.value = LocalPlaylistDetailUiState(
+                    playlist = list.firstOrNull { it.id == id },
+                    isResolved = true
+                )
             }
         }
     }

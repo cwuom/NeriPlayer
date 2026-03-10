@@ -38,6 +38,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.net.toUri
 import coil.compose.AsyncImage
 import coil.request.CachePolicy
+import moe.ouom.neriplayer.R
 import coil.request.ImageRequest
 import coil.size.Size
 import coil.transform.Transformation
@@ -71,7 +72,7 @@ fun CustomBackground(
 
         AsyncImage(
             model = imageRequest,
-            contentDescription = "App Background",
+            contentDescription = context.getString(R.string.cd_app_background),
             contentScale = ContentScale.Crop,
             modifier = modifier
                 .fillMaxSize()

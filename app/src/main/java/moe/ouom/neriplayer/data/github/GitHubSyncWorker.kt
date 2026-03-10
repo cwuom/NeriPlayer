@@ -26,12 +26,13 @@ package moe.ouom.neriplayer.data.github
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
-import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.work.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.data.SettingsRepository
 import moe.ouom.neriplayer.util.NPLogger
 import java.util.concurrent.TimeUnit
 
@@ -126,12 +127,12 @@ class GitHubSyncWorker(
     }
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+        val forceSync = inputData.getBoolean("force_sync", false)
+        val triggerByUserAction = inputData.getBoolean("trigger_by_user_action", false)
         try {
             NPLogger.d(TAG, "Starting GitHub sync...")
 
             val storage = SecureTokenStorage(applicationContext)
-            val forceSync = inputData.getBoolean("force_sync", false)
-            val triggerByUserAction = inputData.getBoolean("trigger_by_user_action", false)
 
             // 如果是强制同步或用户操作触发，跳过自动同步检查
             if (!forceSync && !triggerByUserAction) {
@@ -161,7 +162,15 @@ class GitHubSyncWorker(
                 NPLogger.e(TAG, "Sync failed", error)
 
                 // 显示错误通知
-                showErrorNotification(error)
+                if (
+                    shouldShowErrorNotification(
+                        error = error,
+                        forceSync = forceSync,
+                        triggerByUserAction = triggerByUserAction
+                    )
+                ) {
+                    showErrorNotification(error)
+                }
 
                 // Token过期时不重试，其他错误重试
                 if (error is TokenExpiredException) {
@@ -173,9 +182,33 @@ class GitHubSyncWorker(
 
         } catch (e: Exception) {
             NPLogger.e(TAG, "Sync worker error", e)
-            showErrorNotification(e)
+            if (
+                shouldShowErrorNotification(
+                    error = e,
+                    forceSync = forceSync,
+                    triggerByUserAction = triggerByUserAction
+                )
+            ) {
+                showErrorNotification(e)
+            }
             Result.retry()
         }
+    }
+
+    private suspend fun shouldShowErrorNotification(
+        error: Throwable?,
+        forceSync: Boolean = false,
+        triggerByUserAction: Boolean = false
+    ): Boolean {
+        if (error is TokenExpiredException) {
+            return true
+        }
+        if (forceSync || triggerByUserAction) {
+            return true
+        }
+        return !SettingsRepository(applicationContext)
+            .silentGitHubSyncFailureFlow
+            .first()
     }
 
     /**

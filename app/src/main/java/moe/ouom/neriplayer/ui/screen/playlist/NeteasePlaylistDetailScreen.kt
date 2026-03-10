@@ -398,7 +398,11 @@ fun DetailScreen(
                                 HapticIconButton(onClick = { if (allSelected) clearSelection() else selectAll() }) {
                                     Icon(
                                         imageVector = if (allSelected) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
-                                        contentDescription = if (allSelected) "取消全选" else "全选"
+                                        contentDescription = if (allSelected) {
+                                            stringResource(R.string.action_deselect_all)
+                                        } else {
+                                            stringResource(R.string.action_select_all)
+                                        }
                                     )
                                 }
                                 HapticIconButton(
@@ -492,7 +496,7 @@ fun DetailScreen(
                                             .networkCachePolicy(CachePolicy.ENABLED)
                                             .build(),
                                         contentDescription = ui.header?.name
-                                            ?: "Playlist Shuffling",
+                                            ?: stringResource(R.string.playlist_title),
                                         contentScale = ContentScale.Crop,
                                         modifier = Modifier
                                             .fillMaxSize()
@@ -850,7 +854,7 @@ fun DetailScreen(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            "暂无下载任务",
+                            stringResource(R.string.download_no_tasks),
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

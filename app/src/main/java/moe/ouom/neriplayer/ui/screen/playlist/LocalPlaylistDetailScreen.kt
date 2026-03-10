@@ -124,11 +124,15 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.FavoritesPlaylist
+import moe.ouom.neriplayer.data.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.identity
+import moe.ouom.neriplayer.data.isLocalSong
 import moe.ouom.neriplayer.data.sameIdentityAs
 import moe.ouom.neriplayer.data.stableKey
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.component.LocalSongDetailsDialog
+import moe.ouom.neriplayer.ui.component.LocalSongSyncConfirmDialog
 import moe.ouom.neriplayer.ui.viewmodel.DownloadManagerViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.LocalPlaylistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
@@ -180,6 +184,14 @@ fun LocalPlaylistDetailScreen(
     }
 
     val playlistOrNull = ui.value.playlist
+    val isResolved = ui.value.isResolved
+
+    LaunchedEffect(isResolved, playlistOrNull, playlistId) {
+        if (isResolved && playlistOrNull == null) {
+            AppContainer.playlistUsageRepo.removeEntry(playlistId, "local")
+            onDeleted()
+        }
+    }
 
     AnimatedVisibility(
         visible = true,
@@ -192,6 +204,9 @@ fun LocalPlaylistDetailScreen(
     ) {
         Surface(Modifier.fillMaxSize(), color = Color.Transparent) {
             if (playlistOrNull == null) {
+                if (isResolved) {
+                    return@Surface
+                }
                 Scaffold(
                     containerColor = Color.Transparent,
                     topBar = {
@@ -229,6 +244,8 @@ fun LocalPlaylistDetailScreen(
             val clipboardManager = LocalClipboardManager.current
             val playlist = playlistOrNull
             val isFavorites = FavoritesPlaylist.isSystemPlaylist(playlist, context)
+            val isLocalFilesPlaylist = LocalFilesPlaylist.isSystemPlaylist(playlist, context)
+            val isSystemPlaylist = isFavorites || isLocalFilesPlaylist
 
             val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
             val allPlaylists by repo.playlists.collectAsState()
@@ -239,6 +256,9 @@ fun LocalPlaylistDetailScreen(
             var showDeletePlaylistConfirm by remember { mutableStateOf(false) }
             var showDeleteMultiConfirm by remember { mutableStateOf(false) }
             var showExportSheet by remember { mutableStateOf(false) }
+            var detailSong by remember { mutableStateOf<SongItem?>(null) }
+            var pendingSyncConfirmAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+            var pendingSyncConfirmLabel by remember { mutableStateOf("") }
             val exportSheetState = rememberModalBottomSheetState()
 
             var showSearch by remember { mutableStateOf(false) }
@@ -338,6 +358,15 @@ fun LocalPlaylistDetailScreen(
                 selectionMode = false; clearSelection()
             }
 
+            fun launchWithLocalSyncWarning(songs: List<SongItem>, actionLabel: String, action: () -> Unit) {
+                if (songs.any { it.isLocalSong() }) {
+                    pendingSyncConfirmLabel = actionLabel
+                    pendingSyncConfirmAction = action
+                } else {
+                    action()
+                }
+            }
+
             LaunchedEffect(showSearch, selectionMode) {
                 if (showSearch && !selectionMode) {
                     delay(120)
@@ -355,6 +384,9 @@ fun LocalPlaylistDetailScreen(
                 if (name.isEmpty()) return context.getString(R.string.playlist_name_empty)
                 if (name.equals(context.getString(R.string.favorite_my_music), ignoreCase = true)) {
                     return context.getString(R.string.library_name_reserved, context.getString(R.string.favorite_my_music))
+                }
+                if (name.equals(context.getString(R.string.local_files), ignoreCase = true)) {
+                    return context.getString(R.string.library_name_reserved, context.getString(R.string.local_files))
                 }
                 if (allPlaylists.any {
                         it.id != playlist.id && it.name.equals(
@@ -442,6 +474,14 @@ fun LocalPlaylistDetailScreen(
             // 当前播放 & FAB
             val currentSong by PlayerManager.currentSongFlow.collectAsState()
             val currentIndexInSource = localSongs.indexOfFirst { it.sameIdentityAs(currentSong) }
+            val selectedSongsForAction by remember(localSongs, selectedKeysState.value) {
+                derivedStateOf {
+                    localSongs.filter { it.stableKey() in selectedKeysState.value }
+                }
+            }
+            val hasSelectedOnlineSongs by remember(selectedSongsForAction) {
+                derivedStateOf { selectedSongsForAction.any { !it.isLocalSong() } }
+            }
 
             Scaffold(
                 containerColor = Color.Transparent,
@@ -455,7 +495,11 @@ fun LocalPlaylistDetailScreen(
                     if (!selectionMode) {
                         TopAppBar(
                             title = {
-                                val displayName = if (isFavorites) stringResource(R.string.favorite_my_music) else playlist.name
+                                val displayName = when {
+                                    isFavorites -> stringResource(R.string.favorite_my_music)
+                                    isLocalFilesPlaylist -> stringResource(R.string.local_files)
+                                    else -> playlist.name
+                                }
                                 Text(
                                     displayName,
                                     maxLines = 1,
@@ -492,7 +536,7 @@ fun LocalPlaylistDetailScreen(
                                     }
                                 }
                                 
-                                if (!isFavorites) {
+                                if (isLocalFilesPlaylist) {
                                     HapticIconButton(onClick = {
                                         audioImportLauncher.launch(arrayOf("audio/*"))
                                     }) {
@@ -501,6 +545,9 @@ fun LocalPlaylistDetailScreen(
                                             contentDescription = stringResource(R.string.local_playlist_import_audio)
                                         )
                                     }
+                                }
+                                
+                                if (!isSystemPlaylist) {
                                     HapticIconButton(onClick = {
                                         renameText = TextFieldValue(playlist.name)
                                         renameError = null
@@ -559,15 +606,13 @@ fun LocalPlaylistDetailScreen(
                                 }
                                 HapticIconButton(
                                     onClick = {
-                                        if (selectedKeysState.value.isNotEmpty()) {
-                                            val selectedSongs = localSongs.filter {
-                                                it.stableKey() in selectedKeysState.value
-                                            }
+                                        if (selectedSongsForAction.isNotEmpty() && hasSelectedOnlineSongs) {
+                                            val onlineSongs = selectedSongsForAction.filterNot { it.isLocalSong() }
                                             exitSelectionMode()
-                                            GlobalDownloadManager.startBatchDownload(context, selectedSongs)
+                                            GlobalDownloadManager.startBatchDownload(context, onlineSongs)
                                         }
                                     },
-                                    enabled = selectedKeysState.value.isNotEmpty()
+                                    enabled = selectedSongsForAction.isNotEmpty() && hasSelectedOnlineSongs
                                 ) {
                                     Icon(
                                         Icons.Outlined.Download,
@@ -669,7 +714,11 @@ fun LocalPlaylistDetailScreen(
                                             .align(Alignment.BottomStart)
                                             .padding(horizontal = 16.dp, vertical = 12.dp)
                                     ) {
-                                        val headerDisplayName = if (isFavorites) stringResource(R.string.favorite_my_music) else playlist.name
+                                        val headerDisplayName = when {
+                                            isFavorites -> stringResource(R.string.favorite_my_music)
+                                            isLocalFilesPlaylist -> stringResource(R.string.local_files)
+                                            else -> playlist.name
+                                        }
                                         Text(
                                             text = headerDisplayName,
                                             style = MaterialTheme.typography.headlineSmall.copy(
@@ -853,6 +902,15 @@ fun LocalPlaylistDetailScreen(
                                                             expanded = showMoreMenu,
                                                             onDismissRequest = { showMoreMenu = false }
                                                         ) {
+                                                            if (song.isLocalSong()) {
+                                                                DropdownMenuItem(
+                                                                    text = { Text(stringResource(R.string.local_song_open_details)) },
+                                                                    onClick = {
+                                                                        detailSong = song
+                                                                        showMoreMenu = false
+                                                                    }
+                                                                )
+                                                            }
                                                             DropdownMenuItem(
                                                                 text = { Text(stringResource(R.string.local_playlist_play_next)) },
                                                                 onClick = {
@@ -1008,9 +1066,14 @@ fun LocalPlaylistDetailScreen(
                                                 val songs = localSongs.filter {
                                                     it.stableKey() in selectedKeysState.value
                                                 }
-                                                scope.launch {
-                                                    repo.addSongsToPlaylist(pl.id, songs)
-                                                    showExportSheet = false
+                                                launchWithLocalSyncWarning(
+                                                    songs = songs,
+                                                    actionLabel = context.getString(R.string.playlist_add_to)
+                                                ) {
+                                                    scope.launch {
+                                                        repo.addSongsToPlaylist(pl.id, songs)
+                                                        showExportSheet = false
+                                                    }
                                                 }
                                             }),
                                         verticalAlignment = Alignment.CenterVertically
@@ -1048,14 +1111,19 @@ fun LocalPlaylistDetailScreen(
                                         val songs = displayedSongs.filter {
                                             it.stableKey() in selectedKeysState.value
                                         }
-                                        scope.launch {
-                                            repo.createPlaylist(name)
-                                            val target =
-                                                repo.playlists.value.lastOrNull { it.name == name }
-                                            if (target != null) {
-                                                repo.addSongsToPlaylist(target.id, songs)
+                                        launchWithLocalSyncWarning(
+                                            songs = songs,
+                                            actionLabel = context.getString(R.string.playlist_add_to)
+                                        ) {
+                                            scope.launch {
+                                                repo.createPlaylist(name)
+                                                val target =
+                                                    repo.playlists.value.lastOrNull { it.name == name }
+                                                if (target != null) {
+                                                    repo.addSongsToPlaylist(target.id, songs)
+                                                }
+                                                showExportSheet = false
                                             }
-                                            showExportSheet = false
                                         }
                                     }
                                 ) { Text(stringResource(R.string.playlist_create_and_export)) }
@@ -1214,6 +1282,28 @@ fun LocalPlaylistDetailScreen(
                             Spacer(modifier = Modifier.height(20.dp))
                         }
                     }
+                }
+
+                detailSong?.let { song ->
+                    LocalSongDetailsDialog(
+                        song = song,
+                        onDismiss = { detailSong = null }
+                    )
+                }
+
+                pendingSyncConfirmAction?.let { action ->
+                    LocalSongSyncConfirmDialog(
+                        actionLabel = pendingSyncConfirmLabel,
+                        onConfirm = {
+                            pendingSyncConfirmAction = null
+                            pendingSyncConfirmLabel = ""
+                            action()
+                        },
+                        onDismiss = {
+                            pendingSyncConfirmAction = null
+                            pendingSyncConfirmLabel = ""
+                        }
+                    )
                 }
 
                 // 多选优先退出

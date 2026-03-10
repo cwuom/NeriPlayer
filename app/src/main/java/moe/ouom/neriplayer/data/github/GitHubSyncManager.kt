@@ -9,12 +9,16 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.FavoritesPlaylist
+import moe.ouom.neriplayer.data.LocalPlaylist
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.LocalSongSupport
 import moe.ouom.neriplayer.data.PlayedEntry
 import moe.ouom.neriplayer.data.PlayHistoryRepository
+import moe.ouom.neriplayer.data.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.identity
 import moe.ouom.neriplayer.util.LanguageManager
 import moe.ouom.neriplayer.util.NPLogger
+import java.io.IOException
 import java.util.UUID
 
 class GitHubSyncManager(private val context: Context) {
@@ -60,7 +64,7 @@ class GitHubSyncManager(private val context: Context) {
             }
 
             val apiClient = GitHubApiClient(context, token)
-            val localData = buildLocalSyncData()
+            val localData = sanitizeSyncData(buildLocalSyncData())
             val useDataSaver = storage.isDataSaverMode()
             val preferredFileName = SyncDataSerializer.getFileName(useDataSaver)
 
@@ -106,9 +110,11 @@ class GitHubSyncManager(private val context: Context) {
             }
 
             val remoteData = try {
-                SyncDataSerializer.deserialize(
+                sanitizeSyncData(
+                    SyncDataSerializer.deserialize(
                     remoteContent,
                     SyncDataSerializer.isBinaryFileName(actualFileName)
+                    )
                 )
             } catch (e: Exception) {
                 // 解析失败时尝试另一种格式，再不行才报错
@@ -119,9 +125,11 @@ class GitHubSyncManager(private val context: Context) {
 
                 val parsedFallback = if (!fallback.isNullOrEmpty()) {
                     runCatching {
-                        SyncDataSerializer.deserialize(
+                        sanitizeSyncData(
+                            SyncDataSerializer.deserialize(
                             fallback,
                             SyncDataSerializer.isBinaryFileName(alternativeFileName)
+                            )
                         )
                     }.getOrNull()
                 } else null
@@ -212,11 +220,8 @@ class GitHubSyncManager(private val context: Context) {
             storage.clearToken()
             return Result.failure(error)
         }
-        return Result.success(
-            SyncResult(
-                success = false,
-                message = localizedContext.getString(R.string.sync_upload_failed)
-            )
+        return Result.failure(
+            error ?: IOException(localizedContext.getString(R.string.sync_upload_failed))
         )
     }
 
@@ -243,23 +248,26 @@ class GitHubSyncManager(private val context: Context) {
             SyncFavoritePlaylist.fromFavoritePlaylist(it, context)
         }
 
-        val syncRecentPlays = playHistoryRepo.historyFlow.value.take(500).map { playedEntry ->
-            SyncRecentPlay(
-                songId = playedEntry.id,
-                song = SyncSong(
-                    id = playedEntry.id,
-                    name = playedEntry.name,
-                    artist = playedEntry.artist,
-                    album = playedEntry.album,
-                    albumId = playedEntry.albumId,
-                    durationMs = playedEntry.durationMs,
-                    coverUrl = playedEntry.coverUrl,
-                    mediaUri = playedEntry.mediaUri
-                ),
-                playedAt = playedEntry.playedAt,
-                deviceId = getDeviceId()
-            )
-        }
+        val syncRecentPlays = playHistoryRepo.historyFlow.value
+            .filterNot { LocalSongSupport.isLocalSong(it.album, it.mediaUri, context) }
+            .take(500)
+            .map { playedEntry ->
+                SyncRecentPlay(
+                    songId = playedEntry.id,
+                    song = SyncSong(
+                        id = playedEntry.id,
+                        name = playedEntry.name,
+                        artist = playedEntry.artist,
+                        album = playedEntry.album,
+                        albumId = playedEntry.albumId,
+                        durationMs = playedEntry.durationMs,
+                        coverUrl = playedEntry.coverUrl,
+                        mediaUri = LocalSongSupport.sanitizeMediaUriForSync(playedEntry.mediaUri)
+                    ),
+                    playedAt = playedEntry.playedAt,
+                    deviceId = getDeviceId()
+                )
+            }
 
         return SyncData(
             deviceId = getDeviceId(),
@@ -385,9 +393,11 @@ class GitHubSyncManager(private val context: Context) {
         var hasConflict = false
         var isUpdated = false
 
-        val isFavorites = local.id == FavoritesPlaylist.SYSTEM_ID || remote.id == FavoritesPlaylist.SYSTEM_ID
+        val systemDescriptor = SystemLocalPlaylists.resolve(local.id, local.name, localizedContext)
+            ?: SystemLocalPlaylists.resolve(remote.id, remote.name, localizedContext)
+        val isFavorites = systemDescriptor?.id == FavoritesPlaylist.SYSTEM_ID
         val finalName = when {
-            isFavorites -> FavoritesPlaylist.currentName(localizedContext)
+            systemDescriptor != null -> systemDescriptor.currentName
             local.name == remote.name -> local.name
             local.modifiedAt >= remote.modifiedAt -> {
                 hasConflict = true
@@ -440,7 +450,7 @@ class GitHubSyncManager(private val context: Context) {
 
         return PlaylistMergeResult(
             playlist = SyncPlaylist(
-                id = if (isFavorites) FavoritesPlaylist.SYSTEM_ID else local.id,
+                id = systemDescriptor?.id ?: local.id,
                 name = finalName,
                 songs = mergedSongs,
                 createdAt = minOf(local.createdAt, remote.createdAt),
@@ -463,18 +473,34 @@ class GitHubSyncManager(private val context: Context) {
 
     private suspend fun applyMergedDataToLocal(mergedData: SyncData, remoteHasChanged: Boolean) {
         val localizedContext = LanguageManager.applyLanguage(context)
-        val mergedLocalPlaylists = mergedData.playlists.map { syncPlaylist ->
-            val isFavorites = syncPlaylist.id == FavoritesPlaylist.SYSTEM_ID ||
-                FavoritesPlaylist.matches(syncPlaylist.name, localizedContext)
-            syncPlaylist.toLocalPlaylist().copy(
-                id = if (isFavorites) FavoritesPlaylist.SYSTEM_ID else syncPlaylist.id,
-                name = if (isFavorites) FavoritesPlaylist.currentName(localizedContext) else syncPlaylist.name,
-                modifiedAt = syncPlaylist.modifiedAt
+        val sanitizedMergedData = sanitizeSyncData(mergedData)
+        val currentPlaylists = playlistRepo.playlists.value.associateBy { playlist ->
+            SystemLocalPlaylists.resolve(playlist.id, playlist.name, localizedContext)?.id ?: playlist.id
+        }
+        val mergedLocalPlaylists = sanitizedMergedData.playlists.map { syncPlaylist ->
+            val systemDescriptor = SystemLocalPlaylists.resolve(
+                syncPlaylist.id,
+                syncPlaylist.name,
+                localizedContext
+            )
+            val normalizedId = systemDescriptor?.id ?: syncPlaylist.id
+            val syncedSongs = syncPlaylist.songs.map { it.toSongItem() }
+            val preservedLocalSongs = currentPlaylists[normalizedId]
+                ?.songs
+                .orEmpty()
+                .filter { LocalSongSupport.isLocalSong(it, localizedContext) }
+
+            LocalPlaylist(
+                id = normalizedId,
+                name = systemDescriptor?.currentName ?: syncPlaylist.name,
+                songs = mergeLocalOnlySongs(syncedSongs, preservedLocalSongs),
+                modifiedAt = syncPlaylist.modifiedAt,
+                customCoverUrl = currentPlaylists[normalizedId]?.customCoverUrl
             )
         }
         playlistRepo.updatePlaylists(mergedLocalPlaylists)
 
-        for (favorite in mergedData.favoritePlaylists.map { it.toFavoritePlaylist() }) {
+        for (favorite in sanitizedMergedData.favoritePlaylists.map { it.toFavoritePlaylist() }) {
             favoriteRepo.addFavorite(
                 id = favorite.id,
                 name = favorite.name,
@@ -487,10 +513,14 @@ class GitHubSyncManager(private val context: Context) {
 
         val localPlayHistoryEmpty = playHistoryRepo.historyFlow.value.isEmpty()
         val shouldApplyRemoteHistory = remoteHasChanged ||
-            (localPlayHistoryEmpty && mergedData.recentPlays.isNotEmpty())
+            (localPlayHistoryEmpty && sanitizedMergedData.recentPlays.isNotEmpty())
 
         if (shouldApplyRemoteHistory) {
-            val playHistory = mergedData.recentPlays.map { syncPlay ->
+            val syncedHistory = sanitizedMergedData.recentPlays.mapNotNull { syncPlay ->
+                if (LocalSongSupport.isLocalSong(syncPlay.song.album, syncPlay.song.mediaUri, localizedContext)) {
+                    return@mapNotNull null
+                }
+
                 PlayedEntry(
                     id = syncPlay.song.id,
                     name = syncPlay.song.name,
@@ -499,12 +529,77 @@ class GitHubSyncManager(private val context: Context) {
                     albumId = syncPlay.song.albumId,
                     durationMs = syncPlay.song.durationMs,
                     coverUrl = syncPlay.song.coverUrl,
-                    mediaUri = syncPlay.song.mediaUri,
+                    mediaUri = LocalSongSupport.sanitizeMediaUriForSync(syncPlay.song.mediaUri),
                     playedAt = syncPlay.playedAt
                 )
             }
+            val localOnlyHistory = playHistoryRepo.historyFlow.value.filter {
+                LocalSongSupport.isLocalSong(it.album, it.mediaUri, localizedContext)
+            }
+            val playHistory = mergeLocalOnlyHistory(syncedHistory, localOnlyHistory)
             playHistoryRepo.updateHistory(playHistory)
         }
+    }
+
+    private fun mergeLocalOnlySongs(
+        syncedSongs: List<moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem>,
+        localOnlySongs: List<moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem>
+    ): MutableList<moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem> {
+        val merged = syncedSongs.toMutableList()
+        val knownIdentities = merged.map { it.identity() }.toMutableSet()
+        localOnlySongs.forEach { song ->
+            if (knownIdentities.add(song.identity())) {
+                merged += song
+            }
+        }
+        return merged
+    }
+
+    private fun mergeLocalOnlyHistory(
+        syncedHistory: List<PlayedEntry>,
+        localOnlyHistory: List<PlayedEntry>
+    ): List<PlayedEntry> {
+        return (syncedHistory + localOnlyHistory)
+            .distinctBy { "${it.id}|${it.album}|${it.mediaUri.orEmpty()}|${it.playedAt}" }
+            .sortedByDescending { it.playedAt }
+            .take(500)
+    }
+
+    private fun sanitizeSyncData(data: SyncData): SyncData {
+        return data.copy(
+            playlists = data.playlists.map { sanitizeSyncPlaylist(it) },
+            favoritePlaylists = data.favoritePlaylists.map { sanitizeSyncFavoritePlaylist(it) },
+            recentPlays = data.recentPlays.mapNotNull { sanitizeRecentPlay(it) }
+        )
+    }
+
+    private fun sanitizeSyncPlaylist(playlist: SyncPlaylist): SyncPlaylist {
+        val localizedContext = LanguageManager.applyLanguage(context)
+        val systemDescriptor = SystemLocalPlaylists.resolve(playlist.id, playlist.name, localizedContext)
+        return playlist.copy(
+            id = systemDescriptor?.id ?: playlist.id,
+            name = systemDescriptor?.currentName ?: playlist.name,
+            songs = playlist.songs.mapNotNull { sanitizeSyncSong(it) }
+        )
+    }
+
+    private fun sanitizeSyncFavoritePlaylist(playlist: SyncFavoritePlaylist): SyncFavoritePlaylist {
+        return playlist.copy(
+            songs = playlist.songs.mapNotNull { sanitizeSyncSong(it) }
+        )
+    }
+
+    private fun sanitizeRecentPlay(play: SyncRecentPlay): SyncRecentPlay? {
+        val sanitizedSong = sanitizeSyncSong(play.song) ?: return null
+        return play.copy(songId = sanitizedSong.id, song = sanitizedSong)
+    }
+
+    private fun sanitizeSyncSong(song: SyncSong): SyncSong? {
+        val localizedContext = LanguageManager.applyLanguage(context)
+        if (LocalSongSupport.isLocalSong(song.album, song.mediaUri, localizedContext)) {
+            return null
+        }
+        return song.copy(mediaUri = LocalSongSupport.sanitizeMediaUriForSync(song.mediaUri))
     }
 
     private fun hasDataChanged(remote: SyncData, merged: SyncData): Boolean {

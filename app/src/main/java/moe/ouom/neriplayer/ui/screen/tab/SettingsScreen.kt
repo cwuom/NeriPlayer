@@ -32,6 +32,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.contract.ActivityResultContracts.CreateDocument
 import androidx.activity.result.contract.ActivityResultContracts.OpenDocument
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.EaseInCubic
@@ -67,6 +69,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.AltRoute
+import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Check
@@ -78,6 +81,7 @@ import androidx.compose.material.icons.outlined.Brightness4
 import androidx.compose.material.icons.outlined.ColorLens
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.Router
 import androidx.compose.material.icons.outlined.Subtitles
 import androidx.compose.material.icons.outlined.Timer
@@ -88,7 +92,6 @@ import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material.icons.outlined.ZoomInMap
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Backup
-import androidx.compose.material.icons.outlined.PlaylistPlay
 import androidx.compose.material.icons.outlined.Upload
 import androidx.compose.material.icons.outlined.Analytics
 import androidx.compose.material.icons.outlined.FormatSize
@@ -137,10 +140,14 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -172,7 +179,6 @@ import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthViewModel
 import moe.ouom.neriplayer.util.HapticButton
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
-import moe.ouom.neriplayer.util.NightModeHelper
 import moe.ouom.neriplayer.util.convertTimestampToDate
 import moe.ouom.neriplayer.util.formatFileSize
 import java.io.File
@@ -278,6 +284,88 @@ private fun UiScaleListItem(currentScale: Float, onClick: () -> Unit) {
     )
 }
 
+@Composable
+private fun ThemeModeActionButton(
+    isDarkTheme: Boolean,
+    onToggleRequest: (Offset) -> Unit
+) {
+    var centerInWindow by remember { mutableStateOf<Offset?>(null) }
+    val contentDescription = if (isDarkTheme) {
+        stringResource(R.string.settings_theme_toggle_light)
+    } else {
+        stringResource(R.string.settings_theme_toggle_dark)
+    }
+    val iconProgress by animateFloatAsState(
+        targetValue = if (isDarkTheme) 1f else 0f,
+        animationSpec = tween(durationMillis = 620, easing = FastOutSlowInEasing),
+        label = "theme_toggle_icon_progress"
+    )
+    val containerColor by animateColorAsState(
+        targetValue = if (isDarkTheme) {
+            MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.92f)
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.84f)
+        },
+        animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing),
+        label = "theme_toggle_container_color"
+    )
+
+    Box(
+        modifier = Modifier
+            .size(36.dp)
+            .clip(CircleShape)
+            .background(containerColor)
+    ) {
+        HapticIconButton(
+            onClick = {
+                centerInWindow?.let(onToggleRequest)
+            },
+            modifier = Modifier
+                .fillMaxSize()
+                .onGloballyPositioned { coordinates ->
+                    centerInWindow = coordinates.positionInWindow() + Offset(
+                        x = coordinates.size.width / 2f,
+                        y = coordinates.size.height / 2f
+                    )
+                }
+        ) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.DarkMode,
+                    contentDescription = contentDescription,
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier
+                        .size(20.dp)
+                        .graphicsLayer {
+                            alpha = 1f - iconProgress
+                            val scale = 0.56f + (1f - iconProgress) * 0.44f
+                            scaleX = scale
+                            scaleY = scale
+                            rotationZ = -56f * iconProgress
+                        }
+                )
+                Icon(
+                    imageVector = Icons.Outlined.LightMode,
+                    contentDescription = contentDescription,
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier
+                        .size(20.dp)
+                        .graphicsLayer {
+                            alpha = iconProgress
+                            val scale = 0.56f + iconProgress * 0.44f
+                            scaleX = scale
+                            scaleY = scale
+                            rotationZ = 56f * (1f - iconProgress)
+                        }
+                )
+            }
+        }
+    }
+}
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -285,8 +373,8 @@ fun SettingsScreen(
     listState: androidx.compose.foundation.lazy.LazyListState,
     dynamicColor: Boolean,
     onDynamicColorChange: (Boolean) -> Unit,
-    forceDark: Boolean,
-    onForceDarkChange: (Boolean) -> Unit,
+    isDarkTheme: Boolean,
+    onThemeToggleRequest: (Offset) -> Unit,
     preferredQuality: String,
     onQualityChange: (String) -> Unit,
     biliPreferredQuality: String,
@@ -316,6 +404,10 @@ fun SettingsScreen(
     onBackgroundImageAlphaChange: (Float) -> Unit,
     hapticFeedbackEnabled: Boolean,
     onHapticFeedbackEnabledChange: (Boolean) -> Unit,
+    showCoverSourceBadge: Boolean,
+    onShowCoverSourceBadgeChange: (Boolean) -> Unit,
+    silentGitHubSyncFailure: Boolean,
+    onSilentGitHubSyncFailureChange: (Boolean) -> Unit,
     showLyricTranslation: Boolean,
     onShowLyricTranslationChange: (Boolean) -> Unit,
     onNavigateToDownloadManager: () -> Unit = {},
@@ -398,7 +490,9 @@ fun SettingsScreen(
             if (uri != null) {
                 // 获取永久访问权限
                 val flag = Intent.FLAG_GRANT_READ_URI_PERMISSION
-                context.contentResolver.takePersistableUriPermission(uri, flag)
+                runCatching {
+                    context.contentResolver.takePersistableUriPermission(uri, flag)
+                }
                 onBackgroundImageChange(uri)
             }
         }
@@ -518,7 +612,18 @@ fun SettingsScreen(
         contentColor = Color.Transparent,
         topBar = {
             LargeTopAppBar(
-                title = { Text(stringResource(R.string.settings_title)) },
+                title = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(stringResource(R.string.settings_title))
+                        ThemeModeActionButton(
+                            isDarkTheme = isDarkTheme,
+                            onToggleRequest = onThemeToggleRequest
+                        )
+                    }
+                },
                 scrollBehavior = scrollBehavior,
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent,
@@ -572,34 +677,6 @@ fun SettingsScreen(
                 }
             }
 
-
-            // 强制深色
-            item {
-                ListItem(
-                    leadingContent = {
-                        Icon(
-                            imageVector = Icons.Outlined.DarkMode,
-                            contentDescription = stringResource(R.string.settings_force_dark),
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
-                    },
-                    headlineContent = { Text(stringResource(R.string.settings_force_dark)) },
-                    supportingContent = { Text(stringResource(R.string.settings_force_dark_desc)) },
-                    trailingContent = {
-                        Switch(
-                            checked = forceDark,
-                            onCheckedChange = { checked ->
-                                onForceDarkChange(checked)
-                                NightModeHelper.applyNightMode(
-                                    followSystemDark = false,
-                                    forceDark = checked
-                                )
-                            }
-                        )
-                    },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                )
-            }
 
             item {
                 // 触感反馈
@@ -679,12 +756,12 @@ fun SettingsScreen(
                             leadingContent = {
                                 Icon(
                                     painter = painterResource(id = R.drawable.ic_youtube),
-                                    contentDescription = "YouTube",
+                                    contentDescription = stringResource(R.string.common_youtube),
                                     modifier = Modifier.size(24.dp),
                                     tint = MaterialTheme.colorScheme.onSurface
                                 )
                             },
-                            headlineContent = { Text("YouTube") },
+                            headlineContent = { Text(stringResource(R.string.common_youtube)) },
                             supportingContent = { Text(stringResource(R.string.common_not_implemented)) },
                             modifier = Modifier.clickable { },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
@@ -801,6 +878,26 @@ fun SettingsScreen(
                                 }
                             )
                         }
+
+                        ListItem(
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Outlined.Info,
+                                    contentDescription = stringResource(R.string.settings_cover_source_badge),
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = { Text(stringResource(R.string.settings_cover_source_badge)) },
+                            supportingContent = { Text(stringResource(R.string.settings_cover_source_badge_desc)) },
+                            trailingContent = {
+                                Switch(
+                                    checked = showCoverSourceBadge,
+                                    onCheckedChange = onShowCoverSourceBadgeChange
+                                )
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
 
                         ListItem(
                             leadingContent = {
@@ -1012,7 +1109,9 @@ fun SettingsScreen(
                                 )
                             },
                             headlineContent = { Text(stringResource(R.string.quality_netease_default)) },
-                            supportingContent = { Text("$qualityLabel - $preferredQuality") },
+                            supportingContent = {
+                                Text(stringResource(R.string.common_label_value_format, qualityLabel, preferredQuality))
+                            },
                             modifier = Modifier.clickable { showQualityDialog = true },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
@@ -1027,7 +1126,9 @@ fun SettingsScreen(
                                 )
                             },
                             headlineContent = { Text(stringResource(R.string.quality_bili_default)) },
-                            supportingContent = { Text("$biliQualityLabel - $biliPreferredQuality") },
+                            supportingContent = {
+                                Text(stringResource(R.string.common_label_value_format, biliQualityLabel, biliPreferredQuality))
+                            },
                             modifier = Modifier.clickable { showBiliQualityDialog = true },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
@@ -1297,7 +1398,7 @@ fun SettingsScreen(
                         ListItem(
                             leadingContent = {
                                 Icon(
-                                    Icons.Outlined.PlaylistPlay,
+                                    Icons.AutoMirrored.Outlined.PlaylistPlay,
                                     contentDescription = stringResource(R.string.settings_current_playlist),
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -1703,6 +1804,25 @@ fun SettingsScreen(
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                             )
 
+                            ListItem(
+                                leadingContent = {
+                                    Icon(
+                                        Icons.Outlined.Error,
+                                        contentDescription = stringResource(R.string.github_sync_silent_failure),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                },
+                                headlineContent = { Text(stringResource(R.string.github_sync_silent_failure)) },
+                                supportingContent = { Text(stringResource(R.string.github_sync_silent_failure_desc)) },
+                                trailingContent = {
+                                    Switch(
+                                        checked = silentGitHubSyncFailure,
+                                        onCheckedChange = onSilentGitHubSyncFailureChange
+                                    )
+                                },
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                            )
+
                             HapticTextButton(
                                 onClick = { showClearGitHubConfigDialog = true },
                                 modifier = Modifier.padding(start = 16.dp)
@@ -1800,11 +1920,11 @@ fun SettingsScreen(
                     leadingContent = {
                         Icon(
                             imageVector = Icons.Outlined.Verified,
-                            contentDescription = "Build UUID",
+                            contentDescription = stringResource(R.string.settings_build_uuid),
                             tint = MaterialTheme.colorScheme.onSurface
                         )
                     },
-                    headlineContent = { Text("Build UUID", style = MaterialTheme.typography.titleMedium) },
+                    headlineContent = { Text(stringResource(R.string.settings_build_uuid), style = MaterialTheme.typography.titleMedium) },
                     supportingContent = { Text(BuildConfig.BUILD_UUID) },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
@@ -1822,8 +1942,12 @@ fun SettingsScreen(
                     },
                     headlineContent = { Text(stringResource(R.string.common_version), style = MaterialTheme.typography.titleMedium) },
                     supportingContent = {
-                        val hint = if (!devModeEnabled) "" else "（DEBUG MODE）"
-                        Text("${BuildConfig.VERSION_NAME} $hint")
+                        val suffix = if (devModeEnabled) {
+                            " (${stringResource(R.string.settings_version_debug_suffix)})"
+                        } else {
+                            ""
+                        }
+                        Text("${BuildConfig.VERSION_NAME}$suffix")
                     },
                     modifier = Modifier.clickable {
                         if (!devModeEnabled) {
@@ -1863,12 +1987,12 @@ fun SettingsScreen(
                     leadingContent = {
                         Icon(
                             painter = painterResource(id = R.drawable.ic_github),
-                            contentDescription = "GitHub",
+                            contentDescription = stringResource(R.string.common_github),
                             tint = MaterialTheme.colorScheme.onSurface
                         )
                     },
-                    headlineContent = { Text("GitHub") },
-                    supportingContent = { Text("github.com/cwuom/NeriPlayer") },
+                    headlineContent = { Text(stringResource(R.string.common_github)) },
+                    supportingContent = { Text(stringResource(R.string.settings_github_repo_url)) },
                     modifier = Modifier.clickable {
                         val intent = Intent(
                             Intent.ACTION_VIEW,
@@ -1903,7 +2027,7 @@ fun SettingsScreen(
                                 if (level == biliPreferredQuality) {
                                     Icon(
                                         imageVector = Icons.Filled.Check,
-                                        contentDescription = "Selected",
+                                        contentDescription = stringResource(R.string.common_selected),
                                         tint = MaterialTheme.colorScheme.primary
                                     )
                                 }
@@ -2104,7 +2228,7 @@ fun SettingsScreen(
                                 if (level == preferredQuality) {
                                     Icon(
                                         imageVector = Icons.Filled.Check,
-                                        contentDescription = "Selected",
+                                        contentDescription = stringResource(R.string.common_selected),
                                         tint = MaterialTheme.colorScheme.primary
                                     )
                                 }
@@ -2198,8 +2322,8 @@ fun SettingsScreen(
                     OutlinedTextField(
                         value = githubToken,
                         onValueChange = { githubToken = it },
-                        label = { Text("GitHub Token") },
-                        placeholder = { Text("ghp_xxxxxxxxxxxx") },
+                        label = { Text(stringResource(R.string.settings_github_token_label)) },
+                        placeholder = { Text(stringResource(R.string.settings_github_token_placeholder)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -2257,7 +2381,7 @@ fun SettingsScreen(
                                 value = existingRepoName,
                                 onValueChange = { existingRepoName = it },
                                 label = { Text(stringResource(R.string.sync_repo_full_name)) },
-                                placeholder = { Text("username/repo-name") },
+                                placeholder = { Text(stringResource(R.string.settings_sync_repo_placeholder)) },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -2616,7 +2740,7 @@ private fun ColorPickerItem(
             }
             Icon(
                 imageVector = Icons.Default.Check,
-                contentDescription = "Selected",
+                contentDescription = stringResource(R.string.common_selected),
                 tint = contentColor
             )
         }

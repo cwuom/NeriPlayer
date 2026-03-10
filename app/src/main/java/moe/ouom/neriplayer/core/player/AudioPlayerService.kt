@@ -33,9 +33,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.first
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.MainActivity
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.FavoritesPlaylist
 import moe.ouom.neriplayer.data.sameIdentityAs
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
@@ -89,8 +92,12 @@ class AudioPlayerService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        // 确保 PlayerManager 已初始化（避免阻塞主线程读取 DataStore）
-        PlayerManager.initialize(application as Application)
+        val maxCacheSize = runCatching {
+            runBlocking(Dispatchers.IO) {
+                AppContainer.settingsRepo.maxCacheSizeBytesFlow.first()
+            }
+        }.getOrDefault(1024L * 1024 * 1024)
+        PlayerManager.initialize(application as Application, maxCacheSize)
 
         mediaSession = MediaSessionCompat(this, "NeriPlayerSession").apply {
             setCallback(mediaSessionCallback)

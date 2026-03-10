@@ -29,6 +29,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.github.*
 
 /**
@@ -81,13 +82,16 @@ class GitHubSyncViewModel : ViewModel() {
                     isValidating = false,
                     tokenValid = true,
                     username = username,
-                    successMessage = "Token verified: $username"  // Localized in UI
+                    successMessage = context.getString(R.string.github_token_verify_success, username)
                 )
             } else {
                 _uiState.value = _uiState.value.copy(
                     isValidating = false,
                     tokenValid = false,
-                    errorMessage = "Token verification failed: ${result.exceptionOrNull()?.message}"  // Localized in UI
+                    errorMessage = context.getString(
+                        R.string.github_token_verify_failed,
+                        result.exceptionOrNull()?.message ?: context.getString(R.string.github_sync_failed_message)
+                    )
                 )
             }
         }
@@ -99,7 +103,7 @@ class GitHubSyncViewModel : ViewModel() {
     fun createRepository(context: Context, repoName: String) {
         val token = storage?.getToken()
         if (token == null) {
-            _uiState.value = _uiState.value.copy(errorMessage = "Please configure Token first")  // Localized in UI
+            _uiState.value = _uiState.value.copy(errorMessage = context.getString(R.string.github_token_required))
             return
         }
 
@@ -117,12 +121,15 @@ class GitHubSyncViewModel : ViewModel() {
                     repoOwner = repo.fullName.split("/")[0],
                     repoName = repo.name,
                     isConfigured = true,
-                    successMessage = "Repository created: ${repo.fullName}"  // Localized in UI
+                    successMessage = context.getString(R.string.github_repo_create_success, repo.fullName)
                 )
             } else {
                 _uiState.value = _uiState.value.copy(
                     isCreatingRepo = false,
-                    errorMessage = "Repository creation failed: ${result.exceptionOrNull()?.message}"  // Localized in UI
+                    errorMessage = context.getString(
+                        R.string.github_repo_create_failed,
+                        result.exceptionOrNull()?.message ?: context.getString(R.string.github_sync_failed_message)
+                    )
                 )
             }
         }
@@ -134,13 +141,13 @@ class GitHubSyncViewModel : ViewModel() {
     fun useExistingRepository(context: Context, fullRepoName: String) {
         val token = storage?.getToken()
         if (token == null) {
-            _uiState.value = _uiState.value.copy(errorMessage = "Please configure Token first")  // Localized in UI
+            _uiState.value = _uiState.value.copy(errorMessage = context.getString(R.string.github_token_required))
             return
         }
 
         val parts = fullRepoName.split("/")
         if (parts.size != 2) {
-            _uiState.value = _uiState.value.copy(errorMessage = "Repository format error, should be: owner/repo")  // Localized in UI
+            _uiState.value = _uiState.value.copy(errorMessage = context.getString(R.string.github_repo_format_error))
             return
         }
 
@@ -160,12 +167,15 @@ class GitHubSyncViewModel : ViewModel() {
                     repoOwner = owner,
                     repoName = repo,
                     isConfigured = true,
-                    successMessage = "Repository configured: $fullRepoName"  // Localized in UI
+                    successMessage = context.getString(R.string.github_repo_config_success, fullRepoName)
                 )
             } else {
                 _uiState.value = _uiState.value.copy(
                     isCheckingRepo = false,
-                    errorMessage = "Repository not found or no access: ${result.exceptionOrNull()?.message}"  // Localized in UI
+                    errorMessage = context.getString(
+                        R.string.github_repo_not_found,
+                        result.exceptionOrNull()?.message ?: fullRepoName
+                    )
                 )
             }
         }
@@ -183,17 +193,23 @@ class GitHubSyncViewModel : ViewModel() {
 
             if (result.isSuccess) {
                 val syncResult = result.getOrNull()!!
-                storage?.saveLastSyncTime(System.currentTimeMillis())
-                _uiState.value = _uiState.value.copy(
-                    isSyncing = false,
-                    syncResult = syncResult,
-                    lastSyncTime = System.currentTimeMillis(),
-                    successMessage = syncResult.message
-                )
+                if (syncResult.success) {
+                    storage?.saveLastSyncTime(System.currentTimeMillis())
+                    _uiState.value = _uiState.value.copy(
+                        isSyncing = false,
+                        syncResult = syncResult,
+                        lastSyncTime = System.currentTimeMillis(),
+                        successMessage = syncResult.message
+                    )
 
-                // 启动定期同步
-                if (_uiState.value.autoSyncEnabled) {
-                    GitHubSyncWorker.schedulePeriodicSync(context)
+                    if (_uiState.value.autoSyncEnabled) {
+                        GitHubSyncWorker.schedulePeriodicSync(context)
+                    }
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        isSyncing = false,
+                        errorMessage = syncResult.message
+                    )
                 }
             } else {
                 val error = result.exceptionOrNull()
@@ -203,12 +219,15 @@ class GitHubSyncViewModel : ViewModel() {
                     clearConfiguration(context)
                     _uiState.value = _uiState.value.copy(
                         isSyncing = false,
-                        errorMessage = "GitHub Token expired, please reconfigure"  // Localized in UI
+                        errorMessage = context.getString(R.string.github_token_expired)
                     )
                 } else {
                     _uiState.value = _uiState.value.copy(
                         isSyncing = false,
-                        errorMessage = "Sync failed: ${error?.message}"  // Localized in UI
+                        errorMessage = context.getString(
+                            R.string.github_sync_failed,
+                            error?.message ?: context.getString(R.string.github_sync_failed_message)
+                        )
                     )
                 }
             }

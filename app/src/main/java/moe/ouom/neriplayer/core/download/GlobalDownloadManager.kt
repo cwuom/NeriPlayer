@@ -40,6 +40,8 @@ import kotlinx.coroutines.delay
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.data.LocalMediaSupport
+import moe.ouom.neriplayer.data.LocalSongSupport
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import java.io.File
@@ -259,7 +261,7 @@ object GlobalDownloadManager {
         val hashIdFile = File(lyricsDir, "${songId}.lrc")
         if (hashIdFile.exists()) {
             return try {
-                hashIdFile.readText()
+                LocalMediaSupport.readTextFile(hashIdFile)
             } catch (e: Exception) {
                 NPLogger.w("GlobalDownloadManager", "读取歌词文件失败: ${hashIdFile.name}")
                 null
@@ -270,7 +272,7 @@ object GlobalDownloadManager {
         val baseNameFile = File(lyricsDir, "$baseName.lrc")
         if (baseNameFile.exists()) {
             return try {
-                baseNameFile.readText()
+                LocalMediaSupport.readTextFile(baseNameFile)
             } catch (e: Exception) {
                 NPLogger.w("GlobalDownloadManager", "读取歌词文件失败: ${baseNameFile.name}")
                 null
@@ -288,10 +290,21 @@ object GlobalDownloadManager {
             try {
                 val file = File(song.filePath)
                 if (file.exists() && file.delete()) {
-                    // 删除歌词文件
-                    val lyricsFile = File(song.filePath.replaceAfterLast('.', "lrc"))
-                    if (lyricsFile.exists()) {
-                        lyricsFile.delete()
+                    AudioDownloadManager.getManagedLyricFiles(
+                        context,
+                        SongItem(
+                            id = song.id,
+                            name = song.name,
+                            artist = song.artist,
+                            album = song.album,
+                            albumId = 0L,
+                            durationMs = 0L,
+                            coverUrl = song.coverPath
+                        )
+                    ).forEach { lyricFile ->
+                        if (lyricFile.exists()) {
+                            lyricFile.delete()
+                        }
                     }
                     
                     // 删除封面文件
@@ -321,6 +334,11 @@ object GlobalDownloadManager {
             if (file.exists()) {
                 // 获取音频文件的实际时长
                 val durationMs = getAudioDuration(context, file)
+                val mediaUri = FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    file
+                )
                 
                 // 使用PlayerManager播放本地文件
                 val songItem = SongItem(
@@ -331,6 +349,7 @@ object GlobalDownloadManager {
                     albumId = 0L,
                     durationMs = durationMs,
                     coverUrl = song.coverPath,
+                    mediaUri = mediaUri.toString(),
                     matchedLyric = song.matchedLyric,
                     userLyricOffsetMs = 0L
                 )
@@ -370,7 +389,7 @@ object GlobalDownloadManager {
         scope.launch {
             try {
                 // 添加下载任务，如果已存在则跳过
-                if (!addDownloadTask(song)) {
+                if (shouldSkipDownload(context, song) || !addDownloadTask(context, song)) {
                     return@launch
                 }
 
@@ -419,8 +438,10 @@ object GlobalDownloadManager {
         scope.launch {
             try {
                 // 添加所有下载任务，过滤已存在的
-                val newSongs = songs.filter { song ->
-                    addDownloadTask(song)
+                val newSongs = songs
+                    .filterNot { shouldSkipDownload(context, it) }
+                    .filter { song ->
+                    addDownloadTask(context, song)
                 }
 
                 if (newSongs.isEmpty()) {
@@ -444,7 +465,11 @@ object GlobalDownloadManager {
     /**
      * 添加下载任务
      */
-    private fun addDownloadTask(song: SongItem): Boolean {
+    private fun addDownloadTask(context: Context, song: SongItem): Boolean {
+        if (shouldSkipDownload(context, song)) {
+            return false
+        }
+
         val existingTask = _downloadTasks.value.find { it.song.id == song.id }
         if (existingTask != null) {
             // 如果任务已完成或已取消，移除旧任务，允许重新下载
@@ -464,6 +489,15 @@ object GlobalDownloadManager {
         )
         _downloadTasks.value = _downloadTasks.value + newTask
         NPLogger.d("GlobalDownloadManager", "添加新下载任务: ${song.name}")
+        return true
+    }
+
+    private fun shouldSkipDownload(context: Context, song: SongItem): Boolean {
+        if (!LocalSongSupport.isLocalSong(song, context)) {
+            return false
+        }
+
+        NPLogger.d("GlobalDownloadManager", "Skip local song download: ${song.name}")
         return true
     }
     

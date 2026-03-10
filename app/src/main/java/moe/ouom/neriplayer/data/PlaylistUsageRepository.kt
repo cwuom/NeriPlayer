@@ -3,9 +3,12 @@ package moe.ouom.neriplayer.data
 import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import java.io.File
 
 data class UsageEntry(
@@ -13,14 +16,18 @@ data class UsageEntry(
     val name: String,
     val picUrl: String?,
     val trackCount: Int,
-    val source: String,       // "netease" | "bilibili" | "local"
+    val source: String, // "netease" | "bilibili" | "local"
     val lastOpened: Long,
     val openCount: Int,
     val fid: Long? = null,
     val mid: Long? = null,
-    )
+)
 
 class PlaylistUsageRepository(private val app: Context) {
+    companion object {
+        const val SOURCE_LOCAL = "local"
+    }
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val gson = Gson()
     private val file: File by lazy { File(app.filesDir, "playlist_usage.json") }
@@ -29,25 +36,40 @@ class PlaylistUsageRepository(private val app: Context) {
 
     private fun load(): List<UsageEntry> {
         val list: List<UsageEntry> = try {
-            if (!file.exists()) emptyList() else gson.fromJson(
-                file.readText(),
-                object : TypeToken<List<UsageEntry>>() {}.type
-            )
+            if (!file.exists()) {
+                emptyList()
+            } else {
+                gson.fromJson<List<UsageEntry>>(
+                    file.readText(),
+                    object : TypeToken<List<UsageEntry>>() {}.type
+                ) ?: emptyList()
+            }
         } catch (_: Throwable) {
             emptyList()
         }
 
-        val comparator = compareByDescending<UsageEntry> { it.lastOpened }
-            .thenByDescending { it.openCount }
-
-        return list.sortedWith(comparator).take(100)
+        return normalizeEntries(list)
     }
+
     private fun saveAsync(list: List<UsageEntry>) {
         scope.launch { runCatching { file.writeText(gson.toJson(list)) } }
     }
 
+    private fun normalizeEntries(list: List<UsageEntry>): List<UsageEntry> {
+        return list.sortedWith(
+            compareByDescending<UsageEntry> { it.lastOpened }
+                .thenByDescending { it.openCount }
+        ).take(100)
+    }
+
     fun recordOpen(
-        id: Long, name: String, picUrl: String?, trackCount: Int, fid: Long = 0, mid: Long = 0, source: String,
+        id: Long,
+        name: String,
+        picUrl: String?,
+        trackCount: Int,
+        fid: Long = 0,
+        mid: Long = 0,
+        source: String,
         now: Long = System.currentTimeMillis()
     ) {
         val data = _flow.value.toMutableList()
@@ -66,19 +88,32 @@ class PlaylistUsageRepository(private val app: Context) {
         } else {
             data.add(
                 UsageEntry(
-                    id, name, picUrl, trackCount, source, lastOpened = now, openCount = 1, fid, mid
+                    id = id,
+                    name = name,
+                    picUrl = picUrl,
+                    trackCount = trackCount,
+                    source = source,
+                    lastOpened = now,
+                    openCount = 1,
+                    fid = fid,
+                    mid = mid
                 )
             )
         }
-        val out = data.sortedWith(compareByDescending<UsageEntry> { it.lastOpened }.thenByDescending { it.openCount })
-            .take(100)
+        val out = normalizeEntries(data)
         _flow.value = out
         saveAsync(out)
     }
 
-    /** 只更新歌单信息，不改变打开时间和顺序 */
+    /** 仅刷新歌单信息，不改动最近打开时间与排序。 */
     fun updateInfo(
-        id: Long, name: String, picUrl: String?, trackCount: Int, fid: Long = 0, mid: Long = 0, source: String
+        id: Long,
+        name: String,
+        picUrl: String?,
+        trackCount: Int,
+        fid: Long = 0,
+        mid: Long = 0,
+        source: String
     ) {
         val data = _flow.value.toMutableList()
         val idx = data.indexOfFirst { it.id == id && it.source == source }
@@ -96,7 +131,50 @@ class PlaylistUsageRepository(private val app: Context) {
         }
     }
 
-    /** 从继续播放列表中移除指定项 */
+    /**
+     * 同步本地歌单卡片信息。
+     * 已删除的歌单会被移除，名称/封面/歌曲数变化会刷新展示。
+     */
+    fun syncLocalEntries(playlists: List<LocalPlaylist>) {
+        val current = _flow.value
+        if (current.none { it.source == SOURCE_LOCAL }) return
+
+        val playlistsById = playlists.associateBy(LocalPlaylist::id)
+        var changed = false
+        val updated = current.mapNotNull { entry ->
+            if (entry.source != SOURCE_LOCAL) return@mapNotNull entry
+
+            val playlist = playlistsById[entry.id] ?: run {
+                changed = true
+                return@mapNotNull null
+            }
+
+            val refreshedPicUrl = playlist.displayCoverUrl()
+            val refreshedTrackCount = playlist.songs.size
+            if (
+                entry.name == playlist.name &&
+                entry.picUrl == refreshedPicUrl &&
+                entry.trackCount == refreshedTrackCount
+            ) {
+                entry
+            } else {
+                changed = true
+                entry.copy(
+                    name = playlist.name,
+                    picUrl = refreshedPicUrl,
+                    trackCount = refreshedTrackCount
+                )
+            }
+        }
+
+        if (!changed) return
+
+        val out = normalizeEntries(updated)
+        _flow.value = out
+        saveAsync(out)
+    }
+
+    /** 从继续播放列表中移除指定项。 */
     fun removeEntry(id: Long, source: String) {
         val data = _flow.value.toMutableList()
         data.removeAll { it.id == id && it.source == source }

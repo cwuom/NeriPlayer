@@ -6,7 +6,7 @@ import moe.ouom.neriplayer.R
 object FavoritesPlaylist {
     const val SYSTEM_ID = -1001L
 
-    private const val LEGACY_ZH_NAME = "我喜欢的音乐"
+    private const val LEGACY_ZH_NAME = "\u6211\u559c\u6b22\u7684\u97f3\u4e50"
     private const val LEGACY_EN_NAME = "My Favorite Music"
 
     fun currentName(context: Context): String = context.getString(R.string.favorite_my_music)
@@ -32,24 +32,20 @@ object FavoritesPlaylist {
         return playlist.id == SYSTEM_ID || matches(playlist.name, context)
     }
 
-    fun normalize(playlists: List<LocalPlaylist>, context: Context): List<LocalPlaylist> {
-        val favorites = playlists.filter { isSystemPlaylist(it, context) }
-        val others = playlists.filterNot { isSystemPlaylist(it, context) }
-
-        val mergedFavorites = LocalPlaylist(
+    fun merge(playlists: List<LocalPlaylist>, context: Context): LocalPlaylist {
+        return LocalPlaylist(
             id = SYSTEM_ID,
             name = currentName(context),
-            songs = favorites
+            songs = playlists
                 .flatMap { it.songs }
                 .distinctBy { it.identity() }
                 .toMutableList(),
-            modifiedAt = favorites.maxOfOrNull { it.modifiedAt } ?: System.currentTimeMillis(),
-            customCoverUrl = favorites.lastOrNull { !it.customCoverUrl.isNullOrBlank() }?.customCoverUrl
+            modifiedAt = playlists.maxOfOrNull { it.modifiedAt } ?: System.currentTimeMillis(),
+            customCoverUrl = playlists.lastOrNull { !it.customCoverUrl.isNullOrBlank() }?.customCoverUrl
         )
+    }
 
-        return buildList {
-            add(mergedFavorites)
-            addAll(others)
-        }
+    fun normalize(playlists: List<LocalPlaylist>, context: Context): List<LocalPlaylist> {
+        return SystemLocalPlaylists.normalize(playlists, context)
     }
 }

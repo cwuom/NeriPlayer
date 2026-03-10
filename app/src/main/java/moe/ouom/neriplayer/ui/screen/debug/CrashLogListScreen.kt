@@ -149,8 +149,8 @@ fun CrashLogListScreen(
             if (crashLogFilesState.value.isEmpty()) {
                 item {
                     ListItem(
-                        headlineContent = { Text("暂无崩溃日志") },
-                        supportingContent = { Text("应用崩溃时会自动记录日志") }
+                        headlineContent = { Text(stringResource(R.string.crash_log_no_file)) },
+                        supportingContent = { Text(stringResource(R.string.crash_log_hint)) }
                     )
                 }
             } else {

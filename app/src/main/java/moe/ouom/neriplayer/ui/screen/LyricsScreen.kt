@@ -25,10 +25,13 @@
 
 import android.annotation.SuppressLint
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -104,11 +107,17 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.data.FavoritesPlaylist
+import moe.ouom.neriplayer.data.isLocalSong
+import moe.ouom.neriplayer.data.sameIdentityAs
 import moe.ouom.neriplayer.ui.component.AppleMusicLyric
 import moe.ouom.neriplayer.ui.component.LyricEntry
+import moe.ouom.neriplayer.ui.component.LocalSongDetailsDialog
+import moe.ouom.neriplayer.ui.component.LocalSongSyncConfirmDialog
 import moe.ouom.neriplayer.ui.component.LyricVisualSpec
 import moe.ouom.neriplayer.ui.component.WaveformSlider
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
+import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.HapticFilledIconButton
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.formatDuration
@@ -137,12 +146,17 @@ fun LyricsScreen(
     val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
     val currentPosition by PlayerManager.playbackPositionFlow.collectAsState()
     val durationMs = currentSong?.durationMs ?: 0L
+    val favoriteActionLabel = stringResource(R.string.favorite_add)
+    val playlistAddActionLabel = stringResource(R.string.playlist_add_to)
 
-    LocalContext.current
+    val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
 
     var showSongNameMenu by remember { mutableStateOf(false) }
     var showArtistMenu by remember { mutableStateOf(false) }
+    var detailSong by remember { mutableStateOf<SongItem?>(null) }
+    var pendingSyncConfirmAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var pendingSyncConfirmLabel by remember { mutableStateOf("") }
 
     // 动画状态
     var isLyricsMode by remember { mutableStateOf(false) }
@@ -150,6 +164,15 @@ fun LyricsScreen(
     // 启动进入动画
     LaunchedEffect(Unit) {
         isLyricsMode = true
+    }
+
+    fun launchWithLocalSyncWarning(song: SongItem?, actionLabel: String, action: () -> Unit) {
+        if (song?.isLocalSong() == true) {
+            pendingSyncConfirmLabel = actionLabel
+            pendingSyncConfirmAction = action
+        } else {
+            action()
+        }
     }
 
     // 封面动画
@@ -304,14 +327,13 @@ fun LyricsScreen(
 
             // 收藏按钮（与 NowPlaying 保持一致的逻辑）
             val playlists by PlayerManager.playlistsFlow.collectAsState()
-            val favoritePlaylistName = stringResource(R.string.lyrics_favorite_playlist)
-            val isFavoriteComputed = remember(currentSong, playlists, favoritePlaylistName) {
+            val isFavoriteComputed = remember(currentSong, playlists) {
                 val song = currentSong
                 if (song == null) {
                     false
                 } else {
-                    val fav = playlists.firstOrNull { it.name == "我喜欢的音乐" || it.name == "My Favorite Music" }
-                    fav?.songs?.any { it.id == song.id && it.album == song.album } == true
+                    val fav = playlists.firstOrNull { FavoritesPlaylist.matches(it.name, context) }
+                    fav?.songs?.any { it.sameIdentityAs(song) } == true
                 }
             }
             var favOverride by remember(currentSong) { mutableStateOf<Boolean?>(null) }
@@ -321,8 +343,17 @@ fun LyricsScreen(
                 onClick = {
                     if (currentSong == null) return@HapticIconButton
                     val willFav = !isFavorite
-                    favOverride = willFav
-                    if (willFav) PlayerManager.addCurrentToFavorites() else PlayerManager.removeCurrentFromFavorites()
+                    launchWithLocalSyncWarning(
+                        song = currentSong,
+                        actionLabel = favoriteActionLabel
+                    ) {
+                        favOverride = willFav
+                        if (willFav) {
+                            PlayerManager.addCurrentToFavorites()
+                        } else {
+                            PlayerManager.removeCurrentFromFavorites()
+                        }
+                    }
                 },
                 modifier = Modifier.size(48.dp)
                     .then(
@@ -377,6 +408,7 @@ fun LyricsScreen(
                     originalSong = currentSong!!,
                     queue = displayedQueue,
                     onDismiss = { showMoreOptions = false },
+                    onShowSongDetails = { detailSong = it },
                     onEnterAlbum = onEnterAlbum,
                     onNavigateUp = onNavigateBack,
                     snackbarHostState = snackbarHostState,
@@ -830,8 +862,13 @@ fun LyricsScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                        PlayerManager.addCurrentToPlaylist(pl.id)
-                                        showAddSheet = false
+                                        launchWithLocalSyncWarning(
+                                            song = currentSong,
+                                            actionLabel = playlistAddActionLabel
+                                        ) {
+                                            PlayerManager.addCurrentToPlaylist(pl.id)
+                                            showAddSheet = false
+                                        }
                                     }
                                     .padding(horizontal = 24.dp, vertical = 16.dp),
                                 verticalAlignment = Alignment.CenterVertically
@@ -845,6 +882,28 @@ fun LyricsScreen(
                     Spacer(Modifier.height(12.dp))
                 }
             }
+        }
+
+        detailSong?.let { song ->
+            LocalSongDetailsDialog(
+                song = song,
+                onDismiss = { detailSong = null }
+            )
+        }
+
+        pendingSyncConfirmAction?.let { action ->
+            LocalSongSyncConfirmDialog(
+                actionLabel = pendingSyncConfirmLabel,
+                onConfirm = {
+                    pendingSyncConfirmAction = null
+                    pendingSyncConfirmLabel = ""
+                    action()
+                },
+                onDismiss = {
+                    pendingSyncConfirmAction = null
+                    pendingSyncConfirmLabel = ""
+                }
+            )
         }
     }
 }

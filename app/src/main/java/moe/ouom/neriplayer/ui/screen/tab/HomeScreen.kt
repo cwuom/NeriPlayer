@@ -26,8 +26,8 @@ package moe.ouom.neriplayer.ui.screen.tab
 import android.annotation.SuppressLint
 import android.app.Application
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -71,6 +71,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -98,8 +99,10 @@ import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.UsageEntry
 import moe.ouom.neriplayer.data.FavoritePlaylistRepository
+import moe.ouom.neriplayer.data.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.PlaylistUsageRepository
+import moe.ouom.neriplayer.data.UsageEntry
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.HomeViewModel
@@ -129,18 +132,27 @@ fun HomeScreen(
     )
     val ui by vm.uiState.collectAsState()
     val usage by AppContainer.playlistUsageRepo.frequentPlaylistsFlow.collectAsState(initial = emptyList())
+    val localPlaylistRepo = remember(context) { LocalPlaylistRepository.getInstance(context) }
+    val localPlaylists by localPlaylistRepo.playlists.collectAsState()
+
+    LaunchedEffect(usage, localPlaylists) {
+        if (usage.any { it.source == PlaylistUsageRepository.SOURCE_LOCAL }) {
+            AppContainer.playlistUsageRepo.syncLocalEntries(localPlaylists)
+        }
+    }
 
     // 推荐歌曲（热歌 / 私人雷达）
     val hotSongs by vm.hotSongsFlow.collectAsState()
     val radarSongs by vm.radarSongsFlow.collectAsState()
 
-    val isEnglish = LocalConfiguration.current.locales[0]?.language == "en"
-    val titleOptions = if (isEnglish) {
-        listOf("NeriPlayer")
-    } else {
-        listOf("音理音理音?", "音理音理!", "音理音理!!", "音理音理~", "喵~", "音理!", "NeriPlayer")
-    }
-    val appBarTitle = rememberSaveable { titleOptions.random() }
+    val titleOptions = listOf(
+        stringResource(R.string.app_name),
+        stringResource(R.string.home_title_brand_loud),
+        stringResource(R.string.home_title_brand_wave),
+        stringResource(R.string.home_title_brand_call)
+    ).distinct()
+    val titleSeed = rememberSaveable { (0..Int.MAX_VALUE).random() }
+    val appBarTitle = titleOptions[titleSeed % titleOptions.size]
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -152,133 +164,156 @@ fun HomeScreen(
                 .fillMaxSize()
                 .nestedScroll(scrollBehavior.nestedScrollConnection)
         ) {
-        LargeTopAppBar(
-            title = { Text(appBarTitle) },
-            actions = {
-                HapticIconButton(onClick = { vm.refreshRecommend(); vm.loadHomeRecommendations() }) {
-                    Icon(imageVector = Icons.Filled.Refresh, contentDescription = stringResource(R.string.recommend_refresh))
-                }
-            },
-            scrollBehavior = scrollBehavior,
-            colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = Color.Transparent,
-                scrolledContainerColor = Color.Transparent
-            )
-        )
-
-        Card(
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.0f)
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-            modifier = Modifier
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-                .fillMaxSize()
-        ) {
-            when {
-                ui.loading -> {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(24.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        CircularProgressIndicator()
-                        Text(text = stringResource(R.string.home_loading), style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
-
-                ui.error != null -> {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            text = stringResource(R.string.home_load_failed, ui.error ?: ""),
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodyMedium
+            LargeTopAppBar(
+                title = { Text(appBarTitle) },
+                actions = {
+                    HapticIconButton(onClick = { vm.refreshRecommend(); vm.loadHomeRecommendations() }) {
+                        Icon(
+                            imageVector = Icons.Filled.Refresh,
+                            contentDescription = stringResource(R.string.recommend_refresh)
                         )
-                        Text(text = stringResource(R.string.home_retry_hint), style = MaterialTheme.typography.bodySmall)
                     }
-                }
+                },
+                scrollBehavior = scrollBehavior,
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent,
+                    scrolledContainerColor = Color.Transparent
+                )
+            )
 
-                else -> {
-                    val miniPlayerHeight = LocalMiniPlayerHeight.current
-                    LazyVerticalGrid(
-                        state = gridState,
-                        columns = GridCells.Adaptive(120.dp),
-                        contentPadding = PaddingValues(
-                            start = 8.dp, end = 8.dp, top = 8.dp, bottom = 8.dp + miniPlayerHeight
-                        ),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        // 继续播放 //
-                        if (usage.isNotEmpty()) {
-                            item(span = { GridItemSpan(maxLineSpan) }) {
-                                SectionHeader(icon = Icons.Outlined.History, title = stringResource(R.string.player_continue))
-                            }
-                            item(span = { GridItemSpan(maxLineSpan) }) {
-                                ContinueSection(
-                                    items = usage.take(12),
-                                    onClick = { entry -> onOpenRecent(entry) }
-                                )
-                            }
-                        }
-
-                        // 热力飙升 //
-                        if (hotSongs.isNotEmpty()) {
-                            item(span = { GridItemSpan(maxLineSpan) }) {
-                                SectionHeader(icon = Icons.Outlined.Bolt, title = stringResource(R.string.recommend_trending))
-                            }
-                            item(span = { GridItemSpan(maxLineSpan) }) {
-                                ResponsiveSongPagerList(
-                                    songs = hotSongs,
-                                    onSongClick = onSongClick
-                                )
-                            }
-                        }
-
-                        // 私人雷达 //
-                        if (radarSongs.isNotEmpty()) {
-                            item(span = { GridItemSpan(maxLineSpan) }) {
-                                SectionHeader(icon = Icons.Outlined.Radar, title = stringResource(R.string.recommend_radar))
-                            }
-                            item(span = { GridItemSpan(maxLineSpan) }) {
-                                ResponsiveSongPagerList(
-                                    songs = radarSongs,
-                                    onSongClick = onSongClick
-                                )
-                            }
-                        }
-
-                        // 为你推荐//
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            SectionHeader(icon = Icons.Outlined.Star, title = stringResource(R.string.recommend_for_you))
-                        }
-                        items(items = ui.playlists, key = { it.id }) { item ->
-                            PlaylistCard(
-                                playlist = item,
-                                onClick = { onItemClick(item) },
-                                onShowSnackbar = { message ->
-                                    scope.launch {
-                                        snackbarHostState.showSnackbar(message)
-                                    }
-                                }
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.0f)
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                modifier = Modifier
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .fillMaxSize()
+            ) {
+                when {
+                    ui.loading -> {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(24.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            CircularProgressIndicator()
+                            Text(
+                                text = stringResource(R.string.home_loading),
+                                style = MaterialTheme.typography.bodyMedium
                             )
+                        }
+                    }
+
+                    ui.error != null -> {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = stringResource(R.string.home_load_failed, ui.error ?: ""),
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = stringResource(R.string.home_retry_hint),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+
+                    else -> {
+                        val miniPlayerHeight = LocalMiniPlayerHeight.current
+                        LazyVerticalGrid(
+                            state = gridState,
+                            columns = GridCells.Adaptive(120.dp),
+                            contentPadding = PaddingValues(
+                                start = 8.dp,
+                                end = 8.dp,
+                                top = 8.dp,
+                                bottom = 8.dp + miniPlayerHeight
+                            ),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            // 继续播放
+                            if (usage.isNotEmpty()) {
+                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                    SectionHeader(
+                                        icon = Icons.Outlined.History,
+                                        title = stringResource(R.string.player_continue)
+                                    )
+                                }
+                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                    ContinueSection(
+                                        items = usage.take(12),
+                                        onClick = { entry -> onOpenRecent(entry) }
+                                    )
+                                }
+                            }
+
+                            // 热门推荐
+                            if (hotSongs.isNotEmpty()) {
+                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                    SectionHeader(
+                                        icon = Icons.Outlined.Bolt,
+                                        title = stringResource(R.string.recommend_trending)
+                                    )
+                                }
+                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                    ResponsiveSongPagerList(
+                                        songs = hotSongs,
+                                        onSongClick = onSongClick
+                                    )
+                                }
+                            }
+
+                            // 私人雷达
+                            if (radarSongs.isNotEmpty()) {
+                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                    SectionHeader(
+                                        icon = Icons.Outlined.Radar,
+                                        title = stringResource(R.string.recommend_radar)
+                                    )
+                                }
+                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                    ResponsiveSongPagerList(
+                                        songs = radarSongs,
+                                        onSongClick = onSongClick
+                                    )
+                                }
+                            }
+
+                            // 为你推荐
+                            item(span = { GridItemSpan(maxLineSpan) }) {
+                                SectionHeader(
+                                    icon = Icons.Outlined.Star,
+                                    title = stringResource(R.string.recommend_for_you)
+                                )
+                            }
+                            items(items = ui.playlists, key = { it.id }) { item ->
+                                PlaylistCard(
+                                    playlist = item,
+                                    onClick = { onItemClick(item) },
+                                    onShowSnackbar = { message ->
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar(message)
+                                        }
+                                    }
+                                )
+                            }
                         }
                     }
                 }
             }
         }
-    }
 
-        // Snackbar
         SnackbarHost(
             hostState = snackbarHostState,
             modifier = Modifier
@@ -307,7 +342,7 @@ private fun SectionHeader(icon: androidx.compose.ui.graphics.vector.ImageVector,
     }
 }
 
-/** 紧凑型歌曲行（用于首页推荐区） */
+/** 紧凑型歌曲行，用于首页推荐区。 */
 @Composable
 private fun SongRowMini(
     index: Int,
@@ -322,7 +357,7 @@ private fun SongRowMini(
             .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // 索引
+        // 序号
         Text(
             text = index.toString(),
             style = MaterialTheme.typography.titleSmall,
@@ -348,7 +383,7 @@ private fun SongRowMini(
             Spacer(Modifier.width(10.dp))
         }
 
-        // 文本
+        // 文本信息
         Column(Modifier.weight(1f)) {
             Text(
                 text = song.name,
@@ -360,7 +395,7 @@ private fun SongRowMini(
                 text = listOfNotNull(
                     song.artist.takeIf { it.isNotBlank() },
                     song.album.takeIf { it.isNotBlank() }
-                ).joinToString(" · "),
+                ).joinToString(" 路 "),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodySmall,
@@ -421,7 +456,11 @@ fun PlaylistCard(
                 style = MaterialTheme.typography.titleSmall
             )
             Text(
-                text = stringResource(R.string.home_play_count_format, formatPlayCount(context, playlist.playCount), playlist.trackCount),
+                text = stringResource(
+                    R.string.home_play_count_format,
+                    formatPlayCount(context, playlist.playCount),
+                    playlist.trackCount
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -434,7 +473,15 @@ fun PlaylistCard(
             onDismissRequest = { showMenu = false }
         ) {
             DropdownMenuItem(
-                text = { Text(if (isFavorite) stringResource(R.string.home_unfavorite_playlist) else stringResource(R.string.home_favorite_playlist)) },
+                text = {
+                    Text(
+                        if (isFavorite) {
+                            stringResource(R.string.home_unfavorite_playlist)
+                        } else {
+                            stringResource(R.string.home_favorite_playlist)
+                        }
+                    )
+                },
                 onClick = {
                     showMenu = false
                     scope.launch {
@@ -442,15 +489,14 @@ fun PlaylistCard(
                             favoriteRepo.removeFavorite(playlist.id, "netease")
                             onShowSnackbar(unfavoritedText)
                         } else {
-                            // 需要先获取歌单详情才能收藏
-                            // 这里暂时只收藏基本信息，歌曲列表为空
+                            // 这里仅保存基础歌单信息，歌曲列表仍留空。
                             favoriteRepo.addFavorite(
                                 id = playlist.id,
                                 name = playlist.name,
                                 coverUrl = playlist.picUrl,
                                 trackCount = playlist.trackCount,
                                 source = "netease",
-                                songs = emptyList() // 长按收藏时不包含歌曲列表
+                                songs = emptyList() // 长按收藏时不附带完整歌曲列表
                             )
                             onShowSnackbar(favoriteSuccessText)
                         }
@@ -510,9 +556,18 @@ private fun ContinueCard(entry: UsageEntry, onClick: () -> Unit, onRemove: () ->
                 .clip(RoundedCornerShape(16.dp))
         )
         Column(modifier = Modifier.padding(6.dp)) {
-            Text(text = entry.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
-            Text(text = stringResource(R.string.home_song_count_format, entry.trackCount), style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            Text(
+                text = entry.name,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.titleSmall
+            )
+            Text(
+                text = stringResource(R.string.home_song_count_format, entry.trackCount),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1
+            )
         }
 
         DropdownMenu(
@@ -530,7 +585,6 @@ private fun ContinueCard(entry: UsageEntry, onClick: () -> Unit, onRemove: () ->
     }
 }
 
-
 @SuppressLint("ConfigurationScreenWidthHeight")
 @Composable
 private fun ResponsiveSongPagerList(
@@ -539,9 +593,9 @@ private fun ResponsiveSongPagerList(
 ) {
     val widthDp = LocalConfiguration.current.screenWidthDp
     val columns = when {
-        widthDp >= 840 -> 3   // 大平板/桌面
-        widthDp >= 600 -> 2   // 小平板
-        else -> 1             // 手机
+        widthDp >= 840 -> 3 // 大屏 / 桌面模式
+        widthDp >= 600 -> 2 // 小平板
+        else -> 1 // 手机
     }
     val rowsPerColumn = 3
     val perPage = (columns * rowsPerColumn).coerceAtLeast(1)

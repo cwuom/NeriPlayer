@@ -42,8 +42,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -51,6 +51,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -95,17 +96,18 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.FavoritesPlaylist
-import moe.ouom.neriplayer.data.displayCoverUrl
+import moe.ouom.neriplayer.data.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.LocalPlaylist
+import moe.ouom.neriplayer.data.SystemLocalPlaylists
+import moe.ouom.neriplayer.data.displayCoverUrl
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.LibraryViewModel
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
+import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.formatPlayCount
-import androidx.compose.material.icons.outlined.History
-import moe.ouom.neriplayer.util.HapticIconButton
 
 enum class LibraryTab(val labelResId: Int) {
     LOCAL(R.string.library_tab_local),
@@ -136,18 +138,15 @@ fun LibraryScreen(
     val vm: LibraryViewModel = viewModel()
     val ui by vm.uiState.collectAsState()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val defaultPlaylistName = stringResource(R.string.library_create_playlist_default)
 
-    // 使用rememberSaveable来保存当前选中的标签页索引
     var currentTabIndex by rememberSaveable { mutableStateOf(initialTabIndex) }
-    
-    // 使用rememberPagerState来管理页面状态，支持左右滑动
     val pagerState = rememberPagerState(
         initialPage = currentTabIndex,
         pageCount = { LibraryTab.entries.size }
     )
     val scope = rememberCoroutineScope()
 
-    // 当pagerState改变时，同步更新currentTabIndex并通知父组件
     LaunchedEffect(pagerState.currentPage) {
         currentTabIndex = pagerState.currentPage
         onTabIndexChange(pagerState.currentPage)
@@ -158,7 +157,6 @@ fun LibraryScreen(
             .fillMaxSize()
             .nestedScroll(scrollBehavior.nestedScrollConnection)
     ) {
-        // 大标题 AppBar
         LargeTopAppBar(
             title = { Text(stringResource(R.string.library_title)) },
             scrollBehavior = scrollBehavior,
@@ -168,12 +166,14 @@ fun LibraryScreen(
             ),
             actions = {
                 HapticIconButton(onClick = onOpenRecent) {
-                    Icon(Icons.Outlined.History, contentDescription = "最近播放")
+                    Icon(
+                        Icons.Outlined.History,
+                        contentDescription = stringResource(R.string.library_recent_played)
+                    )
                 }
             }
         )
 
-        // 顶部 Tabs
         ScrollableTabRow(
             selectedTabIndex = pagerState.currentPage,
             edgePadding = 16.dp,
@@ -184,7 +184,6 @@ fun LibraryScreen(
                 Tab(
                     selected = pagerState.currentPage == index,
                     onClick = {
-                        // 点击Tab时，使用协程来平滑滚动到对应页面
                         scope.launch {
                             pagerState.animateScrollToPage(index)
                         }
@@ -196,7 +195,6 @@ fun LibraryScreen(
             }
         }
 
-        // 使用HorizontalPager来支持左右滑动切换标签页
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
@@ -207,7 +205,7 @@ fun LibraryScreen(
                     playlists = ui.localPlaylists,
                     listState = localListState,
                     onCreate = { name ->
-                        val finalName = name.trim().ifBlank { "新建歌单" }
+                        val finalName = name.trim().ifBlank { defaultPlaylistName }
                         vm.createLocalPlaylist(finalName)
                     },
                     onClick = onLocalPlaylistClick,
@@ -218,25 +216,30 @@ fun LibraryScreen(
                         vm.deleteLocalPlaylist(playlistId)
                     }
                 )
+
                 LibraryTab.FAVORITE -> FavoritePlaylistList(
                     listState = favoriteListState,
                     onNeteasePlaylistClick = onNeteasePlaylistClick
                 )
+
                 LibraryTab.NETEASE -> NeteasePlaylistList(
                     playlists = ui.neteasePlaylists,
                     listState = neteaseListState,
                     onClick = onNeteasePlaylistClick
                 )
+
                 LibraryTab.NETEASEALBUM -> NeteaseAlbumList(
                     playlists = ui.neteaseAlbums,
                     listState = neteaseAlbumState,
                     onClick = onNeteaseAlbumClick
                 )
+
                 LibraryTab.BILI -> BiliPlaylistList(
                     playlists = ui.biliPlaylists,
                     listState = biliListState,
                     onClick = onBiliPlaylistClick
                 )
+
                 LibraryTab.QQMUSIC -> QqMusicPlaylistList(
                     playlists = emptyList(), // TODO: Add qqMusicPlaylists to LibraryUiState when QQ Music is implemented
                     listState = qqMusicListState,
@@ -279,7 +282,10 @@ private fun BiliPlaylistList(
                 ListItem(
                     headlineContent = { Text(pl.title) },
                     supportingContent = {
-                        Text(pluralStringResource(R.plurals.library_video_count_plural, pl.count, pl.count), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            pluralStringResource(R.plurals.library_video_count_plural, pl.count, pl.count),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     },
                     colors = ListItemDefaults.colors(
                         containerColor = Color.Transparent
@@ -323,6 +329,7 @@ private fun LocalPlaylistList(
     var nameError by rememberSaveable { mutableStateOf<String?>(null) }
     val focusRequester = remember { FocusRequester() }
     val context = LocalContext.current
+    val defaultPlaylistName = context.getString(R.string.library_create_playlist_default)
 
     LaunchedEffect(showDialog) {
         if (showDialog) focusRequester.requestFocus()
@@ -330,11 +337,16 @@ private fun LocalPlaylistList(
 
     fun tryCreate(): Boolean {
         val trimmedInput = newName.trim()
-        val finalName = trimmedInput.ifBlank { "新建歌单" }
+        val finalName = trimmedInput.ifBlank { defaultPlaylistName }
 
         val favoritesName = context.getString(R.string.favorite_my_music)
-        if (finalName.equals(favoritesName, ignoreCase = true)) {
+        val localFilesName = context.getString(R.string.local_files)
+        if (FavoritesPlaylist.matches(finalName, context)) {
             nameError = context.getString(R.string.library_name_reserved, favoritesName)
+            return false
+        }
+        if (LocalFilesPlaylist.matches(finalName, context)) {
+            nameError = context.getString(R.string.library_name_reserved, localFilesName)
             return false
         }
         if (playlists.any { it.name.equals(finalName, ignoreCase = true) }) {
@@ -348,6 +360,7 @@ private fun LocalPlaylistList(
         nameError = null
         return true
     }
+
     val miniPlayerHeight = LocalMiniPlayerHeight.current
 
     LazyColumn(
@@ -368,10 +381,12 @@ private fun LocalPlaylistList(
                     .animateItem()
                     .clickable { showDialog = true }
             ) {
-                ListItem(headlineContent = { Text(stringResource(R.string.library_create_new)) },
-                colors = ListItemDefaults.colors(
-                    containerColor = Color.Transparent
-                ),)
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.library_create_new)) },
+                    colors = ListItemDefaults.colors(
+                        containerColor = Color.Transparent
+                    )
+                )
             }
 
             if (showDialog) {
@@ -424,12 +439,14 @@ private fun LocalPlaylistList(
                 )
             }
         }
+
         items(
             items = playlists,
             key = { it.id }
         ) { pl ->
-            val isFavorite = FavoritesPlaylist.matches(pl.name, LocalContext.current)
-            val displayName = if (isFavorite) stringResource(R.string.favorite_my_music) else pl.name
+            val systemPlaylist = SystemLocalPlaylists.resolve(pl.id, pl.name, context)
+            val displayName = systemPlaylist?.currentName ?: pl.name
+            val isSystemPlaylist = systemPlaylist != null
 
             var showMenu by remember { mutableStateOf(false) }
             var showRenameDialog by remember { mutableStateOf(false) }
@@ -448,7 +465,7 @@ private fun LocalPlaylistList(
                     .combinedClickable(
                         onClick = { onClick(pl) },
                         onLongClick = {
-                            if (!isFavorite) {
+                            if (!isSystemPlaylist) {
                                 showMenu = true
                             }
                         }
@@ -457,7 +474,10 @@ private fun LocalPlaylistList(
                 ListItem(
                     headlineContent = { Text(displayName) },
                     supportingContent = {
-                        Text(pluralStringResource(R.plurals.library_song_count, pl.songs.size, pl.songs.size), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            pluralStringResource(R.plurals.library_song_count, pl.songs.size, pl.songs.size),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     },
                     colors = ListItemDefaults.colors(
                         containerColor = Color.Transparent
@@ -540,7 +560,9 @@ private fun LocalPlaylistList(
                 AlertDialog(
                     onDismissRequest = { showDeleteDialog = false },
                     title = { Text(stringResource(R.string.action_delete)) },
-                    text = { Text("确定要删除歌单 \"${displayName}\" 吗?") },
+                    text = {
+                        Text(stringResource(R.string.library_delete_playlist_confirm, displayName))
+                    },
                     confirmButton = {
                         HapticTextButton(
                             onClick = {
@@ -594,7 +616,11 @@ private fun NeteasePlaylistList(
                     headlineContent = { Text(pl.name) },
                     supportingContent = {
                         Text(
-                            stringResource(R.string.home_play_count_format, formatPlayCount(context, pl.playCount), pl.trackCount),
+                            stringResource(
+                                R.string.home_play_count_format,
+                                formatPlayCount(context, pl.playCount),
+                                pl.trackCount
+                            ),
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     },
@@ -702,7 +728,10 @@ private fun FavoritePlaylistList(
                     ListItem(
                         headlineContent = { Text(stringResource(R.string.playlist_no_favorite)) },
                         supportingContent = {
-                            Text(stringResource(R.string.playlist_favorite_hint), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                stringResource(R.string.playlist_favorite_hint),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         },
                         colors = ListItemDefaults.colors(
                             containerColor = Color.Transparent
@@ -751,7 +780,14 @@ private fun FavoritePlaylistList(
                     ListItem(
                         headlineContent = { Text(favorite.name) },
                         supportingContent = {
-                            Text(stringResource(R.string.library_favorite_source_format, favorite.trackCount, favorite.source), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                stringResource(
+                                    R.string.library_favorite_source_format,
+                                    favorite.trackCount,
+                                    favorite.source
+                                ),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         },
                         colors = ListItemDefaults.colors(
                             containerColor = Color.Transparent

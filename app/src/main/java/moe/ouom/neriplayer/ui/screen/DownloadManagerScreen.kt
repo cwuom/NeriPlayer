@@ -1,13 +1,7 @@
 ﻿package moe.ouom.neriplayer.ui.screen
 
-import android.Manifest
 import android.app.Application
-import android.content.pm.PackageManager
-import android.os.Build
-import android.widget.Toast
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -31,15 +25,12 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
-import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.DownloadedSong
-import moe.ouom.neriplayer.data.stableKey
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.DownloadManagerViewModel
 import moe.ouom.neriplayer.util.formatDate
@@ -70,48 +61,6 @@ fun DownloadManagerScreen(
     var searchQuery by remember { mutableStateOf("") }
     var selectionMode by remember { mutableStateOf(false) }
     var selectedSongs by remember { mutableStateOf(setOf<Long>()) }
-    var showScanSheet by remember { mutableStateOf(false) }
-    var scanning by remember { mutableStateOf(false) }
-    var scanFailed by remember { mutableStateOf(0) }
-    var scannedSongs by remember { mutableStateOf<List<moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem>>(emptyList()) }
-    var selectedScannedKeys by remember { mutableStateOf(setOf<String>()) }
-    val scope = rememberCoroutineScope()
-    val readAudioPermission = remember {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            Manifest.permission.READ_MEDIA_AUDIO
-        } else {
-            Manifest.permission.READ_EXTERNAL_STORAGE
-        }
-    }
-
-    fun startLocalAudioScan() {
-        showScanSheet = true
-        scanning = true
-        scanFailed = 0
-        scannedSongs = emptyList()
-        selectedScannedKeys = emptySet()
-        scope.launch {
-            val result = viewModel.scanLocalAudio(context)
-            scannedSongs = result.songs
-            selectedScannedKeys = result.songs.map { it.stableKey() }.toSet()
-            scanFailed = result.failedCount
-            scanning = false
-        }
-    }
-
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) {
-            startLocalAudioScan()
-        } else {
-            Toast.makeText(
-                context,
-                context.getString(R.string.download_scan_permission_required),
-                Toast.LENGTH_SHORT
-            ).show()
-        }
-    }
 
     // State for deletion confirmation dialogs
     var showSingleDeleteDialog by remember { mutableStateOf(false) }
@@ -203,20 +152,6 @@ fun DownloadManagerScreen(
                         }
                     ) {
                         Icon(Icons.Default.CloudDownload, contentDescription = stringResource(R.string.download_progress))
-                    }
-                    IconButton(
-                        onClick = {
-                            context.performHapticFeedback()
-                            if (ContextCompat.checkSelfPermission(context, readAudioPermission) ==
-                                PackageManager.PERMISSION_GRANTED
-                            ) {
-                                startLocalAudioScan()
-                            } else {
-                                permissionLauncher.launch(readAudioPermission)
-                            }
-                        }
-                    ) {
-                        Icon(Icons.Default.LibraryMusic, contentDescription = stringResource(R.string.download_scan_local))
                     }
                     IconButton(
                         onClick = {
@@ -340,109 +275,6 @@ fun DownloadManagerScreen(
                 showSingleDeleteDialog = true
             }
         )
-    }
-
-    if (showScanSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showScanSheet = false }
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text(
-                    text = stringResource(R.string.download_scan_local),
-                    style = MaterialTheme.typography.titleLarge
-                )
-                if (scanning) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        CircularProgressIndicator()
-                        Text(stringResource(R.string.download_scanning))
-                    }
-                } else {
-                    if (scanFailed > 0) {
-                        Text(
-                            text = stringResource(R.string.download_scan_failed, scanFailed),
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                    if (scannedSongs.isEmpty()) {
-                        Text(stringResource(R.string.download_scan_empty))
-                    } else {
-                        val allSelected = selectedScannedKeys.size == scannedSongs.size
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            TextButton(onClick = { selectedScannedKeys = scannedSongs.map { it.stableKey() }.toSet() }) {
-                                Text(stringResource(R.string.action_select_all))
-                            }
-                            TextButton(onClick = { selectedScannedKeys = emptySet() }) {
-                                Text(stringResource(R.string.action_deselect_all))
-                            }
-                            TextButton(onClick = {
-                                val newSel = scannedSongs.filter { it.stableKey() !in selectedScannedKeys }
-                                selectedScannedKeys = newSel.map { it.stableKey() }.toSet()
-                            }) { Text(stringResource(R.string.action_inverse_select)) }
-                        }
-                        LazyColumn(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 360.dp)
-                        ) {
-                            items(scannedSongs, key = { it.stableKey() }) { song ->
-                                val checked = song.stableKey() in selectedScannedKeys
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 8.dp)
-                                        .clickable {
-                                            selectedScannedKeys = selectedScannedKeys.toggle(song.stableKey())
-                                        },
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Checkbox(
-                                        checked = checked,
-                                        onCheckedChange = {
-                                            selectedScannedKeys = selectedScannedKeys.toggle(song.stableKey())
-                                        }
-                                    )
-                                    Column(Modifier.weight(1f)) {
-                                        Text(song.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        Text(
-                                            "${song.artist} · ${song.album}",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                    Text(formatDurationMs(song.durationMs), style = MaterialTheme.typography.bodySmall)
-                                }
-                            }
-                        }
-                        Button(
-                            enabled = selectedScannedKeys.isNotEmpty(),
-                            onClick = {
-                                context.performHapticFeedback()
-                                scope.launch {
-                                    val picked = scannedSongs.filter { it.stableKey() in selectedScannedKeys }
-                                    viewModel.importLocalSongs(context, picked)
-                                    showScanSheet = false
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(stringResource(R.string.download_scan_add_selected, selectedScannedKeys.size))
-                        }
-                    }
-                }
-            }
-        }
     }
 
     // Single song delete confirmation dialog
@@ -612,16 +444,6 @@ private fun DownloadedSongsList(
             )
         }
     }
-}
-
-private fun Set<String>.toggle(key: String): Set<String> =
-    if (contains(key)) this - key else this + key
-
-private fun formatDurationMs(durationMs: Long): String {
-    val totalSeconds = durationMs / 1000
-    val minutes = totalSeconds / 60
-    val seconds = totalSeconds % 60
-    return "%d:%02d".format(minutes, seconds)
 }
 
 @Composable

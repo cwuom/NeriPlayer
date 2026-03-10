@@ -80,6 +80,7 @@ import moe.ouom.neriplayer.core.di.AppContainer.biliCookieRepo
 import moe.ouom.neriplayer.core.di.AppContainer.settingsRepo
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.FavoritesPlaylist
+import moe.ouom.neriplayer.data.LocalSongSupport
 import moe.ouom.neriplayer.data.LocalPlaylist
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.sameIdentityAs
@@ -219,7 +220,7 @@ object PlayerManager {
 
     private val gson = Gson()
 
-    private fun isLocalSong(song: SongItem): Boolean = !song.mediaUri.isNullOrBlank()
+    private fun isLocalSong(song: SongItem): Boolean = LocalSongSupport.isLocalSong(song, application)
 
     private fun queueIndexOf(song: SongItem, playlist: List<SongItem> = currentPlaylist): Int {
         return playlist.indexOfFirst { it.sameIdentityAs(song) }
@@ -654,7 +655,13 @@ object PlayerManager {
 
         if (consecutivePlayFailures >= MAX_CONSECUTIVE_FAILURES) {
             NPLogger.e("NERI-PlayerManager", "已连续失败 $consecutivePlayFailures 次，停止播放")
-            mainScope.launch { Toast.makeText(application, "Multiple songs failed, playback stopped", Toast.LENGTH_SHORT).show() }  // Localized
+            mainScope.launch {
+                Toast.makeText(
+                    application,
+                    getLocalizedString(R.string.toast_playback_stopped),
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
             stopAndClearPlaylist()
             return
         }
@@ -1502,9 +1509,13 @@ object PlayerManager {
 
             } catch (e: Exception) {
                 mainScope.launch {
-                    Toast.makeText(application, "Match failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        application,
+                        getLocalizedString(R.string.toast_match_failed, e.message.orEmpty()),
+                        Toast.LENGTH_SHORT
+                    ).show()
                     NPLogger.e("NERI-PlayerManager", "replaceMetadataFromSearch failed: ${e.message}", e)
-                }  // Localized
+                }
             }
         }
     }

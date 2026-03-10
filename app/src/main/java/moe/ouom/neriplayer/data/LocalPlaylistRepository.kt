@@ -48,13 +48,13 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
             emptyList()
         }
 
-        _playlists.value = FavoritesPlaylist.normalize(loaded, context)
+        _playlists.value = SystemLocalPlaylists.normalize(loaded, context)
         saveToDisk(triggerSync = false)
     }
 
     private fun saveToDisk(triggerSync: Boolean = true) {
         runCatching {
-            val json = gson.toJson(FavoritesPlaylist.normalize(_playlists.value, context))
+            val json = gson.toJson(SystemLocalPlaylists.normalize(_playlists.value, context))
             val parent = file.parentFile ?: context.filesDir
             val tmp = File(parent, "${file.name}.tmp")
             tmp.writeText(json)
@@ -72,7 +72,7 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
     }
 
     private fun publish(playlists: List<LocalPlaylist>, triggerSync: Boolean = true) {
-        _playlists.value = FavoritesPlaylist.normalize(playlists, context)
+        _playlists.value = SystemLocalPlaylists.normalize(playlists, context)
         saveToDisk(triggerSync)
     }
 
@@ -89,13 +89,24 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
         }
     }
 
-    private fun sanitizePlaylistName(name: String): String {
-        val trimmed = name.trim().ifBlank { context.getString(R.string.playlist_create) }
-        return if (FavoritesPlaylist.matches(trimmed, context)) {
-            "${trimmed}_2"
-        } else {
-            trimmed
+    private fun sanitizePlaylistName(name: String, excludedPlaylistId: Long? = null): String {
+        val base = name.trim().ifBlank { context.getString(R.string.playlist_create) }
+        val occupiedNames = _playlists.value
+            .asSequence()
+            .filter { playlist -> excludedPlaylistId == null || playlist.id != excludedPlaylistId }
+            .map { it.name.lowercase() }
+            .toSet()
+
+        var candidate = base
+        var index = 2
+        while (
+            SystemLocalPlaylists.matchesReservedName(candidate, context) ||
+            candidate.lowercase() in occupiedNames
+        ) {
+            candidate = "${base}_$index"
+            index++
         }
+        return candidate
     }
 
     private fun songSet(songs: List<SongItem>): Set<SongIdentity> = songs.map { it.identity() }.toSet()
@@ -152,11 +163,11 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
     suspend fun renamePlaylist(playlistId: Long, newName: String) {
         withContext(Dispatchers.IO) {
             val updated = _playlists.value.map { playlist ->
-                if (playlist.id != playlistId || FavoritesPlaylist.isSystemPlaylist(playlist, context)) {
+                if (playlist.id != playlistId || SystemLocalPlaylists.isSystemPlaylist(playlist, context)) {
                     playlist
                 } else {
                     playlist.copy(
-                        name = sanitizePlaylistName(newName),
+                        name = sanitizePlaylistName(newName, excludedPlaylistId = playlistId),
                         modifiedAt = System.currentTimeMillis()
                     )
                 }
@@ -201,7 +212,7 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
     suspend fun deletePlaylist(playlistId: Long): Boolean {
         return withContext(Dispatchers.IO) {
             val playlist = _playlists.value.firstOrNull { it.id == playlistId } ?: return@withContext false
-            if (FavoritesPlaylist.isSystemPlaylist(playlist, context)) return@withContext false
+            if (SystemLocalPlaylists.isSystemPlaylist(playlist, context)) return@withContext false
 
             val updated = _playlists.value.filterNot { it.id == playlistId }
             runCatching {
