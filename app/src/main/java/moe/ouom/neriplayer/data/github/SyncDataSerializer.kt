@@ -28,6 +28,8 @@ import kotlinx.serialization.encodeToByteArray
 import kotlinx.serialization.decodeFromByteArray
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.protobuf.ProtoBuf
+import kotlinx.serialization.protobuf.ProtoNumber
+import kotlinx.serialization.protobuf.internal.ProtobufDecodingException
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.util.zip.GZIPInputStream
@@ -43,7 +45,7 @@ import java.util.zip.GZIPOutputStream
 object SyncDataSerializer {
 
     private val gson = Gson()
-    private val protoBuf = ProtoBuf
+    private val protoBuf = ProtoBuf { ignoreUnknownKeys = true }
 
     /**
      * 序列化数据为字符串（用于上传）
@@ -130,7 +132,12 @@ object SyncDataSerializer {
         val protoBytes = decompress(compressedBytes)
 
         // ProtoBuf反序列化
-        return protoBuf.decodeFromByteArray(protoBytes)
+        return runCatching { protoBuf.decodeFromByteArray<SyncData>(protoBytes) }
+            .getOrElse { original ->
+                // 兼容旧/错误字段编号的 schema
+                val legacy = runCatching { protoBuf.decodeFromByteArray<LegacySyncData>(protoBytes) }.getOrElse { throw original }
+                legacy.toCurrent()
+            }
     }
 
     /**
@@ -188,5 +195,155 @@ object SyncDataSerializer {
      */
     fun isBinaryFileName(fileName: String): Boolean {
         return fileName.endsWith(".bin")
+    }
+
+    /**
+     * 兼容旧/错误字段编号的 schema（mediaUri 插入到 addedAt 之前的版本）
+     */
+    @Serializable
+    private data class LegacySyncData(
+        @ProtoNumber(1) val version: String = "2.0",
+        @ProtoNumber(2) val deviceId: String,
+        @ProtoNumber(3) val deviceName: String,
+        @ProtoNumber(4) val lastModified: Long = System.currentTimeMillis(),
+        @ProtoNumber(5) val playlists: List<LegacySyncPlaylist> = emptyList(),
+        @ProtoNumber(6) val favoritePlaylists: List<LegacySyncFavoritePlaylist> = emptyList(),
+        @ProtoNumber(7) val recentPlays: List<LegacySyncRecentPlay> = emptyList(),
+        @ProtoNumber(8) val syncLog: List<LegacySyncLogEntry> = emptyList()
+    ) {
+        fun toCurrent(): SyncData = SyncData(
+            version = version,
+            deviceId = deviceId,
+            deviceName = deviceName,
+            lastModified = lastModified,
+            playlists = playlists.map { it.toCurrent() },
+            favoritePlaylists = favoritePlaylists.map { it.toCurrent() },
+            recentPlays = recentPlays.map { it.toCurrent() },
+            syncLog = syncLog.map { it.toCurrent() }
+        )
+    }
+
+    @Serializable
+    private data class LegacySyncPlaylist(
+        @ProtoNumber(1) val id: Long,
+        @ProtoNumber(2) val name: String,
+        @ProtoNumber(3) val songs: List<LegacySyncSong>,
+        @ProtoNumber(4) val createdAt: Long,
+        @ProtoNumber(5) val modifiedAt: Long,
+        @ProtoNumber(6) val isDeleted: Boolean = false
+    ) {
+        fun toCurrent(): SyncPlaylist = SyncPlaylist(
+            id = id,
+            name = name,
+            songs = songs.map { it.toCurrent() },
+            createdAt = createdAt,
+            modifiedAt = modifiedAt,
+            isDeleted = isDeleted
+        )
+    }
+
+    @Serializable
+    private data class LegacySyncSong(
+        @ProtoNumber(1) val id: Long,
+        @ProtoNumber(2) val name: String,
+        @ProtoNumber(3) val artist: String,
+        @ProtoNumber(4) val album: String,
+        @ProtoNumber(5) val albumId: Long,
+        @ProtoNumber(6) val durationMs: Long,
+        @ProtoNumber(7) val coverUrl: String?,
+        @ProtoNumber(8) val addedAt: Long = System.currentTimeMillis(),
+        @ProtoNumber(9) val matchedLyric: String? = null,
+        @ProtoNumber(10) val matchedTranslatedLyric: String? = null,
+        @ProtoNumber(11) val matchedLyricSource: String? = null,
+        @ProtoNumber(12) val matchedSongId: String? = null,
+        @ProtoNumber(13) val userLyricOffsetMs: Long = 0L,
+        @ProtoNumber(14) val customCoverUrl: String? = null,
+        @ProtoNumber(15) val customName: String? = null,
+        @ProtoNumber(16) val customArtist: String? = null,
+        @ProtoNumber(17) val originalName: String? = null,
+        @ProtoNumber(18) val originalArtist: String? = null,
+        @ProtoNumber(19) val originalCoverUrl: String? = null,
+        @ProtoNumber(20) val originalLyric: String? = null,
+        @ProtoNumber(21) val originalTranslatedLyric: String? = null
+    ) {
+        fun toCurrent(): SyncSong = SyncSong(
+            id = id,
+            name = name,
+            artist = artist,
+            album = album,
+            albumId = albumId,
+            durationMs = durationMs,
+            coverUrl = coverUrl,
+            mediaUri = null,
+            addedAt = addedAt,
+            matchedLyric = matchedLyric,
+            matchedTranslatedLyric = matchedTranslatedLyric,
+            matchedLyricSource = matchedLyricSource,
+            matchedSongId = matchedSongId,
+            userLyricOffsetMs = userLyricOffsetMs,
+            customCoverUrl = customCoverUrl,
+            customName = customName,
+            customArtist = customArtist,
+            originalName = originalName,
+            originalArtist = originalArtist,
+            originalCoverUrl = originalCoverUrl,
+            originalLyric = originalLyric,
+            originalTranslatedLyric = originalTranslatedLyric
+        )
+    }
+
+    @Serializable
+    private data class LegacySyncRecentPlay(
+        @ProtoNumber(1) val songId: Long,
+        @ProtoNumber(2) val song: LegacySyncSong,
+        @ProtoNumber(3) val playedAt: Long,
+        @ProtoNumber(4) val deviceId: String
+    ) {
+        fun toCurrent(): SyncRecentPlay = SyncRecentPlay(
+            songId = songId,
+            song = song.toCurrent(),
+            playedAt = playedAt,
+            deviceId = deviceId
+        )
+    }
+
+    @Serializable
+    private data class LegacySyncFavoritePlaylist(
+        @ProtoNumber(1) val id: Long,
+        @ProtoNumber(2) val name: String,
+        @ProtoNumber(3) val coverUrl: String?,
+        @ProtoNumber(4) val trackCount: Int,
+        @ProtoNumber(5) val source: String,
+        @ProtoNumber(6) val songs: List<LegacySyncSong>,
+        @ProtoNumber(7) val addedTime: Long
+    ) {
+        fun toCurrent(): SyncFavoritePlaylist = SyncFavoritePlaylist(
+            id = id,
+            name = name,
+            coverUrl = coverUrl,
+            trackCount = trackCount,
+            source = source,
+            songs = songs.map { it.toCurrent() },
+            addedTime = addedTime
+        )
+    }
+
+    @Serializable
+    private data class LegacySyncLogEntry(
+        @ProtoNumber(1) val timestamp: Long,
+        @ProtoNumber(2) val deviceId: String,
+        @ProtoNumber(3) val action: SyncAction,
+        @ProtoNumber(4) val playlistId: Long? = null,
+        @ProtoNumber(5) val songId: Long? = null,
+        @ProtoNumber(6) val details: String? = null
+    ) {
+        fun toCurrent(): SyncLogEntry = SyncLogEntry(
+            timestamp = timestamp,
+            deviceId = deviceId,
+            action = action,
+            playlistId = playlistId,
+            songId = songId,
+            details = details
+        )
     }
 }

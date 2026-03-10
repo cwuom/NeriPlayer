@@ -1,13 +1,16 @@
 package moe.ouom.neriplayer.data
 
+import android.os.Parcelable
+import kotlinx.parcelize.Parcelize
 import moe.ouom.neriplayer.data.github.SyncSong
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 
+@Parcelize
 data class SongIdentity(
     val id: Long,
     val album: String,
     val mediaUri: String?
-)
+) : Parcelable
 
 fun SongIdentity.stableKey(): String = buildString {
     append(id)

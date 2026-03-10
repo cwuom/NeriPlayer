@@ -51,6 +51,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -150,6 +151,7 @@ import androidx.media3.common.Player
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.min
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.util.offlineCachedImageRequest
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
@@ -305,8 +307,8 @@ fun NowPlayingScreen(
     // 自适应布局判断
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-    val isWideLayout = configuration.screenWidthDp >= 600
-    val useTabletLandscapeLayout = isWideLayout && isLandscape
+    val isWideLayout = configuration.screenWidthDp >= 480
+    val useWideLandscapeLayout = isWideLayout && isLandscape
 
     // 歌词偏移（平台 + 用户自定义）
     val platformOffset = if (currentSong?.matchedLyricSource == MusicPlatform.QQ_MUSIC) 500L else 1000L
@@ -356,7 +358,7 @@ fun NowPlayingScreen(
                     }
 
                 // 手机或竖屏下，左滑进入歌词页
-                if (!useTabletLandscapeLayout && lyrics.isNotEmpty()) {
+                if (!useWideLandscapeLayout && lyrics.isNotEmpty()) {
                     contentModifier = contentModifier.pointerInput(lyrics) {
                         detectHorizontalDragGestures { _, dragAmount ->
                             if (dragAmount < -20) showLyricsScreen = true
@@ -454,78 +456,82 @@ fun NowPlayingScreen(
                     Spacer(Modifier.height(8.dp))
 
                     // 封面
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.CenterHorizontally)
-                            .size(240.dp)
-                            .sharedElement(
-                                rememberSharedContentState(key = "cover_image"),
-                                animatedVisibilityScope = this@AnimatedContent
-                            )
-                            .clip(RoundedCornerShape(24.dp))
-                            .background(
-                                color = if ((currentSong?.customCoverUrl ?: currentSong?.coverUrl) != null) Color.Transparent else MaterialTheme.colorScheme.primaryContainer
-                            )
+                    BoxWithConstraints(
+                        modifier = Modifier.align(Alignment.CenterHorizontally)
                     ) {
-                        val displayCoverUrl = currentSong?.customCoverUrl ?: currentSong?.coverUrl
-                        displayCoverUrl?.let { cover ->
-                            val context = LocalContext.current
-                            AsyncImage(
-                                model = offlineCachedImageRequest(context, cover),
-                                contentDescription = currentSong?.customName ?: currentSong?.name ?: "",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
-
-                        // 右下角来源徽标
-                        if (isFromNetease) {
-                            Row(
-                                modifier = Modifier
-                                    .align(Alignment.BottomEnd)
-                                    .padding(10.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
-                                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.ic_netease_cloud_music),
-                                    contentDescription = stringResource(R.string.cd_netease),
-                                    tint = LocalContentColor.current,
-                                    modifier = Modifier.size(16.dp)
+                        val coverSize = min(maxWidth * 0.6f, maxHeight * 0.65f)
+                        Box(
+                            modifier = Modifier
+                                .size(coverSize)
+                                .sharedElement(
+                                    rememberSharedContentState(key = "cover_image"),
+                                    animatedVisibilityScope = this@AnimatedContent
                                 )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = stringResource(R.string.nowplaying_netease_cloud),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurface
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(
+                                    color = if ((currentSong?.customCoverUrl ?: currentSong?.coverUrl) != null) Color.Transparent else MaterialTheme.colorScheme.primaryContainer
+                                )
+                        ) {
+                            val displayCoverUrl = currentSong?.customCoverUrl ?: currentSong?.coverUrl
+                            displayCoverUrl?.let { cover ->
+                                val context = LocalContext.current
+                                AsyncImage(
+                                    model = offlineCachedImageRequest(context, cover),
+                                    contentDescription = currentSong?.customName ?: currentSong?.name ?: "",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
                                 )
                             }
-                        }
 
-                        if (isFromBili) {
-                            Row(
-                                modifier = Modifier
-                                    .align(Alignment.BottomEnd)
-                                    .padding(10.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
-                                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.ic_bilibili),
-                                    contentDescription = stringResource(R.string.cd_bilibili),
-                                    tint = LocalContentColor.current,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = stringResource(R.string.nowplaying_bilibili),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
+                            // 右下角来源徽标
+                            if (isFromNetease) {
+                                Row(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .padding(10.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
+                                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        painter = painterResource(id = R.drawable.ic_netease_cloud_music),
+                                        contentDescription = stringResource(R.string.cd_netease),
+                                        tint = LocalContentColor.current,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = stringResource(R.string.nowplaying_netease_cloud),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+
+                            if (isFromBili) {
+                                Row(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .padding(10.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
+                                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        painter = painterResource(id = R.drawable.ic_bilibili),
+                                        contentDescription = stringResource(R.string.cd_bilibili),
+                                        tint = LocalContentColor.current,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = stringResource(R.string.nowplaying_bilibili),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
                             }
                         }
                     }
@@ -716,7 +722,7 @@ fun NowPlayingScreen(
                     }
 
                     // 手机/竖屏，内嵌迷你歌词
-                    if (!useTabletLandscapeLayout && lyrics.isNotEmpty()) {
+                    if (!useWideLandscapeLayout && lyrics.isNotEmpty()) {
                         Spacer(Modifier.weight(1f))
 
                         AppleMusicLyric(
@@ -851,14 +857,14 @@ fun NowPlayingScreen(
                 }
 
                 // 平板横屏
-                if (useTabletLandscapeLayout) {
+                if (useWideLandscapeLayout) {
                     Row(
                         modifier = contentModifier,
                         horizontalArrangement = Arrangement.spacedBy(24.dp)
                     ) {
                         Column(
                             modifier = Modifier
-                                .weight(1f) // 左半屏
+                                .weight(0.6f) // 左半屏主区域
                                 .fillMaxHeight(),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             content = mainColumnContent
@@ -868,7 +874,7 @@ fun NowPlayingScreen(
                                 lyrics = lyrics,
                                 currentTimeMs = currentPosition,
                                 modifier = Modifier
-                                    .weight(1f) // 右半屏
+                                    .weight(0.4f) // 右半屏
                                     .fillMaxHeight(),
                                 textColor = MaterialTheme.colorScheme.onBackground,
                                 fontSize = (18f * lyricFontScale).coerceIn(14f, 26f).sp,

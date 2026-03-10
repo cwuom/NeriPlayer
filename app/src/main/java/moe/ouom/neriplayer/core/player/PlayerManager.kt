@@ -311,7 +311,8 @@ object PlayerManager {
 
     private data class PersistedState(
         val playlist: List<SongItem>,
-        val index: Int
+        val index: Int,
+        val mediaUrl: String? = null
     )
 
 
@@ -1159,7 +1160,11 @@ object PlayerManager {
                 if (currentPlaylist.isEmpty()) {
                     if (stateFile.exists()) stateFile.delete()
                 } else {
-                    val data = PersistedState(currentPlaylist, currentIndex)
+                    val data = PersistedState(
+                        playlist = currentPlaylist,
+                        index = currentIndex,
+                        mediaUrl = _currentMediaUrl.value
+                    )
                     stateFile.writeText(gson.toJson(data))
                 }
             } catch (e: Exception) {
@@ -1434,6 +1439,7 @@ object PlayerManager {
             currentIndex = data.index
             _currentQueueFlow.value = currentPlaylist
             _currentSongFlow.value = currentPlaylist.getOrNull(currentIndex)
+            _currentMediaUrl.value = data.mediaUrl
         } catch (e: Exception) {
             NPLogger.w("NERI-PlayerManager", "Failed to restore state: ${e.message}")
         }

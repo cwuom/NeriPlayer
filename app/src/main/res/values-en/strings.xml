@@ -25,6 +25,7 @@
     <string name="action_paste">Paste</string>
     <string name="action_select_all">Select All</string>
     <string name="action_deselect_all">Deselect All</string>
+    <string name="action_inverse_select">Invert Selection</string>
     <string name="action_multi_select">Multi-select</string>
     <string name="action_exit_multi_select">Exit Multi-select</string>
 
@@ -979,6 +980,11 @@
     <string name="local_playlist_play_next">Play Next...</string>
     <string name="download_manager_title">Download Manager</string>
     <string name="download_manager_subtitle">Manage downloads</string>
+    <string name="download_scan_local">Scan Local Music</string>
+    <string name="download_scanning">Scanning local audio…</string>
+    <string name="download_scan_failed">Scan failed: %1$d items</string>
+    <string name="download_scan_empty">No local audio files found</string>
+    <string name="download_scan_add_selected">Add selected (%1$d)</string>
     <string name="download_selected_count">%d selected</string>
     <string name="download_delete_selected">Delete Selected</string>
     <string name="download_exit_selection">Exit Selection</string>

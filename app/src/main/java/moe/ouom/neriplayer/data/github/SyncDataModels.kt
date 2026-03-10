@@ -25,6 +25,7 @@ package moe.ouom.neriplayer.data.github
 
 import android.content.Context
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.protobuf.ProtoNumber
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.data.FavoritePlaylist
 import moe.ouom.neriplayer.data.LocalPlaylist
@@ -36,14 +37,14 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
  */
 @Serializable
 data class SyncData(
-    val version: String = "2.0",
-    val deviceId: String,
-    val deviceName: String,
-    val lastModified: Long = System.currentTimeMillis(),
-    val playlists: List<SyncPlaylist> = emptyList(),
-    val favoritePlaylists: List<SyncFavoritePlaylist> = emptyList(),
-    val recentPlays: List<SyncRecentPlay> = emptyList(),
-    val syncLog: List<SyncLogEntry> = emptyList()
+    @ProtoNumber(1) val version: String = "2.0",
+    @ProtoNumber(2) val deviceId: String,
+    @ProtoNumber(3) val deviceName: String,
+    @ProtoNumber(4) val lastModified: Long = System.currentTimeMillis(),
+    @ProtoNumber(5) val playlists: List<SyncPlaylist> = emptyList(),
+    @ProtoNumber(6) val favoritePlaylists: List<SyncFavoritePlaylist> = emptyList(),
+    @ProtoNumber(7) val recentPlays: List<SyncRecentPlay> = emptyList(),
+    @ProtoNumber(8) val syncLog: List<SyncLogEntry> = emptyList()
 )
 
 /**
@@ -52,12 +53,12 @@ data class SyncData(
  */
 @Serializable
 data class SyncPlaylist(
-    val id: Long,
-    val name: String,
-    val songs: List<SyncSong>,
-    val createdAt: Long,
-    val modifiedAt: Long,
-    val isDeleted: Boolean = false
+    @ProtoNumber(1) val id: Long,
+    @ProtoNumber(2) val name: String,
+    @ProtoNumber(3) val songs: List<SyncSong>,
+    @ProtoNumber(4) val createdAt: Long,
+    @ProtoNumber(5) val modifiedAt: Long,
+    @ProtoNumber(6) val isDeleted: Boolean = false
 ) {
     companion object {
         fun fromLocalPlaylist(playlist: LocalPlaylist, modifiedAt: Long = System.currentTimeMillis(), context: Context? = null): SyncPlaylist {
@@ -86,28 +87,28 @@ data class SyncPlaylist(
  */
 @Serializable
 data class SyncSong(
-    val id: Long,
-    val name: String,
-    val artist: String,
-    val album: String,
-    val albumId: Long,
-    val durationMs: Long,
-    val coverUrl: String?,
-    val mediaUri: String? = null,
-    val addedAt: Long = System.currentTimeMillis(),
-    val matchedLyric: String? = null,
-    val matchedTranslatedLyric: String? = null,
-    val matchedLyricSource: String? = null,
-    val matchedSongId: String? = null,
-    val userLyricOffsetMs: Long = 0L,
-    val customCoverUrl: String? = null,
-    val customName: String? = null,
-    val customArtist: String? = null,
-    val originalName: String? = null,
-    val originalArtist: String? = null,
-    val originalCoverUrl: String? = null,
-    val originalLyric: String? = null,
-    val originalTranslatedLyric: String? = null
+    @ProtoNumber(1) val id: Long,
+    @ProtoNumber(2) val name: String,
+    @ProtoNumber(3) val artist: String,
+    @ProtoNumber(4) val album: String,
+    @ProtoNumber(5) val albumId: Long,
+    @ProtoNumber(6) val durationMs: Long,
+    @ProtoNumber(7) val coverUrl: String?,
+    @ProtoNumber(8) val mediaUri: String? = null,
+    @ProtoNumber(9) val addedAt: Long = System.currentTimeMillis(),
+    @ProtoNumber(10) val matchedLyric: String? = null,
+    @ProtoNumber(11) val matchedTranslatedLyric: String? = null,
+    @ProtoNumber(12) val matchedLyricSource: String? = null,
+    @ProtoNumber(13) val matchedSongId: String? = null,
+    @ProtoNumber(14) val userLyricOffsetMs: Long = 0L,
+    @ProtoNumber(15) val customCoverUrl: String? = null,
+    @ProtoNumber(16) val customName: String? = null,
+    @ProtoNumber(17) val customArtist: String? = null,
+    @ProtoNumber(18) val originalName: String? = null,
+    @ProtoNumber(19) val originalArtist: String? = null,
+    @ProtoNumber(20) val originalCoverUrl: String? = null,
+    @ProtoNumber(21) val originalLyric: String? = null,
+    @ProtoNumber(22) val originalTranslatedLyric: String? = null
 ) {
     companion object {
         fun fromSongItem(song: SongItem, context: Context? = null): SyncSong {
@@ -177,10 +178,10 @@ data class SyncSong(
  */
 @Serializable
 data class SyncRecentPlay(
-    val songId: Long,
-    val song: SyncSong,
-    val playedAt: Long,
-    val deviceId: String
+    @ProtoNumber(1) val songId: Long,
+    @ProtoNumber(2) val song: SyncSong,
+    @ProtoNumber(3) val playedAt: Long,
+    @ProtoNumber(4) val deviceId: String
 )
 
 /**
@@ -188,13 +189,13 @@ data class SyncRecentPlay(
  */
 @Serializable
 data class SyncFavoritePlaylist(
-    val id: Long,
-    val name: String,
-    val coverUrl: String?,
-    val trackCount: Int,
-    val source: String,
-    val songs: List<SyncSong>,
-    val addedTime: Long
+    @ProtoNumber(1) val id: Long,
+    @ProtoNumber(2) val name: String,
+    @ProtoNumber(3) val coverUrl: String?,
+    @ProtoNumber(4) val trackCount: Int,
+    @ProtoNumber(5) val source: String,
+    @ProtoNumber(6) val songs: List<SyncSong>,
+    @ProtoNumber(7) val addedTime: Long
 ) {
     companion object {
         fun fromFavoritePlaylist(playlist: FavoritePlaylist, context: Context? = null): SyncFavoritePlaylist {
@@ -229,12 +230,12 @@ data class SyncFavoritePlaylist(
  */
 @Serializable
 data class SyncLogEntry(
-    val timestamp: Long,
-    val deviceId: String,
-    val action: SyncAction,
-    val playlistId: Long? = null,
-    val songId: Long? = null,
-    val details: String? = null
+    @ProtoNumber(1) val timestamp: Long,
+    @ProtoNumber(2) val deviceId: String,
+    @ProtoNumber(3) val action: SyncAction,
+    @ProtoNumber(4) val playlistId: Long? = null,
+    @ProtoNumber(5) val songId: Long? = null,
+    @ProtoNumber(6) val details: String? = null
 )
 
 /**

@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.data
 import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.provider.MediaStore
 import android.provider.OpenableColumns
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -39,6 +40,65 @@ object LocalAudioImportManager {
         LocalAudioImportResult(
             songs = songs.distinctBy { it.identity() },
             failedCount = failedCount
+        )
+    }
+
+    /**
+     * 全盘扫描设备上的本地音频（常见音乐格式）
+     */
+    suspend fun scanDeviceSongs(context: Context): LocalAudioImportResult = withContext(Dispatchers.IO) {
+        val songs = mutableListOf<SongItem>()
+        var failed = 0
+
+        val audioUri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+        val projection = arrayOf(
+            MediaStore.Audio.Media._ID,
+            MediaStore.Audio.Media.TITLE,
+            MediaStore.Audio.Media.ARTIST,
+            MediaStore.Audio.Media.ALBUM,
+            MediaStore.Audio.Media.DURATION
+        )
+        val selection = "${MediaStore.Audio.Media.IS_MUSIC}!=0"
+
+        runCatching {
+            context.contentResolver.query(audioUri, projection, selection, null, null)?.use { cursor ->
+                val idxId = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                val idxTitle = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
+                val idxArtist = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
+                val idxAlbum = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
+                val idxDuration = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+
+                while (cursor.moveToNext()) {
+                    val id = cursor.getLong(idxId)
+                    val title = cursor.getString(idxTitle).orEmpty().ifBlank { context.getString(R.string.local_files) }
+                    val artist = cursor.getString(idxArtist).orEmpty().ifBlank { context.getString(R.string.music_unknown_artist) }
+                    val album = cursor.getString(idxAlbum).orEmpty().ifBlank { context.getString(R.string.local_files) }
+                    val duration = cursor.getLong(idxDuration)
+                    val contentUri = Uri.withAppendedPath(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id.toString())
+
+                    songs += SongItem(
+                        id = computeStableSongId(contentUri),
+                        name = title,
+                        artist = artist,
+                        album = album,
+                        albumId = 0L,
+                        durationMs = duration,
+                        coverUrl = null,
+                        mediaUri = contentUri.toString(),
+                        originalName = title,
+                        originalArtist = artist,
+                        originalCoverUrl = null
+                    )
+                }
+            }
+        }.onFailure {
+            NPLogger.e(TAG, "scanDeviceSongs failed: ${it.message}", it)
+            failed++
+        }
+
+        LocalAudioImportResult(
+            songs = songs.distinctBy { it.identity() },
+            failedCount = failed
         )
     }
 

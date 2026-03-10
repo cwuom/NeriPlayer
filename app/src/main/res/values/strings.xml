@@ -26,6 +26,7 @@
     <string name="action_paste">粘贴</string>
     <string name="action_select_all">全选</string>
     <string name="action_deselect_all">取消全选</string>
+    <string name="action_inverse_select">反选</string>
     <string name="action_multi_select">多选</string>
     <string name="action_exit_multi_select">退出多选</string>
 
@@ -981,6 +982,11 @@
     <!-- DownloadManagerScreen -->
     <string name="download_manager_title">下载管理</string>
     <string name="download_manager_subtitle">管理音乐下载和本地文件</string>
+    <string name="download_scan_local">扫描本地音乐</string>
+    <string name="download_scanning">正在扫描本地音频…</string>
+    <string name="download_scan_failed">扫描失败 %1$d 项</string>
+    <string name="download_scan_empty">未找到本地音频文件</string>
+    <string name="download_scan_add_selected">添加已选（%1$d）</string>
     <string name="download_selected_count">已选 %d 首</string>
     <string name="download_delete_selected">删除所选</string>
     <string name="download_exit_selection">退出多选</string>

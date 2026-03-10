@@ -111,8 +111,27 @@ class GitHubSyncManager(private val context: Context) {
                     SyncDataSerializer.isBinaryFileName(actualFileName)
                 )
             } catch (e: Exception) {
-                NPLogger.e(TAG, "Failed to parse remote data", e)
-                return@withContext Result.failure(e)
+                // 解析失败时尝试另一种格式，再不行才报错
+                val alternativeFileName = SyncDataSerializer.getFileName(!useDataSaver)
+                val fallback = if (alternativeFileName != actualFileName) {
+                    apiClient.getFileContent(owner, repo, alternativeFileName).getOrNull()?.first
+                } else null
+
+                val parsedFallback = if (!fallback.isNullOrEmpty()) {
+                    runCatching {
+                        SyncDataSerializer.deserialize(
+                            fallback,
+                            SyncDataSerializer.isBinaryFileName(alternativeFileName)
+                        )
+                    }.getOrNull()
+                } else null
+
+                if (parsedFallback != null) {
+                    parsedFallback
+                } else {
+                    NPLogger.e(TAG, "Failed to parse remote data", e)
+                    return@withContext Result.failure(e)
+                }
             }
 
             val lastRemoteSha = storage.getLastRemoteSha()
