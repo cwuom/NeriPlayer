@@ -1,5 +1,6 @@
 ﻿package moe.ouom.neriplayer.util
 
+import android.app.Application
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
@@ -8,6 +9,9 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import moe.ouom.neriplayer.R
 import java.io.File
 import java.io.FileOutputStream
@@ -48,24 +52,27 @@ import kotlin.system.exitProcess
 object ExceptionHandler {
 
     private var context: Context? = null
-    private var errorDialogCallback: ((String, String) -> Unit)? = null
     private var previousHandler: Thread.UncaughtExceptionHandler? = null
     @Volatile
     private var initialized = false
     private val mainHandler = Handler(Looper.getMainLooper())
     private var crashLogFile: File? = null
     private val crashLogScope = CoroutineScope(Dispatchers.IO)
+    private val errorDialogEvents = MutableSharedFlow<ErrorDialogEvent>(extraBufferCapacity = 1)
+
+    data class ErrorDialogEvent(val title: String, val message: String)
+    val errorEvents: SharedFlow<ErrorDialogEvent> = errorDialogEvents.asSharedFlow()
     
     /**
      * 初始化异常处理器
      * @param appContext 应用上下文
      */
-    fun init(appContext: Context) {
+    fun init(app: Application) {
         if (initialized) return
-        context = appContext.applicationContext
+        context = app.applicationContext
 
         // 设置崩溃日志文件
-        setupCrashLogFile(appContext)
+        setupCrashLogFile(app)
 
         // 设置全局未捕获异常处理器
         previousHandler = Thread.getDefaultUncaughtExceptionHandler()
@@ -85,13 +92,6 @@ object ExceptionHandler {
         }
     }
 
-    /**
-     * 设置或清除错误弹窗回调
-     */
-    fun setErrorDialogCallback(callback: ((String, String) -> Unit)?) {
-        errorDialogCallback = callback
-    }
-    
     /**
      * 处理异常
      * @param source 异常来源（线程名或组件名）
@@ -215,10 +215,8 @@ object ExceptionHandler {
                     appendLine(localizedContext.getString(R.string.exception_contact))
                 }
 
-                NPLogger.d("ExceptionHandler", "Invoking error dialog callback")
-                errorDialogCallback?.invoke(title, message) ?: run {
-                    NPLogger.e("ExceptionHandler", "Error dialog callback is null")
-                }
+                NPLogger.d("ExceptionHandler", "Emitting error dialog event")
+                errorDialogEvents.tryEmit(ErrorDialogEvent(title, message))
             } catch (e: Exception) {
                 // Fallback: use original context if language manager fails
                 NPLogger.e("ExceptionHandler", "Failed to apply language settings, using fallback", e)
@@ -234,8 +232,8 @@ object ExceptionHandler {
                         appendLine(ctx.getString(R.string.exception_contact))
                     }
 
-                    NPLogger.d("ExceptionHandler", "Invoking error dialog callback (fallback)")
-                    errorDialogCallback?.invoke(title, message)
+                    NPLogger.d("ExceptionHandler", "Emitting error dialog event (fallback)")
+                    errorDialogEvents.tryEmit(ErrorDialogEvent(title, message))
                 } catch (fallbackError: Exception) {
                     NPLogger.e("ExceptionHandler", "Fallback also failed", fallbackError)
                 }
@@ -326,7 +324,6 @@ object ExceptionHandler {
      * 清理资源
      */
     fun cleanup() {
-        errorDialogCallback = null
         NPLogger.i("ExceptionHandler", "Exception handler cleaned up")
     }
 }

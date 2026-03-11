@@ -141,6 +141,7 @@ fun RecentScreen(
 
     // 当前播放态
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
+    val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
     val downloadedSongs by GlobalDownloadManager.downloadedSongs.collectAsState()
     val downloadedSongFilePaths = remember(downloadedSongs) { downloadedSongs.map { it.filePath } }
 
@@ -273,7 +274,8 @@ fun RecentScreen(
                         index = index + 1,
                         song = song,
                         downloadedSongFilePaths = downloadedSongFilePaths,
-                        isPlaying = currentSong?.sameIdentityAs(song) == true,
+                        isCurrentSong = currentSong?.sameIdentityAs(song) == true,
+                        isPlaying = currentSong?.sameIdentityAs(song) == true && isPlaying,
                         onClick = {
                             context.performHapticFeedback()
                             val pos = displayedSongs.indexOfFirst { it.sameIdentityAs(song) }
@@ -336,6 +338,7 @@ private fun RecentRowRich(
     index: Int,
     song: SongItem,
     downloadedSongFilePaths: List<String>,
+    isCurrentSong: Boolean,
     isPlaying: Boolean,
     onClick: () -> Unit,
     moreMenu: @Composable () -> Unit
@@ -360,7 +363,7 @@ private fun RecentRowRich(
         }.joinToString(" · ")
     }
     val rowScale by animateFloatAsState(
-        targetValue = if (isPlaying) 1.01f else 1f,
+        targetValue = if (isCurrentSong) 1.01f else 1f,
         animationSpec = spring(stiffness = 500f),
         label = "recent-row-scale"
     )
@@ -375,8 +378,11 @@ private fun RecentRowRich(
     ) {
         // 序号 / 播放指示
         Box(Modifier.width(40.dp), contentAlignment = Alignment.Center) {
-            if (isPlaying) {
-                PlayingIndicator(color = MaterialTheme.colorScheme.primary)
+            if (isCurrentSong) {
+                PlayingIndicator(
+                    color = MaterialTheme.colorScheme.primary,
+                    animate = isPlaying
+                )
             } else {
                 Text(
                     text = index.toString(),
@@ -440,10 +446,10 @@ private fun RecentRowRich(
 
 /** 播放中指示 */
 @Composable
-private fun PlayingIndicator(color: Color) {
+private fun PlayingIndicator(color: Color, animate: Boolean) {
     // 三条不同节奏/相位的无限动画
     val t = rememberInfiniteTransition(label = "playing")
-    val h1 by t.animateFloat(
+    val animatedH1 by t.animateFloat(
         initialValue = 6f, targetValue = 18f,
         animationSpec = infiniteRepeatable(
             animation = tween(durationMillis = 520, easing = FastOutSlowInEasing),
@@ -451,7 +457,7 @@ private fun PlayingIndicator(color: Color) {
         ),
         label = "bar1"
     )
-    val h2 by t.animateFloat(
+    val animatedH2 by t.animateFloat(
         initialValue = 10f, targetValue = 22f,
         animationSpec = infiniteRepeatable(
             animation = tween(durationMillis = 680, easing = FastOutSlowInEasing),
@@ -459,7 +465,7 @@ private fun PlayingIndicator(color: Color) {
         ),
         label = "bar2"
     )
-    val h3 by t.animateFloat(
+    val animatedH3 by t.animateFloat(
         initialValue = 8f, targetValue = 16f,
         animationSpec = infiniteRepeatable(
             animation = tween(durationMillis = 600, easing = FastOutSlowInEasing, delayMillis = 90),
@@ -467,6 +473,9 @@ private fun PlayingIndicator(color: Color) {
         ),
         label = "bar3"
     )
+    val h1 = if (animate) animatedH1 else 10f
+    val h2 = if (animate) animatedH2 else 18f
+    val h3 = if (animate) animatedH3 else 14f
 
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.width(24.dp)) {
         Box(

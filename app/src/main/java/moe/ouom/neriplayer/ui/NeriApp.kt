@@ -148,9 +148,12 @@ import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
 import moe.ouom.neriplayer.ui.theme.NeriTheme
 import moe.ouom.neriplayer.ui.view.HyperBackground
 import moe.ouom.neriplayer.ui.viewmodel.debug.LogViewerScreen
+import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
+import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
+import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.util.ExceptionHandler
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.syncHapticFeedbackSetting
@@ -434,7 +437,9 @@ fun NeriApp(
         clearThemeRevealVisualState()
     }
 
-    var coverSeedHex by remember { mutableStateOf<String?>(null) }   // 形如 "RRGGBB"
+    // 缓存当前封面的取色结果，避免开关动态取色时先闪到默认种子色。
+    var coverSeedHex by remember { mutableStateOf<String?>(null) }
+    var coverSeedSourceUrl by remember { mutableStateOf<String?>(null) }
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
 
     LaunchedEffect(Unit) {
@@ -463,14 +468,11 @@ fun NeriApp(
         }
     }
 
-    LaunchedEffect(currentSong?.coverUrl, dynamicColorEnabled, fallbackPrimary) {
-        if (!dynamicColorEnabled) {
-            coverSeedHex = null
-            return@LaunchedEffect
-        }
-        val url = currentSong?.coverUrl
+    LaunchedEffect(currentSong?.coverUrl, fallbackPrimary) {
+        val url = currentSong?.coverUrl?.takeIf { it.isNotBlank() }
         if (url.isNullOrBlank()) {
             coverSeedHex = null
+            coverSeedSourceUrl = null
             return@LaunchedEffect
         }
 
@@ -479,7 +481,7 @@ fun NeriApp(
         val result = withContext(Dispatchers.IO) { loader.execute(req) }
         val bmp = (result as? SuccessResult)?.drawable.let { it as? BitmapDrawable }?.bitmap
 
-        coverSeedHex = bmp?.let { bitmap ->
+        val extractedSeedHex = bmp?.let { bitmap ->
             val p = Palette.from(bitmap).clearFilters().generate()
             val base = p.getVibrantColor(
                 p.getMutedColor(
@@ -490,6 +492,14 @@ fun NeriApp(
             val g = (base shr 8) and 0xFF
             val b = base and 0xFF
             String.format("%02X%02X%02X", r, g, b)
+        }
+
+        if (extractedSeedHex != null) {
+            coverSeedHex = extractedSeedHex
+            coverSeedSourceUrl = url
+        } else if (coverSeedSourceUrl != url) {
+            coverSeedHex = null
+            coverSeedSourceUrl = url
         }
     }
 
@@ -623,9 +633,54 @@ fun NeriApp(
         clearThemeRevealState()
     }
 
+    fun playSongsAndOpenNowPlaying(songs: List<SongItem>, index: Int) {
+        showNowPlaying = true
+        ContextCompat.startForegroundService(
+            context,
+            Intent(context, AudioPlayerService::class.java).apply {
+                action = AudioPlayerService.ACTION_PLAY
+                putParcelableArrayListExtra("playlist", ArrayList(songs))
+                putExtra("index", index)
+            }
+        )
+    }
+
+    fun ensureAudioServiceStarted() {
+        ContextCompat.startForegroundService(
+            context,
+            Intent(context, AudioPlayerService::class.java).apply {
+                action = AudioPlayerService.ACTION_SYNC
+            }
+        )
+    }
+
+    fun playBiliAudioAndOpenNowPlaying(videos: List<BiliVideoItem>, index: Int) {
+        showNowPlaying = true
+        NPLogger.d("NERI-App", "Playing audio from Bili video: ${videos[index].title}")
+        PlayerManager.playBiliVideoAsAudio(videos, index)
+        ensureAudioServiceStarted()
+    }
+
+    fun playBiliPartsAndOpenNowPlaying(
+        videoInfo: BiliClient.VideoBasicInfo,
+        index: Int,
+        coverUrl: String
+    ) {
+        showNowPlaying = true
+        NPLogger.d("NERI-App", "Playing parts from Bili video: ${videoInfo.title}")
+        PlayerManager.playBiliVideoParts(videoInfo, index, coverUrl)
+        ensureAudioServiceStarted()
+    }
+
     CompositionLocalProvider(LocalDensity provides finalDensity) {
-        val effectiveSeedHex = coverSeedHex ?: themeSeedColor
-        val useSystemDynamic = dynamicColorEnabled && coverSeedHex == null
+        val currentCoverUrl = currentSong?.coverUrl?.takeIf { it.isNotBlank() }
+        val activeCoverSeedHex = if (coverSeedSourceUrl == currentCoverUrl) coverSeedHex else null
+        val effectiveSeedHex = if (dynamicColorEnabled) {
+            activeCoverSeedHex ?: themeSeedColor
+        } else {
+            themeSeedColor
+        }
+        val useSystemDynamic = dynamicColorEnabled && activeCoverSeedHex == null
 
         NeriTheme(
             followSystemDark = followSystemDark,
@@ -780,20 +835,7 @@ fun NeriApp(
                                     }
                                 ) {
                                     HomeHostScreen(
-                                        onSongClick = { songs, index ->
-                                            ContextCompat.startForegroundService(
-                                                context,
-                                                Intent(context, AudioPlayerService::class.java).apply {
-                                                    action = AudioPlayerService.ACTION_PLAY
-                                                    putParcelableArrayListExtra(
-                                                        "playlist",
-                                                        ArrayList(songs)
-                                                    )
-                                                    putExtra("index", index)
-                                                }
-                                            )
-                                            showNowPlaying = true
-                                        }
+                                        onSongClick = ::playSongsAndOpenNowPlaying
                                     )
                                 }
 
@@ -818,17 +860,7 @@ fun NeriApp(
                                     NeteasePlaylistDetailScreen(
                                         playlist = playlist,
                                         onBack = { navController.popBackStack() },
-                                        onSongClick = { songs, index ->
-                                            ContextCompat.startForegroundService(
-                                                context,
-                                                Intent(context, AudioPlayerService::class.java).apply {
-                                                    action = AudioPlayerService.ACTION_PLAY
-                                                    putParcelableArrayListExtra("playlist", ArrayList(songs))
-                                                    putExtra("index", index)
-                                                }
-                                            )
-                                            showNowPlaying = true
-                                        }
+                                        onSongClick = ::playSongsAndOpenNowPlaying
                                     )
                                 }
 
@@ -853,17 +885,7 @@ fun NeriApp(
                                     NeteaseAlbumDetailScreen(
                                         album = album,
                                         onBack = { navController.popBackStack() },
-                                        onSongClick = { songs, index ->
-                                            ContextCompat.startForegroundService(
-                                                context,
-                                                Intent(context, AudioPlayerService::class.java).apply {
-                                                    action = AudioPlayerService.ACTION_PLAY
-                                                    putParcelableArrayListExtra("playlist", ArrayList(songs))
-                                                    putExtra("index", index)
-                                                }
-                                            )
-                                            showNowPlaying = true
-                                        }
+                                        onSongClick = ::playSongsAndOpenNowPlaying
                                     )
                                 }
                                 
@@ -888,16 +910,8 @@ fun NeriApp(
                                     BiliPlaylistDetailScreen(
                                         playlist = playlist,
                                         onBack = { navController.popBackStack() },
-                                        onPlayAudio = { videos, index ->
-                                            NPLogger.d("NERI-App", "Playing audio from Bili video: ${videos[index].title}")
-                                            PlayerManager.playBiliVideoAsAudio(videos, index)
-                                            showNowPlaying = true
-                                        },
-                                        onPlayParts = { videoInfo, index, coverUrl ->
-                                            NPLogger.d("NERI-App", "Playing parts from Bili video: ${videoInfo.title}")
-                                            PlayerManager.playBiliVideoParts(videoInfo, index, coverUrl)
-                                            showNowPlaying = true
-                                        }
+                                        onPlayAudio = ::playBiliAudioAndOpenNowPlaying,
+                                        onPlayParts = ::playBiliPartsAndOpenNowPlaying
                                     )
                                 }
 
@@ -935,21 +949,8 @@ fun NeriApp(
                                     }
                                 ) {
                                     ExploreHostScreen(
-                                        onSongClick = { songs, index ->
-                                            ContextCompat.startForegroundService(
-                                                context,
-                                                Intent(context, AudioPlayerService::class.java).apply {
-                                                    action = AudioPlayerService.ACTION_PLAY
-                                                    putParcelableArrayListExtra("playlist", ArrayList(songs))
-                                                    putExtra("index", index)
-                                                }
-                                            )
-                                            showNowPlaying = true
-                                        },
-                                        onPlayParts = { videoInfo, index, coverUrl ->
-                                            PlayerManager.playBiliVideoParts(videoInfo, index, coverUrl)
-                                            showNowPlaying = true
-                                        }
+                                        onSongClick = ::playSongsAndOpenNowPlaying,
+                                        onPlayParts = ::playBiliPartsAndOpenNowPlaying
                                     )
                                 }
 
@@ -987,21 +988,8 @@ fun NeriApp(
                                     }
                                 ) {
                                     LibraryHostScreen(
-                                        onSongClick = { songs, index ->
-                                            ContextCompat.startForegroundService(
-                                                context,
-                                                Intent(context, AudioPlayerService::class.java).apply {
-                                                    action = AudioPlayerService.ACTION_PLAY
-                                                    putParcelableArrayListExtra("playlist", ArrayList(songs))
-                                                    putExtra("index", index)
-                                                }
-                                            )
-                                            showNowPlaying = true
-                                        },
-                                        onPlayParts = { videoInfo, index, coverUrl ->
-                                            PlayerManager.playBiliVideoParts(videoInfo, index, coverUrl)
-                                            showNowPlaying = true
-                                        },
+                                        onSongClick = ::playSongsAndOpenNowPlaying,
+                                        onPlayParts = ::playBiliPartsAndOpenNowPlaying,
                                         onOpenRecent = { navController.navigate(Destinations.Recent.route) }
                                     )
                                 }
@@ -1025,17 +1013,7 @@ fun NeriApp(
                                         playlistId = id,
                                         onBack = { navController.popBackStack() },
                                         onDeleted = { navController.popBackStack() },
-                                        onSongClick = { songs, index ->
-                                            ContextCompat.startForegroundService(
-                                                context,
-                                                Intent(context, AudioPlayerService::class.java).apply {
-                                                    action = AudioPlayerService.ACTION_PLAY
-                                                    putParcelableArrayListExtra("playlist", ArrayList(songs))
-                                                    putExtra("index", index)
-                                                }
-                                            )
-                                            showNowPlaying = true
-                                        }
+                                        onSongClick = ::playSongsAndOpenNowPlaying
                                     )
                                 }
 
@@ -1048,17 +1026,7 @@ fun NeriApp(
                                 ) {
                                     RecentScreen(
                                         onBack = { navController.popBackStack() },
-                                        onSongClick = { songs, index ->
-                                            ContextCompat.startForegroundService(
-                                                context,
-                                                Intent(context, AudioPlayerService::class.java).apply {
-                                                    action = AudioPlayerService.ACTION_PLAY
-                                                    putParcelableArrayListExtra("playlist", ArrayList(songs))
-                                                    putExtra("index", index)
-                                                }
-                                            )
-                                            showNowPlaying = true
-                                        }
+                                        onSongClick = ::playSongsAndOpenNowPlaying
                                     )
                                 }
 
@@ -1370,8 +1338,18 @@ fun NeriApp(
                         targetOffsetY = { fullHeight -> fullHeight }
                     ) + fadeOut(animationSpec = tween(durationMillis = 150))
                 ) {
-                    val useSystemDynamic = dynamicColorEnabled && (coverSeedHex == null || currentSong == null)
-                    val effectiveSeedHex = coverSeedHex ?: themeSeedColor
+                    val currentCoverUrl = currentSong?.coverUrl?.takeIf { it.isNotBlank() }
+                    val activeCoverSeedHex = if (coverSeedSourceUrl == currentCoverUrl) {
+                        coverSeedHex
+                    } else {
+                        null
+                    }
+                    val effectiveSeedHex = if (dynamicColorEnabled) {
+                        activeCoverSeedHex ?: themeSeedColor
+                    } else {
+                        themeSeedColor
+                    }
+                    val useSystemDynamic = dynamicColorEnabled && activeCoverSeedHex == null
 
                     NeriTheme(
                         followSystemDark = false,

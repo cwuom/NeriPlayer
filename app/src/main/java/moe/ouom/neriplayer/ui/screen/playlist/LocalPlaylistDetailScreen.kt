@@ -19,6 +19,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -105,6 +106,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.AnnotatedString
@@ -256,6 +258,7 @@ fun LocalPlaylistDetailScreen(
             val isFavorites = FavoritesPlaylist.isSystemPlaylist(playlist, context)
             val isLocalFilesPlaylist = LocalFilesPlaylist.isSystemPlaylist(playlist, context)
             val isSystemPlaylist = isFavorites || isLocalFilesPlaylist
+            val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
 
             val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
             val allPlaylists by repo.playlists.collectAsState()
@@ -737,6 +740,17 @@ fun LocalPlaylistDetailScreen(
 
                 Column(Modifier.padding(padding).fillMaxSize()) {
                     val miniPlayerHeight = LocalMiniPlayerHeight.current
+                    val density = LocalDensity.current
+                    var lastMiniPlayerHeightPx by remember(playlistId) { mutableStateOf(0f) }
+                    LaunchedEffect(miniPlayerHeight) {
+                        val newHeightPx = with(density) { miniPlayerHeight.toPx() }
+                        val delta = newHeightPx - lastMiniPlayerHeightPx
+                        if (delta != 0f && !reorderState.listState.canScrollForward) {
+                            // 仅当列表已在底部时，抵消底部高度变化导致的跳动
+                            reorderState.listState.scrollBy(delta)
+                        }
+                        lastMiniPlayerHeightPx = newHeightPx
+                    }
                     AnimatedVisibility(showSearch && !selectionMode) {
                         OutlinedTextField(
                             value = searchQuery,
@@ -965,7 +979,10 @@ fun LocalPlaylistDetailScreen(
                                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                                 ) {
                                                     if (isPlayingSong) {
-                                                        PlayingIndicator(color = MaterialTheme.colorScheme.primary)
+                                                        PlayingIndicator(
+                                                            color = MaterialTheme.colorScheme.primary,
+                                                            animate = isPlaying
+                                                        )
                                                     } else {
                                                         Text(
                                                             text = formatDuration(song.durationMs),

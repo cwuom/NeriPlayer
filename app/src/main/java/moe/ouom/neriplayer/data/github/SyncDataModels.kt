@@ -28,6 +28,7 @@ package moe.ouom.neriplayer.data.github
 import android.content.Context
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.protobuf.ProtoNumber
+import moe.ouom.neriplayer.data.SystemLocalPlaylists
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.data.FavoritePlaylist
 import moe.ouom.neriplayer.data.LocalSongSupport
@@ -65,9 +66,12 @@ data class SyncPlaylist(
 ) {
     companion object {
         fun fromLocalPlaylist(playlist: LocalPlaylist, modifiedAt: Long = System.currentTimeMillis(), context: Context? = null): SyncPlaylist {
+            val systemDescriptor = context?.let {
+                SystemLocalPlaylists.resolve(playlist.id, playlist.name, it)
+            }
             return SyncPlaylist(
-                id = playlist.id,
-                name = playlist.name,
+                id = systemDescriptor?.id ?: playlist.id,
+                name = systemDescriptor?.currentName ?: playlist.name,
                 songs = playlist.songs.mapNotNull { SyncSong.fromSongItemOrNull(it, context) },
                 createdAt = playlist.id, // 使用ID作为创建时间
                 modifiedAt = modifiedAt

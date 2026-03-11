@@ -29,11 +29,11 @@ object LocalFilesPlaylist {
     }
 
     fun firstOrNull(playlists: List<LocalPlaylist>, context: Context? = null): LocalPlaylist? {
-        return playlists.firstOrNull { it.id == SYSTEM_ID || matches(it.name, context) }
+        return playlists.firstOrNull { it.id == SYSTEM_ID || (it.id < 0 && matches(it.name, context)) }
     }
 
     fun isSystemPlaylist(playlist: LocalPlaylist, context: Context): Boolean {
-        return playlist.id == SYSTEM_ID || matches(playlist.name, context)
+        return playlist.id == SYSTEM_ID || (playlist.id < 0 && matches(playlist.name, context))
     }
 
     fun merge(playlists: List<LocalPlaylist>, context: Context): LocalPlaylist {

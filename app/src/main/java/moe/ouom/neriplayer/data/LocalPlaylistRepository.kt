@@ -114,7 +114,7 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
 
     private fun isLocalFilesPlaylist(playlistId: Long, playlistName: String? = null): Boolean {
         return playlistId == LocalFilesPlaylist.SYSTEM_ID ||
-            (playlistName != null && LocalFilesPlaylist.matches(playlistName, context))
+            (playlistId < 0 && playlistName != null && LocalFilesPlaylist.matches(playlistName, context))
     }
 
     suspend fun createPlaylist(name: String) {

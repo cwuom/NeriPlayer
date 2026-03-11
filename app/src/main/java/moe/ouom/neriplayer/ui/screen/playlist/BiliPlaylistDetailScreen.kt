@@ -36,10 +36,12 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
+import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Close
@@ -83,6 +85,7 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.DownloadManagerViewModel
 import moe.ouom.neriplayer.util.HapticIconButton
+import moe.ouom.neriplayer.util.HapticFloatingActionButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.formatDurationSec
@@ -113,6 +116,8 @@ fun BiliPlaylistDetailScreen(
         }
     )
     val ui by vm.uiState.collectAsState()
+    val currentSong by PlayerManager.currentSongFlow.collectAsState()
+    val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
     // 使用Unit作为key，确保每次进入都重新加载最新数据
     LaunchedEffect(Unit) { vm.start(playlist) }
 
@@ -292,8 +297,15 @@ fun BiliPlaylistDetailScreen(
                     .windowInsetsPadding(WindowInsets.navigationBars)
                 ) {
                     val miniPlayerHeight = LocalMiniPlayerHeight.current
+                    val listState = rememberLazyListState()
+                    val activeSong = currentSong
+                    val currentVideoIndex = displayedVideos.indexOfFirst { video ->
+                        activeSong?.album?.startsWith(PlayerManager.BILI_SOURCE_TAG) == true &&
+                            activeSong.id == video.id
+                    }
 
                     LazyColumn(
+                        state = listState,
                         contentPadding = PaddingValues(
                             bottom = 24.dp + miniPlayerHeight
                         ),
@@ -346,6 +358,11 @@ fun BiliPlaylistDetailScreen(
                                     VideoRow(
                                         index = index + 1,
                                         video = item,
+                                        isCurrentSong = activeSong?.album?.startsWith(PlayerManager.BILI_SOURCE_TAG) == true &&
+                                            activeSong.id == item.id,
+                                        animatePlayingIndicator = activeSong?.album?.startsWith(PlayerManager.BILI_SOURCE_TAG) == true &&
+                                            activeSong.id == item.id &&
+                                            isPlaying,
                                         selectionMode = selectionMode,
                                         selected = selectedIds.contains(item.bvid),
                                         onToggleSelect = { toggleSelect(item.bvid) },
@@ -377,6 +394,24 @@ fun BiliPlaylistDetailScreen(
                                     )
                                 }
                             }
+                        }
+                    }
+
+                    if (currentVideoIndex >= 0) {
+                        HapticFloatingActionButton(
+                            onClick = {
+                                scope.launch {
+                                    listState.animateScrollToItem(currentVideoIndex)
+                                }
+                            },
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(bottom = 16.dp + miniPlayerHeight, end = 16.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Outlined.PlaylistPlay,
+                                contentDescription = stringResource(R.string.cd_locate_playing)
+                            )
                         }
                     }
                 }
@@ -820,6 +855,8 @@ private fun Header(playlist: BiliPlaylist, headerData: BiliPlaylist?) {
 private fun VideoRow(
     index: Int,
     video: BiliVideoItem,
+    isCurrentSong: Boolean,
+    animatePlayingIndicator: Boolean,
     selectionMode: Boolean,
     selected: Boolean,
     onToggleSelect: () -> Unit,
@@ -888,11 +925,18 @@ private fun VideoRow(
             )
         }
         Spacer(Modifier.width(8.dp))
-        Text(
-            text = formatDurationSec(video.durationSec),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        if (isCurrentSong) {
+            PlayingIndicator(
+                color = MaterialTheme.colorScheme.primary,
+                animate = animatePlayingIndicator
+            )
+        } else {
+            Text(
+                text = formatDurationSec(video.durationSec),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         
         // 更多操作菜单
         if (!selectionMode) {

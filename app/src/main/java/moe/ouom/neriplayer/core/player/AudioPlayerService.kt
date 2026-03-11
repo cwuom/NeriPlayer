@@ -32,9 +32,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.flow.first
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.MainActivity
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -94,12 +92,8 @@ class AudioPlayerService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        val maxCacheSize = runCatching {
-            runBlocking(Dispatchers.IO) {
-                AppContainer.settingsRepo.maxCacheSizeBytesFlow.first()
-            }
-        }.getOrDefault(1024L * 1024 * 1024)
-        PlayerManager.initialize(application as Application, maxCacheSize)
+        // 服务必须尽快进入前台，不能在这里阻塞读取 DataStore。
+        PlayerManager.initialize(application as Application)
 
         mediaSession = MediaSessionCompat(this, "NeriPlayerSession").apply {
             setCallback(mediaSessionCallback)
@@ -481,9 +475,8 @@ class AudioPlayerService : Service() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
-        if (allowServiceRestart && PlayerManager.hasItems()) {
-            requestServiceRestart()
-        }
+        // 前台服务已在运行时，不需要额外从最近任务移除回调里重新拉起服务。
+        // 这里主动 startService 更容易在后台启动限制下失败或制造重复生命周期。
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -499,18 +492,6 @@ class AudioPlayerService : Service() {
         super.onDestroy()
     }
 
-
-    private fun requestServiceRestart() {
-        runCatching {
-            startService(
-                Intent(this, AudioPlayerService::class.java).apply {
-                    action = ACTION_SYNC
-                }
-            )
-        }.onFailure {
-            NPLogger.e("NERI-APS", "Failed to restart service", it)
-        }
-    }
 
     private fun ensureForegroundStarted() {
         if (!isForegroundStarted) {

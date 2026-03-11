@@ -125,7 +125,6 @@ private sealed class SongUrlResult {
 object PlayerManager {
     const val BILI_SOURCE_TAG = "Bilibili"
     const val NETEASE_SOURCE_TAG = "Netease"
-    const val LOCAL_SOURCE_TAG = "Local"
 
     private var initialized = false
     private lateinit var application: Application
@@ -147,7 +146,8 @@ object PlayerManager {
     private var mainScope = newMainScope()
     private var progressJob: Job? = null
 
-    private lateinit var localRepo: LocalPlaylistRepository
+    private val localRepo: LocalPlaylistRepository
+        get() = LocalPlaylistRepository.getInstance(application)
 
     private lateinit var stateFile: File
 
@@ -378,7 +378,6 @@ object PlayerManager {
         mainScope = newMainScope()
 
         runCatching {
-            localRepo = LocalPlaylistRepository.getInstance(app)
             stateFile = File(app.filesDir, "last_playlist.json")
 
             // 基础网络请求工厂，支持 B 站 Cookie 注入
@@ -788,6 +787,7 @@ object PlayerManager {
     private fun maybeAutoMatchBiliMetadata(song: SongItem, requestToken: Long) {
         if (!song.album.startsWith(BILI_SOURCE_TAG)) return
         if (song.matchedSongId != null || !song.matchedLyric.isNullOrEmpty()) return
+        if (song.customName != null || song.customArtist != null || song.customCoverUrl != null) return
 
         ioScope.launch {
             val currentSong = _currentSongFlow.value ?: return@launch
@@ -801,7 +801,7 @@ object PlayerManager {
                 return@launch
             }
 
-            replaceMetadataFromSearch(latestSong, candidate)
+            replaceMetadataFromSearch(latestSong, candidate, isAuto = true)
         }
     }
 
@@ -1626,7 +1626,11 @@ object PlayerManager {
     }
 
 
-    fun replaceMetadataFromSearch(originalSong: SongItem, selectedSong: SongSearchInfo) {
+    fun replaceMetadataFromSearch(
+        originalSong: SongItem,
+        selectedSong: SongSearchInfo,
+        isAuto: Boolean = false
+    ) {
         ioScope.launch {
             val platform = selectedSong.source
 
@@ -1638,26 +1642,35 @@ object PlayerManager {
             try {
                 val newDetails = api.getSongInfo(selectedSong.id)
 
-                val updatedSong = originalSong.copy(
-                    name = newDetails.songName,
-                    artist = newDetails.singer,
-                    coverUrl = newDetails.coverUrl,
-                    // 直接使用获取的歌词，如果为null则清除现有歌词（B站音源默认无歌词）
-                    matchedLyric = newDetails.lyric,
-                    matchedTranslatedLyric = newDetails.translatedLyric,
-                    matchedLyricSource = selectedSong.source,
-                    matchedSongId = selectedSong.id,
-                    // 清除所有自定义字段，强制使用获取的信息
-                    customCoverUrl = null,
-                    customName = null,
-                    customArtist = null,
-                    // 保存原始值以便还原
-                    originalName = originalSong.originalName ?: originalSong.name,
-                    originalArtist = originalSong.originalArtist ?: originalSong.artist,
-                    originalCoverUrl = originalSong.originalCoverUrl ?: originalSong.coverUrl,
-                    originalLyric = originalSong.originalLyric ?: originalSong.matchedLyric,
-                    originalTranslatedLyric = originalSong.originalTranslatedLyric ?: originalSong.matchedTranslatedLyric
-                )
+                val updatedSong = if (isAuto) {
+                    originalSong.copy(
+                        matchedLyric = newDetails.lyric ?: originalSong.matchedLyric,
+                        matchedTranslatedLyric = newDetails.translatedLyric ?: originalSong.matchedTranslatedLyric,
+                        matchedLyricSource = selectedSong.source,
+                        matchedSongId = selectedSong.id
+                    )
+                } else {
+                    originalSong.copy(
+                        name = newDetails.songName,
+                        artist = newDetails.singer,
+                        coverUrl = newDetails.coverUrl,
+                        // 直接使用获取的歌词，如果为null则清除现有歌词（B站音源默认无歌词）
+                        matchedLyric = newDetails.lyric,
+                        matchedTranslatedLyric = newDetails.translatedLyric,
+                        matchedLyricSource = selectedSong.source,
+                        matchedSongId = selectedSong.id,
+                        // 清除所有自定义字段，强制使用获取的信息
+                        customCoverUrl = null,
+                        customName = null,
+                        customArtist = null,
+                        // 保存原始值以便还原
+                        originalName = originalSong.originalName ?: originalSong.name,
+                        originalArtist = originalSong.originalArtist ?: originalSong.artist,
+                        originalCoverUrl = originalSong.originalCoverUrl ?: originalSong.coverUrl,
+                        originalLyric = originalSong.originalLyric ?: originalSong.matchedLyric,
+                        originalTranslatedLyric = originalSong.originalTranslatedLyric ?: originalSong.matchedTranslatedLyric
+                    )
+                }
 
                 updateSongInAllPlaces(originalSong, updatedSong)
 

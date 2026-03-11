@@ -4,7 +4,7 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 
 private val biliPartPrefixRegex = Regex("^\\d+\\.\\s*")
-private val biliPartSeparatorRegex = Regex("\\s[-–—]\\s")
+private val biliPartSeparatorRegex = Regex("\\s[-\\u2013\\u2014]\\s")
 
 data class ResolvedBiliSong(
     val avid: Long,
@@ -33,8 +33,8 @@ fun buildBiliPartSong(
 private fun parseBiliPartMetadata(part: String, fallbackArtist: String): Pair<String, String> {
     val rawTitle = part.trim()
     val normalizedTitle = rawTitle.replace(biliPartPrefixRegex, "").trim().ifBlank { rawTitle }
-    val separatorMatch = biliPartSeparatorRegex.findAll(normalizedTitle).lastOrNull()
-        ?: return normalizedTitle to fallbackArtist
+    val separators = biliPartSeparatorRegex.findAll(normalizedTitle).toList()
+    val separatorMatch = separators.singleOrNull() ?: return normalizedTitle to fallbackArtist
 
     val title = normalizedTitle.substring(0, separatorMatch.range.first).trim()
     val artist = normalizedTitle.substring(separatorMatch.range.last + 1).trim()

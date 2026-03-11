@@ -118,31 +118,31 @@ class BackupManager(private val context: Context) {
             var mergedCount = 0
 
             for (syncPlaylist in backupData.playlists) {
+                val importedSystemDescriptor = SystemLocalPlaylists.resolve(
+                    syncPlaylist.id,
+                    syncPlaylist.name,
+                    context
+                )
                 // 转换为LocalPlaylist
                 val importedPlaylist = syncPlaylist.toLocalPlaylist().copy(
-                    id = if (
-                        syncPlaylist.id == FavoritesPlaylist.SYSTEM_ID ||
-                        FavoritesPlaylist.matches(syncPlaylist.name, context)
-                    ) {
-                        FavoritesPlaylist.SYSTEM_ID
-                    } else {
-                        syncPlaylist.id
-                    },
-                    name = if (
-                        syncPlaylist.id == FavoritesPlaylist.SYSTEM_ID ||
-                        FavoritesPlaylist.matches(syncPlaylist.name, context)
-                    ) {
-                        FavoritesPlaylist.currentName(context)
-                    } else {
-                        syncPlaylist.name
-                    }
+                    id = importedSystemDescriptor?.id ?: syncPlaylist.id,
+                    name = importedSystemDescriptor?.currentName ?: syncPlaylist.name
                 )
 
                 val existingIndex = currentPlaylists.indexOfFirst { playlist ->
-                    playlist.id == importedPlaylist.id ||
-                        playlist.name == importedPlaylist.name ||
-                        (FavoritesPlaylist.isSystemPlaylist(playlist, context) &&
-                            FavoritesPlaylist.isSystemPlaylist(importedPlaylist, context))
+                    val existingSystemDescriptor = SystemLocalPlaylists.resolve(
+                        playlist.id,
+                        playlist.name,
+                        context
+                    )
+
+                    when {
+                        existingSystemDescriptor != null && importedSystemDescriptor != null ->
+                            existingSystemDescriptor.id == importedSystemDescriptor.id
+
+                        else ->
+                            playlist.id == importedPlaylist.id || playlist.name == importedPlaylist.name
+                    }
                 }
 
                 if (existingIndex != -1) {
@@ -234,12 +234,25 @@ class BackupManager(private val context: Context) {
             val differences = mutableListOf<PlaylistDifference>()
 
             for (syncPlaylist in backupData.playlists) {
+                val syncSystemDescriptor = SystemLocalPlaylists.resolve(
+                    syncPlaylist.id,
+                    syncPlaylist.name,
+                    context
+                )
                 val currentPlaylist = currentPlaylists.find { playlist ->
-                    playlist.id == syncPlaylist.id ||
-                        playlist.name == syncPlaylist.name ||
-                        (FavoritesPlaylist.isSystemPlaylist(playlist, context) &&
-                            (syncPlaylist.id == FavoritesPlaylist.SYSTEM_ID ||
-                                FavoritesPlaylist.matches(syncPlaylist.name, context)))
+                    val currentSystemDescriptor = SystemLocalPlaylists.resolve(
+                        playlist.id,
+                        playlist.name,
+                        context
+                    )
+
+                    when {
+                        currentSystemDescriptor != null && syncSystemDescriptor != null ->
+                            currentSystemDescriptor.id == syncSystemDescriptor.id
+
+                        else ->
+                            playlist.id == syncPlaylist.id || playlist.name == syncPlaylist.name
+                    }
                 }
 
                 if (currentPlaylist == null) {

@@ -29,11 +29,15 @@ import moe.ouom.neriplayer.core.di.AppContainer
  */
 
 object SearchManager {
+    private const val MINIMUM_MATCH_SCORE = 60
+
     private val cloudMusicApi = AppContainer.cloudMusicSearchApi
     private val qqMusicApi = AppContainer.qqMusicSearchApi
     private val whitespaceRegex = Regex("\\s+")
-    private val artistSeparatorRegex =
-        Regex("\\s*(/|、|,|，|&|feat\\.?|ft\\.?|x)\\s*", RegexOption.IGNORE_CASE)
+    private val artistSeparatorRegex = Regex(
+        "\\s*([/,\\u3001\\uFF0C&])\\s*|\\s+(feat\\.?|ft\\.?)\\s+|\\s+[xX]\\s+",
+        RegexOption.IGNORE_CASE
+    )
 
     suspend fun search(
         keyword: String,
@@ -68,19 +72,28 @@ object SearchManager {
         val normalizedArtist = normalizeText(songArtist)
         val normalizedArtists = normalizeArtists(songArtist)
 
-        return searchResults
-            .withIndex()
-            .maxWithOrNull(
-                compareBy<IndexedValue<SongSearchInfo>> {
-                    scoreCandidate(
-                        candidate = it.value,
-                        targetSongName = normalizedSongName,
-                        targetArtist = normalizedArtist,
-                        targetArtists = normalizedArtists
-                    )
-                }.thenByDescending { -it.index }
+        val scoredResults = searchResults.mapIndexed { index, candidate ->
+            IndexedValue(
+                index = index,
+                value = candidate to scoreCandidate(
+                    candidate = candidate,
+                    targetSongName = normalizedSongName,
+                    targetArtist = normalizedArtist,
+                    targetArtists = normalizedArtists
+                )
             )
-            ?.value
+        }
+
+        val bestScore = scoredResults.maxOfOrNull { it.value.second } ?: return null
+        if (bestScore < MINIMUM_MATCH_SCORE) {
+            NPLogger.d(
+                "SearchManager",
+                "No confident match for $songName / $songArtist, bestScore=$bestScore"
+            )
+            return null
+        }
+
+        return scoredResults.firstOrNull { it.value.second == bestScore }?.value?.first
     }
 
     private suspend fun searchCandidates(

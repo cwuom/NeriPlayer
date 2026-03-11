@@ -1148,7 +1148,7 @@
     <!-- Lyrics Editor -->
     <string name="lyrics_original">原文</string>
     <string name="lyrics_translation">翻译</string>
-    <string name="music_restore_original">恢复原信息</string>
+    <string name="music_restore_original">恢复修改</string>
     <string name="music_restore_cover">恢复封面</string>
     <string name="music_restore_title">恢复歌名</string>
     <string name="music_restore_artist">恢复作者名</string>

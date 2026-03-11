@@ -521,6 +521,9 @@ object LocalMediaSupport {
 
         return runCatching {
             resolver.query(uri, projection, null, null, null)?.use { cursor ->
+                if (!cursor.moveToFirst()) {
+                    return@use null
+                }
                 QueriedContentInfo(
                     displayName = cursor.getOptionalString(OpenableColumns.DISPLAY_NAME),
                     sizeBytes = cursor.getOptionalLong(OpenableColumns.SIZE),
@@ -1196,17 +1199,10 @@ private fun Char.isAsciiLetterOrDigit(): Boolean {
 }
 
 private fun Char.isCjkUnifiedIdeograph(): Boolean {
-    return when (Character.UnicodeBlock.of(this)) {
-        Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS,
-        Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A,
-        Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_B,
-        Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_C,
-        Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_D,
-        Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_E,
-        Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_F,
-        Character.UnicodeBlock.CJK_COMPATIBILITY_IDEOGRAPHS -> true
-        else -> false
-    }
+    val code = code
+    return code in 0x3400..0x4DBF ||
+        code in 0x4E00..0x9FFF ||
+        code in 0xF900..0xFAFF
 }
 
 private fun MediaFormat.getOptionalInt(key: String): Int? {

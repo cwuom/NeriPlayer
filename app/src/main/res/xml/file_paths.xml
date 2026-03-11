@@ -1,22 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <root-path
-        name="root_storage"
-        path="." />
+    <external-path
+        android:name="shared_external"
+        android:path="." />
 
     <external-files-path
-        name="external_files"
-        path="." />
+        android:name="external_files"
+        android:path="." />
 
     <external-files-path
-        name="music_files"
-        path="Music/NeriPlayer/" />
+        android:name="music_files"
+        android:path="Music/NeriPlayer/" />
 
     <external-files-path
-        name="lyrics_files"
-        path="Music/NeriPlayer/Lyrics/" />
+        android:name="lyrics_files"
+        android:path="Music/NeriPlayer/Lyrics/" />
 
     <external-cache-path
-        name="external_cache"
-        path="." />
+        android:name="external_cache"
+        android:path="." />
 </paths>

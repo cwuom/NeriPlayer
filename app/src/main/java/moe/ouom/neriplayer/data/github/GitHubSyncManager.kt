@@ -22,11 +22,12 @@ import moe.ouom.neriplayer.util.NPLogger
 import java.io.IOException
 import java.util.UUID
 
-class GitHubSyncManager(private val context: Context) {
-    private val storage = SecureTokenStorage(context)
-    private val playlistRepo = LocalPlaylistRepository.getInstance(context)
-    private val favoriteRepo = FavoritePlaylistRepository.getInstance(context)
-    private val playHistoryRepo = PlayHistoryRepository.getInstance(context)
+class GitHubSyncManager private constructor(context: Context) {
+    private val appContext = context.applicationContext
+    private val storage = SecureTokenStorage(appContext)
+    private val playlistRepo = LocalPlaylistRepository.getInstance(appContext)
+    private val favoriteRepo = FavoritePlaylistRepository.getInstance(appContext)
+    private val playHistoryRepo = PlayHistoryRepository.getInstance(appContext)
     private val syncLock = Mutex()
 
     companion object {
@@ -43,7 +44,7 @@ class GitHubSyncManager(private val context: Context) {
     }
 
     suspend fun performSync(): Result<SyncResult> = withContext(Dispatchers.IO) {
-        val localizedContext = LanguageManager.applyLanguage(context)
+        val localizedContext = LanguageManager.applyLanguage(appContext)
 
         if (!syncLock.tryLock()) {
             return@withContext Result.failure(
@@ -63,7 +64,7 @@ class GitHubSyncManager(private val context: Context) {
                 )
             }
 
-            val apiClient = GitHubApiClient(context, token)
+            val apiClient = GitHubApiClient(appContext, token)
             val startMutationVersion = storage.getSyncMutationVersion()
             val localData = sanitizeSyncData(buildLocalSyncData())
             val uploadedDeletedPlaylistIds = localData.playlists
@@ -120,6 +121,7 @@ class GitHubSyncManager(private val context: Context) {
             }
 
             val (remoteContent, remoteSha) = remoteResult.getOrThrow()
+            var actualRemoteSha = remoteSha
             if (remoteContent.isEmpty()) {
                 return@withContext Result.failure(
                     IOException(localizedContext.getString(R.string.github_backup_file_invalid))
@@ -136,22 +138,28 @@ class GitHubSyncManager(private val context: Context) {
             } catch (e: Exception) {
                 // 解析失败时尝试另一种格式，再不行才报错
                 val alternativeFileName = SyncDataSerializer.getFileName(!useDataSaver)
-                val fallback = if (alternativeFileName != actualFileName) {
-                    apiClient.getFileContentStrict(owner, repo, alternativeFileName).getOrNull()?.first
+                val fallbackResult = if (alternativeFileName != actualFileName) {
+                    apiClient.getFileContentStrict(owner, repo, alternativeFileName).getOrNull()
                 } else null
 
-                val parsedFallback = if (!fallback.isNullOrEmpty()) {
+                val fallbackContent = fallbackResult?.first
+                val fallbackSha = fallbackResult?.second
+                val parsedFallback = if (!fallbackContent.isNullOrEmpty()) {
                     runCatching {
                         sanitizeSyncData(
                             SyncDataSerializer.deserialize(
-                            fallback,
-                            SyncDataSerializer.isBinaryFileName(alternativeFileName)
+                                fallbackContent,
+                                SyncDataSerializer.isBinaryFileName(alternativeFileName)
                             )
                         )
                     }.getOrNull()
                 } else null
 
                 if (parsedFallback != null) {
+                    actualFileName = alternativeFileName
+                    if (!fallbackSha.isNullOrBlank()) {
+                        actualRemoteSha = fallbackSha
+                    }
                     parsedFallback
                 } else {
                     NPLogger.e(TAG, "Failed to parse remote data", e)
@@ -161,8 +169,9 @@ class GitHubSyncManager(private val context: Context) {
 
             val lastRemoteSha = storage.getLastRemoteSha()
             val isFirstSync = lastRemoteSha == null
-            val remoteHasChanged = lastRemoteSha != null && lastRemoteSha != remoteSha
-            val mergeResult = performThreeWayMerge(localData, remoteData, isFirstSync)
+            val remoteHasChanged = lastRemoteSha != null && lastRemoteSha != actualRemoteSha
+            val lastSyncTime = storage.getLastSyncTime()
+            val mergeResult = performThreeWayMerge(localData, remoteData, lastSyncTime)
             val localMutatedDuringSync =
                 storage.getSyncMutationVersion() != startMutationVersion
 
@@ -176,11 +185,11 @@ class GitHubSyncManager(private val context: Context) {
             }
 
             if (!hasDataChanged(remoteData, mergeResult.mergedData) && !remoteHasChanged) {
-                storage.saveLastRemoteSha(remoteSha)
+                storage.saveLastRemoteSha(actualRemoteSha)
                 storage.saveLastSyncTime(System.currentTimeMillis())
                 if (localMutatedDuringSync) {
                     GitHubSyncWorker.scheduleDelayedSync(
-                        context,
+                        appContext,
                         triggerByUserAction = false,
                         markMutation = false
                     )
@@ -198,8 +207,8 @@ class GitHubSyncManager(private val context: Context) {
                 owner = owner,
                 repo = repo,
                 data = mergeResult.mergedData,
-                sha = remoteSha,
-                fileName = preferredFileName
+                sha = actualRemoteSha,
+                fileName = actualFileName
             )
 
             if (uploadResult.isFailure) {
@@ -217,7 +226,7 @@ class GitHubSyncManager(private val context: Context) {
             storage.removeDeletedPlaylistIds(uploadedDeletedPlaylistIds)
             if (localMutatedDuringSync) {
                 GitHubSyncWorker.scheduleDelayedSync(
-                    context,
+                    appContext,
                     triggerByUserAction = false,
                     markMutation = false
                 )
@@ -249,7 +258,7 @@ class GitHubSyncManager(private val context: Context) {
             storage.removeDeletedPlaylistIds(uploadedDeletedPlaylistIds)
             if (storage.getSyncMutationVersion() != startMutationVersion) {
                 GitHubSyncWorker.scheduleDelayedSync(
-                    context,
+                    appContext,
                     triggerByUserAction = false,
                     markMutation = false
                 )
@@ -275,7 +284,7 @@ class GitHubSyncManager(private val context: Context) {
     private fun buildLocalSyncData(): SyncData {
         val playlists = playlistRepo.playlists.value
         val syncPlaylists = playlists.map { playlist ->
-            SyncPlaylist.fromLocalPlaylist(playlist, playlist.modifiedAt, context)
+            SyncPlaylist.fromLocalPlaylist(playlist, playlist.modifiedAt, appContext)
         }.toMutableList()
 
         storage.getDeletedPlaylistIds().forEach { deletedId ->
@@ -292,11 +301,11 @@ class GitHubSyncManager(private val context: Context) {
         }
 
         val syncFavoritePlaylists = favoriteRepo.getSyncSnapshots().map {
-            SyncFavoritePlaylist.fromFavoritePlaylist(it, context)
+            SyncFavoritePlaylist.fromFavoritePlaylist(it, appContext)
         }
 
         val syncRecentPlays = playHistoryRepo.historyFlow.value
-            .filterNot { LocalSongSupport.isLocalSong(it.album, it.mediaUri, context) }
+            .filterNot { LocalSongSupport.isLocalSong(it.album, it.mediaUri, it.albumId, appContext) }
             .take(500)
             .map { playedEntry ->
                 SyncRecentPlay(
@@ -330,9 +339,9 @@ class GitHubSyncManager(private val context: Context) {
     private fun performThreeWayMerge(
         local: SyncData,
         remote: SyncData,
-        isFirstSync: Boolean
+        lastSyncTime: Long
     ): MergeResult {
-        val localizedContext = LanguageManager.applyLanguage(context)
+        val localizedContext = LanguageManager.applyLanguage(appContext)
         val conflicts = mutableListOf<SyncConflict>()
         var playlistsAdded = 0
         var playlistsUpdated = 0
@@ -371,7 +380,7 @@ class GitHubSyncManager(private val context: Context) {
                     if (localPlaylist.isDeleted || remotePlaylist.isDeleted) {
                         playlistsDeleted++
                     } else {
-                        val merged = mergePlaylist(localPlaylist, remotePlaylist, isFirstSync)
+                        val merged = mergePlaylist(localPlaylist, remotePlaylist, lastSyncTime)
                         mergedPlaylists += merged.playlist
                         merged.conflict?.let { conflicts += it }
                         songsAdded += merged.songsAdded
@@ -421,9 +430,9 @@ class GitHubSyncManager(private val context: Context) {
     private fun mergePlaylist(
         local: SyncPlaylist,
         remote: SyncPlaylist,
-        isFirstSync: Boolean
+        lastSyncTime: Long
     ): PlaylistMergeResult {
-        val localizedContext = LanguageManager.applyLanguage(context)
+        val localizedContext = LanguageManager.applyLanguage(appContext)
         var conflict: SyncConflict? = null
         var hasConflict = false
         var isUpdated = false
@@ -431,10 +440,25 @@ class GitHubSyncManager(private val context: Context) {
         val systemDescriptor = SystemLocalPlaylists.resolve(local.id, local.name, localizedContext)
             ?: SystemLocalPlaylists.resolve(remote.id, remote.name, localizedContext)
         val isFavorites = systemDescriptor?.id == FavoritesPlaylist.SYSTEM_ID
+        val localChangedAfterSync = local.modifiedAt > lastSyncTime
+        val remoteChangedAfterSync = remote.modifiedAt > lastSyncTime
+
         val finalName = when {
             systemDescriptor != null -> systemDescriptor.currentName
             local.name == remote.name -> local.name
-            local.modifiedAt >= remote.modifiedAt -> {
+            remoteChangedAfterSync && !localChangedAfterSync -> {
+                hasConflict = true
+                isUpdated = true
+                conflict = SyncConflict(
+                    type = ConflictType.PLAYLIST_RENAMED_BOTH_SIDES,
+                    playlistId = remote.id,
+                    playlistName = remote.name,
+                    description = localizedContext.getString(R.string.github_playlist_renamed_remote, remote.name),
+                    resolution = ConflictResolution.REMOTE_WINS
+                )
+                remote.name
+            }
+            localChangedAfterSync && !remoteChangedAfterSync -> {
                 hasConflict = true
                 conflict = SyncConflict(
                     type = ConflictType.PLAYLIST_RENAMED_BOTH_SIDES,
@@ -447,15 +471,14 @@ class GitHubSyncManager(private val context: Context) {
             }
             else -> {
                 hasConflict = true
-                isUpdated = true
                 conflict = SyncConflict(
                     type = ConflictType.PLAYLIST_RENAMED_BOTH_SIDES,
-                    playlistId = remote.id,
-                    playlistName = remote.name,
-                    description = localizedContext.getString(R.string.github_playlist_renamed_remote, remote.name),
-                    resolution = ConflictResolution.REMOTE_WINS
+                    playlistId = local.id,
+                    playlistName = local.name,
+                    description = localizedContext.getString(R.string.github_playlist_renamed_local, local.name),
+                    resolution = ConflictResolution.MANUAL_REQUIRED
                 )
-                remote.name
+                local.name
             }
         }
 
@@ -463,25 +486,47 @@ class GitHubSyncManager(private val context: Context) {
         val remoteSongs = remote.songs.map { it.identity() }.toSet()
         val preferRemoteFavorites = isFavorites && localSongs.isEmpty() && remoteSongs.isNotEmpty()
 
+        fun mergeSongsPreservingLocal(
+            localList: List<SyncSong>,
+            remoteList: List<SyncSong>
+        ): List<SyncSong> {
+            val merged = localList.toMutableList()
+            val known = localList.map { it.identity() }.toMutableSet()
+            remoteList.forEach { song ->
+                if (known.add(song.identity())) {
+                    merged += song
+                }
+            }
+            return merged
+        }
+
         val mergedSongs = when {
             remoteSongs.isEmpty() && localSongs.isNotEmpty() -> local.songs
             localSongs.isEmpty() && remoteSongs.isNotEmpty() -> {
                 isUpdated = true
                 remote.songs
             }
-            preferRemoteFavorites || (isFirstSync && remoteSongs.isNotEmpty()) -> {
+            preferRemoteFavorites && !localChangedAfterSync -> {
                 isUpdated = true
                 remote.songs
             }
-            remote.modifiedAt > local.modifiedAt -> {
+            remoteChangedAfterSync && !localChangedAfterSync -> {
                 isUpdated = true
                 remote.songs
             }
-            else -> local.songs
+            localChangedAfterSync && !remoteChangedAfterSync -> local.songs
+            else -> {
+                val merged = mergeSongsPreservingLocal(local.songs, remote.songs)
+                if (merged.size != local.songs.size || merged.size != remote.songs.size) {
+                    isUpdated = true
+                }
+                merged
+            }
         }
 
-        val songsAdded = (remoteSongs - localSongs).size
-        val songsRemoved = (localSongs - remoteSongs).size
+        val mergedIdentities = mergedSongs.map { it.identity() }.toSet()
+        val songsAdded = (mergedIdentities - localSongs).size
+        val songsRemoved = (localSongs - mergedIdentities).size
 
         return PlaylistMergeResult(
             playlist = SyncPlaylist(
@@ -551,7 +596,7 @@ class GitHubSyncManager(private val context: Context) {
     }
 
     private suspend fun applyMergedDataToLocal(mergedData: SyncData, remoteHasChanged: Boolean) {
-        val localizedContext = LanguageManager.applyLanguage(context)
+        val localizedContext = LanguageManager.applyLanguage(appContext)
         val sanitizedMergedData = sanitizeSyncData(mergedData)
         val currentPlaylists = playlistRepo.playlists.value.associateBy { playlist ->
             SystemLocalPlaylists.resolve(playlist.id, playlist.name, localizedContext)?.id ?: playlist.id
@@ -589,7 +634,7 @@ class GitHubSyncManager(private val context: Context) {
 
         if (shouldApplyRemoteHistory) {
             val syncedHistory = sanitizedMergedData.recentPlays.mapNotNull { syncPlay ->
-                if (LocalSongSupport.isLocalSong(syncPlay.song.album, syncPlay.song.mediaUri, localizedContext)) {
+                if (LocalSongSupport.isLocalSong(syncPlay.song.album, syncPlay.song.mediaUri, syncPlay.song.albumId, localizedContext)) {
                     return@mapNotNull null
                 }
 
@@ -606,7 +651,7 @@ class GitHubSyncManager(private val context: Context) {
                 )
             }
             val localOnlyHistory = playHistoryRepo.historyFlow.value.filter {
-                LocalSongSupport.isLocalSong(it.album, it.mediaUri, localizedContext)
+                LocalSongSupport.isLocalSong(it.album, it.mediaUri, it.albumId, localizedContext)
             }
             val playHistory = mergeLocalOnlyHistory(syncedHistory, localOnlyHistory)
             playHistoryRepo.updateHistory(playHistory)
@@ -646,7 +691,7 @@ class GitHubSyncManager(private val context: Context) {
     }
 
     private fun sanitizeSyncPlaylist(playlist: SyncPlaylist): SyncPlaylist? {
-        val localizedContext = LanguageManager.applyLanguage(context)
+        val localizedContext = LanguageManager.applyLanguage(appContext)
         val systemDescriptor = SystemLocalPlaylists.resolve(playlist.id, playlist.name, localizedContext)
         if (systemDescriptor?.id == LocalFilesPlaylist.SYSTEM_ID) {
             return null
@@ -675,8 +720,8 @@ class GitHubSyncManager(private val context: Context) {
     }
 
     private fun sanitizeSyncSong(song: SyncSong): SyncSong? {
-        val localizedContext = LanguageManager.applyLanguage(context)
-        if (LocalSongSupport.isLocalSong(song.album, song.mediaUri, localizedContext)) {
+        val localizedContext = LanguageManager.applyLanguage(appContext)
+        if (LocalSongSupport.isLocalSong(song.album, song.mediaUri, song.albumId, localizedContext)) {
             return null
         }
         return song.copy(mediaUri = LocalSongSupport.sanitizeMediaUriForSync(song.mediaUri))
@@ -727,7 +772,7 @@ class GitHubSyncManager(private val context: Context) {
         sha: String?,
         fileName: String
     ): Result<String> {
-        val localizedContext = LanguageManager.applyLanguage(context)
+        val localizedContext = LanguageManager.applyLanguage(appContext)
         val useDataSaver = storage.isDataSaverMode()
         val content = SyncDataSerializer.serialize(data, useDataSaver)
         NPLogger.d(
@@ -750,7 +795,7 @@ class GitHubSyncManager(private val context: Context) {
         var deviceId = storage.getDeviceId()
         if (deviceId == null) {
             deviceId = try {
-                Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
+                Settings.Secure.getString(appContext.contentResolver, Settings.Secure.ANDROID_ID)
                     ?: UUID.randomUUID().toString()
             } catch (_: Exception) {
                 UUID.randomUUID().toString()

@@ -13,10 +13,16 @@ object LocalSongSupport {
             isLikelyLegacyLocalSong(song, context)
     }
 
-    fun isLocalSong(album: String?, mediaUri: String?, context: Context? = null): Boolean {
+    fun isLocalSong(
+        album: String?,
+        mediaUri: String?,
+        albumId: Long? = null,
+        context: Context? = null
+    ): Boolean {
         return isLocalMediaUri(mediaUri) ||
             (
                 mediaUri.isNullOrBlank() &&
+                    albumId == 0L &&
                     isLocalAlbumPlaceholder(album, context)
             )
     }

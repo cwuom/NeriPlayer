@@ -18,11 +18,13 @@ object SystemLocalPlaylists {
 
     fun resolve(playlistId: Long, playlistName: String?, context: Context): Descriptor? {
         return when {
-            playlistId == FavoritesPlaylist.SYSTEM_ID || FavoritesPlaylist.matches(playlistName, context) -> {
+            playlistId == FavoritesPlaylist.SYSTEM_ID ||
+                (playlistId < 0 && FavoritesPlaylist.matches(playlistName, context)) -> {
                 Descriptor(FavoritesPlaylist.SYSTEM_ID, FavoritesPlaylist.currentName(context))
             }
 
-            playlistId == LocalFilesPlaylist.SYSTEM_ID || LocalFilesPlaylist.matches(playlistName, context) -> {
+            playlistId == LocalFilesPlaylist.SYSTEM_ID ||
+                (playlistId < 0 && LocalFilesPlaylist.matches(playlistName, context)) -> {
                 Descriptor(LocalFilesPlaylist.SYSTEM_ID, LocalFilesPlaylist.currentName(context))
             }
 

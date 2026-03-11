@@ -147,6 +147,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import moe.ouom.neriplayer.data.sameIdentityAs
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.util.HapticFloatingActionButton
 import moe.ouom.neriplayer.util.HapticIconButton
@@ -907,7 +908,8 @@ private fun SongRow(
     snackbarHostState: SnackbarHostState
 ) {
     val current by PlayerManager.currentSongFlow.collectAsState()
-    val isPlayingSong = current?.id == song.id
+    val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
+    val isCurrentSong = current?.sameIdentityAs(song) == true
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
@@ -986,8 +988,11 @@ private fun SongRow(
             )
         }
 
-        if (isPlayingSong) {
-            PlayingIndicator(color = MaterialTheme.colorScheme.primary)
+        if (isCurrentSong) {
+            PlayingIndicator(
+                color = MaterialTheme.colorScheme.primary,
+                animate = isPlaying
+            )
         } else {
             Text(
                 text = formatDuration(song.durationMs),
@@ -1048,10 +1053,11 @@ private fun SongRow(
 @Composable
 fun PlayingIndicator(
     modifier: Modifier = Modifier,
-    color: Color = MaterialTheme.colorScheme.primary
+    color: Color = MaterialTheme.colorScheme.primary,
+    animate: Boolean = true
 ) {
     val transition = rememberInfiniteTransition(label = "playing")
-    val animValues = listOf(
+    val animatedValues = listOf(
         transition.animateFloat(
             initialValue = 0.3f,
             targetValue = 1f,
@@ -1080,6 +1086,12 @@ fun PlayingIndicator(
             label = "bar3"
         )
     )
+    val staticValues = listOf(0.45f, 0.8f, 0.6f)
+    val barHeights = if (animate) {
+        animatedValues.map { it.value }
+    } else {
+        staticValues
+    }
 
     val barWidth = 3.dp
     val barMaxHeight = 12.dp
@@ -1089,11 +1101,11 @@ fun PlayingIndicator(
         verticalAlignment = Alignment.Bottom,
         horizontalArrangement = Arrangement.spacedBy(1.dp)
     ) {
-        animValues.forEach { anim ->
+        barHeights.forEach { barHeight ->
             Box(
                 Modifier
                     .width(barWidth)
-                    .height(barMaxHeight * anim.value)
+                    .height(barMaxHeight * barHeight)
                     .clip(RoundedCornerShape(50))
                     .background(color)
             )

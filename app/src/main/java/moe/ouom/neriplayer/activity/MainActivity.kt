@@ -70,7 +70,6 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
@@ -101,6 +100,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collect
 import moe.ouom.neriplayer.core.player.AudioPlayerService
 import moe.ouom.neriplayer.core.player.PlayerEvent
 import moe.ouom.neriplayer.core.player.PlayerManager
@@ -252,14 +252,13 @@ class MainActivity : ComponentActivity() {
                             var errorMessage by remember { mutableStateOf("") }
                             val lifecycleOwner = LocalLifecycleOwner.current
 
-                            // 初始化异常处理器
-                            DisposableEffect(Unit) {
-                                ExceptionHandler.setErrorDialogCallback { title, message ->
-                                    errorTitle = title
-                                    errorMessage = message
+                            // 初始化异常处理器事件监听
+                            LaunchedEffect(Unit) {
+                                ExceptionHandler.errorEvents.collect { event ->
+                                    errorTitle = event.title
+                                    errorMessage = event.message
                                     showErrorDialog = true
                                 }
-                                onDispose { ExceptionHandler.setErrorDialogCallback(null) }
                             }
 
                             // GitHub同步配置检查（每次回到前台时检查，并定期轮询）

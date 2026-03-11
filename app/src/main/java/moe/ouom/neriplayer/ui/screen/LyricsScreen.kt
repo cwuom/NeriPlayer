@@ -338,7 +338,7 @@ fun LyricsScreen(
                 if (song == null) {
                     false
                 } else {
-                    val fav = playlists.firstOrNull { FavoritesPlaylist.matches(it.name, context) }
+                    val fav = playlists.firstOrNull { FavoritesPlaylist.isSystemPlaylist(it, context) }
                     fav?.songs?.any { it.sameIdentityAs(song) } == true
                 }
             }
