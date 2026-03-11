@@ -18,3 +18,4 @@ local.properties
 /app/release
 /.idea/.name
 /.spec-workflow/
+/.report/
