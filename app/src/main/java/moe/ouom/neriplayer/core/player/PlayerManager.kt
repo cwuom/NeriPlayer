@@ -218,7 +218,10 @@ object PlayerManager {
         private set
 
     private fun isPreparedInPlayer(): Boolean =
-        player.currentMediaItem != null && player.playbackState != Player.STATE_ENDED
+        player.currentMediaItem != null && (
+            player.playbackState == Player.STATE_READY ||
+                player.playbackState == Player.STATE_BUFFERING
+            )
 
     private val gson = Gson()
 
@@ -960,11 +963,23 @@ object PlayerManager {
     fun pause() {
         ensureInitialized()
         if (!initialized) return
+        val currentSong = _currentSongFlow.value
+        val currentPosition = player.currentPosition.coerceAtLeast(0L)
+        val expectedDuration = currentSong?.durationMs?.takeIf { it > 0L } ?: player.duration
+        val shouldForceFlushShortLocalSong =
+            currentSong?.let(::isLocalSong) == true && expectedDuration in 1L..5_000L
         playbackRequestToken += 1
         playJob?.cancel()
         playJob = null
         player.playWhenReady = false
         player.pause()
+        if (shouldForceFlushShortLocalSong) {
+            // 超短本地音频在极端编码下可能把已排队的 PCM 继续播完，这里用一次同位 seek 强制刷新渲染链。
+            runCatching {
+                player.seekTo(currentPosition.coerceAtMost(expectedDuration.coerceAtLeast(0L)))
+            }
+            _playbackPositionMs.value = currentPosition
+        }
     }
 
     fun togglePlayPause() {

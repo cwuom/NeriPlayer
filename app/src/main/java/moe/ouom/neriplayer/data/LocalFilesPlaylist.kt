@@ -7,9 +7,8 @@ import moe.ouom.neriplayer.util.LanguageManager
 object LocalFilesPlaylist {
     const val SYSTEM_ID = -1002L
 
-    private const val LEGACY_ZH_NAME = "本地文件"
-    private const val LEGACY_CORRUPTED_ZH_NAME = "鏈湴鏂囦欢"
-    private const val LEGACY_EN_NAME = "Local Files"
+    private const val CANONICAL_ZH_NAME = "本地文件"
+    private const val CANONICAL_EN_NAME = "Local Files"
 
     fun currentName(context: Context): String {
         val localizedContext = LanguageManager.applyLanguage(context)
@@ -17,12 +16,11 @@ object LocalFilesPlaylist {
     }
 
     fun candidateNames(context: Context? = null): Set<String> {
-        return buildSet {
-            add(LEGACY_ZH_NAME)
-            add(LEGACY_CORRUPTED_ZH_NAME)
-            add(LEGACY_EN_NAME)
-            context?.let { add(currentName(it)) }
-        }
+        return buildSystemPlaylistCandidateNames(
+            canonicalChineseName = CANONICAL_ZH_NAME,
+            canonicalEnglishName = CANONICAL_EN_NAME,
+            localizedName = context?.let(::currentName) ?: CANONICAL_ZH_NAME
+        )
     }
 
     fun matches(name: String?, context: Context? = null): Boolean {

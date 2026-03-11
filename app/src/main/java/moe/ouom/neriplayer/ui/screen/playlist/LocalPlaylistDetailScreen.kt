@@ -169,7 +169,7 @@ fun LocalPlaylistDetailScreen(
 ) {
     val vm: LocalPlaylistDetailViewModel = viewModel()
     val ui = vm.uiState.collectAsState()
-    val isScanning by vm.isScanning.collectAsState()
+    val scanPreviewState by vm.scanPreviewState.collectAsState()
     LaunchedEffect(playlistId) { vm.start(playlistId) }
 
     // 保存最新的歌单数据，用于在Screen销毁时更新使用记录
@@ -266,14 +266,10 @@ fun LocalPlaylistDetailScreen(
             var showDeletePlaylistConfirm by remember { mutableStateOf(false) }
             var showDeleteMultiConfirm by remember { mutableStateOf(false) }
             var showExportSheet by remember { mutableStateOf(false) }
-            var showScanPreviewPage by remember { mutableStateOf(false) }
             var detailSong by remember { mutableStateOf<SongItem?>(null) }
             var pendingSyncConfirmAction by remember { mutableStateOf<(() -> Unit)?>(null) }
             var pendingSyncConfirmLabel by remember { mutableStateOf("") }
             val exportSheetState = rememberModalBottomSheetState()
-            var scanPreviewSongs by remember { mutableStateOf<List<SongItem>>(emptyList()) }
-            var scanPreviewQuery by remember { mutableStateOf("") }
-            var selectedScanKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
 
             var showSearch by remember { mutableStateOf(false) }
             var searchQuery by remember { mutableStateOf("") }
@@ -299,9 +295,6 @@ fun LocalPlaylistDetailScreen(
             fun showAudioImportResult(result: moe.ouom.neriplayer.ui.viewmodel.playlist.LocalAudioImportUiResult) {
                 scope.launch {
                     val message = when {
-                        result.preservedExisting -> {
-                            context.getString(R.string.local_playlist_scan_preserve_existing)
-                        }
                         result.importedCount > 0 && result.failedCount > 0 -> {
                             context.getString(
                                 R.string.local_playlist_import_audio_partial,
@@ -327,23 +320,16 @@ fun LocalPlaylistDetailScreen(
             }
 
             fun startDeviceAudioScan() {
-                showScanPreviewPage = true
                 detailSong = null
-                scanPreviewSongs = emptyList()
-                scanPreviewQuery = ""
-                selectedScanKeys = emptySet()
                 vm.scanDeviceSongs { result ->
                     scope.launch {
                         if (!result.completed) {
-                            showScanPreviewPage = false
                             snackbarHostState.showSnackbar(
                                 context.getString(R.string.local_playlist_scan_preserve_existing)
                             )
                             return@launch
                         }
 
-                        scanPreviewSongs = result.songs
-                        selectedScanKeys = result.songs.map { it.stableKey() }.toSet()
                         if (result.failedCount > 0) {
                             snackbarHostState.showSnackbar(
                                 context.getString(R.string.download_scan_failed, result.failedCount)
@@ -353,12 +339,8 @@ fun LocalPlaylistDetailScreen(
                 }
             }
 
-            fun dismissScanPreviewPage() {
-                vm.cancelDeviceSongScan()
-                showScanPreviewPage = false
-                scanPreviewSongs = emptyList()
-                scanPreviewQuery = ""
-                selectedScanKeys = emptySet()
+            fun dismissScanPreviewPage(cancelScan: Boolean = true) {
+                vm.clearScanPreview(cancelScan = cancelScan)
             }
 
             val audioPermissionLauncher = rememberLauncherForActivityResult(
@@ -547,22 +529,22 @@ fun LocalPlaylistDetailScreen(
                 derivedStateOf { selectedSongsForAction.any { !it.isLocalSong() } }
             }
 
-            if (showScanPreviewPage) {
+            if (scanPreviewState.visible) {
                 LocalScanPreviewScreen(
-                    isScanning = isScanning,
-                    songs = scanPreviewSongs,
-                    query = scanPreviewQuery,
-                    onQueryChange = { scanPreviewQuery = it },
-                    selectedKeys = selectedScanKeys,
-                    onSelectedKeysChange = { selectedScanKeys = it },
+                    isScanning = scanPreviewState.isScanning,
+                    songs = scanPreviewState.songs,
+                    query = scanPreviewState.query,
+                    onQueryChange = vm::updateScanPreviewQuery,
+                    selectedKeys = scanPreviewState.selectedKeys,
+                    onSelectedKeysChange = vm::updateScanPreviewSelection,
                     snackbarHostState = snackbarHostState,
                     onBack = ::dismissScanPreviewPage,
                     onImport = {
-                        val selectedSongs = scanPreviewSongs.filter {
-                            it.stableKey() in selectedScanKeys
+                        val selectedSongs = scanPreviewState.songs.filter {
+                            it.stableKey() in scanPreviewState.selectedKeys
                         }
                         vm.applyScannedSongs(selectedSongs, ::showAudioImportResult)
-                        dismissScanPreviewPage()
+                        dismissScanPreviewPage(cancelScan = false)
                     }
                 )
                 return@Surface
@@ -633,7 +615,7 @@ fun LocalPlaylistDetailScreen(
                                         } else {
                                             audioPermissionLauncher.launch(requiredAudioPermission)
                                         }
-                                    }, enabled = !isScanning) {
+                                    }, enabled = !scanPreviewState.isScanning) {
                                         Icon(
                                             Icons.Outlined.LibraryMusic,
                                             contentDescription = stringResource(R.string.download_scan_local)
@@ -737,11 +719,18 @@ fun LocalPlaylistDetailScreen(
                     derivedStateOf {
                         val base = localSongs.asReversed()
                         if (searchQuery.isBlank()) base
-                        else base.filter {
-                            it.name.contains(searchQuery, true) || it.artist.contains(
-                                searchQuery,
-                                true
-                            )
+                        else base.filter { song ->
+                            listOfNotNull(
+                                song.name,
+                                song.artist,
+                                song.album,
+                                song.localFileName,
+                                song.localFilePath,
+                                song.originalName,
+                                song.originalArtist
+                            ).any { field ->
+                                field.contains(searchQuery, ignoreCase = true)
+                            }
                         }
                     }
                 }

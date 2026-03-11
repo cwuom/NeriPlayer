@@ -7,9 +7,8 @@ import moe.ouom.neriplayer.util.LanguageManager
 object FavoritesPlaylist {
     const val SYSTEM_ID = -1001L
 
-    private const val LEGACY_ZH_NAME = "我喜欢的音乐"
-    private const val LEGACY_CORRUPTED_ZH_NAME = "鎴戝枩娆㈢殑闊充箰"
-    private const val LEGACY_EN_NAME = "My Favorite Music"
+    private const val CANONICAL_ZH_NAME = "我喜欢的音乐"
+    private const val CANONICAL_EN_NAME = "My Favorite Music"
 
     fun currentName(context: Context): String {
         val localizedContext = LanguageManager.applyLanguage(context)
@@ -17,12 +16,11 @@ object FavoritesPlaylist {
     }
 
     fun candidateNames(context: Context? = null): Set<String> {
-        return buildSet {
-            add(LEGACY_ZH_NAME)
-            add(LEGACY_CORRUPTED_ZH_NAME)
-            add(LEGACY_EN_NAME)
-            context?.let { add(currentName(it)) }
-        }
+        return buildSystemPlaylistCandidateNames(
+            canonicalChineseName = CANONICAL_ZH_NAME,
+            canonicalEnglishName = CANONICAL_EN_NAME,
+            localizedName = context?.let(::currentName) ?: CANONICAL_ZH_NAME
+        )
     }
 
     fun matches(name: String?, context: Context? = null): Boolean {
@@ -49,9 +47,5 @@ object FavoritesPlaylist {
             modifiedAt = playlists.maxOfOrNull { it.modifiedAt } ?: System.currentTimeMillis(),
             customCoverUrl = playlists.lastOrNull { !it.customCoverUrl.isNullOrBlank() }?.customCoverUrl
         )
-    }
-
-    fun normalize(playlists: List<LocalPlaylist>, context: Context): List<LocalPlaylist> {
-        return SystemLocalPlaylists.normalize(playlists, context)
     }
 }

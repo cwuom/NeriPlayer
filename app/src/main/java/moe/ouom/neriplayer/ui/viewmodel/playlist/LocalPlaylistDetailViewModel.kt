@@ -1,7 +1,6 @@
 package moe.ouom.neriplayer.ui.viewmodel.playlist
 
 import android.app.Application
-import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
@@ -15,6 +14,7 @@ import moe.ouom.neriplayer.data.LocalPlaylist
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.SongIdentity
 import moe.ouom.neriplayer.data.identity
+import moe.ouom.neriplayer.data.stableKey
 
 data class LocalPlaylistDetailUiState(
     val playlist: LocalPlaylist? = null,
@@ -23,8 +23,15 @@ data class LocalPlaylistDetailUiState(
 
 data class LocalAudioImportUiResult(
     val importedCount: Int,
-    val failedCount: Int,
-    val preservedExisting: Boolean = false
+    val failedCount: Int
+)
+
+data class LocalScanPreviewState(
+    val visible: Boolean = false,
+    val isScanning: Boolean = false,
+    val songs: List<SongItem> = emptyList(),
+    val query: String = "",
+    val selectedKeys: Set<String> = emptySet()
 )
 
 class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(application) {
@@ -34,12 +41,13 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
     private val _uiState = MutableStateFlow(LocalPlaylistDetailUiState())
     val uiState: StateFlow<LocalPlaylistDetailUiState> = _uiState
 
-    private val _isScanning = MutableStateFlow(false)
-    val isScanning: StateFlow<Boolean> = _isScanning
+    private val _scanPreviewState = MutableStateFlow(LocalScanPreviewState())
+    val scanPreviewState: StateFlow<LocalScanPreviewState> = _scanPreviewState
 
     private var playlistId: Long = 0L
     private var playlistCollectJob: Job? = null
     private var scanJob: Job? = null
+    private var scanSessionId: Long = 0L
 
     fun start(id: Long) {
         if (playlistId == id && _uiState.value.playlist != null) return
@@ -61,48 +69,68 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
         }
     }
 
-    fun importSongs(uris: List<Uri>, onResult: (LocalAudioImportUiResult) -> Unit) {
-        viewModelScope.launch {
-            val beforeSongs = repo.playlists.value.firstOrNull { it.id == playlistId }?.songs.orEmpty()
-            val beforeKeys = beforeSongs.map { it.identity() }.toSet()
-            val result = LocalAudioImportManager.importSongs(app, uris)
-            if (result.songs.isNotEmpty()) {
-                repo.addSongsToPlaylist(playlistId, result.songs)
-            }
-            val afterSongs = repo.playlists.value.firstOrNull { it.id == playlistId }?.songs.orEmpty()
-            val afterKeys = afterSongs.map { it.identity() }.toSet()
-            onResult(
-                LocalAudioImportUiResult(
-                    importedCount = (afterKeys - beforeKeys).size,
-                    failedCount = result.failedCount
-                )
-            )
-        }
-    }
-
     fun scanDeviceSongs(onResult: (LocalAudioImportResult) -> Unit) {
-        if (_isScanning.value) return
-        _isScanning.value = true
+        if (_scanPreviewState.value.isScanning) {
+            _scanPreviewState.value = _scanPreviewState.value.copy(visible = true)
+            return
+        }
+
+        scanJob?.cancel()
+        val sessionId = ++scanSessionId
+        _scanPreviewState.value = LocalScanPreviewState(visible = true, isScanning = true)
+
         lateinit var currentJob: Job
         currentJob = viewModelScope.launch {
             try {
-                onResult(LocalAudioImportManager.scanDeviceSongs(app))
+                val result = LocalAudioImportManager.scanDeviceSongs(app)
+                if (!isActiveScanSession(sessionId, currentJob)) return@launch
+                _scanPreviewState.value = if (result.completed) {
+                    LocalScanPreviewState(
+                        visible = true,
+                        isScanning = false,
+                        songs = result.songs,
+                        selectedKeys = result.songs.map { it.stableKey() }.toSet()
+                    )
+                } else {
+                    LocalScanPreviewState()
+                }
+                onResult(result)
             } catch (_: CancellationException) {
-                // 返回扫描页时允许立刻取消，不继续回调 UI。
+                // 用户主动返回时直接取消，不再回调已经离开的界面。
             } finally {
                 if (scanJob === currentJob) {
                     scanJob = null
                 }
-                _isScanning.value = false
+                if (scanSessionId == sessionId && _scanPreviewState.value.isScanning) {
+                    _scanPreviewState.value = _scanPreviewState.value.copy(isScanning = false)
+                }
             }
         }
         scanJob = currentJob
     }
 
     fun cancelDeviceSongScan() {
+        scanSessionId += 1
         scanJob?.cancel()
         scanJob = null
-        _isScanning.value = false
+        if (_scanPreviewState.value.isScanning) {
+            _scanPreviewState.value = _scanPreviewState.value.copy(isScanning = false)
+        }
+    }
+
+    fun updateScanPreviewQuery(query: String) {
+        _scanPreviewState.value = _scanPreviewState.value.copy(query = query)
+    }
+
+    fun updateScanPreviewSelection(selectedKeys: Set<String>) {
+        _scanPreviewState.value = _scanPreviewState.value.copy(selectedKeys = selectedKeys)
+    }
+
+    fun clearScanPreview(cancelScan: Boolean) {
+        if (cancelScan) {
+            cancelDeviceSongScan()
+        }
+        _scanPreviewState.value = LocalScanPreviewState()
     }
 
     fun applyScannedSongs(
@@ -148,5 +176,9 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
 
     fun removeSong(songId: Long) {
         viewModelScope.launch { repo.removeSongFromPlaylist(playlistId, songId) }
+    }
+
+    private fun isActiveScanSession(sessionId: Long, currentJob: Job): Boolean {
+        return scanJob === currentJob && scanSessionId == sessionId
     }
 }

@@ -206,6 +206,7 @@ dependencies {
 
     // Security - 加密存储
     implementation(libs.androidx.security.crypto)
+    implementation(libs.taglib)
 
     // WorkManager - 后台同步
     implementation(libs.androidx.work.runtime.ktx)

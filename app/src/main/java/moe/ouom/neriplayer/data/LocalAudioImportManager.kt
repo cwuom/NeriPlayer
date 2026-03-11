@@ -28,31 +28,6 @@ object LocalAudioImportManager {
     private val imageExtensions = listOf("jpg", "jpeg", "png", "webp")
     private val coverNames = listOf("cover", "folder", "front")
 
-    suspend fun importSongs(context: Context, uris: List<Uri>): LocalAudioImportResult = withContext(Dispatchers.IO) {
-        val songs = mutableListOf<SongItem>()
-        var failedCount = 0
-
-        uris.distinctBy { it.toString() }.forEach { uri ->
-            val song = runCatching {
-                LocalMediaSupport.toSongItem(context, LocalMediaSupport.inspect(context, uri))
-            }
-                .onFailure { NPLogger.e(TAG, "Failed to import local audio: $uri", it) }
-                .getOrNull()
-
-            if (song != null) {
-                songs += song
-            } else {
-                failedCount++
-            }
-        }
-
-        LocalAudioImportResult(
-            songs = songs.distinctBy { it.identity() },
-            failedCount = failedCount,
-            completed = true
-        )
-    }
-
     suspend fun importExternalSongs(context: Context, uris: List<Uri>): LocalAudioImportResult = withContext(Dispatchers.IO) {
         val songs = mutableListOf<SongItem>()
         var failedCount = 0
