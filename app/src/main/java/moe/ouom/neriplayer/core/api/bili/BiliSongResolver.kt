@@ -3,6 +3,9 @@ package moe.ouom.neriplayer.core.api.bili
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 
+private val biliPartPrefixRegex = Regex("^\\d+\\.\\s*")
+private val biliPartSeparatorRegex = Regex("\\s[-–—]\\s")
+
 data class ResolvedBiliSong(
     val avid: Long,
     val cid: Long,
@@ -15,15 +18,31 @@ fun buildBiliPartSong(
     basicInfo: BiliClient.VideoBasicInfo,
     coverUrl: String
 ): SongItem {
+    val (title, artist) = parseBiliPartMetadata(page.part, basicInfo.ownerName)
     return SongItem(
         id = basicInfo.aid,
-        name = page.part,
-        artist = basicInfo.ownerName,
+        name = title,
+        artist = artist,
         album = "${PlayerManager.BILI_SOURCE_TAG}|${page.cid}",
         albumId = 0L,
         durationMs = page.durationSec * 1000L,
         coverUrl = coverUrl
     )
+}
+
+private fun parseBiliPartMetadata(part: String, fallbackArtist: String): Pair<String, String> {
+    val rawTitle = part.trim()
+    val normalizedTitle = rawTitle.replace(biliPartPrefixRegex, "").trim().ifBlank { rawTitle }
+    val separatorMatch = biliPartSeparatorRegex.findAll(normalizedTitle).lastOrNull()
+        ?: return normalizedTitle to fallbackArtist
+
+    val title = normalizedTitle.substring(0, separatorMatch.range.first).trim()
+    val artist = normalizedTitle.substring(separatorMatch.range.last + 1).trim()
+    return if (title.isBlank() || artist.isBlank()) {
+        normalizedTitle to fallbackArtist
+    } else {
+        title to artist
+    }
 }
 
 suspend fun resolveBiliSong(song: SongItem, client: BiliClient): ResolvedBiliSong? {

@@ -1,10 +1,7 @@
 package moe.ouom.neriplayer.util
 
-import moe.ouom.neriplayer.core.api.netease.NeteaseClient
-import moe.ouom.neriplayer.core.api.search.CloudMusicSearchApi
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
-import moe.ouom.neriplayer.core.api.search.QQMusicSearchApi
-import moe.ouom.neriplayer.core.api.search.SongDetails
+import moe.ouom.neriplayer.core.api.search.SearchApi
 import moe.ouom.neriplayer.core.api.search.SongSearchInfo
 import moe.ouom.neriplayer.core.di.AppContainer
 
@@ -32,17 +29,17 @@ import moe.ouom.neriplayer.core.di.AppContainer
  */
 
 object SearchManager {
-    private val qqApi by lazy { QQMusicSearchApi() }
+    private val cloudMusicApi = AppContainer.cloudMusicSearchApi
+    private val qqMusicApi = AppContainer.qqMusicSearchApi
+    private val whitespaceRegex = Regex("\\s+")
+    private val artistSeparatorRegex =
+        Regex("\\s*(/|、|,|，|&|feat\\.?|ft\\.?|x)\\s*", RegexOption.IGNORE_CASE)
 
     suspend fun search(
         keyword: String,
         platform: MusicPlatform,
     ): List<SongSearchInfo> {
-        val api = if (platform == MusicPlatform.CLOUD_MUSIC) {
-            CloudMusicSearchApi(AppContainer.neteaseClient)
-        } else {
-            qqApi
-        }
+        val api = if (platform == MusicPlatform.CLOUD_MUSIC) cloudMusicApi else qqMusicApi
 
         NPLogger.d("SearchManager", "try to search $keyword")
         return try {
@@ -53,25 +50,93 @@ object SearchManager {
         }
     }
 
-    suspend fun findBestMatch(
+    suspend fun findBestSearchCandidate(
         songName: String,
-        platform: MusicPlatform,
-        neteaseClient: NeteaseClient
-    ): SongDetails? {
-        val api = if (platform == MusicPlatform.CLOUD_MUSIC) {
-            CloudMusicSearchApi(neteaseClient)
-        } else {
-            qqApi
+        songArtist: String
+    ): SongSearchInfo? {
+        NPLogger.d("SearchManager", "try to match $songName / $songArtist")
+
+        val searchResults = buildList {
+            addAll(searchCandidates(songName, qqMusicApi, "qq"))
+            addAll(searchCandidates(songName, cloudMusicApi, "cloud"))
+        }
+        if (searchResults.isEmpty()) {
+            return null
         }
 
-        NPLogger.d("SearchManager", "try to search $songName")
-        return try {
-            val searchResults = api.search(songName, page = 1)
-            val bestMatch = searchResults.firstOrNull() ?: return null
-            api.getSongInfo(bestMatch.id)
-        } catch (e: Exception) {
-            NPLogger.e("SearchManager", "Failed to find match", e)
-            null
+        val normalizedSongName = normalizeText(songName)
+        val normalizedArtist = normalizeText(songArtist)
+        val normalizedArtists = normalizeArtists(songArtist)
+
+        return searchResults
+            .withIndex()
+            .maxWithOrNull(
+                compareBy<IndexedValue<SongSearchInfo>> {
+                    scoreCandidate(
+                        candidate = it.value,
+                        targetSongName = normalizedSongName,
+                        targetArtist = normalizedArtist,
+                        targetArtists = normalizedArtists
+                    )
+                }.thenByDescending { -it.index }
+            )
+            ?.value
+    }
+
+    private suspend fun searchCandidates(
+        keyword: String,
+        api: SearchApi,
+        label: String
+    ): List<SongSearchInfo> {
+        return runCatching { api.search(keyword, page = 1) }
+            .onFailure {
+                NPLogger.w(
+                    "SearchManager",
+                    "Failed to search $label for $keyword: ${it.message}"
+                )
+            }
+            .getOrDefault(emptyList())
+    }
+
+    private fun scoreCandidate(
+        candidate: SongSearchInfo,
+        targetSongName: String,
+        targetArtist: String,
+        targetArtists: Set<String>
+    ): Int {
+        val candidateSongName = normalizeText(candidate.songName)
+        val candidateArtist = normalizeText(candidate.singer)
+        val candidateArtists = normalizeArtists(candidate.singer)
+
+        var score = when {
+            candidateSongName == targetSongName -> 100
+            candidateSongName.contains(targetSongName) || targetSongName.contains(candidateSongName) -> 60
+            else -> 0
         }
+
+        if (targetArtist.isNotBlank() || targetArtists.isNotEmpty()) {
+            score += when {
+                candidateArtist == targetArtist -> 40
+                candidateArtists.intersect(targetArtists).isNotEmpty() -> 25
+                candidateArtist.contains(targetArtist) || targetArtist.contains(candidateArtist) -> 15
+                else -> 0
+            }
+        }
+
+        if (!candidate.coverUrl.isNullOrBlank()) score += 2
+        if (!candidate.albumName.isNullOrBlank()) score += 1
+        return score
+    }
+
+    private fun normalizeText(value: String): String {
+        return value.trim().lowercase().replace(whitespaceRegex, " ")
+    }
+
+    private fun normalizeArtists(value: String): Set<String> {
+        return artistSeparatorRegex.split(value)
+            .asSequence()
+            .map(::normalizeText)
+            .filter { it.isNotBlank() }
+            .toSet()
     }
 }

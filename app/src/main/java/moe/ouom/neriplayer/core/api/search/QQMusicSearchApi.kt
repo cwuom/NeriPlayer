@@ -153,6 +153,8 @@ class QQMusicSearchApi : SearchApi {
                 .addQueryParameter("format", "json")
                 .addQueryParameter("inCharset", "utf8")
                 .addQueryParameter("outCharset", "utf-8")
+                .addQueryParameter("nobase64", "1")
+                .addQueryParameter("g_tk", "5381")
                 .build()
 
             val request = Request.Builder().url(url)
@@ -162,23 +164,41 @@ class QQMusicSearchApi : SearchApi {
             val responseJson = executeRequest(request) as String
             val lyricResponse = json.decodeFromString<QQMusicLyricResponse>(responseJson)
 
-            val lyric = if (lyricResponse.lyric != null) {
-                String(Base64.getDecoder().decode(lyricResponse.lyric))
-            } else {
-                null
-            }
+            val lyric = decodeLyricPayload(lyricResponse.lyric)
 
-            val translatedLyric = if (lyricResponse.trans != null) {
-                String(Base64.getDecoder().decode(lyricResponse.trans))
-            } else {
-                null
-            }
+            val translatedLyric = decodeLyricPayload(lyricResponse.trans)
 
             Pair(lyric, translatedLyric)
         } catch (e: Exception) {
             NPLogger.e(TAG, "获取QQ音乐歌词失败", e)
             Pair(null, null)
         }
+    }
+
+    private fun decodeLyricPayload(rawValue: String?): String? {
+        val sanitized = rawValue?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val plainText = htmlUnescape(sanitized)
+        val decoded = decodeBase64Lyric(plainText)
+        return htmlUnescape(decoded ?: plainText)
+    }
+
+    private fun decodeBase64Lyric(value: String): String? {
+        if (value.length % 4 != 0) return null
+        if (!value.matches(Regex("^[A-Za-z0-9+/=\\r\\n]+$"))) return null
+
+        return runCatching {
+            String(Base64.getDecoder().decode(value), Charsets.UTF_8)
+        }.getOrNull()?.takeIf { decoded ->
+            decoded.contains('[') || decoded.contains('\n') || decoded.contains('\r')
+        }
+    }
+
+    private fun htmlUnescape(value: String): String {
+        return value
+            .replace("&#39;", "'")
+            .replace("&apos;", "'")
+            .replace("&quot;", "\"")
+            .replace("&amp;", "&")
     }
 
     @Throws(IOException::class)

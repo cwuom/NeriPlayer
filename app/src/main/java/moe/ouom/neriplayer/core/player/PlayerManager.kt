@@ -90,6 +90,7 @@ import moe.ouom.neriplayer.ui.component.parseNeteaseLrc
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.util.SearchManager
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -764,6 +765,7 @@ object PlayerManager {
                         player.prepare()
                         player.play()
                     }
+                    maybeAutoMatchBiliMetadata(song, requestToken)
                 }
                 is SongUrlResult.RequiresLogin -> {
                     NPLogger.w("NERI-PlayerManager", "Requires login to play: id=${song.id}, source=${song.album}")
@@ -780,6 +782,26 @@ object PlayerManager {
                     withContext(Dispatchers.Main) { next() } // 自动跳到下一首
                 }
             }
+        }
+    }
+
+    private fun maybeAutoMatchBiliMetadata(song: SongItem, requestToken: Long) {
+        if (!song.album.startsWith(BILI_SOURCE_TAG)) return
+        if (song.matchedSongId != null || !song.matchedLyric.isNullOrEmpty()) return
+
+        ioScope.launch {
+            val currentSong = _currentSongFlow.value ?: return@launch
+            if (requestToken != playbackRequestToken || !currentSong.sameIdentityAs(song)) {
+                return@launch
+            }
+
+            val candidate = SearchManager.findBestSearchCandidate(song.name, song.artist) ?: return@launch
+            val latestSong = _currentSongFlow.value ?: return@launch
+            if (requestToken != playbackRequestToken || !latestSong.sameIdentityAs(song)) {
+                return@launch
+            }
+
+            replaceMetadataFromSearch(latestSong, candidate)
         }
     }
 
