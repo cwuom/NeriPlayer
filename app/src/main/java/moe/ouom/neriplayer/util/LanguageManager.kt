@@ -53,8 +53,8 @@ object LanguageManager {
     fun applyLanguage(context: Context): Context {
         val language = getCurrentLanguage(context)
         val locale = when (language) {
-            Language.CHINESE -> Locale("zh")
-            Language.ENGLISH -> Locale("en")
+            Language.CHINESE -> Locale.forLanguageTag("zh")
+            Language.ENGLISH -> Locale.forLanguageTag("en")
             Language.SYSTEM -> {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                     context.resources.configuration.locales[0]
@@ -77,10 +77,7 @@ object LanguageManager {
      * Restart Activity
      */
     fun restartActivity(activity: Activity) {
-        val intent = activity.intent
-        activity.finish()
-        activity.startActivity(intent)
-        activity.overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
+        activity.recreate()
     }
 
     /**
@@ -102,7 +99,7 @@ object LanguageManager {
                 context.resources.configuration.locales[0]
             when {
                 systemLocale.language.startsWith("zh") -> context.getString(R.string.language_simplified_chinese)
-                else -> "English"
+                else -> context.getString(R.string.language_english)
             }
         } else {
             currentLanguage.getDisplayName(context)
@@ -115,7 +112,7 @@ object LanguageManager {
  * Get display name of language
  */
 fun LanguageManager.Language.getDisplayName(context: Context): String = when (this) {
-    LanguageManager.Language.CHINESE -> context.getString(R.string.language_simplified_chinese)
-    LanguageManager.Language.ENGLISH -> "English"
-    LanguageManager.Language.SYSTEM -> context.getString(R.string.language_follow_system)
+    LanguageManager.Language.CHINESE -> context.getString(R.string.language_display_chinese)
+    LanguageManager.Language.ENGLISH -> context.getString(R.string.language_display_english)
+    LanguageManager.Language.SYSTEM -> context.getString(R.string.language_display_system)
 }

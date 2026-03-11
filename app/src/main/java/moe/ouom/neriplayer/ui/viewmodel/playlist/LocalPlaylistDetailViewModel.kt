@@ -4,15 +4,17 @@ import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.LocalAudioImportManager
+import moe.ouom.neriplayer.data.LocalAudioImportResult
 import moe.ouom.neriplayer.data.LocalPlaylist
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.SongIdentity
+import moe.ouom.neriplayer.data.identity
 
 data class LocalPlaylistDetailUiState(
     val playlist: LocalPlaylist? = null,
@@ -21,7 +23,8 @@ data class LocalPlaylistDetailUiState(
 
 data class LocalAudioImportUiResult(
     val importedCount: Int,
-    val failedCount: Int
+    val failedCount: Int,
+    val preservedExisting: Boolean = false
 )
 
 class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(application) {
@@ -31,8 +34,12 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
     private val _uiState = MutableStateFlow(LocalPlaylistDetailUiState())
     val uiState: StateFlow<LocalPlaylistDetailUiState> = _uiState
 
+    private val _isScanning = MutableStateFlow(false)
+    val isScanning: StateFlow<Boolean> = _isScanning
+
     private var playlistId: Long = 0L
     private var playlistCollectJob: Job? = null
+    private var scanJob: Job? = null
 
     fun start(id: Long) {
         if (playlistId == id && _uiState.value.playlist != null) return
@@ -50,25 +57,68 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
 
     fun rename(newName: String) {
         viewModelScope.launch {
-            var name = newName
-            val favoritesName = app.getString(R.string.favorite_my_music)
-            if (newName == favoritesName) {
-                name = "${favoritesName}_2"
-            }
-            repo.renamePlaylist(playlistId, name)
+            repo.renamePlaylist(playlistId, newName)
         }
     }
 
     fun importSongs(uris: List<Uri>, onResult: (LocalAudioImportUiResult) -> Unit) {
         viewModelScope.launch {
+            val beforeSongs = repo.playlists.value.firstOrNull { it.id == playlistId }?.songs.orEmpty()
+            val beforeKeys = beforeSongs.map { it.identity() }.toSet()
             val result = LocalAudioImportManager.importSongs(app, uris)
             if (result.songs.isNotEmpty()) {
                 repo.addSongsToPlaylist(playlistId, result.songs)
             }
+            val afterSongs = repo.playlists.value.firstOrNull { it.id == playlistId }?.songs.orEmpty()
+            val afterKeys = afterSongs.map { it.identity() }.toSet()
             onResult(
                 LocalAudioImportUiResult(
-                    importedCount = result.songs.size,
+                    importedCount = (afterKeys - beforeKeys).size,
                     failedCount = result.failedCount
+                )
+            )
+        }
+    }
+
+    fun scanDeviceSongs(onResult: (LocalAudioImportResult) -> Unit) {
+        if (_isScanning.value) return
+        _isScanning.value = true
+        lateinit var currentJob: Job
+        currentJob = viewModelScope.launch {
+            try {
+                onResult(LocalAudioImportManager.scanDeviceSongs(app))
+            } catch (_: CancellationException) {
+                // 返回扫描页时允许立刻取消，不继续回调 UI。
+            } finally {
+                if (scanJob === currentJob) {
+                    scanJob = null
+                }
+                _isScanning.value = false
+            }
+        }
+        scanJob = currentJob
+    }
+
+    fun cancelDeviceSongScan() {
+        scanJob?.cancel()
+        scanJob = null
+        _isScanning.value = false
+    }
+
+    fun applyScannedSongs(
+        songs: List<SongItem>,
+        onResult: (LocalAudioImportUiResult) -> Unit
+    ) {
+        viewModelScope.launch {
+            val beforeSongs = repo.playlists.value.firstOrNull { it.id == playlistId }?.songs.orEmpty()
+            val beforeKeys = beforeSongs.map { it.identity() }.toSet()
+            repo.addSongsToLocalFilesPlaylist(songs)
+            val afterSongs = repo.playlists.value.firstOrNull { it.id == playlistId }?.songs.orEmpty()
+            val afterKeys = afterSongs.map { it.identity() }.toSet()
+            onResult(
+                LocalAudioImportUiResult(
+                    importedCount = (afterKeys - beforeKeys).size,
+                    failedCount = 0
                 )
             )
         }

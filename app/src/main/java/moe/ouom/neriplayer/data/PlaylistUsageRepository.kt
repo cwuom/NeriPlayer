@@ -9,6 +9,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.util.LanguageManager
 import java.io.File
 
 data class UsageEntry(
@@ -31,6 +32,13 @@ class PlaylistUsageRepository(private val app: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val gson = Gson()
     private val file: File by lazy { File(app.filesDir, "playlist_usage.json") }
+    private val usageEntryComparator = Comparator<UsageEntry> { left, right ->
+        when {
+            left.lastOpened != right.lastOpened -> right.lastOpened.compareTo(left.lastOpened)
+            left.openCount != right.openCount -> right.openCount.compareTo(left.openCount)
+            else -> left.id.compareTo(right.id)
+        }
+    }
     private val _flow = MutableStateFlow(load())
     val frequentPlaylistsFlow: StateFlow<List<UsageEntry>> = _flow
 
@@ -56,10 +64,9 @@ class PlaylistUsageRepository(private val app: Context) {
     }
 
     private fun normalizeEntries(list: List<UsageEntry>): List<UsageEntry> {
-        return list.sortedWith(
-            compareByDescending<UsageEntry> { it.lastOpened }
-                .thenByDescending { it.openCount }
-        ).take(100)
+        return list
+            .sortedWith(usageEntryComparator)
+            .take(100)
     }
 
     fun recordOpen(
@@ -139,6 +146,7 @@ class PlaylistUsageRepository(private val app: Context) {
         val current = _flow.value
         if (current.none { it.source == SOURCE_LOCAL }) return
 
+        val localizedContext = LanguageManager.applyLanguage(app)
         val playlistsById = playlists.associateBy(LocalPlaylist::id)
         var changed = false
         val updated = current.mapNotNull { entry ->
@@ -149,10 +157,15 @@ class PlaylistUsageRepository(private val app: Context) {
                 return@mapNotNull null
             }
 
+            val refreshedName = SystemLocalPlaylists.resolve(
+                playlistId = playlist.id,
+                playlistName = playlist.name,
+                context = localizedContext
+            )?.currentName ?: playlist.name
             val refreshedPicUrl = playlist.displayCoverUrl()
             val refreshedTrackCount = playlist.songs.size
             if (
-                entry.name == playlist.name &&
+                entry.name == refreshedName &&
                 entry.picUrl == refreshedPicUrl &&
                 entry.trackCount == refreshedTrackCount
             ) {
@@ -160,7 +173,7 @@ class PlaylistUsageRepository(private val app: Context) {
             } else {
                 changed = true
                 entry.copy(
-                    name = playlist.name,
+                    name = refreshedName,
                     picUrl = refreshedPicUrl,
                     trackCount = refreshedTrackCount
                 )

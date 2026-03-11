@@ -119,11 +119,6 @@ class NowPlayingViewModel : ViewModel() {
                 val api = when (platform) {
                     MusicPlatform.CLOUD_MUSIC -> {
                         val client = AppContainer.neteaseClient
-                        if (client == null) {
-                            NPLogger.e("NowPlayingViewModel", "neteaseClient is null")
-                            onComplete(false, context.getString(R.string.music_lyrics_fill_failed))
-                            return@launch
-                        }
                         moe.ouom.neriplayer.core.api.search.CloudMusicSearchApi(client)
                     }
                     MusicPlatform.QQ_MUSIC -> moe.ouom.neriplayer.core.api.search.QQMusicSearchApi()

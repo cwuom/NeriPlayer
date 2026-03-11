@@ -38,6 +38,7 @@ import moe.ouom.neriplayer.core.api.bili.resolveBiliSong
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.BiliAudioStreamInfo
 import moe.ouom.neriplayer.data.LocalSongSupport
+import moe.ouom.neriplayer.data.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import okhttp3.Request
@@ -72,6 +73,7 @@ object AudioDownloadManager {
     val isCancelledFlow: StateFlow<Boolean> = _isCancelled
 
     data class DownloadProgress(
+        val songKey: String,
         val songId: Long,
         val fileName: String,
         val bytesRead: Long,
@@ -177,7 +179,7 @@ object AudioDownloadManager {
 
                 // 貌似很多平台都不支持多线程下载(x  所以采用单线程
                 // 传入临时文件
-                singleThreadDownload(client, request, tempFile, song.id)
+                singleThreadDownload(client, request, tempFile, song.id, song.stableKey())
 
                 // 下载完成后，重命名为正式文件
                 val destFile = uniqueFile(downloadDir, fileName)
@@ -234,7 +236,7 @@ object AudioDownloadManager {
                     }
 
                     // 检查当前歌曲是否被单独取消
-                    if (moe.ouom.neriplayer.core.download.GlobalDownloadManager.isSongCancelled(song.id)) {
+                    if (moe.ouom.neriplayer.core.download.GlobalDownloadManager.isSongCancelled(song.stableKey())) {
                         NPLogger.d(TAG, "跳过已取消的歌曲: ${song.name}")
                         _batchProgressFlow.value?.let { current ->
                             _batchProgressFlow.value = current.copy(
@@ -271,7 +273,7 @@ object AudioDownloadManager {
 
                         // 下载成功，直接标记任务为完成
                         moe.ouom.neriplayer.core.download.GlobalDownloadManager.updateTaskStatus(
-                            song.id,
+                            song.stableKey(),
                             moe.ouom.neriplayer.core.download.DownloadStatus.COMPLETED
                         )
 
@@ -293,7 +295,10 @@ object AudioDownloadManager {
                     } catch (e: Exception) {
                         NPLogger.e(TAG, context.getString(R.string.download_batch_failed_song, song.name, e.message ?: ""), e)
                         // 标记任务失败
-                        moe.ouom.neriplayer.core.download.GlobalDownloadManager.updateTaskStatus(song.id, moe.ouom.neriplayer.core.download.DownloadStatus.FAILED)
+                        moe.ouom.neriplayer.core.download.GlobalDownloadManager.updateTaskStatus(
+                            song.stableKey(),
+                            moe.ouom.neriplayer.core.download.DownloadStatus.FAILED
+                        )
                     }
                 }
 
@@ -382,23 +387,41 @@ object AudioDownloadManager {
     }
 
     /** 获取本地音频文件路径 */
-    fun getLocalFilePath(context: Context, song: SongItem): String? {
+fun getLocalFilePath(context: Context, song: SongItem): String? {
         val baseDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir
         val downloadDir = File(baseDir, "NeriPlayer")
+        if (!downloadDir.exists()) return null
         
         // 查找可能的文件扩展名
-        val possibleExtensions = listOf("flac", "m4a", "mp3", "eac3")
-        for (ext in possibleExtensions) {
-            val fileName = generateFileName(song, ext)
-            val file = File(downloadDir, fileName)
-            if (file.exists()) return file.absolutePath
+        val possibleExtensions = listOf("flac", "m4a", "mp3", "eac3", "aac", "wav", "ogg")
+        val baseNames = candidateBaseNames(song)
+        for (baseName in baseNames) {
+            for (ext in possibleExtensions) {
+                val file = File(downloadDir, "$baseName.$ext")
+                if (file.exists()) return file.absolutePath
+            }
         }
-        return null
+        val fileNamePatterns = baseNames.map { baseName ->
+            Regex("^${Regex.escape(baseName)}(?: \\(\\d+\\))?$")
+        }
+        return downloadDir.listFiles()
+            ?.firstOrNull { file ->
+                file.isFile &&
+                    file.extension.lowercase() in possibleExtensions &&
+                    fileNamePatterns.any { pattern -> pattern.matches(file.nameWithoutExtension) }
+            }
+            ?.absolutePath
     }
-    
-    private fun generateFileName(song: SongItem, ext: String? = null): String {
-        val baseName = sanitizeFileName("${song.artist} - ${song.name}")
-        return if (ext.isNullOrBlank()) baseName else "$baseName.$ext"
+
+    private fun candidateBaseNames(song: SongItem): List<String> {
+        val baseNames = linkedSetOf<String>()
+        baseNames += sanitizeFileName("${song.artist} - ${song.name}")
+
+        val originalName = song.originalName?.takeIf { it.isNotBlank() } ?: song.name
+        val originalArtist = song.originalArtist?.takeIf { it.isNotBlank() } ?: song.artist
+        baseNames += sanitizeFileName("$originalArtist - $originalName")
+
+        return baseNames.toList()
     }
 
     /** 获取本地歌词文件路径 */
@@ -558,7 +581,8 @@ object AudioDownloadManager {
         client: okhttp3.OkHttpClient,
         request: Request,
         destFile: File,
-        songId: Long
+        songId: Long,
+        songKey: String
     ) = withContext(Dispatchers.IO) {
         val startNs = System.nanoTime()
         NPLogger.d(TAG, "开始下载文件: ${destFile.name}, songId=$songId")
@@ -573,7 +597,7 @@ object AudioDownloadManager {
                 val buffer = okio.Buffer()
                 while (true) {
                     // 检查是否被取消(全局取消或单个任务取消)
-                    if (_isCancelled.value || moe.ouom.neriplayer.core.download.GlobalDownloadManager.isSongCancelled(songId)) {
+                    if (_isCancelled.value || moe.ouom.neriplayer.core.download.GlobalDownloadManager.isSongCancelled(songKey)) {
                         NPLogger.d(TAG, "下载被取消，停止下载: songId=$songId")
                         destFile.delete() // 删除临时文件
                         _progressFlow.value = null
@@ -586,7 +610,14 @@ object AudioDownloadManager {
                     readSoFar += read
                     val elapsedSec = ((System.nanoTime() - startNs) / 1_000_000_000.0).coerceAtLeast(0.001)
                     val speed = (readSoFar / elapsedSec).toLong()
-                    val progress = DownloadProgress(songId, destFile.name, readSoFar, total, speed)
+                    val progress = DownloadProgress(
+                        songKey = songKey,
+                        songId = songId,
+                        fileName = destFile.name,
+                        bytesRead = readSoFar,
+                        totalBytes = total,
+                        speedBytesPerSec = speed
+                    )
                     _progressFlow.value = progress
                 }
                 sink.flush()

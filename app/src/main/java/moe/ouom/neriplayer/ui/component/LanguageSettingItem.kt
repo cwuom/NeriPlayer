@@ -22,7 +22,8 @@ import moe.ouom.neriplayer.util.getDisplayName
  */
 @Composable
 fun LanguageSettingItem(
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onBeforeRestart: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var showDialog by remember { mutableStateOf(false) }
@@ -90,22 +91,23 @@ fun LanguageSettingItem(
     if (showRestartDialog) {
         AlertDialog(
             onDismissRequest = { showRestartDialog = false },
-            title = { Text(stringResource(R.string.language_restart_title)) },
-            text = { Text(stringResource(R.string.language_restart_message)) },
+            title = { Text(stringResource(R.string.language_restart_title_bilingual)) },
+            text = { Text(stringResource(R.string.language_restart_message_bilingual)) },
             confirmButton = {
                 TextButton(
                     onClick = {
                         (context as? Activity)?.let { activity ->
+                            onBeforeRestart()
                             LanguageManager.restartActivity(activity)
                         }
                     }
                 ) {
-                    Text(stringResource(R.string.language_restart_now))
+                    Text(stringResource(R.string.language_restart_now_bilingual))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showRestartDialog = false }) {
-                    Text(stringResource(R.string.language_restart_later))
+                    Text(stringResource(R.string.language_restart_later_bilingual))
                 }
             }
         )

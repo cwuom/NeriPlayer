@@ -28,6 +28,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import java.util.Locale
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -157,8 +158,8 @@ class SleepTimerManager(
         val seconds = totalSeconds % 60
 
         return when {
-            hours > 0 -> String.format("%d:%02d:%02d", hours, minutes, seconds)
-            else -> String.format("%d:%02d", minutes, seconds)
+            hours > 0 -> String.format(Locale.ROOT, "%d:%02d:%02d", hours, minutes, seconds)
+            else -> String.format(Locale.ROOT, "%d:%02d", minutes, seconds)
         }
     }
 }

@@ -23,7 +23,7 @@ fun SongIdentity.stableKey(): String = buildString {
 fun SongItem.identity(): SongIdentity = SongIdentity(
     id = id,
     album = album,
-    mediaUri = mediaUri
+    mediaUri = localFilePath ?: mediaUri
 )
 
 fun SongItem.stableKey(): String = identity().stableKey()

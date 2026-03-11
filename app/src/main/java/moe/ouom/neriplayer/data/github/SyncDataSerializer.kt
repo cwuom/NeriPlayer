@@ -324,7 +324,9 @@ object SyncDataSerializer {
             trackCount = trackCount,
             source = source,
             songs = songs.map { it.toCurrent() },
-            addedTime = addedTime
+            addedTime = addedTime,
+            modifiedAt = addedTime,
+            isDeleted = false
         )
     }
 

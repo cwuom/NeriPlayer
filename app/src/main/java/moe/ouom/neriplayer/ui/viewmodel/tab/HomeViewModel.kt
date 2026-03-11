@@ -36,11 +36,14 @@ import kotlinx.parcelize.Parcelize
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.util.LanguageManager
 import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
 import java.io.IOException
 
 private const val TAG = "NERI-HomeVM"
+private const val HOME_SEARCH_HOT_KEYWORD = "热歌"
+private const val HOME_SEARCH_RADAR_KEYWORD = "私人雷达"
 
 data class HomeUiState(
     val loading: Boolean = false,
@@ -81,6 +84,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _radarSongsFlow = MutableStateFlow<List<SongItem>>(emptyList())
     val radarSongsFlow: StateFlow<List<SongItem>> = _radarSongsFlow
 
+    private fun localizedAppContext() = LanguageManager.applyLanguage(getApplication())
+
     init {
         // 登录后自动刷新首页推荐歌单
         viewModelScope.launch {
@@ -118,14 +123,22 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     playlists = mapped
                 )
             } catch (e: IOException) {
+                val localizedContext = localizedAppContext()
                 _uiState.value = HomeUiState(
                     loading = false,
-                    error = "Network or server error: ${e.message ?: e.javaClass.simpleName}"  // Localized in UI
+                    error = localizedContext.getString(
+                        R.string.home_error_network,
+                        e.message ?: e.javaClass.simpleName
+                    )
                 )
             } catch (e: Exception) {
+                val localizedContext = localizedAppContext()
                 _uiState.value = HomeUiState(
                     loading = false,
-                    error = "Parse/unknown error: ${e.message ?: e.javaClass.simpleName}"  // Localized in UI
+                    error = localizedContext.getString(
+                        R.string.home_error_unknown,
+                        e.message ?: e.javaClass.simpleName
+                    )
                 )
             }
         }
@@ -145,7 +158,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             launch {
                 runCatching {
                     val raw = withContext(Dispatchers.IO) {
-                        client.searchSongs(keyword = getApplication<Application>().getString(R.string.home_search_hot), limit = 30, offset = 0, type = 1)
+                        client.searchSongs(keyword = HOME_SEARCH_HOT_KEYWORD, limit = 30, offset = 0, type = 1)
                     }
                     parseSongs(raw)
                 }.onSuccess { _hotSongsFlow.value = it }
@@ -155,7 +168,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             launch {
                 runCatching {
                     val raw = withContext(Dispatchers.IO) {
-                        client.searchSongs(keyword = getApplication<Application>().getString(R.string.home_search_radar), limit = 30, offset = 0, type = 1)
+                        client.searchSongs(keyword = HOME_SEARCH_RADAR_KEYWORD, limit = 30, offset = 0, type = 1)
                     }
                     parseSongs(raw)
                 }.onSuccess { _radarSongsFlow.value = it }

@@ -108,6 +108,7 @@ import coil.request.ImageRequest
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.FavoritesPlaylist
+import moe.ouom.neriplayer.data.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.isLocalSong
 import moe.ouom.neriplayer.data.sameIdentityAs
 import moe.ouom.neriplayer.ui.component.AppleMusicLyric
@@ -166,8 +167,13 @@ fun LyricsScreen(
         isLyricsMode = true
     }
 
-    fun launchWithLocalSyncWarning(song: SongItem?, actionLabel: String, action: () -> Unit) {
-        if (song?.isLocalSong() == true) {
+    fun launchWithLocalSyncWarning(
+        song: SongItem?,
+        actionLabel: String,
+        warnForLocalSync: Boolean = true,
+        action: () -> Unit
+    ) {
+        if (warnForLocalSync && song?.isLocalSong() == true) {
             pendingSyncConfirmLabel = actionLabel
             pendingSyncConfirmAction = action
         } else {
@@ -345,7 +351,8 @@ fun LyricsScreen(
                     val willFav = !isFavorite
                     launchWithLocalSyncWarning(
                         song = currentSong,
-                        actionLabel = favoriteActionLabel
+                        actionLabel = favoriteActionLabel,
+                        warnForLocalSync = willFav
                     ) {
                         favOverride = willFav
                         if (willFav) {
@@ -853,11 +860,14 @@ fun LyricsScreen(
             // 添加到歌单弹窗
             if (showAddSheet && currentSong != null) {
                 val playlists by PlayerManager.playlistsFlow.collectAsState()
+                val selectablePlaylists = remember(playlists, context) {
+                    playlists.filterNot { LocalFilesPlaylist.isSystemPlaylist(it, context) }
+                }
                 androidx.compose.material3.ModalBottomSheet(
                     onDismissRequest = { showAddSheet = false }
                 ) {
                     androidx.compose.foundation.lazy.LazyColumn {
-                        itemsIndexed(playlists) { _, pl ->
+                        itemsIndexed(selectablePlaylists) { _, pl ->
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()

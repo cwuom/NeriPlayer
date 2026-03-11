@@ -77,7 +77,9 @@ fun NeriMiniPlayer(
     onPlayPause: () -> Unit,
     onExpand: () -> Unit,
     onHeightChanged: (height: Int) -> Unit,
-    hazeState: HazeState
+    hazeState: HazeState,
+    enableHaze: Boolean = true,
+    modifier: Modifier = Modifier
 ) {
     val shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
     val supportsBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
@@ -89,14 +91,14 @@ fun NeriMiniPlayer(
             )
         ),
         shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-        modifier = Modifier
+        modifier = modifier
             .padding(start = 16.dp, end = 8.dp)
             .clickable { onExpand() }
             .onSizeChanged { size ->
                 onHeightChanged(size.height)
             }
             .then(
-                if (supportsBlur) Modifier.hazeChild(state = hazeState, shape = shape)
+                if (supportsBlur && enableHaze) Modifier.hazeChild(state = hazeState, shape = shape)
                 else Modifier
             )
     ) {

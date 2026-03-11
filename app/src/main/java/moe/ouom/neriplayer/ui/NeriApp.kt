@@ -23,10 +23,17 @@
  * Created: 2025/8/8
  */
 
+import android.app.Activity
 import android.app.Application
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import android.view.PixelCopy
+import android.view.View
+import android.view.ViewTreeObserver
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.EaseInOutCubic
@@ -46,6 +53,8 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
@@ -104,13 +113,17 @@ import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.haze
 import dev.chrisbanes.haze.hazeChild
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.AudioPlayerService
 import moe.ouom.neriplayer.core.player.AudioReactive
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.ThemeDefaults
+import moe.ouom.neriplayer.data.ThemePreferenceSnapshot
 import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.ui.component.NeriBottomBar
 import moe.ouom.neriplayer.ui.component.NeriMiniPlayer
@@ -149,6 +162,10 @@ import moe.ouom.neriplayer.ui.screen.RecentScreen
 import moe.ouom.neriplayer.R
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.view.drawToBitmap
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlin.coroutines.resume
 
 private fun adjustAccent(base: Color, isDark: Boolean): Color {
     val r = (base.red * 255).toInt().coerceIn(0, 255)
@@ -179,6 +196,97 @@ private fun adjustAccent(base: Color, isDark: Boolean): Color {
     )
 
     return Color(mixed)
+}
+
+private suspend fun captureThemeRevealSnapshot(
+    activity: Activity?,
+    fallbackView: View
+): ImageBitmap? {
+    val windowBitmap = activity?.let { currentActivity ->
+        suspendCancellableCoroutine<Bitmap?> { continuation ->
+            val decorView = currentActivity.window.decorView
+            if (decorView.width <= 0 || decorView.height <= 0) {
+                continuation.resume(null)
+                return@suspendCancellableCoroutine
+            }
+
+            val bitmap = Bitmap.createBitmap(
+                decorView.width,
+                decorView.height,
+                Bitmap.Config.ARGB_8888
+            )
+
+            PixelCopy.request(
+                currentActivity.window,
+                bitmap,
+                { result ->
+                    continuation.resume(if (result == PixelCopy.SUCCESS) bitmap else null)
+                },
+                Handler(Looper.getMainLooper())
+            )
+        }
+    }
+
+    return windowBitmap?.asImageBitmap() ?: captureThemeRevealFallbackSnapshot(fallbackView)
+}
+
+private suspend fun captureThemeRevealFallbackSnapshot(view: View): ImageBitmap? {
+    return withContext(Dispatchers.Main.immediate) {
+        runCatching {
+            if (view.width > 0 && view.height > 0) {
+                view.drawToBitmap().asImageBitmap()
+            } else {
+                null
+            }
+        }.getOrNull()
+    }
+}
+
+private suspend fun awaitNextDraw(view: View) {
+    if (!view.isAttachedToWindow || view.width <= 0 || view.height <= 0) {
+        return
+    }
+
+    withTimeoutOrNull(120L) {
+        suspendCancellableCoroutine<Unit> { continuation ->
+            val observer = view.viewTreeObserver
+            var handled = false
+            val drawListener = object : ViewTreeObserver.OnDrawListener {
+                override fun onDraw() {
+                    if (handled) return
+                    handled = true
+                    view.post {
+                        if (observer.isAlive) {
+                            observer.removeOnDrawListener(this)
+                        }
+                        if (continuation.isActive) {
+                            continuation.resume(Unit)
+                        }
+                    }
+                }
+            }
+
+            observer.addOnDrawListener(drawListener)
+            continuation.invokeOnCancellation {
+                if (handled) {
+                    return@invokeOnCancellation
+                }
+                handled = true
+                view.post {
+                    if (observer.isAlive) {
+                        observer.removeOnDrawListener(drawListener)
+                    }
+                }
+            }
+            view.invalidate()
+        }
+    }
+}
+
+private suspend fun awaitStableDraw(view: View) {
+    repeat(2) {
+        awaitNextDraw(view)
+    }
 }
 
 /**
@@ -262,6 +370,7 @@ private fun NowPlayingAccentBackdrop(
 
 @Composable
 fun NeriApp(
+    initialThemeSnapshot: ThemePreferenceSnapshot = ThemePreferenceSnapshot(),
     onIsDarkChanged: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -269,9 +378,15 @@ fun NeriApp(
     val fallbackPrimary = MaterialTheme.colorScheme.primary.toArgb()
     val repo = remember { AppContainer.settingsRepo }
 
-    val storedFollowSystemDark by repo.followSystemDarkFlow.collectAsState(initial = true)
-    val dynamicColorEnabled by repo.dynamicColorFlow.collectAsState(initial = true)
-    val storedForceDark by repo.forceDarkFlow.collectAsState(initial = false)
+    val storedFollowSystemDark by repo.followSystemDarkFlow.collectAsState(
+        initial = initialThemeSnapshot.followSystemDark
+    )
+    val dynamicColorEnabled by repo.dynamicColorFlow.collectAsState(
+        initial = initialThemeSnapshot.dynamicColor
+    )
+    val storedForceDark by repo.forceDarkFlow.collectAsState(
+        initial = initialThemeSnapshot.forceDark
+    )
     var showNowPlaying by rememberSaveable { mutableStateOf(false) }
     val devModeEnabled by repo.devModeEnabledFlow.collectAsState(initial = false)
     val themeSeedColor by repo.themeSeedColorFlow.collectAsState(initial = ThemeDefaults.DEFAULT_SEED_COLOR_HEX)
@@ -289,14 +404,35 @@ fun NeriApp(
     val silentGitHubSyncFailure by repo.silentGitHubSyncFailureFlow.collectAsState(initial = false)
     val showLyricTranslation by repo.showLyricTranslationFlow.collectAsState(initial = true)
     val maxCacheSizeBytes by repo.maxCacheSizeBytesFlow.collectAsState(initial = 1024L * 1024 * 1024)
-    val hazeState = remember { HazeState() }
     var pendingFollowSystemDark by remember { mutableStateOf<Boolean?>(null) }
     var pendingForceDark by remember { mutableStateOf<Boolean?>(null) }
     var themeRevealSnapshot by remember { mutableStateOf<ImageBitmap?>(null) }
     var themeRevealOriginWindow by remember { mutableStateOf<Offset?>(null) }
+    var themeRevealStartRadiusPx by remember { mutableStateOf(0f) }
+    var themeRevealFallbackColorArgb by remember { mutableStateOf<Int?>(null) }
+    var themeRevealCaptureInFlight by remember { mutableStateOf(false) }
+    var themeRevealCaptureJob by remember { mutableStateOf<Job?>(null) }
+    var themeRevealCaptureToken by remember { mutableStateOf(0) }
+    val lifecycleOwner = LocalLifecycleOwner.current
 
     val followSystemDark = pendingFollowSystemDark ?: storedFollowSystemDark
     val forceDark = pendingForceDark ?: storedForceDark
+
+    val clearThemeRevealVisualState = {
+        pendingFollowSystemDark = null
+        pendingForceDark = null
+        themeRevealSnapshot = null
+        themeRevealOriginWindow = null
+        themeRevealStartRadiusPx = 0f
+        themeRevealFallbackColorArgb = null
+    }
+    val clearThemeRevealState = {
+        themeRevealCaptureToken += 1
+        themeRevealCaptureJob?.cancel()
+        themeRevealCaptureJob = null
+        themeRevealCaptureInFlight = false
+        clearThemeRevealVisualState()
+    }
 
     var coverSeedHex by remember { mutableStateOf<String?>(null) }   // 形如 "RRGGBB"
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
@@ -326,7 +462,6 @@ fun NeriApp(
             pendingForceDark = null
         }
     }
-
 
     LaunchedEffect(currentSong?.coverUrl, dynamicColorEnabled, fallbackPrimary) {
         if (!dynamicColorEnabled) {
@@ -378,6 +513,8 @@ fun NeriApp(
         followSystemDark -> isSystemInDarkTheme()
         else -> false
     }
+    val hazeState = remember { HazeState() }
+
     LaunchedEffect(Unit) {
         // 确保 PlayerManager 使用正确的缓存大小初始化
         // 由于 initialize() 是幂等的，如果已经初始化过，这个调用不会改变设置
@@ -395,35 +532,95 @@ fun NeriApp(
         }
     }
 
-    LaunchedEffect(isDark) { onIsDarkChanged(isDark) }
-
     val scope = rememberCoroutineScope()
     val preferredQuality by repo.audioQualityFlow.collectAsState(initial = "exhigh")
     val biliPreferredQuality by repo.biliAudioQualityFlow.collectAsState(initial = "high")
+    val currentThemeBackgroundArgb = MaterialTheme.colorScheme.background.toArgb()
+    val themeRevealActive =
+        themeRevealOriginWindow != null &&
+            themeRevealFallbackColorArgb != null
 
-    fun requestThemeToggle(originInWindow: Offset) {
-        if (pendingFollowSystemDark != null || pendingForceDark != null || themeRevealSnapshot != null) {
+    LaunchedEffect(isDark, themeRevealActive, themeRevealCaptureInFlight) {
+        if (!themeRevealActive && !themeRevealCaptureInFlight) {
+            onIsDarkChanged(isDark)
+        }
+    }
+
+    fun requestThemeToggle(originInWindow: Offset, startRadiusPx: Float) {
+        if (
+            themeRevealCaptureInFlight ||
+            pendingFollowSystemDark != null ||
+            pendingForceDark != null ||
+            themeRevealOriginWindow != null
+        ) {
             return
         }
 
         val nextDark = !isDark
-        val snapshot = runCatching {
-            if (rootView.width > 0 && rootView.height > 0) {
-                rootView.drawToBitmap().asImageBitmap()
-            } else {
-                null
+        val activity = context as? Activity
+        val captureView = activity?.window?.decorView?.rootView ?: rootView.rootView
+        val captureToken = themeRevealCaptureToken + 1
+        themeRevealCaptureToken = captureToken
+        themeRevealCaptureInFlight = true
+
+        val captureJob = scope.launch {
+            awaitStableDraw(captureView)
+            val snapshot = runCatching {
+                captureThemeRevealSnapshot(
+                    activity = activity,
+                    fallbackView = captureView
+                )
+            }.getOrNull()
+            val lifecycleActive = lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+            val activityValid = activity == null || (!activity.isFinishing && !activity.isDestroyed)
+            if (themeRevealCaptureToken != captureToken || !lifecycleActive || !activityValid) {
+                if (themeRevealCaptureToken == captureToken) {
+                    themeRevealCaptureJob = null
+                    themeRevealCaptureInFlight = false
+                }
+                return@launch
             }
-        }.getOrNull()
 
-        themeRevealSnapshot = snapshot
-        themeRevealOriginWindow = originInWindow.takeIf { snapshot != null }
-        pendingFollowSystemDark = false
-        pendingForceDark = nextDark
-
-        scope.launch {
-            repo.setFollowSystemDark(false)
-            repo.setForceDark(nextDark)
+            clearThemeRevealVisualState()
+            if (snapshot != null) {
+                themeRevealSnapshot = snapshot
+                themeRevealFallbackColorArgb = currentThemeBackgroundArgb
+                themeRevealOriginWindow = originInWindow
+                themeRevealStartRadiusPx = startRadiusPx.coerceAtLeast(1f)
+            }
+            try {
+                pendingFollowSystemDark = false
+                pendingForceDark = nextDark
+                repo.setFollowSystemDark(false)
+                repo.setForceDark(nextDark)
+            } finally {
+                if (themeRevealCaptureToken == captureToken) {
+                    themeRevealCaptureJob = null
+                    themeRevealCaptureInFlight = false
+                }
+            }
         }
+        themeRevealCaptureJob = captureJob
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (
+                event == Lifecycle.Event.ON_PAUSE ||
+                event == Lifecycle.Event.ON_STOP ||
+                event == Lifecycle.Event.ON_DESTROY
+            ) {
+                clearThemeRevealState()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    LaunchedEffect(rootView, backgroundImageUri) {
+        clearThemeRevealState()
     }
 
     CompositionLocalProvider(LocalDensity provides finalDensity) {
@@ -476,6 +673,8 @@ fun NeriApp(
                 val currentSong by PlayerManager.currentSongFlow.collectAsState()
                 val isMiniPlayerVisible = currentSong != null && !showNowPlaying
                 val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
+                val showLibraryMiniPlayerBridge =
+                    isMiniPlayerVisible && currentRoute == Destinations.Library.route
 
                 val miniPlayerHeightDp = if (isMiniPlayerVisible) {
                     with(finalDensity) { miniPlayerHeightPx.toDp() }
@@ -972,7 +1171,8 @@ fun NeriApp(
                                                 val (_, message) = PlayerManager.clearCache(clearAudio, clearImage)
                                                 snackbarHostState.showSnackbar(message)
                                             }
-                                        }
+                                        },
+                                        onBeforeLanguageRestart = clearThemeRevealState
                                     )
                                 }
 
@@ -1102,6 +1302,29 @@ fun NeriApp(
                             }
 
                             AnimatedVisibility(
+                                visible = showLibraryMiniPlayerBridge,
+                                modifier = Modifier.align(Alignment.BottomStart),
+                                enter = fadeIn(animationSpec = tween(durationMillis = 180)),
+                                exit = fadeOut(animationSpec = tween(durationMillis = 120))
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(miniPlayerHeightDp + 20.dp)
+                                        .background(
+                                            Brush.verticalGradient(
+                                                colors = listOf(
+                                                    Color.Transparent,
+                                                    MaterialTheme.colorScheme.surface.copy(
+                                                        alpha = if (backgroundImageUri == null) 0.86f else 0.48f
+                                                    )
+                                                )
+                                            )
+                                        )
+                                )
+                            }
+
+                            AnimatedVisibility(
                                 visible = currentSong != null && !showNowPlaying,
                                 modifier = Modifier.align(Alignment.BottomStart),
                                 enter = slideInVertically(
@@ -1128,23 +1351,10 @@ fun NeriApp(
                                     onExpand = { showNowPlaying = true },
                                     onHeightChanged = { heightInPixels -> miniPlayerHeightPx = heightInPixels },
                                     hazeState = hazeState,
+                                    enableHaze = true
                                 )
                             }
 
-                            val revealSnapshot = themeRevealSnapshot
-                            val revealOrigin = themeRevealOriginWindow
-                            if (revealSnapshot != null && revealOrigin != null) {
-                                ThemeRevealOverlay(
-                                    snapshot = revealSnapshot,
-                                    originInWindow = revealOrigin,
-                                    modifier = Modifier.fillMaxSize(),
-                                    durationMillis = 720,
-                                    onFinished = {
-                                        themeRevealSnapshot = null
-                                        themeRevealOriginWindow = null
-                                    }
-                                )
-                            }
                         }
                     }
                 }
@@ -1206,6 +1416,21 @@ fun NeriApp(
                             )
                         }
                     }
+                }
+
+                val revealOrigin = themeRevealOriginWindow
+                val revealFallbackColor = themeRevealFallbackColorArgb?.let(::Color)
+                if (revealOrigin != null && revealFallbackColor != null) {
+                    ThemeRevealOverlay(
+                        snapshot = themeRevealSnapshot,
+                        fallbackColor = revealFallbackColor,
+                        originInWindow = revealOrigin,
+                        startRadiusPx = themeRevealStartRadiusPx,
+                        legacySnapshotDim = true,
+                        modifier = Modifier.fillMaxSize(),
+                        durationMillis = 720,
+                        onFinished = clearThemeRevealState
+                    )
                 }
             }
         }

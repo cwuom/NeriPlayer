@@ -131,9 +131,11 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalFocusManager
@@ -159,6 +161,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.LocalMediaSupport
+import moe.ouom.neriplayer.data.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.FavoritesPlaylist
 import moe.ouom.neriplayer.data.isLocalSong
 import moe.ouom.neriplayer.data.sameIdentityAs
@@ -327,8 +330,13 @@ fun NowPlayingScreen(
     // 当仓库回流或歌曲切换时，撤销本地乐观覆盖，用真实状态对齐
     LaunchedEffect(playlists, currentSong?.id) { favOverride = null }
 
-    fun launchWithLocalSyncWarning(song: SongItem?, actionLabel: String, action: () -> Unit) {
-        if (song?.isLocalSong() == true) {
+    fun launchWithLocalSyncWarning(
+        song: SongItem?,
+        actionLabel: String,
+        warnForLocalSync: Boolean = true,
+        action: () -> Unit
+    ) {
+        if (warnForLocalSync && song?.isLocalSong() == true) {
             pendingSyncConfirmLabel = actionLabel
             pendingSyncConfirmAction = action
         } else {
@@ -338,8 +346,11 @@ fun NowPlayingScreen(
 
     // 自适应布局判断
     val configuration = LocalConfiguration.current
+    val windowInfo = LocalWindowInfo.current
+    val density = LocalDensity.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-    val isWideLayout = configuration.screenWidthDp >= 480
+    val windowWidthDp = with(density) { windowInfo.containerSize.width.toDp() }
+    val isWideLayout = windowWidthDp >= 480.dp
     val useWideLandscapeLayout = isWideLayout && isLandscape
 
     // 歌词偏移（平台 + 用户自定义）
@@ -438,7 +449,8 @@ fun NowPlayingScreen(
                                     val willFav = !isFavorite
                                     launchWithLocalSyncWarning(
                                         song = currentSong,
-                                        actionLabel = context.getString(R.string.favorite_add)
+                                        actionLabel = context.getString(R.string.favorite_add),
+                                        warnForLocalSync = willFav
                                     ) {
                                         favOverride = willFav
                                         if (willFav) {
@@ -1039,12 +1051,15 @@ fun NowPlayingScreen(
             }
 
             if (showAddSheet) {
+                val selectablePlaylists = remember(playlists, context) {
+                    playlists.filterNot { LocalFilesPlaylist.isSystemPlaylist(it, context) }
+                }
                 ModalBottomSheet(
                     onDismissRequest = { showAddSheet = false },
                     sheetState = addSheetState
                 ) {
                     LazyColumn {
-                        itemsIndexed(playlists) { _, pl ->
+                        itemsIndexed(selectablePlaylists) { _, pl ->
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -1998,6 +2013,8 @@ fun EditSongInfoSheet(
             }
         }
 
+        val actionButtonFontSize = if (LocalConfiguration.current.screenWidthDp < 420) 11.sp else 13.sp
+
         // 搜索自动填充按钮
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -2013,7 +2030,13 @@ fun EditSongInfoSheet(
             ) {
                 Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
-                Text(stringResource(R.string.music_auto_fill))
+                Text(
+                    text = stringResource(R.string.music_auto_fill),
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                    fontSize = actionButtonFontSize
+                )
             }
 
             HapticTextButton(
@@ -2029,7 +2052,13 @@ fun EditSongInfoSheet(
             ) {
                 Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
-                Text(stringResource(R.string.music_restore_original))
+                Text(
+                    text = stringResource(R.string.music_restore_original),
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                    fontSize = actionButtonFontSize
+                )
             }
 
             HapticTextButton(

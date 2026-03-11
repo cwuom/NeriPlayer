@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+
 package moe.ouom.neriplayer.data.github
 
 /*
@@ -203,18 +205,44 @@ data class SyncFavoritePlaylist(
     @ProtoNumber(4) val trackCount: Int,
     @ProtoNumber(5) val source: String,
     @ProtoNumber(6) val songs: List<SyncSong>,
-    @ProtoNumber(7) val addedTime: Long
+    @ProtoNumber(7) val addedTime: Long,
+    @ProtoNumber(8) val modifiedAt: Long = addedTime,
+    @ProtoNumber(9) val isDeleted: Boolean = false
 ) {
     companion object {
         fun fromFavoritePlaylist(playlist: FavoritePlaylist, context: Context? = null): SyncFavoritePlaylist {
+            if (playlist.isDeleted) {
+                return SyncFavoritePlaylist(
+                    id = playlist.id,
+                    name = playlist.name,
+                    coverUrl = playlist.coverUrl,
+                    trackCount = 0,
+                    source = playlist.source,
+                    songs = emptyList(),
+                    addedTime = playlist.addedTime,
+                    modifiedAt = playlist.modifiedAt,
+                    isDeleted = true
+                )
+            }
+            val syncedSongs = playlist.songs.mapNotNull { SyncSong.fromSongItemOrNull(it, context) }
+            val hasFilteredLocalSongs = syncedSongs.size != playlist.songs.size
+            val syncedCoverUrl = playlist.coverUrl
+                ?.takeUnless { LocalSongSupport.isLocalMediaUri(it) }
+                ?: syncedSongs.firstOrNull()?.coverUrl
             return SyncFavoritePlaylist(
                 id = playlist.id,
                 name = playlist.name,
-                coverUrl = playlist.coverUrl,
-                trackCount = playlist.trackCount,
+                coverUrl = syncedCoverUrl,
+                trackCount = if (hasFilteredLocalSongs) {
+                    syncedSongs.size
+                } else {
+                    maxOf(playlist.trackCount, syncedSongs.size)
+                },
                 source = playlist.source,
-                songs = playlist.songs.mapNotNull { SyncSong.fromSongItemOrNull(it, context) },
-                addedTime = playlist.addedTime
+                songs = syncedSongs,
+                addedTime = playlist.addedTime,
+                modifiedAt = playlist.modifiedAt,
+                isDeleted = false
             )
         }
     }
@@ -227,7 +255,9 @@ data class SyncFavoritePlaylist(
             trackCount = trackCount,
             source = source,
             songs = songs.map { it.toSongItem() },
-            addedTime = addedTime
+            addedTime = addedTime,
+            modifiedAt = modifiedAt,
+            isDeleted = isDeleted
         )
     }
 }

@@ -71,8 +71,12 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.data.isLocalSong
+import moe.ouom.neriplayer.data.sameIdentityAs
+import moe.ouom.neriplayer.data.stableKey
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.HapticIconButton
@@ -96,7 +100,15 @@ fun RecentScreen(
         history.map {
             SongItem(
                 id = it.id, name = it.name, artist = it.artist, albumId = it.albumId,
-                album = it.album, durationMs = it.durationMs, coverUrl = it.coverUrl
+                album = it.album,
+                durationMs = it.durationMs,
+                coverUrl = it.coverUrl,
+                mediaUri = it.localFilePath ?: it.mediaUri,
+                matchedLyric = it.matchedLyric,
+                originalName = it.originalName,
+                originalArtist = it.originalArtist,
+                localFileName = it.localFileName,
+                localFilePath = it.localFilePath
             )
         }
     }
@@ -113,6 +125,7 @@ fun RecentScreen(
         if (query.isBlank()) baseSongs
         else baseSongs.filter {
             it.name.contains(query, ignoreCase = true) ||
+                    (it.localFileName?.contains(query, ignoreCase = true) == true) ||
                     it.artist.contains(query, ignoreCase = true) ||
                     it.album.contains(query, ignoreCase = true)
         }
@@ -120,14 +133,16 @@ fun RecentScreen(
 
     // 多选
     var selectionMode by remember { mutableStateOf(false) }
-    var selectedIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
-    fun toggleSelect(id: Long) {
-        selectedIds = if (selectedIds.contains(id)) selectedIds - id else selectedIds + id
+    var selectedKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
+    fun toggleSelect(key: String) {
+        selectedKeys = if (selectedKeys.contains(key)) selectedKeys - key else selectedKeys + key
     }
-    fun exitSelection() { selectionMode = false; selectedIds = emptySet() }
+    fun exitSelection() { selectionMode = false; selectedKeys = emptySet() }
 
     // 当前播放态
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
+    val downloadedSongs by GlobalDownloadManager.downloadedSongs.collectAsState()
+    val downloadedSongFilePaths = remember(downloadedSongs) { downloadedSongs.map { it.filePath } }
 
     // 清空确认
     var showClearConfirm by remember { mutableStateOf(false) }
@@ -183,9 +198,9 @@ fun RecentScreen(
                     )
                 )
             } else {
-                val allSelected = selectedIds.size == displayedSongs.size && displayedSongs.isNotEmpty()
+                val allSelected = selectedKeys.size == displayedSongs.size && displayedSongs.isNotEmpty()
                 TopAppBar(
-                    title = { Text(stringResource(R.string.common_selected_count, selectedIds.size)) },
+                    title = { Text(stringResource(R.string.common_selected_count, selectedKeys.size)) },
                     navigationIcon = {
                         HapticIconButton(onClick = { exitSelection() }) {
                             Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.cd_exit_select))
@@ -194,17 +209,17 @@ fun RecentScreen(
                     actions = {
                         // 全选/取消全选
                         HapticTextButton(onClick = {
-                            selectedIds = if (allSelected) emptySet()
-                            else displayedSongs.map { it.id }.toSet()
+                            selectedKeys = if (allSelected) emptySet()
+                            else displayedSongs.map { it.stableKey() }.toSet()
                         }) { Text(if (allSelected) stringResource(R.string.action_deselect_all) else stringResource(R.string.action_select_all)) }
 
                         Spacer(Modifier.width(8.dp))
 
                         // 播放所选
                         HapticTextButton(
-                            enabled = selectedIds.isNotEmpty(),
+                            enabled = selectedKeys.isNotEmpty(),
                             onClick = {
-                                val list = displayedSongs.filter { it.id in selectedIds }
+                                val list = displayedSongs.filter { it.stableKey() in selectedKeys }
                                 if (list.isNotEmpty()) {
                                     onSongClick(list, 0)
                                     exitSelection()
@@ -257,10 +272,11 @@ fun RecentScreen(
                     RecentRowRich(
                         index = index + 1,
                         song = song,
-                        isPlaying = currentSong?.id == song.id && currentSong?.album == song.album,
+                        downloadedSongFilePaths = downloadedSongFilePaths,
+                        isPlaying = currentSong?.sameIdentityAs(song) == true,
                         onClick = {
                             context.performHapticFeedback()
-                            val pos = displayedSongs.indexOfFirst { it.id == song.id && it.album == song.album }
+                            val pos = displayedSongs.indexOfFirst { it.sameIdentityAs(song) }
                             if (pos >= 0) onSongClick(displayedSongs, pos)
                         },
                         moreMenu = {
@@ -319,11 +335,30 @@ fun RecentScreen(
 private fun RecentRowRich(
     index: Int,
     song: SongItem,
+    downloadedSongFilePaths: List<String>,
     isPlaying: Boolean,
     onClick: () -> Unit,
     moreMenu: @Composable () -> Unit
 ) {
     val ctx = LocalContext.current
+            val primaryTitle = remember(song) {
+        if (song.isLocalSong()) {
+            song.localFileName?.takeIf { it.isNotBlank() } ?: song.name
+        } else {
+            song.name
+        }
+    }
+    val secondaryText = remember(song) {
+        buildList {
+            if (song.isLocalSong()) {
+                song.name
+                    .takeIf { it.isNotBlank() && it != primaryTitle }
+                    ?.let(::add)
+            }
+            song.artist.takeIf { it.isNotBlank() }?.let(::add)
+            add(formatDuration(song.durationMs))
+        }.joinToString(" · ")
+    }
     val rowScale by animateFloatAsState(
         targetValue = if (isPlaying) 1.01f else 1f,
         animationSpec = spring(stiffness = 500f),
@@ -370,13 +405,15 @@ private fun RecentRowRich(
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    song.name,
+                    primaryTitle,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.titleMedium
                 )
                 // 已下载标志
-                if (AudioDownloadManager.getLocalFilePath(ctx, song) != null) {
+                if (remember(downloadedSongFilePaths, song) {
+                        AudioDownloadManager.getLocalFilePath(ctx, song) != null
+                    }) {
                     Spacer(Modifier.width(6.dp))
                     Icon(
                         imageVector = Icons.Outlined.DownloadDone,
@@ -387,10 +424,7 @@ private fun RecentRowRich(
                 }
             }
             Text(
-                listOfNotNull(
-                    song.artist.takeIf { it.isNotBlank() },
-                    formatDuration(song.durationMs)
-                ).joinToString(" · "),
+                secondaryText,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodySmall,

@@ -1,3 +1,6 @@
 # Default ignored files
 /shelf/
 /workspace.xml
+/appInsightsSettings.xml
+/copilot.data.migration.ask2agent.xml
+/markdown.xml

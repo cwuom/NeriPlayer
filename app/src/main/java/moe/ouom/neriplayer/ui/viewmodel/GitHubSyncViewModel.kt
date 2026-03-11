@@ -170,12 +170,20 @@ class GitHubSyncViewModel : ViewModel() {
                     successMessage = context.getString(R.string.github_repo_config_success, fullRepoName)
                 )
             } else {
+                val error = result.exceptionOrNull()
                 _uiState.value = _uiState.value.copy(
                     isCheckingRepo = false,
-                    errorMessage = context.getString(
-                        R.string.github_repo_not_found,
-                        result.exceptionOrNull()?.message ?: fullRepoName
-                    )
+                    errorMessage = when {
+                        error is TokenExpiredException -> context.getString(R.string.github_token_expired)
+                        error is GitHubApiException && error.statusCode == 404 -> context.getString(
+                            R.string.github_repo_not_found,
+                            fullRepoName
+                        )
+                        else -> context.getString(
+                            R.string.github_sync_failed,
+                            error?.message ?: context.getString(R.string.github_sync_failed_message)
+                        )
+                    }
                 )
             }
         }
@@ -194,11 +202,11 @@ class GitHubSyncViewModel : ViewModel() {
             if (result.isSuccess) {
                 val syncResult = result.getOrNull()!!
                 if (syncResult.success) {
-                    storage?.saveLastSyncTime(System.currentTimeMillis())
+                    val lastSyncTime = storage?.getLastSyncTime() ?: _uiState.value.lastSyncTime
                     _uiState.value = _uiState.value.copy(
                         isSyncing = false,
                         syncResult = syncResult,
-                        lastSyncTime = System.currentTimeMillis(),
+                        lastSyncTime = lastSyncTime,
                         successMessage = syncResult.message
                     )
 
@@ -213,6 +221,13 @@ class GitHubSyncViewModel : ViewModel() {
                 }
             } else {
                 val error = result.exceptionOrNull()
+                if (error is GitHubSyncInProgressException) {
+                    _uiState.value = _uiState.value.copy(
+                        isSyncing = false,
+                        successMessage = error.message
+                    )
+                    return@launch
+                }
                 // 检查是否是Token过期
                 if (error is TokenExpiredException) {
                     // Token过期，清除配置

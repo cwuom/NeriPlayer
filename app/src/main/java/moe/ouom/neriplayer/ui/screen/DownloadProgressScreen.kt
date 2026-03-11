@@ -24,6 +24,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.DownloadStatus
 import moe.ouom.neriplayer.core.download.DownloadTask
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.data.stableKey
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.util.formatFileSize
 import moe.ouom.neriplayer.util.performHapticFeedback
@@ -137,7 +138,8 @@ fun DownloadProgressScreen(
                     bottom = 16.dp + miniPlayerHeight
                 )
             ) {
-                items(downloadTasks, key = { it.song.id }) { task ->
+                items(downloadTasks, key = { it.song.stableKey() }) { task ->
+                    val songKey = task.song.stableKey()
                     val canDismiss = task.status == DownloadStatus.COMPLETED || task.status == DownloadStatus.CANCELLED
 
                     if (canDismiss) {
@@ -145,7 +147,7 @@ fun DownloadProgressScreen(
                             confirmValueChange = { dismissValue ->
                                 if (dismissValue == SwipeToDismissBoxValue.EndToStart) {
                                     context.performHapticFeedback()
-                                    GlobalDownloadManager.removeDownloadTask(task.song.id)
+                                    GlobalDownloadManager.removeDownloadTask(songKey)
                                     true
                                 } else {
                                     false
@@ -168,11 +170,11 @@ fun DownloadProgressScreen(
                                 task = task,
                                 onCancel = {
                                     context.performHapticFeedback()
-                                    GlobalDownloadManager.cancelDownloadTask(task.song.id)
+                                    GlobalDownloadManager.cancelDownloadTask(songKey)
                                 },
                                 onResume = {
                                     context.performHapticFeedback()
-                                    GlobalDownloadManager.resumeDownloadTask(context, task.song.id)
+                                    GlobalDownloadManager.resumeDownloadTask(context, songKey)
                                 }
                             )
                         }
@@ -181,11 +183,11 @@ fun DownloadProgressScreen(
                             task = task,
                             onCancel = {
                                 context.performHapticFeedback()
-                                GlobalDownloadManager.cancelDownloadTask(task.song.id)
+                                GlobalDownloadManager.cancelDownloadTask(songKey)
                             },
                             onResume = {
                                 context.performHapticFeedback()
-                                GlobalDownloadManager.resumeDownloadTask(context, task.song.id)
+                                GlobalDownloadManager.resumeDownloadTask(context, songKey)
                             },
                             modifier = Modifier.animateItem(
                                 fadeInSpec = tween(durationMillis = 250),

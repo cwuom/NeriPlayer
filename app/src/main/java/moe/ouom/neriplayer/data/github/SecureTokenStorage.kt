@@ -58,6 +58,7 @@ class SecureTokenStorage(context: Context) {
         private const val KEY_DELETED_PLAYLIST_IDS = "deleted_playlist_ids"
         private const val KEY_TOKEN_WARNING_DISMISSED = "token_warning_dismissed"
         private const val KEY_DATA_SAVER_MODE = "data_saver_mode"
+        private const val KEY_SYNC_MUTATION_VERSION = "sync_mutation_version"
     }
 
     /** 播放历史更新模式 */
@@ -188,6 +189,20 @@ class SecureTokenStorage(context: Context) {
         encryptedPrefs.edit().remove(KEY_DELETED_PLAYLIST_IDS).apply()
     }
 
+    fun removeDeletedPlaylistIds(playlistIds: Set<Long>) {
+        if (playlistIds.isEmpty()) {
+            return
+        }
+        val remaining = getDeletedPlaylistIds() - playlistIds
+        if (remaining.isEmpty()) {
+            clearDeletedPlaylistIds()
+            return
+        }
+        encryptedPrefs.edit()
+            .putString(KEY_DELETED_PLAYLIST_IDS, remaining.joinToString(","))
+            .apply()
+    }
+
     /** 设置Token警告已忽略 */
     fun setTokenWarningDismissed(dismissed: Boolean) {
         encryptedPrefs.edit().putBoolean(KEY_TOKEN_WARNING_DISMISSED, dismissed).apply()
@@ -206,5 +221,15 @@ class SecureTokenStorage(context: Context) {
     /** 获取省流模式状态 */
     fun isDataSaverMode(): Boolean {
         return encryptedPrefs.getBoolean(KEY_DATA_SAVER_MODE, true)
+    }
+
+    fun getSyncMutationVersion(): Long {
+        return encryptedPrefs.getLong(KEY_SYNC_MUTATION_VERSION, 0L)
+    }
+
+    fun markSyncMutation(): Long {
+        val nextVersion = getSyncMutationVersion() + 1L
+        encryptedPrefs.edit().putLong(KEY_SYNC_MUTATION_VERSION, nextVersion).apply()
+        return nextVersion
     }
 }

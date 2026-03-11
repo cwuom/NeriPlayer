@@ -75,7 +75,9 @@ data class SongItem(
     val originalArtist: String? = null,
     val originalCoverUrl: String? = null,
     val originalLyric: String? = null,
-    val originalTranslatedLyric: String? = null
+    val originalTranslatedLyric: String? = null,
+    val localFileName: String? = null,
+    val localFilePath: String? = null
 ) : Parcelable
 
 data class PlaylistDetailUiState(

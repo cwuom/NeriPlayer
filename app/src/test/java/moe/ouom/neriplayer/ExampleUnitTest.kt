@@ -17,11 +17,11 @@ class ExampleUnitTest {
     @Test
     fun `formatPlayCount rounds to chinese units`() {
         val context = mockContext(Locale.SIMPLIFIED_CHINESE)
-        `when`(context.getString(R.string.number_ten_thousand, 9.9)).thenReturn("9.9\u4e07")
-        `when`(context.getString(R.string.number_hundred_million, 1.0)).thenReturn("1.0\u4ebf")
+        `when`(context.getString(R.string.number_ten_thousand, 9.9)).thenReturn("9.9万")
+        `when`(context.getString(R.string.number_hundred_million, 1.0)).thenReturn("1.0亿")
 
-        assertEquals("9.9\u4e07", formatPlayCount(context, 99_000))
-        assertEquals("1.0\u4ebf", formatPlayCount(context, 100_000_000))
+        assertEquals("9.9万", formatPlayCount(context, 99_000))
+        assertEquals("1.0亿", formatPlayCount(context, 100_000_000))
         assertEquals("500", formatPlayCount(context, 500))
     }
 

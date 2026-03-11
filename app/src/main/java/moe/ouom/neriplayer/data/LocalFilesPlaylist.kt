@@ -4,16 +4,16 @@ import android.content.Context
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.util.LanguageManager
 
-object FavoritesPlaylist {
-    const val SYSTEM_ID = -1001L
+object LocalFilesPlaylist {
+    const val SYSTEM_ID = -1002L
 
-    private const val LEGACY_ZH_NAME = "我喜欢的音乐"
-    private const val LEGACY_CORRUPTED_ZH_NAME = "鎴戝枩娆㈢殑闊充箰"
-    private const val LEGACY_EN_NAME = "My Favorite Music"
+    private const val LEGACY_ZH_NAME = "本地文件"
+    private const val LEGACY_CORRUPTED_ZH_NAME = "鏈湴鏂囦欢"
+    private const val LEGACY_EN_NAME = "Local Files"
 
     fun currentName(context: Context): String {
         val localizedContext = LanguageManager.applyLanguage(context)
-        return localizedContext.getString(R.string.favorite_my_music)
+        return localizedContext.getString(R.string.local_files)
     }
 
     fun candidateNames(context: Context? = null): Set<String> {
@@ -49,9 +49,5 @@ object FavoritesPlaylist {
             modifiedAt = playlists.maxOfOrNull { it.modifiedAt } ?: System.currentTimeMillis(),
             customCoverUrl = playlists.lastOrNull { !it.customCoverUrl.isNullOrBlank() }?.customCoverUrl
         )
-    }
-
-    fun normalize(playlists: List<LocalPlaylist>, context: Context): List<LocalPlaylist> {
-        return SystemLocalPlaylists.normalize(playlists, context)
     }
 }

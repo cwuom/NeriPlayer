@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="local_song_details_title">Local Song Details</string>
+    <string name="local_song_details_loading">Reading local song info...</string>
+    <string name="local_song_details_failed">Failed to read local song info: %1$s</string>
+    <string name="local_song_detail_display_name">File Name</string>
+    <string name="local_song_detail_title">Title</string>
+    <string name="local_song_detail_artist">Artist</string>
+    <string name="local_song_detail_album">Album</string>
+    <string name="local_song_detail_album_artist">Album Artist</string>
+    <string name="local_song_detail_composer">Composer</string>
+    <string name="local_song_detail_genre">Genre</string>
+    <string name="local_song_detail_year">Year</string>
+    <string name="local_song_detail_track">Track No.</string>
+    <string name="local_song_detail_disc">Disc No.</string>
+    <string name="local_song_detail_duration">Duration</string>
+    <string name="local_song_detail_extension">File Extension</string>
+    <string name="local_song_detail_bitrate">Bitrate</string>
+    <string name="local_song_detail_sample_rate">Sample Rate</string>
+    <string name="local_song_detail_channels">Channels</string>
+    <string name="local_song_detail_bit_depth">Bit Depth</string>
+    <string name="local_song_detail_size">File Size</string>
+    <string name="local_song_detail_mime">MIME Type</string>
+    <string name="local_song_detail_audio_mime">Audio MIME</string>
+    <string name="local_song_detail_modified">Modified</string>
+    <string name="local_song_detail_path">File Path</string>
+    <string name="local_song_detail_lyric_path">Lyrics Path</string>
+    <string name="local_song_detail_uri">Media URI</string>
+    <string name="local_song_detail_cover">Cover Source</string>
+    <string name="local_song_detail_lyric">Lyrics Source</string>
+    <string name="local_song_detail_has_lyrics">Lyrics</string>
+    <string name="local_song_detail_has_lyrics_value">Loaded</string>
+    <string name="local_song_detail_no_lyrics_value">Not Found</string>
+    <string name="local_song_cover_embedded">Embedded Cover</string>
+    <string name="local_song_cover_external">Nearby Cover File</string>
+    <string name="local_song_lyric_external">Nearby Lyrics File</string>
+    <string name="local_song_open_details">Song Details</string>
+    <string name="local_song_sync_confirm_title">Local Song Won\'t Sync</string>
+    <string name="local_song_sync_confirm_message">Local songs are never synced to GitHub. Confirm %1$s?</string>
+    <string name="local_song_share_failed">Unable to share the local song file</string>
+</resources>

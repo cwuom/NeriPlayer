@@ -26,6 +26,11 @@ data class PlayedEntry(
     val durationMs: Long,
     val coverUrl: String?,
     val mediaUri: String? = null,
+    val matchedLyric: String? = null,
+    val originalName: String? = null,
+    val originalArtist: String? = null,
+    val localFileName: String? = null,
+    val localFilePath: String? = null,
     val playedAt: Long // epoch millis
 )
 
@@ -45,7 +50,7 @@ class PlayHistoryRepository private constructor(private val app: Context) {
             val type = object : TypeToken<List<PlayedEntry>>() {}.type
             gson.fromJson<List<PlayedEntry>>(raw, type).orEmpty()
                 .sortedByDescending { it.playedAt }
-                .distinctBy { Triple(it.id, it.album, it.mediaUri) }
+                .distinctBy { it.identityKey() }
                 .take(1000)
         } catch (_: Throwable) { emptyList() }
     }
@@ -87,6 +92,7 @@ class PlayHistoryRepository private constructor(private val app: Context) {
     private fun triggerAutoSync() {
         try {
             // 检查是否启用自动同步
+            storage.markSyncMutation()
             if (!storage.isAutoSyncEnabled()) {
                 NPLogger.d("PlayHistoryRepo", "Auto sync is disabled, skipping sync")
                 return
@@ -112,9 +118,8 @@ class PlayHistoryRepository private constructor(private val app: Context) {
             val current = _history.value
             NPLogger.d("PlayHistoryRepo", "Current history size: ${current.size}")
 
-            val idx = current.indexOfFirst {
-                it.id == song.id && it.album == song.album && it.mediaUri == song.mediaUri
-            }
+            val songIdentityKey = song.identityKey()
+            val idx = current.indexOfFirst { it.identityKey() == songIdentityKey }
 
             val toHead = if (idx >= 0) {
                 NPLogger.d("PlayHistoryRepo", "Updating existing entry at index $idx")
@@ -126,6 +131,11 @@ class PlayHistoryRepository private constructor(private val app: Context) {
                     durationMs = song.durationMs,
                     coverUrl = song.coverUrl,
                     mediaUri = song.mediaUri,
+                    matchedLyric = song.matchedLyric,
+                    originalName = song.originalName,
+                    originalArtist = song.originalArtist,
+                    localFileName = song.localFileName,
+                    localFilePath = song.localFilePath,
                     playedAt = now
                 )
             } else {
@@ -139,6 +149,11 @@ class PlayHistoryRepository private constructor(private val app: Context) {
                     durationMs = song.durationMs,
                     coverUrl = song.coverUrl,
                     mediaUri = song.mediaUri,
+                    matchedLyric = song.matchedLyric,
+                    originalName = song.originalName,
+                    originalArtist = song.originalArtist,
+                    localFileName = song.localFileName,
+                    localFilePath = song.localFilePath,
                     playedAt = now
                 )
             }
@@ -154,7 +169,7 @@ class PlayHistoryRepository private constructor(private val app: Context) {
 
             val clipped = updated
                 .sortedByDescending { it.playedAt }
-                .distinctBy { Triple(it.id, it.album, it.mediaUri) }
+                .distinctBy { it.identityKey() }
                 .take(1000)
 
             NPLogger.d("PlayHistoryRepo", "Updated history size: ${clipped.size}, latest: ${clipped.firstOrNull()?.name}")
@@ -184,7 +199,7 @@ class PlayHistoryRepository private constructor(private val app: Context) {
         try {
             val clipped = entries
                 .sortedByDescending { it.playedAt }
-                .distinctBy { Triple(it.id, it.album, it.mediaUri) }
+                .distinctBy { it.identityKey() }
                 .take(1000)
             NPLogger.d("PlayHistoryRepo", "updateHistory() setting history to ${clipped.size} entries, latest: ${clipped.firstOrNull()?.name}")
             _history.value = clipped
@@ -192,6 +207,14 @@ class PlayHistoryRepository private constructor(private val app: Context) {
         } finally {
             writing.set(false)
         }
+    }
+
+    private fun PlayedEntry.identityKey(): Triple<Long, String, String?> {
+        return Triple(id, album, localFilePath ?: mediaUri)
+    }
+
+    private fun SongItem.identityKey(): Triple<Long, String, String?> {
+        return Triple(id, album, localFilePath ?: mediaUri)
     }
 
     companion object {

@@ -112,6 +112,7 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.data.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
@@ -480,7 +481,9 @@ fun ExploreScreen(
                 Spacer(Modifier.height(8.dp))
 
                 LazyColumn {
-                    itemsIndexed(allLocalPlaylists) { _, pl ->
+                    itemsIndexed(
+                        allLocalPlaylists.filterNot { LocalFilesPlaylist.isSystemPlaylist(it, context) }
+                    ) { _, pl ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()

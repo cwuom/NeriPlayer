@@ -120,6 +120,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.FavoritePlaylistRepository
+import moe.ouom.neriplayer.data.LocalFilesPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.PlaylistDetailViewModel
@@ -655,7 +656,9 @@ fun DetailScreen(
                             Spacer(Modifier.height(8.dp))
 
                             LazyColumn {
-                                itemsIndexed(allPlaylists) { _, pl ->
+                                itemsIndexed(
+                                    allPlaylists.filterNot { LocalFilesPlaylist.isSystemPlaylist(it, context) }
+                                ) { _, pl ->
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -756,7 +759,7 @@ fun DetailScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        "下载管理器",
+                        stringResource(R.string.download_manager),
                         style = MaterialTheme.typography.titleLarge
                     )
                     HapticIconButton(onClick = { showDownloadManager = false }) {
@@ -860,7 +863,7 @@ fun DetailScreen(
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "选择歌曲后点击下载按钮开始下载",
+                            stringResource(R.string.download_select_hint),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
@@ -883,7 +886,7 @@ private fun RetryChip(onClick: () -> Unit) {
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
     ) {
         Text(
-            "点我重试",
+            stringResource(R.string.action_retry),
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             color = MaterialTheme.colorScheme.onPrimaryContainer
         )

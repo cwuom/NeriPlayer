@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.api.bili.buildBiliPartSong
 import moe.ouom.neriplayer.core.player.PlayerManager
@@ -96,6 +97,7 @@ data class ExploreUiState(
 )
 
 class ExploreViewModel(application: Application) : AndroidViewModel(application) {
+    private val app = application
     private val neteaseRepo = NeteaseCookieRepository(application)
 
     private val _uiState = MutableStateFlow(ExploreUiState())
@@ -149,7 +151,10 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     searching = false,
-                    searchError = "Bilibili search failed: ${e.message}",  // Localized in UI
+                    searchError = app.getString(
+                        R.string.error_bilibili_search,
+                        e.message ?: app.getString(R.string.github_sync_failed_message)
+                    ),
                     searchResults = emptyList()
                 )
             }
@@ -181,7 +186,10 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     loading = false,
-                    error = "Load playlist failed: ${e.message}"  // Localized in UI
+                    error = app.getString(
+                        R.string.error_load_playlist,
+                        e.message ?: app.getString(R.string.github_sync_failed_message)
+                    )
                 )
             }
         }
@@ -222,7 +230,10 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     searching = false,
-                    searchError = "Netease search failed: ${e.message}",  // Localized in UI
+                    searchError = app.getString(
+                        R.string.error_netease_search,
+                        e.message ?: app.getString(R.string.github_sync_failed_message)
+                    ),
                     searchResults = emptyList()
                 )
             }

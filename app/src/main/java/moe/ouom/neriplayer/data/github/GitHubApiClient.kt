@@ -43,6 +43,15 @@ import java.io.IOException
  */
 class TokenExpiredException(message: String) : IOException(message)
 
+class GitHubFileNotFoundException(message: String) : IOException(message)
+
+class GitHubApiException(
+    val statusCode: Int,
+    message: String
+) : IOException(message)
+
+class GitHubSyncInProgressException(message: String) : IOException(message)
+
 /**
  * GitHub API客户端
  * 使用GitHub Contents API进行文件读写
@@ -162,13 +171,22 @@ class GitHubApiClient(private val context: Context, private val token: String) {
                 .header("Accept", "application/vnd.github+json")
                 .build()
 
-            val response = client.newCall(request).execute()
-            if (response.isSuccessful) {
-                val body = response.body?.string() ?: return@withContext Result.failure(IOException("Empty response"))
-                val repoInfo = gson.fromJson(body, GitHubRepoResponse::class.java)
-                Result.success(repoInfo)
-            } else {
-                Result.failure(IOException("Repository not found: ${response.code}"))
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: return@withContext Result.failure(IOException("Empty response"))
+                    val repoInfo = gson.fromJson(body, GitHubRepoResponse::class.java)
+                    return@withContext Result.success(repoInfo)
+                }
+
+                val errorBody = response.body?.string()?.takeIf { it.isNotBlank() }
+                val error = when (response.code) {
+                    401 -> TokenExpiredException(context.getString(R.string.github_token_expired_message))
+                    else -> GitHubApiException(
+                        statusCode = response.code,
+                        message = "Failed to check repository: ${response.code}${errorBody?.let { " - $it" } ?: ""}"
+                    )
+                }
+                Result.failure(error)
             }
         } catch (e: Exception) {
             NPLogger.e(TAG, "Check repository error", e)
@@ -207,6 +225,51 @@ class GitHubApiClient(private val context: Context, private val token: String) {
         }
     }
 
+    suspend fun getFileContentStrict(owner: String, repo: String, path: String): Result<Pair<String, String>> = withContext(Dispatchers.IO) {
+        try {
+            val request = Request.Builder()
+                .url("$GITHUB_API_BASE/repos/$owner/$repo/contents/$path")
+                .header("Authorization", "Bearer $token")
+                .header("Accept", "application/vnd.github+json")
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string()
+                        ?: return@withContext Result.failure(IOException("Empty response"))
+                    val fileResponse = gson.fromJson(body, GitHubFileResponse::class.java)
+                    val decodedContent = String(
+                        Base64.decode(fileResponse.content.replace("\n", ""), Base64.DEFAULT)
+                    )
+                    return@withContext Result.success(decodedContent to fileResponse.sha)
+                }
+
+                if (response.code == 401) {
+                    return@withContext Result.failure(
+                        TokenExpiredException(context.getString(R.string.github_token_expired_message))
+                    )
+                }
+
+                if (response.code == 404) {
+                    return@withContext Result.failure(
+                        GitHubFileNotFoundException("Remote backup file not found: $path")
+                    )
+                }
+
+                val errorBody = response.body?.string()?.takeIf { it.isNotBlank() }
+                return@withContext Result.failure(
+                    GitHubApiException(
+                        statusCode = response.code,
+                        message = "Failed to get file: ${response.code}${errorBody?.let { " - $it" } ?: ""}"
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            NPLogger.e(TAG, "Get file content strict error", e)
+            Result.failure(e)
+        }
+    }
+
     /**
      * 创建或更新文件
      */
@@ -226,7 +289,9 @@ class GitHubApiClient(private val context: Context, private val token: String) {
                 if (repoResult.isSuccess) {
                     repoResult.getOrNull()?.defaultBranch ?: "main"
                 } else {
-                    "main"
+                    return@withContext Result.failure(
+                        repoResult.exceptionOrNull() ?: IOException("Failed to resolve default branch")
+                    )
                 }
             }
 

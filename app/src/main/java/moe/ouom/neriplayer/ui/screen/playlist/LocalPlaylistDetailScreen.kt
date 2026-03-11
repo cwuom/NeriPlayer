@@ -1,6 +1,8 @@
 ﻿package moe.ouom.neriplayer.ui.screen.playlist
 
-import android.content.Intent
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -27,12 +29,15 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -111,6 +116,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.delay
@@ -125,7 +131,9 @@ import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.FavoritesPlaylist
 import moe.ouom.neriplayer.data.LocalFilesPlaylist
+import moe.ouom.neriplayer.data.LocalMediaSupport
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.identity
 import moe.ouom.neriplayer.data.isLocalSong
 import moe.ouom.neriplayer.data.sameIdentityAs
@@ -147,6 +155,7 @@ import org.burnoutcrew.reorderable.ReorderableItem
 import org.burnoutcrew.reorderable.detectReorder
 import org.burnoutcrew.reorderable.rememberReorderableLazyListState
 import org.burnoutcrew.reorderable.reorderable
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class,
     DelicateCoroutinesApi::class
@@ -160,6 +169,7 @@ fun LocalPlaylistDetailScreen(
 ) {
     val vm: LocalPlaylistDetailViewModel = viewModel()
     val ui = vm.uiState.collectAsState()
+    val isScanning by vm.isScanning.collectAsState()
     LaunchedEffect(playlistId) { vm.start(playlistId) }
 
     // 保存最新的歌单数据，用于在Screen销毁时更新使用记录
@@ -256,10 +266,14 @@ fun LocalPlaylistDetailScreen(
             var showDeletePlaylistConfirm by remember { mutableStateOf(false) }
             var showDeleteMultiConfirm by remember { mutableStateOf(false) }
             var showExportSheet by remember { mutableStateOf(false) }
+            var showScanPreviewPage by remember { mutableStateOf(false) }
             var detailSong by remember { mutableStateOf<SongItem?>(null) }
             var pendingSyncConfirmAction by remember { mutableStateOf<(() -> Unit)?>(null) }
             var pendingSyncConfirmLabel by remember { mutableStateOf("") }
             val exportSheetState = rememberModalBottomSheetState()
+            var scanPreviewSongs by remember { mutableStateOf<List<SongItem>>(emptyList()) }
+            var scanPreviewQuery by remember { mutableStateOf("") }
+            var selectedScanKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
 
             var showSearch by remember { mutableStateOf(false) }
             var searchQuery by remember { mutableStateOf("") }
@@ -270,45 +284,93 @@ fun LocalPlaylistDetailScreen(
             
             // 下载进度
             val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
+            val downloadedSongs by GlobalDownloadManager.downloadedSongs.collectAsState()
 
             // Snackbar状态
             val snackbarHostState = remember { SnackbarHostState() }
-            val audioImportLauncher = rememberLauncherForActivityResult(
-                contract = ActivityResultContracts.OpenMultipleDocuments()
-            ) { uris ->
-                if (uris.isEmpty()) return@rememberLauncherForActivityResult
-                uris.forEach { uri ->
-                    runCatching {
-                        context.contentResolver.takePersistableUriPermission(
-                            uri,
-                            Intent.FLAG_GRANT_READ_URI_PERMISSION
-                        )
+            val requiredAudioPermission = remember {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    Manifest.permission.READ_MEDIA_AUDIO
+                } else {
+                    Manifest.permission.READ_EXTERNAL_STORAGE
+                }
+            }
+
+            fun showAudioImportResult(result: moe.ouom.neriplayer.ui.viewmodel.playlist.LocalAudioImportUiResult) {
+                scope.launch {
+                    val message = when {
+                        result.preservedExisting -> {
+                            context.getString(R.string.local_playlist_scan_preserve_existing)
+                        }
+                        result.importedCount > 0 && result.failedCount > 0 -> {
+                            context.getString(
+                                R.string.local_playlist_import_audio_partial,
+                                result.importedCount,
+                                result.failedCount
+                            )
+                        }
+                        result.importedCount > 0 -> {
+                            context.getString(
+                                R.string.local_playlist_import_audio_success,
+                                result.importedCount
+                            )
+                        }
+                        else -> {
+                            context.getString(
+                                R.string.local_playlist_import_audio_failed,
+                                result.failedCount
+                            )
+                        }
+                    }
+                    snackbarHostState.showSnackbar(message)
+                }
+            }
+
+            fun startDeviceAudioScan() {
+                showScanPreviewPage = true
+                detailSong = null
+                scanPreviewSongs = emptyList()
+                scanPreviewQuery = ""
+                selectedScanKeys = emptySet()
+                vm.scanDeviceSongs { result ->
+                    scope.launch {
+                        if (!result.completed) {
+                            showScanPreviewPage = false
+                            snackbarHostState.showSnackbar(
+                                context.getString(R.string.local_playlist_scan_preserve_existing)
+                            )
+                            return@launch
+                        }
+
+                        scanPreviewSongs = result.songs
+                        selectedScanKeys = result.songs.map { it.stableKey() }.toSet()
+                        if (result.failedCount > 0) {
+                            snackbarHostState.showSnackbar(
+                                context.getString(R.string.download_scan_failed, result.failedCount)
+                            )
+                        }
                     }
                 }
-                vm.importSongs(uris) { result ->
+            }
+
+            fun dismissScanPreviewPage() {
+                vm.cancelDeviceSongScan()
+                showScanPreviewPage = false
+                scanPreviewSongs = emptyList()
+                scanPreviewQuery = ""
+                selectedScanKeys = emptySet()
+            }
+
+            val audioPermissionLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.RequestPermission()
+            ) { granted ->
+                if (granted) {
+                    startDeviceAudioScan()
+                } else {
                     scope.launch {
-                        val message = when {
-                            result.importedCount > 0 && result.failedCount > 0 -> {
-                                context.getString(
-                                    R.string.local_playlist_import_audio_partial,
-                                    result.importedCount,
-                                    result.failedCount
-                                )
-                            }
-                            result.importedCount > 0 -> {
-                                context.getString(
-                                    R.string.local_playlist_import_audio_success,
-                                    result.importedCount
-                                )
-                            }
-                            else -> {
-                                context.getString(
-                                    R.string.local_playlist_import_audio_failed,
-                                    result.failedCount
-                                )
-                            }
-                        }
-                        snackbarHostState.showSnackbar(message)
+                        snackbarHostState.showSnackbar(
+                            context.getString(R.string.download_scan_permission_required)
+                        )
                     }
                 }
             }
@@ -382,11 +444,13 @@ fun LocalPlaylistDetailScreen(
             fun validateRename(input: String): String? {
                 val name = input.trim()
                 if (name.isEmpty()) return context.getString(R.string.playlist_name_empty)
-                if (name.equals(context.getString(R.string.favorite_my_music), ignoreCase = true)) {
-                    return context.getString(R.string.library_name_reserved, context.getString(R.string.favorite_my_music))
-                }
-                if (name.equals(context.getString(R.string.local_files), ignoreCase = true)) {
-                    return context.getString(R.string.library_name_reserved, context.getString(R.string.local_files))
+                if (SystemLocalPlaylists.matchesReservedName(name, context)) {
+                    val reservedName = SystemLocalPlaylists.resolve(
+                        playlistId = 0L,
+                        playlistName = name,
+                        context = context
+                    )?.currentName ?: name
+                    return context.getString(R.string.library_name_reserved, reservedName)
                 }
                 if (allPlaylists.any {
                         it.id != playlist.id && it.name.equals(
@@ -483,6 +547,27 @@ fun LocalPlaylistDetailScreen(
                 derivedStateOf { selectedSongsForAction.any { !it.isLocalSong() } }
             }
 
+            if (showScanPreviewPage) {
+                LocalScanPreviewScreen(
+                    isScanning = isScanning,
+                    songs = scanPreviewSongs,
+                    query = scanPreviewQuery,
+                    onQueryChange = { scanPreviewQuery = it },
+                    selectedKeys = selectedScanKeys,
+                    onSelectedKeysChange = { selectedScanKeys = it },
+                    snackbarHostState = snackbarHostState,
+                    onBack = ::dismissScanPreviewPage,
+                    onImport = {
+                        val selectedSongs = scanPreviewSongs.filter {
+                            it.stableKey() in selectedScanKeys
+                        }
+                        vm.applyScannedSongs(selectedSongs, ::showAudioImportResult)
+                        dismissScanPreviewPage()
+                    }
+                )
+                return@Surface
+            }
+
             Scaffold(
                 containerColor = Color.Transparent,
                 snackbarHost = { 
@@ -538,11 +623,20 @@ fun LocalPlaylistDetailScreen(
                                 
                                 if (isLocalFilesPlaylist) {
                                     HapticIconButton(onClick = {
-                                        audioImportLauncher.launch(arrayOf("audio/*"))
-                                    }) {
+                                        val hasPermission = Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
+                                            ContextCompat.checkSelfPermission(
+                                                context,
+                                                requiredAudioPermission
+                                            ) == PackageManager.PERMISSION_GRANTED
+                                        if (hasPermission) {
+                                            startDeviceAudioScan()
+                                        } else {
+                                            audioPermissionLauncher.launch(requiredAudioPermission)
+                                        }
+                                    }, enabled = !isScanning) {
                                         Icon(
                                             Icons.Outlined.LibraryMusic,
-                                            contentDescription = stringResource(R.string.local_playlist_import_audio)
+                                            contentDescription = stringResource(R.string.download_scan_local)
                                         )
                                     }
                                 }
@@ -831,6 +925,7 @@ fun LocalPlaylistDetailScreen(
 
                                             // 标题/歌手
                                             Column(Modifier.weight(1f)) {
+                                                val itemContext = LocalContext.current
                                                 Row(
                                                     verticalAlignment = Alignment.CenterVertically,
                                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -842,7 +937,12 @@ fun LocalPlaylistDetailScreen(
                                                         style = MaterialTheme.typography.titleMedium
                                                     )
                                                     // 下载完成标志
-                                                    if (AudioDownloadManager.getLocalFilePath(LocalContext.current, song) != null) {
+                                                    if (remember(downloadedSongs, song, itemContext) {
+                                                            AudioDownloadManager.getLocalFilePath(
+                                                                itemContext,
+                                                                song
+                                                            ) != null
+                                                        }) {
                                                         Icon(
                                                             imageVector = Icons.Outlined.DownloadDone,
                                                             contentDescription = stringResource(R.string.downloaded),
@@ -907,6 +1007,22 @@ fun LocalPlaylistDetailScreen(
                                                                     text = { Text(stringResource(R.string.local_song_open_details)) },
                                                                     onClick = {
                                                                         detailSong = song
+                                                                        showMoreMenu = false
+                                                                    }
+                                                                )
+                                                                DropdownMenuItem(
+                                                                    text = { Text(stringResource(R.string.action_share)) },
+                                                                    onClick = {
+                                                                        val shared = runCatching {
+                                                                            LocalMediaSupport.shareSongFile(context, song)
+                                                                        }.getOrElse { false }
+                                                                        if (!shared) {
+                                                                            scope.launch {
+                                                                                snackbarHostState.showSnackbar(
+                                                                                    context.getString(R.string.local_song_share_failed)
+                                                                                )
+                                                                            }
+                                                                        }
                                                                         showMoreMenu = false
                                                                     }
                                                                 )
@@ -1056,7 +1172,11 @@ fun LocalPlaylistDetailScreen(
                             Spacer(Modifier.height(8.dp))
 
                             LazyColumn {
-                                itemsIndexed(allPlaylists.filter { it.id != playlist.id }) { _, pl ->
+                    itemsIndexed(
+                        allPlaylists.filter {
+                            it.id != playlist.id && !LocalFilesPlaylist.isSystemPlaylist(it, context)
+                        }
+                    ) { _, pl ->
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -1308,6 +1428,308 @@ fun LocalPlaylistDetailScreen(
 
                 // 多选优先退出
                 BackHandler(enabled = selectionMode) { exitSelectionMode() }
+            }
+        }
+    }
+}
+
+private data class LocalScanPreviewItem(
+    val song: SongItem,
+    val stableKey: String,
+    val fileName: String,
+    val filePath: String,
+    val subtitle: String
+)
+
+private fun SongItem.toLocalScanPreviewItem(): LocalScanPreviewItem {
+    val resolvedPath = localFilePath
+        ?.takeIf { it.isNotBlank() }
+        ?: mediaUri?.takeIf { it.startsWith("/") }
+        ?: mediaUri.orEmpty()
+    val resolvedFileName = localFilePath
+        ?.takeIf { it.isNotBlank() }
+        ?.let(::File)
+        ?.name
+        ?: localFileName?.takeIf { it.isNotBlank() }
+        ?: name
+    val subtitle = buildList {
+        name.takeIf { it.isNotBlank() && it != resolvedFileName }?.let(::add)
+        artist.takeIf { it.isNotBlank() }?.let(::add)
+        album.takeIf { it.isNotBlank() }?.let(::add)
+        durationMs.takeIf { it > 0L }?.let { add(formatDuration(it)) }
+    }.joinToString(" · ")
+    return LocalScanPreviewItem(
+        song = this,
+        stableKey = stableKey(),
+        fileName = resolvedFileName,
+        filePath = resolvedPath,
+        subtitle = subtitle
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@Composable
+private fun LocalScanPreviewScreen(
+    isScanning: Boolean,
+    songs: List<SongItem>,
+    query: String,
+    onQueryChange: (String) -> Unit,
+    selectedKeys: Set<String>,
+    onSelectedKeysChange: (Set<String>) -> Unit,
+    snackbarHostState: SnackbarHostState,
+    onBack: () -> Unit,
+    onImport: () -> Unit
+) {
+    val previewItems = remember(songs) { songs.map { it.toLocalScanPreviewItem() } }
+    val listState = rememberLazyListState()
+    val displayedItems = remember(previewItems, query) {
+        val keyword = query.trim()
+        if (keyword.isBlank()) {
+            previewItems
+        } else {
+            previewItems.filter { item ->
+                item.fileName.contains(keyword, ignoreCase = true) ||
+                    item.filePath.contains(keyword, ignoreCase = true) ||
+                    item.song.name.contains(keyword, ignoreCase = true) ||
+                    item.song.artist.contains(keyword, ignoreCase = true) ||
+                    item.song.album.contains(keyword, ignoreCase = true)
+            }
+        }
+    }
+    val allDisplayedSelected = displayedItems.isNotEmpty() &&
+        displayedItems.all { it.stableKey in selectedKeys }
+
+    BackHandler(onBack = onBack)
+
+    Scaffold(
+        containerColor = Color.Transparent,
+        snackbarHost = {
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.padding(bottom = LocalMiniPlayerHeight.current)
+            )
+        },
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.local_playlist_scan_preview_title)) },
+                navigationIcon = {
+                    HapticIconButton(onClick = onBack) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.action_back)
+                        )
+                    }
+                },
+                actions = {
+                    if (isScanning) {
+                        CircularProgressIndicator(
+                            modifier = Modifier
+                                .padding(end = 16.dp)
+                                .size(18.dp),
+                            strokeWidth = 2.dp
+                        )
+                    }
+                },
+                windowInsets = WindowInsets.statusBars,
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.76f),
+                    scrolledContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f)
+                )
+            )
+        },
+        bottomBar = {
+            Surface(
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+                tonalElevation = 3.dp
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .padding(bottom = LocalMiniPlayerHeight.current)
+                ) {
+                    if (isScanning && songs.isEmpty()) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        Spacer(Modifier.height(10.dp))
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.common_selected_count, selectedKeys.size),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f)
+                        )
+                        HapticTextButton(
+                            enabled = selectedKeys.isNotEmpty(),
+                            onClick = onImport
+                        ) {
+                            Text(stringResource(R.string.download_scan_add_selected, selectedKeys.size))
+                        }
+                    }
+                }
+            }
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+        ) {
+            if (isScanning && songs.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        CircularProgressIndicator()
+                        Text(
+                            text = stringResource(R.string.download_scanning),
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                    }
+                }
+            } else {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = {
+                        Text(stringResource(R.string.local_playlist_scan_preview_search))
+                    },
+                    singleLine = true
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    HapticTextButton(
+                        enabled = displayedItems.isNotEmpty(),
+                        onClick = {
+                            onSelectedKeysChange(
+                                if (allDisplayedSelected) {
+                                    selectedKeys - displayedItems.map { it.stableKey }.toSet()
+                                } else {
+                                    selectedKeys + displayedItems.map { it.stableKey }.toSet()
+                                }
+                            )
+                        }
+                    ) {
+                        Text(
+                            if (allDisplayedSelected) {
+                                stringResource(R.string.action_deselect_all)
+                            } else {
+                                stringResource(R.string.action_select_all)
+                            }
+                        )
+                    }
+                    HapticTextButton(
+                        enabled = displayedItems.isNotEmpty(),
+                        onClick = {
+                            val displayedKeys = displayedItems.map { it.stableKey }.toSet()
+                            onSelectedKeysChange(
+                                selectedKeys
+                                    .subtract(displayedKeys)
+                                    .plus(displayedKeys - selectedKeys)
+                            )
+                        }
+                    ) {
+                        Text(stringResource(R.string.action_inverse_select))
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                if (displayedItems.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = stringResource(R.string.download_scan_empty),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        itemsIndexed(displayedItems, key = { _, item -> item.stableKey }) { _, item ->
+                            val selected = item.stableKey in selectedKeys
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .combinedClickable(
+                                        onClick = {
+                                            onSelectedKeysChange(
+                                                if (selected) {
+                                                    selectedKeys - item.stableKey
+                                                } else {
+                                                    selectedKeys + item.stableKey
+                                                }
+                                            )
+                                        }
+                                    )
+                                    .padding(vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(
+                                    checked = selected,
+                                    onCheckedChange = {
+                                        onSelectedKeysChange(
+                                            if (selected) {
+                                                selectedKeys - item.stableKey
+                                            } else {
+                                                selectedKeys + item.stableKey
+                                            }
+                                        )
+                                    }
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        text = item.fileName,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        style = MaterialTheme.typography.bodyLarge
+                                    )
+                                    if (item.subtitle.isNotBlank()) {
+                                        Text(
+                                            text = item.subtitle,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    if (item.filePath.isNotBlank()) {
+                                        Text(
+                                            text = item.filePath,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f)
+                                        )
+                                    }
+                                }
+                            }
+                            HorizontalDivider()
+                        }
+                    }
+                }
             }
         }
     }

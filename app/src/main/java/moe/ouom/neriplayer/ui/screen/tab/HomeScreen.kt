@@ -102,6 +102,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.PlaylistUsageRepository
+import moe.ouom.neriplayer.data.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.UsageEntry
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
@@ -122,6 +123,7 @@ fun HomeScreen(
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> } // 推荐歌曲点击，默认 no-op
 ) {
     val context = LocalContext.current
+    val configuration = LocalConfiguration.current
     val vm: HomeViewModel = viewModel(
         factory = viewModelFactory {
             initializer {
@@ -135,7 +137,7 @@ fun HomeScreen(
     val localPlaylistRepo = remember(context) { LocalPlaylistRepository.getInstance(context) }
     val localPlaylists by localPlaylistRepo.playlists.collectAsState()
 
-    LaunchedEffect(usage, localPlaylists) {
+    LaunchedEffect(usage, localPlaylists, configuration) {
         if (usage.any { it.source == PlaylistUsageRepository.SOURCE_LOCAL }) {
             AppContainer.playlistUsageRepo.syncLocalEntries(localPlaylists)
         }
@@ -395,7 +397,7 @@ private fun SongRowMini(
                 text = listOfNotNull(
                     song.artist.takeIf { it.isNotBlank() },
                     song.album.takeIf { it.isNotBlank() }
-                ).joinToString(" 路 "),
+                ).joinToString(" / "),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodySmall,
@@ -531,8 +533,12 @@ private fun ContinueSection(items: List<UsageEntry>, onClick: (UsageEntry) -> Un
 @Composable
 private fun ContinueCard(entry: UsageEntry, onClick: () -> Unit, onRemove: () -> Unit) {
     val context = LocalContext.current
+    val configuration = LocalConfiguration.current
     val view = androidx.compose.ui.platform.LocalView.current
     var showMenu by remember { mutableStateOf(false) }
+    val displayName = remember(entry.id, entry.name, entry.source, configuration) {
+        SystemLocalPlaylists.resolve(entry.id, entry.name, context)?.currentName ?: entry.name
+    }
 
     Column(
         modifier = Modifier
@@ -548,7 +554,7 @@ private fun ContinueCard(entry: UsageEntry, onClick: () -> Unit, onRemove: () ->
     ) {
         AsyncImage(
             model = ImageRequest.Builder(context).data(entry.picUrl).build(),
-            contentDescription = entry.name,
+            contentDescription = displayName,
             contentScale = ContentScale.Crop,
             modifier = Modifier
                 .fillMaxWidth()
@@ -557,7 +563,7 @@ private fun ContinueCard(entry: UsageEntry, onClick: () -> Unit, onRemove: () ->
         )
         Column(modifier = Modifier.padding(6.dp)) {
             Text(
-                text = entry.name,
+                text = displayName,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.titleSmall

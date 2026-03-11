@@ -50,6 +50,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -59,6 +60,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -135,6 +137,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
@@ -154,6 +157,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.ColorUtils
 import androidx.core.graphics.toColorInt
@@ -162,11 +166,13 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 import moe.ouom.neriplayer.BuildConfig
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.NeteaseWebLoginActivity
 import moe.ouom.neriplayer.data.ThemeDefaults
+import moe.ouom.neriplayer.data.BackgroundImageStorage
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.debug.NeteaseAuthEvent
 import moe.ouom.neriplayer.ui.viewmodel.debug.NeteaseAuthViewModel
@@ -287,9 +293,10 @@ private fun UiScaleListItem(currentScale: Float, onClick: () -> Unit) {
 @Composable
 private fun ThemeModeActionButton(
     isDarkTheme: Boolean,
-    onToggleRequest: (Offset) -> Unit
+    onToggleRequest: (Offset, Float) -> Unit
 ) {
     var centerInWindow by remember { mutableStateOf<Offset?>(null) }
+    var revealStartRadiusPx by remember { mutableFloatStateOf(18f) }
     val contentDescription = if (isDarkTheme) {
         stringResource(R.string.settings_theme_toggle_light)
     } else {
@@ -318,11 +325,15 @@ private fun ThemeModeActionButton(
     ) {
         HapticIconButton(
             onClick = {
-                centerInWindow?.let(onToggleRequest)
+                centerInWindow?.let { onToggleRequest(it, revealStartRadiusPx) }
             },
             modifier = Modifier
                 .fillMaxSize()
                 .onGloballyPositioned { coordinates ->
+                    revealStartRadiusPx = maxOf(
+                        coordinates.size.width,
+                        coordinates.size.height
+                    ) / 2f
                     centerInWindow = coordinates.positionInWindow() + Offset(
                         x = coordinates.size.width / 2f,
                         y = coordinates.size.height / 2f
@@ -374,7 +385,7 @@ fun SettingsScreen(
     dynamicColor: Boolean,
     onDynamicColorChange: (Boolean) -> Unit,
     isDarkTheme: Boolean,
-    onThemeToggleRequest: (Offset) -> Unit,
+    onThemeToggleRequest: (Offset, Float) -> Unit,
     preferredQuality: String,
     onQualityChange: (String) -> Unit,
     biliPreferredQuality: String,
@@ -414,9 +425,11 @@ fun SettingsScreen(
     maxCacheSizeBytes: Long,
     onMaxCacheSizeBytesChange: (Long) -> Unit,
     onClearCacheClick: (clearAudio: Boolean, clearImage: Boolean) -> Unit,
+    onBeforeLanguageRestart: () -> Unit = {},
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     // 登录菜单的状态
     var loginExpanded by remember { mutableStateOf(false) }
@@ -488,12 +501,16 @@ fun SettingsScreen(
         contract = ActivityResultContracts.PickVisualMedia(),
         onResult = { uri ->
             if (uri != null) {
-                // 获取永久访问权限
-                val flag = Intent.FLAG_GRANT_READ_URI_PERMISSION
-                runCatching {
-                    context.contentResolver.takePersistableUriPermission(uri, flag)
+                scope.launch {
+                    val importedUri = BackgroundImageStorage.importFromUri(
+                        context = context,
+                        sourceUri = uri,
+                        previousUriString = backgroundImageUri
+                    )
+                    if (importedUri != null) {
+                        onBackgroundImageChange(importedUri)
+                    }
                 }
-                onBackgroundImageChange(uri)
             }
         }
     )
@@ -545,7 +562,7 @@ fun SettingsScreen(
             "higher" -> context.getString(R.string.settings_audio_quality_higher)
             "exhigh" -> context.getString(R.string.settings_audio_quality_exhigh)
             "lossless" -> context.getString(R.string.settings_audio_quality_lossless)
-            "hires" -> "Hi-Res"
+            "hires" -> context.getString(R.string.quality_hires)
             "jyeffect" -> context.getString(R.string.settings_audio_quality_jyeffect)
             "sky" -> context.getString(R.string.settings_audio_quality_sky)
             "jymaster" -> context.getString(R.string.settings_audio_quality_jymaster)
@@ -556,7 +573,7 @@ fun SettingsScreen(
     val biliQualityLabel = remember(biliPreferredQuality) {
         when (biliPreferredQuality) {
             "dolby"   -> context.getString(R.string.settings_audio_quality_dolby)
-            "hires"   -> "Hi-Res"
+            "hires"   -> context.getString(R.string.quality_hires)
             "lossless"-> context.getString(R.string.settings_audio_quality_lossless)
             "high"    -> context.getString(R.string.settings_audio_quality_high)
             "medium"  -> context.getString(R.string.settings_audio_quality_medium)
@@ -700,7 +717,7 @@ fun SettingsScreen(
 
             // 语言设置
             item {
-                LanguageSettingItem()
+                LanguageSettingItem(onBeforeRestart = onBeforeLanguageRestart)
             }
 
             // 登录三方平台
@@ -987,9 +1004,17 @@ fun SettingsScreen(
 
                         // 展开区域
                         AnimatedVisibility(visible = backgroundImageUri != null) {
-                            Column {
-                                // 清除背景图按钮
-                                TextButton(onClick = { onBackgroundImageChange(null) }) {
+                                Column {
+                                    // 清除背景图按钮
+                                TextButton(onClick = {
+                                    scope.launch {
+                                        BackgroundImageStorage.deleteManagedBackground(
+                                            context = context,
+                                            uriString = backgroundImageUri
+                                        )
+                                        onBackgroundImageChange(null)
+                                    }
+                                }) {
                                     Text(stringResource(R.string.background_clear))
                                 }
 
@@ -1170,9 +1195,9 @@ fun SettingsScreen(
 
                                 // 显示文本格式化：超过 1024MB 显示为 GB
                                 val displaySize = if (sliderValue >= 1024) {
-                                    String.format(Locale.US, "%.1f GB", sliderValue / 1024)
+                                    context.getString(R.string.settings_cache_size_gb, sliderValue / 1024)
                                 } else {
-                                    "${sliderValue.toInt()} MB"
+                                    context.getString(R.string.settings_cache_size_mb, sliderValue.toInt())
                                 }
 
                                 Column {
@@ -2014,7 +2039,7 @@ fun SettingsScreen(
                 Column {
                     val options = listOf(
                         "dolby" to stringResource(R.string.settings_dolby),
-                        "hires" to "Hi-Res",
+                        "hires" to stringResource(R.string.quality_hires),
                         "lossless" to stringResource(R.string.quality_lossless),
                         "high" to stringResource(R.string.settings_audio_quality_high),
                         "medium" to stringResource(R.string.settings_audio_quality_medium),
@@ -2216,7 +2241,7 @@ fun SettingsScreen(
                         "higher" to stringResource(R.string.quality_high),
                         "exhigh" to stringResource(R.string.quality_very_high),
                         "lossless" to stringResource(R.string.quality_lossless),
-                        "hires" to "Hi-Res",
+                        "hires" to stringResource(R.string.quality_hires),
                         "jyeffect" to stringResource(R.string.quality_hd_surround),
                         "sky" to stringResource(R.string.quality_surround),
                         "jymaster" to stringResource(R.string.quality_hires)
@@ -2632,27 +2657,37 @@ private fun ColorPickerDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.settings_select_color)) },
         text = {
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 560.dp)
+                    .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 // 色列表
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 220.dp)
+                        .verticalScroll(rememberScrollState())
                 ) {
-                    palette.forEach { hex ->
-                        val isPreset = ThemeDefaults.PRESET_SET.contains(hex.uppercase(Locale.ROOT))
-                        ColorPickerItem(
-                            hex = hex,
-                            isSelected = currentHex.equals(hex, ignoreCase = true),
-                            onClick = {
-                                pickedHex = hex.uppercase(Locale.ROOT)
-                                onColorSelected(hex) // 允许直接使用预设色
-                            },
-                            onRemove = if (!isPreset) { { onRemoveColor(hex) } } else null
-                        )
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        palette.forEach { hex ->
+                            val isPreset = ThemeDefaults.PRESET_SET.contains(hex.uppercase(Locale.ROOT))
+                            ColorPickerItem(
+                                hex = hex,
+                                isSelected = currentHex.equals(hex, ignoreCase = true),
+                                onClick = {
+                                    pickedHex = hex.uppercase(Locale.ROOT)
+                                    onColorSelected(hex) // 允许直接使用预设色
+                                },
+                                onRemove = if (!isPreset) { { onRemoveColor(hex) } } else null
+                            )
+                        }
                     }
                 }
 
@@ -2667,23 +2702,71 @@ private fun ColorPickerDialog(
 
                 // 操作按钮
                 val existsInPalette = palette.any { it.equals(pickedHex, ignoreCase = true) }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    OutlinedButton(
-                        onClick = { onAddColor(pickedHex) },
-                        enabled = !existsInPalette && !ThemeDefaults.PRESET_SET.contains(pickedHex),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(stringResource(R.string.settings_add_to_palette))
-                    }
-                    Button(
-                        onClick = { onColorSelected(pickedHex) },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(stringResource(R.string.settings_apply_color))
+                BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                    val useVerticalButtons = maxWidth < 360.dp
+                    if (useVerticalButtons) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { onAddColor(pickedHex) },
+                                enabled = !existsInPalette && !ThemeDefaults.PRESET_SET.contains(pickedHex),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.settings_add_to_palette),
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis,
+                                    fontSize = 13.sp
+                                )
+                            }
+                            Button(
+                                onClick = { onColorSelected(pickedHex) },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.settings_apply_color),
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis,
+                                    fontSize = 13.sp
+                                )
+                            }
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedButton(
+                                onClick = { onAddColor(pickedHex) },
+                                enabled = !existsInPalette && !ThemeDefaults.PRESET_SET.contains(pickedHex),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.settings_add_to_palette),
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis,
+                                    fontSize = 13.sp
+                                )
+                            }
+                            Button(
+                                onClick = { onColorSelected(pickedHex) },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.settings_apply_color),
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis,
+                                    fontSize = 13.sp
+                                )
+                            }
+                        }
                     }
                 }
 

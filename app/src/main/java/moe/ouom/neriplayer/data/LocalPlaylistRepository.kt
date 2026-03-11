@@ -79,6 +79,7 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
     private fun triggerAutoSync() {
         try {
             val storage = SecureTokenStorage(context)
+            storage.markSyncMutation()
             if (!storage.isAutoSyncEnabled()) {
                 NPLogger.d("LocalPlaylistRepo", "Auto sync disabled, skip")
                 return
@@ -110,6 +111,11 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
     }
 
     private fun songSet(songs: List<SongItem>): Set<SongIdentity> = songs.map { it.identity() }.toSet()
+
+    private fun isLocalFilesPlaylist(playlistId: Long, playlistName: String? = null): Boolean {
+        return playlistId == LocalFilesPlaylist.SYSTEM_ID ||
+            (playlistName != null && LocalFilesPlaylist.matches(playlistName, context))
+    }
 
     suspend fun createPlaylist(name: String) {
         withContext(Dispatchers.IO) {
@@ -263,6 +269,68 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
             if (songs.isEmpty()) return@withContext
             val updated = _playlists.value.map { playlist ->
                 if (playlist.id != playlistId) return@map playlist
+                if (isLocalFilesPlaylist(playlist.id, playlist.name)) {
+                    return@map playlist
+                }
+
+                val existing = songSet(playlist.songs).toMutableSet()
+                val toAdd = songs.filter { existing.add(it.identity()) }
+                if (toAdd.isEmpty()) {
+                    playlist
+                } else {
+                    playlist.copy(
+                        songs = (playlist.songs + toAdd).toMutableList(),
+                        modifiedAt = System.currentTimeMillis()
+                    )
+                }
+            }
+            publish(updated)
+        }
+    }
+
+    suspend fun syncLocalFilesPlaylist(
+        songs: List<SongItem>,
+        allowEmptyReplacement: Boolean = false
+    ): Boolean {
+        return withContext(Dispatchers.IO) {
+            val normalizedSongs = songs
+                .distinctBy { it.identity() }
+                .toMutableList()
+            val currentLocalFiles = LocalFilesPlaylist.firstOrNull(_playlists.value, context)
+            if (
+                normalizedSongs.isEmpty() &&
+                !allowEmptyReplacement &&
+                currentLocalFiles?.songs?.isNotEmpty() == true
+            ) {
+                NPLogger.w(
+                    "LocalPlaylistRepo",
+                    "Skip replacing Local Files playlist with empty scan result"
+                )
+                return@withContext false
+            }
+
+            val updated = _playlists.value.map { playlist ->
+                if (!isLocalFilesPlaylist(playlist.id, playlist.name)) {
+                    playlist
+                } else {
+                    playlist.copy(
+                        songs = normalizedSongs,
+                        modifiedAt = System.currentTimeMillis()
+                    )
+                }
+            }
+            publish(updated)
+            true
+        }
+    }
+
+    suspend fun addSongsToLocalFilesPlaylist(songs: List<SongItem>) {
+        withContext(Dispatchers.IO) {
+            if (songs.isEmpty()) return@withContext
+            val updated = _playlists.value.map { playlist ->
+                if (!isLocalFilesPlaylist(playlist.id, playlist.name)) {
+                    return@map playlist
+                }
 
                 val existing = songSet(playlist.songs).toMutableSet()
                 val toAdd = songs.filter { existing.add(it.identity()) }
@@ -348,7 +416,12 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
 
     suspend fun updatePlaylists(playlists: List<LocalPlaylist>) {
         withContext(Dispatchers.IO) {
-            publish(playlists, triggerSync = false)
+            val preservedLocalFiles = LocalFilesPlaylist.firstOrNull(_playlists.value, context)
+            val merged = playlists
+                .filterNot { LocalFilesPlaylist.isSystemPlaylist(it, context) }
+                .toMutableList()
+            preservedLocalFiles?.let(merged::add)
+            publish(merged, triggerSync = false)
         }
     }
 

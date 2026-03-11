@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="local_song_details_title">本地歌曲详情</string>
+    <string name="local_song_details_loading">正在读取本地歌曲信息...</string>
+    <string name="local_song_details_failed">读取本地歌曲信息失败：%1$s</string>
+    <string name="local_song_detail_display_name">文件名</string>
+    <string name="local_song_detail_title">标题</string>
+    <string name="local_song_detail_artist">艺术家</string>
+    <string name="local_song_detail_album">专辑</string>
+    <string name="local_song_detail_album_artist">专辑艺术家</string>
+    <string name="local_song_detail_composer">作曲</string>
+    <string name="local_song_detail_genre">流派</string>
+    <string name="local_song_detail_year">年份</string>
+    <string name="local_song_detail_track">音轨号</string>
+    <string name="local_song_detail_disc">碟号</string>
+    <string name="local_song_detail_duration">时长</string>
+    <string name="local_song_detail_extension">文件扩展名</string>
+    <string name="local_song_detail_bitrate">码率</string>
+    <string name="local_song_detail_sample_rate">采样率</string>
+    <string name="local_song_detail_channels">声道数</string>
+    <string name="local_song_detail_bit_depth">位深</string>
+    <string name="local_song_detail_size">文件大小</string>
+    <string name="local_song_detail_mime">MIME 类型</string>
+    <string name="local_song_detail_audio_mime">音频 MIME</string>
+    <string name="local_song_detail_modified">修改时间</string>
+    <string name="local_song_detail_path">文件路径</string>
+    <string name="local_song_detail_lyric_path">歌词路径</string>
+    <string name="local_song_detail_uri">媒体 URI</string>
+    <string name="local_song_detail_cover">封面来源</string>
+    <string name="local_song_detail_lyric">歌词来源</string>
+    <string name="local_song_detail_has_lyrics">歌词</string>
+    <string name="local_song_detail_has_lyrics_value">已加载</string>
+    <string name="local_song_detail_no_lyrics_value">未找到</string>
+    <string name="local_song_cover_embedded">内嵌封面</string>
+    <string name="local_song_cover_external">同目录封面文件</string>
+    <string name="local_song_lyric_external">同目录歌词文件</string>
+    <string name="local_song_open_details">歌曲信息详情</string>
+    <string name="local_song_sync_confirm_title">本地歌曲不会同步</string>
+    <string name="local_song_sync_confirm_message">本地歌曲不会同步到 GitHub，确认%1$s吗？</string>
+    <string name="local_song_share_failed">无法分享本地歌曲文件</string>
+</resources>

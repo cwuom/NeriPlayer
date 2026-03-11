@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="player_playback_invalid_url">播放地址无效，请重新登录或切换音质后重试</string>
+    <string name="player_playback_network_error">网络连接失败，请检查网络后重试</string>
+    <string name="player_playback_failed_with_code">播放失败：%1$s</string>
+    <string name="player_playback_login_required">需要登录后才能播放该歌曲</string>
+    <string name="player_playback_video_info_unavailable">暂时无法获取视频音频信息</string>
+    <string name="player_playback_restore_failed">恢复播放状态失败：%1$s</string>
+    <string name="player_playback_url_error_detail">获取播放地址失败：%1$s</string>
+</resources>

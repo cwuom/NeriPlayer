@@ -21,7 +21,6 @@ import android.util.TypedValue
 import androidx.annotation.DrawableRes
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.app.NotificationCompat
-import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.DrawableCompat
 import androidx.core.graphics.drawable.IconCompat
 import androidx.core.graphics.drawable.toBitmap
@@ -40,6 +39,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.MainActivity
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.FavoritesPlaylist
+import moe.ouom.neriplayer.data.LocalSongSupport
 import moe.ouom.neriplayer.data.sameIdentityAs
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
@@ -69,6 +69,8 @@ class AudioPlayerService : Service() {
     private var currentLargeIcon: Bitmap? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var allowServiceRestart = true
+    private var hasReceivedStartCommand = false
+    private var isForegroundStarted = false
 
     private val mediaSessionCallback = object : MediaSessionCompat.Callback() {
         override fun onPlay() { PlayerManager.play(); updateAll() }
@@ -76,15 +78,15 @@ class AudioPlayerService : Service() {
         override fun onSkipToNext() { PlayerManager.next(); updateAll() }
         override fun onSkipToPrevious() { PlayerManager.previous(); updateAll() }
         override fun onStop() {
-            allowServiceRestart = false
             PlayerManager.pause()
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            updateAll()
         }
         override fun onSeekTo(pos: Long) { PlayerManager.seekTo(pos); updatePlaybackState(); updateNotification() }
         override fun onCustomAction(action: String?, extras: Bundle?) {
             if (action == ACTION_TOGGLE_FAV) {
-                PlayerManager.toggleCurrentFavorite()
+                if (canToggleFavoriteFromExternalSurface(PlayerManager.currentSongFlow.value)) {
+                    PlayerManager.toggleCurrentFavorite()
+                }
                 updateAll()
             }
         }
@@ -107,7 +109,10 @@ class AudioPlayerService : Service() {
         serviceScope.launch {
             PlayerManager.currentSongFlow.collect {
                 if (it == null && !PlayerManager.hasItems()) {
-                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    if (!hasReceivedStartCommand) {
+                        return@collect
+                    }
+                    stopForegroundIfStarted()
                     stopSelf()
                     return@collect
                 }
@@ -165,13 +170,18 @@ class AudioPlayerService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         NPLogger.d("NERI-APS", "onStartCommand action=${intent?.action}")
         allowServiceRestart = true
+        hasReceivedStartCommand = true
 
         val action = intent?.action
         if (action == null && !PlayerManager.hasItems()) {
             allowServiceRestart = false
-            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopForegroundIfStarted()
             stopSelf()
             return START_NOT_STICKY
+        }
+
+        if (action != ACTION_STOP && (action != null || PlayerManager.hasItems())) {
+            ensureForegroundStarted()
         }
 
         // 处理媒体按钮
@@ -204,7 +214,7 @@ class AudioPlayerService : Service() {
             ACTION_STOP -> {
                 allowServiceRestart = false
                 PlayerManager.pause()
-                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopForegroundIfStarted()
                 stopSelf()
                 return START_NOT_STICKY
             }
@@ -212,7 +222,7 @@ class AudioPlayerService : Service() {
             ACTION_SYNC -> {
                 if (!PlayerManager.hasItems()) {
                     allowServiceRestart = false
-                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopForegroundIfStarted()
                     stopSelf()
                     return START_NOT_STICKY
                 }
@@ -220,16 +230,18 @@ class AudioPlayerService : Service() {
             }
 
             ACTION_TOGGLE_FAV -> {
-                PlayerManager.toggleCurrentFavorite()
+                if (canToggleFavoriteFromExternalSurface(PlayerManager.currentSongFlow.value)) {
+                    PlayerManager.toggleCurrentFavorite()
+                }
                 updateNotification()
             }
         }
 
         if (PlayerManager.hasItems()) {
-            startForeground(NOTIFICATION_ID, buildNotification())
+            ensureForegroundStarted()
         } else if (action != ACTION_STOP) {
             allowServiceRestart = false
-            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopForegroundIfStarted()
             stopSelf()
             return START_NOT_STICKY
         }
@@ -258,6 +270,11 @@ class AudioPlayerService : Service() {
         val pauseIntent = servicePendingIntent(ACTION_PAUSE, 3)
         val nextIntent  = servicePendingIntent(ACTION_NEXT, 4)
         val toggleFavIntent = servicePendingIntent(ACTION_TOGGLE_FAV, 6)
+        val favoriteActionIntent = if (requiresInteractiveFavoriteConfirmation(song)) {
+            contentIntent
+        } else {
+            toggleFavIntent
+        }
 
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_neri_player_round_white)
@@ -282,7 +299,7 @@ class AudioPlayerService : Service() {
         val favAction = NotificationCompat.Action.Builder(
             favIcon,
             if (isFav) getString(R.string.favorite_remove) else getString(R.string.favorite_add),
-            toggleFavIntent
+            favoriteActionIntent
         ).build()
 
         builder.addAction(R.drawable.round_skip_previous_24, getString(R.string.player_previous), prevIntent)
@@ -303,12 +320,15 @@ class AudioPlayerService : Service() {
             val timerInfo = when (timerState.mode) {
                 SleepTimerMode.COUNTDOWN -> {
                     val remaining = PlayerManager.sleepTimerManager.formatRemainingTime()
-                    "鈴?$remaining"
+                    getString(R.string.notification_timer_remaining, remaining)
                 }
                 SleepTimerMode.FINISH_CURRENT -> getString(R.string.notification_stop_after_current)
                 SleepTimerMode.FINISH_PLAYLIST -> getString(R.string.notification_stop_after_playlist)
             }
-            "${song?.artist ?: ""} 鈥?$timerInfo"
+            song?.artist
+                ?.takeIf { it.isNotBlank() }
+                ?.let { "$it | $timerInfo" }
+                ?: timerInfo
         } else {
             song?.artist ?: ""
         }
@@ -330,6 +350,15 @@ class AudioPlayerService : Service() {
         return favorites.songs.any { it.sameIdentityAs(song) }
     }
 
+    private fun requiresInteractiveFavoriteConfirmation(song: SongItem?): Boolean {
+        if (song == null) return false
+        return !isFavoriteSong(song) && LocalSongSupport.isLocalSong(song, this)
+    }
+
+    private fun canToggleFavoriteFromExternalSurface(song: SongItem?): Boolean {
+        return !requiresInteractiveFavoriteConfirmation(song)
+    }
+
     private fun updateAll() {
         updateMetadata()
         updatePlaybackState()
@@ -347,6 +376,9 @@ class AudioPlayerService : Service() {
     }
 
     private fun updateNotification() {
+        if (!isForegroundStarted) {
+            return
+        }
         val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         nm.notify(NOTIFICATION_ID, buildNotification())
     }
@@ -398,12 +430,15 @@ class AudioPlayerService : Service() {
 
         val stateBuilder = PlaybackStateCompat.Builder()
             .setActions(actions)
-            .addCustomAction(favCustom)
             .setState(
                 if (isPlaying) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED,
                 pos,
                 if (isPlaying) 1.0f else 0.0f
             )
+
+        if (canToggleFavoriteFromExternalSurface(song)) {
+            stateBuilder.addCustomAction(favCustom)
+        }
 
         mediaSession.setPlaybackState(stateBuilder.build())
     }
@@ -458,9 +493,7 @@ class AudioPlayerService : Service() {
         serviceScope.cancel()
         mediaSession.isActive = false
         mediaSession.release()
-        if (allowServiceRestart && PlayerManager.hasItems()) {
-            requestServiceRestart()
-        } else {
+        if (!allowServiceRestart || !PlayerManager.hasItems()) {
             PlayerManager.release()
         }
         super.onDestroy()
@@ -469,8 +502,7 @@ class AudioPlayerService : Service() {
 
     private fun requestServiceRestart() {
         runCatching {
-            ContextCompat.startForegroundService(
-                this,
+            startService(
                 Intent(this, AudioPlayerService::class.java).apply {
                     action = ACTION_SYNC
                 }
@@ -478,6 +510,23 @@ class AudioPlayerService : Service() {
         }.onFailure {
             NPLogger.e("NERI-APS", "Failed to restart service", it)
         }
+    }
+
+    private fun ensureForegroundStarted() {
+        if (!isForegroundStarted) {
+            startForeground(NOTIFICATION_ID, buildNotification())
+            isForegroundStarted = true
+        } else {
+            updateNotification()
+        }
+    }
+
+    private fun stopForegroundIfStarted() {
+        if (!isForegroundStarted) {
+            return
+        }
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        isForegroundStarted = false
     }
 
     private fun NotificationPaddedIcon(

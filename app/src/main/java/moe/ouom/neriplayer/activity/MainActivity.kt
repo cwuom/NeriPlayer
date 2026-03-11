@@ -27,6 +27,7 @@ package moe.ouom.neriplayer.activity
 import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Color
 import android.net.Uri
 import android.os.Build
@@ -88,6 +89,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.R
+import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toDrawable
 import androidx.core.graphics.toColorInt
 import androidx.core.view.WindowCompat
@@ -95,32 +97,50 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.core.player.AudioPlayerService
 import moe.ouom.neriplayer.core.player.PlayerEvent
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.data.LocalAudioImportManager
 import moe.ouom.neriplayer.data.SettingsRepository
+import moe.ouom.neriplayer.data.readThemePreferenceSnapshotSync
 import moe.ouom.neriplayer.ui.NeriApp
+import moe.ouom.neriplayer.util.ExceptionHandler
 import moe.ouom.neriplayer.util.HapticButton
 import moe.ouom.neriplayer.util.HapticTextButton
-import moe.ouom.neriplayer.util.ExceptionHandler
 import moe.ouom.neriplayer.util.LanguageManager
+import moe.ouom.neriplayer.util.NightModeHelper
 import moe.ouom.neriplayer.util.NPLogger
-import moe.ouom.neriplayer.data.LocalAudioImportManager
 import androidx.core.view.WindowInsetsControllerCompat
 
 private enum class AppStage { Loading, Disclaimer, Main }
 
 class MainActivity : ComponentActivity() {
     private val settingsRepository by lazy { SettingsRepository(applicationContext) }
+    private var externalAudioImportJob: Job? = null
+    private var externalAudioRequestToken = 0L
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LanguageManager.applyLanguage(newBase))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val startupThemeSnapshot = readThemePreferenceSnapshotSync(this)
+        NightModeHelper.applyNightMode(
+            followSystemDark = startupThemeSnapshot.followSystemDark,
+            forceDark = startupThemeSnapshot.forceDark
+        )
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
+        applyWindowBackground(
+            startupThemeSnapshot.resolveUseDark(
+                systemDark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                    Configuration.UI_MODE_NIGHT_YES
+            )
+        )
 
         setContent {
             // 初始化日志：在 Application 期也会被调用，重复调用是幂等的
@@ -128,9 +148,15 @@ class MainActivity : ComponentActivity() {
             val devModeEnabled by repo.devModeEnabledFlow.collectAsState(initial = false)
             NPLogger.init(context = this, enableFileLogging = devModeEnabled)
 
-            val dynamicColor by settingsRepository.dynamicColorFlow.collectAsState(initial = true)
-            val forceDark by settingsRepository.forceDarkFlow.collectAsState(initial = false)
-            val followSystemDark by settingsRepository.followSystemDarkFlow.collectAsState(initial = true)
+            val dynamicColor by settingsRepository.dynamicColorFlow.collectAsState(
+                initial = startupThemeSnapshot.dynamicColor
+            )
+            val forceDark by settingsRepository.forceDarkFlow.collectAsState(
+                initial = startupThemeSnapshot.forceDark
+            )
+            val followSystemDark by settingsRepository.followSystemDarkFlow.collectAsState(
+                initial = startupThemeSnapshot.followSystemDark
+            )
             val disclaimerAcceptedNullable by settingsRepository.disclaimerAcceptedFlow.collectAsState(initial = null)
 
             val systemDark = isSystemInDarkTheme()
@@ -156,7 +182,10 @@ class MainActivity : ComponentActivity() {
                     delay(1000) // 延迟1秒,避免阻塞启动
                     val storage = moe.ouom.neriplayer.data.github.SecureTokenStorage(this@MainActivity)
                     if (storage.isConfigured()) {
-                        moe.ouom.neriplayer.data.github.GitHubSyncWorker.syncNow(this@MainActivity)
+                        moe.ouom.neriplayer.data.github.GitHubSyncWorker.scheduleDelayedSync(
+                            this@MainActivity,
+                            markMutation = false
+                        )
                     }
             }
 
@@ -165,7 +194,6 @@ class MainActivity : ComponentActivity() {
                             handleExternalAudioIntent(intent)
                         }
                         SideEffect {
-                            applyWindowBackground(useDark)
                             val controller = WindowInsetsControllerCompat(window, window.decorView)
                             controller.isAppearanceLightStatusBars = !useDark
                             controller.isAppearanceLightNavigationBars = !useDark
@@ -344,6 +372,7 @@ class MainActivity : ComponentActivity() {
                             }
 
                             NeriApp(
+                                initialThemeSnapshot = startupThemeSnapshot,
                                 onIsDarkChanged = { isDark ->
                                     // 仅调整窗口底色 & 系统栏外观
                                     applyWindowBackground(isDark)
@@ -377,24 +406,61 @@ class MainActivity : ComponentActivity() {
         val action = intent?.action ?: return
         val uriList: List<Uri> = when (action) {
             Intent.ACTION_VIEW -> intent.data?.let(::listOf) ?: emptyList()
-            Intent.ACTION_SEND -> intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)?.let(::listOf) ?: emptyList()
-            Intent.ACTION_SEND_MULTIPLE -> intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM) ?: emptyList()
+            Intent.ACTION_SEND -> getSharedSingleUri(intent)?.let(::listOf) ?: emptyList()
+            Intent.ACTION_SEND_MULTIPLE -> getSharedMultipleUris(intent)
             else -> emptyList()
         }
         if (uriList.isEmpty()) return
 
-        lifecycleScope.launch {
-            val result = LocalAudioImportManager.importSongs(this@MainActivity, uriList)
-            if (result.songs.isNotEmpty()) {
-                PlayerManager.initialize(application)
-                PlayerManager.playPlaylist(result.songs, 0)
+        externalAudioImportJob?.cancel()
+        val requestToken = ++externalAudioRequestToken
+        setIntent(Intent(this, MainActivity::class.java))
+
+        externalAudioImportJob = lifecycleScope.launch {
+            try {
+                val result = LocalAudioImportManager.importExternalSongs(this@MainActivity, uriList)
+                if (requestToken != externalAudioRequestToken) {
+                    return@launch
+                }
+                if (result.songs.isNotEmpty()) {
+                    PlayerManager.initialize(application)
+                    ContextCompat.startForegroundService(
+                        this@MainActivity,
+                        Intent(this@MainActivity, AudioPlayerService::class.java).apply {
+                            setAction(AudioPlayerService.ACTION_PLAY)
+                            putParcelableArrayListExtra("playlist", ArrayList(result.songs))
+                            putExtra("index", 0)
+                        }
+                    )
+                }
+            } catch (_: CancellationException) {
+                // 只保留最新一次外部唤起请求。
             }
         }
     }
 
     override fun onDestroy() {
+        externalAudioImportJob?.cancel()
         super.onDestroy()
         ExceptionHandler.cleanup()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun getSharedSingleUri(intent: Intent): Uri? {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+        } else {
+            intent.getParcelableExtra(Intent.EXTRA_STREAM)
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun getSharedMultipleUris(intent: Intent): List<Uri> {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
+        } else {
+            intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM).orEmpty()
+        }
     }
 }
 

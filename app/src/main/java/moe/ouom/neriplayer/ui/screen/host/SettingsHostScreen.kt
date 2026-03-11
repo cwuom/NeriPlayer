@@ -59,7 +59,7 @@ fun SettingsHostScreen(
     dynamicColor: Boolean,
     onDynamicColorChange: (Boolean) -> Unit,
     isDarkTheme: Boolean,
-    onThemeToggleRequest: (Offset) -> Unit,
+    onThemeToggleRequest: (Offset, Float) -> Unit,
     preferredQuality: String,
     onQualityChange: (String) -> Unit,
     biliPreferredQuality: String,
@@ -98,6 +98,7 @@ fun SettingsHostScreen(
     maxCacheSizeBytes: Long,
     onMaxCacheSizeBytesChange: (Long) -> Unit,
     onClearCacheClick: (clearAudio: Boolean, clearImage: Boolean) -> Unit,
+    onBeforeLanguageRestart: () -> Unit = {},
 ) {
     var screenState by remember { mutableStateOf<SettingsScreenState>(SettingsScreenState.Settings) }
 
@@ -182,7 +183,8 @@ fun SettingsHostScreen(
                     onNavigateToDownloadManager = { screenState = SettingsScreenState.DownloadManager },
                     maxCacheSizeBytes = maxCacheSizeBytes,
                     onMaxCacheSizeBytesChange = onMaxCacheSizeBytesChange,
-                    onClearCacheClick = onClearCacheClick
+                    onClearCacheClick = onClearCacheClick,
+                    onBeforeLanguageRestart = onBeforeLanguageRestart
                 )
                 }
                 SettingsScreenState.DownloadManager -> {

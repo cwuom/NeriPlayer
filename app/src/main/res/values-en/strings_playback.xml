@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="player_playback_invalid_url">Playback URL is invalid. Please sign in again or switch audio quality and retry.</string>
+    <string name="player_playback_network_error">Network connection failed. Check your connection and try again.</string>
+    <string name="player_playback_failed_with_code">Playback failed: %1$s</string>
+    <string name="player_playback_login_required">Sign-in is required before this track can be played.</string>
+    <string name="player_playback_video_info_unavailable">Video audio information is currently unavailable.</string>
+    <string name="player_playback_restore_failed">Failed to restore playback state: %1$s</string>
+    <string name="player_playback_url_error_detail">Failed to resolve playback URL: %1$s</string>
+</resources>

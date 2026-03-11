@@ -84,6 +84,7 @@ import moe.ouom.neriplayer.data.LocalSongSupport
 import moe.ouom.neriplayer.data.LocalPlaylist
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.sameIdentityAs
+import moe.ouom.neriplayer.data.stableKey
 import moe.ouom.neriplayer.ui.component.LyricEntry
 import moe.ouom.neriplayer.ui.component.parseNeteaseLrc
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
@@ -197,6 +198,7 @@ object PlayerManager {
     val playlistsFlow: StateFlow<List<LocalPlaylist>> = _playlistsFlow
 
     private var playJob: Job? = null
+    private var playbackRequestToken = 0L
 
     val audioLevelFlow get() = AudioReactive.level
     val beatImpulseFlow get() = AudioReactive.beat
@@ -224,6 +226,51 @@ object PlayerManager {
 
     private fun queueIndexOf(song: SongItem, playlist: List<SongItem> = currentPlaylist): Int {
         return playlist.indexOfFirst { it.sameIdentityAs(song) }
+    }
+
+    private fun localMediaSource(song: SongItem): String? {
+        return song.localFilePath?.takeIf { it.isNotBlank() }
+            ?: song.mediaUri?.takeIf { it.isNotBlank() }
+    }
+
+    private fun toPlayableLocalUrl(mediaUri: String?): String? {
+        val uriString = mediaUri?.takeIf { it.isNotBlank() } ?: return null
+        return if (uriString.startsWith("/")) {
+            Uri.fromFile(File(uriString)).toString()
+        } else {
+            val parsed = runCatching { Uri.parse(uriString) }.getOrNull() ?: return null
+            when (parsed.scheme?.lowercase()) {
+                null, "" -> Uri.fromFile(File(uriString)).toString()
+                else -> uriString
+            }
+        }
+    }
+
+    private fun isReadableLocalMediaUri(mediaUri: String?): Boolean {
+        val uriString = mediaUri?.takeIf { it.isNotBlank() } ?: return false
+        if (uriString.startsWith("/")) {
+            return File(uriString).exists()
+        }
+
+        val uri = runCatching { Uri.parse(uriString) }.getOrNull() ?: return false
+        return when (uri.scheme?.lowercase()) {
+            null, "" -> File(uriString).exists()
+            "file" -> uri.path?.let(::File)?.exists() == true
+            "content", "android.resource" -> runCatching {
+                application.contentResolver.openAssetFileDescriptor(uri, "r")?.use { true } ?: false
+            }.getOrDefault(false)
+            else -> false
+        }
+    }
+
+    private fun isReadableLocalSong(song: SongItem): Boolean {
+        return isReadableLocalMediaUri(localMediaSource(song))
+    }
+
+    private fun sanitizeRestoredPlaylist(playlist: List<SongItem>): List<SongItem> {
+        return playlist.filter { song ->
+            !isLocalSong(song) || isReadableLocalSong(song)
+        }
     }
 
     private fun isCurrentSong(song: SongItem): Boolean {
@@ -256,7 +303,7 @@ object PlayerManager {
      */
     private fun computeCacheKey(song: SongItem): String {
         return when {
-            isLocalSong(song) -> "local-${song.mediaUri.hashCode()}"
+            isLocalSong(song) -> "local-${song.stableKey().hashCode()}"
             song.album.startsWith(BILI_SOURCE_TAG) -> {
             val parts = song.album.split('|')
             val cidPart = if (parts.size > 1) parts[1] else null
@@ -302,10 +349,10 @@ object PlayerManager {
             else -> {
                 if (player.shuffleModeEnabled) {
                     if (shuffleFuture.isNotEmpty() || shuffleBag.isNotEmpty()) next(force = false)
-                    else stopAndClearPlaylist()
+                    else stopPlaybackPreservingQueue()
                 } else {
                     if (currentIndex < currentPlaylist.lastIndex) next(force = false)
-                    else stopAndClearPlaylist()
+                    else stopPlaybackPreservingQueue()
                 }
             }
         }
@@ -400,11 +447,11 @@ object PlayerManager {
                             null
                         }
                         cause?.message?.contains("no protocol: null", ignoreCase = true) == true ->
-                            "Playback url invalid. Please login or switch quality."
+                            getLocalizedString(R.string.player_playback_invalid_url)
                         error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ->
-                            "网络连接失败，请检查网络后重试"
+                            getLocalizedString(R.string.player_playback_network_error)
                         else ->
-                            "播放失败：${error.errorCodeName}"
+                            getLocalizedString(R.string.player_playback_failed_with_code, error.errorCodeName)
                     }
 
                     if (msg != null) {
@@ -412,7 +459,7 @@ object PlayerManager {
                     }
 
                     if (consecutivePlayFailures >= MAX_CONSECUTIVE_FAILURES) {
-                        stopAndClearPlaylist()
+                        stopPlaybackPreservingQueue(clearMediaUrl = true)
                         return
                     }
 
@@ -662,12 +709,13 @@ object PlayerManager {
                     Toast.LENGTH_SHORT
                 ).show()
             }
-            stopAndClearPlaylist()
+            stopPlaybackPreservingQueue(clearMediaUrl = true)
             return
         }
 
         val song = currentPlaylist[index]
         _currentSongFlow.value = song
+        _currentMediaUrl.value = null
         ioScope.launch {
             persistState()
         }
@@ -678,9 +726,14 @@ object PlayerManager {
         }
 
         playJob?.cancel()
+        playbackRequestToken += 1
+        val requestToken = playbackRequestToken
         _playbackPositionMs.value = 0L
         playJob = ioScope.launch {
             val result = resolveSongUrl(song)
+            if (requestToken != playbackRequestToken || !isActive) {
+                return@launch
+            }
 
             when (result) {
                 is SongUrlResult.Success -> {
@@ -692,10 +745,18 @@ object PlayerManager {
                     val mediaItem = buildMediaItem(song, result.url, cacheKey)
 
                     _currentMediaUrl.value = result.url
+                    persistState()
+                    if (requestToken != playbackRequestToken || !isActive) {
+                        return@launch
+                    }
 
                     withContext(Dispatchers.Main) {
+                        if (requestToken != playbackRequestToken) {
+                            return@withContext
+                        }
                         player.setMediaItem(mediaItem)
                         // 每次切歌后都钳制 Exo 的循环状态，避免单媒体项“列表循环”
+                        syncExoRepeatMode()
                         syncExoRepeatMode()
                         player.prepare()
                         player.play()
@@ -703,7 +764,11 @@ object PlayerManager {
                 }
                 is SongUrlResult.RequiresLogin -> {
                     NPLogger.w("NERI-PlayerManager", "Requires login to play: id=${song.id}, source=${song.album}")
-                    postPlayerEvent(PlayerEvent.ShowLoginPrompt("需要登录才能播放"))
+                    postPlayerEvent(
+                        PlayerEvent.ShowLoginPrompt(
+                            getLocalizedString(R.string.player_playback_login_required)
+                        )
+                    )
                     withContext(Dispatchers.Main) { next() }
                 }
                 is SongUrlResult.Failure -> {
@@ -717,7 +782,12 @@ object PlayerManager {
 
     private suspend fun resolveSongUrl(song: SongItem): SongUrlResult {
         if (isLocalSong(song)) {
-            return SongUrlResult.Success(song.mediaUri.orEmpty())
+            val localMediaUri = localMediaSource(song)
+            if (localMediaUri != null && isReadableLocalMediaUri(localMediaUri)) {
+                return SongUrlResult.Success(toPlayableLocalUrl(localMediaUri) ?: localMediaUri)
+            }
+            postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(R.string.error_no_play_url)))
+            return SongUrlResult.Failure
         }
 
         // 优先检查本地下载的文件
@@ -793,7 +863,7 @@ object PlayerManager {
                     }
                     if (url.isNullOrBlank()) {
                         if (!suppressError) {
-                            postPlayerEvent(PlayerEvent.ShowError("No playable url available. Please login or check rights."))
+                            postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(R.string.error_no_play_url)))
                         }
                         SongUrlResult.Failure
                     } else {
@@ -803,7 +873,7 @@ object PlayerManager {
                 }
                 else -> {
                     if (!suppressError) {
-                        postPlayerEvent(PlayerEvent.ShowError("Failed to get play url."))
+                        postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(R.string.error_no_play_url)))
                     }
                     SongUrlResult.Failure
                 }
@@ -811,7 +881,11 @@ object PlayerManager {
         } catch (e: Exception) {
             NPLogger.e("NERI-PlayerManager", "Failed to get url", e)
             if (!suppressError) {
-                postPlayerEvent(PlayerEvent.ShowError("Failed to get play url: ${e.message}"))
+                postPlayerEvent(
+                    PlayerEvent.ShowError(
+                        getLocalizedString(R.string.player_playback_url_error_detail, e.message.orEmpty())
+                    )
+                )
             }
             SongUrlResult.Failure
         }
@@ -822,7 +896,11 @@ object PlayerManager {
             val resolved = resolveBiliSong(song, biliClient)
             if (resolved == null || resolved.cid == 0L) {
                 if (!suppressError) {
-                    postPlayerEvent(PlayerEvent.ShowError("无法获取视频信息"))
+                    postPlayerEvent(
+                        PlayerEvent.ShowError(
+                            getLocalizedString(R.string.player_playback_video_info_unavailable)
+                        )
+                    )
                 }
                 return@withContext SongUrlResult.Failure
             }
@@ -841,7 +919,11 @@ object PlayerManager {
         } catch (e: Exception) {
             NPLogger.e("NERI-PlayerManager", "Failed to get Bili play url", e)
             if (!suppressError) {
-                postPlayerEvent(PlayerEvent.ShowError("Failed to get play url: ${e.message}"))
+                postPlayerEvent(
+                    PlayerEvent.ShowError(
+                        getLocalizedString(R.string.player_playback_url_error_detail, e.message.orEmpty())
+                    )
+                )
             }
             SongUrlResult.Failure
         }
@@ -878,6 +960,9 @@ object PlayerManager {
     fun pause() {
         ensureInitialized()
         if (!initialized) return
+        playbackRequestToken += 1
+        playJob?.cancel()
+        playJob = null
         player.playWhenReady = false
         player.pause()
     }
@@ -885,7 +970,11 @@ object PlayerManager {
     fun togglePlayPause() {
         ensureInitialized()
         if (!initialized) return
-        if (player.isPlaying) pause() else play()
+        if (player.isPlaying || player.playWhenReady || playJob?.isActive == true) {
+            pause()
+        } else {
+            play()
+        }
     }
 
     fun seekTo(positionMs: Long) {
@@ -917,7 +1006,7 @@ object PlayerManager {
                     rebuildShuffleBag(excludeIndex = currentIndex) // 新一轮，避免同曲连播
                 } else {
                     NPLogger.d("NERI-Player", "Shuffle finished and repeat is off, stopping.")
-                    stopAndClearPlaylist()
+                    stopPlaybackPreservingQueue()
                     return
                 }
             }
@@ -1065,22 +1154,27 @@ object PlayerManager {
 
     private fun stopProgressUpdates() { progressJob?.cancel(); progressJob = null }
 
-    private fun stopAndClearPlaylist() {
+    private fun stopPlaybackPreservingQueue(clearMediaUrl: Boolean = false) {
+        playbackRequestToken += 1
         playJob?.cancel()
         playJob = null
-        player.stop()
-        player.clearMediaItems()
+        stopProgressUpdates()
+        runCatching { player.stop() }
+        runCatching { player.clearMediaItems() }
         _isPlayingFlow.value = false
-        _currentSongFlow.value = null
-        _currentMediaUrl.value = null
         _playbackPositionMs.value = 0L
-        currentIndex = -1
-        currentPlaylist = emptyList()
-        _currentQueueFlow.value = emptyList()
+        if (currentPlaylist.isEmpty()) {
+            currentIndex = -1
+            _currentSongFlow.value = null
+            _currentMediaUrl.value = null
+        } else {
+            currentIndex = currentIndex.coerceIn(0, currentPlaylist.lastIndex)
+            _currentSongFlow.value = currentPlaylist.getOrNull(currentIndex)
+            if (clearMediaUrl) {
+                _currentMediaUrl.value = null
+            }
+        }
         consecutivePlayFailures = 0
-        shuffleBag.clear()
-        shuffleHistory.clear()
-        shuffleFuture.clear()
         ioScope.launch {
             persistState()
         }
@@ -1378,7 +1472,6 @@ object PlayerManager {
         }
 
         val currentSong = _currentSongFlow.value
-
         val newPlaylist = currentPlaylist.toMutableList()
         var insertIndex = (currentIndex + 1).coerceIn(0, newPlaylist.size + 1)
 
@@ -1399,11 +1492,11 @@ object PlayerManager {
         // 更新列表
         currentPlaylist = newPlaylist
         _currentQueueFlow.value = currentPlaylist
-
         if (currentSong != null) {
             currentIndex = queueIndexOf(currentSong, newPlaylist)
+        } else {
+            currentIndex = currentIndex.coerceIn(0, newPlaylist.lastIndex)
         }
-
         if (player.shuffleModeEnabled) {
             val newSongRealIndex = queueIndexOf(song, newPlaylist)
 
@@ -1432,6 +1525,7 @@ object PlayerManager {
             return
         }
 
+        val currentSong = _currentSongFlow.value
         val newPlaylist = currentPlaylist.toMutableList()
 
         // 检查歌曲是否已存在于队列中
@@ -1445,6 +1539,12 @@ object PlayerManager {
         // 更新播放队列
         currentPlaylist = newPlaylist
         _currentQueueFlow.value = currentPlaylist
+        currentIndex = if (currentSong != null) {
+            queueIndexOf(currentSong, newPlaylist).takeIf { it >= 0 }
+                ?: currentIndex.coerceIn(0, newPlaylist.lastIndex)
+        } else {
+            currentIndex.coerceIn(0, newPlaylist.lastIndex)
+        }
 
         // 如果启用了随机播放，需要重建随机播放袋
         if (player.shuffleModeEnabled) {
@@ -1461,11 +1561,28 @@ object PlayerManager {
             if (!stateFile.exists()) return
             val type = object : TypeToken<PersistedState>() {}.type
             val data: PersistedState = gson.fromJson(stateFile.readText(), type)
-            currentPlaylist = data.playlist
-            currentIndex = data.index
+            currentPlaylist = sanitizeRestoredPlaylist(data.playlist)
+            if (currentPlaylist.isEmpty()) {
+                currentIndex = -1
+                _currentQueueFlow.value = emptyList()
+                _currentSongFlow.value = null
+                _currentMediaUrl.value = null
+                return
+            }
+            val preferredSong = data.playlist.getOrNull(data.index)
+            currentIndex = when {
+                currentPlaylist.isEmpty() -> -1
+                preferredSong != null -> queueIndexOf(preferredSong, currentPlaylist).takeIf { it >= 0 }
+                    ?: data.index.coerceIn(0, currentPlaylist.lastIndex)
+                data.index in currentPlaylist.indices -> data.index
+                else -> 0
+            }
             _currentQueueFlow.value = currentPlaylist
             _currentSongFlow.value = currentPlaylist.getOrNull(currentIndex)
-            _currentMediaUrl.value = data.mediaUrl
+            _currentMediaUrl.value = data.mediaUrl?.takeIf {
+                _currentSongFlow.value?.let(::isLocalSong) != true ||
+                    _currentSongFlow.value?.let(::isReadableLocalSong) == true
+            }
         } catch (e: Exception) {
             NPLogger.w("NERI-PlayerManager", "Failed to restore state: ${e.message}")
         }
@@ -1648,7 +1765,11 @@ object PlayerManager {
             } catch (e: Exception) {
                 NPLogger.e("NERI-PlayerManager", "恢复原始信息失败", e)
                 mainScope.launch {
-                    postPlayerEvent(PlayerEvent.ShowError("恢复失败：${e.message}"))
+                    postPlayerEvent(
+                        PlayerEvent.ShowError(
+                            getLocalizedString(R.string.player_playback_restore_failed, e.message.orEmpty())
+                        )
+                    )
                 }
             }
         }
@@ -1668,8 +1789,12 @@ object PlayerManager {
             _currentSongFlow.value = _currentSongFlow.value?.copy(userLyricOffsetMs = newOffset)
         }
 
-        withContext(Dispatchers.IO) {
-            localRepo.updateSongMetadata(songToUpdate, songToUpdate.copy(userLyricOffsetMs = newOffset))
+        val latestSong = currentPlaylist.firstOrNull { it.sameIdentityAs(songToUpdate) }
+            ?: _currentSongFlow.value?.takeIf { it.sameIdentityAs(songToUpdate) }
+        if (latestSong != null) {
+            withContext(Dispatchers.IO) {
+                localRepo.updateSongMetadata(songToUpdate, latestSong)
+            }
         }
 
         persistState()

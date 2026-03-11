@@ -617,6 +617,13 @@
     <string name="toast_cache_cleared">已清理 %d MB 缓存</string>
     <string name="toast_cache_clear_error">清理出错: %s</string>
     <string name="toast_playback_stopped">多首歌曲无法播放，已停止</string>
+    <string name="playback_invalid_url">播放地址无效，请重新登录或切换音质后重试</string>
+    <string name="playback_network_error">网络连接失败，请检查网络后重试</string>
+    <string name="playback_failed_with_code">播放失败：%1$s</string>
+    <string name="playback_login_required">需要登录后才能播放该歌曲</string>
+    <string name="playback_video_info_unavailable">暂时无法获取视频音频信息</string>
+    <string name="playback_restore_failed">恢复播放状态失败：%1$s</string>
+    <string name="playback_url_error_detail">获取播放地址失败：%1$s</string>
     <string name="toast_match_failed">匹配失败: %s</string>
     <string name="toast_save_failed">保存失败: %s</string>
     <string name="snackbar_cookie_empty">未读取到 Cookie，请确认已完成登录</string>
@@ -648,6 +655,7 @@
     <string name="github_repo_not_found">仓库不存在或无权访问: %s</string>
     <string name="github_token_expired">GitHub Token 已过期，请重新配置</string>
     <string name="github_token_expired_message">GitHub Token 已过期或无效，请重新配置</string>
+    <string name="github_backup_file_invalid">远端备份文件无效或已损坏</string>
     <string name="github_sync_failed">同步失败: %s</string>
 
     <!-- LyricsScreen -->
@@ -792,6 +800,8 @@
     <string name="settings_storage_expand">管理缓存大小与清理</string>
     <string name="settings_no_cache">不缓存 (0 MB)</string>
     <string name="settings_cache_notice">设置为 0 MB 即禁用缓存。修改上限后需重启应用生效。</string>
+    <string name="settings_cache_size_gb">%.1f GB</string>
+    <string name="settings_cache_size_mb">%1$d MB</string>
     <string name="settings_download_management">下载管理</string>
     <string name="settings_download_expand">展开以管理下载任务</string>
     <string name="settings_download_progress">下载进度</string>
@@ -890,13 +900,21 @@
 
     <!-- Language Settings -->
     <string name="language_simplified_chinese">简体中文</string>
-    <string name="language_follow_system">跟随系统 / Follow System</string>
-    <string name="language_setting_title">语言 / Language</string>
-    <string name="language_select_title">选择语言 / Select Language</string>
-    <string name="language_restart_title">重启应用 / Restart App</string>
-    <string name="language_restart_message">语言已更改,需要重启应用以完全生效\n\nLanguage changed. App restart required for full effect.</string>
-    <string name="language_restart_now">立即重启 / Restart Now</string>
-    <string name="language_restart_later">稍后 / Later</string>
+    <string name="language_english">英语</string>
+    <string name="language_follow_system">跟随系统</string>
+    <string name="language_display_chinese">简体中文</string>
+    <string name="language_display_english">英语 / English</string>
+    <string name="language_display_system">跟随系统 / Follow system</string>
+    <string name="language_setting_title">语言</string>
+    <string name="language_select_title">选择语言</string>
+    <string name="language_restart_title">重启应用</string>
+    <string name="language_restart_message">语言已更改，需要重启应用以完全生效。</string>
+    <string name="language_restart_now">立即重启</string>
+    <string name="language_restart_later">稍后</string>
+    <string name="language_restart_title_bilingual">重启应用 / Restart app</string>
+    <string name="language_restart_message_bilingual">语言已更改，需要重启应用以完全生效。\nLanguage changed. Restart the app to apply it completely.</string>
+    <string name="language_restart_now_bilingual">立即重启 / Restart now</string>
+    <string name="language_restart_later_bilingual">稍后 / Later</string>
 
     <!-- Time Format -->
     <string name="time_zero_minutes">0分钟</string>
@@ -942,9 +960,9 @@
     <string name="download_local_file">本地文件</string>
 
     <!-- Notification Messages -->
+    <string name="notification_timer_remaining">⏱ %1$s 后停止</string>
     <string name="notification_stop_after_current">⏱ 播完当前停止</string>
     <string name="notification_stop_after_playlist">⏱ 播完列表停止</string>
-
     <!-- Settings Messages -->
     <string name="settings_sync_batch_update_time">每10分钟更新</string>
     <string name="settings_color_picker_hint">长按颜色或点击 × 可删除自定义颜色</string>
@@ -990,6 +1008,10 @@
     <string name="download_manager_title">下载管理</string>
     <string name="download_manager_subtitle">管理音乐下载和本地文件</string>
     <string name="download_scan_local">扫描本地音乐</string>
+    <string name="local_playlist_scan_preserve_existing">扫描结果无效，已保留现有本地文件列表</string>
+    <string name="local_playlist_scan_preview_title">预览本地文件</string>
+    <string name="local_playlist_scan_preview_search">搜索本地文件</string>
+    <string name="local_playlist_scan_preview_apply">导入所选歌曲</string>
     <string name="download_scanning">正在扫描本地音频…</string>
     <string name="download_scan_failed">扫描失败 %1$d 项</string>
     <string name="download_scan_empty">未找到本地音频文件</string>
@@ -1009,6 +1031,8 @@
     <!-- Home Screen -->
     <string name="home_loading">正在为你加载首页推荐...</string>
     <string name="home_load_failed">加载失败：%s</string>
+    <string name="home_error_network">网络或服务器异常：%s</string>
+    <string name="home_error_unknown">解析或未知错误：%s</string>
     <string name="home_retry_hint">点右上角刷新重试~</string>
     <string name="home_song_count_format">%d首</string>
     <string name="home_play_count_format" formatted="false">%s · %d首</string>
@@ -1148,5 +1172,4 @@
     <string name="common_label_value_format">%1$s - %2$s</string>
     <string name="common_percent_int">%1$d%%</string>
     <string name="download_progress_file_label">%1$d%% - %2$s</string>
-
 </resources>
