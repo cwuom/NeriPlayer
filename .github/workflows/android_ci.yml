@@ -115,18 +115,19 @@ jobs:
           commit_author="$COMMIT_AUTHOR"
           commit_url="https://github.com/${REPO}/commit/${SHA}"
           
-          caption="🎉 *检测到新的 GitHub 推送！*
-          *Commit SHA:* \`${SHA}\`
-          
-          \`\`\`
+          caption=$(cat <<EOF
+          检测到新的 GitHub 推送！
+          Commit SHA: ${SHA}
+
+          Commit Message:
           ${commit_msg}
-          \`\`\`
-          
-          *提交者* \`${commit_author}\`
-          [查看详情](${commit_url})"
+
+          提交者: ${commit_author}
+          查看详情: ${commit_url}
+          EOF
+          )
           
           curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
             -F chat_id="${CHAT_ID}" \
             -F document=@"${APK_PATH}" \
-            -F caption="${caption}" \
-            -F parse_mode=Markdown
+            -F caption="${caption}"
