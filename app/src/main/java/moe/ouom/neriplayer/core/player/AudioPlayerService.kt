@@ -153,10 +153,11 @@ class AudioPlayerService : Service() {
         becomingNoisyReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 if (intent.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
-                    NPLogger.d("NERI-APS", "Audio becoming noisy, pausing playback.")
-                    PlayerManager.pause()
-                    updatePlaybackState()
-                    updateNotification()
+                    if (PlayerManager.handleAudioBecomingNoisy()) {
+                        NPLogger.d("NERI-APS", "Handled bluetooth disconnect according to settings.")
+                        updatePlaybackState()
+                        updateNotification()
+                    }
                 }
             }
         }

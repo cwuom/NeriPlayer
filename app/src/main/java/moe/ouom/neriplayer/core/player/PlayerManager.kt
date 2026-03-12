@@ -150,6 +150,7 @@ object PlayerManager {
     private var ioScope = newIoScope()
     private var mainScope = newMainScope()
     private var progressJob: Job? = null
+    private var volumeFadeJob: Job? = null
 
     private val localRepo: LocalPlaylistRepository
         get() = LocalPlaylistRepository.getInstance(application)
@@ -158,6 +159,9 @@ object PlayerManager {
 
     private var preferredQuality: String = "exhigh"
     private var biliPreferredQuality: String = "high"
+    private var playbackFadeInEnabled = false
+    private var playbackCrossfadeNextEnabled = false
+    private var stopOnBluetoothDisconnectEnabled = true
 
     private var currentPlaylist: List<SongItem> = emptyList()
     private var currentIndex = -1
@@ -172,6 +176,8 @@ object PlayerManager {
     private const val MEDIA_URL_STALE_MS = 10 * 60 * 1000L
     private const val URL_REFRESH_COOLDOWN_MS = 30 * 1000L
     private const val STATE_PERSIST_INTERVAL_MS = 15 * 1000L
+    private const val PLAYBACK_FADE_DURATION_MS = 280L
+    private const val PLAYBACK_FADE_STEPS = 7
     @Volatile
     private var urlRefreshInProgress = false
     private var lastUrlRefreshKey: String? = null
@@ -555,6 +561,19 @@ object PlayerManager {
         ioScope.launch {
             settingsRepo.biliAudioQualityFlow.collect { q -> biliPreferredQuality = q }
         }
+        ioScope.launch {
+            settingsRepo.playbackFadeInFlow.collect { enabled -> playbackFadeInEnabled = enabled }
+        }
+        ioScope.launch {
+            settingsRepo.playbackCrossfadeNextFlow.collect { enabled ->
+                playbackCrossfadeNextEnabled = enabled
+            }
+        }
+        ioScope.launch {
+            settingsRepo.stopOnBluetoothDisconnectFlow.collect { enabled ->
+                stopOnBluetoothDisconnectEnabled = enabled
+            }
+        }
 
         // 同步本地歌单
         ioScope.launch {
@@ -677,16 +696,36 @@ object PlayerManager {
         audioManager.registerAudioDeviceCallback(deviceCallback, Handler(Looper.getMainLooper()))
     }
 
+    fun handleAudioBecomingNoisy(): Boolean {
+        ensureInitialized()
+        if (!initialized) return false
+        val currentDevice = _currentAudioDevice.value
+        if (!shouldPauseForBluetoothDisconnect(currentDevice, null)) {
+            return false
+        }
+        NPLogger.d("NERI-PlayerManager", "Bluetooth output became noisy, pausing playback.")
+        pause()
+        return true
+    }
+
     private fun handleDeviceChange(audioManager: AudioManager) {
         val previousDevice = _currentAudioDevice.value
         val newDevice = getCurrentAudioDevice(audioManager)
         _currentAudioDevice.value = newDevice
-        if (player.isPlaying &&
-            previousDevice?.type != AudioDeviceInfo.TYPE_BUILTIN_SPEAKER &&
-            newDevice.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
-            NPLogger.d("NERI-PlayerManager", "Audio output changed to speaker, pausing playback.")
+        if (shouldPauseForBluetoothDisconnect(previousDevice, newDevice)) {
+            NPLogger.d("NERI-PlayerManager", "Bluetooth output changed to speaker, pausing playback.")
             pause()
         }
+    }
+
+    private fun shouldPauseForBluetoothDisconnect(
+        previousDevice: AudioDevice?,
+        newDevice: AudioDevice?
+    ): Boolean {
+        if (!stopOnBluetoothDisconnectEnabled) return false
+        if (!player.isPlaying) return false
+        if (previousDevice?.type != AudioDeviceInfo.TYPE_BLUETOOTH_A2DP) return false
+        return newDevice == null || newDevice.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
     }
 
     private fun getCurrentAudioDevice(audioManager: AudioManager): AudioDevice {
@@ -708,6 +747,63 @@ object PlayerManager {
             return AudioDevice(getLocalizedString(R.string.device_wired_headset), AudioDeviceInfo.TYPE_WIRED_HEADSET, Icons.Default.Headset)
         }
         return AudioDevice(getLocalizedString(R.string.device_speaker), AudioDeviceInfo.TYPE_BUILTIN_SPEAKER, Icons.Default.SpeakerGroup)
+    }
+
+    private fun cancelVolumeFade(resetToFull: Boolean = false) {
+        volumeFadeJob?.cancel()
+        volumeFadeJob = null
+        if (resetToFull && ::player.isInitialized) {
+            runCatching { player.volume = 1f }
+        }
+    }
+
+    private suspend fun fadeOutCurrentPlaybackIfNeeded(enabled: Boolean) {
+        if (!enabled || !::player.isInitialized || !player.isPlaying) {
+            return
+        }
+
+        cancelVolumeFade()
+        val startVolume = withContext(Dispatchers.Main) { player.volume.coerceIn(0f, 1f) }
+        if (startVolume <= 0f) {
+            return
+        }
+
+        val stepDelay = PLAYBACK_FADE_DURATION_MS / PLAYBACK_FADE_STEPS
+        repeat(PLAYBACK_FADE_STEPS) { step ->
+            val fraction = (step + 1).toFloat() / PLAYBACK_FADE_STEPS
+            withContext(Dispatchers.Main) {
+                player.volume = (startVolume * (1f - fraction)).coerceAtLeast(0f)
+            }
+            delay(stepDelay)
+        }
+
+        withContext(Dispatchers.Main) {
+            player.volume = 0f
+        }
+    }
+
+    private fun startPlayerPlaybackWithFade(shouldFadeIn: Boolean) {
+        cancelVolumeFade(resetToFull = !shouldFadeIn)
+        if (!shouldFadeIn) {
+            player.playWhenReady = true
+            player.play()
+            return
+        }
+
+        player.volume = 0f
+        player.playWhenReady = true
+        player.play()
+
+        volumeFadeJob = mainScope.launch {
+            val stepDelay = PLAYBACK_FADE_DURATION_MS / PLAYBACK_FADE_STEPS
+            repeat(PLAYBACK_FADE_STEPS) { step ->
+                delay(stepDelay)
+                if (!::player.isInitialized) return@launch
+                player.volume = ((step + 1).toFloat() / PLAYBACK_FADE_STEPS).coerceAtMost(1f)
+            }
+            player.volume = 1f
+            volumeFadeJob = null
+        }
     }
 
     fun playPlaylist(songs: List<SongItem>, startIndex: Int) {
@@ -744,7 +840,11 @@ object PlayerManager {
         shuffleBag.shuffle()
     }
 
-    private fun playAtIndex(index: Int, resumePositionMs: Long = 0L) {
+    private fun playAtIndex(
+        index: Int,
+        resumePositionMs: Long = 0L,
+        useTrackTransitionFade: Boolean = false
+    ) {
         if (currentPlaylist.isEmpty() || index !in currentPlaylist.indices) {
             NPLogger.w("NERI-Player", "playAtIndex called with invalid index: $index")
             return
@@ -808,6 +908,11 @@ object PlayerManager {
                         return@launch
                     }
 
+                    fadeOutCurrentPlaybackIfNeeded(useTrackTransitionFade)
+                    if (requestToken != playbackRequestToken || !isActive) {
+                        return@launch
+                    }
+
                     withContext(Dispatchers.Main) {
                         if (requestToken != playbackRequestToken) {
                             return@withContext
@@ -821,7 +926,9 @@ object PlayerManager {
                             player.seekTo(resumePositionMs)
                             _playbackPositionMs.value = resumePositionMs
                         }
-                        player.play()
+                        startPlayerPlaybackWithFade(
+                            shouldFadeIn = useTrackTransitionFade || playbackFadeInEnabled
+                        )
                     }
                     maybeAutoMatchBiliMetadata(song, requestToken)
                 }
@@ -1145,8 +1252,7 @@ object PlayerManager {
         when {
             isPreparedInPlayer() -> {
                 syncExoRepeatMode()
-                player.playWhenReady = true
-                player.play()
+                startPlayerPlaybackWithFade(playbackFadeInEnabled)
                 val resumePositionMs = player.currentPosition.coerceAtLeast(0L)
                 _playbackPositionMs.value = resumePositionMs
                 ioScope.launch {
@@ -1174,6 +1280,7 @@ object PlayerManager {
         playbackRequestToken += 1
         playJob?.cancel()
         playJob = null
+        cancelVolumeFade(resetToFull = true)
         player.playWhenReady = false
         player.pause()
         if (shouldForceFlushShortLocalSong) {
@@ -1216,6 +1323,8 @@ object PlayerManager {
         if (!initialized) return
         if (currentPlaylist.isEmpty()) return
         val isShuffle = player.shuffleModeEnabled
+        val useTransitionFade =
+            playbackCrossfadeNextEnabled && (player.isPlaying || player.playWhenReady)
 
         if (isShuffle) {
             // 如果有预定下一首，优先走它
@@ -1223,7 +1332,7 @@ object PlayerManager {
                 val nextIdx = shuffleFuture.removeAt(shuffleFuture.lastIndex)
                 if (currentIndex != -1) shuffleHistory.add(currentIndex)
                 currentIndex = nextIdx
-                playAtIndex(currentIndex)
+                playAtIndex(currentIndex, useTrackTransitionFade = useTransitionFade)
                 return
             }
 
@@ -1240,7 +1349,7 @@ object PlayerManager {
 
             if (shuffleBag.isEmpty()) {
                 // 仅一首歌等极端情况
-                playAtIndex(currentIndex)
+                playAtIndex(currentIndex, useTrackTransitionFade = useTransitionFade)
                 return
             }
 
@@ -1250,7 +1359,7 @@ object PlayerManager {
 
             val pick = if (shuffleBag.size == 1) 0 else Random.nextInt(shuffleBag.size)
             currentIndex = shuffleBag.removeAt(pick)
-            playAtIndex(currentIndex)
+            playAtIndex(currentIndex, useTrackTransitionFade = useTransitionFade)
         } else {
             // 顺序播放
             if (currentIndex < currentPlaylist.lastIndex) {
@@ -1263,7 +1372,7 @@ object PlayerManager {
                     return
                 }
             }
-            playAtIndex(currentIndex)
+            playAtIndex(currentIndex, useTrackTransitionFade = useTransitionFade)
         }
     }
 
@@ -1272,6 +1381,8 @@ object PlayerManager {
         if (!initialized) return
         if (currentPlaylist.isEmpty()) return
         val isShuffle = player.shuffleModeEnabled
+        val useTransitionFade =
+            playbackCrossfadeNextEnabled && (player.isPlaying || player.playWhenReady)
 
         if (isShuffle) {
             if (shuffleHistory.isNotEmpty()) {
@@ -1279,18 +1390,18 @@ object PlayerManager {
                 if (currentIndex != -1) shuffleFuture.add(currentIndex)
                 val prev = shuffleHistory.removeAt(shuffleHistory.lastIndex)
                 currentIndex = prev
-                playAtIndex(currentIndex)
+                playAtIndex(currentIndex, useTrackTransitionFade = useTransitionFade)
             } else {
                 NPLogger.d("NERI-Player", "No previous track in shuffle history.")
             }
         } else {
             if (currentIndex > 0) {
                 currentIndex--
-                playAtIndex(currentIndex)
+                playAtIndex(currentIndex, useTrackTransitionFade = useTransitionFade)
             } else {
                 if (repeatModeSetting == Player.REPEAT_MODE_ALL && currentPlaylist.isNotEmpty()) {
                     currentIndex = currentPlaylist.lastIndex
-                    playAtIndex(currentIndex)
+                    playAtIndex(currentIndex, useTrackTransitionFade = useTransitionFade)
                 } else {
                     NPLogger.d("NERI-Player", "Already at the start of the playlist.")
                 }
@@ -1324,6 +1435,7 @@ object PlayerManager {
         audioDeviceCallback = null
 
         stopProgressUpdates()
+        cancelVolumeFade(resetToFull = true)
         playJob?.cancel()
         playJob = null
 
@@ -1402,6 +1514,7 @@ object PlayerManager {
         playJob = null
         resumePlaybackRequested = false
         stopProgressUpdates()
+        cancelVolumeFade(resetToFull = true)
         runCatching { player.stop() }
         runCatching { player.clearMediaItems() }
         _isPlayingFlow.value = false
