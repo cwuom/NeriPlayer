@@ -23,7 +23,7 @@ package moe.ouom.neriplayer.ui.screen.host
  * Created: 2025/8/11
  */
 
-import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.tween
@@ -41,6 +41,8 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.collect
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
@@ -54,7 +56,13 @@ fun ExploreHostScreen(
     onPlayParts: (BiliClient.VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> }
 ) {
     var selected by rememberSaveable { mutableStateOf<NeteasePlaylist?>(null) }
-    BackHandler(enabled = selected != null) { selected = null }
+    PredictiveBackHandler(enabled = selected != null) { progress ->
+        try {
+            progress.collect { }
+            selected = null
+        } catch (_: CancellationException) {
+        }
+    }
 
     val gridStateSaver: Saver<LazyGridState, *> = LazyGridState.Saver
     val gridState = rememberSaveable(saver = gridStateSaver) {

@@ -23,7 +23,7 @@ package moe.ouom.neriplayer.ui.screen.host
  * Created: 2025/1/17
  */
 
-import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.tween
@@ -42,6 +42,8 @@ import androidx.compose.runtime.saveable.mapSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.collect
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.UsageEntry
@@ -78,7 +80,13 @@ fun HomeHostScreen(
     var selected by rememberSaveable(stateSaver = homeSelectedItemSaver) {
         mutableStateOf<HomeSelectedItem?>(null)
     }
-    BackHandler(enabled = selected != null) { selected = null }
+    PredictiveBackHandler(enabled = selected != null) { progress ->
+        try {
+            progress.collect { }
+            selected = null
+        } catch (_: CancellationException) {
+        }
+    }
 
     val gridState = remember {
         LazyGridState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)

@@ -24,7 +24,7 @@ package moe.ouom.neriplayer.ui.screen.host
  */
 
 import android.net.Uri
-import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.tween
@@ -44,6 +44,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.collect
 import moe.ouom.neriplayer.ui.screen.DownloadManagerScreen
 import moe.ouom.neriplayer.ui.screen.DownloadProgressScreen
 import moe.ouom.neriplayer.ui.screen.tab.SettingsScreen
@@ -126,11 +128,15 @@ fun SettingsHostScreen(
         LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
     }
 
-    BackHandler(enabled = screenState != SettingsScreenState.Settings) {
-        screenState = when (screenState) {
-            SettingsScreenState.DownloadProgress -> SettingsScreenState.DownloadManager
-            SettingsScreenState.DownloadManager -> SettingsScreenState.Settings
-            SettingsScreenState.Settings -> SettingsScreenState.Settings
+    PredictiveBackHandler(enabled = screenState != SettingsScreenState.Settings) { progress ->
+        try {
+            progress.collect { }
+            screenState = when (screenState) {
+                SettingsScreenState.DownloadProgress -> SettingsScreenState.DownloadManager
+                SettingsScreenState.DownloadManager -> SettingsScreenState.Settings
+                SettingsScreenState.Settings -> SettingsScreenState.Settings
+            }
+        } catch (_: CancellationException) {
         }
     }
 

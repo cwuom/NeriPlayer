@@ -24,7 +24,7 @@ package moe.ouom.neriplayer.ui.screen.host
  */
 
 import android.os.Parcelable
-import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import kotlinx.parcelize.Parcelize
 import androidx.compose.animation.SizeTransform
@@ -44,6 +44,8 @@ import androidx.compose.runtime.saveable.mapSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.collect
 import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteaseAlbumDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
@@ -85,7 +87,13 @@ fun LibraryHostScreen(
     }
     // 保存当前选中的标签页索引
     var selectedTabIndex by rememberSaveable { mutableStateOf(0) }
-    BackHandler(enabled = selected != null) { selected = null }
+    PredictiveBackHandler(enabled = selected != null) { progress ->
+        try {
+            progress.collect { }
+            selected = null
+        } catch (_: CancellationException) {
+        }
+    }
 
     // 保存各个列表的滚动状态
     val localListSaver: Saver<LazyListState, *> = LazyListState.Saver
