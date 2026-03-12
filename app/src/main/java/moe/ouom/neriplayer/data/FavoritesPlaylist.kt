@@ -19,7 +19,9 @@ object FavoritesPlaylist {
         return buildSystemPlaylistCandidateNames(
             canonicalChineseName = CANONICAL_ZH_NAME,
             canonicalEnglishName = CANONICAL_EN_NAME,
-            localizedName = context?.let(::currentName) ?: CANONICAL_ZH_NAME
+            localizedName = runCatching {
+                context?.let(::currentName) ?: CANONICAL_ZH_NAME
+            }.getOrDefault(CANONICAL_ZH_NAME)
         )
     }
 

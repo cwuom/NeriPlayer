@@ -17,6 +17,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.PrintWriter
 import java.io.StringWriter
+import java.lang.ref.WeakReference
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -51,7 +52,7 @@ import kotlin.system.exitProcess
  */
 object ExceptionHandler {
 
-    private var context: Context? = null
+    private var applicationRef: WeakReference<Application>? = null
     private var previousHandler: Thread.UncaughtExceptionHandler? = null
     @Volatile
     private var initialized = false
@@ -69,7 +70,7 @@ object ExceptionHandler {
      */
     fun init(app: Application) {
         if (initialized) return
-        context = app.applicationContext
+        applicationRef = WeakReference(app)
 
         // 设置崩溃日志文件
         setupCrashLogFile(app)
@@ -135,7 +136,7 @@ object ExceptionHandler {
 
         // 在主线程显示错误弹窗（仅处理可恢复异常）
         if (!isUncaught) {
-            showErrorDialogOnMainThread(source, throwable, exceptionInfo)
+            showErrorDialogOnMainThread(source, throwable)
         }
     }
     
@@ -194,16 +195,16 @@ object ExceptionHandler {
     /**
      * 在主线程显示错误弹窗
      */
-    private fun showErrorDialogOnMainThread(source: String, throwable: Throwable, exceptionInfo: String) {
+    private fun showErrorDialogOnMainThread(source: String, throwable: Throwable) {
         mainHandler.post {
-            val ctx = context ?: run {
-                NPLogger.e("ExceptionHandler", "Context is null, cannot show error dialog")
+            val app = applicationRef?.get() ?: run {
+                NPLogger.e("ExceptionHandler", "Application reference is null, cannot show error dialog")
                 return@post
             }
 
             try {
                 // Apply language settings to get localized strings
-                val localizedContext = LanguageManager.applyLanguage(ctx)
+                val localizedContext = LanguageManager.applyLanguage(app)
                 val title = localizedContext.getString(R.string.exception_title)
                 val message = buildString {
                     appendLine(localizedContext.getString(R.string.exception_occurred))
@@ -221,15 +222,15 @@ object ExceptionHandler {
                 // Fallback: use original context if language manager fails
                 NPLogger.e("ExceptionHandler", "Failed to apply language settings, using fallback", e)
                 try {
-                    val title = ctx.getString(R.string.exception_title)
+                    val title = app.getString(R.string.exception_title)
                     val message = buildString {
-                        appendLine(ctx.getString(R.string.exception_occurred))
-                        appendLine(ctx.getString(R.string.exception_source, source))
-                        appendLine(ctx.getString(R.string.exception_type, throwable.javaClass.simpleName))
-                        appendLine(ctx.getString(R.string.exception_message, throwable.message ?: ctx.getString(R.string.exception_no_detail)))
+                        appendLine(app.getString(R.string.exception_occurred))
+                        appendLine(app.getString(R.string.exception_source, source))
+                        appendLine(app.getString(R.string.exception_type, throwable.javaClass.simpleName))
+                        appendLine(app.getString(R.string.exception_message, throwable.message ?: app.getString(R.string.exception_no_detail)))
                         appendLine()
-                        appendLine(ctx.getString(R.string.exception_logged))
-                        appendLine(ctx.getString(R.string.exception_contact))
+                        appendLine(app.getString(R.string.exception_logged))
+                        appendLine(app.getString(R.string.exception_contact))
                     }
 
                     NPLogger.d("ExceptionHandler", "Emitting error dialog event (fallback)")
@@ -307,7 +308,7 @@ object ExceptionHandler {
      */
     private fun writeCrashLogSync(exceptionInfo: String) {
         if (crashLogFile == null) {
-            context?.let { setupCrashLogFile(it) }
+            applicationRef?.get()?.let(::setupCrashLogFile)
         }
         val logFile = crashLogFile ?: return
         try {

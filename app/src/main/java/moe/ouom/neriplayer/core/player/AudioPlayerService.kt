@@ -12,8 +12,10 @@ import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.media.AudioManager
+import android.net.Uri
 import android.os.Bundle
 import android.os.IBinder
+import android.os.Build
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
@@ -25,7 +27,6 @@ import androidx.core.graphics.drawable.DrawableCompat
 import androidx.core.graphics.drawable.IconCompat
 import androidx.core.graphics.drawable.toBitmap
 import androidx.media.session.MediaButtonReceiver
-import coil.ImageLoader
 import coil.request.ImageRequest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -35,13 +36,17 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.MainActivity
-import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.FavoritesPlaylist
 import moe.ouom.neriplayer.data.LocalSongSupport
+import moe.ouom.neriplayer.data.displayArtist
+import moe.ouom.neriplayer.data.displayName
 import moe.ouom.neriplayer.data.sameIdentityAs
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import androidx.core.graphics.createBitmap
+import java.io.File
+import android.content.pm.ServiceInfo
+import androidx.core.net.toUri
 
 class AudioPlayerService : Service() {
 
@@ -63,7 +68,7 @@ class AudioPlayerService : Service() {
     private lateinit var mediaSession: MediaSessionCompat
 
     // 灏侀潰缂撳瓨
-    private var currentCoverUrl: String? = null
+    private var currentCoverSource: String? = null
     private var currentLargeIcon: Bitmap? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var allowServiceRestart = true
@@ -174,7 +179,18 @@ class AudioPlayerService : Service() {
             return START_NOT_STICKY
         }
 
-        if (action != ACTION_STOP && (action != null || PlayerManager.hasItems())) {
+        var restoredPlayback = false
+        var restoredPlaybackPositionMs: Long? = null
+        if (action == null) {
+            restoredPlaybackPositionMs = PlayerManager.resumeRestoredPlaybackIfNeeded()
+            restoredPlayback = restoredPlaybackPositionMs != null
+            if (restoredPlayback) {
+                NPLogger.w("NERI-APS", "Restored playback after process restart")
+                updateAll()
+            }
+        }
+
+        if (action != ACTION_STOP && action != null) {
             ensureForegroundStarted()
         }
 
@@ -214,11 +230,20 @@ class AudioPlayerService : Service() {
             }
 
             ACTION_SYNC -> {
+                val resumedFromPendingRestore =
+                    if (!PlayerManager.isPlayingFlow.value) {
+                        PlayerManager.resumeRestoredPlaybackIfNeeded() != null
+                    } else {
+                        false
+                    }
                 if (!PlayerManager.hasItems()) {
                     allowServiceRestart = false
                     stopForegroundIfStarted()
                     stopSelf()
                     return START_NOT_STICKY
+                }
+                if (resumedFromPendingRestore) {
+                    NPLogger.w("NERI-APS", "Resumed pending playback on explicit sync")
                 }
                 updateAll()
             }
@@ -232,7 +257,16 @@ class AudioPlayerService : Service() {
         }
 
         if (PlayerManager.hasItems()) {
-            ensureForegroundStarted()
+            val foregroundReady = ensureForegroundStarted()
+            if (!foregroundReady && action == null) {
+                restoredPlaybackPositionMs?.let(PlayerManager::rearmRestoredPlayback)
+                NPLogger.w(
+                    "NERI-APS",
+                    "Foreground start deferred after background restart; waiting for next explicit sync."
+                )
+                allowServiceRestart = false
+                return START_NOT_STICKY
+            }
         } else if (action != ACTION_STOP) {
             allowServiceRestart = false
             stopForegroundIfStarted()
@@ -240,7 +274,7 @@ class AudioPlayerService : Service() {
             return START_NOT_STICKY
         }
 
-        return START_STICKY
+        return if (allowServiceRestart) START_STICKY else START_NOT_STICKY
     }
 
     /**
@@ -278,6 +312,7 @@ class AudioPlayerService : Service() {
             .setOnlyAlertOnce(true)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .setStyle(
                 androidx.media.app.NotificationCompat.MediaStyle()
                     .setMediaSession(mediaSession.sessionToken)
@@ -306,7 +341,7 @@ class AudioPlayerService : Service() {
         builder.addAction(R.drawable.round_skip_next_24, getString(R.string.player_next), nextIntent)
 
         // 璁剧疆鏍囬鍜屽壇鏍囬
-        builder.setContentTitle(song?.name ?: "NeriPlayer")
+        builder.setContentTitle(song?.displayName() ?: "NeriPlayer")
 
         // 濡傛灉瀹氭椂鍣ㄦ縺娲伙紝鍦ㄥ壇鏍囬涓樉绀哄墿浣欐椂闂?
         val timerState = PlayerManager.sleepTimerManager.timerState.value
@@ -319,12 +354,12 @@ class AudioPlayerService : Service() {
                 SleepTimerMode.FINISH_CURRENT -> getString(R.string.notification_stop_after_current)
                 SleepTimerMode.FINISH_PLAYLIST -> getString(R.string.notification_stop_after_playlist)
             }
-            song?.artist
+            song?.displayArtist()
                 ?.takeIf { it.isNotBlank() }
                 ?.let { "$it | $timerInfo" }
                 ?: timerInfo
         } else {
-            song?.artist ?: ""
+            song?.displayArtist() ?: ""
         }
         builder.setContentText(contentText)
 
@@ -380,22 +415,37 @@ class AudioPlayerService : Service() {
     private fun updateMetadata() {
         val song = PlayerManager.currentSongFlow.value
         val duration = song?.durationMs ?: 0L
+        val coverSource = song.effectiveCoverSource()
+        val coverUri = normalizeArtworkUri(coverSource)
 
         // 灏侀潰 URL 鍙樻洿鍒欏紓姝ュ姞杞?
-        if (song?.coverUrl != currentCoverUrl) {
-            currentCoverUrl = song?.coverUrl
+        if (coverSource != currentCoverSource) {
+            currentCoverSource = coverSource
             currentLargeIcon = null
-            requestLargeIconAsync(currentCoverUrl)
+            requestLargeIconAsync(coverSource)
         }
 
-        val metadata = MediaMetadataCompat.Builder()
-            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, song?.name ?: "NeriPlayer")
-            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, song?.artist ?: "")
+        val displayTitle = song?.displayName() ?: "NeriPlayer"
+        val displayArtist = song?.displayArtist().orEmpty()
+
+        val metadataBuilder = MediaMetadataCompat.Builder()
+            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, displayTitle)
+            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, displayArtist)
+            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_TITLE, displayTitle)
+            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_SUBTITLE, displayArtist)
             .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, duration)
             .putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, currentLargeIcon)
-            .build()
+            .putBitmap(MediaMetadataCompat.METADATA_KEY_ART, currentLargeIcon)
+            .putBitmap(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON, currentLargeIcon)
 
-        mediaSession.setMetadata(metadata)
+        coverUri?.let {
+            metadataBuilder
+                .putString(MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI, it)
+                .putString(MediaMetadataCompat.METADATA_KEY_ART_URI, it)
+                .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON_URI, it)
+        }
+
+        mediaSession.setMetadata(metadataBuilder.build())
     }
 
     private fun updatePlaybackState() {
@@ -461,7 +511,7 @@ class AudioPlayerService : Service() {
                 val drawable = result.drawable ?: return@launch
                 val bmp = drawable.toBitmap()
                 withContext(Dispatchers.Main) {
-                    if (url == currentCoverUrl) {
+                    if (url == currentCoverSource) {
                         currentLargeIcon = bmp
                         updateMetadata()
                         updateNotification()
@@ -471,6 +521,28 @@ class AudioPlayerService : Service() {
                 NPLogger.d("NERI-APS", "Cover load failed: ${e.message}")
             }
         }
+    }
+
+    private fun SongItem?.effectiveCoverSource(): String? {
+        val song = this ?: return null
+        return song.customCoverUrl?.takeIf { it.isNotBlank() }
+            ?: song.coverUrl?.takeIf { it.isNotBlank() }
+    }
+
+    private fun normalizeArtworkUri(source: String?): String? {
+        val raw = source?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val parsed = runCatching { raw.toUri() }.getOrNull()
+        val scheme = parsed?.scheme?.lowercase()
+        return when {
+            scheme.isNullOrBlank() -> filePathToUriString(raw)
+            scheme == "file" -> parsed?.path?.let(::filePathToUriString) ?: raw
+            else -> raw
+        }
+    }
+
+    private fun filePathToUriString(path: String): String {
+        val file = File(path)
+        return Uri.fromFile(file).toString()
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
@@ -493,13 +565,40 @@ class AudioPlayerService : Service() {
     }
 
 
-    private fun ensureForegroundStarted() {
-        if (!isForegroundStarted) {
-            startForeground(NOTIFICATION_ID, buildNotification())
-            isForegroundStarted = true
-        } else {
+    private fun ensureForegroundStarted(): Boolean {
+        if (isForegroundStarted) {
             updateNotification()
+            return true
         }
+        val notification = buildNotification()
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+            isForegroundStarted = true
+            true
+        } catch (e: SecurityException) {
+            NPLogger.e("NERI-APS", "Failed to start foreground service", e)
+            false
+        } catch (e: RuntimeException) {
+            if (isForegroundStartNotAllowed(e)) {
+                NPLogger.w("NERI-APS", "startForeground not allowed right now: ${e.message}")
+                false
+            } else {
+                throw e
+            }
+        }
+    }
+
+    private fun isForegroundStartNotAllowed(error: RuntimeException): Boolean {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            error.javaClass.name == "android.app.ForegroundServiceStartNotAllowedException"
     }
 
     private fun stopForegroundIfStarted() {

@@ -114,6 +114,9 @@ import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.displayAlbum
+import moe.ouom.neriplayer.data.displayArtist
+import moe.ouom.neriplayer.data.displayName
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.ExploreUiState
@@ -657,7 +660,7 @@ private fun SongRow(
         if (!song.coverUrl.isNullOrBlank()) {
             AsyncImage(
                 model = ImageRequest.Builder(LocalContext.current).data(song.coverUrl).build(),
-                contentDescription = song.name,
+                contentDescription = song.displayName(),
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .size(48.dp)
@@ -670,15 +673,15 @@ private fun SongRow(
 
         Column(Modifier.weight(1f)) {
             Text(
-                text = song.name,
+                text = song.displayName(),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.titleMedium
             )
             Text(
                 text = listOfNotNull(
-                    song.artist.takeIf { it.isNotBlank() },
-                    song.album.takeIf { it.isNotBlank() }
+                    song.displayArtist().takeIf { it.isNotBlank() },
+                    song.displayAlbum(context).takeIf { it.isNotBlank() }
                 ).joinToString(" · "),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

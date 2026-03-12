@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.ui.component
 
 import android.app.Activity
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Language
@@ -9,12 +10,16 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.util.LanguageManager
 import moe.ouom.neriplayer.util.getDisplayName
+
+private val LanguageSettingItemShape = RoundedCornerShape(18.dp)
+private val LanguageOptionShape = RoundedCornerShape(16.dp)
 
 /**
  * 语言选择对话框
@@ -28,10 +33,11 @@ fun LanguageSettingItem(
     val context = LocalContext.current
     var showDialog by remember { mutableStateOf(false) }
     var currentLanguage by remember { mutableStateOf(LanguageManager.getCurrentLanguage(context)) }
-    var showRestartDialog by remember { mutableStateOf(false) }
 
     ListItem(
-        modifier = modifier.clickable { showDialog = true },
+        modifier = modifier
+            .clip(LanguageSettingItemShape)
+            .clickable { showDialog = true },
         headlineContent = { Text(stringResource(R.string.language_setting_title)) },
         supportingContent = { Text(currentLanguage.getDisplayName(context)) },
         leadingContent = {
@@ -53,11 +59,16 @@ fun LanguageSettingItem(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .clip(LanguageOptionShape)
                                 .clickable {
+                                    showDialog = false
+                                    if (currentLanguage == language) return@clickable
                                     LanguageManager.setLanguage(context, language)
                                     currentLanguage = language
-                                    showDialog = false
-                                    showRestartDialog = true
+                                    (context as? Activity)?.let { activity ->
+                                        onBeforeRestart()
+                                        LanguageManager.restartActivity(activity)
+                                    }
                                 }
                                 .padding(vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -65,10 +76,14 @@ fun LanguageSettingItem(
                             RadioButton(
                                 selected = currentLanguage == language,
                                 onClick = {
+                                    showDialog = false
+                                    if (currentLanguage == language) return@RadioButton
                                     LanguageManager.setLanguage(context, language)
                                     currentLanguage = language
-                                    showDialog = false
-                                    showRestartDialog = true
+                                    (context as? Activity)?.let { activity ->
+                                        onBeforeRestart()
+                                        LanguageManager.restartActivity(activity)
+                                    }
                                 }
                             )
                             Spacer(modifier = Modifier.width(8.dp))
@@ -83,31 +98,6 @@ fun LanguageSettingItem(
             confirmButton = {
                 TextButton(onClick = { showDialog = false }) {
                     Text(stringResource(R.string.action_close))
-                }
-            }
-        )
-    }
-
-    if (showRestartDialog) {
-        AlertDialog(
-            onDismissRequest = { showRestartDialog = false },
-            title = { Text(stringResource(R.string.language_restart_title_bilingual)) },
-            text = { Text(stringResource(R.string.language_restart_message_bilingual)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        (context as? Activity)?.let { activity ->
-                            onBeforeRestart()
-                            LanguageManager.restartActivity(activity)
-                        }
-                    }
-                ) {
-                    Text(stringResource(R.string.language_restart_now_bilingual))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showRestartDialog = false }) {
-                    Text(stringResource(R.string.language_restart_later_bilingual))
                 }
             }
         )

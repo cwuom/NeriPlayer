@@ -31,6 +31,7 @@ import com.google.gson.annotations.SerializedName
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.util.NPLogger
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -58,7 +59,7 @@ class GitHubSyncInProgressException(message: String) : IOException(message)
  */
 class GitHubApiClient(private val context: Context, private val token: String) {
 
-    private val client = OkHttpClient.Builder().build()
+    private val client: OkHttpClient = AppContainer.sharedOkHttpClient
     private val gson = Gson()
 
     companion object {

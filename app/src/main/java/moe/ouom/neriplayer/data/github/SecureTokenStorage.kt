@@ -25,8 +25,10 @@ package moe.ouom.neriplayer.data.github
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.core.content.edit
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import java.util.UUID
 
 /**
  * GitHub Token安全存储
@@ -69,7 +71,7 @@ class SecureTokenStorage(context: Context) {
 
     /** 保存GitHub Token */
     fun saveToken(token: String) {
-        encryptedPrefs.edit().putString(KEY_GITHUB_TOKEN, token).apply()
+        encryptedPrefs.edit { putString(KEY_GITHUB_TOKEN, token) }
     }
 
     /** 获取GitHub Token */
@@ -79,15 +81,15 @@ class SecureTokenStorage(context: Context) {
 
     /** 删除Token */
     fun clearToken() {
-        encryptedPrefs.edit().remove(KEY_GITHUB_TOKEN).apply()
+        encryptedPrefs.edit { remove(KEY_GITHUB_TOKEN) }
     }
 
     /** 保存仓库信息 */
     fun saveRepository(owner: String, name: String) {
-        encryptedPrefs.edit()
-            .putString(KEY_REPO_OWNER, owner)
-            .putString(KEY_REPO_NAME, name)
-            .apply()
+        encryptedPrefs.edit {
+            putString(KEY_REPO_OWNER, owner)
+                .putString(KEY_REPO_NAME, name)
+        }
     }
 
     /** 获取仓库Owner */
@@ -102,7 +104,7 @@ class SecureTokenStorage(context: Context) {
 
     /** 保存设备ID */
     fun saveDeviceId(deviceId: String) {
-        encryptedPrefs.edit().putString(KEY_DEVICE_ID, deviceId).apply()
+        encryptedPrefs.edit { putString(KEY_DEVICE_ID, deviceId) }
     }
 
     /** 获取设备ID */
@@ -110,9 +112,19 @@ class SecureTokenStorage(context: Context) {
         return encryptedPrefs.getString(KEY_DEVICE_ID, null)
     }
 
+    /**
+     * 升级用户保留已有 deviceId，新用户首次生成本地 UUID。
+     * 不再依赖系统 ANDROID_ID，避免设备标识权限/兼容性问题。
+     */
+    fun getOrCreateDeviceId(): String {
+        return getDeviceId()
+            ?.takeIf { it.isNotBlank() }
+            ?: UUID.randomUUID().toString().also(::saveDeviceId)
+    }
+
     /** 保存最后同步时间 */
     fun saveLastSyncTime(timestamp: Long) {
-        encryptedPrefs.edit().putLong(KEY_LAST_SYNC_TIME, timestamp).apply()
+        encryptedPrefs.edit { putLong(KEY_LAST_SYNC_TIME, timestamp) }
     }
 
     /** 获取最后同步时间 */
@@ -122,7 +134,7 @@ class SecureTokenStorage(context: Context) {
 
     /** 设置自动同步开关 */
     fun setAutoSyncEnabled(enabled: Boolean) {
-        encryptedPrefs.edit().putBoolean(KEY_AUTO_SYNC_ENABLED, enabled).apply()
+        encryptedPrefs.edit { putBoolean(KEY_AUTO_SYNC_ENABLED, enabled) }
     }
 
     /** 获取自动同步开关状态 */

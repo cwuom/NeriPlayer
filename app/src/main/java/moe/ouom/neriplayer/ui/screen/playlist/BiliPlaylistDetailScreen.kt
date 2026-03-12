@@ -1,4 +1,4 @@
-﻿package moe.ouom.neriplayer.ui.screen.playlist
+package moe.ouom.neriplayer.ui.screen.playlist
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -35,8 +35,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -95,6 +95,7 @@ import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.runtime.saveable.rememberSaveable
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -196,6 +197,7 @@ fun BiliPlaylistDetailScreen(
             modifier = Modifier.fillMaxSize(),
             color = Color.Transparent
         ) {
+            val miniPlayerHeight = LocalMiniPlayerHeight.current
             Column {
                 if (!selectionMode) {
                     TopAppBar(
@@ -296,8 +298,9 @@ fun BiliPlaylistDetailScreen(
                     .fillMaxSize()
                     .windowInsetsPadding(WindowInsets.navigationBars)
                 ) {
-                    val miniPlayerHeight = LocalMiniPlayerHeight.current
-                    val listState = rememberLazyListState()
+                    val listState = rememberSaveable(playlist.mediaId, saver = LazyListState.Saver) {
+                        LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
+                    }
                     val activeSong = currentSong
                     val currentVideoIndex = displayedVideos.indexOfFirst { video ->
                         activeSong?.album?.startsWith(PlayerManager.BILI_SOURCE_TAG) == true &&
@@ -306,9 +309,7 @@ fun BiliPlaylistDetailScreen(
 
                     LazyColumn(
                         state = listState,
-                        contentPadding = PaddingValues(
-                            bottom = 24.dp + miniPlayerHeight
-                        ),
+                        contentPadding = PaddingValues(bottom = 24.dp + miniPlayerHeight),
                         modifier = Modifier.fillMaxSize()
                     ) {
                         item {
@@ -401,7 +402,7 @@ fun BiliPlaylistDetailScreen(
                         HapticFloatingActionButton(
                             onClick = {
                                 scope.launch {
-                                    listState.animateScrollToItem(currentVideoIndex)
+                                    listState.animateScrollToItem(currentVideoIndex + 1)
                                 }
                             },
                             modifier = Modifier

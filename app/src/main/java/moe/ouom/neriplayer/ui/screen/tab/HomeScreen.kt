@@ -104,6 +104,9 @@ import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.PlaylistUsageRepository
 import moe.ouom.neriplayer.data.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.UsageEntry
+import moe.ouom.neriplayer.data.displayAlbum
+import moe.ouom.neriplayer.data.displayArtist
+import moe.ouom.neriplayer.data.displayName
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.HomeViewModel
@@ -351,6 +354,7 @@ private fun SongRowMini(
     song: SongItem,
     onClick: () -> Unit
 ) {
+    val context = LocalContext.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -373,7 +377,7 @@ private fun SongRowMini(
         if (!song.coverUrl.isNullOrBlank()) {
             AsyncImage(
                 model = ImageRequest.Builder(LocalContext.current).data(song.coverUrl).build(),
-                contentDescription = song.name,
+                contentDescription = song.displayName(),
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .width(44.dp)
@@ -388,15 +392,15 @@ private fun SongRowMini(
         // 文本信息
         Column(Modifier.weight(1f)) {
             Text(
-                text = song.name,
+                text = song.displayName(),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.titleSmall
             )
             Text(
                 text = listOfNotNull(
-                    song.artist.takeIf { it.isNotBlank() },
-                    song.album.takeIf { it.isNotBlank() }
+                    song.displayArtist().takeIf { it.isNotBlank() },
+                    song.displayAlbum(context).takeIf { it.isNotBlank() }
                 ).joinToString(" / "),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

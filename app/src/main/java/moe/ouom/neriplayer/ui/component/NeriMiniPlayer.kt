@@ -93,6 +93,7 @@ fun NeriMiniPlayer(
         shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
         modifier = modifier
             .padding(start = 16.dp, end = 8.dp)
+            .clip(shape)
             .clickable { onExpand() }
             .onSizeChanged { size ->
                 onHeightChanged(size.height)

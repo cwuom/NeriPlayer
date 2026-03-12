@@ -34,10 +34,10 @@ import java.io.File
  * 维护本地地址和网络地址的映射关系
  * 用于同步时将本地地址转换为网络地址
  */
-class CoverUrlMapper private constructor(private val context: Context) {
+class CoverUrlMapper private constructor(private val storageDir: File) {
 
     private val gson = Gson()
-    private val file: File = File(context.filesDir, "cover_url_mapping.json")
+    private val file: File = File(storageDir, "cover_url_mapping.json")
 
     // 本地地址 -> 网络地址的映射
     private val mapping = mutableMapOf<String, String>()
@@ -64,7 +64,7 @@ class CoverUrlMapper private constructor(private val context: Context) {
     private fun saveToDisk() {
         try {
             val json = gson.toJson(mapping)
-            val parent = file.parentFile ?: context.filesDir
+            val parent = file.parentFile ?: storageDir
             val tmp = File(parent, file.name + ".tmp")
             tmp.writeText(json)
             if (!tmp.renameTo(file)) {
@@ -138,8 +138,9 @@ class CoverUrlMapper private constructor(private val context: Context) {
         private var instance: CoverUrlMapper? = null
 
         fun getInstance(context: Context): CoverUrlMapper {
+            val storageDir = context.applicationContext.filesDir
             return instance ?: synchronized(this) {
-                instance ?: CoverUrlMapper(context.applicationContext).also { instance = it }
+                instance ?: CoverUrlMapper(storageDir).also { instance = it }
             }
         }
     }

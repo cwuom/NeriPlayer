@@ -1,4 +1,4 @@
-﻿package moe.ouom.neriplayer.ui.screen.playlist
+package moe.ouom.neriplayer.ui.screen.playlist
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -19,7 +19,6 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -89,9 +88,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -106,7 +108,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.AnnotatedString
@@ -122,6 +123,7 @@ import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -136,6 +138,9 @@ import moe.ouom.neriplayer.data.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.LocalMediaSupport
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.SystemLocalPlaylists
+import moe.ouom.neriplayer.data.displayAlbum
+import moe.ouom.neriplayer.data.displayArtist
+import moe.ouom.neriplayer.data.displayName
 import moe.ouom.neriplayer.data.identity
 import moe.ouom.neriplayer.data.isLocalSong
 import moe.ouom.neriplayer.data.sameIdentityAs
@@ -515,6 +520,67 @@ fun LocalPlaylistDetailScreen(
                 }
             )
 
+            // 记住滚动位置，避免切换页面后回到顶部（用稳定 key 防止列表变动导致错位）
+            val savedListKey = rememberSaveable(playlistId) { mutableStateOf<String?>(null) }
+            var savedListOffset by rememberSaveable(playlistId) { mutableIntStateOf(0) }
+            val hasRestoredScroll = rememberSaveable(playlistId) { mutableStateOf(false) }
+            val listState = reorderState.listState
+            val displayedSongs by remember {
+                derivedStateOf {
+                    val base = localSongs.asReversed()
+                    if (searchQuery.isBlank()) base
+                    else base.filter { song ->
+                        listOfNotNull(
+                            song.name,
+                            song.artist,
+                            song.customName,
+                            song.customArtist,
+                            song.displayAlbum(context),
+                            song.localFileName,
+                            song.localFilePath,
+                            song.originalName,
+                            song.originalArtist
+                        ).any { field ->
+                            field.contains(searchQuery, ignoreCase = true)
+                        }
+                    }
+                }
+            }
+
+            LaunchedEffect(listState) {
+                snapshotFlow {
+                    Triple(
+                        listState.firstVisibleItemIndex,
+                        listState.firstVisibleItemScrollOffset,
+                        listState.layoutInfo.visibleItemsInfo.firstOrNull()?.key as? String
+                    )
+                }
+                    .distinctUntilChanged()
+                    .collect { (_, offset, key) ->
+                        if (key != null) {
+                            savedListKey.value = key
+                            savedListOffset = offset
+                        }
+                    }
+            }
+            LaunchedEffect(playlistId, displayedSongs) {
+                if (!hasRestoredScroll.value) {
+                    val key = savedListKey.value
+                    val targetIndex = when {
+                        key == null -> null
+                        key == headerKey -> 0
+                        else -> {
+                            val idx = displayedSongs.indexOfFirst { it.stableKey() == key }
+                            if (idx >= 0) idx + 1 else null
+                        }
+                    }
+                    if (targetIndex != null && (targetIndex != 0 || savedListOffset != 0)) {
+                        listState.scrollToItem(targetIndex, savedListOffset)
+                    }
+                    hasRestoredScroll.value = true
+                }
+            }
+
             // 统计
             val totalDurationMs by remember(playlistId) {
                 derivedStateOf { localSongs.sumOf { it.durationMs } }
@@ -718,39 +784,8 @@ fun LocalPlaylistDetailScreen(
                     }
                 }
             ) { padding ->
-                val displayedSongs by remember {
-                    derivedStateOf {
-                        val base = localSongs.asReversed()
-                        if (searchQuery.isBlank()) base
-                        else base.filter { song ->
-                            listOfNotNull(
-                                song.name,
-                                song.artist,
-                                song.album,
-                                song.localFileName,
-                                song.localFilePath,
-                                song.originalName,
-                                song.originalArtist
-                            ).any { field ->
-                                field.contains(searchQuery, ignoreCase = true)
-                            }
-                        }
-                    }
-                }
-
+                val miniPlayerHeight = LocalMiniPlayerHeight.current
                 Column(Modifier.padding(padding).fillMaxSize()) {
-                    val miniPlayerHeight = LocalMiniPlayerHeight.current
-                    val density = LocalDensity.current
-                    var lastMiniPlayerHeightPx by remember(playlistId) { mutableStateOf(0f) }
-                    LaunchedEffect(miniPlayerHeight) {
-                        val newHeightPx = with(density) { miniPlayerHeight.toPx() }
-                        val delta = newHeightPx - lastMiniPlayerHeightPx
-                        if (delta != 0f && !reorderState.listState.canScrollForward) {
-                            // 仅当列表已在底部时，抵消底部高度变化导致的跳动
-                            reorderState.listState.scrollBy(delta)
-                        }
-                        lastMiniPlayerHeightPx = newHeightPx
-                    }
                     AnimatedVisibility(showSearch && !selectionMode) {
                         OutlinedTextField(
                             value = searchQuery,
@@ -856,37 +891,45 @@ fun LocalPlaylistDetailScreen(
                                         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
                                         label = "row-scale"
                                     )
+                                    val isSelectedSong =
+                                        selectionMode && selectedKeysState.value.contains(song.stableKey())
+                                    val rowContainerColor = if (isSelectedSong) {
+                                        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.35f)
+                                    } else {
+                                        Color.Transparent
+                                    }
 
                                     Row(
                                         modifier = Modifier
                                             .graphicsLayer { scaleX = rowScale; scaleY = rowScale }
                                             .fillMaxWidth()
+                                            .background(rowContainerColor)
+                                            .combinedClickable(
+                                                onClick = {
+                                                    context.performHapticFeedback()
+                                                    if (selectionMode) {
+                                                        toggleSelect(song)
+                                                    } else {
+                                                        val baseQueue = localSongs.asReversed()
+                                                        val pos =
+                                                            baseQueue.indexOfFirst { it.sameIdentityAs(song) }
+                                                        if (pos >= 0) onSongClick(baseQueue, pos)
+                                                    }
+                                                },
+                                                onLongClick = {
+                                                    if (!selectionMode) {
+                                                        selectionMode = true
+                                                        selectedKeysState.value = setOf(song.stableKey())
+                                                    } else {
+                                                        toggleSelect(song)
+                                                    }
+                                                }
+                                            )
                                             .padding(horizontal = 16.dp, vertical = 12.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Row(
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .combinedClickable(
-                                                    onClick = {
-                                                        context.performHapticFeedback()
-                                                        if (selectionMode) {
-                                                            toggleSelect(song)
-                                                        } else {
-                                                            val baseQueue = localSongs.asReversed()
-                                                            val pos = baseQueue.indexOfFirst { it.sameIdentityAs(song) }
-                                                            if (pos >= 0) onSongClick(baseQueue, pos)
-                                                        }
-                                                    },
-                                                    onLongClick = {
-                                                        if (!selectionMode) {
-                                                            selectionMode = true
-                                                            selectedKeysState.value = setOf(song.stableKey())
-                                                        } else {
-                                                            toggleSelect(song)
-                                                        }
-                                                    }
-                                                ),
+                                            modifier = Modifier.weight(1f),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             // 序号/复选框
@@ -934,7 +977,7 @@ fun LocalPlaylistDetailScreen(
                                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                                 ) {
                                                     Text(
-                                                        text = song.name,
+                                                        text = song.displayName(),
                                                         maxLines = 1,
                                                         overflow = TextOverflow.Ellipsis,
                                                         style = MaterialTheme.typography.titleMedium
@@ -955,7 +998,7 @@ fun LocalPlaylistDetailScreen(
                                                     }
                                                 }
                                                 Text(
-                                                    text = song.artist,
+                                                    text = song.displayArtist(),
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis,
                                                     style = MaterialTheme.typography.bodySmall,
@@ -1050,10 +1093,13 @@ fun LocalPlaylistDetailScreen(
                                                             DropdownMenuItem(
                                                                 text = { Text(stringResource(R.string.action_copy_song_info)) },
                                                                 onClick = {
-                                                                    val songInfo = "${song.name}-${song.artist}"
+                                                                    val songInfo =
+                                                                        "${song.displayName()}-${song.displayArtist()}"
                                                                     clipboardManager.setText(AnnotatedString(songInfo))
                                                                     scope.launch {
-                                                                        snackbarHostState.showSnackbar(context.getString(R.string.toast_copied))
+                                                                        snackbarHostState.showSnackbar(
+                                                                            context.getString(R.string.toast_copied)
+                                                                        )
                                                                     }
                                                                     showMoreMenu = false
                                                                 }
@@ -1486,6 +1532,7 @@ private fun LocalScanPreviewScreen(
     onBack: () -> Unit,
     onImport: () -> Unit
 ) {
+    val context = LocalContext.current
     val previewItems = remember(songs) { songs.map { it.toLocalScanPreviewItem() } }
     val listState = rememberLazyListState()
     val displayedItems = remember(previewItems, query) {
@@ -1496,9 +1543,9 @@ private fun LocalScanPreviewScreen(
             previewItems.filter { item ->
                 item.fileName.contains(keyword, ignoreCase = true) ||
                     item.filePath.contains(keyword, ignoreCase = true) ||
-                    item.song.name.contains(keyword, ignoreCase = true) ||
-                    item.song.artist.contains(keyword, ignoreCase = true) ||
-                    item.song.album.contains(keyword, ignoreCase = true)
+                    item.song.displayName().contains(keyword, ignoreCase = true) ||
+                    item.song.displayArtist().contains(keyword, ignoreCase = true) ||
+                    item.song.displayAlbum(context).contains(keyword, ignoreCase = true)
             }
         }
     }

@@ -290,7 +290,7 @@ object GlobalDownloadManager {
                             id = song.id,
                             name = song.name,
                             artist = song.artist,
-                            album = song.album,
+                            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
                             albumId = 0L,
                             durationMs = 0L,
                             coverUrl = song.coverPath
@@ -333,7 +333,7 @@ object GlobalDownloadManager {
                     id = song.id,
                     name = song.name,
                     artist = song.artist,
-                    album = context.getString(R.string.local_files),
+                    album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
                     albumId = 0L,
                     durationMs = durationMs,
                     coverUrl = song.coverPath,

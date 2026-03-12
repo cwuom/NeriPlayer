@@ -28,8 +28,10 @@ import android.app.Application
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.api.bili.BiliClientAudioDataSource
 import moe.ouom.neriplayer.core.api.bili.BiliPlaybackRepository
@@ -97,10 +99,19 @@ object AppContainer {
 
     fun initialize(app: Application) {
         this.application = app
+        primeProxySetting()
         startCookieObserver()
         startSettingsObserver()
         playHistoryRepo = PlayHistoryRepository.getInstance(app)
         playlistUsageRepo = PlaylistUsageRepository(app)
+    }
+
+    private fun primeProxySetting() {
+        DynamicProxySelector.bypassProxy = runCatching {
+            runBlocking(Dispatchers.IO) {
+                settingsRepo.bypassProxyFlow.first()
+            }
+        }.getOrDefault(DynamicProxySelector.bypassProxy)
     }
 
     private fun startCookieObserver() {
@@ -118,6 +129,8 @@ object AppContainer {
         settingsRepo.bypassProxyFlow
             .onEach { enabled ->
                 DynamicProxySelector.bypassProxy = enabled
+                sharedOkHttpClient.connectionPool.evictAll()
+                neteaseClient.evictConnections()
             }
             .launchIn(scope)
     }

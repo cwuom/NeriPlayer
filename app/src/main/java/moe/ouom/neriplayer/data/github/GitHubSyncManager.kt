@@ -2,7 +2,6 @@ package moe.ouom.neriplayer.data.github
 
 import android.content.Context
 import android.os.Build
-import android.provider.Settings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
@@ -20,7 +19,6 @@ import moe.ouom.neriplayer.data.identity
 import moe.ouom.neriplayer.util.LanguageManager
 import moe.ouom.neriplayer.util.NPLogger
 import java.io.IOException
-import java.util.UUID
 
 class GitHubSyncManager private constructor(context: Context) {
     private val appContext = context.applicationContext
@@ -735,8 +733,11 @@ class GitHubSyncManager private constructor(context: Context) {
             val remotePlaylist = remotePlaylistMap[mergedPlaylist.id] ?: return true
             if (remotePlaylist.name != mergedPlaylist.name) return true
             if (remotePlaylist.songs.size != mergedPlaylist.songs.size) return true
-            if (remotePlaylist.songs.map { it.identity() } != mergedPlaylist.songs.map { it.identity() }) {
-                return true
+            if (remotePlaylist.songs.map { it.identity() } != mergedPlaylist.songs.map { it.identity() }) return true
+            for (i in remotePlaylist.songs.indices) {
+                val remoteSong = remotePlaylist.songs[i]
+                val mergedSong = mergedPlaylist.songs[i]
+                if (!sameSongMetadata(remoteSong, mergedSong)) return true
             }
         }
 
@@ -749,8 +750,11 @@ class GitHubSyncManager private constructor(context: Context) {
             if (remoteFavorite.isDeleted != mergedFavorite.isDeleted) return true
             if (remoteFavorite.modifiedAt != mergedFavorite.modifiedAt) return true
             if (remoteFavorite.trackCount != mergedFavorite.trackCount) return true
-            if (remoteFavorite.songs.map { it.identity() } != mergedFavorite.songs.map { it.identity() }) {
-                return true
+            if (remoteFavorite.songs.map { it.identity() } != mergedFavorite.songs.map { it.identity() }) return true
+            for (i in remoteFavorite.songs.indices) {
+                val remoteSong = remoteFavorite.songs[i]
+                val mergedSong = mergedFavorite.songs[i]
+                if (!sameSongMetadata(remoteSong, mergedSong)) return true
             }
         }
 
@@ -759,9 +763,33 @@ class GitHubSyncManager private constructor(context: Context) {
         if (remoteRecent.size != mergedRecent.size) return true
         for (i in remoteRecent.indices) {
             if (remoteRecent[i].song.identity() != mergedRecent[i].song.identity()) return true
+            if (!sameSongMetadata(remoteRecent[i].song, mergedRecent[i].song)) return true
             if (remoteRecent[i].playedAt != mergedRecent[i].playedAt) return true
         }
         return false
+    }
+
+    private fun sameSongMetadata(a: SyncSong, b: SyncSong): Boolean {
+        return a.name == b.name &&
+            a.artist == b.artist &&
+            a.album == b.album &&
+            a.albumId == b.albumId &&
+            a.durationMs == b.durationMs &&
+            a.coverUrl == b.coverUrl &&
+            a.mediaUri == b.mediaUri &&
+            a.matchedLyric == b.matchedLyric &&
+            a.matchedTranslatedLyric == b.matchedTranslatedLyric &&
+            a.matchedLyricSource == b.matchedLyricSource &&
+            a.matchedSongId == b.matchedSongId &&
+            a.userLyricOffsetMs == b.userLyricOffsetMs &&
+            a.customCoverUrl == b.customCoverUrl &&
+            a.customName == b.customName &&
+            a.customArtist == b.customArtist &&
+            a.originalName == b.originalName &&
+            a.originalArtist == b.originalArtist &&
+            a.originalCoverUrl == b.originalCoverUrl &&
+            a.originalLyric == b.originalLyric &&
+            a.originalTranslatedLyric == b.originalTranslatedLyric
     }
 
     private suspend fun uploadLocalData(
@@ -792,17 +820,7 @@ class GitHubSyncManager private constructor(context: Context) {
     }
 
     private fun getDeviceId(): String {
-        var deviceId = storage.getDeviceId()
-        if (deviceId == null) {
-            deviceId = try {
-                Settings.Secure.getString(appContext.contentResolver, Settings.Secure.ANDROID_ID)
-                    ?: UUID.randomUUID().toString()
-            } catch (_: Exception) {
-                UUID.randomUUID().toString()
-            }
-            storage.saveDeviceId(deviceId)
-        }
-        return deviceId
+        return storage.getOrCreateDeviceId()
     }
 
     private fun getDeviceName(): String {

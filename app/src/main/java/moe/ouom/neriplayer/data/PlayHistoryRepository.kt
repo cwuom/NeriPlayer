@@ -188,6 +188,16 @@ class PlayHistoryRepository private constructor(private val app: Context) {
         persistAsync(emptyList())
     }
 
+    fun removeSongs(songs: List<SongItem>) {
+        if (songs.isEmpty()) return
+        val removalKeys = songs.map { it.identityKey() }.toSet()
+        val updated = _history.value.filterNot { it.identityKey() in removalKeys }
+        if (updated.size == _history.value.size) return
+        _history.value = updated
+        persistAsync(updated)
+        triggerSyncIfNeeded()
+    }
+
     /** 批量更新播放历史（由同步管理器调用，不触发新的同步） */
     fun updateHistory(entries: List<PlayedEntry>) {
         NPLogger.d("PlayHistoryRepo", "updateHistory() called: entries=${entries.size}, writing=${writing.get()}")

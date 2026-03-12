@@ -23,6 +23,7 @@ import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import kotlin.math.max
+import androidx.core.net.toUri
 
 private const val LOCAL_MEDIA_SHARE_TAG = "LocalMediaSupport"
 private const val MAX_CONTAINER_METADATA_BYTES = 4L * 1024L * 1024L
@@ -36,6 +37,7 @@ data class LocalMediaDetails(
     val title: String,
     val artist: String,
     val album: String,
+    val usesFallbackAlbum: Boolean,
     val albumArtist: String?,
     val composer: String?,
     val genre: String?,
@@ -73,7 +75,7 @@ fun SongItem.localMediaUri(): Uri? {
     return if (source.startsWith("/")) {
         Uri.fromFile(File(source))
     } else {
-        Uri.parse(source)
+        source.toUri()
     }
 }
 
@@ -226,10 +228,11 @@ object LocalMediaSupport {
                 ?: context.getString(R.string.music_unknown_artist)
             val album = tagLibMetadata?.album
                 ?: retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)
-                ?.takeIf { it.isNotBlank() }
+                    ?.takeIf { it.isNotBlank() }
                 ?: containerMetadata?.album?.takeIf { it.isNotBlank() }
                 ?: queried.album?.takeIf { it.isNotBlank() }
-                ?: context.getString(R.string.local_files)
+            val usesFallbackAlbum = album == null
+            val resolvedAlbum = album ?: context.getString(R.string.local_files)
             val albumArtist = tagLibMetadata?.albumArtist
                 ?: retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST)
                 ?.takeIf { it.isNotBlank() }
@@ -305,7 +308,8 @@ object LocalMediaSupport {
                 displayName = displayName,
                 title = title,
                 artist = artist,
-                album = album,
+                album = resolvedAlbum,
+                usesFallbackAlbum = usesFallbackAlbum,
                 albumArtist = albumArtist,
                 composer = composer,
                 genre = genre,
@@ -354,7 +358,8 @@ object LocalMediaSupport {
             val album = tagLibMetadata?.album
                 ?: containerMetadata?.album?.takeIf { it.isNotBlank() }
                 ?: queried.album?.takeIf { it.isNotBlank() }
-                ?: context.getString(R.string.local_files)
+            val usesFallbackAlbum = album == null
+            val resolvedAlbum = album ?: context.getString(R.string.local_files)
             val tagLibCoverUri = tagLibMetadata?.coverBytes
                 ?.takeIf { it.isNotEmpty() }
                 ?.let { saveEmbeddedCover(context, "${resolvedPath ?: uri}#taglib", it) }
@@ -364,7 +369,8 @@ object LocalMediaSupport {
                 displayName = displayName,
                 title = title,
                 artist = artist,
-                album = album,
+                album = resolvedAlbum,
+                usesFallbackAlbum = usesFallbackAlbum,
                 albumArtist = tagLibMetadata?.albumArtist ?: containerMetadata?.albumArtist,
                 composer = tagLibMetadata?.composer ?: containerMetadata?.composer,
                 genre = tagLibMetadata?.genre ?: containerMetadata?.genre,
@@ -410,7 +416,7 @@ object LocalMediaSupport {
             id = stableId,
             name = details.title,
             artist = details.artist,
-            album = details.album,
+            album = normalizeLocalAlbumIdentity(details.album, details.usesFallbackAlbum),
             albumId = 0L,
             durationMs = details.durationMs,
             coverUrl = details.coverUri,

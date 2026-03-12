@@ -44,8 +44,25 @@ class SystemPlaylistIdentityTest {
     }
 
     @Test
+    fun `negative id chinese reserved names map as system playlists`() {
+        val legacyFavorites = LocalPlaylist(
+            id = -11L,
+            name = "我喜欢的音乐"
+        )
+        val legacyLocalFiles = LocalPlaylist(
+            id = -12L,
+            name = "本地文件"
+        )
+
+        assertNotNull(FavoritesPlaylist.firstOrNull(listOf(legacyFavorites), inertContext))
+        assertNotNull(LocalFilesPlaylist.firstOrNull(listOf(legacyLocalFiles), inertContext))
+    }
+
+    @Test
     fun `legacy local song fallback requires album id zero`() {
         assertTrue(LocalSongSupport.isLocalSong("Local Files", null, 0L, null))
         assertFalse(LocalSongSupport.isLocalSong("Local Files", null, 12L, null))
+        assertTrue(LocalSongSupport.isLocalSong("本地文件", null, 0L, inertContext))
+        assertTrue(LocalSongSupport.isLocalSong(LocalSongSupport.LOCAL_ALBUM_IDENTITY, null, 0L, null))
     }
 }

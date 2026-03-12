@@ -273,7 +273,10 @@
     <string name="sync_create_new_repo">创建新仓库</string>
     <string name="sync_use_existing_repo">使用现有仓库</string>
     <string name="sync_data_saver">省流通道</string>
-    <string name="sync_data_saver_desc">若无特殊需求，十分推荐打开此选项\n切换通道可能导致数据丢失，请确保所有平台的设置保持一致，请勿随意切换</string>
+    <string name="sync_data_saver_desc">减少同步流量，切换前请确认所有设备保持同一设置</string>
+    <string name="sync_data_saver_warning_title">切换省流通道？</string>
+    <string name="sync_data_saver_warning_message">切换后可能影响同步一致性，请确认所有设备使用同一设置。</string>
+    <string name="sync_data_saver_warning_confirm">继续切换</string>
     <string name="sync_diff_failed">差异分析失败</string>
     <string name="sync_analysis_progress">分析进度</string>
 

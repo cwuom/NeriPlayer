@@ -4,15 +4,18 @@ import android.text.format.DateFormat
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -37,8 +40,10 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.DownloadDone
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -75,6 +80,9 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.isLocalSong
+import moe.ouom.neriplayer.data.displayAlbum
+import moe.ouom.neriplayer.data.displayArtist
+import moe.ouom.neriplayer.data.displayName
 import moe.ouom.neriplayer.data.sameIdentityAs
 import moe.ouom.neriplayer.data.stableKey
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
@@ -127,17 +135,29 @@ fun RecentScreen(
             it.name.contains(query, ignoreCase = true) ||
                     (it.localFileName?.contains(query, ignoreCase = true) == true) ||
                     it.artist.contains(query, ignoreCase = true) ||
-                    it.album.contains(query, ignoreCase = true)
+                    it.displayAlbum(context).contains(query, ignoreCase = true)
         }
     }
 
     // 多选
     var selectionMode by remember { mutableStateOf(false) }
     var selectedKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
-    fun toggleSelect(key: String) {
-        selectedKeys = if (selectedKeys.contains(key)) selectedKeys - key else selectedKeys + key
+    fun exitSelection() {
+        selectionMode = false
+        selectedKeys = emptySet()
     }
-    fun exitSelection() { selectionMode = false; selectedKeys = emptySet() }
+    fun toggleSelect(key: String) {
+        val updated = if (selectedKeys.contains(key)) {
+            selectedKeys - key
+        } else {
+            selectedKeys + key
+        }
+        if (selectionMode && updated.isEmpty()) {
+            exitSelection()
+        } else {
+            selectedKeys = updated
+        }
+    }
 
     // 当前播放态
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
@@ -216,6 +236,25 @@ fun RecentScreen(
 
                         Spacer(Modifier.width(8.dp))
 
+                        HapticIconButton(
+                            enabled = selectedKeys.isNotEmpty(),
+                            onClick = {
+                                val selectedSongs =
+                                    displayedSongs.filter { it.stableKey() in selectedKeys }
+                                if (selectedSongs.isNotEmpty()) {
+                                    repo.removeSongs(selectedSongs)
+                                    exitSelection()
+                                }
+                            }
+                        ) {
+                            Icon(
+                                Icons.Outlined.DeleteForever,
+                                contentDescription = stringResource(R.string.action_delete)
+                            )
+                        }
+
+                        Spacer(Modifier.width(8.dp))
+
                         // 播放所选
                         HapticTextButton(
                             enabled = selectedKeys.isNotEmpty(),
@@ -274,12 +313,27 @@ fun RecentScreen(
                         index = index + 1,
                         song = song,
                         downloadedSongFilePaths = downloadedSongFilePaths,
+                        selectionMode = selectionMode,
+                        selected = song.stableKey() in selectedKeys,
                         isCurrentSong = currentSong?.sameIdentityAs(song) == true,
                         isPlaying = currentSong?.sameIdentityAs(song) == true && isPlaying,
+                        onToggleSelect = { toggleSelect(song.stableKey()) },
+                        onLongPress = {
+                            if (!selectionMode) {
+                                selectionMode = true
+                                selectedKeys = setOf(song.stableKey())
+                            } else {
+                                toggleSelect(song.stableKey())
+                            }
+                        },
                         onClick = {
                             context.performHapticFeedback()
-                            val pos = displayedSongs.indexOfFirst { it.sameIdentityAs(song) }
-                            if (pos >= 0) onSongClick(displayedSongs, pos)
+                            if (selectionMode) {
+                                toggleSelect(song.stableKey())
+                            } else {
+                                val pos = displayedSongs.indexOfFirst { it.sameIdentityAs(song) }
+                                if (pos >= 0) onSongClick(displayedSongs, pos)
+                            }
                         },
                         moreMenu = {
                             var showMenu by remember { mutableStateOf(false) }
@@ -338,27 +392,31 @@ private fun RecentRowRich(
     index: Int,
     song: SongItem,
     downloadedSongFilePaths: List<String>,
+    selectionMode: Boolean,
+    selected: Boolean,
     isCurrentSong: Boolean,
     isPlaying: Boolean,
+    onToggleSelect: () -> Unit,
+    onLongPress: () -> Unit,
     onClick: () -> Unit,
     moreMenu: @Composable () -> Unit
 ) {
     val ctx = LocalContext.current
-            val primaryTitle = remember(song) {
+    val primaryTitle = remember(song) {
         if (song.isLocalSong()) {
-            song.localFileName?.takeIf { it.isNotBlank() } ?: song.name
+            song.localFileName?.takeIf { it.isNotBlank() } ?: song.displayName()
         } else {
-            song.name
+            song.displayName()
         }
     }
     val secondaryText = remember(song) {
         buildList {
             if (song.isLocalSong()) {
-                song.name
+                song.displayName()
                     .takeIf { it.isNotBlank() && it != primaryTitle }
                     ?.let(::add)
             }
-            song.artist.takeIf { it.isNotBlank() }?.let(::add)
+            song.displayArtist().takeIf { it.isNotBlank() }?.let(::add)
             add(formatDuration(song.durationMs))
         }.joinToString(" · ")
     }
@@ -367,18 +425,40 @@ private fun RecentRowRich(
         animationSpec = spring(stiffness = 500f),
         label = "recent-row-scale"
     )
+    val rowShape = RoundedCornerShape(18.dp)
+    val rowContainerColor = if (selected) {
+        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.35f)
+    } else {
+        Color.Transparent
+    }
 
     Row(
         modifier = Modifier
             .graphicsLayer { scaleX = rowScale; scaleY = rowScale }
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 10.dp)
-            .clickable(onClick = onClick),
+            .clip(rowShape)
+            .background(rowContainerColor)
+            .combinedClickable(
+                onClick = {
+                    if (selectionMode) {
+                        onToggleSelect()
+                    } else {
+                        onClick()
+                    }
+                },
+                onLongClick = onLongPress
+            )
+            .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // 序号 / 播放指示
         Box(Modifier.width(40.dp), contentAlignment = Alignment.Center) {
-            if (isCurrentSong) {
+            if (selectionMode) {
+                Checkbox(
+                    checked = selected,
+                    onCheckedChange = { onToggleSelect() }
+                )
+            } else if (isCurrentSong) {
                 PlayingIndicator(
                     color = MaterialTheme.colorScheme.primary,
                     animate = isPlaying
@@ -449,6 +529,9 @@ private fun RecentRowRich(
 private fun PlayingIndicator(color: Color, animate: Boolean) {
     // 三条不同节奏/相位的无限动画
     val t = rememberInfiniteTransition(label = "playing")
+    val flatHeight = 8f
+    val transitionSpec: FiniteAnimationSpec<Float> =
+        if (animate) snap() else tween(durationMillis = 180, easing = FastOutSlowInEasing)
     val animatedH1 by t.animateFloat(
         initialValue = 6f, targetValue = 18f,
         animationSpec = infiniteRepeatable(
@@ -473,9 +556,21 @@ private fun PlayingIndicator(color: Color, animate: Boolean) {
         ),
         label = "bar3"
     )
-    val h1 = if (animate) animatedH1 else 10f
-    val h2 = if (animate) animatedH2 else 18f
-    val h3 = if (animate) animatedH3 else 14f
+    val h1 by animateFloatAsState(
+        targetValue = if (animate) animatedH1 else flatHeight,
+        animationSpec = transitionSpec,
+        label = "bar1Hold"
+    )
+    val h2 by animateFloatAsState(
+        targetValue = if (animate) animatedH2 else flatHeight,
+        animationSpec = transitionSpec,
+        label = "bar2Hold"
+    )
+    val h3 by animateFloatAsState(
+        targetValue = if (animate) animatedH3 else flatHeight,
+        animationSpec = transitionSpec,
+        label = "bar3Hold"
+    )
 
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.width(24.dp)) {
         Box(

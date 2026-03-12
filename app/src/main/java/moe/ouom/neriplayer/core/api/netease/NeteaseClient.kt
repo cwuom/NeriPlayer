@@ -73,6 +73,10 @@ class NeteaseClient(bypassProxy: Boolean = true) {
             .build()
     }
 
+    fun evictConnections() {
+        okHttpClient.connectionPool.evictAll()
+    }
+
     /** 是否已登录 */
     fun hasLogin(): Boolean = !persistedCookies["MUSIC_U"].isNullOrBlank()
 

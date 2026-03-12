@@ -122,7 +122,7 @@ object LocalAudioImportManager {
                         .ifBlank { context.getString(R.string.music_unknown_artist) }
                     val fallbackAlbum = cursor.getString(idxAlbum)
                         .orEmpty()
-                        .ifBlank { context.getString(R.string.local_files) }
+                        .ifBlank { LocalSongSupport.LOCAL_ALBUM_IDENTITY }
                     val fallbackTitle = cursor.getString(idxTitle)
                         .orEmpty()
                         .takeIf(::isReadableScannedTitle)

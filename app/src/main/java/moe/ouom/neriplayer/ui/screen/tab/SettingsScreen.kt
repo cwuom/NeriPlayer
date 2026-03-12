@@ -211,6 +211,12 @@ private fun maskCookieValue(value: String): String {
     }
 }
 
+private val SettingsItemShape = RoundedCornerShape(18.dp)
+
+private fun Modifier.settingsItemClickable(onClick: () -> Unit): Modifier {
+    return clip(SettingsItemShape).clickable(onClick = onClick)
+}
+
 /** 可复用的折叠区头部 */
 @Composable
 private fun ExpandableHeader(
@@ -240,7 +246,7 @@ private fun ExpandableHeader(
                 tint = MaterialTheme.colorScheme.onSurface
             )
         },
-        modifier = Modifier.clickable { onToggle() },
+        modifier = Modifier.settingsItemClickable { onToggle() },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
     )
 }
@@ -249,7 +255,7 @@ private fun ExpandableHeader(
 @Composable
 private fun ThemeSeedListItem(seedColorHex: String, onClick: () -> Unit) {
     ListItem(
-        modifier = Modifier.clickable(onClick = onClick),
+        modifier = Modifier.settingsItemClickable(onClick = onClick),
         leadingContent = {
             Icon(
                 imageVector = Icons.Outlined.ColorLens,
@@ -275,7 +281,7 @@ private fun ThemeSeedListItem(seedColorHex: String, onClick: () -> Unit) {
 @Composable
 private fun UiScaleListItem(currentScale: Float, onClick: () -> Unit) {
     ListItem(
-        modifier = Modifier.clickable(onClick = onClick),
+        modifier = Modifier.settingsItemClickable(onClick = onClick),
         leadingContent = {
             Icon(
                 imageVector = Icons.Outlined.ZoomInMap,
@@ -309,9 +315,9 @@ private fun ThemeModeActionButton(
     )
     val containerColor by animateColorAsState(
         targetValue = if (isDarkTheme) {
-            MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.92f)
+            MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.8f)
         } else {
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.84f)
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
         },
         animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing),
         label = "theme_toggle_container_color"
@@ -758,7 +764,7 @@ fun SettingsScreen(
                             },
                             headlineContent = { Text(stringResource(R.string.platform_bilibili)) },
                             supportingContent = { Text(stringResource(R.string.login_browser)) },
-                            modifier = Modifier.clickable {
+                            modifier = Modifier.settingsItemClickable {
                                 inlineMsg = null
                                 biliWebLoginLauncher.launch(
                                     Intent(context, moe.ouom.neriplayer.activity.BiliWebLoginActivity::class.java)
@@ -780,7 +786,7 @@ fun SettingsScreen(
                             },
                             headlineContent = { Text(stringResource(R.string.common_youtube)) },
                             supportingContent = { Text(stringResource(R.string.common_not_implemented)) },
-                            modifier = Modifier.clickable { },
+                            modifier = Modifier.settingsItemClickable { },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
 
@@ -796,7 +802,7 @@ fun SettingsScreen(
                             },
                             headlineContent = { Text(stringResource(R.string.platform_netease)) },
                             supportingContent = { Text(stringResource(R.string.login_methods)) },
-                            modifier = Modifier.clickable {
+                            modifier = Modifier.settingsItemClickable {
                                 inlineMsg = null
                                 showNeteaseSheet = true
                             },
@@ -815,7 +821,7 @@ fun SettingsScreen(
                             },
                             headlineContent = { Text(stringResource(R.string.settings_qq_music)) },
                             supportingContent = { Text(stringResource(R.string.common_coming_soon)) },
-                            modifier = Modifier.clickable { },
+                            modifier = Modifier.settingsItemClickable { },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
                     }
@@ -984,7 +990,7 @@ fun SettingsScreen(
 
                         // 选择背景图
                         ListItem(
-                            modifier = Modifier.clickable {
+                            modifier = Modifier.settingsItemClickable {
                                 photoPickerLauncher.launch(
                                     PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                                 )
@@ -1137,7 +1143,7 @@ fun SettingsScreen(
                             supportingContent = {
                                 Text(stringResource(R.string.common_label_value_format, qualityLabel, preferredQuality))
                             },
-                            modifier = Modifier.clickable { showQualityDialog = true },
+                            modifier = Modifier.settingsItemClickable { showQualityDialog = true },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
 
@@ -1154,7 +1160,7 @@ fun SettingsScreen(
                             supportingContent = {
                                 Text(stringResource(R.string.common_label_value_format, biliQualityLabel, biliPreferredQuality))
                             },
-                            modifier = Modifier.clickable { showBiliQualityDialog = true },
+                            modifier = Modifier.settingsItemClickable { showBiliQualityDialog = true },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
                     }
@@ -1346,7 +1352,7 @@ fun SettingsScreen(
                                         Text(stringResource(R.string.action_cancel), color = MaterialTheme.colorScheme.error)
                                     }
                                 },
-                                modifier = Modifier.clickable {
+                                modifier = Modifier.settingsItemClickable {
                                     onNavigateToDownloadManager()
                                 },
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent)
@@ -1382,7 +1388,7 @@ fun SettingsScreen(
                                 },
                                 headlineContent = { Text(stringResource(R.string.download_title)) },
                                 supportingContent = { Text(stringResource(R.string.download_desc)) },
-                                modifier = Modifier.clickable {
+                                modifier = Modifier.settingsItemClickable {
                                     onNavigateToDownloadManager()
                                 },
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent)
@@ -1444,7 +1450,7 @@ fun SettingsScreen(
                             },
                             headlineContent = { Text(stringResource(R.string.playlist_export)) },
                             supportingContent = { Text(stringResource(R.string.playlist_export_desc)) },
-                            modifier = Modifier.clickable {
+                            modifier = Modifier.settingsItemClickable {
                                 if (!backupRestoreUiState.isExporting) {
                                     exportPlaylistLauncher.launch(backupRestoreVm.generateBackupFileName())
                                 }
@@ -1463,7 +1469,7 @@ fun SettingsScreen(
                             },
                             headlineContent = { Text(stringResource(R.string.playlist_import)) },
                             supportingContent = { Text(stringResource(R.string.playlist_import_desc)) },
-                            modifier = Modifier.clickable {
+                            modifier = Modifier.settingsItemClickable {
                                 if (!backupRestoreUiState.isImporting) {
                                     importPlaylistLauncher.launch(arrayOf("*/*"))
                                 }
@@ -1649,7 +1655,7 @@ fun SettingsScreen(
                                 },
                                 headlineContent = { Text(stringResource(R.string.sync_config)) },
                                 supportingContent = { Text(stringResource(R.string.sync_config_desc)) },
-                                modifier = Modifier.clickable {
+                                modifier = Modifier.settingsItemClickable {
                                     showGitHubConfigDialog = true
                                 },
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent)
@@ -1727,7 +1733,7 @@ fun SettingsScreen(
                                         }
                                     )
                                 },
-                                modifier = Modifier.clickable {
+                                modifier = Modifier.settingsItemClickable {
                                     showPlayHistoryModeDialog = true
                                 },
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent)
@@ -1806,6 +1812,7 @@ fun SettingsScreen(
 
                             // 省流模式开关
                             var dataSaverMode by remember { mutableStateOf(storage.isDataSaverMode()) }
+                            var pendingDataSaverMode by remember { mutableStateOf<Boolean?>(null) }
 
                             ListItem(
                                 leadingContent = {
@@ -1820,14 +1827,44 @@ fun SettingsScreen(
                                 trailingContent = {
                                     Switch(
                                         checked = dataSaverMode,
-                                        onCheckedChange = {
-                                            dataSaverMode = it
-                                            storage.setDataSaverMode(it)
+                                        onCheckedChange = { enabled ->
+                                            if (enabled != dataSaverMode) {
+                                                pendingDataSaverMode = enabled
+                                            }
                                         }
                                     )
                                 },
                                 colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                             )
+
+                            if (pendingDataSaverMode != null) {
+                                AlertDialog(
+                                    onDismissRequest = { pendingDataSaverMode = null },
+                                    title = {
+                                        Text(stringResource(R.string.sync_data_saver_warning_title))
+                                    },
+                                    text = {
+                                        Text(stringResource(R.string.sync_data_saver_warning_message))
+                                    },
+                                    confirmButton = {
+                                        HapticTextButton(
+                                            onClick = {
+                                                val enabled = pendingDataSaverMode ?: return@HapticTextButton
+                                                dataSaverMode = enabled
+                                                storage.setDataSaverMode(enabled)
+                                                pendingDataSaverMode = null
+                                            }
+                                        ) {
+                                            Text(stringResource(R.string.sync_data_saver_warning_confirm))
+                                        }
+                                    },
+                                    dismissButton = {
+                                        HapticTextButton(onClick = { pendingDataSaverMode = null }) {
+                                            Text(stringResource(R.string.action_cancel))
+                                        }
+                                    }
+                                )
+                            }
 
                             ListItem(
                                 leadingContent = {
@@ -1974,7 +2011,7 @@ fun SettingsScreen(
                         }
                         Text("${BuildConfig.VERSION_NAME}$suffix")
                     },
-                    modifier = Modifier.clickable {
+                    modifier = Modifier.settingsItemClickable {
                         if (!devModeEnabled) {
                             versionTapCount++
                             if (versionTapCount >= 7) {
@@ -2018,7 +2055,7 @@ fun SettingsScreen(
                     },
                     headlineContent = { Text(stringResource(R.string.common_github)) },
                     supportingContent = { Text(stringResource(R.string.settings_github_repo_url)) },
-                    modifier = Modifier.clickable {
+                    modifier = Modifier.settingsItemClickable {
                         val intent = Intent(
                             Intent.ACTION_VIEW,
                             "https://github.com/cwuom/NeriPlayer".toUri()
@@ -2057,7 +2094,7 @@ fun SettingsScreen(
                                     )
                                 }
                             },
-                            modifier = Modifier.clickable {
+                            modifier = Modifier.settingsItemClickable {
                                 onBiliQualityChange(level)
                                 showBiliQualityDialog = false
                             },
@@ -2258,7 +2295,7 @@ fun SettingsScreen(
                                     )
                                 }
                             },
-                            modifier = Modifier.clickable {
+                            modifier = Modifier.settingsItemClickable {
                                 onQualityChange(level)
                                 showQualityDialog = false
                             },

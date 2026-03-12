@@ -75,6 +75,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -89,6 +90,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -124,6 +126,7 @@ import moe.ouom.neriplayer.core.player.AudioReactive
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.ThemeDefaults
 import moe.ouom.neriplayer.data.ThemePreferenceSnapshot
+import moe.ouom.neriplayer.data.displayCoverUrl
 import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.ui.component.NeriBottomBar
 import moe.ouom.neriplayer.ui.component.NeriMiniPlayer
@@ -303,10 +306,10 @@ private fun NowPlayingAccentBackdrop(
     onAccentChanged: (String?) -> Unit = {}
 ) {
     val context = LocalContext.current
-    val fallback = MaterialTheme.colorScheme.background
-    var target by remember(coverUrl) { mutableStateOf<Color?>(null) }
+    val fallback = if (isDark) Color(0xFF121212) else Color(0xFFF5F5F5)
+    var target by remember { mutableStateOf<Color?>(null) }
 
-    LaunchedEffect(coverUrl) {
+    LaunchedEffect(coverUrl, isDark) {
         if (coverUrl.isNullOrEmpty()) {
             target = null
             onAccentChanged(null)
@@ -320,7 +323,7 @@ private fun NowPlayingAccentBackdrop(
 
         val result = withContext(Dispatchers.IO) { loader.execute(req) }
         val bmp = (result as? SuccessResult)?.drawable.let { it as? BitmapDrawable }?.bitmap
-        target = bmp?.let {
+        val nextTarget = bmp?.let {
             val p = Palette.from(it).clearFilters().generate()
             val rgb = p.getVibrantColor(
                 p.getMutedColor(
@@ -328,6 +331,9 @@ private fun NowPlayingAccentBackdrop(
                 )
             )
             adjustAccent(Color(rgb), isDark)
+        }
+        if (nextTarget != null) {
+            target = nextTarget
         }
     }
 
@@ -439,8 +445,8 @@ fun NeriApp(
 
     // 缓存当前封面的取色结果，避免开关动态取色时先闪到默认种子色。
     var coverSeedHex by remember { mutableStateOf<String?>(null) }
-    var coverSeedSourceUrl by remember { mutableStateOf<String?>(null) }
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
+    val displayCoverUrl = currentSong?.displayCoverUrl()?.takeIf { it.isNotBlank() }
 
     LaunchedEffect(Unit) {
         val initialCacheSize = repo.maxCacheSizeBytesFlow.first()
@@ -468,11 +474,10 @@ fun NeriApp(
         }
     }
 
-    LaunchedEffect(currentSong?.coverUrl, fallbackPrimary) {
-        val url = currentSong?.coverUrl?.takeIf { it.isNotBlank() }
+    LaunchedEffect(displayCoverUrl, fallbackPrimary) {
+        val url = displayCoverUrl
         if (url.isNullOrBlank()) {
             coverSeedHex = null
-            coverSeedSourceUrl = null
             return@LaunchedEffect
         }
 
@@ -496,10 +501,6 @@ fun NeriApp(
 
         if (extractedSeedHex != null) {
             coverSeedHex = extractedSeedHex
-            coverSeedSourceUrl = url
-        } else if (coverSeedSourceUrl != url) {
-            coverSeedHex = null
-            coverSeedSourceUrl = url
         }
     }
 
@@ -509,7 +510,8 @@ fun NeriApp(
     }
 
     val defaultDensity = LocalDensity.current
-    var miniPlayerHeightPx by remember { mutableStateOf(0) }
+    var miniPlayerHeightPx by remember { mutableIntStateOf(0) }
+    var bottomBarHeightPx by remember { mutableIntStateOf(0) }
 
     val finalDensity = remember(defaultDensity, uiDensityScale) {
         Density(
@@ -673,14 +675,15 @@ fun NeriApp(
     }
 
     CompositionLocalProvider(LocalDensity provides finalDensity) {
-        val currentCoverUrl = currentSong?.coverUrl?.takeIf { it.isNotBlank() }
-        val activeCoverSeedHex = if (coverSeedSourceUrl == currentCoverUrl) coverSeedHex else null
+        val currentCoverUrl = displayCoverUrl
+        val activeCoverSeedHex = if (currentCoverUrl == null) null else coverSeedHex
         val effectiveSeedHex = if (dynamicColorEnabled) {
             activeCoverSeedHex ?: themeSeedColor
         } else {
             themeSeedColor
         }
-        val useSystemDynamic = dynamicColorEnabled && activeCoverSeedHex == null
+        val useSystemDynamic =
+            dynamicColorEnabled && activeCoverSeedHex == null && currentCoverUrl == null
 
         NeriTheme(
             followSystemDark = followSystemDark,
@@ -728,14 +731,27 @@ fun NeriApp(
                 val currentSong by PlayerManager.currentSongFlow.collectAsState()
                 val isMiniPlayerVisible = currentSong != null && !showNowPlaying
                 val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
-                val showLibraryMiniPlayerBridge =
-                    isMiniPlayerVisible && currentRoute == Destinations.Library.route
-
-                val miniPlayerHeightDp = if (isMiniPlayerVisible) {
+                val measuredMiniPlayerHeightDp = if (miniPlayerHeightPx > 0) {
                     with(finalDensity) { miniPlayerHeightPx.toDp() }
-                } else 0.dp
+                } else {
+                    0.dp
+                }
+                val reservedMiniPlayerHeightDp = when {
+                    currentSong == null -> 0.dp
+                    measuredMiniPlayerHeightDp > 0.dp -> measuredMiniPlayerHeightDp
+                    else -> 56.dp
+                }
+                val visibleMiniPlayerHeightDp = if (isMiniPlayerVisible) {
+                    measuredMiniPlayerHeightDp
+                } else {
+                    0.dp
+                }
+                val showLibraryMiniPlayerBridge =
+                    isMiniPlayerVisible &&
+                        currentRoute == Destinations.Library.route &&
+                        visibleMiniPlayerHeightDp > 0.dp
 
-                CompositionLocalProvider(LocalMiniPlayerHeight provides miniPlayerHeightDp) {
+                CompositionLocalProvider(LocalMiniPlayerHeight provides reservedMiniPlayerHeightDp) {
                     Scaffold(
                         containerColor = containerColor,
                         contentColor = MaterialTheme.colorScheme.onSurface,
@@ -750,13 +766,34 @@ fun NeriApp(
                             )
                         },
                         bottomBar = {
-                            AnimatedVisibility(
-                                visible = !showNowPlaying,
-                                enter = slideInVertically { it },
-                                exit = slideOutVertically { it }
+                            val bottomBarVisibilityProgress by animateFloatAsState(
+                                targetValue = if (showNowPlaying) 0f else 1f,
+                                animationSpec = tween(
+                                    durationMillis = if (showNowPlaying) 220 else 280,
+                                    easing = FastOutSlowInEasing
+                                ),
+                                label = "bottom_bar_visibility"
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clipToBounds()
                             ) {
                                 NeriBottomBar(
-                                    modifier = Modifier.hazeChild(state = hazeState),
+                                    modifier = Modifier
+                                        .align(Alignment.BottomCenter)
+                                        .onSizeChanged { size ->
+                                            if (size.height > 0) {
+                                                bottomBarHeightPx = size.height
+                                            }
+                                        }
+                                        .graphicsLayer {
+                                            translationY =
+                                                (1f - bottomBarVisibilityProgress) * bottomBarHeightPx
+                                                    .toFloat()
+                                            alpha = bottomBarVisibilityProgress
+                                        }
+                                        .hazeChild(state = hazeState),
                                     selectAlpha = selectAlpha,
                                     items = buildList {
                                         add(Destinations.Home to Icons.Outlined.Home)
@@ -1278,7 +1315,7 @@ fun NeriApp(
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .height(miniPlayerHeightDp + 20.dp)
+                                        .height(visibleMiniPlayerHeightDp + 20.dp)
                                         .background(
                                             Brush.verticalGradient(
                                                 colors = listOf(
@@ -1313,11 +1350,15 @@ fun NeriApp(
                                 NeriMiniPlayer(
                                     title = currentSong?.name ?: context.getString(R.string.nowplaying_no_playback),
                                     artist = currentSong?.artist ?: "",
-                                    coverUrl = currentSong?.coverUrl,
+                                    coverUrl = currentSong?.displayCoverUrl(),
                                     isPlaying = isPlaying,
                                     onPlayPause = { PlayerManager.togglePlayPause() },
                                     onExpand = { showNowPlaying = true },
-                                    onHeightChanged = { heightInPixels -> miniPlayerHeightPx = heightInPixels },
+                                    onHeightChanged = { heightInPixels ->
+                                        if (heightInPixels > 0) {
+                                            miniPlayerHeightPx = heightInPixels
+                                        }
+                                    },
                                     hazeState = hazeState,
                                     enableHaze = true
                                 )
@@ -1338,18 +1379,15 @@ fun NeriApp(
                         targetOffsetY = { fullHeight -> fullHeight }
                     ) + fadeOut(animationSpec = tween(durationMillis = 150))
                 ) {
-                    val currentCoverUrl = currentSong?.coverUrl?.takeIf { it.isNotBlank() }
-                    val activeCoverSeedHex = if (coverSeedSourceUrl == currentCoverUrl) {
-                        coverSeedHex
-                    } else {
-                        null
-                    }
+                    val currentCoverUrl = currentSong?.displayCoverUrl()?.takeIf { it.isNotBlank() }
+                    val activeCoverSeedHex = if (currentCoverUrl == null) null else coverSeedHex
                     val effectiveSeedHex = if (dynamicColorEnabled) {
                         activeCoverSeedHex ?: themeSeedColor
                     } else {
                         themeSeedColor
                     }
-                    val useSystemDynamic = dynamicColorEnabled && activeCoverSeedHex == null
+                    val useSystemDynamic =
+                        dynamicColorEnabled && activeCoverSeedHex == null && currentCoverUrl == null
 
                     NeriTheme(
                         followSystemDark = false,
@@ -1360,11 +1398,13 @@ fun NeriApp(
                         BackHandler { showNowPlaying = false }
 
                         val currentSongNP by PlayerManager.currentSongFlow.collectAsState()
+                        val nowPlayingCoverUrl =
+                            currentSongNP?.displayCoverUrl()?.takeIf { it.isNotBlank() }
 
                         Box(Modifier.fillMaxSize()) {
                             // 背景固定按暗色逻辑渲染
                             NowPlayingAccentBackdrop(
-                                coverUrl = currentSongNP?.coverUrl,
+                                coverUrl = nowPlayingCoverUrl,
                                 isDark = true,
                                 modifier = Modifier.fillMaxSize()
                             )
@@ -1374,24 +1414,26 @@ fun NeriApp(
                                     .fillMaxSize()
                                     .graphicsLayer { alpha = 0.80f },
                                 isDark = true,
-                                coverUrl = currentSongNP?.coverUrl
+                                coverUrl = nowPlayingCoverUrl
                             )
 
-                            NowPlayingScreen(
-                                onNavigateUp = { showNowPlaying = false },
-                                onEnterAlbum = { album ->
-                                    val json = Uri.encode(Gson().toJson(album))
-                                    navController.navigate("netease_album_detail/$json")
-                                },
-                                lyricBlurEnabled = lyricBlurEnabled,
-                                lyricBlurAmount = lyricBlurAmount,
-                                lyricFontScale = lyricFontScale,
-                                onLyricFontScaleChange = { scale ->
-                                    scope.launch { repo.setLyricFontScale(scale) }
-                                },
-                                showCoverSourceBadge = showCoverSourceBadge,
-                                showLyricTranslation = showLyricTranslation
-                            )
+                            CompositionLocalProvider(LocalMiniPlayerHeight provides 0.dp) {
+                                NowPlayingScreen(
+                                    onNavigateUp = { showNowPlaying = false },
+                                    onEnterAlbum = { album ->
+                                        val json = Uri.encode(Gson().toJson(album))
+                                        navController.navigate("netease_album_detail/$json")
+                                    },
+                                    lyricBlurEnabled = lyricBlurEnabled,
+                                    lyricBlurAmount = lyricBlurAmount,
+                                    lyricFontScale = lyricFontScale,
+                                    onLyricFontScaleChange = { scale ->
+                                        scope.launch { repo.setLyricFontScale(scale) }
+                                    },
+                                    showCoverSourceBadge = showCoverSourceBadge,
+                                    showLyricTranslation = showLyricTranslation
+                                )
+                            }
                         }
                     }
                 }

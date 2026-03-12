@@ -118,7 +118,7 @@
     <string name="download_tasks_count">%d tasks</string>
     <string name="download_clear_completed">Clear Completed</string>
     <string name="download_clear_confirm_title">Clear Download Tasks</string>
-    <string name="download_clear_confirm_message">Are you sure you want to clear all completed and cancelled download tasks?</string>
+    <string name="download_clear_confirm_message">Are you sure you want to clear all completed and canceled download tasks?</string>
     <string name="download_confirm">Confirm</string>
     <string name="download_cancel_action">Cancel</string>
     <string name="download_resume">Resume Download</string>
@@ -161,8 +161,8 @@
     <string name="settings_show_lyric_translation">Show Translation</string>
     <string name="settings_show_lyric_translation_desc">Show translated lyrics</string>
     <string name="settings_network">Network</string>
-    <string name="settings_bypass_proxy">Bypass System Proxy</string>
-    <string name="settings_bypass_proxy_desc">Don\'t use system proxy for app requests</string>
+    <string name="settings_bypass_proxy">Bypass Proxy</string>
+    <string name="settings_bypass_proxy_desc">Ignore system proxy</string>
     <string name="settings_storage">Storage &amp; Cache</string>
     <string name="settings_cache_limit">Cache Limit</string>
     <string name="settings_clear_cache">Clear</string>
@@ -211,7 +211,7 @@
     <string name="lyrics_title">Lyrics</string>
     <string name="lyrics_no_lyrics">No Lyrics</string>
     <string name="lyrics_blur">Blur</string>
-    <string name="lyrics_blur_effect">Blur Effect</string>
+    <string name="lyrics_blur_effect">Lyrics Blur</string>
     <string name="lyrics_blur_desc">Blur inactive lines</string>
     <string name="lyrics_blur_amount">Blur Intensity</string>
     <string name="lyrics_blur_current">Current Blur: %.2f</string>
@@ -273,7 +273,10 @@
     <string name="sync_create_new_repo">Create New</string>
     <string name="sync_use_existing_repo">Use Existing</string>
     <string name="sync_data_saver">Data Saver</string>
-    <string name="sync_data_saver_desc">Highly recommended if no special requirements\nSwitching modes may cause data loss. Ensure all platform settings are consistent. Do not switch casually</string>
+    <string name="sync_data_saver_desc">Reduce sync traffic. Keep the same setting on all devices.</string>
+    <string name="sync_data_saver_warning_title">Change Data Saver?</string>
+    <string name="sync_data_saver_warning_message">Changing this may affect sync consistency. Make sure all devices use the same setting.</string>
+    <string name="sync_data_saver_warning_confirm">Continue</string>
     <string name="sync_diff_failed">Diff Analysis Failed</string>
     <string name="sync_analysis_progress">Analysis Progress</string>
 
@@ -328,7 +331,7 @@
     <string name="music_search_cover">Search Cover</string>
     <string name="music_auto_fill">Auto Fill</string>
     <string name="music_auto_fill_hint">Auto fill info from search results</string>
-    <string name="music_save_changes">Save Changes</string>
+    <string name="music_save_changes">Save</string>
     <string name="music_info_saved">Song info saved</string>
     <string name="music_select_result">Select search result</string>
     <string name="music_manual_edit">Manual Edit</string>
@@ -646,7 +649,7 @@
     <string name="error_netease_search">Netease search failed: %s</string>
     <string name="error_load_playlist">Load playlist failed: %s</string>
     <string name="error_search_failed">Search failed: %s</string>
-    <string name="error_get_user_id">Cannot get user ID, please login again</string>
+    <string name="error_get_user_id">Cannot get user ID, please log in again</string>
     <string name="error_api_code">API returned error code=%d</string>
     <string name="error_missing_node">Missing %s node</string>
 
@@ -1039,7 +1042,7 @@
     <string name="library_name_reserved">This name is reserved for \"%s\", please choose another name~</string>
     <string name="library_name_exists">A playlist with this name already exists, please choose another name</string>
     <string name="library_create_new">+ Create Playlist</string>
-    <string name="library_song_count_format" formatted="false">%d song</string>
+    <string name="library_song_count_format">%d song</string>
     <plurals name="library_song_count">
         <item quantity="one">%d song</item>
         <item quantity="other">%d songs</item>

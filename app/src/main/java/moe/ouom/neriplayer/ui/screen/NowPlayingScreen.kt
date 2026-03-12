@@ -13,8 +13,11 @@ import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -118,6 +121,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -178,6 +182,11 @@ import moe.ouom.neriplayer.util.formatDuration
 import moe.ouom.neriplayer.util.offlineCachedImageRequest
 import kotlin.math.roundToInt
 
+private const val LyricsPageTransitionDurationMs = 300
+private const val CoverSourceBadgeRevealBufferMs = 20
+private const val CoverSourceBadgeRevealDelayMs =
+    LyricsPageTransitionDurationMs + CoverSourceBadgeRevealBufferMs
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalSharedTransitionApi::class)
 @Composable
 fun NowPlayingScreen(
@@ -200,16 +209,26 @@ fun NowPlayingScreen(
 
     // 订阅当前播放链接
     val currentMediaUrl by PlayerManager.currentMediaUrlFlow.collectAsState()
-    val isFromNetease = currentMediaUrl?.contains("music.126.net", ignoreCase = true) == true
-    val isFromBili = currentMediaUrl?.contains("bilivideo.", ignoreCase = true) == true
-    val playbackSourceType = when {
+    val isFromNeteaseTag =
+        currentSong?.album?.startsWith(PlayerManager.NETEASE_SOURCE_TAG) == true
+    val isFromBiliTag =
+        currentSong?.album?.startsWith(PlayerManager.BILI_SOURCE_TAG) == true
+    val isFromNeteaseUrl = currentMediaUrl?.contains("music.126.net", ignoreCase = true) == true
+    val isFromBiliUrl = currentMediaUrl?.contains("bilivideo.", ignoreCase = true) == true
+    val isFromNetease = isFromNeteaseTag || (!isFromBiliTag && isFromNeteaseUrl)
+    val isFromBili = isFromBiliTag || (!isFromNeteaseTag && isFromBiliUrl)
+    val rawPlaybackSourceType = when {
         currentSong?.isLocalSong() == true -> PlaybackSourceType.LOCAL
         isFromNetease -> PlaybackSourceType.NETEASE
         isFromBili -> PlaybackSourceType.BILIBILI
         else -> null
-    }?.takeIf { showCoverSourceBadge }
+    }
+    val playbackSourceSongKey = currentSong?.let {
+        listOf(it.id.toString(), it.album, it.mediaUri.orEmpty(), it.localFilePath.orEmpty())
+            .joinToString(separator = "|")
+    }
+    var playbackSourceType by remember { mutableStateOf<PlaybackSourceType?>(null) }
 
-    // 歌单&收藏
     val playlists by PlayerManager.playlistsFlow.collectAsState()
     val context = LocalContext.current
 
@@ -238,7 +257,9 @@ fun NowPlayingScreen(
     var showQueueSheet by remember { mutableStateOf(false) }
     var showLyricsScreen by remember { mutableStateOf(false) }
     var showSleepTimerDialog by remember { mutableStateOf(false) }
-    var showCoverPageSourceBadge by remember(currentSong?.id) { mutableStateOf(false) }
+    var showCoverPageSourceBadge by remember { mutableStateOf(false) }
+    var animateCoverPageSourceBadge by remember { mutableStateOf(false) }
+    var previousLyricsScreenState by remember { mutableStateOf(false) }
     var showSongNameMenu by remember { mutableStateOf(false) }
     var showArtistMenu by remember { mutableStateOf(false) }
     val addSheetState = rememberModalBottomSheetState()
@@ -309,11 +330,34 @@ fun NowPlayingScreen(
 
     LaunchedEffect(Unit) { contentVisible = true }
     LaunchedEffect(currentPosition) { if (!isUserDraggingSlider) sliderPosition = currentPosition.toFloat() }
-    LaunchedEffect(showLyricsScreen, currentSong?.id, playbackSourceType) {
-        showCoverPageSourceBadge = false
-        if (!showLyricsScreen && playbackSourceType != null) {
-            delay(380)
+    LaunchedEffect(showLyricsScreen, showCoverSourceBadge) {
+        val returningFromLyrics = previousLyricsScreenState && !showLyricsScreen
+        previousLyricsScreenState = showLyricsScreen
+        if (!showCoverSourceBadge) {
+            showCoverPageSourceBadge = false
+            animateCoverPageSourceBadge = false
+            return@LaunchedEffect
+        }
+        if (showLyricsScreen) {
+            showCoverPageSourceBadge = false
+            animateCoverPageSourceBadge = false
+        } else {
+            animateCoverPageSourceBadge = returningFromLyrics
+            if (returningFromLyrics) {
+                delay(CoverSourceBadgeRevealDelayMs.toLong())
+            }
             showCoverPageSourceBadge = true
+        }
+    }
+    LaunchedEffect(playbackSourceSongKey, rawPlaybackSourceType, showCoverSourceBadge) {
+        when {
+            !showCoverSourceBadge -> playbackSourceType = null
+            rawPlaybackSourceType != null -> playbackSourceType = rawPlaybackSourceType
+            playbackSourceSongKey == null -> playbackSourceType = null
+            else -> {
+                delay(250)
+                playbackSourceType = null
+            }
         }
     }
 
@@ -355,9 +399,15 @@ fun NowPlayingScreen(
                     targetState = showLyricsScreen,
                     transitionSpec = {
                         fadeIn(
-                            animationSpec = tween(durationMillis = 300, easing = LinearEasing)
+                            animationSpec = tween(
+                                durationMillis = LyricsPageTransitionDurationMs,
+                                easing = LinearEasing
+                            )
                         ) togetherWith fadeOut(
-                            animationSpec = tween(durationMillis = 300, easing = LinearEasing)
+                            animationSpec = tween(
+                                durationMillis = LyricsPageTransitionDurationMs,
+                                easing = LinearEasing
+                            )
                         )
                     },
                     label = "lyrics_transition"
@@ -536,33 +586,36 @@ fun NowPlayingScreen(
                                 }
                             }
 
-                            androidx.compose.animation.AnimatedVisibility(
-                                visible = showCoverPageSourceBadge && playbackSourceType != null,
-                                modifier = Modifier
-                                    .align(Alignment.BottomEnd)
-                                    .padding(10.dp),
-                                enter = scaleIn(
-                                    initialScale = 0f,
-                                    animationSpec = tween(
-                                        durationMillis = 360,
-                                        easing = FastOutSlowInEasing
+                            val coverPageSourceBadgeScale by animateFloatAsState(
+                                targetValue = if (showCoverPageSourceBadge && playbackSourceType != null) {
+                                    1f
+                                } else {
+                                    0f
+                                },
+                                animationSpec = if (animateCoverPageSourceBadge) {
+                                    tween(
+                                        durationMillis = 280,
+                                        easing = CubicBezierEasing(0.2f, 0f, 0.7f, 0.2f)
                                     )
-                                ) + fadeIn(
-                                    animationSpec = tween(
-                                        durationMillis = 260,
-                                        easing = FastOutSlowInEasing
-                                    )
-                                ),
-                                exit = scaleOut(
-                                    targetScale = 0.8f,
-                                    animationSpec = tween(
-                                        durationMillis = 160,
-                                        easing = FastOutSlowInEasing
-                                    )
-                                ) + fadeOut(animationSpec = tween(durationMillis = 120))
-                            ) {
+                                } else {
+                                    snap()
+                                },
+                                label = "cover_source_badge_scale"
+                            )
+
+                            if (showCoverPageSourceBadge && playbackSourceType != null) {
                                 playbackSourceType?.let { sourceType ->
-                                    PlaybackSourceBadge(source = sourceType)
+                                    PlaybackSourceBadge(
+                                        source = sourceType,
+                                        modifier = Modifier
+                                            .align(Alignment.BottomEnd)
+                                            .padding(10.dp)
+                                            .graphicsLayer {
+                                                scaleX = coverPageSourceBadgeScale
+                                                scaleY = coverPageSourceBadgeScale
+                                                alpha = coverPageSourceBadgeScale
+                                            }
+                                    )
                                 }
                             }
                         }

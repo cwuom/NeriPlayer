@@ -3,9 +3,11 @@ package moe.ouom.neriplayer.data
 import android.content.Context
 import android.net.Uri
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import androidx.core.net.toUri
 
 object LocalSongSupport {
     private val localUriSchemes = setOf("content", "file", "android.resource")
+    const val LOCAL_ALBUM_IDENTITY = "__local_files__"
 
     fun isLocalSong(song: SongItem, context: Context? = null): Boolean {
         return !song.localFilePath.isNullOrBlank() ||
@@ -31,7 +33,7 @@ object LocalSongSupport {
         if (mediaUri.isNullOrBlank()) return false
         if (mediaUri.startsWith("/")) return true
 
-        val scheme = runCatching { Uri.parse(mediaUri).scheme.orEmpty().lowercase() }
+        val scheme = runCatching { mediaUri.toUri().scheme.orEmpty().lowercase() }
             .getOrDefault("")
         return scheme in localUriSchemes
     }
@@ -47,6 +49,11 @@ object LocalSongSupport {
     }
 
     private fun isLocalAlbumPlaceholder(album: String?, context: Context?): Boolean {
-        return LocalFilesPlaylist.matches(album, context)
+        if (album.isNullOrBlank()) return false
+        return album == LOCAL_ALBUM_IDENTITY || LocalFilesPlaylist.matches(album, context)
+    }
+
+    internal fun identityAlbumKey(song: SongItem): String {
+        return if (isLocalSong(song, null)) LOCAL_ALBUM_IDENTITY else song.album
     }
 }

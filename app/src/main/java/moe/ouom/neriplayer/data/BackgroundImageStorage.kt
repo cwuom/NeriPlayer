@@ -6,6 +6,7 @@ import android.provider.OpenableColumns
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import androidx.core.net.toUri
 
 object BackgroundImageStorage {
     private const val DIRECTORY_NAME = "custom_background"
@@ -58,7 +59,7 @@ object BackgroundImageStorage {
 
     private fun resolveManagedFile(context: Context, uriString: String?): File? {
         if (uriString.isNullOrBlank()) return null
-        val uri = runCatching { Uri.parse(uriString) }.getOrNull() ?: return null
+        val uri = runCatching { uriString.toUri() }.getOrNull() ?: return null
         val path = when {
             uri.scheme.equals("file", ignoreCase = true) -> uri.path
             uri.scheme.isNullOrBlank() -> uriString

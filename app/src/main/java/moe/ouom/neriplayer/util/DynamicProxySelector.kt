@@ -14,17 +14,19 @@ import java.net.URI
 object DynamicProxySelector : ProxySelector() {
     @Volatile
     var bypassProxy: Boolean = true
-
-    private val systemDefault: ProxySelector? = getDefault()
+    private fun systemDefault(): ProxySelector? {
+        val current = getDefault()
+        return if (current === this) null else current
+    }
 
     override fun select(uri: URI?): List<Proxy> {
         if (uri == null) return listOf(Proxy.NO_PROXY)
         return if (bypassProxy) listOf(Proxy.NO_PROXY)
-        else systemDefault?.select(uri).takeUnless { it.isNullOrEmpty() } ?: listOf(Proxy.NO_PROXY)
+        else systemDefault()?.select(uri).takeUnless { it.isNullOrEmpty() } ?: listOf(Proxy.NO_PROXY)
     }
 
     override fun connectFailed(uri: URI?, sa: SocketAddress?, ioe: IOException?) {
-        systemDefault?.connectFailed(uri, sa, ioe)
+        systemDefault()?.connectFailed(uri, sa, ioe)
     }
 }
 
