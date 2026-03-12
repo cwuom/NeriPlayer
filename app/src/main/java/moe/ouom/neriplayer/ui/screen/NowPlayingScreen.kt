@@ -152,6 +152,8 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.search.SongSearchInfo
+import moe.ouom.neriplayer.core.download.DownloadStatus
+import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
@@ -160,6 +162,7 @@ import moe.ouom.neriplayer.data.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.LocalMediaSupport
 import moe.ouom.neriplayer.data.isLocalSong
 import moe.ouom.neriplayer.data.sameIdentityAs
+import moe.ouom.neriplayer.data.stableKey
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.AppleMusicLyric
 import moe.ouom.neriplayer.ui.component.LocalSongDetailsDialog
@@ -1345,40 +1348,70 @@ fun MoreOptionsSheet(
                                 }
                             )
                         } else if (AudioDownloadManager.getLocalFilePath(context, originalSong) == null) {
-                            // 监听下载进度
-                            val downloadProgress by AudioDownloadManager.progressFlow.collectAsState()
-                            val isDownloading = downloadProgress != null
+                            val songKey = remember(originalSong) { originalSong.stableKey() }
+                            val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsState()
+                            val currentDownloadTask = remember(downloadTasks, songKey) {
+                                downloadTasks.firstOrNull { it.song.stableKey() == songKey }
+                            }
+                            val downloadHeadlineRes = when (currentDownloadTask?.status) {
+                                DownloadStatus.DOWNLOADING -> R.string.download_cancel_download
+                                DownloadStatus.CANCELLED -> R.string.download_resume
+                                DownloadStatus.FAILED -> R.string.action_retry
+                                else -> R.string.download_to_local
+                            }
 
                             ListItem(
                                 headlineContent = {
-                                    Text(
-                                        if (isDownloading) stringResource(R.string.download_progress)
-                                        else stringResource(R.string.download_to_local)
-                                    )
+                                    Text(stringResource(downloadHeadlineRes))
                                 },
                                 leadingContent = { Icon(Icons.Outlined.Download, null) },
-                                supportingContent = downloadProgress?.let { progress ->
-                                    {
-                                        Column {
-                                            Text(
-                                                stringResource(
-                                                    R.string.download_progress_file_label,
-                                                    progress.percentage,
-                                                    progress.fileName
+                                supportingContent = {
+                                    when {
+                                        currentDownloadTask?.progress != null -> {
+                                            val progress = currentDownloadTask.progress
+                                            Column {
+                                                Text(
+                                                    stringResource(
+                                                        R.string.download_progress_file_label,
+                                                        progress.percentage,
+                                                        progress.fileName
+                                                    )
                                                 )
-                                            )
-                                            LinearProgressIndicator(
-                                                progress = { progress.bytesRead.toFloat() / progress.totalBytes.toFloat() },
-                                                modifier = Modifier.fillMaxWidth()
-                                            )
+                                                LinearProgressIndicator(
+                                                    progress = {
+                                                        progress.bytesRead.toFloat() /
+                                                            progress.totalBytes.toFloat()
+                                                    },
+                                                    modifier = Modifier.fillMaxWidth()
+                                                )
+                                            }
+                                        }
+
+                                        currentDownloadTask?.status == DownloadStatus.CANCELLED -> {
+                                            Text(stringResource(R.string.download_cancelled_status))
+                                        }
+
+                                        currentDownloadTask?.status == DownloadStatus.FAILED -> {
+                                            Text(stringResource(R.string.download_failed))
                                         }
                                     }
                                 },
                                 modifier = Modifier.clickable {
-                                    if (!isDownloading) {
-                                        viewModel.downloadSong(context, originalSong)
-                                        coroutineScope.launch {
-//                                            snackbarHostState.showSnackbar(context.getString(R.string.download_starting, originalSong.name))
+                                    when (currentDownloadTask?.status) {
+                                        DownloadStatus.DOWNLOADING -> {
+                                            viewModel.cancelDownload(songKey)
+                                        }
+
+                                        DownloadStatus.CANCELLED -> {
+                                            viewModel.resumeDownload(context, songKey)
+                                        }
+
+                                        DownloadStatus.FAILED -> {
+                                            viewModel.retryDownload(context, originalSong)
+                                        }
+
+                                        else -> {
+                                            viewModel.downloadSong(context, originalSong)
                                         }
                                     }
                                 }

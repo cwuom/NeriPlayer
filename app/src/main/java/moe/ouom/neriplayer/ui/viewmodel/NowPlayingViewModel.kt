@@ -51,6 +51,7 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.AudioPlayerService
 import moe.ouom.neriplayer.ui.NeriApp
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.data.stableKey
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.R
 
@@ -109,6 +110,19 @@ class NowPlayingViewModel : ViewModel() {
     }
 
     fun downloadSong(context: Context, song: SongItem) {
+        GlobalDownloadManager.startDownload(context, song)
+    }
+
+    fun cancelDownload(songKey: String) {
+        GlobalDownloadManager.cancelDownloadTask(songKey)
+    }
+
+    fun resumeDownload(context: Context, songKey: String) {
+        GlobalDownloadManager.resumeDownloadTask(context, songKey)
+    }
+
+    fun retryDownload(context: Context, song: SongItem) {
+        GlobalDownloadManager.removeDownloadTask(song.stableKey())
         GlobalDownloadManager.startDownload(context, song)
     }
 
