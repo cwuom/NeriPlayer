@@ -120,6 +120,10 @@ import kotlin.math.min
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
+    showContinueCard: Boolean = true,
+    showTrendingCard: Boolean = true,
+    showRadarCard: Boolean = true,
+    showRecommendedCard: Boolean = true,
     onItemClick: (NeteasePlaylist) -> Unit = {},
     gridState: LazyGridState,
     onOpenRecent: (UsageEntry) -> Unit = {},
@@ -162,6 +166,8 @@ fun HomeScreen(
 
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val hasVisibleSections =
+        showContinueCard || showTrendingCard || showRadarCard || showRecommendedCard
 
     Box(Modifier.fillMaxSize()) {
         Column(
@@ -233,6 +239,20 @@ fun HomeScreen(
                     }
 
                     else -> {
+                        if (!hasVisibleSections) {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.home_all_cards_hidden),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            return@Card
+                        }
+
                         val miniPlayerHeight = LocalMiniPlayerHeight.current
                         LazyVerticalGrid(
                             state = gridState,
@@ -248,7 +268,7 @@ fun HomeScreen(
                             modifier = Modifier.fillMaxSize()
                         ) {
                             // 继续播放
-                            if (usage.isNotEmpty()) {
+                            if (showContinueCard && usage.isNotEmpty()) {
                                 item(span = { GridItemSpan(maxLineSpan) }) {
                                     SectionHeader(
                                         icon = Icons.Outlined.History,
@@ -264,7 +284,7 @@ fun HomeScreen(
                             }
 
                             // 热门推荐
-                            if (hotSongs.isNotEmpty()) {
+                            if (showTrendingCard && hotSongs.isNotEmpty()) {
                                 item(span = { GridItemSpan(maxLineSpan) }) {
                                     SectionHeader(
                                         icon = Icons.Outlined.Bolt,
@@ -280,7 +300,7 @@ fun HomeScreen(
                             }
 
                             // 私人雷达
-                            if (radarSongs.isNotEmpty()) {
+                            if (showRadarCard && radarSongs.isNotEmpty()) {
                                 item(span = { GridItemSpan(maxLineSpan) }) {
                                     SectionHeader(
                                         icon = Icons.Outlined.Radar,
@@ -296,22 +316,24 @@ fun HomeScreen(
                             }
 
                             // 为你推荐
-                            item(span = { GridItemSpan(maxLineSpan) }) {
-                                SectionHeader(
-                                    icon = Icons.Outlined.Star,
-                                    title = stringResource(R.string.recommend_for_you)
-                                )
-                            }
-                            items(items = ui.playlists, key = { it.id }) { item ->
-                                PlaylistCard(
-                                    playlist = item,
-                                    onClick = { onItemClick(item) },
-                                    onShowSnackbar = { message ->
-                                        scope.launch {
-                                            snackbarHostState.showSnackbar(message)
+                            if (showRecommendedCard) {
+                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                    SectionHeader(
+                                        icon = Icons.Outlined.Star,
+                                        title = stringResource(R.string.recommend_for_you)
+                                    )
+                                }
+                                items(items = ui.playlists, key = { it.id }) { item ->
+                                    PlaylistCard(
+                                        playlist = item,
+                                        onClick = { onItemClick(item) },
+                                        onShowSnackbar = { message ->
+                                            scope.launch {
+                                                snackbarHostState.showSnackbar(message)
+                                            }
                                         }
-                                    }
-                                )
+                                    )
+                                }
                             }
                         }
                     }

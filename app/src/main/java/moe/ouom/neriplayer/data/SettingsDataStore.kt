@@ -67,6 +67,15 @@ object SettingsKeys {
     val SLEEP_TIMER_MODE = stringPreferencesKey("sleep_timer_mode")
     val SLEEP_TIMER_MINUTES = longPreferencesKey("sleep_timer_minutes")
     val SHOW_LYRIC_TRANSLATION = booleanPreferencesKey("show_lyric_translation")
+    val DEFAULT_START_DESTINATION = stringPreferencesKey("default_start_destination")
+    val AUTO_SHOW_KEYBOARD = booleanPreferencesKey("auto_show_keyboard")
+    val HOME_CARD_CONTINUE = booleanPreferencesKey("home_card_continue")
+    val HOME_CARD_TRENDING = booleanPreferencesKey("home_card_trending")
+    val HOME_CARD_RADAR = booleanPreferencesKey("home_card_radar")
+    val HOME_CARD_RECOMMENDED = booleanPreferencesKey("home_card_recommended")
+    val PLAYBACK_FADE_IN = booleanPreferencesKey("playback_fade_in")
+    val PLAYBACK_CROSSFADE_NEXT = booleanPreferencesKey("playback_crossfade_next")
+    val STOP_ON_BLUETOOTH_DISCONNECT = booleanPreferencesKey("stop_on_bluetooth_disconnect")
 }
 
 
@@ -194,6 +203,33 @@ class SettingsRepository(private val context: Context) {
 
     val showLyricTranslationFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.SHOW_LYRIC_TRANSLATION] ?: true }
+
+    val defaultStartDestinationFlow: Flow<String> =
+        context.dataStore.data.map { it[SettingsKeys.DEFAULT_START_DESTINATION] ?: "home" }
+
+    val autoShowKeyboardFlow: Flow<Boolean> =
+        context.dataStore.data.map { it[SettingsKeys.AUTO_SHOW_KEYBOARD] ?: false }
+
+    val homeCardContinueFlow: Flow<Boolean> =
+        context.dataStore.data.map { it[SettingsKeys.HOME_CARD_CONTINUE] ?: true }
+
+    val homeCardTrendingFlow: Flow<Boolean> =
+        context.dataStore.data.map { it[SettingsKeys.HOME_CARD_TRENDING] ?: true }
+
+    val homeCardRadarFlow: Flow<Boolean> =
+        context.dataStore.data.map { it[SettingsKeys.HOME_CARD_RADAR] ?: true }
+
+    val homeCardRecommendedFlow: Flow<Boolean> =
+        context.dataStore.data.map { it[SettingsKeys.HOME_CARD_RECOMMENDED] ?: true }
+
+    val playbackFadeInFlow: Flow<Boolean> =
+        context.dataStore.data.map { it[SettingsKeys.PLAYBACK_FADE_IN] ?: false }
+
+    val playbackCrossfadeNextFlow: Flow<Boolean> =
+        context.dataStore.data.map { it[SettingsKeys.PLAYBACK_CROSSFADE_NEXT] ?: false }
+
+    val stopOnBluetoothDisconnectFlow: Flow<Boolean> =
+        context.dataStore.data.map { it[SettingsKeys.STOP_ON_BLUETOOTH_DISCONNECT] ?: true }
 
     suspend fun setDynamicColor(value: Boolean) {
         context.dataStore.edit { it[SettingsKeys.DYNAMIC_COLOR] = value }
@@ -337,6 +373,42 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setShowLyricTranslation(enabled: Boolean) {
         context.dataStore.edit { it[SettingsKeys.SHOW_LYRIC_TRANSLATION] = enabled }
+    }
+
+    suspend fun setDefaultStartDestination(route: String) {
+        context.dataStore.edit { it[SettingsKeys.DEFAULT_START_DESTINATION] = route }
+    }
+
+    suspend fun setAutoShowKeyboard(enabled: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.AUTO_SHOW_KEYBOARD] = enabled }
+    }
+
+    suspend fun setHomeCardContinue(enabled: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.HOME_CARD_CONTINUE] = enabled }
+    }
+
+    suspend fun setHomeCardTrending(enabled: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.HOME_CARD_TRENDING] = enabled }
+    }
+
+    suspend fun setHomeCardRadar(enabled: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.HOME_CARD_RADAR] = enabled }
+    }
+
+    suspend fun setHomeCardRecommended(enabled: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.HOME_CARD_RECOMMENDED] = enabled }
+    }
+
+    suspend fun setPlaybackFadeIn(enabled: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.PLAYBACK_FADE_IN] = enabled }
+    }
+
+    suspend fun setPlaybackCrossfadeNext(enabled: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.PLAYBACK_CROSSFADE_NEXT] = enabled }
+    }
+
+    suspend fun setStopOnBluetoothDisconnect(enabled: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.STOP_ON_BLUETOOTH_DISCONNECT] = enabled }
     }
 
     /** 备用：一次性读取（非 Compose 场景） */

@@ -152,6 +152,7 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.search.SongSearchInfo
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.FavoritesPlaylist
@@ -1264,14 +1265,17 @@ fun MoreOptionsSheet(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val isLocalSong = originalSong.isLocalSong()
+    val autoShowKeyboard by AppContainer.settingsRepo.autoShowKeyboardFlow.collectAsState(initial = false)
 
     LaunchedEffect(showSearchView) {
         if (showSearchView) {
             viewModel.prepareForSearch(originalSong.name)
             viewModel.performSearch()
-            delay(120)
-            searchFocusRequester.requestFocus()
-            keyboardController?.show()
+            if (autoShowKeyboard) {
+                delay(120)
+                searchFocusRequester.requestFocus()
+                keyboardController?.show()
+            }
         }
     }
 

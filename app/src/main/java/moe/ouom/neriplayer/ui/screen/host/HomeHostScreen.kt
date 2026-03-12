@@ -69,6 +69,10 @@ private sealed class HomeSelectedItem {
 
 @Composable
 fun HomeHostScreen(
+    showContinueCard: Boolean = true,
+    showTrendingCard: Boolean = true,
+    showRadarCard: Boolean = true,
+    showRecommendedCard: Boolean = true,
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> }
 ) {
     var selected by rememberSaveable(stateSaver = homeSelectedItemSaver) {
@@ -96,6 +100,10 @@ fun HomeHostScreen(
         ) { current ->
             if (current == null) {
                 HomeScreen(
+                    showContinueCard = showContinueCard,
+                    showTrendingCard = showTrendingCard,
+                    showRadarCard = showRadarCard,
+                    showRecommendedCard = showRecommendedCard,
                     gridState = gridState,
                     onItemClick = { pl ->
                         AppContainer.playlistUsageRepo.recordOpen(

@@ -418,9 +418,10 @@ fun LocalPlaylistDetailScreen(
                     action()
                 }
             }
+            val autoShowKeyboard by AppContainer.settingsRepo.autoShowKeyboardFlow.collectAsState(initial = false)
 
             LaunchedEffect(showSearch, selectionMode) {
-                if (showSearch && !selectionMode) {
+                if (showSearch && !selectionMode && autoShowKeyboard) {
                     delay(120)
                     searchFocusRequester.requestFocus()
                     keyboardController?.show()

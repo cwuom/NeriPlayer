@@ -94,6 +94,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.FavoritesPlaylist
 import moe.ouom.neriplayer.data.LocalFilesPlaylist
@@ -330,9 +331,10 @@ private fun LocalPlaylistList(
     val focusRequester = remember { FocusRequester() }
     val context = LocalContext.current
     val defaultPlaylistName = context.getString(R.string.library_create_playlist_default)
+    val autoShowKeyboard by AppContainer.settingsRepo.autoShowKeyboardFlow.collectAsState(initial = false)
 
     LaunchedEffect(showDialog) {
-        if (showDialog) focusRequester.requestFocus()
+        if (showDialog && autoShowKeyboard) focusRequester.requestFocus()
     }
 
     fun tryCreate(): Boolean {

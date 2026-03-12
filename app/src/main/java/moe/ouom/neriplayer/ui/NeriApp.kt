@@ -204,6 +204,21 @@ private fun adjustAccent(base: Color, isDark: Boolean): Color {
     return Color(mixed)
 }
 
+private fun resolveMainStartDestination(
+    preferredRoute: String,
+    showHomeTab: Boolean,
+    devModeEnabled: Boolean
+): String {
+    return when (preferredRoute) {
+        Destinations.Home.route -> if (showHomeTab) Destinations.Home.route else Destinations.Explore.route
+        Destinations.Explore.route -> Destinations.Explore.route
+        Destinations.Library.route -> Destinations.Library.route
+        Destinations.Settings.route -> Destinations.Settings.route
+        Destinations.Debug.route -> if (devModeEnabled) Destinations.Debug.route else if (showHomeTab) Destinations.Home.route else Destinations.Explore.route
+        else -> if (showHomeTab) Destinations.Home.route else Destinations.Explore.route
+    }
+}
+
 private suspend fun captureThemeRevealSnapshot(
     activity: Activity?,
     fallbackView: View
@@ -412,6 +427,15 @@ fun NeriApp(
     val showCoverSourceBadge by repo.showCoverSourceBadgeFlow.collectAsState(initial = true)
     val silentGitHubSyncFailure by repo.silentGitHubSyncFailureFlow.collectAsState(initial = false)
     val showLyricTranslation by repo.showLyricTranslationFlow.collectAsState(initial = true)
+    val defaultStartDestination by repo.defaultStartDestinationFlow.collectAsState(initial = Destinations.Home.route)
+    val autoShowKeyboard by repo.autoShowKeyboardFlow.collectAsState(initial = false)
+    val showHomeContinueCard by repo.homeCardContinueFlow.collectAsState(initial = true)
+    val showHomeTrendingCard by repo.homeCardTrendingFlow.collectAsState(initial = true)
+    val showHomeRadarCard by repo.homeCardRadarFlow.collectAsState(initial = true)
+    val showHomeRecommendedCard by repo.homeCardRecommendedFlow.collectAsState(initial = true)
+    val playbackFadeIn by repo.playbackFadeInFlow.collectAsState(initial = false)
+    val playbackCrossfadeNext by repo.playbackCrossfadeNextFlow.collectAsState(initial = false)
+    val stopOnBluetoothDisconnect by repo.stopOnBluetoothDisconnectFlow.collectAsState(initial = true)
     val maxCacheSizeBytes by repo.maxCacheSizeBytesFlow.collectAsState(initial = 1024L * 1024 * 1024)
     var pendingFollowSystemDark by remember { mutableStateOf<Boolean?>(null) }
     var pendingForceDark by remember { mutableStateOf<Boolean?>(null) }
@@ -694,6 +718,23 @@ fun NeriApp(
             val navController = rememberNavController()
             val backEntry by navController.currentBackStackEntryAsState()
             val currentRoute = backEntry?.destination?.route
+            val showHomeTab = showHomeContinueCard || showHomeTrendingCard || showHomeRadarCard || showHomeRecommendedCard
+            val effectiveStartDestination = remember(defaultStartDestination, showHomeTab, devModeEnabled) {
+                resolveMainStartDestination(
+                    preferredRoute = defaultStartDestination,
+                    showHomeTab = showHomeTab,
+                    devModeEnabled = devModeEnabled
+                )
+            }
+            val bottomBarItems = remember(showHomeTab, devModeEnabled) {
+                buildList {
+                    if (showHomeTab) add(Destinations.Home to Icons.Outlined.Home)
+                    add(Destinations.Explore to Icons.Outlined.Search)
+                    add(Destinations.Library to Icons.Outlined.LibraryMusic)
+                    add(Destinations.Settings to Icons.Outlined.Settings)
+                    if (devModeEnabled) add(Destinations.Debug to Icons.Outlined.BugReport)
+                }
+            }
 
             val snackbarHostState = remember { SnackbarHostState() }
 
@@ -751,6 +792,18 @@ fun NeriApp(
                         currentRoute == Destinations.Library.route &&
                         visibleMiniPlayerHeightDp > 0.dp
 
+                LaunchedEffect(currentRoute, showHomeTab, effectiveStartDestination) {
+                    if (!showHomeTab && currentRoute == Destinations.Home.route) {
+                        navController.navigate(effectiveStartDestination) {
+                            popUpTo(navController.graph.startDestinationId) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+                }
+
                 CompositionLocalProvider(LocalMiniPlayerHeight provides reservedMiniPlayerHeightDp) {
                     Scaffold(
                         containerColor = containerColor,
@@ -795,13 +848,7 @@ fun NeriApp(
                                         }
                                         .hazeChild(state = hazeState),
                                     selectAlpha = selectAlpha,
-                                    items = buildList {
-                                        add(Destinations.Home to Icons.Outlined.Home)
-                                        add(Destinations.Explore to Icons.Outlined.Search)
-                                        add(Destinations.Library to Icons.Outlined.LibraryMusic)
-                                        add(Destinations.Settings to Icons.Outlined.Settings)
-                                        if (devModeEnabled) add(Destinations.Debug to Icons.Outlined.BugReport)
-                                    },
+                                    items = bottomBarItems,
                                     currentDestination = backEntry?.destination,
                                     onItemSelected = { dest ->
                                         if (currentRoute != dest.route) {
@@ -826,7 +873,7 @@ fun NeriApp(
                         ) {
                             NavHost(
                                 navController = navController,
-                                startDestination = Destinations.Home.route,
+                                startDestination = effectiveStartDestination,
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .haze(
@@ -872,6 +919,10 @@ fun NeriApp(
                                     }
                                 ) {
                                     HomeHostScreen(
+                                        showContinueCard = showHomeContinueCard,
+                                        showTrendingCard = showHomeTrendingCard,
+                                        showRadarCard = showHomeRadarCard,
+                                        showRecommendedCard = showHomeRecommendedCard,
                                         onSongClick = ::playSongsAndOpenNowPlaying
                                     )
                                 }
@@ -1166,6 +1217,42 @@ fun NeriApp(
                                         showLyricTranslation = showLyricTranslation,
                                         onShowLyricTranslationChange = { enabled ->
                                             scope.launch { repo.setShowLyricTranslation(enabled) }
+                                        },
+                                        defaultStartDestination = defaultStartDestination,
+                                        onDefaultStartDestinationChange = { route ->
+                                            scope.launch { repo.setDefaultStartDestination(route) }
+                                        },
+                                        autoShowKeyboard = autoShowKeyboard,
+                                        onAutoShowKeyboardChange = { enabled ->
+                                            scope.launch { repo.setAutoShowKeyboard(enabled) }
+                                        },
+                                        showHomeContinueCard = showHomeContinueCard,
+                                        onShowHomeContinueCardChange = { enabled ->
+                                            scope.launch { repo.setHomeCardContinue(enabled) }
+                                        },
+                                        showHomeTrendingCard = showHomeTrendingCard,
+                                        onShowHomeTrendingCardChange = { enabled ->
+                                            scope.launch { repo.setHomeCardTrending(enabled) }
+                                        },
+                                        showHomeRadarCard = showHomeRadarCard,
+                                        onShowHomeRadarCardChange = { enabled ->
+                                            scope.launch { repo.setHomeCardRadar(enabled) }
+                                        },
+                                        showHomeRecommendedCard = showHomeRecommendedCard,
+                                        onShowHomeRecommendedCardChange = { enabled ->
+                                            scope.launch { repo.setHomeCardRecommended(enabled) }
+                                        },
+                                        playbackFadeIn = playbackFadeIn,
+                                        onPlaybackFadeInChange = { enabled ->
+                                            scope.launch { repo.setPlaybackFadeIn(enabled) }
+                                        },
+                                        playbackCrossfadeNext = playbackCrossfadeNext,
+                                        onPlaybackCrossfadeNextChange = { enabled ->
+                                            scope.launch { repo.setPlaybackCrossfadeNext(enabled) }
+                                        },
+                                        stopOnBluetoothDisconnect = stopOnBluetoothDisconnect,
+                                        onStopOnBluetoothDisconnectChange = { enabled ->
+                                            scope.launch { repo.setStopOnBluetoothDisconnect(enabled) }
                                         },
                                         maxCacheSizeBytes = maxCacheSizeBytes,
                                         onMaxCacheSizeBytesChange = { size ->

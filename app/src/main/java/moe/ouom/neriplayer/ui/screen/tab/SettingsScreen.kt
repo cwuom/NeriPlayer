@@ -103,6 +103,9 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.Error
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.BluetoothAudio
+import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -194,6 +197,11 @@ import kotlin.math.roundToInt
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.outlined.DeleteForever
+import androidx.compose.material.icons.outlined.GraphicEq
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Keyboard
+import androidx.compose.material.icons.outlined.LibraryMusic
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SdStorage
 import moe.ouom.neriplayer.ui.component.HsvPicker
 import moe.ouom.neriplayer.ui.component.LanguageSettingItem
@@ -427,6 +435,24 @@ fun SettingsScreen(
     onSilentGitHubSyncFailureChange: (Boolean) -> Unit,
     showLyricTranslation: Boolean,
     onShowLyricTranslationChange: (Boolean) -> Unit,
+    defaultStartDestination: String,
+    onDefaultStartDestinationChange: (String) -> Unit,
+    autoShowKeyboard: Boolean,
+    onAutoShowKeyboardChange: (Boolean) -> Unit,
+    showHomeContinueCard: Boolean,
+    onShowHomeContinueCardChange: (Boolean) -> Unit,
+    showHomeTrendingCard: Boolean,
+    onShowHomeTrendingCardChange: (Boolean) -> Unit,
+    showHomeRadarCard: Boolean,
+    onShowHomeRadarCardChange: (Boolean) -> Unit,
+    showHomeRecommendedCard: Boolean,
+    onShowHomeRecommendedCardChange: (Boolean) -> Unit,
+    playbackFadeIn: Boolean,
+    onPlaybackFadeInChange: (Boolean) -> Unit,
+    playbackCrossfadeNext: Boolean,
+    onPlaybackCrossfadeNextChange: (Boolean) -> Unit,
+    stopOnBluetoothDisconnect: Boolean,
+    onStopOnBluetoothDisconnectChange: (Boolean) -> Unit,
     onNavigateToDownloadManager: () -> Unit = {},
     maxCacheSizeBytes: Long,
     onMaxCacheSizeBytesChange: (Long) -> Unit,
@@ -454,6 +480,10 @@ fun SettingsScreen(
     var audioQualityExpanded by remember { mutableStateOf(false) }
     val audioQualityArrowRotation by animateFloatAsState(targetValue = if (audioQualityExpanded) 180f else 0f, label = "audio_quality_arrow")
 
+    // 播放设置菜单的状态
+    var playbackExpanded by remember { mutableStateOf(false) }
+    val playbackArrowRotation by animateFloatAsState(targetValue = if (playbackExpanded) 180f else 0f, label = "playback_arrow")
+
     // 下载管理菜单的状态
     var downloadManagerExpanded by remember { mutableStateOf(false) }
     val downloadManagerArrowRotation by animateFloatAsState(targetValue = if (downloadManagerExpanded) 180f else 0f, label = "download_manager_arrow")
@@ -480,6 +510,7 @@ fun SettingsScreen(
     var showQualityDialog by remember { mutableStateOf(false) }
     var showNeteaseSheet by remember { mutableStateOf(false) }
     var showBiliQualityDialog by remember { mutableStateOf(false) }
+    var showDefaultStartDestinationDialog by remember { mutableStateOf(false) }
     var showConfirmDialog by remember { mutableStateOf(false) }
     var showCookieDialog by remember { mutableStateOf(false) }
     var showBiliCookieDialog by remember { mutableStateOf(false) }
@@ -587,6 +618,20 @@ fun SettingsScreen(
             else -> biliPreferredQuality
         }
     }
+
+    val defaultStartDestinationLabel = remember(defaultStartDestination, context) {
+        when (defaultStartDestination) {
+            "explore" -> context.getString(R.string.nav_explore)
+            "library" -> context.getString(R.string.nav_library)
+            "settings" -> context.getString(R.string.nav_settings)
+            else -> context.getString(R.string.nav_home)
+        }
+    }
+    val allHomeCardsHidden =
+        !showHomeContinueCard &&
+            !showHomeTrendingCard &&
+            !showHomeRadarCard &&
+            !showHomeRecommendedCard
 
     LaunchedEffect(neteaseVm) {
         neteaseVm.events.collect { e ->
@@ -854,6 +899,163 @@ fun SettingsScreen(
                             .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
                     ) {
                         ListItem(
+                            modifier = Modifier.settingsItemClickable {
+                                showDefaultStartDestinationDialog = true
+                            },
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Outlined.Home,
+                                    contentDescription = stringResource(R.string.settings_default_start_screen),
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = { Text(stringResource(R.string.settings_default_start_screen)) },
+                            supportingContent = {
+                                Text(
+                                    stringResource(
+                                        R.string.settings_default_start_screen_desc,
+                                        defaultStartDestinationLabel
+                                    )
+                                )
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+
+                        ListItem(
+                            modifier = Modifier.settingsItemClickable {
+                                onAutoShowKeyboardChange(!autoShowKeyboard)
+                            },
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Outlined.Keyboard,
+                                    contentDescription = stringResource(R.string.settings_auto_show_keyboard),
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = { Text(stringResource(R.string.settings_auto_show_keyboard)) },
+                            supportingContent = { Text(stringResource(R.string.settings_auto_show_keyboard_desc)) },
+                            trailingContent = {
+                                Switch(
+                                    checked = autoShowKeyboard,
+                                    onCheckedChange = onAutoShowKeyboardChange
+                                )
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+
+                        Text(
+                            text = stringResource(R.string.settings_home_cards),
+                            modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = stringResource(R.string.settings_home_cards_desc),
+                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        ListItem(
+                            modifier = Modifier.settingsItemClickable {
+                                onShowHomeContinueCardChange(!showHomeContinueCard)
+                            },
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Outlined.History,
+                                    contentDescription = stringResource(R.string.player_continue),
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = { Text(stringResource(R.string.player_continue)) },
+                            trailingContent = {
+                                Switch(
+                                    checked = showHomeContinueCard,
+                                    onCheckedChange = onShowHomeContinueCardChange
+                                )
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+
+                        ListItem(
+                            modifier = Modifier.settingsItemClickable {
+                                onShowHomeTrendingCardChange(!showHomeTrendingCard)
+                            },
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Outlined.Bolt,
+                                    contentDescription = stringResource(R.string.recommend_trending),
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = { Text(stringResource(R.string.recommend_trending)) },
+                            trailingContent = {
+                                Switch(
+                                    checked = showHomeTrendingCard,
+                                    onCheckedChange = onShowHomeTrendingCardChange
+                                )
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+
+                        ListItem(
+                            modifier = Modifier.settingsItemClickable {
+                                onShowHomeRadarCardChange(!showHomeRadarCard)
+                            },
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Outlined.Search,
+                                    contentDescription = stringResource(R.string.recommend_radar),
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = { Text(stringResource(R.string.recommend_radar)) },
+                            trailingContent = {
+                                Switch(
+                                    checked = showHomeRadarCard,
+                                    onCheckedChange = onShowHomeRadarCardChange
+                                )
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+
+                        ListItem(
+                            modifier = Modifier.settingsItemClickable {
+                                onShowHomeRecommendedCardChange(!showHomeRecommendedCard)
+                            },
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Outlined.LibraryMusic,
+                                    contentDescription = stringResource(R.string.recommend_for_you),
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = { Text(stringResource(R.string.recommend_for_you)) },
+                            trailingContent = {
+                                Switch(
+                                    checked = showHomeRecommendedCard,
+                                    onCheckedChange = onShowHomeRecommendedCardChange
+                                )
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+
+                        AnimatedVisibility(visible = allHomeCardsHidden) {
+                            Text(
+                                text = stringResource(R.string.settings_home_hidden_notice),
+                                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        ListItem(
                             leadingContent = {
                                 Icon(
                                     imageVector = Icons.Outlined.BlurOn,
@@ -1097,6 +1299,103 @@ fun SettingsScreen(
                             supportingContent = { Text(stringResource(R.string.settings_bypass_proxy_desc)) },
                             trailingContent = {
                                 Switch(checked = bypassProxy, onCheckedChange = onBypassProxyChange)
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+                    }
+                }
+            }
+
+
+            item {
+                ExpandableHeader(
+                    icon = Icons.AutoMirrored.Outlined.PlaylistPlay,
+                    title = stringResource(R.string.settings_playback),
+                    subtitleCollapsed = stringResource(R.string.settings_playback_expand),
+                    subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
+                    expanded = playbackExpanded,
+                    onToggle = { playbackExpanded = !playbackExpanded },
+                    arrowRotation = playbackArrowRotation
+                )
+            }
+
+            item {
+                AnimatedVisibility(
+                    visible = playbackExpanded,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.Transparent)
+                            .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
+                    ) {
+                        ListItem(
+                            modifier = Modifier.settingsItemClickable {
+                                onPlaybackFadeInChange(!playbackFadeIn)
+                            },
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Outlined.GraphicEq,
+                                    contentDescription = stringResource(R.string.settings_playback_fade_in),
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = { Text(stringResource(R.string.settings_playback_fade_in)) },
+                            supportingContent = { Text(stringResource(R.string.settings_playback_fade_in_desc)) },
+                            trailingContent = {
+                                Switch(
+                                    checked = playbackFadeIn,
+                                    onCheckedChange = onPlaybackFadeInChange
+                                )
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+
+                        ListItem(
+                            modifier = Modifier.settingsItemClickable {
+                                onPlaybackCrossfadeNextChange(!playbackCrossfadeNext)
+                            },
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Outlined.Sync,
+                                    contentDescription = stringResource(R.string.settings_playback_crossfade_next),
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = { Text(stringResource(R.string.settings_playback_crossfade_next)) },
+                            supportingContent = { Text(stringResource(R.string.settings_playback_crossfade_next_desc)) },
+                            trailingContent = {
+                                Switch(
+                                    checked = playbackCrossfadeNext,
+                                    onCheckedChange = onPlaybackCrossfadeNextChange
+                                )
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+
+                        ListItem(
+                            modifier = Modifier.settingsItemClickable {
+                                onStopOnBluetoothDisconnectChange(!stopOnBluetoothDisconnect)
+                            },
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Outlined.BluetoothAudio,
+                                    contentDescription = stringResource(R.string.settings_stop_on_bluetooth_disconnect),
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = { Text(stringResource(R.string.settings_stop_on_bluetooth_disconnect)) },
+                            supportingContent = { Text(stringResource(R.string.settings_stop_on_bluetooth_disconnect_desc)) },
+                            trailingContent = {
+                                Switch(
+                                    checked = stopOnBluetoothDisconnect,
+                                    onCheckedChange = onStopOnBluetoothDisconnectChange
+                                )
                             },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
@@ -2262,6 +2561,45 @@ fun SettingsScreen(
             },
             confirmButton = {
                 HapticTextButton(onClick = { showBiliCookieDialog = false }) { Text(stringResource(R.string.action_ok)) }
+            }
+        )
+    }
+
+    // 音质选择对话框
+    if (showDefaultStartDestinationDialog) {
+        AlertDialog(
+            onDismissRequest = { showDefaultStartDestinationDialog = false },
+            title = { Text(stringResource(R.string.settings_default_start_screen)) },
+            text = {
+                Column {
+                    val options = listOf(
+                        "home" to stringResource(R.string.nav_home),
+                        "explore" to stringResource(R.string.nav_explore),
+                        "library" to stringResource(R.string.nav_library),
+                        "settings" to stringResource(R.string.nav_settings)
+                    )
+                    options.forEach { (route, label) ->
+                        ListItem(
+                            headlineContent = { Text(label) },
+                            trailingContent = {
+                                RadioButton(
+                                    selected = route == defaultStartDestination,
+                                    onClick = null
+                                )
+                            },
+                            modifier = Modifier.settingsItemClickable {
+                                onDefaultStartDestinationChange(route)
+                                showDefaultStartDestinationDialog = false
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                HapticTextButton(onClick = { showDefaultStartDestinationDialog = false }) {
+                    Text(stringResource(R.string.action_close))
+                }
             }
         )
     }

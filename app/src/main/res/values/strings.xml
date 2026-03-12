@@ -273,9 +273,9 @@
     <string name="sync_create_new_repo">创建新仓库</string>
     <string name="sync_use_existing_repo">使用现有仓库</string>
     <string name="sync_data_saver">省流通道</string>
-    <string name="sync_data_saver_desc">减少同步流量，切换前请确认所有设备保持同一设置</string>
+    <string name="sync_data_saver_desc">减少同步流量，所有设备需保持一致</string>
     <string name="sync_data_saver_warning_title">切换省流通道？</string>
-    <string name="sync_data_saver_warning_message">切换后可能影响同步一致性，请确认所有设备使用同一设置。</string>
+    <string name="sync_data_saver_warning_message">切换后可能导致同步不一致，请确认继续。</string>
     <string name="sync_data_saver_warning_confirm">继续切换</string>
     <string name="sync_diff_failed">差异分析失败</string>
     <string name="sync_analysis_progress">分析进度</string>
@@ -789,6 +789,21 @@
     <string name="settings_netease">网易云音乐</string>
     <string name="settings_qq_music">QQ 音乐</string>
     <string name="settings_personalization_expand">展开以调整视觉效果</string>
+    <string name="settings_default_start_screen">默认打开页面</string>
+    <string name="settings_default_start_screen_desc">当前：%1$s</string>
+    <string name="settings_auto_show_keyboard">自动弹出软键盘</string>
+    <string name="settings_auto_show_keyboard_desc">输入框出现时自动聚焦并尝试打开软键盘</string>
+    <string name="settings_home_cards">首页卡片</string>
+    <string name="settings_home_cards_desc">可分别关闭首页卡片，全部关闭后首页会隐藏</string>
+    <string name="settings_home_hidden_notice">当前已关闭全部首页卡片，首页会从底部栏隐藏。</string>
+    <string name="settings_playback">播放设置</string>
+    <string name="settings_playback_expand">展开以配置播放行为</string>
+    <string name="settings_playback_fade_in">播放淡入淡出</string>
+    <string name="settings_playback_fade_in_desc">开始播放时使用淡入淡出过渡</string>
+    <string name="settings_playback_crossfade_next">下一首淡入淡出</string>
+    <string name="settings_playback_crossfade_next_desc">切换到下一首时使用淡入淡出过渡</string>
+    <string name="settings_stop_on_bluetooth_disconnect">蓝牙断开自动停止</string>
+    <string name="settings_stop_on_bluetooth_disconnect_desc">蓝牙设备断开时自动暂停播放</string>
     <string name="settings_lyrics_blur">歌词模糊</string>
     <string name="settings_lyrics_font_size">歌词字体大小</string>
     <string name="settings_lyrics_font_current">当前：%d%%</string>
@@ -1046,6 +1061,7 @@
     <string name="home_title_brand_loud">音理音理!!</string>
     <string name="home_title_brand_wave">音理音理~</string>
     <string name="home_title_brand_call">NeriPlayer</string>
+    <string name="home_all_cards_hidden">首页卡片已全部隐藏，可在设置中重新开启。</string>
 
     <!-- Library Screen -->
     <string name="library_tab_local">本地</string>
