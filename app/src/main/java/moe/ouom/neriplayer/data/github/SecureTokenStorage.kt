@@ -28,6 +28,9 @@ import android.content.SharedPreferences
 import androidx.core.content.edit
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
+import moe.ouom.neriplayer.data.SongIdentity
 import java.util.UUID
 
 /**
@@ -35,6 +38,7 @@ import java.util.UUID
  * 使用Android Keystore + EncryptedSharedPreferences加密存储
  */
 class SecureTokenStorage(context: Context) {
+    private val gson = Gson()
 
     private val masterKey = MasterKey.Builder(context)
         .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
@@ -58,9 +62,11 @@ class SecureTokenStorage(context: Context) {
         private const val KEY_LAST_REMOTE_SHA = "last_remote_sha"
         private const val KEY_PLAY_HISTORY_UPDATE_MODE = "play_history_update_mode"
         private const val KEY_DELETED_PLAYLIST_IDS = "deleted_playlist_ids"
+        private const val KEY_RECENT_PLAY_DELETIONS = "recent_play_deletions"
         private const val KEY_TOKEN_WARNING_DISMISSED = "token_warning_dismissed"
         private const val KEY_DATA_SAVER_MODE = "data_saver_mode"
         private const val KEY_SYNC_MUTATION_VERSION = "sync_mutation_version"
+        private const val MAX_RECENT_PLAY_DELETIONS = 500
     }
 
     /** 播放历史更新模式 */
@@ -215,6 +221,42 @@ class SecureTokenStorage(context: Context) {
             .apply()
     }
 
+    fun getRecentPlayDeletions(): List<SyncRecentPlayDeletion> {
+        val raw = encryptedPrefs.getString(KEY_RECENT_PLAY_DELETIONS, null).orEmpty()
+        if (raw.isBlank()) {
+            return emptyList()
+        }
+        val parsed = runCatching {
+            val type = object : TypeToken<List<SyncRecentPlayDeletion>>() {}.type
+            gson.fromJson<List<SyncRecentPlayDeletion>>(raw, type).orEmpty()
+        }.getOrElse { emptyList() }
+        return normalizeRecentPlayDeletions(parsed)
+    }
+
+    fun setRecentPlayDeletions(deletions: List<SyncRecentPlayDeletion>) {
+        val normalized = normalizeRecentPlayDeletions(deletions)
+        encryptedPrefs.edit {
+            if (normalized.isEmpty()) {
+                remove(KEY_RECENT_PLAY_DELETIONS)
+            } else {
+                putString(KEY_RECENT_PLAY_DELETIONS, gson.toJson(normalized))
+            }
+        }
+    }
+
+    fun addRecentPlayDeletions(deletions: List<SyncRecentPlayDeletion>) {
+        if (deletions.isEmpty()) {
+            return
+        }
+        setRecentPlayDeletions(getRecentPlayDeletions() + deletions)
+    }
+
+    fun removeRecentPlayDeletion(identity: SongIdentity) {
+        val remaining = getRecentPlayDeletions()
+            .filterNot { it.identity() == identity }
+        setRecentPlayDeletions(remaining)
+    }
+
     /** 设置Token警告已忽略 */
     fun setTokenWarningDismissed(dismissed: Boolean) {
         encryptedPrefs.edit().putBoolean(KEY_TOKEN_WARNING_DISMISSED, dismissed).apply()
@@ -243,5 +285,21 @@ class SecureTokenStorage(context: Context) {
         val nextVersion = getSyncMutationVersion() + 1L
         encryptedPrefs.edit().putLong(KEY_SYNC_MUTATION_VERSION, nextVersion).apply()
         return nextVersion
+    }
+
+    private fun normalizeRecentPlayDeletions(
+        deletions: List<SyncRecentPlayDeletion>
+    ): List<SyncRecentPlayDeletion> {
+        return deletions
+            .groupBy { it.stableKey() }
+            .map { (_, snapshots) ->
+                snapshots.maxWithOrNull(
+                    compareBy<SyncRecentPlayDeletion> { it.deletedAt }
+                        .thenBy { it.deviceId }
+                ) ?: return@map null
+            }
+            .filterNotNull()
+            .sortedByDescending { it.deletedAt }
+            .take(MAX_RECENT_PLAY_DELETIONS)
     }
 }

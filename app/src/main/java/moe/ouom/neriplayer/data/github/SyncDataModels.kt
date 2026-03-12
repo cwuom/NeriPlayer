@@ -33,6 +33,8 @@ import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.data.FavoritePlaylist
 import moe.ouom.neriplayer.data.LocalSongSupport
 import moe.ouom.neriplayer.data.LocalPlaylist
+import moe.ouom.neriplayer.data.SongIdentity
+import moe.ouom.neriplayer.data.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 
 /**
@@ -48,7 +50,8 @@ data class SyncData(
     @ProtoNumber(5) val playlists: List<SyncPlaylist> = emptyList(),
     @ProtoNumber(6) val favoritePlaylists: List<SyncFavoritePlaylist> = emptyList(),
     @ProtoNumber(7) val recentPlays: List<SyncRecentPlay> = emptyList(),
-    @ProtoNumber(8) val syncLog: List<SyncLogEntry> = emptyList()
+    @ProtoNumber(8) val syncLog: List<SyncLogEntry> = emptyList(),
+    @ProtoNumber(9) val recentPlayDeletions: List<SyncRecentPlayDeletion> = emptyList()
 )
 
 /**
@@ -197,6 +200,23 @@ data class SyncRecentPlay(
     @ProtoNumber(3) val playedAt: Long,
     @ProtoNumber(4) val deviceId: String
 )
+
+@Serializable
+data class SyncRecentPlayDeletion(
+    @ProtoNumber(1) val songId: Long,
+    @ProtoNumber(2) val album: String,
+    @ProtoNumber(3) val mediaUri: String? = null,
+    @ProtoNumber(4) val deletedAt: Long,
+    @ProtoNumber(5) val deviceId: String
+) {
+    fun identity(): SongIdentity = SongIdentity(
+        id = songId,
+        album = album,
+        mediaUri = mediaUri
+    )
+
+    fun stableKey(): String = identity().stableKey()
+}
 
 /**
  * 收藏的歌单
