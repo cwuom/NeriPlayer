@@ -849,6 +849,17 @@ fun NeriApp(
                                 NeriBottomBar(
                                     modifier = Modifier
                                         .align(Alignment.BottomCenter)
+                                        .then(
+                                            if (advancedBlurEnabled) {
+                                                val bridgeAlpha =
+                                                    if (backgroundImageUri == null) 0.92f else 0.70f
+                                                Modifier.background(
+                                                    MaterialTheme.colorScheme.surface.copy(alpha = bridgeAlpha)
+                                                )
+                                            } else {
+                                                Modifier
+                                            }
+                                        )
                                         .onSizeChanged { size ->
                                             if (size.height > 0) {
                                                 bottomBarHeightPx = size.height
@@ -1443,17 +1454,6 @@ fun NeriApp(
                                         onBack = { navController.popBackStack() }
                                     )
                                 }
-                            }
-
-                            if (!showNowPlaying && advancedBlurEnabled && bottomBarHeightDp + navBarPaddingDp > 0.dp) {
-                                val bridgeAlpha = if (backgroundImageUri == null) 0.92f else 0.70f
-                                Box(
-                                    modifier = Modifier
-                                        .align(Alignment.BottomStart)
-                                        .fillMaxWidth()
-                                        .height(bottomBarHeightDp + navBarPaddingDp)
-                                        .background(MaterialTheme.colorScheme.surface.copy(alpha = bridgeAlpha))
-                                )
                             }
 
                             AnimatedVisibility(
