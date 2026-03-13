@@ -174,6 +174,9 @@ class AudioPlayerService : Service() {
         hasReceivedStartCommand = true
 
         val action = intent?.action
+        if (!isForegroundStarted && action != ACTION_STOP) {
+            startForegroundImmediately(buildBootstrapNotification())
+        }
         if (action == null && !PlayerManager.hasItems()) {
             allowServiceRestart = false
             stopForegroundIfStarted()
@@ -232,20 +235,11 @@ class AudioPlayerService : Service() {
             }
 
             ACTION_SYNC -> {
-                val resumedFromPendingRestore =
-                    if (!PlayerManager.isPlayingFlow.value) {
-                        PlayerManager.resumeRestoredPlaybackIfNeeded() != null
-                    } else {
-                        false
-                    }
                 if (!PlayerManager.hasItems()) {
                     allowServiceRestart = false
                     stopForegroundIfStarted()
                     stopSelf()
                     return START_NOT_STICKY
-                }
-                if (resumedFromPendingRestore) {
-                    NPLogger.w("NERI-APS", "Resumed pending playback on explicit sync")
                 }
                 updateAll()
             }
@@ -574,7 +568,7 @@ class AudioPlayerService : Service() {
         // 用户从最近任务移除应用时，视作“主动退出”。
         // 这里暂停播放并持久化 shouldResumePlayback=false，避免下次打开自动播放。
         if (PlayerManager.hasItems()) {
-            PlayerManager.pause()
+            PlayerManager.pause(forcePersist = true)
             updateAll()
         }
     }
