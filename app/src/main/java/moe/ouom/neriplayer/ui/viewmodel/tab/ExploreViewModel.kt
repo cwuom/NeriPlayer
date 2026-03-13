@@ -167,7 +167,11 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
 
     fun loadHighQuality(cat: String? = null) {
         val realCat = cat ?: _uiState.value.selectedTag
-        _uiState.value = _uiState.value.copy(loading = true, error = null)
+        _uiState.value = _uiState.value.copy(
+            loading = true,
+            error = null,
+            selectedTag = realCat
+        )
         viewModelScope.launch {
             try {
                 // Convert tag key to Chinese API category
@@ -189,7 +193,8 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                     error = app.getString(
                         R.string.error_load_playlist,
                         e.message ?: app.getString(R.string.github_sync_failed_message)
-                    )
+                    ),
+                    selectedTag = realCat
                 )
             }
         }
@@ -219,7 +224,13 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             try {
                 val raw = withContext(Dispatchers.IO) {
-                    neteaseClient.searchSongs(keyword, limit = 30, offset = 0, type = 1)
+                    neteaseClient.searchSongs(
+                        keyword = keyword,
+                        limit = 30,
+                        offset = 0,
+                        type = 1,
+                        usePersistedCookies = false
+                    )
                 }
                 val songs = parseSongs(raw)
                 _uiState.value = _uiState.value.copy(

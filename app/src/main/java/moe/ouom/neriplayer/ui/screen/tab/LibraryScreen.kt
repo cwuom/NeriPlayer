@@ -265,12 +265,13 @@ private fun BiliPlaylistList(
         verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = Modifier.fillMaxSize()
     ) {
+        val cardShape = RoundedCornerShape(12.dp)
         items(
             items = playlists,
             key = { it.mediaId }
         ) { pl ->
             Card(
-                shape = RoundedCornerShape(12.dp),
+                shape = cardShape,
                 colors = CardDefaults.cardColors(
                     containerColor = Color.Transparent
                 ),
@@ -278,6 +279,7 @@ private fun BiliPlaylistList(
                 modifier = Modifier
                     .padding(horizontal = 8.dp, vertical = 4.dp)
                     .animateItem()
+                    .clip(cardShape)
                     .clickable { onClick(pl) }
             ) {
                 ListItem(
@@ -371,9 +373,10 @@ private fun LocalPlaylistList(
         verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = Modifier.fillMaxSize()
     ) {
+        val cardShape = RoundedCornerShape(12.dp)
         item {
             Card(
-                shape = RoundedCornerShape(12.dp),
+                shape = cardShape,
                 colors = CardDefaults.cardColors(
                     containerColor = Color.Transparent
                 ),
@@ -381,6 +384,7 @@ private fun LocalPlaylistList(
                 modifier = Modifier
                     .padding(horizontal = 8.dp, vertical = 4.dp)
                     .animateItem()
+                    .clip(cardShape)
                     .clickable { showDialog = true }
             ) {
                 ListItem(
@@ -456,7 +460,7 @@ private fun LocalPlaylistList(
             var renameText by remember { mutableStateOf(pl.name) }
 
             Card(
-                shape = RoundedCornerShape(12.dp),
+                shape = cardShape,
                 colors = CardDefaults.cardColors(
                     containerColor = Color.Transparent
                 ),
@@ -464,6 +468,7 @@ private fun LocalPlaylistList(
                 modifier = Modifier
                     .padding(horizontal = 8.dp, vertical = 4.dp)
                     .animateItem()
+                    .clip(cardShape)
                     .combinedClickable(
                         onClick = { onClick(pl) },
                         onLongClick = {
@@ -599,12 +604,13 @@ private fun NeteasePlaylistList(
         verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = Modifier.fillMaxSize()
     ) {
+        val cardShape = RoundedCornerShape(12.dp)
         items(
             items = playlists,
             key = { it.id }
         ) { pl ->
             Card(
-                shape = RoundedCornerShape(12.dp),
+                shape = cardShape,
                 colors = CardDefaults.cardColors(
                     containerColor = Color.Transparent
                 ),
@@ -612,6 +618,7 @@ private fun NeteasePlaylistList(
                 modifier = Modifier
                     .padding(horizontal = 8.dp, vertical = 4.dp)
                     .animateItem()
+                    .clip(cardShape)
                     .clickable { onClick(pl) }
             ) {
                 ListItem(
@@ -659,12 +666,13 @@ private fun NeteaseAlbumList(
         verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = Modifier.fillMaxSize()
     ) {
+        val cardShape = RoundedCornerShape(12.dp)
         items(
             items = playlists,
             key = { it.id }
         ) { pl ->
             Card(
-                shape = RoundedCornerShape(12.dp),
+                shape = cardShape,
                 colors = CardDefaults.cardColors(
                     containerColor = Color.Transparent
                 ),
@@ -672,6 +680,7 @@ private fun NeteaseAlbumList(
                 modifier = Modifier
                     .padding(horizontal = 8.dp, vertical = 4.dp)
                     .animateItem()
+                    .clip(cardShape)
                     .clickable { onClick(pl) }
             ) {
                 ListItem(
@@ -717,15 +726,18 @@ private fun FavoritePlaylistList(
         verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = Modifier.fillMaxSize()
     ) {
+        val cardShape = RoundedCornerShape(12.dp)
         if (favorites.isEmpty()) {
             item {
                 Card(
-                    shape = RoundedCornerShape(12.dp),
+                    shape = cardShape,
                     colors = CardDefaults.cardColors(
                         containerColor = Color.Transparent
                     ),
                     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    modifier = Modifier
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .clip(cardShape)
                 ) {
                     ListItem(
                         headlineContent = { Text(stringResource(R.string.playlist_no_favorite)) },
@@ -755,7 +767,7 @@ private fun FavoritePlaylistList(
                 key = { "${it.source}:${it.id}" }
             ) { favorite ->
                 Card(
-                    shape = RoundedCornerShape(12.dp),
+                    shape = cardShape,
                     colors = CardDefaults.cardColors(
                         containerColor = Color.Transparent
                     ),
@@ -763,6 +775,7 @@ private fun FavoritePlaylistList(
                     modifier = Modifier
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                         .animateItem()
+                        .clip(cardShape)
                         .clickable {
                             when (favorite.source) {
                                 "netease" -> {
@@ -834,16 +847,18 @@ private fun QqMusicPlaylistList(
         verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = Modifier.fillMaxSize()
     ) {
+        val cardShape = RoundedCornerShape(12.dp)
         // TODO: Implement QQ Music playlist list when type is available
         item {
             Card(
-                shape = RoundedCornerShape(12.dp),
+                shape = cardShape,
                 colors = CardDefaults.cardColors(
                     containerColor = Color.Transparent
                 ),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 modifier = Modifier
                     .padding(horizontal = 8.dp, vertical = 4.dp)
+                    .clip(cardShape)
             ) {
                 ListItem(
                     headlineContent = { Text(stringResource(R.string.library_qqmusic_coming)) },

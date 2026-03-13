@@ -72,7 +72,12 @@ class CloudMusicSearchApi(private val neteaseClient: NeteaseClient) : SearchApi 
     override suspend fun search(keyword: String, page: Int): List<SongSearchInfo> {
         return withContext(Dispatchers.IO) {
             val offset = (page - 1).coerceAtLeast(0) * 20
-            val responseJson = neteaseClient.searchSongs(keyword, limit = 20, offset = offset)
+            val responseJson = neteaseClient.searchSongs(
+                keyword = keyword,
+                limit = 20,
+                offset = offset,
+                usePersistedCookies = false
+            )
             logLongJson(TAG, responseJson)
 
             val searchResponse = json.decodeFromString<CloudMusicSearchResponse>(responseJson)

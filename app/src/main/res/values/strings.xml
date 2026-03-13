@@ -46,6 +46,7 @@
     <string name="player_repeat">循环</string>
     <string name="player_now_playing">正在播放</string>
     <string name="player_no_playback">暂无播放</string>
+    <string name="player_notification_preparing">正在准备播放服务</string>
     <string name="player_continue">继续播放</string>
     <string name="player_locate_current">定位到正在播放</string>
     <string name="player_shuffle_play">随机播放</string>

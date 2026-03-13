@@ -189,7 +189,11 @@ class NeteaseClient(bypassProxy: Boolean = true) {
 
         // WEAPI 的 csrf_token 优先用持久化 Cookie，再回退本地 CookieJar
         if (mode == CryptoMode.WEAPI) {
-            val csrf = persistedCookies["__csrf"] ?: getCookie("__csrf") ?: ""
+            val csrf = if (usePersistedCookies) {
+                persistedCookies["__csrf"] ?: getCookie("__csrf") ?: ""
+            } else {
+                getCookie("__csrf") ?: ""
+            }
             reqUrl = requestUrl.newBuilder()
                 .setQueryParameter("csrf_token", csrf)
                 .build()
@@ -289,14 +293,23 @@ class NeteaseClient(bypassProxy: Boolean = true) {
 
     // 业务接口
     @Throws(IOException::class)
-    fun getRecommendedPlaylists(limit: Int = 30): String {
+    fun getRecommendedPlaylists(
+        limit: Int = 30,
+        usePersistedCookies: Boolean = true
+    ): String {
         val url = "https://music.163.com/weapi/personalized/playlist"
         val params = mapOf("limit" to limit.toString())
-        return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
+        return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = usePersistedCookies)
     }
 
     @Throws(IOException::class)
-    fun searchSongs(keyword: String, limit: Int = 30, offset: Int = 0, type: Int = 1): String {
+    fun searchSongs(
+        keyword: String,
+        limit: Int = 30,
+        offset: Int = 0,
+        type: Int = 1,
+        usePersistedCookies: Boolean = true
+    ): String {
         val url = "https://music.163.com/weapi/cloudsearch/get/web"
         val params = mutableMapOf<String, Any>(
             "s" to keyword,
@@ -305,7 +318,7 @@ class NeteaseClient(bypassProxy: Boolean = true) {
             "offset" to offset.toString(),
             "total" to "true"
         )
-        return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
+        return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = usePersistedCookies)
     }
 
     /**

@@ -39,6 +39,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -383,15 +384,14 @@ private fun SectionHeader(icon: ImageVector, title: String) {
 
 @Composable
 private fun SectionLoadingState(text: String) {
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 20.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        CircularProgressIndicator(modifier = Modifier.width(20.dp), strokeWidth = 2.dp)
-        Spacer(Modifier.width(12.dp))
+        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
         Text(text = text, style = MaterialTheme.typography.bodyMedium)
     }
 }
@@ -405,7 +405,7 @@ private fun SectionErrorState(detail: String) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
-            text = stringResource(R.string.home_load_failed, detail),
+            text = detail,
             color = MaterialTheme.colorScheme.error,
             style = MaterialTheme.typography.bodyMedium
         )

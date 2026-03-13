@@ -48,6 +48,9 @@ private const val HOME_SEARCH_HOT_KEYWORD = "热歌"
 private const val HOME_SEARCH_RADAR_KEYWORD = "私人雷达"
 private const val HOME_MAX_FAILURE_BEFORE_WARNING = 3
 
+private class ApiCodeException(val code: Int) : IllegalStateException("api_code=$code")
+private fun shouldFallbackRecommend(code: Int): Boolean = code == 301 || code == 50000005
+
 data class HomeSectionState<T>(
     val items: List<T> = emptyList(),
     val loading: Boolean = false,
@@ -95,6 +98,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private var playlistJob: Job? = null
     private var hotSongsJob: Job? = null
     private var radarSongsJob: Job? = null
+    private var hasRecommendLogin = false
 
     private fun localizedAppContext() = LanguageManager.applyLanguage(getApplication())
 
@@ -105,14 +109,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 val cookies = raw.toMutableMap()
                 if (!cookies.containsKey("os")) cookies["os"] = "pc"
                 NPLogger.d(TAG, "cookieFlow updated: keys=${cookies.keys.joinToString()}")
-                if (!cookies["MUSIC_U"].isNullOrBlank()) {
-                    NPLogger.d(TAG, "Detected login cookie, refreshing recommend")
-                    refreshRecommend()
-                    loadHomeRecommendations(force = true)
-                }
+                hasRecommendLogin = !cookies["MUSIC_U"].isNullOrBlank()
+                refreshRecommend()
             }
         }
-        refreshRecommend()
         loadHomeRecommendations(force = true)
     }
 
@@ -125,8 +125,21 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         )
         playlistJob = viewModelScope.launch {
             when (val result = fetchWithRetry {
-                val raw = withContext(Dispatchers.IO) { client.getRecommendedPlaylists(limit = 30) }
-                parseRecommend(raw)
+                val raw = withContext(Dispatchers.IO) {
+                    client.getRecommendedPlaylists(limit = 30, usePersistedCookies = hasRecommendLogin)
+                }
+                try {
+                    parseRecommend(raw)
+                } catch (e: ApiCodeException) {
+                    if (hasRecommendLogin && shouldFallbackRecommend(e.code)) {
+                        val fallbackRaw = withContext(Dispatchers.IO) {
+                            client.getRecommendedPlaylists(limit = 30, usePersistedCookies = false)
+                        }
+                        parseRecommend(fallbackRaw)
+                    } else {
+                        throw e
+                    }
+                }
             }) {
                 is RetryLoadResult.Success -> {
                     _uiState.value = _uiState.value.copy(
@@ -176,7 +189,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         keyword = HOME_SEARCH_HOT_KEYWORD,
                         limit = 30,
                         offset = 0,
-                        type = 1
+                        type = 1,
+                        usePersistedCookies = false
                     )
                 }
                 parseSongs(raw)
@@ -211,7 +225,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         keyword = HOME_SEARCH_RADAR_KEYWORD,
                         limit = 30,
                         offset = 0,
-                        type = 1
+                        type = 1,
+                        usePersistedCookies = false
                     )
                 }
                 parseSongs(raw)
@@ -250,13 +265,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun buildHomeErrorMessage(error: Throwable): String {
         val localizedContext = localizedAppContext()
-        return if (error is IOException) {
-            localizedContext.getString(
+        return when (error) {
+            is IOException -> localizedContext.getString(
                 R.string.home_error_network,
                 error.message ?: error.javaClass.simpleName
             )
-        } else {
-            localizedContext.getString(
+            is ApiCodeException -> localizedContext.getString(R.string.error_api_code, error.code)
+            else -> localizedContext.getString(
                 R.string.home_error_unknown,
                 error.message ?: error.javaClass.simpleName
             )
@@ -269,7 +284,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
         val code = root.optInt("code", -1)
         if (code != 200) {
-            throw IllegalStateException(getApplication<Application>().getString(R.string.error_api_code, code))
+            throw ApiCodeException(code)
         }
 
         val arr = root.optJSONArray("result") ?: return emptyList()
@@ -303,7 +318,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val root = JSONObject(raw)
         val code = root.optInt("code", -1)
         if (code != 200) {
-            throw IllegalStateException(getApplication<Application>().getString(R.string.error_api_code, code))
+            throw ApiCodeException(code)
         }
         val songs = root.optJSONObject("result")?.optJSONArray("songs") ?: return emptyList()
         for (i in 0 until songs.length()) {

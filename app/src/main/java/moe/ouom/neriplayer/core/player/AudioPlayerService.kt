@@ -97,13 +97,22 @@ class AudioPlayerService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        // 服务必须尽快进入前台，不能在这里阻塞读取 DataStore。
-        PlayerManager.initialize(application as Application)
+        val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            "NeriPlayer Playback",
+            NotificationManager.IMPORTANCE_LOW
+        )
+        nm.createNotificationChannel(channel)
 
         mediaSession = MediaSessionCompat(this, "NeriPlayerSession").apply {
             setCallback(mediaSessionCallback)
             isActive = true
         }
+        startForegroundImmediately(buildBootstrapNotification())
+
+        // 服务必须尽快进入前台，不能在这里阻塞前台通知启动。
+        PlayerManager.initialize(application as Application)
 
         serviceScope.launch {
             PlayerManager.currentSongFlow.collect {
@@ -139,16 +148,6 @@ class AudioPlayerService : Service() {
             }
         }
 
-
-        // 閫氱煡娓犻亾
-        val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            "NeriPlayer Playback",
-            NotificationManager.IMPORTANCE_LOW
-        )
-        nm.createNotificationChannel(channel)
-
         // 鎷斿嚭鑰虫満鑷姩鏆傚仠
         becomingNoisyReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
@@ -165,6 +164,7 @@ class AudioPlayerService : Service() {
 
         updateMetadata()
         updatePlaybackState()
+        updateNotification()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -367,6 +367,28 @@ class AudioPlayerService : Service() {
         currentLargeIcon?.let { builder.setLargeIcon(it) }
 
         return builder.build()
+    }
+
+    private fun buildBootstrapNotification(): Notification {
+        val contentIntent = PendingIntent.getActivity(
+            this, 0, Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_neri_player_round_white)
+            .setContentTitle(getString(R.string.app_name))
+            .setContentText(getString(R.string.player_notification_preparing))
+            .setContentIntent(contentIntent)
+            .setCategory(Notification.CATEGORY_TRANSPORT)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setOnlyAlertOnce(true)
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+            .build()
     }
 
     /**
@@ -572,6 +594,10 @@ class AudioPlayerService : Service() {
             return true
         }
         val notification = buildNotification()
+        return startForegroundImmediately(notification)
+    }
+
+    private fun startForegroundImmediately(notification: Notification): Boolean {
         return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 startForeground(

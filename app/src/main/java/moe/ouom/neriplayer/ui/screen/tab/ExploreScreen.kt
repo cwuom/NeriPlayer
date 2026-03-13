@@ -69,6 +69,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeTopAppBar
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -598,26 +599,40 @@ private fun NeteaseDefaultContent(
                         Text(if (ui.expanded) stringResource(R.string.explore_collapse) else stringResource(R.string.explore_expand))
                     }
                 }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .padding(horizontal = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (ui.loading) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    }
+                }
             }
         }
-        if (ui.loading) {
+        if (ui.playlists.isNotEmpty()) {
+            items(items = ui.playlists, key = { it.id }) { playlist ->
+                PlaylistCard(
+                    playlist = playlist,
+                    onClick = { onPlay(playlist) }
+                )
+            }
+        } else if (ui.loading) {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                Box(Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 24.dp), Alignment.Center) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 24.dp),
+                    Alignment.Center
+                ) {
                     CircularProgressIndicator()
                 }
             }
         } else if (ui.error != null) {
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Text(ui.error, color = MaterialTheme.colorScheme.error)
-            }
-        } else {
-            items(items = ui.playlists, key = { it.id }) { playlist ->
-                PlaylistCard(
-                    playlist = playlist,
-                    onClick = { onPlay(playlist) }
-                )
             }
         }
     }

@@ -46,6 +46,7 @@
     <string name="player_repeat">Repeat</string>
     <string name="player_now_playing">Now Playing</string>
     <string name="player_no_playback">No Playback</string>
+    <string name="player_notification_preparing">Preparing playback service</string>
     <string name="player_continue">Continue</string>
     <string name="player_locate_current">Locate Current</string>
     <string name="player_shuffle_play">Shuffle Play</string>
