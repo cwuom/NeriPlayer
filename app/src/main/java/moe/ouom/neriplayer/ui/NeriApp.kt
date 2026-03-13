@@ -417,6 +417,9 @@ fun NeriApp(
     val themeColorPalette by repo.themeColorPaletteFlow.collectAsState(initial = ThemeDefaults.PRESET_COLORS)
     val lyricBlurEnabled by repo.lyricBlurEnabledFlow.collectAsState(initial = true)
     val lyricBlurAmount by repo.lyricBlurAmountFlow.collectAsState(initial = 10f)
+    val advancedBlurEnabled by repo.advancedBlurEnabledFlow.collectAsState(initial = true)
+    val miniPlayerHazeEnabled by repo.miniPlayerHazeEnabledFlow.collectAsState(initial = true)
+    val nowPlayingAudioReactiveEnabled by repo.nowPlayingAudioReactiveEnabledFlow.collectAsState(initial = true)
     val lyricFontScale by repo.lyricFontScaleFlow.collectAsState(initial = 1.0f)
     val uiDensityScale by repo.uiDensityScaleFlow.collectAsState(initial = 1.0f)
     val bypassProxy by repo.bypassProxyFlow.collectAsState(initial = true)
@@ -738,13 +741,13 @@ fun NeriApp(
 
             val snackbarHostState = remember { SnackbarHostState() }
 
-            DisposableEffect(showNowPlaying) {
-                AudioReactive.enabled = showNowPlaying
+            DisposableEffect(showNowPlaying, nowPlayingAudioReactiveEnabled) {
+                AudioReactive.enabled = showNowPlaying && nowPlayingAudioReactiveEnabled
                 onDispose { AudioReactive.enabled = false }
             }
 
             Box(modifier = Modifier.fillMaxSize()) {
-                val modifier = if (backgroundImageUri == null) {
+                val modifier = if (backgroundImageUri == null || !advancedBlurEnabled) {
                     Modifier
                 } else Modifier
                     .haze(
@@ -768,6 +771,8 @@ fun NeriApp(
                 } else Color.Transparent
 
                 val selectAlpha = if (backgroundImageUri == null) 1f else 0f
+                val bottomBarHazeModifier =
+                    if (advancedBlurEnabled) Modifier.hazeChild(state = hazeState) else Modifier
 
                 val currentSong by PlayerManager.currentSongFlow.collectAsState()
                 val isMiniPlayerVisible = currentSong != null && !showNowPlaying
@@ -846,7 +851,7 @@ fun NeriApp(
                                                     .toFloat()
                                             alpha = bottomBarVisibilityProgress
                                         }
-                                        .hazeChild(state = hazeState),
+                                        .then(bottomBarHazeModifier),
                                     selectAlpha = selectAlpha,
                                     items = bottomBarItems,
                                     currentDestination = backEntry?.destination,
@@ -876,13 +881,19 @@ fun NeriApp(
                                 startDestination = effectiveStartDestination,
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .haze(
-                                        hazeState,
-                                        HazeStyle(
-                                            tint = MaterialTheme.colorScheme.onSurface.copy(.0f),
-                                            blurRadius = 30.dp,
-                                            noiseFactor = HazeDefaults.noiseFactor
-                                        )
+                                    .then(
+                                        if (advancedBlurEnabled) {
+                                            Modifier.haze(
+                                                hazeState,
+                                                HazeStyle(
+                                                    tint = MaterialTheme.colorScheme.onSurface.copy(.0f),
+                                                    blurRadius = 30.dp,
+                                                    noiseFactor = HazeDefaults.noiseFactor
+                                                )
+                                            )
+                                        } else {
+                                            Modifier
+                                        }
                                     )
                             ) {
                                 composable(
@@ -1175,6 +1186,18 @@ fun NeriApp(
                                         onLyricBlurAmountChange = { amount ->
                                             scope.launch { repo.setLyricBlurAmount(amount) }
                                         },
+                                        advancedBlurEnabled = advancedBlurEnabled,
+                                        onAdvancedBlurEnabledChange = { enabled ->
+                                            scope.launch { repo.setAdvancedBlurEnabled(enabled) }
+                                        },
+                                        miniPlayerHazeEnabled = miniPlayerHazeEnabled,
+                                        onMiniPlayerHazeEnabledChange = { enabled ->
+                                            scope.launch { repo.setMiniPlayerHazeEnabled(enabled) }
+                                        },
+                                        nowPlayingAudioReactiveEnabled = nowPlayingAudioReactiveEnabled,
+                                        onNowPlayingAudioReactiveEnabledChange = { enabled ->
+                                            scope.launch { repo.setNowPlayingAudioReactiveEnabled(enabled) }
+                                        },
                                         lyricFontScale = lyricFontScale,
                                         onLyricFontScaleChange = { scale ->
                                             scope.launch { repo.setLyricFontScale(scale) }
@@ -1447,7 +1470,7 @@ fun NeriApp(
                                         }
                                     },
                                     hazeState = hazeState,
-                                    enableHaze = true
+                                    enableHaze = advancedBlurEnabled && miniPlayerHazeEnabled
                                 )
                             }
 
@@ -1496,13 +1519,15 @@ fun NeriApp(
                                 modifier = Modifier.fillMaxSize()
                             )
 
-                            HyperBackground(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .graphicsLayer { alpha = 0.80f },
-                                isDark = true,
-                                coverUrl = nowPlayingCoverUrl
-                            )
+                            if (nowPlayingAudioReactiveEnabled) {
+                                HyperBackground(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .graphicsLayer { alpha = 0.80f },
+                                    isDark = true,
+                                    coverUrl = nowPlayingCoverUrl
+                                )
+                            }
 
                             CompositionLocalProvider(LocalMiniPlayerHeight provides 0.dp) {
                                 NowPlayingScreen(

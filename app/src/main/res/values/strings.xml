@@ -216,6 +216,12 @@
     <string name="lyrics_blur_desc">为非当前行歌词添加景深模糊</string>
     <string name="lyrics_blur_amount">模糊强度</string>
     <string name="lyrics_blur_current">当前模糊度: %.2f</string>
+    <string name="settings_advanced_blur">高级模糊效果</string>
+    <string name="settings_advanced_blur_desc">启用 Haze 动态模糊（可能增加性能开销）</string>
+    <string name="settings_miniplayer_blur">底部播放器模糊</string>
+    <string name="settings_miniplayer_blur_desc">控制底部小播放器的模糊效果（需开启高级模糊）</string>
+    <string name="settings_nowplaying_audio_reactive">正在播放音频律动</string>
+    <string name="settings_nowplaying_audio_reactive_desc">控制正在播放页面的音频律动与动态背景</string>
     <string name="lyrics_font_size">歌词字体大小</string>
     <string name="lyrics_offset">歌词偏移调整</string>
     <string name="lyrics_adjust_offset">调整歌词偏移</string>
@@ -700,6 +706,8 @@
     <string name="settings_login_platforms">登录三方平台</string>
     <string name="settings_login_platforms_expand">展开以选择登录平台</string>
     <string name="settings_login_platforms_collapse">收起</string>
+    <string name="settings_motion">动效设置</string>
+    <string name="settings_motion_expand">展开以调整动效表现</string>
 
     <!-- NowPlayingScreen -->
     <string name="nowplaying_no_playback">暂无播放</string>

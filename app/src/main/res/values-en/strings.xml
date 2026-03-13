@@ -216,6 +216,12 @@
     <string name="lyrics_blur_desc">Blur inactive lines</string>
     <string name="lyrics_blur_amount">Blur Intensity</string>
     <string name="lyrics_blur_current">Current Blur: %.2f</string>
+    <string name="settings_advanced_blur">Advanced Blur</string>
+    <string name="settings_advanced_blur_desc">Enable Haze blur effects (higher cost)</string>
+    <string name="settings_miniplayer_blur">Mini Player Blur</string>
+    <string name="settings_miniplayer_blur_desc">Blur the mini player (requires Advanced Blur)</string>
+    <string name="settings_nowplaying_audio_reactive">Now Playing Audio Reactive</string>
+    <string name="settings_nowplaying_audio_reactive_desc">Audio-reactive background in Now Playing</string>
     <string name="lyrics_font_size">Lyrics Font Size</string>
     <string name="lyrics_offset">Lyrics Offset</string>
     <string name="lyrics_adjust_offset">Adjust Lyrics Offset</string>
@@ -706,6 +712,8 @@
     <string name="settings_login_platforms">Login Platforms</string>
     <string name="settings_login_platforms_expand">Select platform</string>
     <string name="settings_login_platforms_collapse">Collapse</string>
+    <string name="settings_motion">Motion Settings</string>
+    <string name="settings_motion_expand">Customize motion effects</string>
 
     <!-- NowPlayingScreen -->
     <string name="nowplaying_no_playback">No Playback</string>

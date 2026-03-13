@@ -415,6 +415,12 @@ fun SettingsScreen(
     onLyricBlurEnabledChange: (Boolean) -> Unit,
     lyricBlurAmount: Float,
     onLyricBlurAmountChange: (Float) -> Unit,
+    advancedBlurEnabled: Boolean,
+    onAdvancedBlurEnabledChange: (Boolean) -> Unit,
+    miniPlayerHazeEnabled: Boolean,
+    onMiniPlayerHazeEnabledChange: (Boolean) -> Unit,
+    nowPlayingAudioReactiveEnabled: Boolean,
+    onNowPlayingAudioReactiveEnabledChange: (Boolean) -> Unit,
     lyricFontScale: Float,
     onLyricFontScaleChange: (Float) -> Unit,
     uiDensityScale: Float,
@@ -471,6 +477,10 @@ fun SettingsScreen(
     // 个性化菜单的状态
     var personalizationExpanded by remember { mutableStateOf(false) }
     val personalizationArrowRotation by animateFloatAsState(targetValue = if (personalizationExpanded) 180f else 0f, label = "personalization_arrow")
+
+    // 动效设置菜单的状态
+    var motionExpanded by remember { mutableStateOf(false) }
+    val motionArrowRotation by animateFloatAsState(targetValue = if (motionExpanded) 180f else 0f, label = "motion_arrow")
 
     // 网络配置菜单的状态
     var networkExpanded by remember { mutableStateOf(false) }
@@ -885,13 +895,13 @@ fun SettingsScreen(
                 )
             }
 
-            // 展开区域
-            item {
-                AnimatedVisibility(
-                    visible = personalizationExpanded,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
-                ) {
+              // 展开区域
+              item {
+                  AnimatedVisibility(
+                      visible = personalizationExpanded,
+                      enter = fadeIn() + expandVertically(),
+                      exit = fadeOut() + shrinkVertically()
+                  ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1058,55 +1068,6 @@ fun SettingsScreen(
                         ListItem(
                             leadingContent = {
                                 Icon(
-                                    imageVector = Icons.Outlined.BlurOn,
-                                    contentDescription = stringResource(R.string.settings_lyrics_blur),
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
-                            },
-                            headlineContent = { Text(stringResource(R.string.lyrics_blur_effect)) },
-                            supportingContent = { Text(stringResource(R.string.lyrics_blur_desc)) },
-                            trailingContent = {
-                                Switch(checked = lyricBlurEnabled, onCheckedChange = onLyricBlurEnabledChange)
-                            },
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                        )
-
-                        AnimatedVisibility(visible = lyricBlurEnabled) {
-                            ListItem(
-                                headlineContent = { Text(stringResource(R.string.lyrics_blur_amount)) },
-                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                                supportingContent = {
-                                    var pendingBlurAmount by remember { mutableFloatStateOf(lyricBlurAmount) }
-                                    LaunchedEffect(lyricBlurAmount) {
-                                        if ((pendingBlurAmount - lyricBlurAmount).absoluteValue > 0.01f) {
-                                            pendingBlurAmount = lyricBlurAmount
-                                        }
-                                    }
-
-                                    Column(Modifier.fillMaxWidth()) {
-                                        Text(
-                                            text = stringResource(R.string.lyrics_blur_current, pendingBlurAmount),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                        Slider(
-                                            value = pendingBlurAmount,
-                                            onValueChange = { pendingBlurAmount = it },
-                                            onValueChangeFinished = {
-                                                onLyricBlurAmountChange(pendingBlurAmount)
-                                            },
-                                            valueRange = 0f..8f,
-                                            steps = 79
-                                        )
-                                    }
-                                }
-                            )
-                        }
-
-                        ListItem(
-                            leadingContent = {
-                                Icon(
                                     imageVector = Icons.Outlined.Info,
                                     contentDescription = stringResource(R.string.settings_cover_source_badge),
                                     modifier = Modifier.size(24.dp),
@@ -1257,14 +1218,159 @@ fun SettingsScreen(
                                 )
                             }
                         }
-                    }
-                }
-            }
+                      }
+                  }
+              }
 
-            item {
-                ExpandableHeader(
-                    icon = Icons.Outlined.Router,
-                    title = stringResource(R.string.settings_network),
+              item {
+                  ExpandableHeader(
+                      icon = Icons.Outlined.Bolt,
+                      title = stringResource(R.string.settings_motion),
+                      subtitleCollapsed = stringResource(R.string.settings_motion_expand),
+                      subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
+                      expanded = motionExpanded,
+                      onToggle = { motionExpanded = !motionExpanded },
+                      arrowRotation = motionArrowRotation
+                  )
+              }
+
+              item {
+                  AnimatedVisibility(
+                      visible = motionExpanded,
+                      enter = fadeIn() + expandVertically(),
+                      exit = fadeOut() + shrinkVertically()
+                  ) {
+                      Column(
+                          modifier = Modifier
+                              .fillMaxWidth()
+                              .background(Color.Transparent)
+                              .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
+                      ) {
+                          ListItem(
+                              modifier = Modifier.settingsItemClickable {
+                                  onAdvancedBlurEnabledChange(!advancedBlurEnabled)
+                              },
+                              leadingContent = {
+                                  Icon(
+                                      imageVector = Icons.Outlined.BlurOn,
+                                      contentDescription = stringResource(R.string.settings_advanced_blur),
+                                      modifier = Modifier.size(24.dp),
+                                      tint = MaterialTheme.colorScheme.onSurface
+                                  )
+                              },
+                              headlineContent = { Text(stringResource(R.string.settings_advanced_blur)) },
+                              supportingContent = { Text(stringResource(R.string.settings_advanced_blur_desc)) },
+                              trailingContent = {
+                                  Switch(
+                                      checked = advancedBlurEnabled,
+                                      onCheckedChange = onAdvancedBlurEnabledChange
+                                  )
+                              },
+                              colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                          )
+
+                          ListItem(
+                              modifier = Modifier.settingsItemClickable {
+                                  onMiniPlayerHazeEnabledChange(!miniPlayerHazeEnabled)
+                              },
+                              leadingContent = {
+                                  Icon(
+                                      imageVector = Icons.Outlined.Wallpaper,
+                                      contentDescription = stringResource(R.string.settings_miniplayer_blur),
+                                      modifier = Modifier.size(24.dp),
+                                      tint = MaterialTheme.colorScheme.onSurface
+                                  )
+                              },
+                              headlineContent = { Text(stringResource(R.string.settings_miniplayer_blur)) },
+                              supportingContent = { Text(stringResource(R.string.settings_miniplayer_blur_desc)) },
+                              trailingContent = {
+                                  Switch(
+                                      checked = miniPlayerHazeEnabled,
+                                      onCheckedChange = onMiniPlayerHazeEnabledChange
+                                  )
+                              },
+                              colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                          )
+
+                          ListItem(
+                              modifier = Modifier.settingsItemClickable {
+                                  onNowPlayingAudioReactiveEnabledChange(!nowPlayingAudioReactiveEnabled)
+                              },
+                              leadingContent = {
+                                  Icon(
+                                      imageVector = Icons.Outlined.Analytics,
+                                      contentDescription = stringResource(R.string.settings_nowplaying_audio_reactive),
+                                      modifier = Modifier.size(24.dp),
+                                      tint = MaterialTheme.colorScheme.onSurface
+                                  )
+                              },
+                              headlineContent = { Text(stringResource(R.string.settings_nowplaying_audio_reactive)) },
+                              supportingContent = { Text(stringResource(R.string.settings_nowplaying_audio_reactive_desc)) },
+                              trailingContent = {
+                                  Switch(
+                                      checked = nowPlayingAudioReactiveEnabled,
+                                      onCheckedChange = onNowPlayingAudioReactiveEnabledChange
+                                  )
+                              },
+                              colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                          )
+
+                          ListItem(
+                              leadingContent = {
+                                  Icon(
+                                      imageVector = Icons.Outlined.Subtitles,
+                                      contentDescription = stringResource(R.string.settings_lyrics_blur),
+                                      modifier = Modifier.size(24.dp),
+                                      tint = MaterialTheme.colorScheme.onSurface
+                                  )
+                              },
+                              headlineContent = { Text(stringResource(R.string.lyrics_blur_effect)) },
+                              supportingContent = { Text(stringResource(R.string.lyrics_blur_desc)) },
+                              trailingContent = {
+                                  Switch(checked = lyricBlurEnabled, onCheckedChange = onLyricBlurEnabledChange)
+                              },
+                              colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                          )
+
+                          AnimatedVisibility(visible = lyricBlurEnabled) {
+                              ListItem(
+                                  headlineContent = { Text(stringResource(R.string.lyrics_blur_amount)) },
+                                  colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                  supportingContent = {
+                                      var pendingBlurAmount by remember { mutableFloatStateOf(lyricBlurAmount) }
+                                      LaunchedEffect(lyricBlurAmount) {
+                                          if ((pendingBlurAmount - lyricBlurAmount).absoluteValue > 0.01f) {
+                                              pendingBlurAmount = lyricBlurAmount
+                                          }
+                                      }
+
+                                      Column(Modifier.fillMaxWidth()) {
+                                          Text(
+                                              text = stringResource(R.string.lyrics_blur_current, pendingBlurAmount),
+                                              style = MaterialTheme.typography.bodySmall,
+                                              color = MaterialTheme.colorScheme.onSurfaceVariant
+                                          )
+                                          Slider(
+                                              value = pendingBlurAmount,
+                                              onValueChange = { pendingBlurAmount = it },
+                                              onValueChangeFinished = {
+                                                  onLyricBlurAmountChange(pendingBlurAmount)
+                                              },
+                                              valueRange = 0f..8f,
+                                              steps = 79
+                                          )
+                                      }
+                                  }
+                              )
+                          }
+                      }
+                  }
+              }
+
+              item {
+                  ExpandableHeader(
+                      icon = Icons.Outlined.Router,
+                      title = stringResource(R.string.settings_network),
                     subtitleCollapsed = stringResource(R.string.settings_network_expand),
                     subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
                     expanded = networkExpanded,
