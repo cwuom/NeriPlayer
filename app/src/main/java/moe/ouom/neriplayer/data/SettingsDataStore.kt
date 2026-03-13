@@ -57,6 +57,7 @@ object SettingsKeys {
     val LYRIC_BLUR_AMOUNT = floatPreferencesKey("lyric_blur_amount")
     val ADVANCED_BLUR_ENABLED = booleanPreferencesKey("advanced_blur_enabled")
     val NOWPLAYING_AUDIO_REACTIVE_ENABLED = booleanPreferencesKey("nowplaying_audio_reactive_enabled")
+    val NOWPLAYING_DYNAMIC_BACKGROUND_ENABLED = booleanPreferencesKey("nowplaying_dynamic_background_enabled")
     val LYRIC_FONT_SCALE = floatPreferencesKey("lyric_font_scale")
     val UI_DENSITY_SCALE = floatPreferencesKey("ui_density_scale")
     val BYPASS_PROXY = booleanPreferencesKey("bypass_proxy")
@@ -77,7 +78,12 @@ object SettingsKeys {
     val HOME_CARD_RECOMMENDED = booleanPreferencesKey("home_card_recommended")
     val PLAYBACK_FADE_IN = booleanPreferencesKey("playback_fade_in")
     val PLAYBACK_CROSSFADE_NEXT = booleanPreferencesKey("playback_crossfade_next")
+    val PLAYBACK_FADE_IN_DURATION_MS = longPreferencesKey("playback_fade_in_duration_ms")
+    val PLAYBACK_FADE_OUT_DURATION_MS = longPreferencesKey("playback_fade_out_duration_ms")
+    val PLAYBACK_CROSSFADE_IN_DURATION_MS = longPreferencesKey("playback_crossfade_in_duration_ms")
+    val PLAYBACK_CROSSFADE_OUT_DURATION_MS = longPreferencesKey("playback_crossfade_out_duration_ms")
     val STOP_ON_BLUETOOTH_DISCONNECT = booleanPreferencesKey("stop_on_bluetooth_disconnect")
+    val ALLOW_MIXED_PLAYBACK = booleanPreferencesKey("allow_mixed_playback")
 }
 
 
@@ -158,13 +164,16 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.data.map { it[SettingsKeys.LYRIC_BLUR_ENABLED] ?: true }
 
     val lyricBlurAmountFlow: Flow<Float> =
-        context.dataStore.data.map { it[SettingsKeys.LYRIC_BLUR_AMOUNT] ?: 3f }
+        context.dataStore.data.map { it[SettingsKeys.LYRIC_BLUR_AMOUNT] ?: 1.5f }
 
     val advancedBlurEnabledFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.ADVANCED_BLUR_ENABLED] ?: true }
 
     val nowPlayingAudioReactiveEnabledFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.NOWPLAYING_AUDIO_REACTIVE_ENABLED] ?: true }
+
+    val nowPlayingDynamicBackgroundEnabledFlow: Flow<Boolean> =
+        context.dataStore.data.map { it[SettingsKeys.NOWPLAYING_DYNAMIC_BACKGROUND_ENABLED] ?: true }
 
     val lyricFontScaleFlow: Flow<Float> =
         context.dataStore.data.map { it[SettingsKeys.LYRIC_FONT_SCALE] ?: 1.0f }
@@ -236,8 +245,23 @@ class SettingsRepository(private val context: Context) {
     val playbackCrossfadeNextFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.PLAYBACK_CROSSFADE_NEXT] ?: false }
 
+    val playbackFadeInDurationMsFlow: Flow<Long> =
+        context.dataStore.data.map { it[SettingsKeys.PLAYBACK_FADE_IN_DURATION_MS] ?: 500L }
+
+    val playbackFadeOutDurationMsFlow: Flow<Long> =
+        context.dataStore.data.map { it[SettingsKeys.PLAYBACK_FADE_OUT_DURATION_MS] ?: 500L }
+
+    val playbackCrossfadeInDurationMsFlow: Flow<Long> =
+        context.dataStore.data.map { it[SettingsKeys.PLAYBACK_CROSSFADE_IN_DURATION_MS] ?: 500L }
+
+    val playbackCrossfadeOutDurationMsFlow: Flow<Long> =
+        context.dataStore.data.map { it[SettingsKeys.PLAYBACK_CROSSFADE_OUT_DURATION_MS] ?: 500L }
+
     val stopOnBluetoothDisconnectFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.STOP_ON_BLUETOOTH_DISCONNECT] ?: true }
+
+    val allowMixedPlaybackFlow: Flow<Boolean> =
+        context.dataStore.data.map { it[SettingsKeys.ALLOW_MIXED_PLAYBACK] ?: false }
 
     suspend fun setDynamicColor(value: Boolean) {
         context.dataStore.edit { it[SettingsKeys.DYNAMIC_COLOR] = value }
@@ -337,6 +361,10 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { it[SettingsKeys.NOWPLAYING_AUDIO_REACTIVE_ENABLED] = enabled }
     }
 
+    suspend fun setNowPlayingDynamicBackgroundEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.NOWPLAYING_DYNAMIC_BACKGROUND_ENABLED] = enabled }
+    }
+
     suspend fun setLyricFontScale(scale: Float) {
         context.dataStore.edit { it[SettingsKeys.LYRIC_FONT_SCALE] = scale }
     }
@@ -423,8 +451,28 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { it[SettingsKeys.PLAYBACK_CROSSFADE_NEXT] = enabled }
     }
 
+    suspend fun setPlaybackFadeInDurationMs(durationMs: Long) {
+        context.dataStore.edit { it[SettingsKeys.PLAYBACK_FADE_IN_DURATION_MS] = durationMs }
+    }
+
+    suspend fun setPlaybackFadeOutDurationMs(durationMs: Long) {
+        context.dataStore.edit { it[SettingsKeys.PLAYBACK_FADE_OUT_DURATION_MS] = durationMs }
+    }
+
+    suspend fun setPlaybackCrossfadeInDurationMs(durationMs: Long) {
+        context.dataStore.edit { it[SettingsKeys.PLAYBACK_CROSSFADE_IN_DURATION_MS] = durationMs }
+    }
+
+    suspend fun setPlaybackCrossfadeOutDurationMs(durationMs: Long) {
+        context.dataStore.edit { it[SettingsKeys.PLAYBACK_CROSSFADE_OUT_DURATION_MS] = durationMs }
+    }
+
     suspend fun setStopOnBluetoothDisconnect(enabled: Boolean) {
         context.dataStore.edit { it[SettingsKeys.STOP_ON_BLUETOOTH_DISCONNECT] = enabled }
+    }
+
+    suspend fun setAllowMixedPlayback(enabled: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.ALLOW_MIXED_PLAYBACK] = enabled }
     }
 
     /** 备用：一次性读取（非 Compose 场景） */

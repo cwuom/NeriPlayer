@@ -46,7 +46,6 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -106,6 +105,7 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.BluetoothAudio
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.VolumeUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -154,7 +154,6 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -193,6 +192,7 @@ import moe.ouom.neriplayer.util.formatFileSize
 import java.io.File
 import java.util.Locale
 import kotlin.math.absoluteValue
+import kotlin.math.roundToLong
 import kotlin.math.roundToInt
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.width
@@ -419,6 +419,8 @@ fun SettingsScreen(
     onAdvancedBlurEnabledChange: (Boolean) -> Unit,
     nowPlayingAudioReactiveEnabled: Boolean,
     onNowPlayingAudioReactiveEnabledChange: (Boolean) -> Unit,
+    nowPlayingDynamicBackgroundEnabled: Boolean,
+    onNowPlayingDynamicBackgroundEnabledChange: (Boolean) -> Unit,
     lyricFontScale: Float,
     onLyricFontScaleChange: (Float) -> Unit,
     uiDensityScale: Float,
@@ -455,8 +457,18 @@ fun SettingsScreen(
     onPlaybackFadeInChange: (Boolean) -> Unit,
     playbackCrossfadeNext: Boolean,
     onPlaybackCrossfadeNextChange: (Boolean) -> Unit,
+    playbackFadeInDurationMs: Long,
+    onPlaybackFadeInDurationMsChange: (Long) -> Unit,
+    playbackFadeOutDurationMs: Long,
+    onPlaybackFadeOutDurationMsChange: (Long) -> Unit,
+    playbackCrossfadeInDurationMs: Long,
+    onPlaybackCrossfadeInDurationMsChange: (Long) -> Unit,
+    playbackCrossfadeOutDurationMs: Long,
+    onPlaybackCrossfadeOutDurationMsChange: (Long) -> Unit,
     stopOnBluetoothDisconnect: Boolean,
     onStopOnBluetoothDisconnectChange: (Boolean) -> Unit,
+    allowMixedPlayback: Boolean,
+    onAllowMixedPlaybackChange: (Boolean) -> Unit,
     onNavigateToDownloadManager: () -> Unit = {},
     maxCacheSizeBytes: Long,
     onMaxCacheSizeBytesChange: (Long) -> Unit,
@@ -1291,6 +1303,29 @@ fun SettingsScreen(
                           )
 
                           ListItem(
+                              modifier = Modifier.settingsItemClickable {
+                                  onNowPlayingDynamicBackgroundEnabledChange(!nowPlayingDynamicBackgroundEnabled)
+                              },
+                              leadingContent = {
+                                  Icon(
+                                      imageVector = Icons.Outlined.Wallpaper,
+                                      contentDescription = stringResource(R.string.settings_nowplaying_dynamic_background),
+                                      modifier = Modifier.size(24.dp),
+                                      tint = MaterialTheme.colorScheme.onSurface
+                                  )
+                              },
+                              headlineContent = { Text(stringResource(R.string.settings_nowplaying_dynamic_background)) },
+                              supportingContent = { Text(stringResource(R.string.settings_nowplaying_dynamic_background_desc)) },
+                              trailingContent = {
+                                  Switch(
+                                      checked = nowPlayingDynamicBackgroundEnabled,
+                                      onCheckedChange = onNowPlayingDynamicBackgroundEnabledChange
+                                  )
+                              },
+                              colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                          )
+
+                          ListItem(
                               leadingContent = {
                                   Icon(
                                       imageVector = Icons.Outlined.Subtitles,
@@ -1435,6 +1470,84 @@ fun SettingsScreen(
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
 
+                        AnimatedVisibility(visible = playbackFadeIn) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 8.dp, end = 8.dp, bottom = 8.dp)
+                            ) {
+                                val fadeInSeconds = playbackFadeInDurationMs / 1000f
+                                var pendingFadeInSeconds by remember { mutableFloatStateOf(fadeInSeconds) }
+                                LaunchedEffect(playbackFadeInDurationMs) {
+                                    if ((pendingFadeInSeconds - fadeInSeconds).absoluteValue > 0.01f) {
+                                        pendingFadeInSeconds = fadeInSeconds
+                                    }
+                                }
+                                ListItem(
+                                    headlineContent = { Text(stringResource(R.string.settings_playback_fade_in_duration)) },
+                                    supportingContent = {
+                                        Column(Modifier.fillMaxWidth()) {
+                                            Text(
+                                                text = stringResource(
+                                                    R.string.settings_playback_fade_duration_value,
+                                                    pendingFadeInSeconds
+                                                ),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Slider(
+                                                value = pendingFadeInSeconds,
+                                                onValueChange = { pendingFadeInSeconds = it },
+                                                onValueChangeFinished = {
+                                                    onPlaybackFadeInDurationMsChange(
+                                                        (pendingFadeInSeconds * 1000f).roundToLong()
+                                                    )
+                                                },
+                                                valueRange = 0f..3f,
+                                                steps = 29
+                                            )
+                                        }
+                                    },
+                                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                                )
+
+                                val fadeOutSeconds = playbackFadeOutDurationMs / 1000f
+                                var pendingFadeOutSeconds by remember { mutableFloatStateOf(fadeOutSeconds) }
+                                LaunchedEffect(playbackFadeOutDurationMs) {
+                                    if ((pendingFadeOutSeconds - fadeOutSeconds).absoluteValue > 0.01f) {
+                                        pendingFadeOutSeconds = fadeOutSeconds
+                                    }
+                                }
+                                ListItem(
+                                    headlineContent = { Text(stringResource(R.string.settings_playback_fade_out_duration)) },
+                                    supportingContent = {
+                                        Column(Modifier.fillMaxWidth()) {
+                                            Text(
+                                                text = stringResource(
+                                                    R.string.settings_playback_fade_duration_value,
+                                                    pendingFadeOutSeconds
+                                                ),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Slider(
+                                                value = pendingFadeOutSeconds,
+                                                onValueChange = { pendingFadeOutSeconds = it },
+                                                onValueChangeFinished = {
+                                                    onPlaybackFadeOutDurationMsChange(
+                                                        (pendingFadeOutSeconds * 1000f).roundToLong()
+                                                    )
+                                                },
+                                                valueRange = 0f..3f,
+                                                steps = 29
+                                            )
+                                        }
+                                    },
+                                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                                )
+                            }
+                        }
+
                         ListItem(
                             modifier = Modifier.settingsItemClickable {
                                 onPlaybackCrossfadeNextChange(!playbackCrossfadeNext)
@@ -1458,6 +1571,84 @@ fun SettingsScreen(
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
 
+                        AnimatedVisibility(visible = playbackCrossfadeNext) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 8.dp, end = 8.dp, bottom = 8.dp)
+                            ) {
+                                val crossfadeInSeconds = playbackCrossfadeInDurationMs / 1000f
+                                var pendingCrossfadeInSeconds by remember { mutableFloatStateOf(crossfadeInSeconds) }
+                                LaunchedEffect(playbackCrossfadeInDurationMs) {
+                                    if ((pendingCrossfadeInSeconds - crossfadeInSeconds).absoluteValue > 0.01f) {
+                                        pendingCrossfadeInSeconds = crossfadeInSeconds
+                                    }
+                                }
+                                ListItem(
+                                    headlineContent = { Text(stringResource(R.string.settings_playback_crossfade_in_duration)) },
+                                    supportingContent = {
+                                        Column(Modifier.fillMaxWidth()) {
+                                            Text(
+                                                text = stringResource(
+                                                    R.string.settings_playback_fade_duration_value,
+                                                    pendingCrossfadeInSeconds
+                                                ),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Slider(
+                                                value = pendingCrossfadeInSeconds,
+                                                onValueChange = { pendingCrossfadeInSeconds = it },
+                                                onValueChangeFinished = {
+                                                    onPlaybackCrossfadeInDurationMsChange(
+                                                        (pendingCrossfadeInSeconds * 1000f).roundToLong()
+                                                    )
+                                                },
+                                                valueRange = 0f..3f,
+                                                steps = 29
+                                            )
+                                        }
+                                    },
+                                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                                )
+
+                                val crossfadeOutSeconds = playbackCrossfadeOutDurationMs / 1000f
+                                var pendingCrossfadeOutSeconds by remember { mutableFloatStateOf(crossfadeOutSeconds) }
+                                LaunchedEffect(playbackCrossfadeOutDurationMs) {
+                                    if ((pendingCrossfadeOutSeconds - crossfadeOutSeconds).absoluteValue > 0.01f) {
+                                        pendingCrossfadeOutSeconds = crossfadeOutSeconds
+                                    }
+                                }
+                                ListItem(
+                                    headlineContent = { Text(stringResource(R.string.settings_playback_crossfade_out_duration)) },
+                                    supportingContent = {
+                                        Column(Modifier.fillMaxWidth()) {
+                                            Text(
+                                                text = stringResource(
+                                                    R.string.settings_playback_fade_duration_value,
+                                                    pendingCrossfadeOutSeconds
+                                                ),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Slider(
+                                                value = pendingCrossfadeOutSeconds,
+                                                onValueChange = { pendingCrossfadeOutSeconds = it },
+                                                onValueChangeFinished = {
+                                                    onPlaybackCrossfadeOutDurationMsChange(
+                                                        (pendingCrossfadeOutSeconds * 1000f).roundToLong()
+                                                    )
+                                                },
+                                                valueRange = 0f..3f,
+                                                steps = 29
+                                            )
+                                        }
+                                    },
+                                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                                )
+                            }
+                        }
+
                         ListItem(
                             modifier = Modifier.settingsItemClickable {
                                 onStopOnBluetoothDisconnectChange(!stopOnBluetoothDisconnect)
@@ -1476,6 +1667,29 @@ fun SettingsScreen(
                                 Switch(
                                     checked = stopOnBluetoothDisconnect,
                                     onCheckedChange = onStopOnBluetoothDisconnectChange
+                                )
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+
+                        ListItem(
+                            modifier = Modifier.settingsItemClickable {
+                                onAllowMixedPlaybackChange(!allowMixedPlayback)
+                            },
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Outlined.VolumeUp,
+                                    contentDescription = stringResource(R.string.settings_allow_mixed_playback),
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = { Text(stringResource(R.string.settings_allow_mixed_playback)) },
+                            supportingContent = { Text(stringResource(R.string.settings_allow_mixed_playback_desc)) },
+                            trailingContent = {
+                                Switch(
+                                    checked = allowMixedPlayback,
+                                    onCheckedChange = onAllowMixedPlaybackChange
                                 )
                             },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)

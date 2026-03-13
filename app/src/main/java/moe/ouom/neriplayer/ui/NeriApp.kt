@@ -52,6 +52,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -416,14 +417,15 @@ fun NeriApp(
     val themeSeedColor by repo.themeSeedColorFlow.collectAsState(initial = ThemeDefaults.DEFAULT_SEED_COLOR_HEX)
     val themeColorPalette by repo.themeColorPaletteFlow.collectAsState(initial = ThemeDefaults.PRESET_COLORS)
     val lyricBlurEnabled by repo.lyricBlurEnabledFlow.collectAsState(initial = true)
-    val lyricBlurAmount by repo.lyricBlurAmountFlow.collectAsState(initial = 10f)
+    val lyricBlurAmount by repo.lyricBlurAmountFlow.collectAsState(initial = 1.5f)
     val advancedBlurEnabled by repo.advancedBlurEnabledFlow.collectAsState(initial = true)
     val nowPlayingAudioReactiveEnabled by repo.nowPlayingAudioReactiveEnabledFlow.collectAsState(initial = true)
+    val nowPlayingDynamicBackgroundEnabled by repo.nowPlayingDynamicBackgroundEnabledFlow.collectAsState(initial = true)
     val lyricFontScale by repo.lyricFontScaleFlow.collectAsState(initial = 1.0f)
     val uiDensityScale by repo.uiDensityScaleFlow.collectAsState(initial = 1.0f)
     val bypassProxy by repo.bypassProxyFlow.collectAsState(initial = true)
     val backgroundImageUri by repo.backgroundImageUriFlow.collectAsState(initial = null)
-    val backgroundImageBlur by repo.backgroundImageBlurFlow.collectAsState(initial = 10f)
+    val backgroundImageBlur by repo.backgroundImageBlurFlow.collectAsState(initial = 0f)
     val backgroundImageAlpha by repo.backgroundImageAlphaFlow.collectAsState(initial = 0.3f)
     val hapticFeedbackEnabled by repo.hapticFeedbackEnabledFlow.collectAsState(initial = true)
     val showCoverSourceBadge by repo.showCoverSourceBadgeFlow.collectAsState(initial = true)
@@ -437,7 +439,12 @@ fun NeriApp(
     val showHomeRecommendedCard by repo.homeCardRecommendedFlow.collectAsState(initial = true)
     val playbackFadeIn by repo.playbackFadeInFlow.collectAsState(initial = false)
     val playbackCrossfadeNext by repo.playbackCrossfadeNextFlow.collectAsState(initial = false)
+    val playbackFadeInDurationMs by repo.playbackFadeInDurationMsFlow.collectAsState(initial = 500L)
+    val playbackFadeOutDurationMs by repo.playbackFadeOutDurationMsFlow.collectAsState(initial = 500L)
+    val playbackCrossfadeInDurationMs by repo.playbackCrossfadeInDurationMsFlow.collectAsState(initial = 500L)
+    val playbackCrossfadeOutDurationMs by repo.playbackCrossfadeOutDurationMsFlow.collectAsState(initial = 500L)
     val stopOnBluetoothDisconnect by repo.stopOnBluetoothDisconnectFlow.collectAsState(initial = true)
+    val allowMixedPlayback by repo.allowMixedPlaybackFlow.collectAsState(initial = false)
     val maxCacheSizeBytes by repo.maxCacheSizeBytesFlow.collectAsState(initial = 1024L * 1024 * 1024)
     var pendingFollowSystemDark by remember { mutableStateOf<Boolean?>(null) }
     var pendingForceDark by remember { mutableStateOf<Boolean?>(null) }
@@ -791,6 +798,9 @@ fun NeriApp(
                 } else {
                     0.dp
                 }
+                val bottomBarHeightDp = with(finalDensity) { bottomBarHeightPx.toDp() }
+                val navBarPaddingDp = WindowInsets.navigationBars.asPaddingValues()
+                    .calculateBottomPadding()
                 val showLibraryMiniPlayerBridge =
                     isMiniPlayerVisible &&
                         currentRoute == Destinations.Library.route &&
@@ -1193,6 +1203,10 @@ fun NeriApp(
                                         onNowPlayingAudioReactiveEnabledChange = { enabled ->
                                             scope.launch { repo.setNowPlayingAudioReactiveEnabled(enabled) }
                                         },
+                                        nowPlayingDynamicBackgroundEnabled = nowPlayingDynamicBackgroundEnabled,
+                                        onNowPlayingDynamicBackgroundEnabledChange = { enabled ->
+                                            scope.launch { repo.setNowPlayingDynamicBackgroundEnabled(enabled) }
+                                        },
                                         lyricFontScale = lyricFontScale,
                                         onLyricFontScaleChange = { scale ->
                                             scope.launch { repo.setLyricFontScale(scale) }
@@ -1268,9 +1282,29 @@ fun NeriApp(
                                         onPlaybackCrossfadeNextChange = { enabled ->
                                             scope.launch { repo.setPlaybackCrossfadeNext(enabled) }
                                         },
+                                        playbackFadeInDurationMs = playbackFadeInDurationMs,
+                                        onPlaybackFadeInDurationMsChange = { duration ->
+                                            scope.launch { repo.setPlaybackFadeInDurationMs(duration) }
+                                        },
+                                        playbackFadeOutDurationMs = playbackFadeOutDurationMs,
+                                        onPlaybackFadeOutDurationMsChange = { duration ->
+                                            scope.launch { repo.setPlaybackFadeOutDurationMs(duration) }
+                                        },
+                                        playbackCrossfadeInDurationMs = playbackCrossfadeInDurationMs,
+                                        onPlaybackCrossfadeInDurationMsChange = { duration ->
+                                            scope.launch { repo.setPlaybackCrossfadeInDurationMs(duration) }
+                                        },
+                                        playbackCrossfadeOutDurationMs = playbackCrossfadeOutDurationMs,
+                                        onPlaybackCrossfadeOutDurationMsChange = { duration ->
+                                            scope.launch { repo.setPlaybackCrossfadeOutDurationMs(duration) }
+                                        },
                                         stopOnBluetoothDisconnect = stopOnBluetoothDisconnect,
                                         onStopOnBluetoothDisconnectChange = { enabled ->
                                             scope.launch { repo.setStopOnBluetoothDisconnect(enabled) }
+                                        },
+                                        allowMixedPlayback = allowMixedPlayback,
+                                        onAllowMixedPlaybackChange = { enabled ->
+                                            scope.launch { repo.setAllowMixedPlayback(enabled) }
                                         },
                                         maxCacheSizeBytes = maxCacheSizeBytes,
                                         onMaxCacheSizeBytesChange = { size ->
@@ -1411,6 +1445,17 @@ fun NeriApp(
                                 }
                             }
 
+                            if (!showNowPlaying && advancedBlurEnabled && bottomBarHeightDp + navBarPaddingDp > 0.dp) {
+                                val bridgeAlpha = if (backgroundImageUri == null) 0.92f else 0.70f
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomStart)
+                                        .fillMaxWidth()
+                                        .height(bottomBarHeightDp + navBarPaddingDp)
+                                        .background(MaterialTheme.colorScheme.surface.copy(alpha = bridgeAlpha))
+                                )
+                            }
+
                             AnimatedVisibility(
                                 visible = showLibraryMiniPlayerBridge,
                                 modifier = Modifier.align(Alignment.BottomStart),
@@ -1514,7 +1559,7 @@ fun NeriApp(
                                 modifier = Modifier.fillMaxSize()
                             )
 
-                            if (nowPlayingAudioReactiveEnabled) {
+                            if (nowPlayingDynamicBackgroundEnabled) {
                                 HyperBackground(
                                     modifier = Modifier
                                         .fillMaxSize()
