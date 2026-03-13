@@ -36,6 +36,7 @@ data class LocalScanPreviewState(
     val selectedKeys: Set<String> = emptySet()
 )
 
+@Suppress("unused")
 class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application
     private val repo = LocalPlaylistRepository.getInstance(application)

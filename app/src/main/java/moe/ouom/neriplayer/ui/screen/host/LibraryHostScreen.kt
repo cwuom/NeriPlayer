@@ -64,15 +64,20 @@ import moe.ouom.neriplayer.ui.util.restoreBiliPlaylist
 import moe.ouom.neriplayer.ui.util.restoreNeteaseAlbum
 import moe.ouom.neriplayer.ui.util.restoreNeteasePlaylist
 
+@Suppress("unused")
 @Parcelize
 sealed class LibrarySelectedItem : Parcelable {
     @Parcelize
+    @Suppress("unused")
     data class Local(val playlistId: Long) : LibrarySelectedItem()
     @Parcelize
+    @Suppress("unused")
     data class Netease(val playlist: NeteasePlaylist) : LibrarySelectedItem()
     @Parcelize
+    @Suppress("unused")
     data class NeteaseAlbumlist(val album: NeteaseAlbum) : LibrarySelectedItem()
     @Parcelize
+    @Suppress("unused")
     data class Bili(val playlist: BiliPlaylist) : LibrarySelectedItem()
 }
 

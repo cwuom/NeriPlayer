@@ -52,6 +52,7 @@ sealed interface NeteaseAuthEvent {
     data object LoginSuccess : NeteaseAuthEvent
 }
 
+@Suppress("unused")
 class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
 
     private val cookieRepo = AppContainer.neteaseCookieRepo

@@ -34,6 +34,7 @@ import coil.disk.DiskCache
 import coil.memory.MemoryCache
 import coil.request.CachePolicy
 
+@Suppress("unused")
 class NeriPlayerApplication : Application() {
     override fun onCreate() {
         super.onCreate()

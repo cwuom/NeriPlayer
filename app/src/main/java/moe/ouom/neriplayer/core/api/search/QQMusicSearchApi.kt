@@ -1,3 +1,5 @@
+@file:Suppress("unused")
+
 package moe.ouom.neriplayer.core.api.search
 
 /*

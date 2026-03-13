@@ -48,6 +48,7 @@ import com.google.android.material.color.MaterialColors
 import com.google.android.material.snackbar.Snackbar
 import moe.ouom.neriplayer.R
 
+@Suppress("unused")
 class NeteaseWebLoginActivity : ComponentActivity() {
 
     companion object {

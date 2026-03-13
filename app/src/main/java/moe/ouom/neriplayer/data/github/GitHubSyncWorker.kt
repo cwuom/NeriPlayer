@@ -42,6 +42,7 @@ import java.util.concurrent.TimeUnit
  * GitHub 同步 Worker
  * 使用WorkManager实现后台自动同步
  */
+@Suppress("unused")
 class GitHubSyncWorker(
     context: Context,
     params: WorkerParameters

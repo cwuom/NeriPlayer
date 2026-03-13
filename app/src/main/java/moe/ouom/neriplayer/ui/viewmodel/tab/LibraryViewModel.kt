@@ -66,6 +66,7 @@ data class LibraryUiState(
     val biliError: String? = null
 )
 
+@Suppress("unused")
 class LibraryViewModel(application: Application) : AndroidViewModel(application) {
     private val localRepo = LocalPlaylistRepository.getInstance(application)
 

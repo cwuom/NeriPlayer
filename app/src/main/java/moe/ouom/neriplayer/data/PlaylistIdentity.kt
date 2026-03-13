@@ -5,6 +5,7 @@ import kotlinx.parcelize.Parcelize
 import moe.ouom.neriplayer.data.github.SyncSong
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 
+@Suppress("unused")
 @Parcelize
 data class SongIdentity(
     val id: Long,

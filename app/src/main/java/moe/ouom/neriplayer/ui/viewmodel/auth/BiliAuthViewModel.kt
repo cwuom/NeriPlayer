@@ -38,6 +38,7 @@ sealed interface BiliAuthEvent {
     data object LoginSuccess : BiliAuthEvent
 }
 
+@Suppress("unused")
 class BiliAuthViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = BiliCookieRepository(app)
 

@@ -57,6 +57,7 @@ class GitHubSyncInProgressException(message: String) : IOException(message)
  * GitHub API客户端
  * 使用GitHub Contents API进行文件读写
  */
+@Suppress("unused")
 class GitHubApiClient(private val context: Context, private val token: String) {
 
     private val client: OkHttpClient = AppContainer.sharedOkHttpClient

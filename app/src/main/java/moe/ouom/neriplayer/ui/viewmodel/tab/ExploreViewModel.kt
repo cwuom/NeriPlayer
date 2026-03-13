@@ -79,6 +79,7 @@ val TAG_TO_API_CATEGORY = mapOf(
  * 定义搜索源
  * @param displayName 用于在UI上显示的名称
  */
+@Suppress("unused")
 enum class SearchSource(val displayName: String) {
     NETEASE("Netease"),  // Will use string resource in UI
     BILIBILI("Bilibili")  // Will use string resource in UI

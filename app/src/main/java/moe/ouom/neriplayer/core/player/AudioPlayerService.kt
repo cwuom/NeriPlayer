@@ -48,6 +48,7 @@ import java.io.File
 import android.content.pm.ServiceInfo
 import androidx.core.net.toUri
 
+@Suppress("unused")
 class AudioPlayerService : Service() {
 
     companion object {
