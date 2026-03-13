@@ -280,7 +280,7 @@
     <string name="sync_create_new_repo">创建新仓库</string>
     <string name="sync_use_existing_repo">使用现有仓库</string>
     <string name="sync_data_saver">省流通道</string>
-    <string name="sync_data_saver_desc">减少同步流量，所有设备需保持一致</string>
+    <string name="sync_data_saver_desc">减少同步流量，所有设备需一致</string>
     <string name="sync_data_saver_warning_title">切换省流通道？</string>
     <string name="sync_data_saver_warning_message">切换后可能导致同步不一致，请确认继续。</string>
     <string name="sync_data_saver_warning_confirm">继续切换</string>
