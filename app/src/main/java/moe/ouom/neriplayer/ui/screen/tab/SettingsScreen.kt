@@ -417,8 +417,6 @@ fun SettingsScreen(
     onLyricBlurAmountChange: (Float) -> Unit,
     advancedBlurEnabled: Boolean,
     onAdvancedBlurEnabledChange: (Boolean) -> Unit,
-    miniPlayerHazeEnabled: Boolean,
-    onMiniPlayerHazeEnabledChange: (Boolean) -> Unit,
     nowPlayingAudioReactiveEnabled: Boolean,
     onNowPlayingAudioReactiveEnabledChange: (Boolean) -> Unit,
     lyricFontScale: Float,
@@ -1264,29 +1262,6 @@ fun SettingsScreen(
                                   Switch(
                                       checked = advancedBlurEnabled,
                                       onCheckedChange = onAdvancedBlurEnabledChange
-                                  )
-                              },
-                              colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                          )
-
-                          ListItem(
-                              modifier = Modifier.settingsItemClickable {
-                                  onMiniPlayerHazeEnabledChange(!miniPlayerHazeEnabled)
-                              },
-                              leadingContent = {
-                                  Icon(
-                                      imageVector = Icons.Outlined.Wallpaper,
-                                      contentDescription = stringResource(R.string.settings_miniplayer_blur),
-                                      modifier = Modifier.size(24.dp),
-                                      tint = MaterialTheme.colorScheme.onSurface
-                                  )
-                              },
-                              headlineContent = { Text(stringResource(R.string.settings_miniplayer_blur)) },
-                              supportingContent = { Text(stringResource(R.string.settings_miniplayer_blur_desc)) },
-                              trailingContent = {
-                                  Switch(
-                                      checked = miniPlayerHazeEnabled,
-                                      onCheckedChange = onMiniPlayerHazeEnabledChange
                                   )
                               },
                               colors = ListItemDefaults.colors(containerColor = Color.Transparent)

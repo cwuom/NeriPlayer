@@ -418,7 +418,6 @@ fun NeriApp(
     val lyricBlurEnabled by repo.lyricBlurEnabledFlow.collectAsState(initial = true)
     val lyricBlurAmount by repo.lyricBlurAmountFlow.collectAsState(initial = 10f)
     val advancedBlurEnabled by repo.advancedBlurEnabledFlow.collectAsState(initial = true)
-    val miniPlayerHazeEnabled by repo.miniPlayerHazeEnabledFlow.collectAsState(initial = true)
     val nowPlayingAudioReactiveEnabled by repo.nowPlayingAudioReactiveEnabledFlow.collectAsState(initial = true)
     val lyricFontScale by repo.lyricFontScaleFlow.collectAsState(initial = 1.0f)
     val uiDensityScale by repo.uiDensityScaleFlow.collectAsState(initial = 1.0f)
@@ -1190,10 +1189,6 @@ fun NeriApp(
                                         onAdvancedBlurEnabledChange = { enabled ->
                                             scope.launch { repo.setAdvancedBlurEnabled(enabled) }
                                         },
-                                        miniPlayerHazeEnabled = miniPlayerHazeEnabled,
-                                        onMiniPlayerHazeEnabledChange = { enabled ->
-                                            scope.launch { repo.setMiniPlayerHazeEnabled(enabled) }
-                                        },
                                         nowPlayingAudioReactiveEnabled = nowPlayingAudioReactiveEnabled,
                                         onNowPlayingAudioReactiveEnabledChange = { enabled ->
                                             scope.launch { repo.setNowPlayingAudioReactiveEnabled(enabled) }
@@ -1470,7 +1465,7 @@ fun NeriApp(
                                         }
                                     },
                                     hazeState = hazeState,
-                                    enableHaze = advancedBlurEnabled && miniPlayerHazeEnabled
+                                    enableHaze = advancedBlurEnabled
                                 )
                             }
 

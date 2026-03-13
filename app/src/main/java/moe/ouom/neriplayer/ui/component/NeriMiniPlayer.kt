@@ -87,7 +87,7 @@ fun NeriMiniPlayer(
     Card(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(
-                alpha = if (supportsBlur) .4f else 1f
+                alpha = if (supportsBlur && enableHaze) .4f else 1f
             )
         ),
         shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),

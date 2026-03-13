@@ -217,9 +217,7 @@
     <string name="lyrics_blur_amount">Blur Intensity</string>
     <string name="lyrics_blur_current">Current Blur: %.2f</string>
     <string name="settings_advanced_blur">Advanced Blur</string>
-    <string name="settings_advanced_blur_desc">Enable Haze blur effects (higher cost)</string>
-    <string name="settings_miniplayer_blur">Mini Player Blur</string>
-    <string name="settings_miniplayer_blur_desc">Blur the mini player (requires Advanced Blur)</string>
+    <string name="settings_advanced_blur_desc">Enable Haze blur (affects the mini player and surfaces)</string>
     <string name="settings_nowplaying_audio_reactive">Now Playing Audio Reactive</string>
     <string name="settings_nowplaying_audio_reactive_desc">Audio-reactive background in Now Playing</string>
     <string name="lyrics_font_size">Lyrics Font Size</string>
