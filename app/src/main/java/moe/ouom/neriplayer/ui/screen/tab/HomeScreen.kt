@@ -166,8 +166,11 @@ fun HomeScreen(
 
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val canShowLoginSections = ui.hasLogin
+    val showTrending = showTrendingCard && canShowLoginSections
+    val showRadar = showRadarCard && canShowLoginSections
     val hasVisibleSections =
-        showContinueCard || showTrendingCard || showRadarCard || showRecommendedCard
+        showContinueCard || showTrending || showRadar || showRecommendedCard
 
     Box(Modifier.fillMaxSize()) {
         Column(
@@ -251,7 +254,7 @@ fun HomeScreen(
                         }
                     }
 
-                    if (showTrendingCard) {
+                    if (showTrending) {
                         item(span = { GridItemSpan(maxLineSpan) }) {
                             SectionHeader(
                                 icon = Icons.Outlined.Bolt,
@@ -272,7 +275,7 @@ fun HomeScreen(
                         }
                     }
 
-                    if (showRadarCard) {
+                    if (showRadar) {
                         item(span = { GridItemSpan(maxLineSpan) }) {
                             SectionHeader(
                                 icon = Icons.Outlined.Radar,

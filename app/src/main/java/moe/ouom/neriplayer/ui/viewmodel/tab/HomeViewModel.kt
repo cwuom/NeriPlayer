@@ -60,7 +60,8 @@ data class HomeSectionState<T>(
 data class HomeUiState(
     val playlists: HomeSectionState<NeteasePlaylist> = HomeSectionState(),
     val hotSongs: HomeSectionState<SongItem> = HomeSectionState(),
-    val radarSongs: HomeSectionState<SongItem> = HomeSectionState()
+    val radarSongs: HomeSectionState<SongItem> = HomeSectionState(),
+    val hasLogin: Boolean = false
 )
 
 /** UI 使用的精简数据模型 */
@@ -109,8 +110,19 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 val cookies = raw.toMutableMap()
                 if (!cookies.containsKey("os")) cookies["os"] = "pc"
                 NPLogger.d(TAG, "cookieFlow updated: keys=${cookies.keys.joinToString()}")
-                hasRecommendLogin = !cookies["MUSIC_U"].isNullOrBlank()
+                val nextHasLogin = !cookies["MUSIC_U"].isNullOrBlank()
+                val loginChanged = hasRecommendLogin != nextHasLogin
+                hasRecommendLogin = nextHasLogin
+                if (loginChanged) {
+                    _uiState.value = _uiState.value.copy(hasLogin = nextHasLogin)
+                    if (!nextHasLogin) {
+                        clearLoginOnlySections()
+                    }
+                }
                 refreshRecommend()
+                if (hasRecommendLogin) {
+                    loadHomeRecommendations(force = true)
+                }
             }
         }
         loadHomeRecommendations(force = true)
@@ -164,6 +176,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      * - 私人雷达：使用关键词“私人雷达”搜索 30 首
      */
     fun loadHomeRecommendations(force: Boolean = false) {
+        if (!hasRecommendLogin) {
+            if (force) {
+                clearLoginOnlySections()
+            }
+            return
+        }
         val state = _uiState.value
         if (!force) {
             val alreadyLoaded =
@@ -177,6 +195,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun refreshHotSongs() {
+        if (!hasRecommendLogin) {
+            clearLoginOnlySections()
+            return
+        }
         hotSongsJob?.cancel()
         val previous = _uiState.value.hotSongs
         _uiState.value = _uiState.value.copy(
@@ -213,6 +235,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun refreshRadarSongs() {
+        if (!hasRecommendLogin) {
+            clearLoginOnlySections()
+            return
+        }
         radarSongsJob?.cancel()
         val previous = _uiState.value.radarSongs
         _uiState.value = _uiState.value.copy(
@@ -342,6 +368,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         return list
+    }
+
+    private fun clearLoginOnlySections() {
+        hotSongsJob?.cancel()
+        radarSongsJob?.cancel()
+        _uiState.value = _uiState.value.copy(
+            hotSongs = HomeSectionState(),
+            radarSongs = HomeSectionState()
+        )
     }
 
     private sealed interface RetryLoadResult<out T> {
