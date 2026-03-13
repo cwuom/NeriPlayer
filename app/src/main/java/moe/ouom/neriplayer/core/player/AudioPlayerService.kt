@@ -570,8 +570,12 @@ class AudioPlayerService : Service() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
-        // 前台服务已在运行时，不需要额外从最近任务移除回调里重新拉起服务。
-        // 这里主动 startService 更容易在后台启动限制下失败或制造重复生命周期。
+        // 用户从最近任务移除应用时，视作“主动退出”。
+        // 这里暂停播放并持久化 shouldResumePlayback=false，避免下次打开自动播放。
+        if (PlayerManager.hasItems()) {
+            PlayerManager.pause()
+            updateAll()
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
