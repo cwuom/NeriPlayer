@@ -42,6 +42,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.mapSaver
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.CancellationException
@@ -92,6 +93,7 @@ fun LibraryHostScreen(
     }
     // 保存当前选中的标签页索引
     var selectedTabIndex by rememberSaveable { mutableStateOf(0) }
+    val libraryStateHolder = rememberSaveableStateHolder()
     PredictiveBackHandler(enabled = selected != null) { progress ->
         try {
             progress.collect { }
@@ -142,45 +144,61 @@ fun LibraryHostScreen(
             }
         ) { current ->
             if (current == null) {
-                LibraryScreen(
-                    initialTabIndex = selectedTabIndex,
-                    onTabIndexChange = { selectedTabIndex = it },
-                    localListState = localListState,
-                    favoriteListState = favoriteListState,
-                    neteaseAlbumState = neteaseAlbumState,
-                    neteaseListState = neteaseListState,
-                    biliListState = biliListState,
-                    qqMusicListState = qqMusicListState,
-                    onLocalPlaylistClick = { playlist -> 
-                        selected = LibrarySelectedItem.Local(playlist.id)
-                        AppContainer.playlistUsageRepo.recordOpen(
-                            id = playlist.id, name = playlist.name, picUrl = playlist.displayCoverUrl(),
-                            trackCount = playlist.songs.size, source = "local"
-                        )
-                    },
-                    onNeteasePlaylistClick = { playlist -> 
-                        selected = LibrarySelectedItem.Netease(playlist)
-                        AppContainer.playlistUsageRepo.recordOpen(
-                            id = playlist.id, name = playlist.name, picUrl = playlist.picUrl,
-                            trackCount = playlist.trackCount, source = "netease"
-                        )
-                    },
-                    onNeteaseAlbumClick = { album -> 
-                        selected = LibrarySelectedItem.NeteaseAlbumlist(album)
-                        AppContainer.playlistUsageRepo.recordOpen(
-                            id = album.id, name = album.name, picUrl = album.picUrl,
-                            trackCount = album.size, source = "neteaseAlbum"
-                        )
-                    },
-                    onBiliPlaylistClick = { playlist -> 
-                        selected = LibrarySelectedItem.Bili(playlist)
-                        AppContainer.playlistUsageRepo.recordOpen(
-                            id = playlist.mediaId, name = playlist.title, picUrl = playlist.coverUrl,
-                            trackCount = playlist.count, source = "bili", mid = playlist.mid, fid = playlist.fid
-                        )
-                    },
-                    onOpenRecent = onOpenRecent
-                )
+                libraryStateHolder.SaveableStateProvider("library_screen") {
+                    LibraryScreen(
+                        initialTabIndex = selectedTabIndex,
+                        onTabIndexChange = { selectedTabIndex = it },
+                        localListState = localListState,
+                        favoriteListState = favoriteListState,
+                        neteaseAlbumState = neteaseAlbumState,
+                        neteaseListState = neteaseListState,
+                        biliListState = biliListState,
+                        qqMusicListState = qqMusicListState,
+                        onLocalPlaylistClick = { playlist ->
+                            selected = LibrarySelectedItem.Local(playlist.id)
+                            AppContainer.playlistUsageRepo.recordOpen(
+                                id = playlist.id,
+                                name = playlist.name,
+                                picUrl = playlist.displayCoverUrl(),
+                                trackCount = playlist.songs.size,
+                                source = "local"
+                            )
+                        },
+                        onNeteasePlaylistClick = { playlist ->
+                            selected = LibrarySelectedItem.Netease(playlist)
+                            AppContainer.playlistUsageRepo.recordOpen(
+                                id = playlist.id,
+                                name = playlist.name,
+                                picUrl = playlist.picUrl,
+                                trackCount = playlist.trackCount,
+                                source = "netease"
+                            )
+                        },
+                        onNeteaseAlbumClick = { album ->
+                            selected = LibrarySelectedItem.NeteaseAlbumlist(album)
+                            AppContainer.playlistUsageRepo.recordOpen(
+                                id = album.id,
+                                name = album.name,
+                                picUrl = album.picUrl,
+                                trackCount = album.size,
+                                source = "neteaseAlbum"
+                            )
+                        },
+                        onBiliPlaylistClick = { playlist ->
+                            selected = LibrarySelectedItem.Bili(playlist)
+                            AppContainer.playlistUsageRepo.recordOpen(
+                                id = playlist.mediaId,
+                                name = playlist.title,
+                                picUrl = playlist.coverUrl,
+                                trackCount = playlist.count,
+                                source = "bili",
+                                mid = playlist.mid,
+                                fid = playlist.fid
+                            )
+                        },
+                        onOpenRecent = onOpenRecent
+                    )
+                }
             } else {
                 when (current) {
                     is LibrarySelectedItem.Local -> {

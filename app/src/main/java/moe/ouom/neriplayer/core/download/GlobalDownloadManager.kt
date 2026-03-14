@@ -46,6 +46,7 @@ import moe.ouom.neriplayer.data.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import java.io.File
+import java.util.Collections
 
 /**
  * 全局下载管理器单例，用于管理下载任务和状态
@@ -65,6 +66,8 @@ object GlobalDownloadManager {
 
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+
+    private val cancelledSongKeys = Collections.synchronizedSet(mutableSetOf<String>())
     
     private var initialized = false
     
@@ -125,7 +128,7 @@ object GlobalDownloadManager {
         scope.launch {
             AudioDownloadManager.isCancelledFlow.collect { isCancelled ->
                 if (isCancelled) {
-                    updateAllTasksStatus(DownloadStatus.CANCELLED)
+                    cancelAllActiveTasks()
                 }
             }
         }
@@ -414,11 +417,13 @@ object GlobalDownloadManager {
                 }
             } catch (e: java.util.concurrent.CancellationException) {
                 NPLogger.d("GlobalDownloadManager", "下载已取消: ${song.name}")
-                updateTaskStatus(song.stableKey(), DownloadStatus.CANCELLED)
+                removeDownloadTask(song.stableKey())
+                clearSongCancelled(song.stableKey())
                 _isSingleDownloading.value = false
             } catch (e: CancellationException) {
                 NPLogger.d("GlobalDownloadManager", "下载已取消: ${song.name}")
-                updateTaskStatus(song.stableKey(), DownloadStatus.CANCELLED)
+                removeDownloadTask(song.stableKey())
+                clearSongCancelled(song.stableKey())
                 _isSingleDownloading.value = false
             } catch (e: Exception) {
                 NPLogger.e("GlobalDownloadManager", "下载失败: ${e.message}")
@@ -455,23 +460,17 @@ object GlobalDownloadManager {
             } catch (e: java.util.concurrent.CancellationException) {
                 NPLogger.d("GlobalDownloadManager", "批量下载已取消")
                 val cancelledKeys = songs.map { it.stableKey() }.toSet()
-                _downloadTasks.value = _downloadTasks.value.map { task ->
-                    if (task.song.stableKey() in cancelledKeys && task.status == DownloadStatus.DOWNLOADING) {
-                        task.copy(status = DownloadStatus.CANCELLED)
-                    } else {
-                        task
-                    }
+                _downloadTasks.value = _downloadTasks.value.filterNot { task ->
+                    task.song.stableKey() in cancelledKeys && task.status != DownloadStatus.COMPLETED
                 }
+                cancelledKeys.forEach { clearSongCancelled(it) }
             } catch (e: CancellationException) {
                 NPLogger.d("GlobalDownloadManager", "批量下载已取消")
                 val cancelledKeys = songs.map { it.stableKey() }.toSet()
-                _downloadTasks.value = _downloadTasks.value.map { task ->
-                    if (task.song.stableKey() in cancelledKeys && task.status == DownloadStatus.DOWNLOADING) {
-                        task.copy(status = DownloadStatus.CANCELLED)
-                    } else {
-                        task
-                    }
+                _downloadTasks.value = _downloadTasks.value.filterNot { task ->
+                    task.song.stableKey() in cancelledKeys && task.status != DownloadStatus.COMPLETED
                 }
+                cancelledKeys.forEach { clearSongCancelled(it) }
             } catch (e: Exception) {
                 NPLogger.e("GlobalDownloadManager", "批量下载失败: ${e.message}")
                 songs.forEach { song ->
@@ -490,6 +489,7 @@ object GlobalDownloadManager {
         }
 
         val songKey = song.stableKey()
+        clearSongCancelled(songKey)
         val existingTask = _downloadTasks.value.find { it.song.stableKey() == songKey }
         if (existingTask != null) {
             // 如果任务已完成或已取消，移除旧任务，允许重新下载
@@ -533,16 +533,7 @@ object GlobalDownloadManager {
             }
         }
     }
-    
-    /**
-     * 更新所有任务状态
-     */
-    private fun updateAllTasksStatus(status: DownloadStatus) {
-        _downloadTasks.value = _downloadTasks.value.map { task ->
-            task.copy(status = status)
-        }
-    }
-    
+
     /**
      * 移除下载任务
      */
@@ -550,20 +541,33 @@ object GlobalDownloadManager {
         _downloadTasks.value = _downloadTasks.value.filter { it.song.stableKey() != songKey }
     }
 
+    private fun markSongCancelled(songKey: String) {
+        cancelledSongKeys.add(songKey)
+    }
+
+    fun clearSongCancelled(songKey: String) {
+        cancelledSongKeys.remove(songKey)
+    }
+
+    private fun cancelAllActiveTasks() {
+        val remaining = _downloadTasks.value.filter { it.status == DownloadStatus.COMPLETED }
+        _downloadTasks.value = remaining
+    }
+
     /**
      * 取消单个下载任务
      */
     fun cancelDownloadTask(songKey: String) {
-        // 只标记为已取消，不调用全局取消
-        // 这样不会影响队列中的其他任务
-        updateTaskStatus(songKey, DownloadStatus.CANCELLED)
+        // 只取消单个任务，不影响其他任务
+        markSongCancelled(songKey)
+        removeDownloadTask(songKey)
     }
 
     /**
      * 检查歌曲是否已被取消
      */
     fun isSongCancelled(songKey: String): Boolean {
-        return _downloadTasks.value.find { it.song.stableKey() == songKey }?.status == DownloadStatus.CANCELLED
+        return cancelledSongKeys.contains(songKey)
     }
 
     /**
@@ -597,6 +601,7 @@ object GlobalDownloadManager {
 
         // 清除所有任务
         _downloadTasks.value = emptyList()
+        cancelledSongKeys.clear()
 
         // 重置取消标志，允许用户立即开始新的下载
         scope.launch {

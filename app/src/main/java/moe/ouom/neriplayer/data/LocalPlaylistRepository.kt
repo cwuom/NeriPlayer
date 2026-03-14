@@ -486,26 +486,7 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
             NPLogger.w("LocalPlaylistRepo", "ensureWeapiSession failed: ${it.message}")
         }
 
-        val likedRaw = runCatching { client.getUserLikedSongIds(0) }
-            .getOrElse { error ->
-                NPLogger.e("LocalPlaylistRepo", "getUserLikedSongIds failed: ${error.message}", error)
-                ""
-            }
-        val likedCode = parseNeteaseCode(likedRaw)
-        val likedIds = if (likedCode == 200) {
-            parseNeteaseLikedSongIds(likedRaw).toMutableSet()
-        } else {
-            mutableSetOf()
-        }
-        if (likedIds.isEmpty() && likedCode == 200) {
-            val fallback = fetchNeteaseLikedIdsFallback(client)
-            if (fallback.isNotEmpty()) {
-                likedIds.addAll(fallback)
-            }
-        }
-        if (recentNeteaseLikedIds.isNotEmpty()) {
-            likedIds.addAll(recentNeteaseLikedIds)
-        }
+        val likedIds = fetchNeteaseLikedIdsMerged(client)
         if (likedIds.isEmpty()) return candidates
 
         val seenNeteaseIds = mutableSetOf<Long>()
@@ -589,32 +570,7 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
                 )
             }
 
-            val likedRaw = runCatching { client.getUserLikedSongIds(0) }
-                .getOrElse { error ->
-                    NPLogger.e("LocalPlaylistRepo", "getUserLikedSongIds failed: ${error.message}", error)
-                    ""
-                }
-            val likedCode = parseNeteaseCode(likedRaw)
-            if (likedCode != 200) {
-                return@withContext NeteaseLikeSyncResult(
-                    totalSongs = songs.size,
-                    supportedSongs = supported,
-                    skippedUnsupported = skippedUnsupported,
-                    skippedExisting = skippedExisting,
-                    added = 0,
-                    failed = candidates.size
-                )
-            }
-            val likedIds = parseNeteaseLikedSongIds(likedRaw).toMutableSet()
-            if (likedIds.isEmpty()) {
-                val fallback = fetchNeteaseLikedIdsFallback(client)
-                if (fallback.isNotEmpty()) {
-                    likedIds.addAll(fallback)
-                }
-            }
-            if (recentNeteaseLikedIds.isNotEmpty()) {
-                likedIds.addAll(recentNeteaseLikedIds)
-            }
+            val likedIds = fetchNeteaseLikedIdsMerged(client).toMutableSet()
 
             for (neteaseId in candidates) {
                 if (likedIds.contains(neteaseId)) {
@@ -674,6 +630,29 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
             if (matched != null && matched > 0) return matched
         }
         return null
+    }
+
+    private suspend fun fetchNeteaseLikedIdsMerged(client: NeteaseClient): Set<Long> {
+        val likedRaw = runCatching { client.getUserLikedSongIds(0) }
+            .getOrElse { error ->
+                NPLogger.e("LocalPlaylistRepo", "getUserLikedSongIds failed: ${error.message}", error)
+                ""
+            }
+        val likedIds = if (parseNeteaseCode(likedRaw) == 200) {
+            parseNeteaseLikedSongIds(likedRaw).toMutableSet()
+        } else {
+            mutableSetOf()
+        }
+
+        val fallback = fetchNeteaseLikedIdsFallback(client)
+        if (fallback.isNotEmpty()) {
+            likedIds.addAll(fallback)
+        }
+        if (recentNeteaseLikedIds.isNotEmpty()) {
+            likedIds.addAll(recentNeteaseLikedIds)
+        }
+
+        return likedIds
     }
 
     private fun parseNeteaseLikedSongIds(raw: String): Set<Long> {

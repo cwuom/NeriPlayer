@@ -214,6 +214,7 @@
     <string name="lyrics_blur">歌词模糊</string>
     <string name="lyrics_blur_effect">歌词模糊效果</string>
     <string name="lyrics_blur_desc">为非当前行歌词添加景深模糊</string>
+    <string name="lyrics_blur_low_cost_hint">低于 Android 12 使用低开销方案，效果较弱</string>
     <string name="lyrics_blur_amount">模糊强度</string>
     <string name="lyrics_blur_current">当前模糊度: %.2f</string>
     <string name="settings_advanced_blur">小播放器高级模糊效果</string>

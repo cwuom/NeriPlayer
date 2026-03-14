@@ -423,6 +423,8 @@ fun NeriApp(
     val lyricBlurEnabled by repo.lyricBlurEnabledFlow.collectAsState(initial = true)
     val lyricBlurAmount by repo.lyricBlurAmountFlow.collectAsState(initial = 1.5f)
     val advancedBlurEnabled by repo.advancedBlurEnabledFlow.collectAsState(initial = true)
+    val advancedBlurAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    val effectiveAdvancedBlurEnabled = advancedBlurAvailable && advancedBlurEnabled
     val nowPlayingAudioReactiveEnabled by repo.nowPlayingAudioReactiveEnabledFlow.collectAsState(initial = true)
     val nowPlayingDynamicBackgroundEnabled by repo.nowPlayingDynamicBackgroundEnabledFlow.collectAsState(initial = true)
     val nowPlayingCoverBlurBackgroundEnabled by repo.nowPlayingCoverBlurBackgroundEnabledFlow.collectAsState(initial = false)
@@ -765,7 +767,7 @@ fun NeriApp(
             }
 
             Box(modifier = Modifier.fillMaxSize()) {
-                val modifier = if (backgroundImageUri == null || !advancedBlurEnabled) {
+                val modifier = if (backgroundImageUri == null || !effectiveAdvancedBlurEnabled) {
                     Modifier
                 } else Modifier
                     .haze(
@@ -790,7 +792,7 @@ fun NeriApp(
 
                 val selectAlpha = if (backgroundImageUri == null) 1f else 0f
                 val bottomBarHazeModifier =
-                    if (advancedBlurEnabled) Modifier.hazeChild(state = hazeState) else Modifier
+                    if (effectiveAdvancedBlurEnabled) Modifier.hazeChild(state = hazeState) else Modifier
 
                 val currentSong by PlayerManager.currentSongFlow.collectAsState()
                 val isMiniPlayerVisible = currentSong != null && !showNowPlaying
@@ -813,10 +815,8 @@ fun NeriApp(
                 val bottomBarHeightDp = with(finalDensity) { bottomBarHeightPx.toDp() }
                 val navBarPaddingDp = WindowInsets.navigationBars.asPaddingValues()
                     .calculateBottomPadding()
-                val showLibraryMiniPlayerBridge =
-                    isMiniPlayerVisible &&
-                        currentRoute == Destinations.Library.route &&
-                        visibleMiniPlayerHeightDp > 0.dp
+                val showMiniPlayerBridge =
+                    isMiniPlayerVisible && visibleMiniPlayerHeightDp > 0.dp
 
                 LaunchedEffect(currentRoute, showHomeTab, effectiveStartDestination) {
                     if (!showHomeTab && currentRoute == Destinations.Home.route) {
@@ -862,9 +862,9 @@ fun NeriApp(
                                     modifier = Modifier
                                         .align(Alignment.BottomCenter)
                                         .then(
-                                            if (advancedBlurEnabled) {
+                                            if (effectiveAdvancedBlurEnabled) {
                                                 val bridgeAlpha =
-                                                    if (backgroundImageUri == null) 0.92f else 0.70f
+                                                    if (backgroundImageUri == null) 0.92f else 0.58f
                                                 Modifier.background(
                                                     MaterialTheme.colorScheme.surface.copy(alpha = bridgeAlpha)
                                                 )
@@ -914,7 +914,7 @@ fun NeriApp(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .then(
-                                        if (advancedBlurEnabled) {
+                                        if (effectiveAdvancedBlurEnabled) {
                                             Modifier.haze(
                                                 hazeState,
                                                 HazeStyle(
@@ -1481,7 +1481,7 @@ fun NeriApp(
                             }
 
                             AnimatedVisibility(
-                                visible = showLibraryMiniPlayerBridge,
+                                visible = showMiniPlayerBridge,
                                 modifier = Modifier.align(Alignment.BottomStart),
                                 enter = fadeIn(animationSpec = tween(durationMillis = 180)),
                                 exit = fadeOut(animationSpec = tween(durationMillis = 120))
@@ -1534,7 +1534,7 @@ fun NeriApp(
                                         }
                                     },
                                     hazeState = hazeState,
-                                    enableHaze = advancedBlurEnabled
+                                    enableHaze = effectiveAdvancedBlurEnabled
                                 )
                             }
 
@@ -1634,7 +1634,7 @@ fun NeriApp(
                             if (!hasCoverBlur) {
                                 // 背景固定按暗色逻辑渲染
                                 NowPlayingAccentBackdrop(
-                                    coverUrl = if (effectiveDynamicBackgroundEnabled) nowPlayingCoverUrl else null,
+                                    coverUrl = nowPlayingCoverUrl,
                                     isDark = true,
                                     modifier = Modifier.fillMaxSize()
                                 )

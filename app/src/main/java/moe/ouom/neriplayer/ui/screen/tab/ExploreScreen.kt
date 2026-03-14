@@ -111,6 +111,7 @@ import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
@@ -147,6 +148,7 @@ fun ExploreScreen(
     var searchQuery by remember { mutableStateOf("") }
     val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
+    val backgroundImageUri by AppContainer.settingsRepo.backgroundImageUriFlow.collectAsState(initial = null)
 
     val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
     val allLocalPlaylists by repo.playlists.collectAsState(initial = emptyList())
@@ -164,6 +166,9 @@ fun ExploreScreen(
 
     val pagerState = rememberPagerState(pageCount = { SearchSource.entries.size })
     val miniPlayerHeight = LocalMiniPlayerHeight.current
+    val tagChipSelectedAlpha = if (backgroundImageUri == null) 1f else 0.86f
+    val tagChipUnselectedAlpha = if (backgroundImageUri == null) 1f else 0.74f
+    val tagChipBorderAlpha = if (backgroundImageUri == null) 1f else 0.58f
 
     fun exitPartsSelection() {
         partsSelectionMode = false
@@ -336,7 +341,17 @@ fun ExploreScreen(
                 } else {
                     when (currentSource) {
                         SearchSource.NETEASE -> {
-                            NeteaseDefaultContent(gridState, ui, tagKeys, tagLabels, vm, onPlay)
+                            NeteaseDefaultContent(
+                                gridState = gridState,
+                                ui = ui,
+                                tagKeys = tagKeys,
+                                tagLabels = tagLabels,
+                                vm = vm,
+                                onPlay = onPlay,
+                                tagChipSelectedAlpha = tagChipSelectedAlpha,
+                                tagChipUnselectedAlpha = tagChipUnselectedAlpha,
+                                tagChipBorderAlpha = tagChipBorderAlpha
+                            )
                         }
                         SearchSource.BILIBILI -> {
                             Box(Modifier.fillMaxSize(), Alignment.Center) {
@@ -561,7 +576,10 @@ private fun NeteaseDefaultContent(
     tagKeys: List<String>,
     tagLabels: List<String>,
     vm: ExploreViewModel,
-    onPlay: (NeteasePlaylist) -> Unit
+    onPlay: (NeteasePlaylist) -> Unit,
+    tagChipSelectedAlpha: Float,
+    tagChipUnselectedAlpha: Float,
+    tagChipBorderAlpha: Float
 ) {
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     LazyVerticalGrid(
@@ -591,6 +609,9 @@ private fun NeteaseDefaultContent(
                             label = displayLabels[index],
                             selected = selected,
                             onClick = { if (!selected) vm.loadHighQuality(tagKey) },
+                            selectedAlpha = tagChipSelectedAlpha,
+                            unselectedAlpha = tagChipUnselectedAlpha,
+                            borderAlpha = tagChipBorderAlpha
                         )
                     }
                 }
@@ -642,12 +663,15 @@ private fun NeteaseDefaultContent(
 private fun ExploreTagChip(
     label: String,
     selected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    selectedAlpha: Float,
+    unselectedAlpha: Float,
+    borderAlpha: Float
 ) {
     val containerColor = if (selected) {
-        MaterialTheme.colorScheme.secondaryContainer
+        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = selectedAlpha)
     } else {
-        MaterialTheme.colorScheme.surface
+        MaterialTheme.colorScheme.surface.copy(alpha = unselectedAlpha)
     }
     val contentColor = if (selected) {
         MaterialTheme.colorScheme.onSecondaryContainer
@@ -655,9 +679,9 @@ private fun ExploreTagChip(
         MaterialTheme.colorScheme.onSurface
     }
     val borderColor = if (selected) {
-        MaterialTheme.colorScheme.secondary
+        MaterialTheme.colorScheme.secondary.copy(alpha = borderAlpha)
     } else {
-        MaterialTheme.colorScheme.outline
+        MaterialTheme.colorScheme.outline.copy(alpha = borderAlpha)
     }
 
     Surface(

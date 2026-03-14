@@ -47,6 +47,7 @@ import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.snackbar.Snackbar
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.util.lockPortraitIfPhone
 
 @Suppress("unused")
 class NeteaseWebLoginActivity : ComponentActivity() {
@@ -66,6 +67,7 @@ class NeteaseWebLoginActivity : ComponentActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        lockPortraitIfPhone()
         enableEdgeToEdge()
         WindowCompat.setDecorFitsSystemWindows(window, false)
 

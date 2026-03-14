@@ -1292,10 +1292,14 @@ fun SettingsScreen(
                             .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
                     ) {
                         val coverBlurAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                        val advancedBlurAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
                         val dynamicBackgroundApiAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-                        LaunchedEffect(coverBlurAvailable, dynamicBackgroundApiAvailable) {
+                        LaunchedEffect(coverBlurAvailable, dynamicBackgroundApiAvailable, advancedBlurAvailable) {
                             if (!coverBlurAvailable && nowPlayingCoverBlurBackgroundEnabled) {
                                 onNowPlayingCoverBlurBackgroundEnabledChange(false)
+                            }
+                            if (!advancedBlurAvailable && advancedBlurEnabled) {
+                                onAdvancedBlurEnabledChange(false)
                             }
                             if (!dynamicBackgroundApiAvailable) {
                                 if (nowPlayingDynamicBackgroundEnabled) {
@@ -1335,9 +1339,13 @@ fun SettingsScreen(
                         }
 
                         ListItem(
-                            modifier = Modifier.settingsItemClickable {
-                                onAdvancedBlurEnabledChange(!advancedBlurEnabled)
-                            },
+                            modifier = Modifier
+                                .settingsItemClickable {
+                                    if (advancedBlurAvailable) {
+                                        onAdvancedBlurEnabledChange(!advancedBlurEnabled)
+                                    }
+                                }
+                                .alpha(if (advancedBlurAvailable) 1f else 0.5f),
                             leadingContent = {
                                   Icon(
                                       imageVector = Icons.Outlined.BlurOn,
@@ -1347,11 +1355,20 @@ fun SettingsScreen(
                                   )
                               },
                               headlineContent = { Text(stringResource(R.string.settings_advanced_blur)) },
-                              supportingContent = { Text(stringResource(R.string.settings_advanced_blur_desc)) },
+                              supportingContent = {
+                                  val desc = stringResource(R.string.settings_advanced_blur_desc)
+                                  val suffix = if (advancedBlurAvailable) "" else " · " + stringResource(R.string.settings_android12_required)
+                                  Text(desc + suffix)
+                              },
                               trailingContent = {
                                   Switch(
-                                      checked = advancedBlurEnabled,
-                                      onCheckedChange = onAdvancedBlurEnabledChange
+                                      checked = advancedBlurAvailable && advancedBlurEnabled,
+                                      onCheckedChange = { enabled ->
+                                          if (advancedBlurAvailable) {
+                                              onAdvancedBlurEnabledChange(enabled)
+                                          }
+                                      },
+                                      enabled = advancedBlurAvailable
                                   )
                               },
                               colors = ListItemDefaults.colors(containerColor = Color.Transparent)
@@ -1553,7 +1570,14 @@ fun SettingsScreen(
                                   )
                               },
                               headlineContent = { Text(stringResource(R.string.lyrics_blur_effect)) },
-                              supportingContent = { Text(stringResource(R.string.lyrics_blur_desc)) },
+                              supportingContent = {
+                                  val desc = stringResource(R.string.lyrics_blur_desc)
+                                  val suffix =
+                                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) "" else " · " + stringResource(
+                                          R.string.lyrics_blur_low_cost_hint
+                                      )
+                                  Text(desc + suffix)
+                              },
                               trailingContent = {
                                   Switch(checked = lyricBlurEnabled, onCheckedChange = onLyricBlurEnabledChange)
                               },

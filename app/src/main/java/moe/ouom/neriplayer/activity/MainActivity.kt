@@ -114,6 +114,7 @@ import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.LanguageManager
 import moe.ouom.neriplayer.util.NightModeHelper
 import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.util.lockPortraitIfPhone
 import androidx.core.view.WindowInsetsControllerCompat
 
 private enum class AppStage { Loading, Disclaimer, Main }
@@ -135,6 +136,7 @@ class MainActivity : ComponentActivity() {
             forceDark = startupThemeSnapshot.forceDark
         )
         super.onCreate(savedInstanceState)
+        lockPortraitIfPhone()
         WindowCompat.setDecorFitsSystemWindows(window, false)
         applyWindowBackground(
             startupThemeSnapshot.resolveUseDark(

@@ -795,38 +795,37 @@ private fun LocalPlaylistList(
                                     )
                                 }
                             } else if (!selectionMode && !isSystemPlaylist) {
-                                HapticIconButton(onClick = { showMenu = true }) {
-                                    Icon(
-                                        imageVector = Icons.Filled.MoreVert,
-                                        contentDescription = stringResource(R.string.common_more_options)
-                                    )
+                                Box {
+                                    HapticIconButton(onClick = { showMenu = true }) {
+                                        Icon(
+                                            imageVector = Icons.Filled.MoreVert,
+                                            contentDescription = stringResource(R.string.common_more_options)
+                                        )
+                                    }
+                                    DropdownMenu(
+                                        expanded = showMenu,
+                                        onDismissRequest = { showMenu = false }
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(R.string.action_rename)) },
+                                            onClick = {
+                                                showMenu = false
+                                                renameText = pl.name.take(maxNameLength)
+                                                showRenameDialog = true
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(R.string.action_delete)) },
+                                            onClick = {
+                                                showMenu = false
+                                                showDeleteDialog = true
+                                            }
+                                        )
+                                    }
                                 }
                             }
                         }
                     )
-
-                    if (!selectionMode) {
-                        DropdownMenu(
-                            expanded = showMenu,
-                            onDismissRequest = { showMenu = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.action_rename)) },
-                                onClick = {
-                                    showMenu = false
-                                    renameText = pl.name.take(maxNameLength)
-                                    showRenameDialog = true
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.action_delete)) },
-                                onClick = {
-                                    showMenu = false
-                                    showDeleteDialog = true
-                                }
-                            )
-                        }
-                    }
                 }
 
                 if (showRenameDialog) {

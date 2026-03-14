@@ -1495,9 +1495,6 @@ fun LocalPlaylistDetailScreen(
                                             HapticTextButton(
                                                 onClick = {
                                                     AudioDownloadManager.cancelDownload()
-                                                    scope.launch {
-                                                        snackbarHostState.showSnackbar(context.getString(R.string.download_cancelled))
-                                                    }
                                                 }
                                             ) {
                                                 Text(stringResource(R.string.action_cancel), color = MaterialTheme.colorScheme.error)

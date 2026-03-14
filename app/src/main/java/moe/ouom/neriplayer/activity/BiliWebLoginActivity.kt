@@ -37,6 +37,7 @@ import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.util.lockPortraitIfPhone
 import androidx.core.net.toUri
 
 /**
@@ -74,6 +75,7 @@ class BiliWebLoginActivity : ComponentActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        lockPortraitIfPhone()
         enableEdgeToEdge()
         forceFreshWebContext()
 

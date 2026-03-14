@@ -36,6 +36,8 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.resolveBiliSong
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.GlobalDownloadManager.clearSongCancelled
 import moe.ouom.neriplayer.data.BiliAudioStreamInfo
 import moe.ouom.neriplayer.data.LocalSongSupport
 import moe.ouom.neriplayer.data.stableKey
@@ -205,10 +207,11 @@ object AudioDownloadManager {
                 if (
                     e is java.util.concurrent.CancellationException ||
                         _isCancelled.value ||
-                        moe.ouom.neriplayer.core.download.GlobalDownloadManager.isSongCancelled(songKey)
+                        GlobalDownloadManager.isSongCancelled(songKey)
                 ) {
                     NPLogger.d(TAG, "下载已取消: ${song.name}")
                     _progressFlow.value = null
+                    clearSongCancelled(songKey)
                     throw java.util.concurrent.CancellationException("Download cancelled")
                 }
                 NPLogger.e(TAG, "下载失败: ${song.name}, 错误: ${e.javaClass.simpleName} - ${e.message}", e)
@@ -248,6 +251,7 @@ object AudioDownloadManager {
                     // 检查当前歌曲是否被单独取消
                     if (moe.ouom.neriplayer.core.download.GlobalDownloadManager.isSongCancelled(song.stableKey())) {
                         NPLogger.d(TAG, "跳过已取消的歌曲: ${song.name}")
+                        clearSongCancelled(song.stableKey())
                         _batchProgressFlow.value?.let { current ->
                             _batchProgressFlow.value = current.copy(
                                 completedSongs = index + 1,
@@ -296,6 +300,7 @@ object AudioDownloadManager {
                     } catch (e: java.util.concurrent.CancellationException) {
                         // 下载被取消，继续下一首
                         NPLogger.d(TAG, "歌曲下载被取消: ${song.name}")
+                        clearSongCancelled(song.stableKey())
                         _batchProgressFlow.value?.let { current ->
                             _batchProgressFlow.value = current.copy(
                                 completedSongs = index + 1,
