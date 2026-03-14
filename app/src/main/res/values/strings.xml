@@ -219,7 +219,7 @@
     <string name="settings_advanced_blur">小播放器高级模糊效果</string>
     <string name="settings_advanced_blur_desc">启用小播放器的 Haze 动态模糊</string>
     <string name="settings_nowplaying_cover_blur_background">正在播放模糊封面背景</string>
-    <string name="settings_nowplaying_cover_blur_background_desc">使用当前封面作为模糊背景</string>
+    <string name="settings_nowplaying_cover_blur_background_desc">使用当前封面作为正在播放页面背景</string>
     <string name="settings_nowplaying_cover_blur_amount">封面模糊强度</string>
     <string name="settings_nowplaying_cover_blur_value">当前模糊：%.1f</string>
     <string name="settings_nowplaying_cover_blur_darken">背景调暗</string>

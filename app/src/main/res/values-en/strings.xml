@@ -219,7 +219,7 @@
     <string name="settings_advanced_blur">Mini Player Advanced Blur</string>
     <string name="settings_advanced_blur_desc">Enable Haze blur for the mini player</string>
     <string name="settings_nowplaying_cover_blur_background">Now Playing Cover Blur</string>
-    <string name="settings_nowplaying_cover_blur_background_desc">Use the current cover as a blurred background</string>
+    <string name="settings_nowplaying_cover_blur_background_desc">Use the current cover as the background of Now Playing</string>
     <string name="settings_nowplaying_cover_blur_amount">Cover Blur Intensity</string>
     <string name="settings_nowplaying_cover_blur_value">Blur: %.1f</string>
     <string name="settings_nowplaying_cover_blur_darken">Background Dim</string>
@@ -1070,6 +1070,7 @@
     <string name="home_login_required_hint">Will auto-enable after sign-in</string>
     <string name="home_retry_hint">Tap refresh in the upper right to retry~</string>
     <string name="settings_android12_required">Android 12+ required</string>
+    <string name="settings_android13_required">Android 13+ required</string>
     <string name="home_song_count_format">%d songs</string>
     <string name="home_play_count_format" formatted="false">%s · %d songs</string>
     <string name="home_unfavorite_playlist">Unfavorite</string>
