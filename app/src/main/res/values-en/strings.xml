@@ -286,7 +286,7 @@
     <string name="sync_create_new_repo">Create New</string>
     <string name="sync_use_existing_repo">Use Existing</string>
     <string name="sync_data_saver">Data Saver</string>
-    <string name="sync_data_saver_desc">Reduce sync traffic.</string>
+    <string name="sync_data_saver_desc">Reduce sync traffic</string>
     <string name="sync_data_saver_warning_title">Change Data Saver?</string>
     <string name="sync_data_saver_warning_message">This may cause sync inconsistencies. Continue?</string>
     <string name="sync_data_saver_warning_confirm">Continue</string>
