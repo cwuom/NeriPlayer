@@ -99,7 +99,9 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.FavoritePlaylistRepository
@@ -148,9 +150,14 @@ fun HomeScreen(
     val localPlaylistRepo = remember(context) { LocalPlaylistRepository.getInstance(context) }
     val localPlaylists by localPlaylistRepo.playlists.collectAsState()
 
-    LaunchedEffect(usage, localPlaylists, configuration) {
-        if (usage.any { it.source == PlaylistUsageRepository.SOURCE_LOCAL }) {
-            AppContainer.playlistUsageRepo.syncLocalEntries(localPlaylists)
+    val hasLocalUsage = remember(usage) {
+        usage.any { it.source == PlaylistUsageRepository.SOURCE_LOCAL }
+    }
+    LaunchedEffect(hasLocalUsage, localPlaylists) {
+        if (hasLocalUsage) {
+            withContext(Dispatchers.Default) {
+                AppContainer.playlistUsageRepo.syncLocalEntries(localPlaylists)
+            }
         }
     }
 
@@ -166,11 +173,12 @@ fun HomeScreen(
 
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    val canShowLoginSections = ui.hasLogin
-    val showTrending = showTrendingCard && canShowLoginSections
-    val showRadar = showRadarCard && canShowLoginSections
+    val showTrending = showTrendingCard
+    val showRadar = showRadarCard
     val hasVisibleSections =
         showContinueCard || showTrending || showRadar || showRecommendedCard
+    val loginRequiredText = stringResource(R.string.home_login_required)
+    val loginRequiredHint = stringResource(R.string.home_login_required_hint)
 
     Box(Modifier.fillMaxSize()) {
         Column(
@@ -261,16 +269,25 @@ fun HomeScreen(
                                 title = stringResource(R.string.recommend_trending)
                             )
                         }
-                        sectionContent(
-                            section = ui.hotSongs,
-                            loadingText = homeLoadingText,
-                            errorDetail = ui.hotSongs.error
-                        ) {
+                        if (!ui.hasLogin) {
                             item(span = { GridItemSpan(maxLineSpan) }) {
-                                ResponsiveSongPagerList(
-                                    songs = ui.hotSongs.items,
-                                    onSongClick = onSongClick
+                                SectionLoginRequiredState(
+                                    title = loginRequiredText,
+                                    hint = loginRequiredHint
                                 )
+                            }
+                        } else {
+                            sectionContent(
+                                section = ui.hotSongs,
+                                loadingText = homeLoadingText,
+                                errorDetail = ui.hotSongs.error
+                            ) {
+                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                    ResponsiveSongPagerList(
+                                        songs = ui.hotSongs.items,
+                                        onSongClick = onSongClick
+                                    )
+                                }
                             }
                         }
                     }
@@ -282,16 +299,25 @@ fun HomeScreen(
                                 title = stringResource(R.string.recommend_radar)
                             )
                         }
-                        sectionContent(
-                            section = ui.radarSongs,
-                            loadingText = homeLoadingText,
-                            errorDetail = ui.radarSongs.error
-                        ) {
+                        if (!ui.hasLogin) {
                             item(span = { GridItemSpan(maxLineSpan) }) {
-                                ResponsiveSongPagerList(
-                                    songs = ui.radarSongs.items,
-                                    onSongClick = onSongClick
+                                SectionLoginRequiredState(
+                                    title = loginRequiredText,
+                                    hint = loginRequiredHint
                                 )
+                            }
+                        } else {
+                            sectionContent(
+                                section = ui.radarSongs,
+                                loadingText = homeLoadingText,
+                                errorDetail = ui.radarSongs.error
+                            ) {
+                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                    ResponsiveSongPagerList(
+                                        songs = ui.radarSongs.items,
+                                        onSongClick = onSongClick
+                                    )
+                                }
                             }
                         }
                     }
@@ -414,6 +440,27 @@ private fun SectionErrorState(detail: String) {
         )
         Text(
             text = stringResource(R.string.home_retry_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun SectionLoginRequiredState(title: String, hint: String) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = title,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium
+        )
+        Text(
+            text = hint,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

@@ -29,6 +29,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.PixelCopy
@@ -91,6 +92,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
@@ -106,6 +108,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import coil.compose.AsyncImage
 import coil.ImageLoader
 import coil.request.ImageRequest
 import coil.request.SuccessResult
@@ -128,6 +131,7 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.ThemeDefaults
 import moe.ouom.neriplayer.data.ThemePreferenceSnapshot
 import moe.ouom.neriplayer.data.displayCoverUrl
+import moe.ouom.neriplayer.data.sameIdentityAs
 import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.ui.component.NeriBottomBar
 import moe.ouom.neriplayer.ui.component.NeriMiniPlayer
@@ -421,6 +425,9 @@ fun NeriApp(
     val advancedBlurEnabled by repo.advancedBlurEnabledFlow.collectAsState(initial = true)
     val nowPlayingAudioReactiveEnabled by repo.nowPlayingAudioReactiveEnabledFlow.collectAsState(initial = true)
     val nowPlayingDynamicBackgroundEnabled by repo.nowPlayingDynamicBackgroundEnabledFlow.collectAsState(initial = true)
+    val nowPlayingCoverBlurBackgroundEnabled by repo.nowPlayingCoverBlurBackgroundEnabledFlow.collectAsState(initial = false)
+    val nowPlayingCoverBlurAmount by repo.nowPlayingCoverBlurAmountFlow.collectAsState(initial = 1.5f)
+    val nowPlayingCoverBlurDarken by repo.nowPlayingCoverBlurDarkenFlow.collectAsState(initial = 0.2f)
     val lyricFontScale by repo.lyricFontScaleFlow.collectAsState(initial = 1.0f)
     val uiDensityScale by repo.uiDensityScaleFlow.collectAsState(initial = 1.0f)
     val bypassProxy by repo.bypassProxyFlow.collectAsState(initial = true)
@@ -747,8 +754,13 @@ fun NeriApp(
 
             val snackbarHostState = remember { SnackbarHostState() }
 
-            DisposableEffect(showNowPlaying, nowPlayingAudioReactiveEnabled) {
-                AudioReactive.enabled = showNowPlaying && nowPlayingAudioReactiveEnabled
+            val effectiveDynamicBackgroundEnabled =
+                nowPlayingDynamicBackgroundEnabled && !nowPlayingCoverBlurBackgroundEnabled
+            val effectiveAudioReactiveEnabled =
+                nowPlayingAudioReactiveEnabled && effectiveDynamicBackgroundEnabled
+
+            DisposableEffect(showNowPlaying, effectiveAudioReactiveEnabled) {
+                AudioReactive.enabled = showNowPlaying && effectiveAudioReactiveEnabled
                 onDispose { AudioReactive.enabled = false }
             }
 
@@ -1218,6 +1230,18 @@ fun NeriApp(
                                         onNowPlayingDynamicBackgroundEnabledChange = { enabled ->
                                             scope.launch { repo.setNowPlayingDynamicBackgroundEnabled(enabled) }
                                         },
+                                        nowPlayingCoverBlurBackgroundEnabled = nowPlayingCoverBlurBackgroundEnabled,
+                                        onNowPlayingCoverBlurBackgroundEnabledChange = { enabled ->
+                                            scope.launch { repo.setNowPlayingCoverBlurBackgroundEnabled(enabled) }
+                                        },
+                                        nowPlayingCoverBlurAmount = nowPlayingCoverBlurAmount,
+                                        onNowPlayingCoverBlurAmountChange = { amount ->
+                                            scope.launch { repo.setNowPlayingCoverBlurAmount(amount) }
+                                        },
+                                        nowPlayingCoverBlurDarken = nowPlayingCoverBlurDarken,
+                                        onNowPlayingCoverBlurDarkenChange = { amount ->
+                                            scope.launch { repo.setNowPlayingCoverBlurDarken(amount) }
+                                        },
                                         lyricFontScale = lyricFontScale,
                                         onLyricFontScaleChange = { scale ->
                                             scope.launch { repo.setLyricFontScale(scale) }
@@ -1548,18 +1572,133 @@ fun NeriApp(
                         BackHandler { showNowPlaying = false }
 
                         val currentSongNP by PlayerManager.currentSongFlow.collectAsState()
+                        val nowPlayingQueue by PlayerManager.currentQueueFlow.collectAsState()
                         val nowPlayingCoverUrl =
                             currentSongNP?.displayCoverUrl()?.takeIf { it.isNotBlank() }
 
                         Box(Modifier.fillMaxSize()) {
-                            // 背景固定按暗色逻辑渲染
-                            NowPlayingAccentBackdrop(
-                                coverUrl = nowPlayingCoverUrl,
-                                isDark = true,
-                                modifier = Modifier.fillMaxSize()
-                            )
+                            val coverBlurAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                            val hasCoverBlur =
+                                coverBlurAvailable &&
+                                    nowPlayingCoverBlurBackgroundEnabled &&
+                                    !nowPlayingCoverUrl.isNullOrBlank()
+                            val blurStrength = nowPlayingCoverBlurAmount.coerceIn(0f, 500f)
+                            val imageLoader = remember(context) { ImageLoader(context) }
+                            var stableCoverUrl by remember { mutableStateOf<String?>(null) }
+                            var stableBlurStrength by remember { mutableStateOf<Float?>(null) }
+                            val currentQueueIndex = remember(nowPlayingQueue, currentSongNP) {
+                                val current = currentSongNP ?: return@remember -1
+                                nowPlayingQueue.indexOfFirst { it.sameIdentityAs(current) }
+                            }
+                            val preloadCoverUrls = remember(nowPlayingQueue, currentQueueIndex) {
+                                if (currentQueueIndex == -1) {
+                                    emptyList()
+                                } else {
+                                    listOfNotNull(
+                                        nowPlayingQueue.getOrNull(currentQueueIndex - 1)?.displayCoverUrl()
+                                            ?.takeIf { it.isNotBlank() },
+                                        nowPlayingQueue.getOrNull(currentQueueIndex + 1)?.displayCoverUrl()
+                                            ?.takeIf { it.isNotBlank() }
+                                    ).distinct()
+                                }
+                            }
 
-                            if (nowPlayingDynamicBackgroundEnabled) {
+                            LaunchedEffect(hasCoverBlur, blurStrength, preloadCoverUrls) {
+                                if (!hasCoverBlur || preloadCoverUrls.isEmpty()) return@LaunchedEffect
+                                preloadCoverUrls.forEach { url ->
+                                    imageLoader.enqueue(
+                                        ImageRequest.Builder(context)
+                                            .data(url)
+                                            .allowHardware(false)
+                                            .memoryCacheKey("nowplaying-blur:$url:$blurStrength")
+                                            .diskCacheKey("nowplaying-blur:$url:$blurStrength")
+                                            .transformations(
+                                                if (blurStrength > 0f) {
+                                                    listOf(BlurTransformation(context, blurStrength))
+                                                } else {
+                                                    emptyList()
+                                                }
+                                            )
+                                            .build()
+                                    )
+                                }
+                            }
+
+                            LaunchedEffect(hasCoverBlur, nowPlayingCoverUrl, blurStrength) {
+                                if (!hasCoverBlur) {
+                                    stableCoverUrl = null
+                                    stableBlurStrength = null
+                                }
+                            }
+
+                            if (!hasCoverBlur) {
+                                // 背景固定按暗色逻辑渲染
+                                NowPlayingAccentBackdrop(
+                                    coverUrl = if (effectiveDynamicBackgroundEnabled) nowPlayingCoverUrl else null,
+                                    isDark = true,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+
+                            if (hasCoverBlur) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(Color(0xFF121212))
+                                )
+                                val shouldShowStable =
+                                    stableCoverUrl != null &&
+                                        (stableCoverUrl != nowPlayingCoverUrl || stableBlurStrength != blurStrength)
+                                if (shouldShowStable) {
+                                    AsyncImage(
+                                        model = ImageRequest.Builder(context)
+                                            .data(stableCoverUrl)
+                                            .allowHardware(false)
+                                            .memoryCacheKey("nowplaying-blur:$stableCoverUrl:$stableBlurStrength")
+                                            .diskCacheKey("nowplaying-blur:$stableCoverUrl:$stableBlurStrength")
+                                            .transformations(
+                                                if ((stableBlurStrength ?: 0f) > 0f) {
+                                                    listOf(BlurTransformation(context, stableBlurStrength ?: 0f))
+                                                } else {
+                                                    emptyList()
+                                                }
+                                            )
+                                            .build(),
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
+                                AsyncImage(
+                                    model = ImageRequest.Builder(context)
+                                        .data(nowPlayingCoverUrl)
+                                        .allowHardware(false)
+                                        .memoryCacheKey("nowplaying-blur:$nowPlayingCoverUrl:$blurStrength")
+                                        .diskCacheKey("nowplaying-blur:$nowPlayingCoverUrl:$blurStrength")
+                                        .transformations(
+                                            if (blurStrength > 0f) {
+                                                listOf(BlurTransformation(context, blurStrength))
+                                            } else {
+                                                emptyList()
+                                            }
+                                        )
+                                        .build(),
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize(),
+                                    onSuccess = {
+                                        stableCoverUrl = nowPlayingCoverUrl
+                                        stableBlurStrength = blurStrength
+                                    }
+                                )
+                                if (nowPlayingCoverBlurDarken > 0f) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(Color.Black.copy(alpha = nowPlayingCoverBlurDarken.coerceIn(0f, 0.8f)))
+                                    )
+                                }
+                            } else if (effectiveDynamicBackgroundEnabled) {
                                 HyperBackground(
                                     modifier = Modifier
                                         .fillMaxSize()

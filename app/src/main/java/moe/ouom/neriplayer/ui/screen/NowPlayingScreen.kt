@@ -1,4 +1,5 @@
 ﻿package moe.ouom.neriplayer.ui.screen
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
@@ -128,7 +129,8 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -136,7 +138,6 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -187,7 +188,7 @@ import moe.ouom.neriplayer.util.offlineCachedImageRequest
 import kotlin.math.roundToInt
 
 private const val LyricsPageTransitionDurationMs = 300
-private const val CoverSourceBadgeRevealBufferMs = 20
+private const val CoverSourceBadgeRevealBufferMs = 120
 private const val CoverSourceBadgeRevealDelayMs =
     LyricsPageTransitionDurationMs + CoverSourceBadgeRevealBufferMs
 
@@ -275,7 +276,8 @@ fun NowPlayingScreen(
     var pendingSyncConfirmAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     var pendingSyncConfirmLabel by remember { mutableStateOf("") }
 
-    val clipboardManager = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
+    val clipboardScope = rememberCoroutineScope()
 
     // 是否拖拽进度条
     var isUserDraggingSlider by remember(currentSong?.id) { mutableStateOf(false) }
@@ -435,11 +437,13 @@ fun NowPlayingScreen(
                         )
                     } else {
                 // 播放页面
+                val horizontalPadding = if (isLandscape) 16.dp else 20.dp
+                val verticalPadding = if (isLandscape) 8.dp else 12.dp
                 var contentModifier = Modifier
                     .fillMaxSize()
                     .windowInsetsPadding(WindowInsets.statusBars)
                     .windowInsetsPadding(WindowInsets.navigationBars)
-                    .padding(horizontal = 20.dp, vertical = 12.dp)
+                    .padding(horizontal = horizontalPadding, vertical = verticalPadding)
                     .pointerInput(Unit) {
                         detectVerticalDragGestures { _, dragAmount -> if (dragAmount > 60) onNavigateUp() }
                     }
@@ -557,7 +561,11 @@ fun NowPlayingScreen(
                     BoxWithConstraints(
                         modifier = Modifier.align(Alignment.CenterHorizontally)
                     ) {
-                        val coverSize = minOf(maxWidth * 0.6f, maxHeight * 0.65f)
+                        val coverSize = if (isLandscape) {
+                            minOf(windowWidthDp * 0.45f, maxHeight * 0.5f, maxWidth)
+                        } else {
+                            minOf(maxWidth * 0.6f, maxHeight * 0.65f)
+                        }
                         Box(
                             modifier = Modifier
                                 .size(coverSize)
@@ -598,8 +606,8 @@ fun NowPlayingScreen(
                                 },
                                 animationSpec = if (animateCoverPageSourceBadge) {
                                     tween(
-                                        durationMillis = 280,
-                                        easing = CubicBezierEasing(0.2f, 0f, 0.7f, 0.2f)
+                                        durationMillis = 520,
+                                        easing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
                                     )
                                 } else {
                                     snap()
@@ -658,7 +666,11 @@ fun NowPlayingScreen(
                                         text = { Text(stringResource(R.string.action_copy_song_name)) },
                                         onClick = {
                                             val displayName = currentSong?.customName ?: currentSong?.name
-                                            displayName?.let { clipboardManager.setText(AnnotatedString(it)) }
+                                            displayName?.let { text ->
+                                                clipboardScope.launch {
+                                                    clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("text", text)))
+                                                }
+                                            }
                                             showSongNameMenu = false
                                         }
                                     )
@@ -690,7 +702,11 @@ fun NowPlayingScreen(
                                         text = { Text(stringResource(R.string.action_copy_artist)) },
                                         onClick = {
                                             val displayArtist = currentSong?.customArtist ?: currentSong?.artist
-                                            displayArtist?.let { clipboardManager.setText(AnnotatedString(it)) }
+                                            displayArtist?.let { text ->
+                                                clipboardScope.launch {
+                                                    clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("text", text)))
+                                                }
+                                            }
                                             showArtistMenu = false
                                         }
                                     )
@@ -840,7 +856,7 @@ fun NowPlayingScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .windowInsetsPadding(WindowInsets.navigationBars)
-                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -1355,7 +1371,7 @@ fun MoreOptionsSheet(
                             }
                             val downloadHeadlineRes = when (currentDownloadTask?.status) {
                                 DownloadStatus.DOWNLOADING -> R.string.download_cancel_download
-                                DownloadStatus.CANCELLED -> R.string.download_resume
+                                DownloadStatus.CANCELLED -> R.string.download_to_local
                                 DownloadStatus.FAILED -> R.string.action_retry
                                 else -> R.string.download_to_local
                             }
@@ -2359,7 +2375,7 @@ fun LyricsEditorSheet(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val clipboardManager = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
 
     var lyricsText by remember { mutableStateOf(initialLyrics) }
     var translatedLyricsText by remember { mutableStateOf(initialTranslatedLyrics) }
@@ -2524,10 +2540,17 @@ fun LyricsEditorSheet(
 
             HapticTextButton(
                 onClick = {
-                    clipboardManager.getText()?.let { text ->
-                        when (selectedTab) {
-                            0 -> lyricsText = text.text
-                            1 -> translatedLyricsText = text.text
+                    coroutineScope.launch {
+                        val clipText = clipboard.getClipEntry()
+                            ?.clipData
+                            ?.getItemAt(0)
+                            ?.coerceToText(context)
+                            ?.toString()
+                        if (!clipText.isNullOrEmpty()) {
+                            when (selectedTab) {
+                                0 -> lyricsText = clipText
+                                1 -> translatedLyricsText = clipText
+                            }
                         }
                     }
                 },

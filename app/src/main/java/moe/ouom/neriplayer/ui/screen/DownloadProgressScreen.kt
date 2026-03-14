@@ -281,7 +281,7 @@ private fun DownloadTaskItem(
                         IconButton(onClick = onResume) {
                             Icon(
                                 Icons.Default.Refresh,
-                                contentDescription = stringResource(R.string.download_resume),
+                                contentDescription = stringResource(R.string.download_to_local),
                                 tint = MaterialTheme.colorScheme.primary
                             )
                         }

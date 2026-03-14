@@ -19,3 +19,4 @@ local.properties
 /.idea/.name
 /.spec-workflow/
 /.report/
+/.ck/

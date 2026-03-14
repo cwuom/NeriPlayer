@@ -96,7 +96,7 @@ fun CustomBackground(
  * 一个利用 RenderScript 实现高性能高斯模糊的 Coil Transformation
  *
  * @param context Context
- * @param radius 模糊半径, 有效范围是 (0, 25]. 会被自动限制在该范围内
+ * @param radius 模糊强度, 建议范围 [0, 500]。内部会根据强度调整半径与缩放。
  */
 class BlurTransformation(
     private val context: Context,
@@ -113,20 +113,37 @@ class BlurTransformation(
         var rs: RenderScript? = null
         try {
             rs = RenderScript.create(context)
+            val strength = radius.coerceAtLeast(0f)
+            if (strength <= 0f) return input
 
-            val inputAllocation = Allocation.createFromBitmap(rs, input)
+            val maxRadius = 25f
+            val scaleFactor = (strength / maxRadius).coerceAtLeast(1f).coerceAtMost(20f)
+            val targetBitmap = if (scaleFactor > 1f) {
+                val targetWidth = (input.width / scaleFactor).toInt().coerceAtLeast(1)
+                val targetHeight = (input.height / scaleFactor).toInt().coerceAtLeast(1)
+                Bitmap.createScaledBitmap(input, targetWidth, targetHeight, true)
+            } else {
+                input
+            }
+
+            val inputAllocation = Allocation.createFromBitmap(rs, targetBitmap)
             val outputAllocation = Allocation.createTyped(rs, inputAllocation.type)
 
             val script = ScriptIntrinsicBlur.create(rs, Element.U8_4(rs))
 
-            script.setRadius(radius.coerceIn(0.1f, 25.0f))
+            script.setRadius(strength.coerceIn(0.1f, maxRadius))
             script.setInput(inputAllocation)
             script.forEach(outputAllocation) // 执行模糊处理
 
-            val output = input.config?.let { createBitmap(input.width, input.height, it) }
-            outputAllocation.copyTo(output)
+            val baseConfig = input.config ?: Bitmap.Config.ARGB_8888
+            val intermediate = createBitmap(targetBitmap.width, targetBitmap.height, baseConfig)
+            outputAllocation.copyTo(intermediate)
 
-            return output!!
+            return if (scaleFactor > 1f) {
+                Bitmap.createScaledBitmap(intermediate, input.width, input.height, true)
+            } else {
+                intermediate
+            }
         } finally {
             rs?.destroy()
         }

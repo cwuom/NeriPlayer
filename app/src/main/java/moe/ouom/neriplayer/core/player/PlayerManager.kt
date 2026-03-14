@@ -74,6 +74,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.api.bili.buildBiliPartSong
 import moe.ouom.neriplayer.core.api.bili.resolveBiliSong
@@ -161,7 +162,12 @@ object PlayerManager {
     private var biliPreferredQuality: String = "high"
     private var playbackFadeInEnabled = false
     private var playbackCrossfadeNextEnabled = false
+    private var playbackFadeInDurationMs = DEFAULT_FADE_DURATION_MS
+    private var playbackFadeOutDurationMs = DEFAULT_FADE_DURATION_MS
+    private var playbackCrossfadeInDurationMs = DEFAULT_FADE_DURATION_MS
+    private var playbackCrossfadeOutDurationMs = DEFAULT_FADE_DURATION_MS
     private var stopOnBluetoothDisconnectEnabled = true
+    private var allowMixedPlaybackEnabled = false
 
     private var currentPlaylist: List<SongItem> = emptyList()
     private var currentIndex = -1
@@ -176,8 +182,9 @@ object PlayerManager {
     private const val MEDIA_URL_STALE_MS = 10 * 60 * 1000L
     private const val URL_REFRESH_COOLDOWN_MS = 30 * 1000L
     private const val STATE_PERSIST_INTERVAL_MS = 15 * 1000L
-    private const val PLAYBACK_FADE_DURATION_MS = 280L
-    private const val PLAYBACK_FADE_STEPS = 7
+    private const val DEFAULT_FADE_DURATION_MS = 500L
+    private const val MIN_FADE_STEPS = 4
+    private const val MAX_FADE_STEPS = 30
     @Volatile
     private var urlRefreshInProgress = false
     private var lastUrlRefreshKey: String? = null
@@ -238,9 +245,36 @@ object PlayerManager {
     // 记录当前缓存大小设置
     private var currentCacheSize: Long = 1024L * 1024 * 1024
 
-    // 睡眠定时器
-    lateinit var sleepTimerManager: SleepTimerManager
+    // 睡眠定时器（提前初始化，避免界面先于 PlayerManager.initialize 访问时崩溃）
+    var sleepTimerManager: SleepTimerManager = createSleepTimerManager()
         private set
+
+    private fun createSleepTimerManager(): SleepTimerManager {
+        return SleepTimerManager(
+            scope = mainScope,
+            onTimerExpired = {
+                pause()
+                sleepTimerManager.cancel()
+            }
+        )
+    }
+
+    private fun fadeStepsFor(durationMs: Long): Int {
+        if (durationMs <= 0L) return 0
+        return (durationMs / 40L).toInt().coerceIn(MIN_FADE_STEPS, MAX_FADE_STEPS)
+    }
+
+    private fun applyAudioFocusPolicy() {
+        if (!::player.isInitialized) return
+        val handleFocus = !allowMixedPlaybackEnabled
+        val attributes = AudioAttributes.Builder()
+            .setUsage(C.USAGE_MEDIA)
+            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+            .build()
+        mainScope.launch {
+            player.setAudioAttributes(attributes, handleFocus)
+        }
+    }
 
     private fun isPreparedInPlayer(): Boolean =
         player.currentMediaItem != null && (
@@ -448,14 +482,8 @@ object PlayerManager {
                 .build()
                 .apply {
                     setWakeMode(C.WAKE_MODE_NETWORK)
-                    setAudioAttributes(
-                        AudioAttributes.Builder()
-                            .setUsage(C.USAGE_MEDIA)
-                            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                            .build(),
-                        true
-                    )
                 }
+            applyAudioFocusPolicy()
 
             val audioOffload = TrackSelectionParameters.AudioOffloadPreferences.Builder()
                 .setAudioOffloadMode(
@@ -570,8 +598,34 @@ object PlayerManager {
             }
         }
         ioScope.launch {
+            settingsRepo.playbackFadeInDurationMsFlow.collect { duration ->
+                playbackFadeInDurationMs = duration.coerceAtLeast(0L)
+            }
+        }
+        ioScope.launch {
+            settingsRepo.playbackFadeOutDurationMsFlow.collect { duration ->
+                playbackFadeOutDurationMs = duration.coerceAtLeast(0L)
+            }
+        }
+        ioScope.launch {
+            settingsRepo.playbackCrossfadeInDurationMsFlow.collect { duration ->
+                playbackCrossfadeInDurationMs = duration.coerceAtLeast(0L)
+            }
+        }
+        ioScope.launch {
+            settingsRepo.playbackCrossfadeOutDurationMsFlow.collect { duration ->
+                playbackCrossfadeOutDurationMs = duration.coerceAtLeast(0L)
+            }
+        }
+        ioScope.launch {
             settingsRepo.stopOnBluetoothDisconnectFlow.collect { enabled ->
                 stopOnBluetoothDisconnectEnabled = enabled
+            }
+        }
+        ioScope.launch {
+            settingsRepo.allowMixedPlaybackFlow.collect { enabled ->
+                allowMixedPlaybackEnabled = enabled
+                applyAudioFocusPolicy()
             }
         }
 
@@ -585,14 +639,8 @@ object PlayerManager {
         setupAudioDeviceCallback()
         restoreState()
 
-        // 初始化睡眠定时器
-        sleepTimerManager = SleepTimerManager(
-            scope = mainScope,
-            onTimerExpired = {
-                pause()
-                sleepTimerManager.cancel()
-            }
-        )
+        // 初始化睡眠定时器（使用最新 scope）
+        sleepTimerManager = createSleepTimerManager()
 
         // 初始化完成后检查是否有待播放项并尝试同步前台服务
         initialized = true
@@ -723,7 +771,7 @@ object PlayerManager {
         newDevice: AudioDevice?
     ): Boolean {
         if (!stopOnBluetoothDisconnectEnabled) return false
-        if (!player.isPlaying) return false
+        if (!_isPlayingFlow.value) return false
         if (previousDevice?.type != AudioDeviceInfo.TYPE_BLUETOOTH_A2DP) return false
         return newDevice == null || newDevice.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
     }
@@ -753,12 +801,25 @@ object PlayerManager {
         volumeFadeJob?.cancel()
         volumeFadeJob = null
         if (resetToFull && ::player.isInitialized) {
-            runCatching { player.volume = 1f }
+            mainScope.launch { runCatching { player.volume = 1f } }
         }
     }
 
-    private suspend fun fadeOutCurrentPlaybackIfNeeded(enabled: Boolean) {
-        if (!enabled || !::player.isInitialized || !player.isPlaying) {
+    private suspend fun fadeOutCurrentPlaybackIfNeeded(
+        enabled: Boolean,
+        fadeOutDurationMs: Long = playbackCrossfadeOutDurationMs
+    ) {
+        if (!enabled || !::player.isInitialized) {
+            return
+        }
+
+        val shouldFade = _isPlayingFlow.value
+        if (!shouldFade) {
+            return
+        }
+
+        val durationMs = fadeOutDurationMs.coerceAtLeast(0L)
+        if (durationMs <= 0L) {
             return
         }
 
@@ -768,40 +829,62 @@ object PlayerManager {
             return
         }
 
-        val stepDelay = PLAYBACK_FADE_DURATION_MS / PLAYBACK_FADE_STEPS
-        repeat(PLAYBACK_FADE_STEPS) { step ->
-            val fraction = (step + 1).toFloat() / PLAYBACK_FADE_STEPS
+        val steps = fadeStepsFor(durationMs)
+        if (steps <= 0) return
+        val stepDelay = (durationMs / steps).coerceAtLeast(1L)
+        repeat(steps) { step ->
+            val fraction = (step + 1).toFloat() / steps
             withContext(Dispatchers.Main) {
+                if (!::player.isInitialized) {
+                    return@withContext
+                }
                 player.volume = (startVolume * (1f - fraction)).coerceAtLeast(0f)
             }
             delay(stepDelay)
         }
 
         withContext(Dispatchers.Main) {
-            player.volume = 0f
+            if (::player.isInitialized) {
+                player.volume = 0f
+            }
         }
     }
 
-    private fun startPlayerPlaybackWithFade(shouldFadeIn: Boolean) {
+    private fun startPlayerPlaybackWithFade(
+        shouldFadeIn: Boolean,
+        fadeDurationMs: Long = playbackFadeInDurationMs
+    ) {
         cancelVolumeFade(resetToFull = !shouldFadeIn)
-        if (!shouldFadeIn) {
-            player.playWhenReady = true
-            player.play()
+        val durationMs = fadeDurationMs.coerceAtLeast(0L)
+        if (!shouldFadeIn || durationMs <= 0L) {
+            mainScope.launch {
+                if (!::player.isInitialized) return@launch
+                player.volume = 1f
+                player.playWhenReady = true
+                player.play()
+            }
             return
         }
 
-        player.volume = 0f
-        player.playWhenReady = true
-        player.play()
+        mainScope.launch {
+            if (!::player.isInitialized) return@launch
+            player.volume = 0f
+            player.playWhenReady = true
+            player.play()
+        }
 
+        val steps = fadeStepsFor(durationMs)
+        if (steps <= 0) return
+        val stepDelay = (durationMs / steps).coerceAtLeast(1L)
         volumeFadeJob = mainScope.launch {
-            val stepDelay = PLAYBACK_FADE_DURATION_MS / PLAYBACK_FADE_STEPS
-            repeat(PLAYBACK_FADE_STEPS) { step ->
+            repeat(steps) { step ->
                 delay(stepDelay)
                 if (!::player.isInitialized) return@launch
-                player.volume = ((step + 1).toFloat() / PLAYBACK_FADE_STEPS).coerceAtMost(1f)
+                player.volume = ((step + 1).toFloat() / steps).coerceAtMost(1f)
             }
-            player.volume = 1f
+            if (::player.isInitialized) {
+                player.volume = 1f
+            }
             volumeFadeJob = null
         }
     }
@@ -908,7 +991,10 @@ object PlayerManager {
                         return@launch
                     }
 
-                    fadeOutCurrentPlaybackIfNeeded(useTrackTransitionFade)
+                    fadeOutCurrentPlaybackIfNeeded(
+                        enabled = useTrackTransitionFade,
+                        fadeOutDurationMs = playbackCrossfadeOutDurationMs
+                    )
                     if (requestToken != playbackRequestToken || !isActive) {
                         return@launch
                     }
@@ -927,7 +1013,12 @@ object PlayerManager {
                             _playbackPositionMs.value = resumePositionMs
                         }
                         startPlayerPlaybackWithFade(
-                            shouldFadeIn = useTrackTransitionFade || playbackFadeInEnabled
+                            shouldFadeIn = useTrackTransitionFade || playbackFadeInEnabled,
+                            fadeDurationMs = if (useTrackTransitionFade) {
+                                playbackCrossfadeInDurationMs
+                            } else {
+                                playbackFadeInDurationMs
+                            }
                         )
                     }
                     maybeAutoMatchBiliMetadata(song, requestToken)
@@ -1252,7 +1343,10 @@ object PlayerManager {
         when {
             isPreparedInPlayer() -> {
                 syncExoRepeatMode()
-                startPlayerPlaybackWithFade(playbackFadeInEnabled)
+                startPlayerPlaybackWithFade(
+                    shouldFadeIn = playbackFadeInEnabled,
+                    fadeDurationMs = playbackFadeInDurationMs
+                )
                 val resumePositionMs = player.currentPosition.coerceAtLeast(0L)
                 _playbackPositionMs.value = resumePositionMs
                 ioScope.launch {
@@ -1268,9 +1362,25 @@ object PlayerManager {
         }
     }
 
-    fun pause() {
+    fun pause(forcePersist: Boolean = false) {
         ensureInitialized()
         if (!initialized) return
+        val shouldFadeOut =
+            playbackFadeInEnabled && playbackFadeOutDurationMs > 0L && ::player.isInitialized
+        if (shouldFadeOut) {
+            mainScope.launch {
+                fadeOutCurrentPlaybackIfNeeded(
+                    enabled = true,
+                    fadeOutDurationMs = playbackFadeOutDurationMs
+                )
+                pauseInternal(forcePersist, resetVolumeToFull = false)
+            }
+        } else {
+            pauseInternal(forcePersist, resetVolumeToFull = true)
+        }
+    }
+
+    private fun pauseInternal(forcePersist: Boolean, resetVolumeToFull: Boolean) {
         resumePlaybackRequested = false
         val currentSong = _currentSongFlow.value
         val currentPosition = player.currentPosition.coerceAtLeast(0L)
@@ -1280,7 +1390,7 @@ object PlayerManager {
         playbackRequestToken += 1
         playJob?.cancel()
         playJob = null
-        cancelVolumeFade(resetToFull = true)
+        cancelVolumeFade(resetToFull = resetVolumeToFull)
         player.playWhenReady = false
         player.pause()
         if (shouldForceFlushShortLocalSong) {
@@ -1290,8 +1400,21 @@ object PlayerManager {
             }
             _playbackPositionMs.value = currentPosition
         }
-        ioScope.launch {
-            persistState(positionMs = currentPosition, shouldResumePlayback = false)
+        if (!resetVolumeToFull) {
+            mainScope.launch {
+                if (::player.isInitialized) {
+                    player.volume = 1f
+                }
+            }
+        }
+        if (forcePersist) {
+            runBlocking(Dispatchers.IO) {
+                persistState(positionMs = currentPosition, shouldResumePlayback = false)
+            }
+        } else {
+            ioScope.launch {
+                persistState(positionMs = currentPosition, shouldResumePlayback = false)
+            }
         }
     }
 
@@ -1735,15 +1858,7 @@ object PlayerManager {
 
     /** 根据歌曲来源返回可用的翻译（如果有） */
     suspend fun getTranslatedLyrics(song: SongItem): List<LyricEntry> {
-        // 检查当前语言设置，只有中文环境才显示翻译
         val context = application
-        val currentLocale = context.resources.configuration.locales[0]
-        val isChinese = currentLocale.language.startsWith("zh")
-
-        // 如果不是中文环境，直接返回空列表
-        if (!isChinese) {
-            return emptyList()
-        }
 
         // 优先检查本地翻译歌词缓存
         val localTransPath = AudioDownloadManager.getTranslatedLyricFilePath(context, song)

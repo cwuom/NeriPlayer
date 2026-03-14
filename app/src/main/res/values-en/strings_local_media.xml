@@ -36,6 +36,6 @@
     <string name="local_song_lyric_external">Nearby Lyrics File</string>
     <string name="local_song_open_details">Song Details</string>
     <string name="local_song_sync_confirm_title">Local Song Won\'t Sync</string>
-    <string name="local_song_sync_confirm_message">Local songs are never synced to GitHub. Confirm %1$s?</string>
+    <string name="local_song_sync_confirm_message">Local songs are not synced. Confirm %1$s?</string>
     <string name="local_song_share_failed">Unable to share the local song file</string>
 </resources>

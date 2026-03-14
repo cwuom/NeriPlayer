@@ -36,6 +36,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
@@ -411,6 +412,14 @@ object GlobalDownloadManager {
                     // 释放下载锁
                     _isSingleDownloading.value = false
                 }
+            } catch (e: java.util.concurrent.CancellationException) {
+                NPLogger.d("GlobalDownloadManager", "下载已取消: ${song.name}")
+                updateTaskStatus(song.stableKey(), DownloadStatus.CANCELLED)
+                _isSingleDownloading.value = false
+            } catch (e: CancellationException) {
+                NPLogger.d("GlobalDownloadManager", "下载已取消: ${song.name}")
+                updateTaskStatus(song.stableKey(), DownloadStatus.CANCELLED)
+                _isSingleDownloading.value = false
             } catch (e: Exception) {
                 NPLogger.e("GlobalDownloadManager", "下载失败: ${e.message}")
                 updateTaskStatus(song.stableKey(), DownloadStatus.FAILED)
@@ -443,6 +452,26 @@ object GlobalDownloadManager {
                 AudioDownloadManager.downloadPlaylist(context, newSongs)
 
                 NPLogger.d("GlobalDownloadManager", "开始批量下载: ${newSongs.size} 首歌曲")
+            } catch (e: java.util.concurrent.CancellationException) {
+                NPLogger.d("GlobalDownloadManager", "批量下载已取消")
+                val cancelledKeys = songs.map { it.stableKey() }.toSet()
+                _downloadTasks.value = _downloadTasks.value.map { task ->
+                    if (task.song.stableKey() in cancelledKeys && task.status == DownloadStatus.DOWNLOADING) {
+                        task.copy(status = DownloadStatus.CANCELLED)
+                    } else {
+                        task
+                    }
+                }
+            } catch (e: CancellationException) {
+                NPLogger.d("GlobalDownloadManager", "批量下载已取消")
+                val cancelledKeys = songs.map { it.stableKey() }.toSet()
+                _downloadTasks.value = _downloadTasks.value.map { task ->
+                    if (task.song.stableKey() in cancelledKeys && task.status == DownloadStatus.DOWNLOADING) {
+                        task.copy(status = DownloadStatus.CANCELLED)
+                    } else {
+                        task
+                    }
+                }
             } catch (e: Exception) {
                 NPLogger.e("GlobalDownloadManager", "批量下载失败: ${e.message}")
                 songs.forEach { song ->

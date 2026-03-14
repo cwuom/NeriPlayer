@@ -40,11 +40,12 @@ import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import android.content.ClipData
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
@@ -65,7 +66,7 @@ fun LogViewerScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val clipboardManager = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
     val snackbarHostState = remember { SnackbarHostState() }
 
     var logContent by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -131,8 +132,8 @@ fun LogViewerScreen(
                 actions = {
                     IconButton(onClick = {
                         val fullText = logContent.joinToString("\n")
-                        clipboardManager.setText(AnnotatedString(fullText))
                         coroutineScope.launch {
+                            clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("text", fullText)))
                             snackbarHostState.showSnackbar(context.getString(R.string.log_copied))
                         }
                     }) {

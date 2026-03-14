@@ -362,6 +362,23 @@ class NeteaseClient(bypassProxy: Boolean = true) {
     }
 
     @Throws(IOException::class)
+    fun getSongDetail(ids: List<Long>): String {
+        require(ids.isNotEmpty()) { "ids must not be empty" }
+        val url = "https://music.163.com/weapi/v3/song/detail"
+        val idsParam = ids.joinToString(",")
+        val detailParam = ids.joinToString(
+            separator = ",",
+            prefix = "[",
+            postfix = "]"
+        ) { id -> """{"id":$id}""" }
+        val params = mapOf(
+            "c" to detailParam,
+            "ids" to "[$idsParam]"
+        )
+        return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
+    }
+
+    @Throws(IOException::class)
     fun getUserPlaylists(userId: Long, offset: Int = 0, limit: Int = 30): String {
         val url = "https://music.163.com/weapi/user/playlist"
         val params = mutableMapOf<String, Any>(
@@ -419,7 +436,7 @@ class NeteaseClient(bypassProxy: Boolean = true) {
         )
         return request(url, params, CryptoMode.API, "POST", usePersistedCookies = true)
     }
-        
+
     @Throws(IOException::class)
     fun getDjRadioDetail(radioId: Long, n: Int = 100000, s: Int = 8): String {
         val url = "https://music.163.com/api/v6/playlist/detail"

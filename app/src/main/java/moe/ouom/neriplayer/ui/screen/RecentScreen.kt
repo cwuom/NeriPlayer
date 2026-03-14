@@ -167,6 +167,8 @@ fun RecentScreen(
 
     // 清空确认
     var showClearConfirm by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+    var pendingDeleteSongs by remember { mutableStateOf<List<SongItem>>(emptyList()) }
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -242,8 +244,8 @@ fun RecentScreen(
                                 val selectedSongs =
                                     displayedSongs.filter { it.stableKey() in selectedKeys }
                                 if (selectedSongs.isNotEmpty()) {
-                                    repo.removeSongs(selectedSongs)
-                                    exitSelection()
+                                    pendingDeleteSongs = selectedSongs
+                                    showDeleteConfirm = true
                                 }
                             }
                         ) {
@@ -379,6 +381,39 @@ fun RecentScreen(
             },
             dismissButton = {
                 HapticTextButton(onClick = { showClearConfirm = false }) { Text(stringResource(R.string.action_cancel)) }
+            }
+        )
+    }
+
+    // 删除确认弹窗（单条/多选共用）
+    if (showDeleteConfirm) {
+        val deleteCount = pendingDeleteSongs.size
+        val deleteMessage = if (deleteCount <= 1) {
+            val songName = pendingDeleteSongs.firstOrNull()?.displayName().orEmpty()
+            stringResource(R.string.download_delete_confirm, songName)
+        } else {
+            stringResource(R.string.download_delete_selected_confirm, deleteCount)
+        }
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text(stringResource(R.string.dialog_confirm_delete)) },
+            text = { Text(deleteMessage) },
+            confirmButton = {
+                HapticTextButton(onClick = {
+                    if (pendingDeleteSongs.isNotEmpty()) {
+                        repo.removeSongs(pendingDeleteSongs)
+                        if (selectionMode) {
+                            exitSelection()
+                        }
+                    }
+                    pendingDeleteSongs = emptyList()
+                    showDeleteConfirm = false
+                }) { Text(stringResource(R.string.action_delete)) }
+            },
+            dismissButton = {
+                HapticTextButton(onClick = { showDeleteConfirm = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
             }
         )
     }

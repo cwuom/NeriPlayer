@@ -219,25 +219,51 @@ fun AppleMusicLyric(
 ) {
     val spec = visualSpec
     val listState = rememberLazyListState()
-    var isUserScrolling by remember { mutableStateOf(false) }
+    var manualClearHoldIndex by remember(lyrics) { mutableStateOf<Int?>(null) }
     var isAutoScrolling by remember { mutableStateOf(false) }
+    var lastUserInteracting by remember { mutableStateOf(false) }
 
     val currentIndex = remember(lyrics, currentTimeMs + lyricOffsetMs) {
         findCurrentLineIndex(lyrics, currentTimeMs + lyricOffsetMs)
     }
 
-    LaunchedEffect(currentIndex) {
-        if (currentIndex >= 0 && !listState.isScrollInProgress) {
+    LaunchedEffect(currentIndex, lyrics.size) {
+        if (currentIndex in lyrics.indices && !listState.isScrollInProgress) {
             isAutoScrolling = true
-            listState.animateScrollToItem(currentIndex)
-            isAutoScrolling = false
-            isUserScrolling = false
+            try {
+                listState.animateScrollToItem(currentIndex)
+            } finally {
+                // 确保自动滚动被取消或完成后及时复位，避免后续手动滚动无法进入清晰态
+                isAutoScrolling = false
+            }
         }
     }
 
-    LaunchedEffect(listState.isScrollInProgress) {
-        if (listState.isScrollInProgress && !isAutoScrolling) {
-            isUserScrolling = true
+    val isUserInteracting by remember {
+        derivedStateOf { listState.isScrollInProgress && !isAutoScrolling }
+    }
+
+    LaunchedEffect(isUserInteracting, currentIndex) {
+        if (isUserInteracting && !lastUserInteracting && currentIndex >= 0) {
+            manualClearHoldIndex = currentIndex
+        } else if (!isUserInteracting && lastUserInteracting && currentIndex >= 0) {
+            manualClearHoldIndex = currentIndex
+        }
+        lastUserInteracting = isUserInteracting
+    }
+
+    LaunchedEffect(currentIndex, isUserInteracting) {
+        if (!isUserInteracting && manualClearHoldIndex != null && currentIndex != manualClearHoldIndex) {
+            manualClearHoldIndex = null
+        }
+    }
+
+    val shouldUseClearText = isUserInteracting ||
+        (manualClearHoldIndex != null && manualClearHoldIndex == currentIndex)
+    val handleLyricClick: ((LyricEntry) -> Unit)? = onLyricClick?.let { callback ->
+        { line ->
+            manualClearHoldIndex = null
+            callback(line)
         }
     }
 
@@ -264,8 +290,8 @@ fun AppleMusicLyric(
                         .padding(vertical = centerPadding / 2, horizontal = 24.dp)
                         .clip(RoundedCornerShape(16.dp))
                         .clickable(
-                            enabled = onLyricClick != null,
-                            onClick = { onLyricClick?.invoke(line) }
+                            enabled = handleLyricClick != null,
+                            onClick = { handleLyricClick?.invoke(line) }
                         )
                         .widthIn(max = maxTextWidth)
                         .animateContentSize( // 平滑处理高度变化
@@ -273,16 +299,13 @@ fun AppleMusicLyric(
                                 dampingRatio = Spring.DampingRatioLowBouncy,
                                 stiffness = Spring.StiffnessLow
                             )
-                        )
-                        .let { modifier ->
-                            if (onLyricClick != null) modifier.clickable { onLyricClick(line) } else modifier
-                        },
+                        ),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     val distance = abs(index - currentIndex)
                     val isActive = index == currentIndex
 
-                    if (isUserScrolling) {
+                    if (shouldUseClearText) {
                         // 滚动时：显示简单文本
                         Text(
                             text = line.text,
@@ -399,7 +422,7 @@ fun AppleMusicLyric(
 
                         if (isTimeAligned) matchedLine?.text else null
                     }
-                    val shouldShowTranslation = (isUserScrolling || isActive) && !transText.isNullOrBlank()
+                    val shouldShowTranslation = (shouldUseClearText || isActive) && !transText.isNullOrBlank()
 
                     Crossfade(
                         targetState = shouldShowTranslation,

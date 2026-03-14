@@ -231,6 +231,10 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch { localRepo.deletePlaylist(playlistId) }
     }
 
+    fun reorderLocalPlaylists(order: List<Long>) {
+        viewModelScope.launch { localRepo.reorderPlaylists(order) }
+    }
+
     private fun parseNeteasePlaylists(raw: String): List<NeteasePlaylist> {
         val result = mutableListOf<NeteasePlaylist>()
         val root = JSONObject(raw)

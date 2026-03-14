@@ -216,8 +216,14 @@
     <string name="lyrics_blur_desc">为非当前行歌词添加景深模糊</string>
     <string name="lyrics_blur_amount">模糊强度</string>
     <string name="lyrics_blur_current">当前模糊度: %.2f</string>
-    <string name="settings_advanced_blur">高级模糊效果</string>
-    <string name="settings_advanced_blur_desc">启用 Haze 动态模糊（影响小播放器等界面）</string>
+    <string name="settings_advanced_blur">小播放器高级模糊效果</string>
+    <string name="settings_advanced_blur_desc">启用小播放器的 Haze 动态模糊</string>
+    <string name="settings_nowplaying_cover_blur_background">正在播放模糊封面背景</string>
+    <string name="settings_nowplaying_cover_blur_background_desc">使用当前封面作为模糊背景</string>
+    <string name="settings_nowplaying_cover_blur_amount">封面模糊强度</string>
+    <string name="settings_nowplaying_cover_blur_value">当前模糊：%.1f</string>
+    <string name="settings_nowplaying_cover_blur_darken">背景调暗</string>
+    <string name="settings_nowplaying_cover_blur_darken_value">调暗强度：%.2f</string>
     <string name="settings_nowplaying_audio_reactive">正在播放音频律动</string>
     <string name="settings_nowplaying_audio_reactive_desc">控制正在播放页面的音频律动效果</string>
     <string name="settings_nowplaying_dynamic_background">正在播放动态背景</string>
@@ -280,7 +286,7 @@
     <string name="sync_create_new_repo">创建新仓库</string>
     <string name="sync_use_existing_repo">使用现有仓库</string>
     <string name="sync_data_saver">省流通道</string>
-    <string name="sync_data_saver_desc">减少同步流量，所有设备需一致</string>
+    <string name="sync_data_saver_desc">减少同步流量</string>
     <string name="sync_data_saver_warning_title">切换省流通道？</string>
     <string name="sync_data_saver_warning_message">切换后可能导致同步不一致，请确认继续。</string>
     <string name="sync_data_saver_warning_confirm">继续切换</string>
@@ -804,6 +810,8 @@
     <string name="settings_auto_show_keyboard_desc">输入框出现时自动聚焦并尝试打开软键盘</string>
     <string name="settings_home_cards">首页卡片</string>
     <string name="settings_home_cards_desc">可分别关闭首页卡片，全部关闭后首页会隐藏</string>
+    <string name="settings_display">显示设置</string>
+    <string name="settings_display_desc">控制封面、歌词与背景的显示方式</string>
     <string name="settings_home_hidden_notice">当前已关闭全部首页卡片，首页会从底部栏隐藏。</string>
     <string name="settings_playback">播放设置</string>
     <string name="settings_playback_expand">展开以配置播放行为</string>
@@ -1067,7 +1075,11 @@
     <string name="home_load_failed">加载失败：%s</string>
     <string name="home_error_network">网络或服务器异常：%s</string>
     <string name="home_error_unknown">解析或未知错误：%s</string>
+    <string name="home_login_required">请登录后启用</string>
+    <string name="home_login_required_hint">登录后会自动开启</string>
     <string name="home_retry_hint">点右上角刷新重试~</string>
+    <string name="settings_android12_required">需要 Android 12+</string>
+    <string name="settings_android13_required">需要 Android 13+</string>
     <string name="home_song_count_format">%d首</string>
     <string name="home_play_count_format" formatted="false">%s · %d首</string>
     <string name="home_unfavorite_playlist">取消收藏</string>
@@ -1122,6 +1134,18 @@
     <string name="local_playlist_delete_songs">删除所选歌曲</string>
     <string name="local_playlist_delete_songs_confirm">确定要从歌单移除所选的 %d 首歌曲吗？</string>
     <string name="local_playlist_delete_count">删除（%d）</string>
+    <string name="local_playlist_sync_netease_liked">同步到网易云我喜欢的音乐</string>
+    <string name="local_playlist_sync_netease_confirm_title">同步到网易云？</string>
+    <string name="local_playlist_sync_netease_confirm_message">将所选歌曲同步到网易云我喜欢的音乐，是否继续？</string>
+    <string name="local_playlist_sync_netease_preview_title">同步到网易云</string>
+    <string name="local_playlist_sync_netease_result">同步完成：总计 %1$d，新增 %2$d，已存在 %3$d，跳过不支持 %4$d，失败 %5$d</string>
+    <string name="local_playlist_sync_netease_empty">收藏为空，无需同步</string>
+    <string name="local_playlist_sync_netease_no_supported">没有可同步的歌曲</string>
+    <string name="local_playlist_sync_netease_all_synced">已同步到网易云，无需重复同步</string>
+    <string name="local_playlist_sync_selected">同步选中 (%d)</string>
+    <string name="local_playlist_sync_search">搜索可同步歌曲</string>
+    <string name="local_playlist_sync_empty">没有可同步的歌曲</string>
+    <string name="library_delete_selected_confirm">确定要删除选中的 %d 个歌单吗？此操作不可撤销。</string>
     <string name="local_playlist_export_to">导出到歌单</string>
     <string name="local_playlist_import_audio">导入本地音频</string>
     <string name="local_playlist_import_audio_success">已导入 %d 首本地音频</string>

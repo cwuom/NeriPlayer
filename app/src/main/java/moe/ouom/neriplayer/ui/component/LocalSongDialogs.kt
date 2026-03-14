@@ -20,15 +20,17 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ClipEntry
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.LocalMediaDetails
@@ -45,7 +47,8 @@ fun LocalSongDetailsDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    val clipboardManager = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
     var details by remember(song) { mutableStateOf<LocalMediaDetails?>(null) }
     var error by remember(song) { mutableStateOf<String?>(null) }
 
@@ -62,7 +65,9 @@ fun LocalSongDetailsDialog(
         title = { Text(stringResource(R.string.local_song_details_title)) },
         text = {
             fun copyPath(path: String) {
-                clipboardManager.setClip(ClipEntry(ClipData.newPlainText("text", path)))
+                scope.launch {
+                    clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("text", path)))
+                }
                 Toast.makeText(context, context.getString(R.string.toast_copied), Toast.LENGTH_SHORT).show()
             }
 

@@ -26,6 +26,7 @@
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -103,9 +104,10 @@ import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.Error
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.BluetoothAudio
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.History
-import androidx.compose.material.icons.outlined.VolumeUp
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -141,10 +143,12 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.rotate
@@ -421,6 +425,12 @@ fun SettingsScreen(
     onNowPlayingAudioReactiveEnabledChange: (Boolean) -> Unit,
     nowPlayingDynamicBackgroundEnabled: Boolean,
     onNowPlayingDynamicBackgroundEnabledChange: (Boolean) -> Unit,
+    nowPlayingCoverBlurBackgroundEnabled: Boolean,
+    onNowPlayingCoverBlurBackgroundEnabledChange: (Boolean) -> Unit,
+    nowPlayingCoverBlurAmount: Float,
+    onNowPlayingCoverBlurAmountChange: (Float) -> Unit,
+    nowPlayingCoverBlurDarken: Float,
+    onNowPlayingCoverBlurDarkenChange: (Float) -> Unit,
     lyricFontScale: Float,
     onLyricFontScaleChange: (Float) -> Unit,
     uiDensityScale: Float,
@@ -480,41 +490,54 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
 
     // 登录菜单的状态
-    var loginExpanded by remember { mutableStateOf(false) }
+    var loginExpanded by rememberSaveable { mutableStateOf(false) }
     // 仅用于示意展开箭头的旋转，后续可复用至 ExpandableHeader 的 arrowRotation 入参
     val arrowRotation by animateFloatAsState(targetValue = if (loginExpanded) 180f else 0f, label = "arrow")
 
     // 个性化菜单的状态
-    var personalizationExpanded by remember { mutableStateOf(false) }
+    var personalizationExpanded by rememberSaveable { mutableStateOf(false) }
     val personalizationArrowRotation by animateFloatAsState(targetValue = if (personalizationExpanded) 180f else 0f, label = "personalization_arrow")
 
     // 动效设置菜单的状态
-    var motionExpanded by remember { mutableStateOf(false) }
+    var motionExpanded by rememberSaveable { mutableStateOf(false) }
     val motionArrowRotation by animateFloatAsState(targetValue = if (motionExpanded) 180f else 0f, label = "motion_arrow")
 
+    LaunchedEffect(nowPlayingDynamicBackgroundEnabled, nowPlayingCoverBlurBackgroundEnabled) {
+        if (nowPlayingCoverBlurBackgroundEnabled) {
+            if (nowPlayingDynamicBackgroundEnabled) {
+                onNowPlayingDynamicBackgroundEnabledChange(false)
+            }
+            if (nowPlayingAudioReactiveEnabled) {
+                onNowPlayingAudioReactiveEnabledChange(false)
+            }
+        } else if (!nowPlayingDynamicBackgroundEnabled && nowPlayingAudioReactiveEnabled) {
+            onNowPlayingAudioReactiveEnabledChange(false)
+        }
+    }
+
     // 网络配置菜单的状态
-    var networkExpanded by remember { mutableStateOf(false) }
+    var networkExpanded by rememberSaveable { mutableStateOf(false) }
     val networkArrowRotation by animateFloatAsState(targetValue = if (networkExpanded) 180f else 0f, label = "network_arrow")
 
     // 音质设置菜单的状态
-    var audioQualityExpanded by remember { mutableStateOf(false) }
+    var audioQualityExpanded by rememberSaveable { mutableStateOf(false) }
     val audioQualityArrowRotation by animateFloatAsState(targetValue = if (audioQualityExpanded) 180f else 0f, label = "audio_quality_arrow")
 
     // 播放设置菜单的状态
-    var playbackExpanded by remember { mutableStateOf(false) }
+    var playbackExpanded by rememberSaveable { mutableStateOf(false) }
     val playbackArrowRotation by animateFloatAsState(targetValue = if (playbackExpanded) 180f else 0f, label = "playback_arrow")
 
     // 下载管理菜单的状态
-    var downloadManagerExpanded by remember { mutableStateOf(false) }
+    var downloadManagerExpanded by rememberSaveable { mutableStateOf(false) }
     val downloadManagerArrowRotation by animateFloatAsState(targetValue = if (downloadManagerExpanded) 180f else 0f, label = "download_manager_arrow")
 
     // 备份与恢复菜单的状态
-    var backupRestoreExpanded by remember { mutableStateOf(false) }
+    var backupRestoreExpanded by rememberSaveable { mutableStateOf(false) }
     val backupRestoreArrowRotation by animateFloatAsState(targetValue = if (backupRestoreExpanded) 180f else 0f, label = "backup_restore_arrow")
 
     // 缓存设置的状态
     var showClearCacheDialog by remember { mutableStateOf(false) }
-    var cacheExpanded by remember { mutableStateOf(false) }
+    var cacheExpanded by rememberSaveable { mutableStateOf(false) }
     val cacheArrowRotation by animateFloatAsState(targetValue = if (cacheExpanded) 180f else 0f, label = "backup_restore_arrow")
 
     // 缓存类型选择状态
@@ -1075,6 +1098,18 @@ fun SettingsScreen(
                             )
                         }
 
+                        Text(
+                            text = stringResource(R.string.settings_display),
+                            modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = stringResource(R.string.settings_display_desc),
+                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                         ListItem(
                             leadingContent = {
                                 Icon(
@@ -1250,17 +1285,60 @@ fun SettingsScreen(
                       enter = fadeIn() + expandVertically(),
                       exit = fadeOut() + shrinkVertically()
                   ) {
-                      Column(
-                          modifier = Modifier
-                              .fillMaxWidth()
-                              .background(Color.Transparent)
-                              .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
-                      ) {
-                          ListItem(
-                              modifier = Modifier.settingsItemClickable {
-                                  onAdvancedBlurEnabledChange(!advancedBlurEnabled)
-                              },
-                              leadingContent = {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.Transparent)
+                            .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
+                    ) {
+                        val coverBlurAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                        val dynamicBackgroundApiAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                        LaunchedEffect(coverBlurAvailable, dynamicBackgroundApiAvailable) {
+                            if (!coverBlurAvailable && nowPlayingCoverBlurBackgroundEnabled) {
+                                onNowPlayingCoverBlurBackgroundEnabledChange(false)
+                            }
+                            if (!dynamicBackgroundApiAvailable) {
+                                if (nowPlayingDynamicBackgroundEnabled) {
+                                    onNowPlayingDynamicBackgroundEnabledChange(false)
+                                }
+                                if (nowPlayingAudioReactiveEnabled) {
+                                    onNowPlayingAudioReactiveEnabledChange(false)
+                                }
+                            }
+                        }
+                        val dynamicBackgroundAvailable =
+                            dynamicBackgroundApiAvailable && !nowPlayingCoverBlurBackgroundEnabled
+                        val dynamicBackgroundAlpha = if (dynamicBackgroundAvailable) 1f else 0.5f
+                        val audioReactiveAvailable =
+                            dynamicBackgroundApiAvailable &&
+                                nowPlayingDynamicBackgroundEnabled &&
+                                dynamicBackgroundAvailable
+                        val audioReactiveAlpha = if (audioReactiveAvailable) 1f else 0.5f
+                        val onCoverBlurToggle: (Boolean) -> Unit = onCoverBlurToggle@{ enabled ->
+                            if (!coverBlurAvailable) return@onCoverBlurToggle
+                            onNowPlayingCoverBlurBackgroundEnabledChange(enabled)
+                            if (enabled) {
+                                if (nowPlayingDynamicBackgroundEnabled) {
+                                    onNowPlayingDynamicBackgroundEnabledChange(false)
+                                }
+                                if (nowPlayingAudioReactiveEnabled) {
+                                    onNowPlayingAudioReactiveEnabledChange(false)
+                                }
+                            }
+                        }
+                        val onDynamicBackgroundToggle: (Boolean) -> Unit = onDynamicBackgroundToggle@{ enabled ->
+                            if (!dynamicBackgroundAvailable) return@onDynamicBackgroundToggle
+                            onNowPlayingDynamicBackgroundEnabledChange(enabled)
+                            if (!enabled && nowPlayingAudioReactiveEnabled) {
+                                onNowPlayingAudioReactiveEnabledChange(false)
+                            }
+                        }
+
+                        ListItem(
+                            modifier = Modifier.settingsItemClickable {
+                                onAdvancedBlurEnabledChange(!advancedBlurEnabled)
+                            },
+                            leadingContent = {
                                   Icon(
                                       imageVector = Icons.Outlined.BlurOn,
                                       contentDescription = stringResource(R.string.settings_advanced_blur),
@@ -1279,51 +1357,191 @@ fun SettingsScreen(
                               colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                           )
 
-                          ListItem(
-                              modifier = Modifier.settingsItemClickable {
-                                  onNowPlayingAudioReactiveEnabledChange(!nowPlayingAudioReactiveEnabled)
-                              },
-                              leadingContent = {
-                                  Icon(
-                                      imageVector = Icons.Outlined.Analytics,
-                                      contentDescription = stringResource(R.string.settings_nowplaying_audio_reactive),
-                                      modifier = Modifier.size(24.dp),
-                                      tint = MaterialTheme.colorScheme.onSurface
-                                  )
-                              },
-                              headlineContent = { Text(stringResource(R.string.settings_nowplaying_audio_reactive)) },
-                              supportingContent = { Text(stringResource(R.string.settings_nowplaying_audio_reactive_desc)) },
-                              trailingContent = {
-                                  Switch(
-                                      checked = nowPlayingAudioReactiveEnabled,
-                                      onCheckedChange = onNowPlayingAudioReactiveEnabledChange
-                                  )
-                              },
-                              colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                          )
+                        ListItem(
+                            modifier = Modifier
+                                .settingsItemClickable {
+                                    if (coverBlurAvailable) {
+                                        onCoverBlurToggle(!nowPlayingCoverBlurBackgroundEnabled)
+                                    }
+                                }
+                                .alpha(if (coverBlurAvailable) 1f else 0.5f),
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Outlined.Wallpaper,
+                                    contentDescription = stringResource(R.string.settings_nowplaying_cover_blur_background),
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = { Text(stringResource(R.string.settings_nowplaying_cover_blur_background)) },
+                            supportingContent = {
+                                val desc = stringResource(R.string.settings_nowplaying_cover_blur_background_desc)
+                                val suffix = if (coverBlurAvailable) "" else " · " + stringResource(R.string.settings_android12_required)
+                                Text(desc + suffix)
+                            },
+                            trailingContent = {
+                                Switch(
+                                    checked = coverBlurAvailable && nowPlayingCoverBlurBackgroundEnabled,
+                                    onCheckedChange = { onCoverBlurToggle(it) },
+                                    enabled = coverBlurAvailable
+                                )
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
 
-                          ListItem(
-                              modifier = Modifier.settingsItemClickable {
-                                  onNowPlayingDynamicBackgroundEnabledChange(!nowPlayingDynamicBackgroundEnabled)
-                              },
-                              leadingContent = {
-                                  Icon(
-                                      imageVector = Icons.Outlined.Wallpaper,
-                                      contentDescription = stringResource(R.string.settings_nowplaying_dynamic_background),
-                                      modifier = Modifier.size(24.dp),
-                                      tint = MaterialTheme.colorScheme.onSurface
-                                  )
-                              },
-                              headlineContent = { Text(stringResource(R.string.settings_nowplaying_dynamic_background)) },
-                              supportingContent = { Text(stringResource(R.string.settings_nowplaying_dynamic_background_desc)) },
-                              trailingContent = {
-                                  Switch(
-                                      checked = nowPlayingDynamicBackgroundEnabled,
-                                      onCheckedChange = onNowPlayingDynamicBackgroundEnabledChange
-                                  )
-                              },
-                              colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                          )
+                        AnimatedVisibility(visible = coverBlurAvailable && nowPlayingCoverBlurBackgroundEnabled) {
+                            val blurUiMax = 500f
+                            val blurUiStep = 5f
+                            val blurSteps = (blurUiMax / blurUiStep).toInt().coerceAtLeast(1) - 1
+
+                            Column(Modifier.fillMaxWidth()) {
+                                ListItem(
+                                    headlineContent = { Text(stringResource(R.string.settings_nowplaying_cover_blur_amount)) },
+                                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                    supportingContent = {
+                                        var pendingBlurAmount by remember {
+                                            mutableFloatStateOf(nowPlayingCoverBlurAmount.coerceIn(0f, blurUiMax))
+                                        }
+                                        LaunchedEffect(nowPlayingCoverBlurAmount) {
+                                            val clamped = nowPlayingCoverBlurAmount.coerceIn(0f, blurUiMax)
+                                            if ((pendingBlurAmount - clamped).absoluteValue > 0.01f) {
+                                                pendingBlurAmount = clamped
+                                            }
+                                        }
+                                        Column(Modifier.fillMaxWidth()) {
+                                            Text(
+                                                text = stringResource(
+                                                    R.string.settings_nowplaying_cover_blur_value,
+                                                    pendingBlurAmount
+                                                ),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Slider(
+                                                value = pendingBlurAmount,
+                                                onValueChange = { value ->
+                                                    val snapped = (value / blurUiStep).roundToInt() * blurUiStep
+                                                    pendingBlurAmount = snapped.coerceIn(0f, blurUiMax)
+                                                },
+                                                onValueChangeFinished = {
+                                                    onNowPlayingCoverBlurAmountChange(
+                                                        pendingBlurAmount.coerceIn(0f, blurUiMax)
+                                                    )
+                                                },
+                                                valueRange = 0f..blurUiMax,
+                                                steps = blurSteps
+                                            )
+                                        }
+                                    }
+                                )
+
+                                Spacer(Modifier.height(4.dp))
+
+                                ListItem(
+                                    headlineContent = { Text(stringResource(R.string.settings_nowplaying_cover_blur_darken)) },
+                                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                    supportingContent = {
+                                        var pendingDarken by remember { mutableFloatStateOf(nowPlayingCoverBlurDarken) }
+                                        LaunchedEffect(nowPlayingCoverBlurDarken) {
+                                            if ((pendingDarken - nowPlayingCoverBlurDarken).absoluteValue > 0.01f) {
+                                                pendingDarken = nowPlayingCoverBlurDarken
+                                            }
+                                        }
+                                        Column(Modifier.fillMaxWidth()) {
+                                            Text(
+                                                text = stringResource(
+                                                    R.string.settings_nowplaying_cover_blur_darken_value,
+                                                    pendingDarken
+                                                ),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Slider(
+                                                value = pendingDarken,
+                                                onValueChange = { pendingDarken = it },
+                                                onValueChangeFinished = {
+                                                    onNowPlayingCoverBlurDarkenChange(pendingDarken.coerceIn(0f, 0.8f))
+                                                },
+                                                valueRange = 0f..0.8f,
+                                                steps = 15
+                                            )
+                                        }
+                                    }
+                                )
+                            }
+                        }
+
+                        ListItem(
+                            modifier = (if (audioReactiveAvailable) {
+                                Modifier.settingsItemClickable {
+                                    onNowPlayingAudioReactiveEnabledChange(!nowPlayingAudioReactiveEnabled)
+                                }
+                            } else {
+                                Modifier
+                            }).alpha(audioReactiveAlpha),
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Outlined.Analytics,
+                                    contentDescription = stringResource(R.string.settings_nowplaying_audio_reactive),
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = { Text(stringResource(R.string.settings_nowplaying_audio_reactive)) },
+                            supportingContent = {
+                                val desc = stringResource(R.string.settings_nowplaying_audio_reactive_desc)
+                                val suffix = if (dynamicBackgroundApiAvailable) "" else " · " + stringResource(R.string.settings_android13_required)
+                                Text(desc + suffix)
+                            },
+                            trailingContent = {
+                                Switch(
+                                    checked = audioReactiveAvailable && nowPlayingAudioReactiveEnabled,
+                                    onCheckedChange = {
+                                        if (audioReactiveAvailable) {
+                                            onNowPlayingAudioReactiveEnabledChange(it)
+                                        }
+                                    },
+                                    enabled = audioReactiveAvailable
+                                )
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+
+                        ListItem(
+                            modifier = (if (dynamicBackgroundAvailable) {
+                                Modifier.settingsItemClickable {
+                                    onDynamicBackgroundToggle(!nowPlayingDynamicBackgroundEnabled)
+                                }
+                            } else {
+                                Modifier
+                            }).alpha(dynamicBackgroundAlpha),
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Outlined.AutoAwesome,
+                                    contentDescription = stringResource(R.string.settings_nowplaying_dynamic_background),
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = { Text(stringResource(R.string.settings_nowplaying_dynamic_background)) },
+                            supportingContent = {
+                                val desc = stringResource(R.string.settings_nowplaying_dynamic_background_desc)
+                                val suffix = if (dynamicBackgroundApiAvailable) "" else " · " + stringResource(R.string.settings_android13_required)
+                                Text(desc + suffix)
+                            },
+                            trailingContent = {
+                                Switch(
+                                    checked = dynamicBackgroundAvailable && nowPlayingDynamicBackgroundEnabled,
+                                    onCheckedChange = {
+                                        if (dynamicBackgroundAvailable) {
+                                            onDynamicBackgroundToggle(it)
+                                        }
+                                    },
+                                    enabled = dynamicBackgroundAvailable
+                                )
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
 
                           ListItem(
                               leadingContent = {
@@ -1678,7 +1896,7 @@ fun SettingsScreen(
                             },
                             leadingContent = {
                                 Icon(
-                                    imageVector = Icons.Outlined.VolumeUp,
+                                    imageVector = Icons.AutoMirrored.Outlined.VolumeUp,
                                     contentDescription = stringResource(R.string.settings_allow_mixed_playback),
                                     modifier = Modifier.size(24.dp),
                                     tint = MaterialTheme.colorScheme.onSurface

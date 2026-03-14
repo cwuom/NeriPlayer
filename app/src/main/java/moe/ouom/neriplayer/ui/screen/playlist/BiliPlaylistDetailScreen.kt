@@ -45,9 +45,11 @@ import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -59,9 +61,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.layout.ContentScale
+import android.content.ClipData
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -76,6 +79,7 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.data.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
@@ -153,6 +157,25 @@ fun BiliPlaylistDetailScreen(
 
     val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
     val allLocalPlaylists by repo.playlists.collectAsState(initial = emptyList())
+    val playlistSource = "bili"
+    val playlistId = ui.header?.mediaId ?: playlist.mediaId
+    val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
+    val favorites by favoriteRepo.favorites.collectAsState()
+    val isFavorite = remember(favorites, playlistId) {
+        favoriteRepo.isFavorite(playlistId, playlistSource)
+    }
+    LaunchedEffect(isFavorite, ui.header, ui.videos) {
+        if (!isFavorite) return@LaunchedEffect
+        val header = ui.header ?: return@LaunchedEffect
+        favoriteRepo.updateFavoriteMeta(
+            id = header.mediaId,
+            name = header.title,
+            coverUrl = header.coverUrl,
+            trackCount = header.count,
+            source = playlistSource,
+            songs = ui.videos.map { it.toSongItem() }
+        )
+    }
     var selectionMode by remember { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showExportSheet by remember { mutableStateOf(false) }
@@ -218,6 +241,39 @@ fun BiliPlaylistDetailScreen(
                                 showSearch = !showSearch
                                 if (!showSearch) searchQuery = ""
                             }) { Icon(Icons.Filled.Search, contentDescription = stringResource(R.string.search_video)) }
+
+                            // 收藏按钮
+                            HapticIconButton(onClick = {
+                                scope.launch {
+                                    val header = ui.header ?: playlist
+                                    if (isFavorite) {
+                                        favoriteRepo.removeFavorite(playlistId, playlistSource)
+                                    } else {
+                                        favoriteRepo.addFavorite(
+                                            id = playlistId,
+                                            name = header.title,
+                                            coverUrl = header.coverUrl,
+                                            trackCount = header.count,
+                                            source = playlistSource,
+                                            songs = ui.videos.map { it.toSongItem() }
+                                        )
+                                    }
+                                }
+                            }) {
+                                Icon(
+                                    imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                                    contentDescription = if (isFavorite) {
+                                        stringResource(R.string.action_unfavorite)
+                                    } else {
+                                        stringResource(R.string.action_favorite_playlist)
+                                    },
+                                    tint = if (isFavorite) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface
+                                    }
+                                )
+                            }
 
                             if (batchDownloadProgress != null) {
                                 HapticIconButton(onClick = { showDownloadManager = true }) {
@@ -866,7 +922,7 @@ private fun VideoRow(
     snackbarHostState: SnackbarHostState
 ) {
     val context = LocalContext.current
-    val clipboardManager = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     Row(
         modifier = Modifier
@@ -977,8 +1033,8 @@ private fun VideoRow(
                         text = { Text(stringResource(R.string.action_copy_song_info)) },
                         onClick = {
                             val songInfo = "${video.title}-${video.uploader}"
-                            clipboardManager.setText(AnnotatedString(songInfo))
                             scope.launch {
+                                clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("text", songInfo)))
                                 snackbarHostState.showSnackbar(context.getString(R.string.toast_copied))
                             }
                             showMoreMenu = false

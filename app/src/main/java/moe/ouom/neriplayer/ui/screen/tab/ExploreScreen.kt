@@ -212,7 +212,7 @@ fun ExploreScreen(
             LargeTopAppBar(
                 title = { Text(stringResource(R.string.nav_explore)) },
                 scrollBehavior = scrollBehavior,
-                colors = TopAppBarDefaults.largeTopAppBarColors(
+                colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent,
                     scrolledContainerColor = Color.Transparent
                 )

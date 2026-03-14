@@ -104,6 +104,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private var hasRecommendLogin = false
 
     private fun localizedAppContext() = LanguageManager.applyLanguage(getApplication())
+    private fun buildLoginRequiredMessage(): String =
+        localizedAppContext().getString(R.string.home_login_required)
 
     init {
         // 登录后自动刷新首页推荐歌单
@@ -117,9 +119,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 hasRecommendLogin = nextHasLogin
                 if (loginChanged) {
                     _uiState.value = _uiState.value.copy(hasLogin = nextHasLogin)
-                    if (!nextHasLogin) {
-                        clearLoginOnlySections()
-                    }
                 }
                 refreshRecommend()
                 if (hasRecommendLogin) {
@@ -178,12 +177,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      * - 私人雷达：使用关键词“私人雷达”搜索 30 首
      */
     fun loadHomeRecommendations(force: Boolean = false) {
-        if (!hasRecommendLogin) {
-            if (force) {
-                clearLoginOnlySections()
-            }
-            return
-        }
         val state = _uiState.value
         if (!force) {
             val alreadyLoaded =
@@ -198,7 +191,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun refreshHotSongs() {
         if (!hasRecommendLogin) {
-            clearLoginOnlySections()
+            _uiState.value = _uiState.value.copy(
+                hotSongs = HomeSectionState(
+                    loading = false,
+                    error = buildLoginRequiredMessage()
+                )
+            )
             return
         }
         hotSongsJob?.cancel()
@@ -238,7 +236,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun refreshRadarSongs() {
         if (!hasRecommendLogin) {
-            clearLoginOnlySections()
+            _uiState.value = _uiState.value.copy(
+                radarSongs = HomeSectionState(
+                    loading = false,
+                    error = buildLoginRequiredMessage()
+                )
+            )
             return
         }
         radarSongsJob?.cancel()
@@ -298,7 +301,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 R.string.home_error_network,
                 error.message ?: error.javaClass.simpleName
             )
-            is ApiCodeException -> localizedContext.getString(R.string.error_api_code, error.code)
+            is ApiCodeException -> {
+                if (error.code == 50000005) {
+                    localizedContext.getString(R.string.home_login_required)
+                } else {
+                    localizedContext.getString(R.string.error_api_code, error.code)
+                }
+            }
             else -> localizedContext.getString(
                 R.string.home_error_unknown,
                 error.message ?: error.javaClass.simpleName
@@ -370,15 +379,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         return list
-    }
-
-    private fun clearLoginOnlySections() {
-        hotSongsJob?.cancel()
-        radarSongsJob?.cancel()
-        _uiState.value = _uiState.value.copy(
-            hotSongs = HomeSectionState(),
-            radarSongs = HomeSectionState()
-        )
     }
 
     private sealed interface RetryLoadResult<out T> {

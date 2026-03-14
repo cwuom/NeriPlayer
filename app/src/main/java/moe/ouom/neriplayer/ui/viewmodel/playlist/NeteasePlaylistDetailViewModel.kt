@@ -28,6 +28,9 @@ import android.os.Parcelable
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -146,12 +149,20 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
                 val raw = withContext(Dispatchers.IO) { client.getPlaylistDetail(playlistId) }
                 NPLogger.d(TAG_PD, "detail head=${raw.take(500)}")
 
-                val (header, tracks) = parseDetailFromPlaylist(raw)
+                val parsed = parseDetailFromPlaylist(raw)
+                val tracks = if (
+                    parsed.trackIds.isNotEmpty() &&
+                    parsed.trackIds.size > parsed.tracks.size
+                ) {
+                    fetchFullPlaylistTracks(parsed.trackIds, parsed.tracks)
+                } else {
+                    parsed.tracks
+                }
 
                 _uiState.value = PlaylistDetailUiState(
                     loading = false,
                     error = null,
-                    header = header,
+                    header = parsed.header,
                     tracks = tracks
                 )
             } catch (e: IOException) {
@@ -269,40 +280,18 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
         if (tracksArr != null) {
             for (i in 0 until tracksArr.length()) {
                 val t = tracksArr.optJSONObject(i) ?: continue
-                val id = t.optLong("id", 0L)
-                val name = t.optString("name", "")
-                if (id == 0L || name.isBlank()) continue
-
-                val ar = t.optJSONArray("ar")
-                val artist = buildString {
-                    if (ar != null) {
-                        for (j in 0 until ar.length()) {
-                            val a = ar.optJSONObject(j)?.optString("name") ?: continue
-                            if (isNotEmpty()) append(" / ")
-                            append(a)
-                        }
-                    }
-                }
-                val al = t.optJSONObject("al")
-                val albumName = al?.optString("name", "") ?: ""
-                val albumId = al?.optLong("id", 0L) ?: 0L
-                val cover = toHttps(al?.optString("picUrl", "")) ?: ""
-                val duration = t.optLong("dt", 0L)
-
-                list.add(
-                    SongItem(
-                        id = id,
-                        name = name,
-                        artist = artist,
-                        album = "Netease$albumName",
-                        albumId = albumId,
-                        durationMs = duration,
-                        coverUrl = cover
-                    )
-                )
+                parseSongItem(t)?.let { list.add(it) }
             }
         }
-        return ParsedDetail(header, list)
+        val trackIds = mutableListOf<Long>()
+        val trackIdsArr = pl.optJSONArray("trackIds")
+        if (trackIdsArr != null) {
+            for (i in 0 until trackIdsArr.length()) {
+                val id = trackIdsArr.optJSONObject(i)?.optLong("id", 0L) ?: 0L
+                if (id != 0L) trackIds.add(id)
+            }
+        }
+        return ParsedDetail(header, list, trackIds)
     }
 
     private fun parseDetailFromAlbum(raw: String): ParsedDetail {
@@ -327,36 +316,7 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
         if (tracksArr != null) {
             for (i in 0 until tracksArr.length()) {
                 val t = tracksArr.optJSONObject(i) ?: continue
-                val id = t.optLong("id", 0L)
-                val name = t.optString("name", "")
-                if (id == 0L || name.isBlank()) continue
-
-                val ar = t.optJSONArray("ar")
-                val artist = buildString {
-                    if (ar != null) {
-                        for (j in 0 until ar.length()) {
-                            val a = ar.optJSONObject(j)?.optString("name") ?: continue
-                            if (isNotEmpty()) append(" / ")
-                            append(a)
-                        }
-                    }
-                }
-                val al = t.optJSONObject("al")
-                val albumName = al?.optString("name", "") ?: ""
-                val albumId = al?.optLong("id", 0L) ?: 0L
-                val duration = t.optLong("dt", 0L)
-
-                list.add(
-                    SongItem(
-                        id = id,
-                        name = name,
-                        artist = artist,
-                        album = "Netease$albumName",
-                        albumId = albumId,
-                        durationMs = duration,
-                        coverUrl = cover
-                    )
-                )
+                parseSongItem(t, coverFallback = cover)?.let { list.add(it) }
             }
         }
         return ParsedDetail(header, list)
@@ -364,6 +324,84 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
     
     private data class ParsedDetail(
         val header: PlaylistHeader,
-        val tracks: List<SongItem>
+        val tracks: List<SongItem>,
+        val trackIds: List<Long> = emptyList()
     )
+
+    private fun parseSongItem(
+        t: JSONObject,
+        coverFallback: String? = null
+    ): SongItem? {
+        val id = t.optLong("id", 0L)
+        val name = t.optString("name", "")
+        if (id == 0L || name.isBlank()) return null
+
+        val ar = t.optJSONArray("ar")
+        val artist = buildString {
+            if (ar != null) {
+                for (j in 0 until ar.length()) {
+                    val a = ar.optJSONObject(j)?.optString("name") ?: continue
+                    if (isNotEmpty()) append(" / ")
+                    append(a)
+                }
+            }
+        }
+        val al = t.optJSONObject("al")
+        val albumName = al?.optString("name", "") ?: ""
+        val albumId = al?.optLong("id", 0L) ?: 0L
+        val cover = toHttps(al?.optString("picUrl", "")) ?: coverFallback ?: ""
+        val duration = t.optLong("dt", 0L)
+
+        return SongItem(
+            id = id,
+            name = name,
+            artist = artist,
+            album = "Netease$albumName",
+            albumId = albumId,
+            durationMs = duration,
+            coverUrl = cover
+        )
+    }
+
+    private suspend fun fetchFullPlaylistTracks(
+        trackIds: List<Long>,
+        existing: List<SongItem>
+    ): List<SongItem> = coroutineScope {
+        val existingMap = existing.associateBy { it.id }
+        val missingIds = trackIds.filterNot { existingMap.containsKey(it) }
+        if (missingIds.isEmpty()) {
+            return@coroutineScope trackIds.mapNotNull { existingMap[it] }
+        }
+
+        val pageSize = 300
+        val pages = missingIds.chunked(pageSize)
+        val deferred = pages.mapIndexed { index, ids ->
+            async(Dispatchers.IO) {
+                index to client.getSongDetail(ids)
+            }
+        }
+        val fetchedMap = mutableMapOf<Long, SongItem>()
+        deferred.awaitAll()
+            .sortedBy { it.first }
+            .forEach { (_, raw) ->
+                parseSongDetail(raw).forEach { song ->
+                    fetchedMap[song.id] = song
+                }
+            }
+        val merged = existingMap + fetchedMap
+        trackIds.mapNotNull { merged[it] }
+    }
+
+    private fun parseSongDetail(raw: String): List<SongItem> {
+        val root = JSONObject(raw)
+        val code = root.optInt("code", -1)
+        require(code == 200) { getApplication<Application>().getString(R.string.error_api_code, code) }
+        val songs = root.optJSONArray("songs") ?: return emptyList()
+        val out = mutableListOf<SongItem>()
+        for (i in 0 until songs.length()) {
+            val t = songs.optJSONObject(i) ?: continue
+            parseSongItem(t)?.let { out.add(it) }
+        }
+        return out
+    }
 }

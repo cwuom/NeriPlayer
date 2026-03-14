@@ -103,6 +103,7 @@ object AudioDownloadManager {
 
     suspend fun downloadSong(context: Context, song: SongItem) {
         withContext(Dispatchers.IO) {
+            val songKey = song.stableKey()
             try {
                 // 检查文件是否已存在
                 if (LocalSongSupport.isLocalSong(song, context)) {
@@ -201,6 +202,15 @@ object AudioDownloadManager {
                 } catch (_: Exception) { }
 
             } catch (e: Exception) {
+                if (
+                    e is java.util.concurrent.CancellationException ||
+                        _isCancelled.value ||
+                        moe.ouom.neriplayer.core.download.GlobalDownloadManager.isSongCancelled(songKey)
+                ) {
+                    NPLogger.d(TAG, "下载已取消: ${song.name}")
+                    _progressFlow.value = null
+                    throw java.util.concurrent.CancellationException("Download cancelled")
+                }
                 NPLogger.e(TAG, "下载失败: ${song.name}, 错误: ${e.javaClass.simpleName} - ${e.message}", e)
                 _progressFlow.value = null
                 throw e  // 重新抛出异常，让调用方知道下载失败

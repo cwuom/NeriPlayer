@@ -24,6 +24,7 @@
  */
 
 import android.annotation.SuppressLint
+import android.content.ClipData
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
@@ -87,6 +88,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -95,10 +97,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -122,6 +124,7 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.HapticFilledIconButton
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.formatDuration
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, androidx.compose.animation.ExperimentalSharedTransitionApi::class)
 @Composable
@@ -151,7 +154,8 @@ fun LyricsScreen(
     val playlistAddActionLabel = stringResource(R.string.playlist_add_to)
 
     val context = LocalContext.current
-    val clipboardManager = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
 
     var showSongNameMenu by remember { mutableStateOf(false) }
     var showArtistMenu by remember { mutableStateOf(false) }
@@ -286,7 +290,11 @@ fun LyricsScreen(
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.action_copy_song_name)) },
                             onClick = {
-                                currentSong?.name?.let { clipboardManager.setText(AnnotatedString(it)) }
+                                currentSong?.name?.let { text ->
+                                    scope.launch {
+                                        clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("text", text)))
+                                    }
+                                }
                                 showSongNameMenu = false
                             }
                         )
@@ -323,7 +331,11 @@ fun LyricsScreen(
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.action_copy_artist)) },
                             onClick = {
-                                currentSong?.artist?.let { clipboardManager.setText(AnnotatedString(it)) }
+                                currentSong?.artist?.let { text ->
+                                    scope.launch {
+                                        clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("text", text)))
+                                    }
+                                }
                                 showArtistMenu = false
                             }
                         )

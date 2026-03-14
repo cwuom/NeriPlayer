@@ -24,6 +24,7 @@ package moe.ouom.neriplayer.ui.screen.playlist
  */
 
 import android.app.Application
+import android.content.ClipData
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -103,9 +104,9 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -126,6 +127,7 @@ import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.displayArtist
+import moe.ouom.neriplayer.data.displayCoverUrl
 import moe.ouom.neriplayer.data.displayName
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
@@ -306,6 +308,19 @@ fun DetailScreen(
     val favorites by favoriteRepo.favorites.collectAsState()
     val isFavorite = remember(favorites, playlistId) {
         favoriteRepo.isFavorite(playlistId, playlistSource)
+    }
+
+    LaunchedEffect(isFavorite, ui.header, ui.tracks) {
+        if (!isFavorite) return@LaunchedEffect
+        val header = ui.header ?: return@LaunchedEffect
+        favoriteRepo.updateFavoriteMeta(
+            id = header.id,
+            name = header.name,
+            coverUrl = header.coverUrl,
+            trackCount = header.trackCount,
+            source = playlistSource,
+            songs = ui.tracks
+        )
     }
 
     var showExportSheet by remember { mutableStateOf(false) }
@@ -919,7 +934,7 @@ private fun SongRow(
     val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
     val isCurrentSong = current?.sameIdentityAs(song) == true
     val context = LocalContext.current
-    val clipboardManager = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
 
     Row(
@@ -957,7 +972,8 @@ private fun SongRow(
             }
         }
 
-        if (!song.coverUrl.isNullOrBlank()) {
+        val displayCoverUrl = song.displayCoverUrl()
+        if (!displayCoverUrl.isNullOrBlank()) {
             Box(
                 modifier = Modifier
                     .size(48.dp)
@@ -968,7 +984,7 @@ private fun SongRow(
                     )
             ) {
                 AsyncImage(
-                    model = ImageRequest.Builder(LocalContext.current).data(song.coverUrl).build(),
+                    model = ImageRequest.Builder(LocalContext.current).data(displayCoverUrl).build(),
                     contentDescription = song.displayName(),
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.matchParentSize()
@@ -1045,8 +1061,8 @@ private fun SongRow(
                         text = { Text(stringResource(R.string.action_copy_song_info)) },
                         onClick = {
                             val songInfo = "${song.displayName()}-${song.displayArtist()}"
-                            clipboardManager.setText(AnnotatedString(songInfo))
                             scope.launch {
+                                clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("text", songInfo)))
                                 snackbarHostState.showSnackbar(context.getString(R.string.toast_copied))
                             }
                             showMoreMenu = false

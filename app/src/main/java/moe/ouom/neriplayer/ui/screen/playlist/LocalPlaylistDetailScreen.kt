@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.ui.screen.playlist
 
 import android.Manifest
+import android.content.ClipData
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.BackHandler
@@ -56,6 +57,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.DownloadDone
 import androidx.compose.material.icons.outlined.LibraryMusic
+import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -106,11 +108,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
@@ -140,6 +143,7 @@ import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.displayAlbum
 import moe.ouom.neriplayer.data.displayArtist
+import moe.ouom.neriplayer.data.displayCoverUrl
 import moe.ouom.neriplayer.data.displayName
 import moe.ouom.neriplayer.data.identity
 import moe.ouom.neriplayer.data.isLocalSong
@@ -192,7 +196,7 @@ fun LocalPlaylistDetailScreen(
                 AppContainer.playlistUsageRepo.updateInfo(
                     id = playlist.id,
                     name = playlist.name,
-                    picUrl = playlist.songs.lastOrNull()?.coverUrl,
+                    picUrl = playlist.displayCoverUrl(),
                     trackCount = playlist.songs.size,
                     source = "local"
                 )
@@ -258,7 +262,7 @@ fun LocalPlaylistDetailScreen(
             }
 
             val context = LocalContext.current
-            val clipboardManager = LocalClipboardManager.current
+            val clipboard = LocalClipboard.current
             val playlist = playlistOrNull
             val isFavorites = FavoritesPlaylist.isSystemPlaylist(playlist, context)
             val isLocalFilesPlaylist = LocalFilesPlaylist.isSystemPlaylist(playlist, context)
@@ -268,6 +272,12 @@ fun LocalPlaylistDetailScreen(
             val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
             val allPlaylists by repo.playlists.collectAsState()
             val scope = rememberCoroutineScope()
+            var syncInProgress by remember { mutableStateOf(false) }
+            var showNeteaseSyncConfirm by remember { mutableStateOf(false) }
+            var showNeteaseSyncPreview by remember { mutableStateOf(false) }
+            var neteaseSyncPreviewSongs by remember { mutableStateOf<List<SongItem>>(emptyList()) }
+            var neteaseSyncPreviewQuery by rememberSaveable { mutableStateOf("") }
+            var neteaseSyncSelectedKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
 
 
 
@@ -418,6 +428,81 @@ fun LocalPlaylistDetailScreen(
                     action()
                 }
             }
+
+            fun handleNeteaseSyncResult(result: moe.ouom.neriplayer.data.NeteaseLikeSyncResult) {
+                syncInProgress = false
+                val message = if (result.totalSongs == 0) {
+                    context.getString(R.string.local_playlist_sync_netease_empty)
+                } else {
+                    context.getString(
+                        R.string.local_playlist_sync_netease_result,
+                        result.totalSongs,
+                        result.added,
+                        result.skippedExisting,
+                        result.skippedUnsupported,
+                        result.failed
+                    )
+                }
+                scope.launch {
+                    snackbarHostState.showSnackbar(message)
+                }
+            }
+
+            fun syncSelectedNeteaseSongs() {
+                if (syncInProgress) return
+                val selectedSongs = neteaseSyncPreviewSongs.filter {
+                    it.stableKey() in neteaseSyncSelectedKeys
+                }
+                if (selectedSongs.isEmpty()) return
+                syncInProgress = true
+                vm.syncSongsToNeteaseLiked(selectedSongs) { result ->
+                    showNeteaseSyncPreview = false
+                    handleNeteaseSyncResult(result)
+                }
+            }
+
+            fun openNeteaseSyncPreview() {
+                val allSongs = playlist.songs
+                if (allSongs.isEmpty()) {
+                    scope.launch {
+                        snackbarHostState.showSnackbar(
+                            context.getString(R.string.local_playlist_sync_netease_empty)
+                        )
+                    }
+                    return
+                }
+                if (syncInProgress) return
+                syncInProgress = true
+                scope.launch {
+                    val localCandidates = repo.filterNeteaseLikeSyncCandidates(allSongs)
+                    if (localCandidates.isEmpty()) {
+                        syncInProgress = false
+                        snackbarHostState.showSnackbar(
+                            context.getString(R.string.local_playlist_sync_netease_no_supported)
+                        )
+                        return@launch
+                    }
+                    val filteredCandidates = repo.filterNeteaseLikeSyncCandidatesExcludingLiked(
+                        AppContainer.neteaseClient,
+                        allSongs
+                    )
+                    syncInProgress = false
+                    if (filteredCandidates.isEmpty()) {
+                        snackbarHostState.showSnackbar(
+                            context.getString(R.string.local_playlist_sync_netease_all_synced)
+                        )
+                        return@launch
+                    }
+                    neteaseSyncPreviewSongs = filteredCandidates
+                    neteaseSyncSelectedKeys = filteredCandidates.map { it.stableKey() }.toSet()
+                    neteaseSyncPreviewQuery = ""
+                    showNeteaseSyncPreview = true
+                }
+            }
+
+            fun requestNeteaseSync() {
+                showNeteaseSyncConfirm = true
+            }
             val autoShowKeyboard by AppContainer.settingsRepo.autoShowKeyboardFlow.collectAsState(initial = false)
 
             LaunchedEffect(showSearch, selectionMode) {
@@ -430,10 +515,13 @@ fun LocalPlaylistDetailScreen(
 
             // 重命名
             var showRename by remember { mutableStateOf(false) }
-            var renameText by remember { mutableStateOf(TextFieldValue(playlist.name)) }
+            var renameText by remember {
+                mutableStateOf(TextFieldValue(playlist.name.take(LocalPlaylistRepository.MAX_PLAYLIST_NAME_LENGTH)))
+            }
             var renameError by remember { mutableStateOf<String?>(null) }
+            val maxNameLength = LocalPlaylistRepository.MAX_PLAYLIST_NAME_LENGTH
             fun validateRename(input: String): String? {
-                val name = input.trim()
+                val name = input.trim().take(maxNameLength)
                 if (name.isEmpty()) return context.getString(R.string.playlist_name_empty)
                 if (SystemLocalPlaylists.matchesReservedName(name, context)) {
                     val reservedName = SystemLocalPlaylists.resolve(
@@ -459,7 +547,7 @@ fun LocalPlaylistDetailScreen(
                 AlertDialog(
                     onDismissRequest = { showRename = false },
                     confirmButton = {
-                        val trimmed = renameText.text.trim()
+                        val trimmed = renameText.text.trim().take(maxNameLength)
                         val disabled =
                             renameError != null || trimmed.equals(playlist.name, ignoreCase = true)
                         HapticTextButton(
@@ -481,8 +569,12 @@ fun LocalPlaylistDetailScreen(
                         OutlinedTextField(
                             value = renameText,
                             onValueChange = {
-                                renameText = it
-                                renameError = validateRename(it.text)
+                                val limited = it.text.take(maxNameLength)
+                                renameText = it.copy(
+                                    text = limited,
+                                    selection = TextRange(limited.length)
+                                )
+                                renameError = validateRename(limited)
                             },
                             singleLine = true,
                             isError = renameError != null,
@@ -620,6 +712,28 @@ fun LocalPlaylistDetailScreen(
                 return@Surface
             }
 
+            if (showNeteaseSyncPreview) {
+                LocalScanPreviewScreen(
+                    isScanning = false,
+                    songs = neteaseSyncPreviewSongs,
+                    query = neteaseSyncPreviewQuery,
+                    onQueryChange = { neteaseSyncPreviewQuery = it },
+                    selectedKeys = neteaseSyncSelectedKeys,
+                    onSelectedKeysChange = { neteaseSyncSelectedKeys = it },
+                    snackbarHostState = snackbarHostState,
+                    onBack = { showNeteaseSyncPreview = false },
+                    onImport = { syncSelectedNeteaseSongs() },
+                    title = stringResource(R.string.local_playlist_sync_netease_preview_title),
+                    actionLabel = { count ->
+                        context.getString(R.string.local_playlist_sync_selected, count)
+                    },
+                    searchPlaceholder = stringResource(R.string.local_playlist_sync_search),
+                    emptyText = stringResource(R.string.local_playlist_sync_empty),
+                    isBusy = syncInProgress
+                )
+                return@Surface
+            }
+
             Scaffold(
                 containerColor = Color.Transparent,
                 snackbarHost = { 
@@ -690,6 +804,24 @@ fun LocalPlaylistDetailScreen(
                                             Icons.Outlined.LibraryMusic,
                                             contentDescription = stringResource(R.string.download_scan_local)
                                         )
+                                    }
+                                }
+                                if (isFavorites) {
+                                    HapticIconButton(
+                                        onClick = { requestNeteaseSync() },
+                                        enabled = !syncInProgress
+                                    ) {
+                                        if (syncInProgress) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(20.dp),
+                                                strokeWidth = 2.dp
+                                            )
+                                        } else {
+                                            Icon(
+                                                imageVector = Icons.Outlined.Sync,
+                                                contentDescription = stringResource(R.string.local_playlist_sync_netease_liked)
+                                            )
+                                        }
                                     }
                                 }
                                 
@@ -820,7 +952,9 @@ fun LocalPlaylistDetailScreen(
                                 ) {
                                     // 头图取"展示顺序"的第一张有封面的
                                     val baseQueue = localSongs.asReversed()
-                                    val headerCover = baseQueue.firstOrNull { !it.coverUrl.isNullOrBlank() }?.coverUrl
+                                    val headerCover =
+                                        baseQueue.firstOrNull { !it.displayCoverUrl().isNullOrBlank() }
+                                            ?.displayCoverUrl()
                                     AsyncImage(
                                         model = ImageRequest.Builder(LocalContext.current)
                                             .data(headerCover).build(),
@@ -955,10 +1089,11 @@ fun LocalPlaylistDetailScreen(
                                             }
 
                                             // 封面
-                                            if (!song.coverUrl.isNullOrBlank()) {
+                                            val displayCoverUrl = song.displayCoverUrl()
+                                            if (!displayCoverUrl.isNullOrBlank()) {
                                                 AsyncImage(
                                                     model = ImageRequest.Builder(LocalContext.current)
-                                                        .data(song.coverUrl).build(),
+                                                        .data(displayCoverUrl).build(),
                                                     contentDescription = null,
                                                     contentScale = ContentScale.Crop,
                                                     modifier = Modifier
@@ -1096,8 +1231,8 @@ fun LocalPlaylistDetailScreen(
                                                                 onClick = {
                                                                     val songInfo =
                                                                         "${song.displayName()}-${song.displayArtist()}"
-                                                                    clipboardManager.setText(AnnotatedString(songInfo))
                                                                     scope.launch {
+                                                                        clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("text", songInfo)))
                                                                         snackbarHostState.showSnackbar(
                                                                             context.getString(R.string.toast_copied)
                                                                         )
@@ -1464,6 +1599,27 @@ fun LocalPlaylistDetailScreen(
                     )
                 }
 
+                if (showNeteaseSyncConfirm) {
+                    AlertDialog(
+                        onDismissRequest = { showNeteaseSyncConfirm = false },
+                        title = { Text(stringResource(R.string.local_playlist_sync_netease_confirm_title)) },
+                        text = { Text(stringResource(R.string.local_playlist_sync_netease_confirm_message)) },
+                        confirmButton = {
+                            HapticTextButton(
+                                onClick = {
+                                    showNeteaseSyncConfirm = false
+                                    openNeteaseSyncPreview()
+                                }
+                            ) { Text(stringResource(R.string.action_confirm)) }
+                        },
+                        dismissButton = {
+                            HapticTextButton(
+                                onClick = { showNeteaseSyncConfirm = false }
+                            ) { Text(stringResource(R.string.action_cancel)) }
+                        }
+                    )
+                }
+
                 pendingSyncConfirmAction?.let { action ->
                     LocalSongSyncConfirmDialog(
                         actionLabel = pendingSyncConfirmLabel,
@@ -1531,7 +1687,12 @@ private fun LocalScanPreviewScreen(
     onSelectedKeysChange: (Set<String>) -> Unit,
     snackbarHostState: SnackbarHostState,
     onBack: () -> Unit,
-    onImport: () -> Unit
+    onImport: () -> Unit,
+    title: String? = null,
+    actionLabel: ((Int) -> String)? = null,
+    searchPlaceholder: String? = null,
+    emptyText: String? = null,
+    isBusy: Boolean = false
 ) {
     val context = LocalContext.current
     val previewItems = remember(songs) { songs.map { it.toLocalScanPreviewItem() } }
@@ -1552,6 +1713,13 @@ private fun LocalScanPreviewScreen(
     }
     val allDisplayedSelected = displayedItems.isNotEmpty() &&
         displayedItems.all { it.stableKey in selectedKeys }
+    val resolvedTitle = title ?: stringResource(R.string.local_playlist_scan_preview_title)
+    val resolvedSearchPlaceholder =
+        searchPlaceholder ?: stringResource(R.string.local_playlist_scan_preview_search)
+    val resolvedEmptyText = emptyText ?: stringResource(R.string.download_scan_empty)
+    val resolvedActionLabel = actionLabel?.invoke(selectedKeys.size)
+        ?: stringResource(R.string.download_scan_add_selected, selectedKeys.size)
+    val showBusy = isScanning || isBusy
 
     BackHandler(onBack = onBack)
 
@@ -1565,7 +1733,7 @@ private fun LocalScanPreviewScreen(
         },
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.local_playlist_scan_preview_title)) },
+                title = { Text(resolvedTitle) },
                 navigationIcon = {
                     HapticIconButton(onClick = onBack) {
                         Icon(
@@ -1575,7 +1743,7 @@ private fun LocalScanPreviewScreen(
                     }
                 },
                 actions = {
-                    if (isScanning) {
+                    if (showBusy) {
                         CircularProgressIndicator(
                             modifier = Modifier
                                 .padding(end = 16.dp)
@@ -1619,10 +1787,10 @@ private fun LocalScanPreviewScreen(
                             modifier = Modifier.weight(1f)
                         )
                         HapticTextButton(
-                            enabled = selectedKeys.isNotEmpty(),
+                            enabled = selectedKeys.isNotEmpty() && !isBusy,
                             onClick = onImport
                         ) {
-                            Text(stringResource(R.string.download_scan_add_selected, selectedKeys.size))
+                            Text(resolvedActionLabel)
                         }
                     }
                 }
@@ -1657,7 +1825,7 @@ private fun LocalScanPreviewScreen(
                     onValueChange = onQueryChange,
                     modifier = Modifier.fillMaxWidth(),
                     placeholder = {
-                        Text(stringResource(R.string.local_playlist_scan_preview_search))
+                        Text(resolvedSearchPlaceholder)
                     },
                     singleLine = true
                 )
@@ -1712,7 +1880,7 @@ private fun LocalScanPreviewScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = stringResource(R.string.download_scan_empty),
+                            text = resolvedEmptyText,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }

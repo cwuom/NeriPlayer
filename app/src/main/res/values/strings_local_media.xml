@@ -36,6 +36,6 @@
     <string name="local_song_lyric_external">同目录歌词文件</string>
     <string name="local_song_open_details">歌曲信息详情</string>
     <string name="local_song_sync_confirm_title">本地歌曲不会同步</string>
-    <string name="local_song_sync_confirm_message">本地歌曲不会同步到 GitHub，确认%1$s吗？</string>
+    <string name="local_song_sync_confirm_message">本地歌曲不会参与同步，确认%1$s吗？</string>
     <string name="local_song_share_failed">无法分享本地歌曲文件</string>
 </resources>

@@ -8,11 +8,13 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.LocalAudioImportManager
 import moe.ouom.neriplayer.data.LocalAudioImportResult
 import moe.ouom.neriplayer.data.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.LocalPlaylist
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.NeteaseLikeSyncResult
 import moe.ouom.neriplayer.data.LocalSongSupport
 import moe.ouom.neriplayer.data.SongIdentity
 import moe.ouom.neriplayer.data.identity
@@ -180,6 +182,23 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
 
     fun removeSong(songId: Long) {
         viewModelScope.launch { repo.removeSongFromPlaylist(playlistId, songId) }
+    }
+
+    fun syncFavoritesToNeteaseLiked(onResult: (NeteaseLikeSyncResult) -> Unit) {
+        viewModelScope.launch {
+            val result = repo.syncFavoritesToNeteaseLiked(AppContainer.neteaseClient)
+            onResult(result)
+        }
+    }
+
+    fun syncSongsToNeteaseLiked(
+        songs: List<SongItem>,
+        onResult: (NeteaseLikeSyncResult) -> Unit
+    ) {
+        viewModelScope.launch {
+            val result = repo.syncSongsToNeteaseLiked(AppContainer.neteaseClient, songs)
+            onResult(result)
+        }
     }
 
     private fun isActiveScanSession(sessionId: Long, currentJob: Job): Boolean {

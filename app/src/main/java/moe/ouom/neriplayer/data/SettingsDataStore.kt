@@ -58,6 +58,10 @@ object SettingsKeys {
     val ADVANCED_BLUR_ENABLED = booleanPreferencesKey("advanced_blur_enabled")
     val NOWPLAYING_AUDIO_REACTIVE_ENABLED = booleanPreferencesKey("nowplaying_audio_reactive_enabled")
     val NOWPLAYING_DYNAMIC_BACKGROUND_ENABLED = booleanPreferencesKey("nowplaying_dynamic_background_enabled")
+    val NOWPLAYING_COVER_BLUR_BACKGROUND_ENABLED =
+        booleanPreferencesKey("nowplaying_cover_blur_background_enabled")
+    val NOWPLAYING_COVER_BLUR_AMOUNT = floatPreferencesKey("nowplaying_cover_blur_amount")
+    val NOWPLAYING_COVER_BLUR_DARKEN = floatPreferencesKey("nowplaying_cover_blur_darken")
     val LYRIC_FONT_SCALE = floatPreferencesKey("lyric_font_scale")
     val UI_DENSITY_SCALE = floatPreferencesKey("ui_density_scale")
     val BYPASS_PROXY = booleanPreferencesKey("bypass_proxy")
@@ -174,6 +178,15 @@ class SettingsRepository(private val context: Context) {
 
     val nowPlayingDynamicBackgroundEnabledFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.NOWPLAYING_DYNAMIC_BACKGROUND_ENABLED] ?: true }
+
+    val nowPlayingCoverBlurBackgroundEnabledFlow: Flow<Boolean> =
+        context.dataStore.data.map { it[SettingsKeys.NOWPLAYING_COVER_BLUR_BACKGROUND_ENABLED] ?: false }
+
+    val nowPlayingCoverBlurAmountFlow: Flow<Float> =
+        context.dataStore.data.map { it[SettingsKeys.NOWPLAYING_COVER_BLUR_AMOUNT] ?: 1.5f }
+
+    val nowPlayingCoverBlurDarkenFlow: Flow<Float> =
+        context.dataStore.data.map { it[SettingsKeys.NOWPLAYING_COVER_BLUR_DARKEN] ?: 0.2f }
 
     val lyricFontScaleFlow: Flow<Float> =
         context.dataStore.data.map { it[SettingsKeys.LYRIC_FONT_SCALE] ?: 1.0f }
@@ -363,6 +376,18 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setNowPlayingDynamicBackgroundEnabled(enabled: Boolean) {
         context.dataStore.edit { it[SettingsKeys.NOWPLAYING_DYNAMIC_BACKGROUND_ENABLED] = enabled }
+    }
+
+    suspend fun setNowPlayingCoverBlurBackgroundEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.NOWPLAYING_COVER_BLUR_BACKGROUND_ENABLED] = enabled }
+    }
+
+    suspend fun setNowPlayingCoverBlurAmount(amount: Float) {
+        context.dataStore.edit { it[SettingsKeys.NOWPLAYING_COVER_BLUR_AMOUNT] = amount }
+    }
+
+    suspend fun setNowPlayingCoverBlurDarken(amount: Float) {
+        context.dataStore.edit { it[SettingsKeys.NOWPLAYING_COVER_BLUR_DARKEN] = amount }
     }
 
     suspend fun setLyricFontScale(scale: Float) {

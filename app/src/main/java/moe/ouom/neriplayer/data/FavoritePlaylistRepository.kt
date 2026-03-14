@@ -160,6 +160,39 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
         }
     }
 
+    suspend fun updateFavoriteMeta(
+        id: Long,
+        name: String,
+        coverUrl: String?,
+        trackCount: Int,
+        source: String,
+        songs: List<SongItem>
+    ) {
+        withContext(Dispatchers.IO) {
+            val list = _snapshots.value.toMutableList()
+            val existingIndex = list.indexOfFirst { it.id == id && it.source == source }
+            if (existingIndex == -1) return@withContext
+
+            val existing = list[existingIndex]
+            if (existing.isDeleted) return@withContext
+
+            val mergedSongs = if (songs.isNotEmpty()) songs else existing.songs
+            val resolvedName = name.ifBlank { existing.name }
+            val resolvedCover = coverUrl ?: existing.coverUrl
+            val resolvedTrackCount = maxOf(trackCount, mergedSongs.size, existing.trackCount)
+
+            list[existingIndex] = existing.copy(
+                name = resolvedName,
+                coverUrl = resolvedCover,
+                trackCount = resolvedTrackCount,
+                songs = mergedSongs,
+                modifiedAt = System.currentTimeMillis(),
+                isDeleted = false
+            )
+            publish(list)
+        }
+    }
+
     suspend fun replaceFavoritesFromSync(favorites: List<FavoritePlaylist>) {
         withContext(Dispatchers.IO) {
             publish(favorites, triggerSync = false)

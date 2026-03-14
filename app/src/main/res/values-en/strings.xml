@@ -216,8 +216,14 @@
     <string name="lyrics_blur_desc">Blur inactive lines</string>
     <string name="lyrics_blur_amount">Blur Intensity</string>
     <string name="lyrics_blur_current">Current Blur: %.2f</string>
-    <string name="settings_advanced_blur">Advanced Blur</string>
-    <string name="settings_advanced_blur_desc">Enable Haze blur (affects the mini player and surfaces)</string>
+    <string name="settings_advanced_blur">Mini Player Advanced Blur</string>
+    <string name="settings_advanced_blur_desc">Enable Haze blur for the mini player</string>
+    <string name="settings_nowplaying_cover_blur_background">Now Playing Cover Blur</string>
+    <string name="settings_nowplaying_cover_blur_background_desc">Use the current cover as a blurred background</string>
+    <string name="settings_nowplaying_cover_blur_amount">Cover Blur Intensity</string>
+    <string name="settings_nowplaying_cover_blur_value">Blur: %.1f</string>
+    <string name="settings_nowplaying_cover_blur_darken">Background Dim</string>
+    <string name="settings_nowplaying_cover_blur_darken_value">Dim: %.2f</string>
     <string name="settings_nowplaying_audio_reactive">Now Playing Audio Reactive</string>
     <string name="settings_nowplaying_audio_reactive_desc">Enable audio-reactive motion in Now Playing</string>
     <string name="settings_nowplaying_dynamic_background">Now Playing Dynamic Background</string>
@@ -280,7 +286,7 @@
     <string name="sync_create_new_repo">Create New</string>
     <string name="sync_use_existing_repo">Use Existing</string>
     <string name="sync_data_saver">Data Saver</string>
-    <string name="sync_data_saver_desc">Use less sync traffic. Keep all devices aligned.</string>
+    <string name="sync_data_saver_desc">Reduce sync traffic.</string>
     <string name="sync_data_saver_warning_title">Change Data Saver?</string>
     <string name="sync_data_saver_warning_message">This may cause sync inconsistencies. Continue?</string>
     <string name="sync_data_saver_warning_confirm">Continue</string>
@@ -810,6 +816,8 @@
     <string name="settings_auto_show_keyboard_desc">Auto focus inputs and try to show the keyboard</string>
     <string name="settings_home_cards">Home Cards</string>
     <string name="settings_home_cards_desc">You can hide any home card. Hide all cards to hide Home.</string>
+    <string name="settings_display">Display Settings</string>
+    <string name="settings_display_desc">Control cover, lyrics, and background display.</string>
     <string name="settings_home_hidden_notice">All home cards are hidden, so Home will disappear from the bottom bar.</string>
     <string name="settings_playback">Playback Settings</string>
     <string name="settings_playback_expand">Configure playback behavior</string>
@@ -1058,7 +1066,10 @@
     <string name="home_load_failed">Load failed: %s</string>
     <string name="home_error_network">Network or server error: %s</string>
     <string name="home_error_unknown">Parse or unknown error: %s</string>
+    <string name="home_login_required">Sign in to enable</string>
+    <string name="home_login_required_hint">Will auto-enable after sign-in</string>
     <string name="home_retry_hint">Tap refresh in the upper right to retry~</string>
+    <string name="settings_android12_required">Android 12+ required</string>
     <string name="home_song_count_format">%d songs</string>
     <string name="home_play_count_format" formatted="false">%s · %d songs</string>
     <string name="home_unfavorite_playlist">Unfavorite</string>
@@ -1103,6 +1114,18 @@
     <string name="local_playlist_delete_songs">Delete Selected Songs</string>
     <string name="local_playlist_delete_songs_confirm">Are you sure you want to remove %d selected songs from the playlist?</string>
     <string name="local_playlist_delete_count">Delete (%d)</string>
+    <string name="local_playlist_sync_netease_liked">Sync to NetEase Liked Songs</string>
+    <string name="local_playlist_sync_netease_confirm_title">Sync to NetEase?</string>
+    <string name="local_playlist_sync_netease_confirm_message">Sync selected songs to NetEase Liked Songs?</string>
+    <string name="local_playlist_sync_netease_preview_title">Sync to NetEase</string>
+    <string name="local_playlist_sync_netease_result">Sync finished: total %1$d, added %2$d, existing %3$d, unsupported %4$d, failed %5$d</string>
+    <string name="local_playlist_sync_netease_empty">Favorites are empty. Nothing to sync.</string>
+    <string name="local_playlist_sync_netease_no_supported">No songs available to sync.</string>
+    <string name="local_playlist_sync_netease_all_synced">Already synced to NetEase. Nothing to update.</string>
+    <string name="local_playlist_sync_selected">Sync selected (%d)</string>
+    <string name="local_playlist_sync_search">Search syncable songs</string>
+    <string name="local_playlist_sync_empty">No songs available to sync.</string>
+    <string name="library_delete_selected_confirm">Delete selected %d playlists? This cannot be undone.</string>
     <string name="local_playlist_export_to">Export to Playlist</string>
     <string name="local_playlist_import_audio">Import Local Audio</string>
     <string name="local_playlist_import_audio_success">Imported %d local tracks</string>
