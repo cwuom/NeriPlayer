@@ -201,6 +201,8 @@ object PlayerManager {
     private var lastStatePersistAtMs: Long = 0L
     @Volatile
     private var resumePlaybackRequested = false
+    @Volatile
+    private var suppressAutoResumeForCurrentSession = false
 
     private val _currentSongFlow = MutableStateFlow<SongItem?>(null)
     val currentSongFlow: StateFlow<SongItem?> = _currentSongFlow
@@ -974,6 +976,7 @@ object PlayerManager {
             NPLogger.w("NERI-Player", "playPlaylist called with EMPTY list")
             return
         }
+        suppressAutoResumeForCurrentSession = false
         consecutivePlayFailures = 0
         currentPlaylist = songs
         _currentQueueFlow.value = currentPlaylist
@@ -1427,6 +1430,7 @@ object PlayerManager {
     fun play() {
         ensureInitialized()
         if (!initialized) return
+        suppressAutoResumeForCurrentSession = false
         resumePlaybackRequested = true
         val song = _currentSongFlow.value
         if (isPreparedInPlayer() && song != null && !isLocalSong(song)) {
@@ -1893,6 +1897,8 @@ object PlayerManager {
         val playlistSnapshot = currentPlaylist.toList()
         val currentIndexSnapshot = currentIndex
         val mediaUrlSnapshot = _currentMediaUrl.value
+        val persistedShouldResumePlayback =
+            shouldResumePlayback && !suppressAutoResumeForCurrentSession
         val persistedPositionMs = if (keepLastPlaybackProgressEnabled) {
             positionMs.coerceAtLeast(0L)
         } else {
@@ -1917,7 +1923,7 @@ object PlayerManager {
                         index = currentIndexSnapshot,
                         mediaUrl = mediaUrlSnapshot,
                         positionMs = persistedPositionMs,
-                        shouldResumePlayback = shouldResumePlayback,
+                        shouldResumePlayback = persistedShouldResumePlayback,
                         repeatMode = persistedRepeatMode,
                         shuffleEnabled = persistedShuffleEnabled
                     )
@@ -2275,11 +2281,28 @@ object PlayerManager {
         val resumePositionMs = positionMs.coerceAtLeast(0L)
         restoredResumePositionMs = resumePositionMs
         restoredShouldResumePlayback = true
+        suppressAutoResumeForCurrentSession = false
         resumePlaybackRequested = true
         ioScope.launch {
             persistState(positionMs = resumePositionMs, shouldResumePlayback = true)
         }
         return true
+    }
+
+    fun suppressFutureAutoResumeForCurrentSession() {
+        ensureInitialized()
+        if (!initialized || currentPlaylist.isEmpty()) return
+        suppressAutoResumeForCurrentSession = true
+        restoredShouldResumePlayback = false
+        val positionMs = if (::player.isInitialized) {
+            player.currentPosition.coerceAtLeast(0L)
+        } else {
+            _playbackPositionMs.value.coerceAtLeast(0L)
+        }
+        _playbackPositionMs.value = positionMs
+        ioScope.launch {
+            persistState(positionMs = positionMs, shouldResumePlayback = false)
+        }
     }
 
 

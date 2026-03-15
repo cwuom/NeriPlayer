@@ -565,17 +565,24 @@ class AudioPlayerService : Service() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
-        // 用户从最近任务移除应用时，视作“主动退出”。
-        // 这里暂停播放并持久化 shouldResumePlayback=false，避免下次打开自动播放。
+        NPLogger.w(
+            "NERI-APS",
+            "onTaskRemoved hasItems=${PlayerManager.hasItems()} isPlaying=${PlayerManager.isPlayingFlow.value}"
+        )
+        // 从最近任务移除时不再直接停播，只禁止这次会话后续自动恢复。
         if (PlayerManager.hasItems()) {
-            PlayerManager.pause(forcePersist = true)
-            updateAll()
+            PlayerManager.suppressFutureAutoResumeForCurrentSession()
+            updateNotification()
         }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        NPLogger.w(
+            "NERI-APS",
+            "onDestroy allowServiceRestart=$allowServiceRestart hasItems=${PlayerManager.hasItems()} isPlaying=${PlayerManager.isPlayingFlow.value}"
+        )
         unregisterReceiver(becomingNoisyReceiver)
         serviceScope.cancel()
         mediaSession.isActive = false
@@ -584,6 +591,22 @@ class AudioPlayerService : Service() {
             PlayerManager.release()
         }
         super.onDestroy()
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        NPLogger.w(
+            "NERI-APS",
+            "onTrimMemory level=$level foreground=$isForegroundStarted hasItems=${PlayerManager.hasItems()} isPlaying=${PlayerManager.isPlayingFlow.value}"
+        )
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        NPLogger.w(
+            "NERI-APS",
+            "onLowMemory foreground=$isForegroundStarted hasItems=${PlayerManager.hasItems()} isPlaying=${PlayerManager.isPlayingFlow.value}"
+        )
     }
 
 
