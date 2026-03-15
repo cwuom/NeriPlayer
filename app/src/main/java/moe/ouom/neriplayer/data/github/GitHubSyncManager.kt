@@ -403,6 +403,7 @@ class GitHubSyncManager private constructor(context: Context) {
             .map { (_, snapshots) ->
                 snapshots.reduce(::mergeFavoritePlaylist)
             }
+            .sortedByDescending { it.sortOrder }
 
         val mergedRecentPlayDeletions = pruneRecentPlayDeletions(
             mergeRecentPlayDeletions(local.recentPlayDeletions, remote.recentPlayDeletions),
@@ -623,11 +624,16 @@ class GitHubSyncManager private constructor(context: Context) {
                 )
             } else {
                 if (newer.isDeleted) {
-                    newer.copy(songs = emptyList(), trackCount = 0)
+                    newer.copy(
+                        songs = emptyList(),
+                        trackCount = 0,
+                        sortOrder = maxOf(left.sortOrder, right.sortOrder)
+                    )
                 } else {
                     newer.copy(
                         songs = (left.songs + right.songs).distinctBy { it.identity() },
-                        trackCount = maxOf(left.trackCount, right.trackCount, left.songs.size, right.songs.size)
+                        trackCount = maxOf(left.trackCount, right.trackCount, left.songs.size, right.songs.size),
+                        sortOrder = newer.sortOrder.takeIf { it > 0L } ?: older.sortOrder
                     )
                 }
             }
@@ -637,7 +643,8 @@ class GitHubSyncManager private constructor(context: Context) {
             return newer.copy(
                 songs = emptyList(),
                 trackCount = 0,
-                addedTime = maxOf(left.addedTime, right.addedTime)
+                addedTime = maxOf(left.addedTime, right.addedTime),
+                sortOrder = maxOf(left.sortOrder, right.sortOrder)
             )
         }
 
@@ -648,6 +655,7 @@ class GitHubSyncManager private constructor(context: Context) {
             trackCount = maxOf(left.trackCount, right.trackCount, mergedSongs.size),
             addedTime = maxOf(left.addedTime, right.addedTime),
             modifiedAt = maxOf(left.modifiedAt, right.modifiedAt),
+            sortOrder = newer.sortOrder.takeIf { it > 0L } ?: older.sortOrder,
             isDeleted = false
         )
     }
@@ -819,6 +827,7 @@ class GitHubSyncManager private constructor(context: Context) {
             val mergedFavorite = mergedFavoriteMap[key] ?: return true
             if (remoteFavorite.isDeleted != mergedFavorite.isDeleted) return true
             if (remoteFavorite.modifiedAt != mergedFavorite.modifiedAt) return true
+            if (remoteFavorite.sortOrder != mergedFavorite.sortOrder) return true
             if (remoteFavorite.trackCount != mergedFavorite.trackCount) return true
             if (remoteFavorite.songs.map { it.identity() } != mergedFavorite.songs.map { it.identity() }) return true
             for (i in remoteFavorite.songs.indices) {

@@ -83,11 +83,12 @@ fun NeriMiniPlayer(
 ) {
     val shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
     val supportsBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    val hazeContainerAlpha = if (supportsBlur && enableHaze) 0.4f else 1f
 
     Card(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(
-                alpha = if (supportsBlur && enableHaze) .4f else 1f
+                alpha = hazeContainerAlpha
             )
         ),
         shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),

@@ -9,6 +9,6 @@ import android.content.pm.ActivityInfo
 fun Activity.lockPortraitIfPhone() {
     val isPhone = resources.configuration.smallestScreenWidthDp < 600
     if (isPhone) {
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
     }
 }

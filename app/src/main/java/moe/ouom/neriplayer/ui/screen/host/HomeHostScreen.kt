@@ -37,7 +37,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.mapSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -88,7 +87,7 @@ fun HomeHostScreen(
         }
     }
 
-    val gridState = remember {
+    val gridState = rememberSaveable(saver = LazyGridState.Saver) {
         LazyGridState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
     }
 

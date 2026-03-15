@@ -86,6 +86,8 @@ object SettingsKeys {
     val PLAYBACK_FADE_OUT_DURATION_MS = longPreferencesKey("playback_fade_out_duration_ms")
     val PLAYBACK_CROSSFADE_IN_DURATION_MS = longPreferencesKey("playback_crossfade_in_duration_ms")
     val PLAYBACK_CROSSFADE_OUT_DURATION_MS = longPreferencesKey("playback_crossfade_out_duration_ms")
+    val KEEP_LAST_PLAYBACK_PROGRESS = booleanPreferencesKey("keep_last_playback_progress")
+    val KEEP_PLAYBACK_MODE_STATE = booleanPreferencesKey("keep_playback_mode_state")
     val STOP_ON_BLUETOOTH_DISCONNECT = booleanPreferencesKey("stop_on_bluetooth_disconnect")
     val ALLOW_MIXED_PLAYBACK = booleanPreferencesKey("allow_mixed_playback")
 }
@@ -269,6 +271,12 @@ class SettingsRepository(private val context: Context) {
 
     val playbackCrossfadeOutDurationMsFlow: Flow<Long> =
         context.dataStore.data.map { it[SettingsKeys.PLAYBACK_CROSSFADE_OUT_DURATION_MS] ?: 500L }
+
+    val keepLastPlaybackProgressFlow: Flow<Boolean> =
+        context.dataStore.data.map { it[SettingsKeys.KEEP_LAST_PLAYBACK_PROGRESS] ?: true }
+
+    val keepPlaybackModeStateFlow: Flow<Boolean> =
+        context.dataStore.data.map { it[SettingsKeys.KEEP_PLAYBACK_MODE_STATE] ?: true }
 
     val stopOnBluetoothDisconnectFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.STOP_ON_BLUETOOTH_DISCONNECT] ?: true }
@@ -490,6 +498,14 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setPlaybackCrossfadeOutDurationMs(durationMs: Long) {
         context.dataStore.edit { it[SettingsKeys.PLAYBACK_CROSSFADE_OUT_DURATION_MS] = durationMs }
+    }
+
+    suspend fun setKeepLastPlaybackProgress(enabled: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.KEEP_LAST_PLAYBACK_PROGRESS] = enabled }
+    }
+
+    suspend fun setKeepPlaybackModeState(enabled: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.KEEP_PLAYBACK_MODE_STATE] = enabled }
     }
 
     suspend fun setStopOnBluetoothDisconnect(enabled: Boolean) {

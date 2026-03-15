@@ -108,8 +108,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import coil.Coil
 import coil.compose.AsyncImage
-import coil.ImageLoader
 import coil.request.ImageRequest
 import coil.request.SuccessResult
 import com.google.gson.Gson
@@ -224,6 +224,10 @@ private fun resolveMainStartDestination(
     }
 }
 
+private fun SongItem?.resolveUiCoverSource(context: android.content.Context): String? {
+    return this?.displayCoverUrl(context)
+}
+
 private suspend fun captureThemeRevealSnapshot(
     activity: Activity?,
     fallbackView: View
@@ -335,7 +339,7 @@ private fun NowPlayingAccentBackdrop(
             onAccentChanged(null)
             return@LaunchedEffect
         }
-        val loader = ImageLoader(context)
+        val loader = Coil.imageLoader(context)
         val req = ImageRequest.Builder(context)
             .data(coverUrl)
             .allowHardware(false)
@@ -452,6 +456,8 @@ fun NeriApp(
     val playbackFadeOutDurationMs by repo.playbackFadeOutDurationMsFlow.collectAsState(initial = 500L)
     val playbackCrossfadeInDurationMs by repo.playbackCrossfadeInDurationMsFlow.collectAsState(initial = 500L)
     val playbackCrossfadeOutDurationMs by repo.playbackCrossfadeOutDurationMsFlow.collectAsState(initial = 500L)
+    val keepLastPlaybackProgress by repo.keepLastPlaybackProgressFlow.collectAsState(initial = true)
+    val keepPlaybackModeState by repo.keepPlaybackModeStateFlow.collectAsState(initial = true)
     val stopOnBluetoothDisconnect by repo.stopOnBluetoothDisconnectFlow.collectAsState(initial = true)
     val allowMixedPlayback by repo.allowMixedPlaybackFlow.collectAsState(initial = false)
     val maxCacheSizeBytes by repo.maxCacheSizeBytesFlow.collectAsState(initial = 1024L * 1024 * 1024)
@@ -488,7 +494,7 @@ fun NeriApp(
     // 缓存当前封面的取色结果，避免开关动态取色时先闪到默认种子色。
     var coverSeedHex by remember { mutableStateOf<String?>(null) }
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
-    val displayCoverUrl = currentSong?.displayCoverUrl()?.takeIf { it.isNotBlank() }
+    val displayCoverUrl = currentSong.resolveUiCoverSource(context)
 
     LaunchedEffect(Unit) {
         val initialCacheSize = repo.maxCacheSizeBytesFlow.first()
@@ -523,7 +529,7 @@ fun NeriApp(
             return@LaunchedEffect
         }
 
-        val loader = ImageLoader(context)
+        val loader = Coil.imageLoader(context)
         val req = ImageRequest.Builder(context).data(url).allowHardware(false).build()
         val result = withContext(Dispatchers.IO) { loader.execute(req) }
         val bmp = (result as? SuccessResult)?.drawable.let { it as? BitmapDrawable }?.bitmap
@@ -812,9 +818,6 @@ fun NeriApp(
                 } else {
                     0.dp
                 }
-                val bottomBarHeightDp = with(finalDensity) { bottomBarHeightPx.toDp() }
-                val navBarPaddingDp = WindowInsets.navigationBars.asPaddingValues()
-                    .calculateBottomPadding()
                 val showMiniPlayerBridge =
                     isMiniPlayerVisible && visibleMiniPlayerHeightDp > 0.dp
 
@@ -861,17 +864,6 @@ fun NeriApp(
                                 NeriBottomBar(
                                     modifier = Modifier
                                         .align(Alignment.BottomCenter)
-                                        .then(
-                                            if (effectiveAdvancedBlurEnabled) {
-                                                val bridgeAlpha =
-                                                    if (backgroundImageUri == null) 0.92f else 0.58f
-                                                Modifier.background(
-                                                    MaterialTheme.colorScheme.surface.copy(alpha = bridgeAlpha)
-                                                )
-                                            } else {
-                                                Modifier
-                                            }
-                                        )
                                         .onSizeChanged { size ->
                                             if (size.height > 0) {
                                                 bottomBarHeightPx = size.height
@@ -1333,6 +1325,14 @@ fun NeriApp(
                                         onPlaybackCrossfadeOutDurationMsChange = { duration ->
                                             scope.launch { repo.setPlaybackCrossfadeOutDurationMs(duration) }
                                         },
+                                        keepLastPlaybackProgress = keepLastPlaybackProgress,
+                                        onKeepLastPlaybackProgressChange = { enabled ->
+                                            scope.launch { repo.setKeepLastPlaybackProgress(enabled) }
+                                        },
+                                        keepPlaybackModeState = keepPlaybackModeState,
+                                        onKeepPlaybackModeStateChange = { enabled ->
+                                            scope.launch { repo.setKeepPlaybackModeState(enabled) }
+                                        },
                                         stopOnBluetoothDisconnect = stopOnBluetoothDisconnect,
                                         onStopOnBluetoothDisconnectChange = { enabled ->
                                             scope.launch { repo.setStopOnBluetoothDisconnect(enabled) }
@@ -1481,29 +1481,6 @@ fun NeriApp(
                             }
 
                             AnimatedVisibility(
-                                visible = showMiniPlayerBridge,
-                                modifier = Modifier.align(Alignment.BottomStart),
-                                enter = fadeIn(animationSpec = tween(durationMillis = 180)),
-                                exit = fadeOut(animationSpec = tween(durationMillis = 120))
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(visibleMiniPlayerHeightDp + 20.dp)
-                                        .background(
-                                            Brush.verticalGradient(
-                                                colors = listOf(
-                                                    Color.Transparent,
-                                                    MaterialTheme.colorScheme.surface.copy(
-                                                        alpha = if (backgroundImageUri == null) 0.86f else 0.48f
-                                                    )
-                                                )
-                                            )
-                                        )
-                                )
-                            }
-
-                            AnimatedVisibility(
                                 visible = currentSong != null && !showNowPlaying,
                                 modifier = Modifier.align(Alignment.BottomStart),
                                 enter = slideInVertically(
@@ -1524,7 +1501,7 @@ fun NeriApp(
                                 NeriMiniPlayer(
                                     title = currentSong?.name ?: context.getString(R.string.nowplaying_no_playback),
                                     artist = currentSong?.artist ?: "",
-                                    coverUrl = currentSong?.displayCoverUrl(),
+                                    coverUrl = currentSong.resolveUiCoverSource(context),
                                     isPlaying = isPlaying,
                                     onPlayPause = { PlayerManager.togglePlayPause() },
                                     onExpand = { showNowPlaying = true },
@@ -1553,7 +1530,7 @@ fun NeriApp(
                         targetOffsetY = { fullHeight -> fullHeight }
                     ) + fadeOut(animationSpec = tween(durationMillis = 150))
                 ) {
-                    val currentCoverUrl = currentSong?.displayCoverUrl()?.takeIf { it.isNotBlank() }
+                    val currentCoverUrl = currentSong.resolveUiCoverSource(context)
                     val activeCoverSeedHex = if (currentCoverUrl == null) null else coverSeedHex
                     val effectiveSeedHex = if (dynamicColorEnabled) {
                         activeCoverSeedHex ?: themeSeedColor
@@ -1573,8 +1550,7 @@ fun NeriApp(
 
                         val currentSongNP by PlayerManager.currentSongFlow.collectAsState()
                         val nowPlayingQueue by PlayerManager.currentQueueFlow.collectAsState()
-                        val nowPlayingCoverUrl =
-                            currentSongNP?.displayCoverUrl()?.takeIf { it.isNotBlank() }
+                        val nowPlayingCoverUrl = currentSongNP.resolveUiCoverSource(context)
 
                         Box(Modifier.fillMaxSize()) {
                             val coverBlurAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
@@ -1583,7 +1559,7 @@ fun NeriApp(
                                     nowPlayingCoverBlurBackgroundEnabled &&
                                     !nowPlayingCoverUrl.isNullOrBlank()
                             val blurStrength = nowPlayingCoverBlurAmount.coerceIn(0f, 500f)
-                            val imageLoader = remember(context) { ImageLoader(context) }
+                            val imageLoader = remember(context) { Coil.imageLoader(context) }
                             var stableCoverUrl by remember { mutableStateOf<String?>(null) }
                             var stableBlurStrength by remember { mutableStateOf<Float?>(null) }
                             val currentQueueIndex = remember(nowPlayingQueue, currentSongNP) {
@@ -1595,10 +1571,10 @@ fun NeriApp(
                                     emptyList()
                                 } else {
                                     listOfNotNull(
-                                        nowPlayingQueue.getOrNull(currentQueueIndex - 1)?.displayCoverUrl()
-                                            ?.takeIf { it.isNotBlank() },
-                                        nowPlayingQueue.getOrNull(currentQueueIndex + 1)?.displayCoverUrl()
-                                            ?.takeIf { it.isNotBlank() }
+                                        nowPlayingQueue.getOrNull(currentQueueIndex - 1)
+                                            .resolveUiCoverSource(context),
+                                        nowPlayingQueue.getOrNull(currentQueueIndex + 1)
+                                            .resolveUiCoverSource(context)
                                     ).distinct()
                                 }
                             }

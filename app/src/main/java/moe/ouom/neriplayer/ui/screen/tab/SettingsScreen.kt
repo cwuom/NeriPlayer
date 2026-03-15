@@ -475,6 +475,10 @@ fun SettingsScreen(
     onPlaybackCrossfadeInDurationMsChange: (Long) -> Unit,
     playbackCrossfadeOutDurationMs: Long,
     onPlaybackCrossfadeOutDurationMsChange: (Long) -> Unit,
+    keepLastPlaybackProgress: Boolean,
+    onKeepLastPlaybackProgressChange: (Boolean) -> Unit,
+    keepPlaybackModeState: Boolean,
+    onKeepPlaybackModeStateChange: (Boolean) -> Unit,
     stopOnBluetoothDisconnect: Boolean,
     onStopOnBluetoothDisconnectChange: (Boolean) -> Unit,
     allowMixedPlayback: Boolean,
@@ -1890,6 +1894,52 @@ fun SettingsScreen(
                                 )
                             }
                         }
+
+                        ListItem(
+                            modifier = Modifier.settingsItemClickable {
+                                onKeepLastPlaybackProgressChange(!keepLastPlaybackProgress)
+                            },
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Outlined.History,
+                                    contentDescription = stringResource(R.string.settings_keep_last_playback_progress),
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = { Text(stringResource(R.string.settings_keep_last_playback_progress)) },
+                            supportingContent = { Text(stringResource(R.string.settings_keep_last_playback_progress_desc)) },
+                            trailingContent = {
+                                Switch(
+                                    checked = keepLastPlaybackProgress,
+                                    onCheckedChange = onKeepLastPlaybackProgressChange
+                                )
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+
+                        ListItem(
+                            modifier = Modifier.settingsItemClickable {
+                                onKeepPlaybackModeStateChange(!keepPlaybackModeState)
+                            },
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Outlined.Tune,
+                                    contentDescription = stringResource(R.string.settings_keep_playback_mode_state),
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = { Text(stringResource(R.string.settings_keep_playback_mode_state)) },
+                            supportingContent = { Text(stringResource(R.string.settings_keep_playback_mode_state_desc)) },
+                            trailingContent = {
+                                Switch(
+                                    checked = keepPlaybackModeState,
+                                    onCheckedChange = onKeepPlaybackModeStateChange
+                                )
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
 
                         ListItem(
                             modifier = Modifier.settingsItemClickable {

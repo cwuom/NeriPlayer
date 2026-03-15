@@ -73,7 +73,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
@@ -82,6 +81,7 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.isLocalSong
 import moe.ouom.neriplayer.data.displayAlbum
 import moe.ouom.neriplayer.data.displayArtist
+import moe.ouom.neriplayer.data.displayCoverUrl
 import moe.ouom.neriplayer.data.displayName
 import moe.ouom.neriplayer.data.sameIdentityAs
 import moe.ouom.neriplayer.data.stableKey
@@ -90,6 +90,7 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.formatDuration
+import moe.ouom.neriplayer.util.offlineCachedImageRequest
 import moe.ouom.neriplayer.util.performHapticFeedback
 import java.util.Date
 import kotlin.random.Random
@@ -437,6 +438,7 @@ private fun RecentRowRich(
     moreMenu: @Composable () -> Unit
 ) {
     val ctx = LocalContext.current
+    val coverUrl = song.displayCoverUrl(ctx)
     val primaryTitle = remember(song) {
         if (song.isLocalSong()) {
             song.localFileName?.takeIf { it.isNotBlank() } ?: song.displayName()
@@ -508,9 +510,9 @@ private fun RecentRowRich(
         }
 
         // 封面
-        if (!song.coverUrl.isNullOrBlank()) {
+        if (!coverUrl.isNullOrBlank()) {
             AsyncImage(
-                model = ImageRequest.Builder(ctx).data(song.coverUrl).build(),
+                model = offlineCachedImageRequest(ctx, coverUrl),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier

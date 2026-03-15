@@ -231,7 +231,8 @@ data class SyncFavoritePlaylist(
     @ProtoNumber(6) val songs: List<SyncSong>,
     @ProtoNumber(7) val addedTime: Long,
     @ProtoNumber(8) val modifiedAt: Long = addedTime,
-    @ProtoNumber(9) val isDeleted: Boolean = false
+    @ProtoNumber(9) val isDeleted: Boolean = false,
+    @ProtoNumber(10) val sortOrder: Long = addedTime
 ) {
     companion object {
         fun fromFavoritePlaylist(playlist: FavoritePlaylist, context: Context? = null): SyncFavoritePlaylist {
@@ -245,7 +246,8 @@ data class SyncFavoritePlaylist(
                     songs = emptyList(),
                     addedTime = playlist.addedTime,
                     modifiedAt = playlist.modifiedAt,
-                    isDeleted = true
+                    isDeleted = true,
+                    sortOrder = playlist.sortOrder
                 )
             }
             val syncedSongs = playlist.songs.mapNotNull { SyncSong.fromSongItemOrNull(it, context) }
@@ -266,7 +268,8 @@ data class SyncFavoritePlaylist(
                 songs = syncedSongs,
                 addedTime = playlist.addedTime,
                 modifiedAt = playlist.modifiedAt,
-                isDeleted = false
+                isDeleted = false,
+                sortOrder = playlist.sortOrder
             )
         }
     }
@@ -280,6 +283,7 @@ data class SyncFavoritePlaylist(
             source = source,
             songs = songs.map { it.toSongItem() },
             addedTime = addedTime,
+            sortOrder = sortOrder,
             modifiedAt = modifiedAt,
             isDeleted = isDeleted
         )

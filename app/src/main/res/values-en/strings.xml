@@ -217,8 +217,8 @@
     <string name="lyrics_blur_low_cost_hint">Below Android 12 uses a low-cost effect and looks weaker</string>
     <string name="lyrics_blur_amount">Blur Intensity</string>
     <string name="lyrics_blur_current">Current Blur: %.2f</string>
-    <string name="settings_advanced_blur">Mini Player Advanced Blur</string>
-    <string name="settings_advanced_blur_desc">Enable Haze blur for the mini player</string>
+    <string name="settings_advanced_blur">Advanced Blur Effects</string>
+    <string name="settings_advanced_blur_desc">Enable Haze blur for the mini player and bottom bar</string>
     <string name="settings_nowplaying_cover_blur_background">Now Playing Cover Blur</string>
     <string name="settings_nowplaying_cover_blur_background_desc">Use the current cover as the background of Now Playing</string>
     <string name="settings_nowplaying_cover_blur_amount">Cover Blur Intensity</string>
@@ -831,6 +831,10 @@
     <string name="settings_playback_crossfade_next_desc">Fade between tracks when moving to the next song</string>
     <string name="settings_playback_crossfade_in_duration">Next Track Fade-in Duration</string>
     <string name="settings_playback_crossfade_out_duration">Current Track Fade-out Duration</string>
+    <string name="settings_keep_last_playback_progress">Keep Last Playback Progress</string>
+    <string name="settings_keep_last_playback_progress_desc">Remember the current song position after restarting the app</string>
+    <string name="settings_keep_playback_mode_state">Keep Playback Mode State</string>
+    <string name="settings_keep_playback_mode_state_desc">Restore repeat and shuffle state after restarting the app</string>
     <string name="settings_stop_on_bluetooth_disconnect">Stop On Bluetooth Disconnect</string>
     <string name="settings_stop_on_bluetooth_disconnect_desc">Pause playback when a Bluetooth device disconnects</string>
     <string name="settings_allow_mixed_playback">Allow Mixed Playback</string>
@@ -1098,6 +1102,8 @@
     </plurals>
     <string name="library_qqmusic_coming">Coming Soon</string>
     <string name="library_favorite_source_format" formatted="false">%d songs · %s</string>
+    <string name="library_favorite_sort_mode_title">Favorite Playlist Order</string>
+    <string name="library_favorite_sort_mode_desc">Long press a playlist to enter sorting mode, then drag the handle</string>
     <string name="library_title">Library</string>
     <string name="library_coming_soon">Coming Soon</string>
     <string name="library_recent_played">Recent Plays</string>

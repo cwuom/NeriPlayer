@@ -160,6 +160,7 @@ import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.formatDuration
 import moe.ouom.neriplayer.util.formatTotalDuration
+import moe.ouom.neriplayer.util.offlineCachedImageRequest
 import moe.ouom.neriplayer.util.performHapticFeedback
 import org.burnoutcrew.reorderable.ItemPosition
 import org.burnoutcrew.reorderable.ReorderableItem
@@ -178,6 +179,7 @@ fun LocalPlaylistDetailScreen(
     onDeleted: () -> Unit = onBack,
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> }
 ) {
+    val context = LocalContext.current
     val vm: LocalPlaylistDetailViewModel = viewModel()
     val ui = vm.uiState.collectAsState()
     val scanPreviewState by vm.scanPreviewState.collectAsState()
@@ -196,7 +198,7 @@ fun LocalPlaylistDetailScreen(
                 AppContainer.playlistUsageRepo.updateInfo(
                     id = playlist.id,
                     name = playlist.name,
-                    picUrl = playlist.displayCoverUrl(),
+                    picUrl = playlist.displayCoverUrl(context),
                     trackCount = playlist.songs.size,
                     source = "local"
                 )
@@ -431,7 +433,7 @@ fun LocalPlaylistDetailScreen(
 
             fun handleNeteaseSyncResult(result: moe.ouom.neriplayer.data.NeteaseLikeSyncResult) {
                 syncInProgress = false
-                val message = if (result.totalSongs == 0) {
+                val message = result.message ?: if (result.totalSongs == 0) {
                     context.getString(R.string.local_playlist_sync_netease_empty)
                 } else {
                     context.getString(
@@ -474,27 +476,19 @@ fun LocalPlaylistDetailScreen(
                 if (syncInProgress) return
                 syncInProgress = true
                 scope.launch {
-                    val localCandidates = repo.filterNeteaseLikeSyncCandidates(allSongs)
-                    if (localCandidates.isEmpty()) {
-                        syncInProgress = false
-                        snackbarHostState.showSnackbar(
-                            context.getString(R.string.local_playlist_sync_netease_no_supported)
-                        )
-                        return@launch
-                    }
-                    val filteredCandidates = repo.filterNeteaseLikeSyncCandidatesExcludingLiked(
+                    val plan = repo.prepareNeteaseLikeSyncPlan(
                         AppContainer.neteaseClient,
                         allSongs
                     )
                     syncInProgress = false
-                    if (filteredCandidates.isEmpty()) {
+                    if (plan.pendingSongs.isEmpty()) {
                         snackbarHostState.showSnackbar(
-                            context.getString(R.string.local_playlist_sync_netease_all_synced)
+                            plan.message ?: context.getString(R.string.local_playlist_sync_netease_all_synced)
                         )
                         return@launch
                     }
-                    neteaseSyncPreviewSongs = filteredCandidates
-                    neteaseSyncSelectedKeys = filteredCandidates.map { it.stableKey() }.toSet()
+                    neteaseSyncPreviewSongs = plan.pendingSongs
+                    neteaseSyncSelectedKeys = plan.pendingSongs.map { it.stableKey() }.toSet()
                     neteaseSyncPreviewQuery = ""
                     showNeteaseSyncPreview = true
                 }
@@ -951,13 +945,13 @@ fun LocalPlaylistDetailScreen(
                                         .height(headerHeight)
                                 ) {
                                     // 头图取"展示顺序"的第一张有封面的
+                                    val headerContext = LocalContext.current
                                     val baseQueue = localSongs.asReversed()
                                     val headerCover =
-                                        baseQueue.firstOrNull { !it.displayCoverUrl().isNullOrBlank() }
-                                            ?.displayCoverUrl()
+                                        baseQueue.firstOrNull { !it.displayCoverUrl(headerContext).isNullOrBlank() }
+                                            ?.displayCoverUrl(headerContext)
                                     AsyncImage(
-                                        model = ImageRequest.Builder(LocalContext.current)
-                                            .data(headerCover).build(),
+                                        model = offlineCachedImageRequest(headerContext, headerCover),
                                         contentDescription = playlist.name,
                                         contentScale = ContentScale.Crop,
                                         modifier = Modifier
@@ -1089,11 +1083,11 @@ fun LocalPlaylistDetailScreen(
                                             }
 
                                             // 封面
-                                            val displayCoverUrl = song.displayCoverUrl()
+                                            val itemContext = LocalContext.current
+                                            val displayCoverUrl = song.displayCoverUrl(itemContext)
                                             if (!displayCoverUrl.isNullOrBlank()) {
                                                 AsyncImage(
-                                                    model = ImageRequest.Builder(LocalContext.current)
-                                                        .data(displayCoverUrl).build(),
+                                                    model = offlineCachedImageRequest(itemContext, displayCoverUrl),
                                                     contentDescription = null,
                                                     contentScale = ContentScale.Crop,
                                                     modifier = Modifier
@@ -1107,7 +1101,6 @@ fun LocalPlaylistDetailScreen(
 
                                             // 标题/歌手
                                             Column(Modifier.weight(1f)) {
-                                                val itemContext = LocalContext.current
                                                 Row(
                                                     verticalAlignment = Alignment.CenterVertically,
                                                     horizontalArrangement = Arrangement.spacedBy(8.dp)

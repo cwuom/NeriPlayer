@@ -122,6 +122,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.formatPlayCount
+import moe.ouom.neriplayer.util.offlineCachedImageRequest
 import org.burnoutcrew.reorderable.ItemPosition
 import org.burnoutcrew.reorderable.ReorderableItem
 import org.burnoutcrew.reorderable.detectReorder
@@ -160,16 +161,23 @@ fun LibraryScreen(
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val defaultPlaylistName = stringResource(R.string.library_create_playlist_default)
 
-    var currentTabIndex by rememberSaveable { mutableStateOf(initialTabIndex) }
     val pagerState = rememberPagerState(
-        initialPage = currentTabIndex,
+        initialPage = initialTabIndex.coerceIn(0, LibraryTab.entries.lastIndex),
         pageCount = { LibraryTab.entries.size }
     )
     val scope = rememberCoroutineScope()
 
+    LaunchedEffect(initialTabIndex) {
+        val targetPage = initialTabIndex.coerceIn(0, LibraryTab.entries.lastIndex)
+        if (pagerState.currentPage != targetPage) {
+            pagerState.scrollToPage(targetPage)
+        }
+    }
+
     LaunchedEffect(pagerState.currentPage) {
-        currentTabIndex = pagerState.currentPage
-        onTabIndexChange(pagerState.currentPage)
+        if (pagerState.currentPage != initialTabIndex) {
+            onTabIndexChange(pagerState.currentPage)
+        }
     }
 
     Column(
@@ -194,81 +202,94 @@ fun LibraryScreen(
             }
         )
 
-        PrimaryScrollableTabRow(
-            selectedTabIndex = pagerState.currentPage,
-            edgePadding = 16.dp,
-            containerColor = Color.Transparent,
-            contentColor = MaterialTheme.colorScheme.primary
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0f)
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+            modifier = Modifier
+                .padding(horizontal = 0.dp, vertical = 12.dp)
+                .fillMaxSize()
         ) {
-            LibraryTab.entries.forEachIndexed { index, tab ->
-                Tab(
-                    selected = pagerState.currentPage == index,
-                    onClick = {
-                        scope.launch {
-                            pagerState.animateScrollToPage(index)
-                        }
-                    },
-                    selectedContentColor = MaterialTheme.colorScheme.primary,
-                    unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    text = { Text(stringResource(tab.labelResId)) }
-                )
-            }
-        }
-
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.fillMaxSize(),
-            pageSpacing = 0.dp
-        ) { page ->
-            when (LibraryTab.entries[page]) {
-                LibraryTab.LOCAL -> LocalPlaylistList(
-                    playlists = ui.localPlaylists,
-                    listState = localListState,
-                    onCreate = { name ->
-                        val finalName = name.trim().ifBlank { defaultPlaylistName }
-                        vm.createLocalPlaylist(finalName)
-                    },
-                    onClick = onLocalPlaylistClick,
-                    onRename = { playlistId, newName ->
-                        vm.renameLocalPlaylist(playlistId, newName)
-                    },
-                    onDelete = { playlistId ->
-                        vm.deleteLocalPlaylist(playlistId)
-                    },
-                    onReorder = { order ->
-                        vm.reorderLocalPlaylists(order)
+            Column(Modifier.fillMaxSize()) {
+                PrimaryScrollableTabRow(
+                    selectedTabIndex = pagerState.currentPage,
+                    edgePadding = 8.dp,
+                    containerColor = Color.Transparent,
+                    contentColor = MaterialTheme.colorScheme.primary
+                ) {
+                    LibraryTab.entries.forEachIndexed { index, tab ->
+                        Tab(
+                            selected = pagerState.currentPage == index,
+                            onClick = {
+                                scope.launch {
+                                    pagerState.animateScrollToPage(index)
+                                }
+                            },
+                            selectedContentColor = MaterialTheme.colorScheme.primary,
+                            unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            text = { Text(stringResource(tab.labelResId)) }
+                        )
                     }
-                )
+                }
 
-                LibraryTab.FAVORITE -> FavoritePlaylistList(
-                    listState = favoriteListState,
-                    onNeteasePlaylistClick = onNeteasePlaylistClick,
-                    onBiliPlaylistClick = onBiliPlaylistClick
-                )
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxSize(),
+                    pageSpacing = 0.dp
+                ) { page ->
+                    when (LibraryTab.entries[page]) {
+                        LibraryTab.LOCAL -> LocalPlaylistList(
+                            playlists = ui.localPlaylists,
+                            listState = localListState,
+                            onCreate = { name ->
+                                val finalName = name.trim().ifBlank { defaultPlaylistName }
+                                vm.createLocalPlaylist(finalName)
+                            },
+                            onClick = onLocalPlaylistClick,
+                            onRename = { playlistId, newName ->
+                                vm.renameLocalPlaylist(playlistId, newName)
+                            },
+                            onDelete = { playlistId ->
+                                vm.deleteLocalPlaylist(playlistId)
+                            },
+                            onReorder = { order ->
+                                vm.reorderLocalPlaylists(order)
+                            }
+                        )
 
-                LibraryTab.NETEASE -> NeteasePlaylistList(
-                    playlists = ui.neteasePlaylists,
-                    listState = neteaseListState,
-                    onClick = onNeteasePlaylistClick
-                )
+                        LibraryTab.FAVORITE -> FavoritePlaylistList(
+                            listState = favoriteListState,
+                            onNeteasePlaylistClick = onNeteasePlaylistClick,
+                            onBiliPlaylistClick = onBiliPlaylistClick
+                        )
 
-                LibraryTab.NETEASEALBUM -> NeteaseAlbumList(
-                    playlists = ui.neteaseAlbums,
-                    listState = neteaseAlbumState,
-                    onClick = onNeteaseAlbumClick
-                )
+                        LibraryTab.NETEASE -> NeteasePlaylistList(
+                            playlists = ui.neteasePlaylists,
+                            listState = neteaseListState,
+                            onClick = onNeteasePlaylistClick
+                        )
 
-                LibraryTab.BILI -> BiliPlaylistList(
-                    playlists = ui.biliPlaylists,
-                    listState = biliListState,
-                    onClick = onBiliPlaylistClick
-                )
+                        LibraryTab.NETEASEALBUM -> NeteaseAlbumList(
+                            playlists = ui.neteaseAlbums,
+                            listState = neteaseAlbumState,
+                            onClick = onNeteaseAlbumClick
+                        )
 
-                LibraryTab.QQMUSIC -> QqMusicPlaylistList(
-                    playlists = emptyList(), // TODO: Add qqMusicPlaylists to LibraryUiState when QQ Music is implemented
-                    listState = qqMusicListState,
-                    onClick = { /* TODO: Implement QQ Music playlist click */ }
-                )
+                        LibraryTab.BILI -> BiliPlaylistList(
+                            playlists = ui.biliPlaylists,
+                            listState = biliListState,
+                            onClick = onBiliPlaylistClick
+                        )
+
+                        LibraryTab.QQMUSIC -> QqMusicPlaylistList(
+                            playlists = emptyList(), // TODO: Add qqMusicPlaylists to LibraryUiState when QQ Music is implemented
+                            listState = qqMusicListState,
+                            onClick = { /* TODO: Implement QQ Music playlist click */ }
+                        )
+                    }
+                }
             }
         }
     }
@@ -628,7 +649,6 @@ private fun LocalPlaylistList(
                     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                     modifier = Modifier
                         .padding(horizontal = 8.dp, vertical = 4.dp)
-                        .animateItem()
                         .clip(cardShape)
                         .combinedClickable(
                             onClick = {
@@ -659,10 +679,10 @@ private fun LocalPlaylistList(
                                     Spacer(modifier = Modifier.size(24.dp))
                                     Spacer(modifier = Modifier.width(8.dp))
                                 }
-                                val cover = system.displayCoverUrl()
+                                val cover = system.displayCoverUrl(context)
                                 if (!cover.isNullOrEmpty()) {
                                     AsyncImage(
-                                        model = ImageRequest.Builder(LocalContext.current).data(cover).build(),
+                                        model = offlineCachedImageRequest(context, cover),
                                         contentDescription = null,
                                         contentScale = ContentScale.Crop,
                                         modifier = Modifier
@@ -761,10 +781,10 @@ private fun LocalPlaylistList(
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                 }
-                                val cover = pl.displayCoverUrl()
+                                val cover = pl.displayCoverUrl(context)
                                 if (!cover.isNullOrEmpty()) {
                                     AsyncImage(
-                                        model = ImageRequest.Builder(LocalContext.current).data(cover).build(),
+                                        model = offlineCachedImageRequest(context, cover),
                                         contentDescription = null,
                                         contentScale = ContentScale.Crop,
                                         modifier = Modifier
@@ -895,7 +915,6 @@ private fun LocalPlaylistList(
                     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                     modifier = Modifier
                         .padding(horizontal = 8.dp, vertical = 4.dp)
-                        .animateItem()
                         .clip(cardShape)
                         .combinedClickable(
                             onClick = {
@@ -926,10 +945,10 @@ private fun LocalPlaylistList(
                                     Spacer(modifier = Modifier.size(24.dp))
                                     Spacer(modifier = Modifier.width(8.dp))
                                 }
-                                val cover = system.displayCoverUrl()
+                                val cover = system.displayCoverUrl(context)
                                 if (!cover.isNullOrEmpty()) {
                                     AsyncImage(
-                                        model = ImageRequest.Builder(LocalContext.current).data(cover).build(),
+                                        model = offlineCachedImageRequest(context, cover),
                                         contentDescription = null,
                                         contentScale = ContentScale.Crop,
                                         modifier = Modifier
@@ -1084,14 +1103,86 @@ private fun FavoritePlaylistList(
     val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
     val favorites by favoriteRepo.favorites.collectAsState()
     val miniPlayerHeight = LocalMiniPlayerHeight.current
+    val scope = rememberCoroutineScope()
+    var sortMode by rememberSaveable { mutableStateOf(false) }
+    val reorderableFavorites = remember { mutableStateListOf<moe.ouom.neriplayer.data.FavoritePlaylist>() }
+
+    BackHandler(enabled = sortMode) { sortMode = false }
+
+    LaunchedEffect(favorites) {
+        reorderableFavorites.clear()
+        reorderableFavorites.addAll(favorites)
+        if (sortMode && favorites.isEmpty()) {
+            sortMode = false
+        }
+    }
+
+    val reorderState = rememberReorderableLazyListState(
+        listState = listState,
+        onMove = { from: ItemPosition, to: ItemPosition ->
+            if (!sortMode) return@rememberReorderableLazyListState
+            val fromKey = from.key as? String ?: return@rememberReorderableLazyListState
+            val toKey = to.key as? String ?: return@rememberReorderableLazyListState
+            val fromIndex = reorderableFavorites.indexOfFirst { "${it.source}:${it.id}" == fromKey }
+            val toIndex = reorderableFavorites.indexOfFirst { "${it.source}:${it.id}" == toKey }
+            if (fromIndex != -1 && toIndex != -1 && fromIndex != toIndex) {
+                reorderableFavorites.add(toIndex, reorderableFavorites.removeAt(fromIndex))
+            }
+        },
+        canDragOver = { _, over -> sortMode && over.key is String },
+        onDragEnd = { _, _ ->
+            if (sortMode) {
+                scope.launch {
+                    favoriteRepo.reorderFavorites(
+                        reorderableFavorites.map { "${it.source}:${it.id}" }
+                    )
+                }
+            }
+        }
+    )
 
     LazyColumn(
-        state = listState,
+        state = reorderState.listState,
         contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 8.dp + miniPlayerHeight),
         verticalArrangement = Arrangement.spacedBy(4.dp),
-        modifier = Modifier.fillMaxSize()
+        modifier = Modifier
+            .fillMaxSize()
+            .reorderable(reorderState)
     ) {
         val cardShape = RoundedCornerShape(12.dp)
+        if (sortMode) {
+            item(key = "favorite_sort_mode_header") {
+                Card(
+                    shape = cardShape,
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.25f)
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                    modifier = Modifier
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .clip(cardShape)
+                ) {
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.library_favorite_sort_mode_title)) },
+                        supportingContent = {
+                            Text(
+                                stringResource(R.string.library_favorite_sort_mode_desc),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        leadingContent = {
+                            HapticIconButton(onClick = { sortMode = false }) {
+                                Icon(
+                                    imageVector = Icons.Filled.Close,
+                                    contentDescription = stringResource(R.string.action_cancel)
+                                )
+                            }
+                        }
+                    )
+                }
+            }
+        }
         if (favorites.isEmpty()) {
             item {
                 Card(
@@ -1128,82 +1219,111 @@ private fun FavoritePlaylistList(
             }
         } else {
             items(
-                items = favorites,
+                items = reorderableFavorites,
                 key = { "${it.source}:${it.id}" }
             ) { favorite ->
-                Card(
-                    shape = cardShape,
-                    colors = CardDefaults.cardColors(
-                        containerColor = Color.Transparent
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                    modifier = Modifier
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                        .animateItem()
-                        .clip(cardShape)
-                        .clickable {
-                            when (favorite.source) {
-                                "netease" -> {
-                                    onNeteasePlaylistClick(
-                                        NeteasePlaylist(
-                                            id = favorite.id,
-                                            name = favorite.name,
-                                            picUrl = favorite.coverUrl ?: "",
-                                            playCount = 0,
-                                            trackCount = favorite.trackCount
-                                        )
-                                    )
-                                }
-                                "bili" -> {
-                                    onBiliPlaylistClick(
-                                        BiliPlaylist(
-                                            mediaId = favorite.id,
-                                            fid = 0L,
-                                            mid = 0L,
-                                            title = favorite.name,
-                                            count = favorite.trackCount,
-                                            coverUrl = favorite.coverUrl.orEmpty()
-                                        )
-                                    )
-                                }
-                            }
-                        }
-                ) {
-                    ListItem(
-                        headlineContent = { Text(favorite.name) },
-                        supportingContent = {
-                            Text(
-                                stringResource(
-                                    R.string.library_favorite_source_format,
-                                    favorite.trackCount,
-                                    favorite.source
-                                ),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        },
-                        colors = ListItemDefaults.colors(
-                            containerColor = Color.Transparent
-                        ),
-                        leadingContent = {
-                            if (!favorite.coverUrl.isNullOrEmpty()) {
-                                AsyncImage(
-                                    model = ImageRequest.Builder(LocalContext.current).data(favorite.coverUrl).build(),
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier
-                                        .size(56.dp)
-                                        .clip(RoundedCornerShape(8.dp))
-                                )
+                ReorderableItem(state = reorderState, key = "${favorite.source}:${favorite.id}") {
+                    Card(
+                        shape = cardShape,
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (sortMode) {
+                                MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.12f)
                             } else {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(56.dp)
-                                )
+                                Color.Transparent
                             }
-                        }
-                    )
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                        modifier = Modifier
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                            .animateItem()
+                            .clip(cardShape)
+                            .combinedClickable(
+                                onClick = {
+                                    if (sortMode) return@combinedClickable
+                                    when (favorite.source) {
+                                        "netease" -> {
+                                            onNeteasePlaylistClick(
+                                                NeteasePlaylist(
+                                                    id = favorite.id,
+                                                    name = favorite.name,
+                                                    picUrl = favorite.coverUrl ?: "",
+                                                    playCount = 0,
+                                                    trackCount = favorite.trackCount
+                                                )
+                                            )
+                                        }
+                                        "bili" -> {
+                                            onBiliPlaylistClick(
+                                                BiliPlaylist(
+                                                    mediaId = favorite.id,
+                                                    fid = 0L,
+                                                    mid = 0L,
+                                                    title = favorite.name,
+                                                    count = favorite.trackCount,
+                                                    coverUrl = favorite.coverUrl.orEmpty()
+                                                )
+                                            )
+                                        }
+                                    }
+                                },
+                                onLongClick = {
+                                    if (!sortMode) {
+                                        sortMode = true
+                                    }
+                                }
+                            )
+                    ) {
+                        ListItem(
+                            headlineContent = { Text(favorite.name) },
+                            supportingContent = {
+                                Text(
+                                    stringResource(
+                                        R.string.library_favorite_source_format,
+                                        favorite.trackCount,
+                                        favorite.source
+                                    ),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            colors = ListItemDefaults.colors(
+                                containerColor = Color.Transparent
+                            ),
+                            leadingContent = {
+                                if (!favorite.coverUrl.isNullOrEmpty()) {
+                                    AsyncImage(
+                                        model = offlineCachedImageRequest(context, favorite.coverUrl),
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier
+                                            .size(56.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(56.dp)
+                                    )
+                                }
+                            },
+                            trailingContent = {
+                                if (sortMode) {
+                                    Box(
+                                        modifier = Modifier
+                                            .detectReorder(reorderState)
+                                            .padding(8.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.DragHandle,
+                                            contentDescription = stringResource(R.string.common_drag_handle),
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        )
+                    }
                 }
             }
         }

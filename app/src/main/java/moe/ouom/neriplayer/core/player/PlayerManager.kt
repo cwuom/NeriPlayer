@@ -52,6 +52,7 @@ import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.CacheDataSource
+import androidx.media3.datasource.cache.ContentMetadata
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.datasource.okhttp.OkHttpDataSource
@@ -71,6 +72,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -152,6 +154,7 @@ object PlayerManager {
     private var mainScope = newMainScope()
     private var progressJob: Job? = null
     private var volumeFadeJob: Job? = null
+    private var bluetoothDisconnectPauseJob: Job? = null
 
     private val localRepo: LocalPlaylistRepository
         get() = LocalPlaylistRepository.getInstance(application)
@@ -166,6 +169,8 @@ object PlayerManager {
     private var playbackFadeOutDurationMs = DEFAULT_FADE_DURATION_MS
     private var playbackCrossfadeInDurationMs = DEFAULT_FADE_DURATION_MS
     private var playbackCrossfadeOutDurationMs = DEFAULT_FADE_DURATION_MS
+    private var keepLastPlaybackProgressEnabled = true
+    private var keepPlaybackModeStateEnabled = true
     private var stopOnBluetoothDisconnectEnabled = true
     private var allowMixedPlaybackEnabled = false
 
@@ -183,6 +188,7 @@ object PlayerManager {
     private const val URL_REFRESH_COOLDOWN_MS = 30 * 1000L
     private const val STATE_PERSIST_INTERVAL_MS = 15 * 1000L
     private const val DEFAULT_FADE_DURATION_MS = 500L
+    private const val BLUETOOTH_DISCONNECT_CONFIRM_DELAY_MS = 1200L
     private const val MIN_FADE_STEPS = 4
     private const val MAX_FADE_STEPS = 30
     @Volatile
@@ -231,6 +237,7 @@ object PlayerManager {
 
     private var playJob: Job? = null
     private var playbackRequestToken = 0L
+    private var lastHandledTrackEndToken = -1L
 
     val audioLevelFlow get() = AudioReactive.level
     val beatImpulseFlow get() = AudioReactive.beat
@@ -429,7 +436,9 @@ object PlayerManager {
         val index: Int,
         val mediaUrl: String? = null,
         val positionMs: Long = 0L,
-        val shouldResumePlayback: Boolean = false
+        val shouldResumePlayback: Boolean = false,
+        val repeatMode: Int? = null,
+        val shuffleEnabled: Boolean? = null
     )
 
 
@@ -443,6 +452,10 @@ object PlayerManager {
 
         runCatching {
             stateFile = File(app.filesDir, "last_playlist.json")
+            runBlocking(Dispatchers.IO) {
+                keepLastPlaybackProgressEnabled = settingsRepo.keepLastPlaybackProgressFlow.first()
+                keepPlaybackModeStateEnabled = settingsRepo.keepPlaybackModeStateFlow.first()
+            }
 
             // 基础网络请求工厂，支持 B 站 Cookie 注入
             val okHttpClient = AppContainer.sharedOkHttpClient
@@ -519,8 +532,8 @@ object PlayerManager {
                     }
                     val msg = when {
                         isOfflineCache -> {
-                            NPLogger.w("NERI-Player", "离线缓存播放失败，跳过该歌曲")
-                            null
+                            NPLogger.w("NERI-Player", "离线缓存播放失败，暂停当前歌曲等待重新恢复")
+                            getLocalizedString(R.string.player_playback_failed_with_code, error.errorCodeName)
                         }
                         cause?.message?.contains("no protocol: null", ignoreCase = true) == true ->
                             getLocalizedString(R.string.player_playback_invalid_url)
@@ -530,22 +543,22 @@ object PlayerManager {
                             getLocalizedString(R.string.player_playback_failed_with_code, error.errorCodeName)
                     }
 
-                    if (msg != null) {
-                        postPlayerEvent(PlayerEvent.ShowError(msg))
-                    }
+                    postPlayerEvent(PlayerEvent.ShowError(msg))
 
                     if (consecutivePlayFailures >= MAX_CONSECUTIVE_FAILURES) {
                         stopPlaybackPreservingQueue(clearMediaUrl = true)
                         return
                     }
 
-                    val shouldSkip = isOfflineCache ||
+                    val shouldSkip =
                         error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
                         error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ||
                         error.errorCode == PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND ||
                         cause?.message?.contains("no protocol: null", ignoreCase = true) == true
 
-                    if (shouldSkip) {
+                    if (isOfflineCache) {
+                        pause()
+                    } else if (shouldSkip) {
                         mainScope.launch { handleTrackEnded() }
                     } else {
                         pause()
@@ -553,7 +566,7 @@ object PlayerManager {
                 }
 
                 override fun onPlaybackStateChanged(state: Int) {
-                    if (state == Player.STATE_ENDED) handleTrackEnded()
+                    if (state == Player.STATE_ENDED) handleTrackEndedIfNeeded()
                 }
 
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -566,6 +579,16 @@ object PlayerManager {
                             positionMs = positionMs,
                             shouldResumePlayback = shouldResumePlayback
                         )
+                    }
+                }
+
+                override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                    if (
+                        !playWhenReady &&
+                        reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM &&
+                        player.playbackState == Player.STATE_ENDED
+                    ) {
+                        handleTrackEndedIfNeeded()
                     }
                 }
 
@@ -615,6 +638,24 @@ object PlayerManager {
         ioScope.launch {
             settingsRepo.playbackCrossfadeOutDurationMsFlow.collect { duration ->
                 playbackCrossfadeOutDurationMs = duration.coerceAtLeast(0L)
+            }
+        }
+        ioScope.launch {
+            settingsRepo.keepLastPlaybackProgressFlow.collect { enabled ->
+                val changed = keepLastPlaybackProgressEnabled != enabled
+                keepLastPlaybackProgressEnabled = enabled
+                if (changed && initialized && currentPlaylist.isNotEmpty()) {
+                    persistState()
+                }
+            }
+        }
+        ioScope.launch {
+            settingsRepo.keepPlaybackModeStateFlow.collect { enabled ->
+                val changed = keepPlaybackModeStateEnabled != enabled
+                keepPlaybackModeStateEnabled = enabled
+                if (changed && initialized && currentPlaylist.isNotEmpty()) {
+                    persistState()
+                }
             }
         }
         ioScope.launch {
@@ -751,9 +792,11 @@ object PlayerManager {
         if (!shouldPauseForBluetoothDisconnect(currentDevice, null)) {
             return false
         }
-        NPLogger.d("NERI-PlayerManager", "Bluetooth output became noisy, pausing playback.")
-        pause()
-        return true
+        schedulePauseForBluetoothDisconnect(
+            previousDevice = currentDevice,
+            reason = "becoming_noisy"
+        )
+        return false
     }
 
     private fun handleDeviceChange(audioManager: AudioManager) {
@@ -761,8 +804,13 @@ object PlayerManager {
         val newDevice = getCurrentAudioDevice(audioManager)
         _currentAudioDevice.value = newDevice
         if (shouldPauseForBluetoothDisconnect(previousDevice, newDevice)) {
-            NPLogger.d("NERI-PlayerManager", "Bluetooth output changed to speaker, pausing playback.")
-            pause()
+            schedulePauseForBluetoothDisconnect(
+                previousDevice = previousDevice,
+                reason = "device_changed_to_${newDevice.type}"
+            )
+        } else if (newDevice.type != AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
+            bluetoothDisconnectPauseJob?.cancel()
+            bluetoothDisconnectPauseJob = null
         }
     }
 
@@ -774,6 +822,36 @@ object PlayerManager {
         if (!_isPlayingFlow.value) return false
         if (previousDevice?.type != AudioDeviceInfo.TYPE_BLUETOOTH_A2DP) return false
         return newDevice == null || newDevice.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+    }
+
+    // 蓝牙路由切换常有瞬时抖动，这里二次确认后再暂停，避免误伤正常播放。
+    private fun schedulePauseForBluetoothDisconnect(previousDevice: AudioDevice?, reason: String) {
+        if (previousDevice?.type != AudioDeviceInfo.TYPE_BLUETOOTH_A2DP) return
+        bluetoothDisconnectPauseJob?.cancel()
+        bluetoothDisconnectPauseJob = mainScope.launch {
+            delay(BLUETOOTH_DISCONNECT_CONFIRM_DELAY_MS)
+            if (!stopOnBluetoothDisconnectEnabled || !_isPlayingFlow.value) {
+                bluetoothDisconnectPauseJob = null
+                return@launch
+            }
+
+            val audioManager = application.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            val confirmedDevice = getCurrentAudioDevice(audioManager)
+            _currentAudioDevice.value = confirmedDevice
+            if (confirmedDevice.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
+                NPLogger.d(
+                    "NERI-PlayerManager",
+                    "Confirmed bluetooth disconnect ($reason), pausing playback."
+                )
+                pause()
+            } else {
+                NPLogger.d(
+                    "NERI-PlayerManager",
+                    "Ignored transient bluetooth route change ($reason): ${confirmedDevice.type}"
+                )
+            }
+            bluetoothDisconnectPauseJob = null
+        }
     }
 
     private fun getCurrentAudioDevice(audioManager: AudioManager): AudioDevice {
@@ -1130,6 +1208,9 @@ object PlayerManager {
                     player.playWhenReady = true
                     player.play()
                 }
+            } else {
+                postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(R.string.player_playback_network_error)))
+                mainScope.launch { pause() }
             }
             return
         }
@@ -1153,7 +1234,8 @@ object PlayerManager {
                         player.play()
                     }
                 } else {
-                    mainScope.launch { handleTrackEnded() }
+                    postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(R.string.player_playback_network_error)))
+                    withContext(Dispatchers.Main) { pause() }
                 }
             } finally {
                 urlRefreshInProgress = false
@@ -1196,7 +1278,7 @@ object PlayerManager {
         } else null
     }
 
-    /** 检查 ExoPlayer 缓存中是否有完整的歌曲数据 */
+    /** 只有完整缓存才允许离线兜底，避免半首歌缓存被误当成可播放资源。 */
     private fun checkExoPlayerCache(cacheKey: String): Boolean {
         return try {
             if (!::cache.isInitialized) return false
@@ -1204,15 +1286,40 @@ object PlayerManager {
             val cachedSpans = cache.getCachedSpans(cacheKey)
             if (cachedSpans.isEmpty()) return false
 
-            // 检查是否有完整的缓存数据
-            // 如果有至少一个缓存片段,认为可以尝试播放
-            val hasCachedData = cachedSpans.any { it.length > 0 }
-
-            if (hasCachedData) {
-                NPLogger.d("NERI-PlayerManager", "找到缓存数据: $cacheKey, 片段数: ${cachedSpans.size}")
+            val contentLength = ContentMetadata.getContentLength(cache.getContentMetadata(cacheKey))
+            if (contentLength <= 0L) {
+                NPLogger.d("NERI-PlayerManager", "缓存长度未知，不启用离线兜底: $cacheKey")
+                return false
             }
 
-            hasCachedData
+            val orderedSpans = cachedSpans.sortedBy { it.position }
+            var coveredUntil = 0L
+            for (span in orderedSpans) {
+                if (span.position > coveredUntil) {
+                    NPLogger.d(
+                        "NERI-PlayerManager",
+                        "缓存存在空洞，不启用离线兜底: $cacheKey @ ${span.position}"
+                    )
+                    return false
+                }
+                coveredUntil = maxOf(coveredUntil, span.position + span.length)
+                if (coveredUntil >= contentLength) break
+            }
+
+            val isComplete = coveredUntil >= contentLength
+            if (isComplete) {
+                NPLogger.d(
+                    "NERI-PlayerManager",
+                    "找到完整缓存数据: $cacheKey, 长度: $contentLength, 片段数: ${cachedSpans.size}"
+                )
+            } else {
+                NPLogger.d(
+                    "NERI-PlayerManager",
+                    "缓存未完整覆盖，不启用离线兜底: $cacheKey, 已覆盖: $coveredUntil/$contentLength"
+                )
+            }
+
+            isComplete
         } catch (e: Exception) {
             NPLogger.w("NERI-PlayerManager", "检查缓存失败: ${e.message}")
             false
@@ -1356,10 +1463,26 @@ object PlayerManager {
                     )
                 }
             }
-            currentPlaylist.isNotEmpty() && currentIndex != -1 -> playAtIndex(currentIndex)
+            currentPlaylist.isNotEmpty() && currentIndex != -1 -> {
+                val resumePositionMs = if (keepLastPlaybackProgressEnabled) {
+                    maxOf(restoredResumePositionMs, _playbackPositionMs.value).coerceAtLeast(0L)
+                } else {
+                    0L
+                }
+                playAtIndex(currentIndex, resumePositionMs = resumePositionMs)
+            }
             currentPlaylist.isNotEmpty() -> playAtIndex(0)
             else -> {}
         }
+    }
+
+    private fun handleTrackEndedIfNeeded() {
+        val currentToken = playbackRequestToken
+        if (lastHandledTrackEndToken == currentToken) {
+            return
+        }
+        lastHandledTrackEndToken = currentToken
+        handleTrackEnded()
     }
 
     fun pause(forcePersist: Boolean = false) {
@@ -1545,6 +1668,9 @@ object PlayerManager {
         _repeatModeFlow.value = newMode
         // 仅当单曲循环时让 Exo 循环；其余交给我们的队列推进
         syncExoRepeatMode()
+        ioScope.launch {
+            persistState()
+        }
     }
 
     fun release() {
@@ -1559,6 +1685,8 @@ object PlayerManager {
 
         stopProgressUpdates()
         cancelVolumeFade(resetToFull = true)
+        bluetoothDisconnectPauseJob?.cancel()
+        bluetoothDisconnectPauseJob = null
         playJob?.cancel()
         playJob = null
 
@@ -1603,6 +1731,9 @@ object PlayerManager {
             rebuildShuffleBag(excludeIndex = currentIndex)
         } else {
             shuffleBag.clear()
+        }
+        ioScope.launch {
+            persistState()
         }
     }
 
@@ -1759,19 +1890,36 @@ object PlayerManager {
         positionMs: Long = _playbackPositionMs.value.coerceAtLeast(0L),
         shouldResumePlayback: Boolean = currentPlaylist.isNotEmpty() && shouldResumePlaybackSnapshot()
     ) {
+        val playlistSnapshot = currentPlaylist.toList()
+        val currentIndexSnapshot = currentIndex
+        val mediaUrlSnapshot = _currentMediaUrl.value
+        val persistedPositionMs = if (keepLastPlaybackProgressEnabled) {
+            positionMs.coerceAtLeast(0L)
+        } else {
+            0L
+        }
+        val persistedRepeatMode = if (keepPlaybackModeStateEnabled) {
+            repeatModeSetting
+        } else {
+            Player.REPEAT_MODE_OFF
+        }
+        val persistedShuffleEnabled = keepPlaybackModeStateEnabled && _shuffleModeFlow.value
+
         withContext(Dispatchers.IO) {
             try {
-                if (currentPlaylist.isEmpty()) {
+                if (playlistSnapshot.isEmpty()) {
                     restoredResumePositionMs = 0L
                     restoredShouldResumePlayback = false
                     if (stateFile.exists()) stateFile.delete()
                 } else {
                     val data = PersistedState(
-                        playlist = currentPlaylist,
-                        index = currentIndex,
-                        mediaUrl = _currentMediaUrl.value,
-                        positionMs = positionMs.coerceAtLeast(0L),
-                        shouldResumePlayback = shouldResumePlayback
+                        playlist = playlistSnapshot,
+                        index = currentIndexSnapshot,
+                        mediaUrl = mediaUrlSnapshot,
+                        positionMs = persistedPositionMs,
+                        shouldResumePlayback = shouldResumePlayback,
+                        repeatMode = persistedRepeatMode,
+                        shuffleEnabled = persistedShuffleEnabled
                     )
                     stateFile.writeText(gson.toJson(data))
                 }
@@ -2068,7 +2216,35 @@ object PlayerManager {
                 _currentSongFlow.value?.let(::isLocalSong) != true ||
                     _currentSongFlow.value?.let(::isReadableLocalSong) == true
             }
-            restoredResumePositionMs = data.positionMs.coerceAtLeast(0L)
+            repeatModeSetting = if (keepPlaybackModeStateEnabled) {
+                when (data.repeatMode) {
+                    Player.REPEAT_MODE_ALL,
+                    Player.REPEAT_MODE_ONE,
+                    Player.REPEAT_MODE_OFF -> data.repeatMode
+                    else -> Player.REPEAT_MODE_OFF
+                }
+            } else {
+                Player.REPEAT_MODE_OFF
+            }
+            syncExoRepeatMode()
+            _repeatModeFlow.value = repeatModeSetting
+
+            val restoreShuffleEnabled = keepPlaybackModeStateEnabled && (data.shuffleEnabled == true)
+            player.shuffleModeEnabled = restoreShuffleEnabled
+            _shuffleModeFlow.value = restoreShuffleEnabled
+            shuffleHistory.clear()
+            shuffleFuture.clear()
+            if (restoreShuffleEnabled) {
+                rebuildShuffleBag(excludeIndex = currentIndex)
+            } else {
+                shuffleBag.clear()
+            }
+
+            restoredResumePositionMs = if (keepLastPlaybackProgressEnabled) {
+                data.positionMs.coerceAtLeast(0L)
+            } else {
+                0L
+            }
             restoredShouldResumePlayback = data.shouldResumePlayback && currentIndex != -1
             resumePlaybackRequested = restoredShouldResumePlayback
             _playbackPositionMs.value = restoredResumePositionMs

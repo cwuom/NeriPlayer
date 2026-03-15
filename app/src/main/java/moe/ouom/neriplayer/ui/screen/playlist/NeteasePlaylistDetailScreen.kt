@@ -160,6 +160,7 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.util.HapticFloatingActionButton
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
+import moe.ouom.neriplayer.util.offlineCachedImageRequest
 import moe.ouom.neriplayer.util.performHapticFeedback
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -972,7 +973,8 @@ private fun SongRow(
             }
         }
 
-        val displayCoverUrl = song.displayCoverUrl()
+        val itemContext = LocalContext.current
+        val displayCoverUrl = song.displayCoverUrl(itemContext)
         if (!displayCoverUrl.isNullOrBlank()) {
             Box(
                 modifier = Modifier
@@ -984,7 +986,7 @@ private fun SongRow(
                     )
             ) {
                 AsyncImage(
-                    model = ImageRequest.Builder(LocalContext.current).data(displayCoverUrl).build(),
+                    model = offlineCachedImageRequest(itemContext, displayCoverUrl),
                     contentDescription = song.displayName(),
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.matchParentSize()

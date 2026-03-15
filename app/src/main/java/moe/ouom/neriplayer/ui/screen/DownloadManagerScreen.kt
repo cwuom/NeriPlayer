@@ -1,6 +1,7 @@
 ﻿package moe.ouom.neriplayer.ui.screen
 
 import android.app.Application
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -31,11 +32,14 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.DownloadedSong
+import moe.ouom.neriplayer.data.LocalMediaSupport
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.DownloadManagerViewModel
 import moe.ouom.neriplayer.util.formatDate
 import moe.ouom.neriplayer.util.formatFileSize
+import moe.ouom.neriplayer.util.offlineCachedImageRequest
 import moe.ouom.neriplayer.util.performHapticFeedback
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -456,6 +460,16 @@ private fun DownloadedSongItem(
     onSelectionChanged: (Boolean) -> Unit,
     onLongClick: () -> Unit
 ) {
+    val context = LocalContext.current
+    val resolvedCover = remember(song.coverPath, song.filePath) {
+        song.coverPath
+            ?.takeIf { File(it).exists() }
+            ?.let { File(it).toURI().toString() }
+            ?: runCatching {
+                LocalMediaSupport.inspect(context, Uri.fromFile(File(song.filePath))).coverUri
+            }.getOrNull()
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -499,10 +513,9 @@ private fun DownloadedSongItem(
             }
 
             // 封面或音乐图标
-            if (song.coverPath != null) {
-                // 显示封面
+            if (!resolvedCover.isNullOrBlank()) {
                 AsyncImage(
-                    model = java.io.File(song.coverPath).toURI().toString(),
+                    model = offlineCachedImageRequest(context, resolvedCover),
                     contentDescription = null,
                     modifier = Modifier
                         .size(48.dp)

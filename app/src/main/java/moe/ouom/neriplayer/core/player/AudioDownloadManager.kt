@@ -39,6 +39,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.clearSongCancelled
 import moe.ouom.neriplayer.data.BiliAudioStreamInfo
+import moe.ouom.neriplayer.data.LocalMediaSupport
 import moe.ouom.neriplayer.data.LocalSongSupport
 import moe.ouom.neriplayer.data.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
@@ -428,8 +429,49 @@ fun getLocalFilePath(context: Context, song: SongItem): String? {
             ?.absolutePath
     }
 
+    /** 解析下载歌曲对应的本地封面，供离线 UI 兜底使用。 */
+    fun getLocalCoverUri(context: Context, song: SongItem): String? {
+        val baseDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir
+        val coverDir = File(File(baseDir, "NeriPlayer"), "Covers")
+        val possibleExtensions = listOf("jpg", "jpeg", "png", "webp")
+        val baseNames = candidateBaseNames(song)
+        if (coverDir.exists()) {
+            for (baseName in baseNames) {
+                for (ext in possibleExtensions) {
+                    val file = File(coverDir, "$baseName.$ext")
+                    if (file.exists()) return file.toURI().toString()
+                }
+            }
+
+            val fileNamePatterns = baseNames.map { baseName ->
+                Regex("^${Regex.escape(baseName)}(?: \\(\\d+\\))?$")
+            }
+            coverDir.listFiles()
+                ?.firstOrNull { file ->
+                    file.isFile &&
+                        file.extension.lowercase() in possibleExtensions &&
+                        fileNamePatterns.any { pattern -> pattern.matches(file.nameWithoutExtension) }
+                }
+                ?.toURI()
+                ?.toString()
+                ?.let { return it }
+        }
+
+        val localAudioPath = getLocalFilePath(context, song)
+            ?: song.localFilePath?.takeIf { File(it).exists() }
+            ?: return null
+        val localAudioUri = Uri.fromFile(File(localAudioPath))
+        return runCatching {
+            LocalMediaSupport.inspect(context, localAudioUri).coverUri
+        }.getOrElse {
+            NPLogger.w(TAG, "resolve local cover fallback failed: ${it.message}")
+            null
+        }
+    }
+
     private fun candidateBaseNames(song: SongItem): List<String> {
         val baseNames = linkedSetOf<String>()
+        baseNames += sanitizeFileName("${song.customArtist ?: song.artist} - ${song.customName ?: song.name}")
         baseNames += sanitizeFileName("${song.artist} - ${song.name}")
 
         val originalName = song.originalName?.takeIf { it.isNotBlank() } ?: song.name

@@ -217,8 +217,8 @@
     <string name="lyrics_blur_low_cost_hint">低于 Android 12 使用低开销方案，效果较弱</string>
     <string name="lyrics_blur_amount">模糊强度</string>
     <string name="lyrics_blur_current">当前模糊度: %.2f</string>
-    <string name="settings_advanced_blur">小播放器高级模糊效果</string>
-    <string name="settings_advanced_blur_desc">启用小播放器的 Haze 动态模糊</string>
+    <string name="settings_advanced_blur">高级模糊效果</string>
+    <string name="settings_advanced_blur_desc">启用作用于小播放器和底部栏的 Haze 动态模糊</string>
     <string name="settings_nowplaying_cover_blur_background">正在播放模糊封面背景</string>
     <string name="settings_nowplaying_cover_blur_background_desc">使用当前封面作为正在播放页面背景</string>
     <string name="settings_nowplaying_cover_blur_amount">封面模糊强度</string>
@@ -825,6 +825,10 @@
     <string name="settings_playback_crossfade_next_desc">切换到下一首时使用淡入淡出过渡</string>
     <string name="settings_playback_crossfade_in_duration">下一首淡入时长</string>
     <string name="settings_playback_crossfade_out_duration">当前曲淡出时长</string>
+    <string name="settings_keep_last_playback_progress">保留上次播放进度</string>
+    <string name="settings_keep_last_playback_progress_desc">应用重启后继续记住当前歌曲的播放进度</string>
+    <string name="settings_keep_playback_mode_state">保留播放状态</string>
+    <string name="settings_keep_playback_mode_state_desc">应用重启后恢复单曲循环、列表循环和随机播放状态</string>
     <string name="settings_stop_on_bluetooth_disconnect">蓝牙断开自动停止</string>
     <string name="settings_stop_on_bluetooth_disconnect_desc">蓝牙设备断开时自动暂停播放</string>
     <string name="settings_allow_mixed_playback">允许与其他应用同时播放</string>
@@ -1113,6 +1117,8 @@
     </plurals>
     <string name="library_qqmusic_coming">QQ音乐功能开发中...</string>
     <string name="library_favorite_source_format" formatted="false">%d首 · %s</string>
+    <string name="library_favorite_sort_mode_title">收藏歌单排序</string>
+    <string name="library_favorite_sort_mode_desc">长按歌单进入排序，拖动右侧手柄调整顺序</string>
     <string name="library_title">媒体库</string>
     <string name="library_coming_soon">敬请期待</string>
     <string name="library_recent_played">最近播放</string>

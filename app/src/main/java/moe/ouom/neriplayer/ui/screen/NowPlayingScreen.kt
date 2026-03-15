@@ -161,6 +161,7 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.FavoritesPlaylist
 import moe.ouom.neriplayer.data.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.LocalMediaSupport
+import moe.ouom.neriplayer.data.displayCoverUrl
 import moe.ouom.neriplayer.data.isLocalSong
 import moe.ouom.neriplayer.data.sameIdentityAs
 import moe.ouom.neriplayer.data.stableKey
@@ -579,14 +580,14 @@ fun NowPlayingScreen(
                                     )
                                     .clip(RoundedCornerShape(24.dp))
                                     .background(
-                                        color = if ((currentSong?.customCoverUrl ?: currentSong?.coverUrl) != null) {
+                                        color = if (currentSong?.displayCoverUrl(LocalContext.current) != null) {
                                             Color.Transparent
                                         } else {
                                             MaterialTheme.colorScheme.primaryContainer
                                         }
                                     )
                             ) {
-                                val displayCoverUrl = currentSong?.customCoverUrl ?: currentSong?.coverUrl
+                                val displayCoverUrl = currentSong?.displayCoverUrl(LocalContext.current)
                                 displayCoverUrl?.let { cover ->
                                     val context = LocalContext.current
                                     AsyncImage(

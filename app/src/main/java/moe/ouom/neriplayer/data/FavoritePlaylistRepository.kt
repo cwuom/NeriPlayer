@@ -22,6 +22,7 @@ data class FavoritePlaylist(
     val source: String,
     val songs: List<SongItem>,
     val addedTime: Long = System.currentTimeMillis(),
+    val sortOrder: Long = addedTime,
     val modifiedAt: Long = addedTime,
     val isDeleted: Boolean = false
 )
@@ -73,13 +74,26 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
             .groupBy { "${it.id}_${it.source}" }
             .map { (_, snapshots) ->
                 snapshots.maxByOrNull { maxOf(it.modifiedAt, it.addedTime) }!!
+                    .normalizeSortOrder()
             }
-            .sortedByDescending { maxOf(it.modifiedAt, it.addedTime) }
+            .sortedWith(compareByDescending<FavoritePlaylist> { it.sortOrder }.thenByDescending {
+                maxOf(it.modifiedAt, it.addedTime)
+            })
         _snapshots.value = normalized
         _favorites.value = normalized
             .filterNot(FavoritePlaylist::isDeleted)
-            .sortedByDescending { maxOf(it.modifiedAt, it.addedTime) }
+            .sortedWith(compareByDescending<FavoritePlaylist> { it.sortOrder }.thenByDescending {
+                maxOf(it.modifiedAt, it.addedTime)
+            })
         saveToDisk(triggerSync)
+    }
+
+    private fun FavoritePlaylist.normalizeSortOrder(): FavoritePlaylist {
+        val resolvedSortOrder = sortOrder.takeIf { it > 0L }
+            ?: addedTime.takeIf { it > 0L }
+            ?: modifiedAt.takeIf { it > 0L }
+            ?: System.currentTimeMillis()
+        return if (resolvedSortOrder == sortOrder) this else copy(sortOrder = resolvedSortOrder)
     }
 
     private fun triggerAutoSync() {
@@ -121,7 +135,8 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
                 trackCount = maxOf(trackCount, existing?.trackCount ?: 0, mergedSongs.size),
                 source = source,
                 songs = if (mergedSongs.isNotEmpty()) mergedSongs else existing?.songs.orEmpty(),
-                addedTime = now,
+                addedTime = existing?.takeUnless { it.isDeleted }?.addedTime ?: now,
+                sortOrder = existing?.takeUnless { it.isDeleted }?.normalizeSortOrder()?.sortOrder ?: now,
                 modifiedAt = now,
                 isDeleted = false
             )
@@ -153,6 +168,7 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
                 songs = emptyList(),
                 trackCount = 0,
                 coverUrl = existing.coverUrl,
+                sortOrder = existing.normalizeSortOrder().sortOrder,
                 modifiedAt = System.currentTimeMillis(),
                 isDeleted = true
             )
@@ -186,10 +202,42 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
                 coverUrl = resolvedCover,
                 trackCount = resolvedTrackCount,
                 songs = mergedSongs,
+                sortOrder = existing.normalizeSortOrder().sortOrder,
                 modifiedAt = System.currentTimeMillis(),
                 isDeleted = false
             )
             publish(list)
+        }
+    }
+
+    suspend fun reorderFavorites(newOrder: List<String>) {
+        withContext(Dispatchers.IO) {
+            val currentVisible = _favorites.value
+            if (currentVisible.isEmpty()) return@withContext
+
+            val orderedKeys = newOrder.distinct()
+            val visibleByKey = currentVisible.associateBy { "${it.source}:${it.id}" }
+            val reorderedVisible = buildList {
+                orderedKeys.mapNotNullTo(this) { visibleByKey[it] }
+                currentVisible.filterTo(this) { favorite ->
+                    "${favorite.source}:${favorite.id}" !in orderedKeys
+                }
+            }
+            if (reorderedVisible.isEmpty()) return@withContext
+
+            val now = System.currentTimeMillis()
+            val reorderedByKey = reorderedVisible.mapIndexed { index, favorite ->
+                val key = "${favorite.source}:${favorite.id}"
+                key to favorite.copy(
+                    sortOrder = now + (reorderedVisible.size - index).toLong(),
+                    modifiedAt = now
+                )
+            }.toMap()
+
+            val updated = _snapshots.value.map { snapshot ->
+                reorderedByKey["${snapshot.source}:${snapshot.id}"] ?: snapshot
+            }
+            publish(updated)
         }
     }
 

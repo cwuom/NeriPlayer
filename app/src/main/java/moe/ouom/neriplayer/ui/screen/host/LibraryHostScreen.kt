@@ -45,6 +45,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collect
 import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistDetailScreen
@@ -128,6 +129,7 @@ fun LibraryHostScreen(
     val qqMusicListState = rememberSaveable(saver = qqMusicListSaver) {
         LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
     }
+    val context = LocalContext.current
 
     Surface(color = Color.Transparent) {
         AnimatedContent(
@@ -159,7 +161,7 @@ fun LibraryHostScreen(
                             AppContainer.playlistUsageRepo.recordOpen(
                                 id = playlist.id,
                                 name = playlist.name,
-                                picUrl = playlist.displayCoverUrl(),
+                                picUrl = playlist.displayCoverUrl(context),
                                 trackCount = playlist.songs.size,
                                 source = "local"
                             )

@@ -107,7 +107,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
@@ -117,6 +116,7 @@ import moe.ouom.neriplayer.data.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.displayAlbum
 import moe.ouom.neriplayer.data.displayArtist
+import moe.ouom.neriplayer.data.displayCoverUrl
 import moe.ouom.neriplayer.data.displayName
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
@@ -128,6 +128,7 @@ import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.formatDuration
+import moe.ouom.neriplayer.util.offlineCachedImageRequest
 import moe.ouom.neriplayer.util.performHapticFeedback
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
@@ -230,48 +231,48 @@ fun ExploreScreen(
                 .padding(innerPadding)
         ) {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = {
-                        searchQuery = it
-                        vm.search(searchQuery)
-                    },
-                    label = { Text(stringResource(R.string.search_keyword)) },
-                    leadingIcon = { Icon(Icons.Default.Search, "Search") },
-                    trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            HapticIconButton(onClick = {
-                                searchQuery = ""
-                                vm.search("")
-                            }) { Icon(Icons.Default.Clear, "Clear") }
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = {
+                            searchQuery = it
+                            vm.search(searchQuery)
+                        },
+                        label = { Text(stringResource(R.string.search_keyword)) },
+                        leadingIcon = { Icon(Icons.Default.Search, "Search") },
+                        trailingIcon = {
+                            if (searchQuery.isNotEmpty()) {
+                                HapticIconButton(onClick = {
+                                    searchQuery = ""
+                                    vm.search("")
+                                }) { Icon(Icons.Default.Clear, "Clear") }
+                            }
+                        },
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = {
+                            focusManager.clearFocus()
+                        }),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    PrimaryTabRow(
+                        selectedTabIndex = pagerState.currentPage,
+                        containerColor = Color.Transparent,
+                        contentColor = MaterialTheme.colorScheme.primary
+                    ) {
+                        SearchSource.entries.forEachIndexed { index, source ->
+                            Tab(
+                                selected = pagerState.currentPage == index,
+                                onClick = {
+                                    scope.launch {
+                                        pagerState.animateScrollToPage(index)
+                                    }
+                                },
+                                text = { Text(source.displayName) }
+                            )
                         }
-                    },
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = {
-                        focusManager.clearFocus()
-                    }),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(8.dp))
-                PrimaryTabRow(
-                    selectedTabIndex = pagerState.currentPage,
-                    containerColor = Color.Transparent,
-                    contentColor = MaterialTheme.colorScheme.primary
-                ) {
-                    SearchSource.entries.forEachIndexed { index, source ->
-                        Tab(
-                            selected = pagerState.currentPage == index,
-                            onClick = {
-                                scope.launch {
-                                    pagerState.animateScrollToPage(index)
-                                }
-                            },
-                            text = { Text(source.displayName) }
-                        )
                     }
                 }
-            }
 
             HorizontalPager(
                 state = pagerState,
@@ -714,6 +715,7 @@ private fun SongRow(
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
+    val coverUrl = song.displayCoverUrl(context)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -735,9 +737,9 @@ private fun SongRow(
             )
         }
 
-        if (!song.coverUrl.isNullOrBlank()) {
+        if (!coverUrl.isNullOrBlank()) {
             AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current).data(song.coverUrl).build(),
+                model = offlineCachedImageRequest(context, coverUrl),
                 contentDescription = song.displayName(),
                 contentScale = ContentScale.Crop,
                 modifier = Modifier

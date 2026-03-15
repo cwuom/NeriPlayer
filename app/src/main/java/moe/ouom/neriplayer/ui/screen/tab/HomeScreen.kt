@@ -111,6 +111,7 @@ import moe.ouom.neriplayer.data.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.UsageEntry
 import moe.ouom.neriplayer.data.displayAlbum
 import moe.ouom.neriplayer.data.displayArtist
+import moe.ouom.neriplayer.data.displayCoverUrl
 import moe.ouom.neriplayer.data.displayName
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
@@ -120,6 +121,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.formatDuration
 import moe.ouom.neriplayer.util.formatPlayCount
+import moe.ouom.neriplayer.util.offlineCachedImageRequest
 import kotlin.math.ceil
 import kotlin.math.min
 
@@ -474,6 +476,7 @@ private fun SongRowMini(
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
+    val coverUrl = song.displayCoverUrl(context)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -491,9 +494,9 @@ private fun SongRowMini(
             overflow = TextOverflow.Clip
         )
 
-        if (!song.coverUrl.isNullOrBlank()) {
+        if (!coverUrl.isNullOrBlank()) {
             AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current).data(song.coverUrl).build(),
+                model = offlineCachedImageRequest(context, coverUrl),
                 contentDescription = song.displayName(),
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
