@@ -82,6 +82,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -461,6 +462,7 @@ fun NeriApp(
     val stopOnBluetoothDisconnect by repo.stopOnBluetoothDisconnectFlow.collectAsState(initial = true)
     val allowMixedPlayback by repo.allowMixedPlaybackFlow.collectAsState(initial = false)
     val maxCacheSizeBytes by repo.maxCacheSizeBytesFlow.collectAsState(initial = 1024L * 1024 * 1024)
+    val homeUsageEntries by AppContainer.playlistUsageRepo.frequentPlaylistsFlow.collectAsState(initial = emptyList())
     var pendingFollowSystemDark by remember { mutableStateOf<Boolean?>(null) }
     var pendingForceDark by remember { mutableStateOf<Boolean?>(null) }
     var themeRevealSnapshot by remember { mutableStateOf<ImageBitmap?>(null) }
@@ -491,7 +493,7 @@ fun NeriApp(
         clearThemeRevealVisualState()
     }
 
-    // 缓存当前封面的取色结果，避免开关动态取色时先闪到默认种子色。
+    // 缓存当前封面的取色结果，避免开关动态取色时先闪到默认种子色
     var coverSeedHex by remember { mutableStateOf<String?>(null) }
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
     val displayCoverUrl = currentSong.resolveUiCoverSource(context)
@@ -742,7 +744,11 @@ fun NeriApp(
             val navController = rememberNavController()
             val backEntry by navController.currentBackStackEntryAsState()
             val currentRoute = backEntry?.destination?.route
-            val showHomeTab = showHomeContinueCard || showHomeTrendingCard || showHomeRadarCard || showHomeRecommendedCard
+            val showHomeTab =
+                (showHomeContinueCard && homeUsageEntries.isNotEmpty()) ||
+                    showHomeTrendingCard ||
+                    showHomeRadarCard ||
+                    showHomeRecommendedCard
             val effectiveStartDestination = remember(defaultStartDestination, showHomeTab, devModeEnabled) {
                 resolveMainStartDestination(
                     preferredRoute = defaultStartDestination,
@@ -1562,6 +1568,15 @@ fun NeriApp(
                             val imageLoader = remember(context) { Coil.imageLoader(context) }
                             var stableCoverUrl by remember { mutableStateOf<String?>(null) }
                             var stableBlurStrength by remember { mutableStateOf<Float?>(null) }
+                            var coverBlurLoadFailed by remember { mutableStateOf(false) }
+                            val coverBlurRequestKey = remember(nowPlayingCoverUrl, blurStrength) {
+                                if (nowPlayingCoverUrl.isNullOrBlank()) {
+                                    null
+                                } else {
+                                    "nowplaying-blur:$nowPlayingCoverUrl:$blurStrength"
+                                }
+                            }
+                            val latestCoverBlurRequestKey by rememberUpdatedState(coverBlurRequestKey)
                             val currentQueueIndex = remember(nowPlayingQueue, currentSongNP) {
                                 val current = currentSongNP ?: return@remember -1
                                 nowPlayingQueue.indexOfFirst { it.sameIdentityAs(current) }
@@ -1604,10 +1619,16 @@ fun NeriApp(
                                 if (!hasCoverBlur) {
                                     stableCoverUrl = null
                                     stableBlurStrength = null
+                                    coverBlurLoadFailed = false
+                                } else {
+                                    coverBlurLoadFailed = false
                                 }
                             }
 
-                            if (!hasCoverBlur) {
+                            val blurBackdropCoverUrl = stableCoverUrl ?: nowPlayingCoverUrl
+                            val useCoverBlurBackground = hasCoverBlur && !coverBlurLoadFailed
+
+                            if (!useCoverBlurBackground) {
                                 // 背景固定按暗色逻辑渲染
                                 NowPlayingAccentBackdrop(
                                     coverUrl = nowPlayingCoverUrl,
@@ -1616,11 +1637,12 @@ fun NeriApp(
                                 )
                             }
 
-                            if (hasCoverBlur) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .background(Color(0xFF121212))
+                            if (useCoverBlurBackground) {
+                                // 先铺一层强调色背景，避免首次加载和旋转重建时黑底闪烁。
+                                NowPlayingAccentBackdrop(
+                                    coverUrl = blurBackdropCoverUrl,
+                                    isDark = true,
+                                    modifier = Modifier.fillMaxSize()
                                 )
                                 val shouldShowStable =
                                     stableCoverUrl != null &&
@@ -1663,8 +1685,18 @@ fun NeriApp(
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier.fillMaxSize(),
                                     onSuccess = {
-                                        stableCoverUrl = nowPlayingCoverUrl
-                                        stableBlurStrength = blurStrength
+                                        if (latestCoverBlurRequestKey == coverBlurRequestKey) {
+                                            stableCoverUrl = nowPlayingCoverUrl
+                                            stableBlurStrength = blurStrength
+                                            coverBlurLoadFailed = false
+                                        }
+                                    },
+                                    onError = {
+                                        if (latestCoverBlurRequestKey == coverBlurRequestKey) {
+                                            stableCoverUrl = null
+                                            stableBlurStrength = null
+                                            coverBlurLoadFailed = true
+                                        }
                                     }
                                 )
                                 if (nowPlayingCoverBlurDarken > 0f) {

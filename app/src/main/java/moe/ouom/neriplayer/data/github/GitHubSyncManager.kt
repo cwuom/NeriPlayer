@@ -354,7 +354,7 @@ class GitHubSyncManager private constructor(context: Context) {
         var songsAdded = 0
         var songsRemoved = 0
 
-        val mergedPlaylists = mutableListOf<SyncPlaylist>()
+        val mergedPlaylistsById = linkedMapOf<Long, SyncPlaylist>()
         val localPlaylistsMap = local.playlists.associateBy { it.id }
         val remotePlaylistsMap = remote.playlists.associateBy { it.id }
         val allPlaylistIds = (localPlaylistsMap.keys + remotePlaylistsMap.keys).toSet()
@@ -365,7 +365,7 @@ class GitHubSyncManager private constructor(context: Context) {
             when {
                 localPlaylist != null && remotePlaylist == null -> {
                     if (!localPlaylist.isDeleted) {
-                        mergedPlaylists += localPlaylist
+                        mergedPlaylistsById[localPlaylist.id] = localPlaylist
                         playlistsAdded++
                     } else {
                         playlistsDeleted++
@@ -374,7 +374,7 @@ class GitHubSyncManager private constructor(context: Context) {
 
                 localPlaylist == null && remotePlaylist != null -> {
                     if (!remotePlaylist.isDeleted) {
-                        mergedPlaylists += remotePlaylist
+                        mergedPlaylistsById[remotePlaylist.id] = remotePlaylist
                         playlistsAdded++
                     } else {
                         playlistsDeleted++
@@ -386,7 +386,7 @@ class GitHubSyncManager private constructor(context: Context) {
                         playlistsDeleted++
                     } else {
                         val merged = mergePlaylist(localPlaylist, remotePlaylist, lastSyncTime)
-                        mergedPlaylists += merged.playlist
+                        mergedPlaylistsById[merged.playlist.id] = merged.playlist
                         merged.conflict?.let { conflicts += it }
                         songsAdded += merged.songsAdded
                         songsRemoved += merged.songsRemoved
@@ -408,6 +408,12 @@ class GitHubSyncManager private constructor(context: Context) {
         val mergedRecentPlayDeletions = pruneRecentPlayDeletions(
             mergeRecentPlayDeletions(local.recentPlayDeletions, remote.recentPlayDeletions),
             local.recentPlays + remote.recentPlays
+        )
+        val mergedPlaylists = orderMergedPlaylists(
+            local = local.playlists,
+            remote = remote.playlists,
+            mergedById = mergedPlaylistsById,
+            lastSyncTime = lastSyncTime
         )
         val mergedRecentPlays = mergeRecentPlays(
             local = local.recentPlays,
@@ -442,6 +448,42 @@ class GitHubSyncManager private constructor(context: Context) {
                 conflicts = conflicts
             )
         )
+    }
+
+    private fun orderMergedPlaylists(
+        local: List<SyncPlaylist>,
+        remote: List<SyncPlaylist>,
+        mergedById: Map<Long, SyncPlaylist>,
+        lastSyncTime: Long
+    ): List<SyncPlaylist> {
+        if (mergedById.isEmpty()) return emptyList()
+
+        val localChangedAfterSync = hasPlaylistCollectionChangedAfterSync(local, lastSyncTime)
+        val remoteChangedAfterSync = hasPlaylistCollectionChangedAfterSync(remote, lastSyncTime)
+        val primary = if (remoteChangedAfterSync && !localChangedAfterSync) remote else local
+        val secondary = if (primary === local) remote else local
+        val orderedIds = LinkedHashSet<Long>()
+
+        fun appendPlaylistIds(source: List<SyncPlaylist>) {
+            source.asSequence()
+                .filterNot(SyncPlaylist::isDeleted)
+                .map(SyncPlaylist::id)
+                .filter(mergedById::containsKey)
+                .forEach(orderedIds::add)
+        }
+
+        appendPlaylistIds(primary)
+        appendPlaylistIds(secondary)
+        mergedById.keys.forEach(orderedIds::add)
+
+        return orderedIds.mapNotNull(mergedById::get)
+    }
+
+    private fun hasPlaylistCollectionChangedAfterSync(
+        playlists: List<SyncPlaylist>,
+        lastSyncTime: Long
+    ): Boolean {
+        return playlists.any { it.modifiedAt > lastSyncTime }
     }
 
     private fun mergePlaylist(
@@ -805,6 +847,7 @@ class GitHubSyncManager private constructor(context: Context) {
 
     private fun hasDataChanged(remote: SyncData, merged: SyncData): Boolean {
         if (remote.playlists.size != merged.playlists.size) return true
+        if (remote.playlists.map(SyncPlaylist::id) != merged.playlists.map(SyncPlaylist::id)) return true
 
         val remotePlaylistMap = remote.playlists.associateBy { it.id }
         for (mergedPlaylist in merged.playlists) {

@@ -26,7 +26,9 @@
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -100,6 +102,7 @@ data class ExploreUiState(
 class ExploreViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application
     private val neteaseRepo = NeteaseCookieRepository(application)
+    private var highQualityLoadJob: Job? = null
 
     private val _uiState = MutableStateFlow(ExploreUiState())
     val uiState: StateFlow<ExploreUiState> = _uiState
@@ -167,13 +170,18 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun loadHighQuality(cat: String? = null) {
-        val realCat = cat ?: _uiState.value.selectedTag
-        _uiState.value = _uiState.value.copy(
+        val currentState = _uiState.value
+        val realCat = cat ?: currentState.selectedTag
+        val previousTag = currentState.selectedTag
+        val previousPlaylists = currentState.playlists
+
+        highQualityLoadJob?.cancel()
+        _uiState.value = currentState.copy(
             loading = true,
             error = null,
             selectedTag = realCat
         )
-        viewModelScope.launch {
+        highQualityLoadJob = viewModelScope.launch {
             try {
                 // Convert tag key to Chinese API category
                 val apiCategory = TAG_TO_API_CATEGORY[realCat] ?: realCat
@@ -188,14 +196,18 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                     playlists = mapped,
                     selectedTag = realCat
                 )
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
+                val shouldRestorePreviousContent = previousPlaylists.isNotEmpty() && realCat != previousTag
                 _uiState.value = _uiState.value.copy(
                     loading = false,
                     error = app.getString(
                         R.string.error_load_playlist,
                         e.message ?: app.getString(R.string.github_sync_failed_message)
                     ),
-                    selectedTag = realCat
+                    playlists = if (shouldRestorePreviousContent) previousPlaylists else emptyList(),
+                    selectedTag = if (shouldRestorePreviousContent) previousTag else realCat
                 )
             }
         }

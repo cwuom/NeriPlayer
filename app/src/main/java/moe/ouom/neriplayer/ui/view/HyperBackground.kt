@@ -38,7 +38,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.graphics.drawable.toBitmap
-import androidx.core.view.ViewCompat
 import androidx.palette.graphics.Palette
 import coil.ImageLoader
 import coil.request.ImageRequest
@@ -91,7 +90,7 @@ fun HyperBackground(
         while (
             !v.isAttachedToWindow ||
             v.parent == null ||
-            !ViewCompat.isLaidOut(v) ||
+            !v.isLaidOut ||
             v.width == 0 || v.height == 0
         ) {
             withFrameNanos { /* just wait next frame */ }

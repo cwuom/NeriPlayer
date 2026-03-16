@@ -790,15 +790,24 @@ object PlayerManager {
     fun handleAudioBecomingNoisy(): Boolean {
         ensureInitialized()
         if (!initialized) return false
+        if (!_isPlayingFlow.value) return false
         val currentDevice = _currentAudioDevice.value
-        if (!shouldPauseForBluetoothDisconnect(currentDevice, null)) {
+        if (currentDevice == null || !isHeadsetLikeOutput(currentDevice.type)) {
             return false
         }
-        schedulePauseForBluetoothDisconnect(
-            previousDevice = currentDevice,
-            reason = "becoming_noisy"
-        )
-        return false
+        if (requiresDisconnectConfirmation(currentDevice.type)) {
+            if (!shouldPauseForBluetoothDisconnect(currentDevice, null)) {
+                return false
+            }
+            schedulePauseForBluetoothDisconnect(
+                previousDevice = currentDevice,
+                reason = "becoming_noisy"
+            )
+            return true
+        }
+        NPLogger.d("NERI-PlayerManager", "Audio becoming noisy, pausing playback immediately.")
+        pause()
+        return true
     }
 
     private fun handleDeviceChange(audioManager: AudioManager) {
@@ -810,6 +819,14 @@ object PlayerManager {
                 previousDevice = previousDevice,
                 reason = "device_changed_to_${newDevice.type}"
             )
+        } else if (shouldPauseForImmediateOutputDisconnect(previousDevice, newDevice)) {
+            bluetoothDisconnectPauseJob?.cancel()
+            bluetoothDisconnectPauseJob = null
+            NPLogger.d(
+                "NERI-PlayerManager",
+                "Detected immediate output disconnect (${previousDevice?.type} -> ${newDevice.type}), pausing playback."
+            )
+            pause()
         } else if (newDevice.type != AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
             bluetoothDisconnectPauseJob?.cancel()
             bluetoothDisconnectPauseJob = null
@@ -822,13 +839,13 @@ object PlayerManager {
     ): Boolean {
         if (!stopOnBluetoothDisconnectEnabled) return false
         if (!_isPlayingFlow.value) return false
-        if (previousDevice?.type != AudioDeviceInfo.TYPE_BLUETOOTH_A2DP) return false
+        if (previousDevice == null || !requiresDisconnectConfirmation(previousDevice.type)) return false
         return newDevice == null || newDevice.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
     }
 
     // 蓝牙路由切换常有瞬时抖动，这里二次确认后再暂停，避免误伤正常播放。
     private fun schedulePauseForBluetoothDisconnect(previousDevice: AudioDevice?, reason: String) {
-        if (previousDevice?.type != AudioDeviceInfo.TYPE_BLUETOOTH_A2DP) return
+        if (previousDevice == null || !requiresDisconnectConfirmation(previousDevice.type)) return
         bluetoothDisconnectPauseJob?.cancel()
         bluetoothDisconnectPauseJob = mainScope.launch {
             delay(BLUETOOTH_DISCONNECT_CONFIRM_DELAY_MS)
@@ -858,23 +875,52 @@ object PlayerManager {
 
     private fun getCurrentAudioDevice(audioManager: AudioManager): AudioDevice {
         val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-        val bluetoothDevice = devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP }
+        val bluetoothDevice = devices.firstOrNull { isBluetoothOutputType(it.type) }
         if (bluetoothDevice != null) {
             return try {
                 AudioDevice(
                     name = bluetoothDevice.productName.toString().ifBlank { getLocalizedString(R.string.device_bluetooth_headset) },
-                    type = AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+                    type = bluetoothDevice.type,
                     icon = Icons.Default.BluetoothAudio
                 )
             } catch (_: SecurityException) {
                 AudioDevice(getLocalizedString(R.string.device_bluetooth_headset), AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, Icons.Default.BluetoothAudio)
             }
         }
-        val wiredHeadset = devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET || it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES }
+        val wiredHeadset = devices.firstOrNull { isWiredOutputType(it.type) }
         if (wiredHeadset != null) {
-            return AudioDevice(getLocalizedString(R.string.device_wired_headset), AudioDeviceInfo.TYPE_WIRED_HEADSET, Icons.Default.Headset)
+            return AudioDevice(getLocalizedString(R.string.device_wired_headset), wiredHeadset.type, Icons.Default.Headset)
         }
         return AudioDevice(getLocalizedString(R.string.device_speaker), AudioDeviceInfo.TYPE_BUILTIN_SPEAKER, Icons.Default.SpeakerGroup)
+    }
+
+    private fun isBluetoothOutputType(type: Int): Boolean {
+        return type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+            type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
+            type == AudioDeviceInfo.TYPE_BLE_SPEAKER
+    }
+
+    private fun isWiredOutputType(type: Int): Boolean {
+        return type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+            type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
+            type == AudioDeviceInfo.TYPE_USB_HEADSET
+    }
+
+    private fun isHeadsetLikeOutput(type: Int): Boolean {
+        return isBluetoothOutputType(type) || isWiredOutputType(type)
+    }
+
+    private fun requiresDisconnectConfirmation(type: Int): Boolean {
+        return isBluetoothOutputType(type)
+    }
+
+    private fun shouldPauseForImmediateOutputDisconnect(
+        previousDevice: AudioDevice?,
+        newDevice: AudioDevice?
+    ): Boolean {
+        if (previousDevice == null || !isWiredOutputType(previousDevice.type)) return false
+        if (!_isPlayingFlow.value) return false
+        return newDevice == null || newDevice.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
     }
 
     private fun cancelVolumeFade(resetToFull: Boolean = false) {
@@ -2289,7 +2335,7 @@ object PlayerManager {
         return true
     }
 
-    fun suppressFutureAutoResumeForCurrentSession() {
+    fun suppressFutureAutoResumeForCurrentSession(forcePersist: Boolean = false) {
         ensureInitialized()
         if (!initialized || currentPlaylist.isEmpty()) return
         suppressAutoResumeForCurrentSession = true
@@ -2300,8 +2346,14 @@ object PlayerManager {
             _playbackPositionMs.value.coerceAtLeast(0L)
         }
         _playbackPositionMs.value = positionMs
-        ioScope.launch {
-            persistState(positionMs = positionMs, shouldResumePlayback = false)
+        if (forcePersist) {
+            runBlocking(Dispatchers.IO) {
+                persistState(positionMs = positionMs, shouldResumePlayback = false)
+            }
+        } else {
+            ioScope.launch {
+                persistState(positionMs = positionMs, shouldResumePlayback = false)
+            }
         }
     }
 

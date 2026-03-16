@@ -31,8 +31,7 @@
         <activity
             android:name=".activity.MainActivity"
             android:enableOnBackInvokedCallback="true"
-            android:exported="true"
-            android:screenOrientation="portrait">
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
@@ -50,14 +49,12 @@
         <activity
             android:name=".activity.NeteaseWebLoginActivity"
             android:exported="false"
-            android:screenOrientation="portrait"
             android:theme="@style/Theme.Material3.DayNight.NoActionBar"
         />
         <activity
             android:name="moe.ouom.neriplayer.activity.BiliWebLoginActivity"
             android:exported="false"
             android:launchMode="singleTop"
-            android:screenOrientation="portrait"
             />
         <service
             android:name="moe.ouom.neriplayer.core.player.AudioPlayerService"

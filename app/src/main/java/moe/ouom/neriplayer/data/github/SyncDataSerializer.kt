@@ -23,11 +23,13 @@ package moe.ouom.neriplayer.data.github
  * Created: 2025/1/8
  */
 
-import com.google.gson.Gson
 import kotlinx.serialization.decodeFromByteArray
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToByteArray
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.protobuf.ProtoBuf
 import kotlinx.serialization.protobuf.ProtoNumber
 import java.io.ByteArrayInputStream
@@ -44,7 +46,12 @@ import java.util.zip.GZIPOutputStream
 @OptIn(ExperimentalSerializationApi::class)
 object SyncDataSerializer {
 
-    private val gson = Gson()
+    private val json = Json {
+        encodeDefaults = true
+        ignoreUnknownKeys = true
+        coerceInputValues = true
+        explicitNulls = false
+    }
     private val protoBuf = ProtoBuf
 
     /**
@@ -93,16 +100,12 @@ object SyncDataSerializer {
     /**
      * JSON序列化
      */
-    private fun serializeJson(data: SyncData): String {
-        return gson.toJson(data)
-    }
+    private fun serializeJson(data: SyncData): String = json.encodeToString(data)
 
     /**
      * JSON反序列化
      */
-    private fun deserializeJson(content: String): SyncData {
-        return gson.fromJson(content, SyncData::class.java)
-    }
+    private fun deserializeJson(content: String): SyncData = json.decodeFromString(content)
 
     /**
      * ProtoBuf + GZIP压缩序列化

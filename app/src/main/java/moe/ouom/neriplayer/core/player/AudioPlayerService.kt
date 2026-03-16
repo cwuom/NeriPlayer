@@ -154,7 +154,7 @@ class AudioPlayerService : Service() {
             override fun onReceive(context: Context, intent: Intent) {
                 if (intent.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
                     if (PlayerManager.handleAudioBecomingNoisy()) {
-                        NPLogger.d("NERI-APS", "Handled bluetooth disconnect according to settings.")
+                        NPLogger.d("NERI-APS", "Handled audio becoming noisy according to playback policy.")
                         updatePlaybackState()
                         updateNotification()
                     }
@@ -182,17 +182,6 @@ class AudioPlayerService : Service() {
             stopForegroundIfStarted()
             stopSelf()
             return START_NOT_STICKY
-        }
-
-        var restoredPlayback = false
-        var restoredPlaybackPositionMs: Long? = null
-        if (action == null) {
-            restoredPlaybackPositionMs = PlayerManager.resumeRestoredPlaybackIfNeeded()
-            restoredPlayback = restoredPlaybackPositionMs != null
-            if (restoredPlayback) {
-                NPLogger.w("NERI-APS", "Restored playback after process restart")
-                updateAll()
-            }
         }
 
         if (action != ACTION_STOP && action != null) {
@@ -255,13 +244,20 @@ class AudioPlayerService : Service() {
         if (PlayerManager.hasItems()) {
             val foregroundReady = ensureForegroundStarted()
             if (!foregroundReady && action == null) {
-                restoredPlaybackPositionMs?.let(PlayerManager::rearmRestoredPlayback)
                 NPLogger.w(
                     "NERI-APS",
-                    "Foreground start deferred after background restart; waiting for next explicit sync."
+                    "Foreground start deferred after background restart; skip restoring playback."
                 )
                 allowServiceRestart = false
+                stopSelf()
                 return START_NOT_STICKY
+            }
+            if (action == null) {
+                val restoredPlaybackPositionMs = PlayerManager.resumeRestoredPlaybackIfNeeded()
+                if (restoredPlaybackPositionMs != null) {
+                    NPLogger.w("NERI-APS", "Restored playback after process restart")
+                    updateAll()
+                }
             }
         } else if (action != ACTION_STOP) {
             allowServiceRestart = false
@@ -571,7 +567,7 @@ class AudioPlayerService : Service() {
         )
         // 从最近任务移除时不再直接停播，只禁止这次会话后续自动恢复。
         if (PlayerManager.hasItems()) {
-            PlayerManager.suppressFutureAutoResumeForCurrentSession()
+            PlayerManager.suppressFutureAutoResumeForCurrentSession(forcePersist = true)
             updateNotification()
         }
     }

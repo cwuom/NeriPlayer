@@ -393,6 +393,22 @@ fun NowPlayingScreen(
     val windowWidthDp = with(density) { windowInfo.containerSize.width.toDp() }
     val isWideLayout = windowWidthDp >= 480.dp
     val useWideLandscapeLayout = isWideLayout && isLandscape
+    val isCompactTabletLandscape = useWideLandscapeLayout && windowWidthDp < 720.dp
+    val secondaryControlButtonSize = when {
+        useWideLandscapeLayout && isCompactTabletLandscape -> 42.dp
+        useWideLandscapeLayout -> 46.dp
+        else -> 42.dp
+    }
+    val primaryControlButtonSize = when {
+        useWideLandscapeLayout && isCompactTabletLandscape -> 46.dp
+        useWideLandscapeLayout -> 50.dp
+        else -> 42.dp
+    }
+    val controlButtonSpacing = when {
+        useWideLandscapeLayout && isCompactTabletLandscape -> 18.dp
+        useWideLandscapeLayout -> 22.dp
+        else -> 20.dp
+    }
 
     // 歌词偏移（平台 + 用户自定义）
     val platformOffset = if (currentSong?.matchedLyricSource == MusicPlatform.QQ_MUSIC) 500L else 1000L
@@ -560,15 +576,24 @@ fun NowPlayingScreen(
 
                     // 封面
                     BoxWithConstraints(
-                        modifier = Modifier.align(Alignment.CenterHorizontally)
-                    ) {
-                        val coverSize = if (isLandscape) {
-                            minOf(windowWidthDp * 0.45f, maxHeight * 0.5f, maxWidth)
+                        modifier = if (useWideLandscapeLayout) {
+                            Modifier.fillMaxWidth()
                         } else {
-                            minOf(maxWidth * 0.6f, maxHeight * 0.65f)
+                            Modifier.align(Alignment.CenterHorizontally)
+                        }
+                    ) {
+                        val coverSize = when {
+                            useWideLandscapeLayout -> minOf(
+                                windowWidthDp * 0.40f,
+                                maxWidth * 0.82f,
+                                maxHeight * 0.42f
+                            )
+                            isLandscape -> minOf(windowWidthDp * 0.45f, maxHeight * 0.5f, maxWidth)
+                            else -> minOf(maxWidth * 0.6f, maxHeight * 0.65f)
                         }
                         Box(
                             modifier = Modifier
+                                .align(Alignment.Center)
                                 .size(coverSize)
                         ) {
                             Box(
@@ -721,7 +746,7 @@ fun NowPlayingScreen(
                     // 进度条
                     Row(
                         modifier = Modifier
-                            .fillMaxWidth()
+                            .fillMaxWidth(if (useWideLandscapeLayout) 0.88f else 1f)
                             .sharedBounds(
                                 rememberSharedContentState(key = "progress_bar"),
                                 animatedVisibilityScope = this@AnimatedContent
@@ -756,16 +781,17 @@ fun NowPlayingScreen(
                         )
                     }
 
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(if (useWideLandscapeLayout) 14.dp else 8.dp))
 
                     // 控制按钮
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(20.dp),
+                        horizontalArrangement = Arrangement.spacedBy(controlButtonSpacing),
+                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.align(Alignment.CenterHorizontally)
                     ) {
                         HapticIconButton(onClick = { PlayerManager.setShuffle(!shuffleEnabled) },
                             modifier = Modifier
-                                .size(42.dp)
+                                .size(secondaryControlButtonSize)
                         ) {
                             Icon(
                                 Icons.Outlined.Shuffle,
@@ -780,7 +806,7 @@ fun NowPlayingScreen(
                                 rememberSharedContentState(key = "player_previous"),
                                 animatedVisibilityScope = this@AnimatedContent
                             )
-                            .size(42.dp)
+                            .size(secondaryControlButtonSize)
                         ) {
                             Icon(Icons.Outlined.SkipPrevious, contentDescription = stringResource(R.string.player_previous))
                         }
@@ -792,7 +818,7 @@ fun NowPlayingScreen(
                                     rememberSharedContentState(key = "play_button"),
                                     animatedVisibilityScope = this@AnimatedContent
                                 )
-                                .size(42.dp)
+                                .size(primaryControlButtonSize)
                         ) {
                             AnimatedContent(
                                 targetState = isPlaying,
@@ -811,13 +837,13 @@ fun NowPlayingScreen(
                                 rememberSharedContentState(key = "player_next"),
                                 animatedVisibilityScope = this@AnimatedContent
                             )
-                            .size(42.dp)
+                            .size(secondaryControlButtonSize)
                         ) {
                             Icon(Icons.Outlined.SkipNext, contentDescription = stringResource(R.string.player_next))
                         }
                         HapticIconButton(onClick = { PlayerManager.cycleRepeatMode() },
                             modifier = Modifier
-                                .size(42.dp)
+                                .size(secondaryControlButtonSize)
                         ) {
                             Icon(
                                 imageVector = if (repeatMode == Player.REPEAT_MODE_ONE) Icons.Filled.RepeatOne else Icons.Outlined.Repeat,
@@ -849,23 +875,39 @@ fun NowPlayingScreen(
                         )
                     }
 
-                    // 将下面的内容推到底部
-                    Spacer(modifier = Modifier.weight(1f))
+                    if (useWideLandscapeLayout) {
+                        Spacer(Modifier.height(24.dp))
+                    } else {
+                        // 将下面的内容推到底部
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
 
                     // 底部操作栏（固定在底部）
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .windowInsetsPadding(WindowInsets.navigationBars)
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = if (useWideLandscapeLayout) {
+                            Modifier
+                                .fillMaxWidth(0.9f)
+                                .clip(RoundedCornerShape(28.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.32f))
+                                .padding(horizontal = 18.dp, vertical = 12.dp)
+                        } else {
+                            Modifier
+                                .fillMaxWidth()
+                                .windowInsetsPadding(WindowInsets.navigationBars)
+                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                        },
+                        horizontalArrangement = if (useWideLandscapeLayout) {
+                            Arrangement.SpaceEvenly
+                        } else {
+                            Arrangement.SpaceBetween
+                        },
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         // 播放队列
                         HapticIconButton(onClick = { showQueueSheet = true },
                             modifier = Modifier
                                 .sharedBounds(
-                                    rememberSharedContentState(key = "btn_queue"),
+                                rememberSharedContentState(key = "btn_queue"),
                                     animatedVisibilityScope = this@AnimatedContent,
                                     enter = EnterTransition.None,
                                     exit = ExitTransition.None,
@@ -873,7 +915,7 @@ fun NowPlayingScreen(
                             Icon(
                                 Icons.AutoMirrored.Outlined.QueueMusic,
                                 contentDescription = stringResource(R.string.playlist_queue),
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(if (useWideLandscapeLayout) 22.dp else 20.dp)
                             )
                         }
 
@@ -890,7 +932,7 @@ fun NowPlayingScreen(
                                 Icons.Outlined.Timer,
                                 contentDescription = stringResource(R.string.sleep_timer_short),
                                 tint = if (sleepTimerState.isActive) MaterialTheme.colorScheme.primary else LocalContentColor.current,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(if (useWideLandscapeLayout) 22.dp else 20.dp)
                             )
                         }
 
@@ -908,7 +950,7 @@ fun NowPlayingScreen(
                             Icon(
                                 audioDeviceInfo.second,
                                 contentDescription = audioDeviceInfo.first,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(if (useWideLandscapeLayout) 22.dp else 20.dp)
                             )
                         }
 
@@ -938,7 +980,7 @@ fun NowPlayingScreen(
                                     } else {
                                         LocalContentColor.current
                                     },
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier.size(if (useWideLandscapeLayout) 22.dp else 20.dp)
                                 )
                             }
                         }
@@ -956,7 +998,7 @@ fun NowPlayingScreen(
                             Icon(
                                 Icons.AutoMirrored.Outlined.PlaylistAdd,
                                 contentDescription = stringResource(R.string.playlist_add_to),
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(if (useWideLandscapeLayout) 22.dp else 20.dp)
                             )
                         }
                     }
@@ -966,38 +1008,58 @@ fun NowPlayingScreen(
                 if (useWideLandscapeLayout) {
                     Row(
                         modifier = contentModifier,
-                        horizontalArrangement = Arrangement.spacedBy(24.dp)
+                        horizontalArrangement = Arrangement.spacedBy(28.dp)
                     ) {
                         Column(
                             modifier = Modifier
-                                .weight(0.6f) // 左半屏主区域
+                                .weight(1f)
                                 .fillMaxHeight(),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             content = mainColumnContent
                         )
-                        if (lyrics.isNotEmpty()) {
-                            AppleMusicLyric(
-                                lyrics = lyrics,
-                                currentTimeMs = currentPosition,
-                                modifier = Modifier
-                                    .weight(0.4f) // 右半屏
-                                    .fillMaxHeight(),
-                                textColor = MaterialTheme.colorScheme.onBackground,
-                                fontSize = (18f * lyricFontScale).coerceIn(14f, 26f).sp,
-                                translationFontSize = (14f * lyricFontScale).coerceIn(12f, 22f).sp,
-                                visualSpec = LyricVisualSpec(),
-                                lyricOffsetMs = totalOffset,
-                                lyricBlurEnabled = lyricBlurEnabled,
-                                lyricBlurAmount = lyricBlurAmount,
-                                onLyricClick = { entry -> PlayerManager.seekTo(entry.startTimeMs) },
-                                translatedLyrics = if (showLyricTranslation) translatedLyrics else null
-                            )
-                        } else {
-                            Spacer(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .fillMaxHeight()
-                            )
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                        ) {
+                            if (lyrics.isNotEmpty()) {
+                                AppleMusicLyric(
+                                    lyrics = lyrics,
+                                    currentTimeMs = currentPosition,
+                                    modifier = Modifier.fillMaxSize(),
+                                    textColor = MaterialTheme.colorScheme.onBackground,
+                                    fontSize = (18f * lyricFontScale).coerceIn(14f, 26f).sp,
+                                    translationFontSize = (14f * lyricFontScale).coerceIn(12f, 22f).sp,
+                                    visualSpec = LyricVisualSpec(),
+                                    lyricOffsetMs = totalOffset,
+                                    lyricBlurEnabled = lyricBlurEnabled,
+                                    lyricBlurAmount = lyricBlurAmount,
+                                    onLyricClick = { entry -> PlayerManager.seekTo(entry.startTimeMs) },
+                                    translatedLyrics = if (showLyricTranslation) translatedLyrics else null
+                                )
+                            } else {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(horizontal = 28.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.LibraryMusic,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                                        modifier = Modifier.size(36.dp)
+                                    )
+                                    Spacer(Modifier.height(12.dp))
+                                    Text(
+                                        text = stringResource(R.string.lyrics_no_lyrics),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            }
                         }
                     }
                 } else {
@@ -1402,10 +1464,6 @@ fun MoreOptionsSheet(
                                                     modifier = Modifier.fillMaxWidth()
                                                 )
                                             }
-                                        }
-
-                                        currentDownloadTask?.status == DownloadStatus.CANCELLED -> {
-                                            Text(stringResource(R.string.download_cancelled_status))
                                         }
 
                                         currentDownloadTask?.status == DownloadStatus.FAILED -> {
@@ -2326,38 +2384,59 @@ fun EditSongInfoSheet(
                 }
 
                 // 搜索结果列表
-                Box(Modifier.weight(1f)) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
                     if (searchState.isLoading) {
-                        CircularProgressIndicator(Modifier.align(Alignment.Center))
+                        CircularProgressIndicator()
                     } else if (searchState.searchResults.isNotEmpty()) {
-                        LazyColumn {
+                        LazyColumn(
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
                             items(searchState.searchResults) { songResult ->
-                                ListItem(
-                                    headlineContent = { Text(songResult.songName, maxLines = 1) },
-                                    supportingContent = { Text(songResult.singer, maxLines = 1) },
-                                    leadingContent = {
-                                        AsyncImage(
-                                            model = offlineCachedImageRequest(
-                                                context,
-                                                songResult.coverUrl?.replaceFirst("http://", "https://")
-                                            ),
-                                            contentDescription = songResult.songName,
-                                            modifier = Modifier
-                                                .size(48.dp)
-                                                .clip(RoundedCornerShape(8.dp))
-                                        )
-                                    },
-                                    modifier = Modifier.clickable {
-                                        selectedSongForFill = songResult
-                                        showSearchResults = false
-                                    }
-                                )
+                                androidx.compose.material3.Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(18.dp),
+                                    colors = androidx.compose.material3.CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f)
+                                    ),
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        width = 1.dp,
+                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.38f)
+                                    )
+                                ) {
+                                    ListItem(
+                                        colors = androidx.compose.material3.ListItemDefaults.colors(
+                                            containerColor = Color.Transparent
+                                        ),
+                                        headlineContent = { Text(songResult.songName, maxLines = 1) },
+                                        supportingContent = { Text(songResult.singer, maxLines = 1) },
+                                        leadingContent = {
+                                            AsyncImage(
+                                                model = offlineCachedImageRequest(
+                                                    context,
+                                                    songResult.coverUrl?.replaceFirst("http://", "https://")
+                                                ),
+                                                contentDescription = songResult.songName,
+                                                modifier = Modifier
+                                                    .size(48.dp)
+                                                    .clip(RoundedCornerShape(12.dp))
+                                            )
+                                        },
+                                        modifier = Modifier.clickable {
+                                            selectedSongForFill = songResult
+                                            showSearchResults = false
+                                        }
+                                    )
+                                }
                             }
                         }
                     } else {
                         Text(
                             text = searchState.error ?: stringResource(R.string.nowplaying_no_search_result),
-                            modifier = Modifier.align(Alignment.Center),
                             color = if (searchState.error != null) MaterialTheme.colorScheme.error else LocalContentColor.current
                         )
                     }
@@ -2611,26 +2690,35 @@ fun FillOptionsDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 // 显示选中的歌曲信息
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .padding(12.dp)
+                androidx.compose.material3.Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = androidx.compose.material3.CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.82f)
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+                    )
                 ) {
-                    Text(
-                        text = songResult.songName,
-                        style = MaterialTheme.typography.titleSmall,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = songResult.singer,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Column(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
+                    ) {
+                        Text(
+                            text = songResult.songName,
+                            style = MaterialTheme.typography.titleSmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            text = songResult.singer,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
 
                 Spacer(Modifier.height(8.dp))

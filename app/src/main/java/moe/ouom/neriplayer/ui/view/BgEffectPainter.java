@@ -30,6 +30,7 @@ import android.content.res.Resources;
 import android.graphics.RenderEffect;
 import android.graphics.RuntimeShader;
 import android.os.Build;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.View;
 import android.view.ViewGroup;
@@ -44,10 +45,9 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 
 import moe.ouom.neriplayer.R;
-import moe.ouom.neriplayer.util.NPLogger;
-
 @RequiresApi(api = Build.VERSION_CODES.TIRAMISU)
 public class BgEffectPainter {
+    private static final String TAG = "BgEffectPainter";
     private float[] bound;
     RuntimeShader mBgRuntimeShader;
     Context mContext;
@@ -193,7 +193,7 @@ public class BgEffectPainter {
                 shaderCode.append(line).append("\n");
             }
         } catch (IOException e) {
-            NPLogger.INSTANCE.e("BgEffectPainter", e);
+            Log.e(TAG, "Failed to load shader asset", e);
         }
         return shaderCode.toString();
     }

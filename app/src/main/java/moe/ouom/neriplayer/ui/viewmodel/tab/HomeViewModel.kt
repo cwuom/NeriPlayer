@@ -104,8 +104,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private var hasRecommendLogin = false
 
     private fun localizedAppContext() = LanguageManager.applyLanguage(getApplication())
-    private fun buildLoginRequiredMessage(): String =
-        localizedAppContext().getString(R.string.home_login_required)
 
     init {
         // 登录后自动刷新首页推荐歌单
@@ -190,15 +188,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun refreshHotSongs() {
-        if (!hasRecommendLogin) {
-            _uiState.value = _uiState.value.copy(
-                hotSongs = HomeSectionState(
-                    loading = false,
-                    error = buildLoginRequiredMessage()
-                )
-            )
-            return
-        }
         hotSongsJob?.cancel()
         val previous = _uiState.value.hotSongs
         _uiState.value = _uiState.value.copy(
@@ -235,15 +224,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun refreshRadarSongs() {
-        if (!hasRecommendLogin) {
-            _uiState.value = _uiState.value.copy(
-                radarSongs = HomeSectionState(
-                    loading = false,
-                    error = buildLoginRequiredMessage()
-                )
-            )
-            return
-        }
         radarSongsJob?.cancel()
         val previous = _uiState.value.radarSongs
         _uiState.value = _uiState.value.copy(

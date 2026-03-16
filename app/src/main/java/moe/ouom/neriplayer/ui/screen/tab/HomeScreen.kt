@@ -177,10 +177,9 @@ fun HomeScreen(
     val scope = rememberCoroutineScope()
     val showTrending = showTrendingCard
     val showRadar = showRadarCard
+    val showContinue = showContinueCard && usage.isNotEmpty()
     val hasVisibleSections =
-        showContinueCard || showTrending || showRadar || showRecommendedCard
-    val loginRequiredText = stringResource(R.string.home_login_required)
-    val loginRequiredHint = stringResource(R.string.home_login_required_hint)
+        showContinue || showTrending || showRadar || showRecommendedCard
 
     Box(Modifier.fillMaxSize()) {
         Column(
@@ -249,7 +248,7 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    if (showContinueCard && usage.isNotEmpty()) {
+                    if (showContinue) {
                         item(span = { GridItemSpan(maxLineSpan) }) {
                             SectionHeader(
                                 icon = Icons.Outlined.History,
@@ -271,25 +270,16 @@ fun HomeScreen(
                                 title = stringResource(R.string.recommend_trending)
                             )
                         }
-                        if (!ui.hasLogin) {
+                        sectionContent(
+                            section = ui.hotSongs,
+                            loadingText = homeLoadingText,
+                            errorDetail = ui.hotSongs.error
+                        ) {
                             item(span = { GridItemSpan(maxLineSpan) }) {
-                                SectionLoginRequiredState(
-                                    title = loginRequiredText,
-                                    hint = loginRequiredHint
+                                ResponsiveSongPagerList(
+                                    songs = ui.hotSongs.items,
+                                    onSongClick = onSongClick
                                 )
-                            }
-                        } else {
-                            sectionContent(
-                                section = ui.hotSongs,
-                                loadingText = homeLoadingText,
-                                errorDetail = ui.hotSongs.error
-                            ) {
-                                item(span = { GridItemSpan(maxLineSpan) }) {
-                                    ResponsiveSongPagerList(
-                                        songs = ui.hotSongs.items,
-                                        onSongClick = onSongClick
-                                    )
-                                }
                             }
                         }
                     }
@@ -301,25 +291,16 @@ fun HomeScreen(
                                 title = stringResource(R.string.recommend_radar)
                             )
                         }
-                        if (!ui.hasLogin) {
+                        sectionContent(
+                            section = ui.radarSongs,
+                            loadingText = homeLoadingText,
+                            errorDetail = ui.radarSongs.error
+                        ) {
                             item(span = { GridItemSpan(maxLineSpan) }) {
-                                SectionLoginRequiredState(
-                                    title = loginRequiredText,
-                                    hint = loginRequiredHint
+                                ResponsiveSongPagerList(
+                                    songs = ui.radarSongs.items,
+                                    onSongClick = onSongClick
                                 )
-                            }
-                        } else {
-                            sectionContent(
-                                section = ui.radarSongs,
-                                loadingText = homeLoadingText,
-                                errorDetail = ui.radarSongs.error
-                            ) {
-                                item(span = { GridItemSpan(maxLineSpan) }) {
-                                    ResponsiveSongPagerList(
-                                        songs = ui.radarSongs.items,
-                                        onSongClick = onSongClick
-                                    )
-                                }
                             }
                         }
                     }
@@ -442,27 +423,6 @@ private fun SectionErrorState(detail: String) {
         )
         Text(
             text = stringResource(R.string.home_retry_hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
-
-@Composable
-private fun SectionLoginRequiredState(title: String, hint: String) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            text = title,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodyMedium
-        )
-        Text(
-            text = hint,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

@@ -509,7 +509,23 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
             others.forEach { playlist ->
                 if (ordered.none { it.id == playlist.id }) ordered += playlist
             }
-            publish(ordered + system)
+            if (ordered.map(LocalPlaylist::id) == others.map(LocalPlaylist::id)) {
+                return@withContext
+            }
+
+            val modifiedAt = System.currentTimeMillis()
+            val reordered = ordered.map { playlist ->
+                // 歌单顺序属于全局状态，重排后统一刷新 modifiedAt，便于同步层感知顺序变化
+                playlist.copy(modifiedAt = modifiedAt)
+            }
+            publish(reordered + system)
+        }
+    }
+
+    private fun replaceRecentNeteaseLikedIds(likedIds: Set<Long>) {
+        synchronized(recentNeteaseLikedIds) {
+            recentNeteaseLikedIds.clear()
+            recentNeteaseLikedIds.addAll(likedIds)
         }
     }
 
@@ -900,9 +916,7 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
             )
         }
 
-        if (recentNeteaseLikedIds.isNotEmpty()) {
-            likedIds.addAll(recentNeteaseLikedIds)
-        }
+        replaceRecentNeteaseLikedIds(likedIds)
 
         return NeteaseLikedIdsFetchResult(
             likedIds = likedIds,
@@ -983,7 +997,17 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
             }
 
         val parsed = parseNeteaseTrackIdsFromPlaylistDetail(playlistRaw)
-        if (!parsed.success || parsed.trackIds.isEmpty()) {
+        if (!parsed.success) {
+            return@withContext NeteaseLikedIdsFetchResult(
+                likedIds = emptySet(),
+                compareSucceeded = false
+            )
+        }
+        if (parsed.trackIds.isEmpty() && parsed.trackCount > 0) {
+            NPLogger.w(
+                "LocalPlaylistRepo",
+                "Liked playlist detail returned empty trackIds but trackCount=${parsed.trackCount}"
+            )
             return@withContext NeteaseLikedIdsFetchResult(
                 likedIds = emptySet(),
                 compareSucceeded = false
@@ -1000,14 +1024,16 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
                 "Liked playlist trackIds incomplete: parsed=${parsed.trackIds.size}, expected=${parsed.trackCount}"
             )
         }
-        val detailSummary = fetchNeteaseLikedSongDetailSummaryByPages(client, parsed.trackIds)
-        likedIds.addAll(detailSummary.ids)
-        likedFingerprints.addAll(detailSummary.fingerprints)
+        if (parsed.trackIds.isNotEmpty()) {
+            val detailSummary = fetchNeteaseLikedSongDetailSummaryByPages(client, parsed.trackIds)
+            likedIds.addAll(detailSummary.ids)
+            likedFingerprints.addAll(detailSummary.fingerprints)
+        }
 
         NeteaseLikedIdsFetchResult(
             likedIds = likedIds,
             likedFingerprints = likedFingerprints,
-            compareSucceeded = likedIds.isNotEmpty()
+            compareSucceeded = true
         )
     }
 

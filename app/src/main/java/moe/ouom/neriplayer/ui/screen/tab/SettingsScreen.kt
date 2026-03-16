@@ -177,6 +177,7 @@ import kotlinx.coroutines.flow.StateFlow
 import moe.ouom.neriplayer.BuildConfig
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.NeteaseWebLoginActivity
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.ThemeDefaults
 import moe.ouom.neriplayer.data.BackgroundImageStorage
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
@@ -666,19 +667,32 @@ fun SettingsScreen(
         }
     }
 
-    val defaultStartDestinationLabel = remember(defaultStartDestination, context) {
-        when (defaultStartDestination) {
+    val allHomeCardsHidden =
+        !showHomeContinueCard &&
+            !showHomeTrendingCard &&
+            !showHomeRadarCard &&
+            !showHomeRecommendedCard
+    val recentUsage by AppContainer.playlistUsageRepo.frequentPlaylistsFlow.collectAsState(initial = emptyList())
+    val homeStartAvailable =
+        showHomeTrendingCard ||
+            showHomeRadarCard ||
+            showHomeRecommendedCard ||
+            (showHomeContinueCard && recentUsage.isNotEmpty())
+    val effectiveDefaultStartDestination = remember(defaultStartDestination, homeStartAvailable) {
+        if (!homeStartAvailable && defaultStartDestination == "home") {
+            "explore"
+        } else {
+            defaultStartDestination
+        }
+    }
+    val defaultStartDestinationLabel = remember(effectiveDefaultStartDestination, context) {
+        when (effectiveDefaultStartDestination) {
             "explore" -> context.getString(R.string.nav_explore)
             "library" -> context.getString(R.string.nav_library)
             "settings" -> context.getString(R.string.nav_settings)
             else -> context.getString(R.string.nav_home)
         }
     }
-    val allHomeCardsHidden =
-        !showHomeContinueCard &&
-            !showHomeTrendingCard &&
-            !showHomeRadarCard &&
-            !showHomeRecommendedCard
 
     LaunchedEffect(neteaseVm) {
         neteaseVm.events.collect { e ->
@@ -1093,7 +1107,7 @@ fun SettingsScreen(
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
 
-                        AnimatedVisibility(visible = allHomeCardsHidden) {
+                        AnimatedVisibility(visible = !homeStartAvailable) {
                             Text(
                                 text = stringResource(R.string.settings_home_hidden_notice),
                                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
@@ -3159,8 +3173,8 @@ fun SettingsScreen(
             title = { Text(stringResource(R.string.settings_default_start_screen)) },
             text = {
                 Column {
-                    val options = listOf(
-                        "home" to stringResource(R.string.nav_home),
+                    val options = listOfNotNull(
+                        ("home" to stringResource(R.string.nav_home)).takeUnless { !homeStartAvailable },
                         "explore" to stringResource(R.string.nav_explore),
                         "library" to stringResource(R.string.nav_library),
                         "settings" to stringResource(R.string.nav_settings)
@@ -3170,7 +3184,7 @@ fun SettingsScreen(
                             headlineContent = { Text(label) },
                             trailingContent = {
                                 RadioButton(
-                                    selected = route == defaultStartDestination,
+                                    selected = route == effectiveDefaultStartDestination,
                                     onClick = null
                                 )
                             },
