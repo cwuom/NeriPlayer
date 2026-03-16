@@ -128,7 +128,7 @@ class BiliApiProbeViewModel(app: Application) : AndroidViewModel(app) {
         val page = 1
         val result = client.searchVideos(keyword = kw, page = page)
         val arr = JSONArray()
-        result.items.take(10).forEach { it ->
+        result.items.take(10).forEach {
             arr.put(JSONObject().apply {
                 put("aid", it.aid)
                 put("bvid", it.bvid)

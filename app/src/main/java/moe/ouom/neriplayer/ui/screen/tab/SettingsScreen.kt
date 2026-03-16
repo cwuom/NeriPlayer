@@ -667,11 +667,10 @@ fun SettingsScreen(
         }
     }
 
-    val allHomeCardsHidden =
-        !showHomeContinueCard &&
-            !showHomeTrendingCard &&
-            !showHomeRadarCard &&
-            !showHomeRecommendedCard
+    !showHomeContinueCard &&
+        !showHomeTrendingCard &&
+        !showHomeRadarCard &&
+        !showHomeRecommendedCard
     val recentUsage by AppContainer.playlistUsageRepo.frequentPlaylistsFlow.collectAsState(initial = emptyList())
     val homeStartAvailable =
         showHomeTrendingCard ||
@@ -4004,7 +4003,7 @@ private fun <T> StateFlow<T>.collectAsStateWithLifecycleCompat(): State<T> {
  */
 @Composable
 private fun formatSyncTime(timestamp: Long): String {
-    val context = LocalContext.current
+    LocalContext.current
     val now = System.currentTimeMillis()
     val diff = now - timestamp
 

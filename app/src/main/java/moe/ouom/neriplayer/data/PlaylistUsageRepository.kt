@@ -112,7 +112,7 @@ class PlaylistUsageRepository(private val app: Context) {
         saveAsync(out)
     }
 
-    /** 仅刷新歌单信息，不改动最近打开时间与排序。 */
+    /** 仅刷新歌单信息，不改动最近打开时间与排序 */
     fun updateInfo(
         id: Long,
         name: String,
@@ -139,8 +139,8 @@ class PlaylistUsageRepository(private val app: Context) {
     }
 
     /**
-     * 同步本地歌单卡片信息。
-     * 已删除的歌单会被移除，名称/封面/歌曲数变化会刷新展示。
+     * 同步本地歌单卡片信息
+     * 已删除的歌单会被移除，名称/封面/歌曲数变化会刷新展示
      */
     fun syncLocalEntries(playlists: List<LocalPlaylist>) {
         val current = _flow.value
@@ -187,7 +187,7 @@ class PlaylistUsageRepository(private val app: Context) {
         saveAsync(out)
     }
 
-    /** 从继续播放列表中移除指定项。 */
+    /** 从继续播放列表中移除指定项 */
     fun removeEntry(id: Long, source: String) {
         val data = _flow.value.toMutableList()
         data.removeAll { it.id == id && it.source == source }

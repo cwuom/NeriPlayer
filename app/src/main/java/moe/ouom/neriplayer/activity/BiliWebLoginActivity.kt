@@ -41,7 +41,8 @@ import moe.ouom.neriplayer.util.lockPortraitIfPhone
 import androidx.core.net.toUri
 
 /**
- * 用内置 WebView 登录哔哩哔哩。登录后读取 Cookie 并返回 JSON(Map<String,String>)。
+ * 用内置 WebView 登录哔哩哔哩
+ * 登录后读取 Cookie 并返回 JSON(Map<String,String>)
  *
  * 通过 Intent Extra 约定返回：
  *   - RESULT_COOKIE: String(JSON of Map<String,String>)

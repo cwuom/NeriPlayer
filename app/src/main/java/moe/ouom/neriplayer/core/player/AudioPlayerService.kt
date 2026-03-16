@@ -112,7 +112,7 @@ class AudioPlayerService : Service() {
         }
         startForegroundImmediately(buildBootstrapNotification())
 
-        // 服务必须尽快进入前台，不能在这里阻塞前台通知启动。
+        // 服务必须尽快进入前台，不能在这里阻塞前台通知启动
         PlayerManager.initialize(application as Application)
 
         serviceScope.launch {
@@ -565,7 +565,7 @@ class AudioPlayerService : Service() {
             "NERI-APS",
             "onTaskRemoved hasItems=${PlayerManager.hasItems()} isPlaying=${PlayerManager.isPlayingFlow.value}"
         )
-        // 从最近任务移除时不再直接停播，只禁止这次会话后续自动恢复。
+        // 从最近任务移除时不再直接停播，只禁止这次会话后续自动恢复
         if (PlayerManager.hasItems()) {
             PlayerManager.suppressFutureAutoResumeForCurrentSession(forcePersist = true)
             updateNotification()

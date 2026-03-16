@@ -34,7 +34,7 @@ import kotlin.collections.firstOrNull
  * - "medium"   : 约 128kbps
  * - "low"      : 约 64kbps
  *
- * 注意：不硬编码 B 站的 dash 音频 ID，统一用标签/比特率做选择，避免因平台变动导致崩溃。
+ * 注意：不硬编码 B 站的 dash 音频 ID，统一用标签/比特率做选择，避免因平台变动导致崩溃
  */
 
 data class BiliAudioStreamInfo(

@@ -824,8 +824,7 @@ fun NeriApp(
                 } else {
                     0.dp
                 }
-                val showMiniPlayerBridge =
-                    isMiniPlayerVisible && visibleMiniPlayerHeightDp > 0.dp
+                isMiniPlayerVisible && visibleMiniPlayerHeightDp > 0.dp
 
                 LaunchedEffect(currentRoute, showHomeTab, effectiveStartDestination) {
                     if (!showHomeTab && currentRoute == Destinations.Home.route) {
@@ -1638,7 +1637,7 @@ fun NeriApp(
                             }
 
                             if (useCoverBlurBackground) {
-                                // 先铺一层强调色背景，避免首次加载和旋转重建时黑底闪烁。
+                                // 先铺一层强调色背景，避免首次加载和旋转重建时黑底闪烁
                                 NowPlayingAccentBackdrop(
                                     coverUrl = blurBackdropCoverUrl,
                                     isDark = true,

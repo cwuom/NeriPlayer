@@ -250,7 +250,7 @@ object AudioDownloadManager {
                     }
 
                     // 检查当前歌曲是否被单独取消
-                    if (moe.ouom.neriplayer.core.download.GlobalDownloadManager.isSongCancelled(song.stableKey())) {
+                    if (GlobalDownloadManager.isSongCancelled(song.stableKey())) {
                         NPLogger.d(TAG, "跳过已取消的歌曲: ${song.name}")
                         clearSongCancelled(song.stableKey())
                         _batchProgressFlow.value?.let { current ->
@@ -287,7 +287,7 @@ object AudioDownloadManager {
                         }
 
                         // 下载成功，直接标记任务为完成
-                        moe.ouom.neriplayer.core.download.GlobalDownloadManager.updateTaskStatus(
+                        GlobalDownloadManager.updateTaskStatus(
                             song.stableKey(),
                             moe.ouom.neriplayer.core.download.DownloadStatus.COMPLETED
                         )
@@ -311,7 +311,7 @@ object AudioDownloadManager {
                     } catch (e: Exception) {
                         NPLogger.e(TAG, context.getString(R.string.download_batch_failed_song, song.name, e.message ?: ""), e)
                         // 标记任务失败
-                        moe.ouom.neriplayer.core.download.GlobalDownloadManager.updateTaskStatus(
+                        GlobalDownloadManager.updateTaskStatus(
                             song.stableKey(),
                             moe.ouom.neriplayer.core.download.DownloadStatus.FAILED
                         )
@@ -429,7 +429,7 @@ fun getLocalFilePath(context: Context, song: SongItem): String? {
             ?.absolutePath
     }
 
-    /** 解析下载歌曲对应的本地封面，供离线 UI 兜底使用。 */
+    /** 解析下载歌曲对应的本地封面，供离线 UI 兜底使用 */
     fun getLocalCoverUri(context: Context, song: SongItem): String? {
         val baseDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir
         val coverDir = File(File(baseDir, "NeriPlayer"), "Covers")
@@ -654,7 +654,7 @@ fun getLocalFilePath(context: Context, song: SongItem): String? {
                 val buffer = okio.Buffer()
                 while (true) {
                     // 检查是否被取消(全局取消或单个任务取消)
-                    if (_isCancelled.value || moe.ouom.neriplayer.core.download.GlobalDownloadManager.isSongCancelled(songKey)) {
+                    if (_isCancelled.value || GlobalDownloadManager.isSongCancelled(songKey)) {
                         NPLogger.d(TAG, "下载被取消，停止下载: songId=$songId")
                         destFile.delete() // 删除临时文件
                         _progressFlow.value = null

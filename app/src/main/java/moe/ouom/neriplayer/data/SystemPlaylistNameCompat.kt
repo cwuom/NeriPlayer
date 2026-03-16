@@ -24,7 +24,7 @@ internal fun buildSystemPlaylistCandidateNames(
 private fun generateLegacyMojibakeVariants(sourceName: String): Set<String> {
     if (sourceName.isBlank() || legacyMojibakeCharsets.isEmpty()) return emptySet()
 
-    // 这里只兼容历史上一层 UTF-8 -> ANSI 误解码的脏值，避免把二次/三次乱码继续扩散进源码语义。
+    // 这里只兼容历史上一层 UTF-8 -> ANSI 误解码的脏值，避免把二次/三次乱码继续扩散进源码语义
     return legacyMojibakeCharsets.mapNotNullTo(linkedSetOf()) { charset ->
         runCatching {
             String(sourceName.toByteArray(Charsets.UTF_8), charset)

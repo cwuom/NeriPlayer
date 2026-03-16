@@ -1,4 +1,4 @@
-@file:androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
+@file:androidx.annotation.OptIn(markerClass = [UnstableApi::class])
 
 package moe.ouom.neriplayer.core.player
 
@@ -843,7 +843,7 @@ object PlayerManager {
         return newDevice == null || newDevice.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
     }
 
-    // 蓝牙路由切换常有瞬时抖动，这里二次确认后再暂停，避免误伤正常播放。
+    // 蓝牙路由切换常有瞬时抖动，这里二次确认后再暂停，避免误伤正常播放
     private fun schedulePauseForBluetoothDisconnect(previousDevice: AudioDevice?, reason: String) {
         if (previousDevice == null || !requiresDisconnectConfirmation(previousDevice.type)) return
         bluetoothDisconnectPauseJob?.cancel()
@@ -1327,7 +1327,7 @@ object PlayerManager {
         } else null
     }
 
-    /** 只有完整缓存才允许离线兜底，避免半首歌缓存被误当成可播放资源。 */
+    /** 只有完整缓存才允许离线兜底，避免半首歌缓存被误当成可播放资源 */
     private fun checkExoPlayerCache(cacheKey: String): Boolean {
         return try {
             if (!::cache.isInitialized) return false
@@ -1567,7 +1567,7 @@ object PlayerManager {
         player.playWhenReady = false
         player.pause()
         if (shouldForceFlushShortLocalSong) {
-            // 超短本地音频在极端编码下可能把已排队的 PCM 继续播完，这里用一次同位 seek 强制刷新渲染链。
+            // 超短本地音频在极端编码下可能把已排队的 PCM 继续播完，这里用一次同位 seek 强制刷新渲染链
             runCatching {
                 player.seekTo(currentPosition.coerceAtMost(expectedDuration.coerceAtLeast(0L)))
             }

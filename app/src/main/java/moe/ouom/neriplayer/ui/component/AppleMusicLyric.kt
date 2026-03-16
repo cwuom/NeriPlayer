@@ -723,7 +723,8 @@ fun AppleMusicActiveLine(
 data class ActiveWord(val range: IntRange, val sustainWeight: Float, val tInWord: Float)
 
 /**
- * 解析 LRC（逐句）。支持 [mm:ss.SSS] 或 [mm:ss]。
+ * 解析 LRC（逐句）
+ * 支持 [mm:ss.SSS] 或 [mm:ss]
  * 没有逐字信息时，逐字揭示会按整句线性推进
  */
 fun parseNeteaseLrc(lrc: String): List<LyricEntry> {

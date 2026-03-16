@@ -244,7 +244,7 @@ object ExceptionHandler {
 
     /**
      * 尽量保持系统原始崩溃链路；若系统未提供默认处理器，则显式终止进程，
-     * 避免异常被吞掉后应用继续运行在损坏状态。
+     * 避免异常被吞掉后应用继续运行在损坏状态
      */
     private fun delegateOrTerminate(thread: Thread, throwable: Throwable) {
         val handler = previousHandler

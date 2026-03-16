@@ -102,7 +102,7 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
                 }
                 onResult(result)
             } catch (_: CancellationException) {
-                // 用户主动返回时直接取消，不再回调已经离开的界面。
+                // 用户主动返回时直接取消，不再回调已经离开的界面
             } finally {
                 if (scanJob === currentJob) {
                     scanJob = null

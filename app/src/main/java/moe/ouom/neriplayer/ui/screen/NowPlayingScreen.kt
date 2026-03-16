@@ -250,7 +250,6 @@ fun NowPlayingScreen(
     val isFavorite = favOverride ?: isFavoriteComputed
 
     // 缩放动画
-    var bumpKey by remember(currentSong?.id) { mutableIntStateOf(0) }
     if (isFavorite) 1.0f else 1.0f
 
     val queue by PlayerManager.currentQueueFlow.collectAsState()

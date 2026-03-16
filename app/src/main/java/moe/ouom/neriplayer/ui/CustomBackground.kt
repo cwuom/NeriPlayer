@@ -96,7 +96,8 @@ fun CustomBackground(
  * 一个利用 RenderScript 实现高性能高斯模糊的 Coil Transformation
  *
  * @param context Context
- * @param radius 模糊强度, 建议范围 [0, 500]。内部会根据强度调整半径与缩放。
+ * @param radius 模糊强度, 建议范围 [0, 500]
+ * 内部会根据强度调整半径与缩放
  */
 class BlurTransformation(
     private val context: Context,

@@ -119,8 +119,8 @@ class SecureTokenStorage(context: Context) {
     }
 
     /**
-     * 升级用户保留已有 deviceId，新用户首次生成本地 UUID。
-     * 不再依赖系统 ANDROID_ID，避免设备标识权限/兼容性问题。
+     * 升级用户保留已有 deviceId，新用户首次生成本地 UUID
+     * 不再依赖系统 ANDROID_ID，避免设备标识权限/兼容性问题
      */
     fun getOrCreateDeviceId(): String {
         return getDeviceId()

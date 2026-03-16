@@ -123,7 +123,7 @@ fun RecentScreen(
     }
 
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
+    rememberCoroutineScope()
     val mini = LocalMiniPlayerHeight.current
 
     // 搜索
