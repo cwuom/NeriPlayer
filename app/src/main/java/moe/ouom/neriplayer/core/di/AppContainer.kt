@@ -43,6 +43,7 @@ import moe.ouom.neriplayer.data.NeteaseCookieRepository
 import moe.ouom.neriplayer.data.PlayHistoryRepository
 import moe.ouom.neriplayer.data.PlaylistUsageRepository
 import moe.ouom.neriplayer.data.SettingsRepository
+import moe.ouom.neriplayer.data.YouTubeAuthRepository
 import moe.ouom.neriplayer.util.DynamicProxySelector
 import okhttp3.OkHttpClient
 
@@ -59,6 +60,7 @@ object AppContainer {
     val settingsRepo by lazy { SettingsRepository(application) }
     val neteaseCookieRepo by lazy { NeteaseCookieRepository(application) }
     val biliCookieRepo by lazy { BiliCookieRepository(application) }
+    val youtubeAuthRepo by lazy { YouTubeAuthRepository(application) }
 
 
     @SuppressLint("StaticFieldLeak")

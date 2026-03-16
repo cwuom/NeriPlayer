@@ -56,6 +56,11 @@
             android:exported="false"
             android:launchMode="singleTop"
             />
+        <activity
+            android:name=".activity.YouTubeWebLoginActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Material3.DayNight.NoActionBar"
+            />
         <service
             android:name="moe.ouom.neriplayer.core.player.AudioPlayerService"
             android:exported="false"

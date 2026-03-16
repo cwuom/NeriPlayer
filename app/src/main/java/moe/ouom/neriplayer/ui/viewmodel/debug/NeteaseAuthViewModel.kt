@@ -1,4 +1,4 @@
-﻿package moe.ouom.neriplayer.ui.viewmodel.debug
+package moe.ouom.neriplayer.ui.viewmodel.debug
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -31,8 +31,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.data.SavedCookieAuthHealth
+import moe.ouom.neriplayer.data.SavedCookieAuthState
 import org.json.JSONObject
 
 data class NeteaseAuthUiState(
@@ -41,15 +45,16 @@ data class NeteaseAuthUiState(
     val sending: Boolean = false,
     val loggingIn: Boolean = false,
     val countdownSec: Int = 0,
-    val isLoggedIn: Boolean = false
+    val isLoggedIn: Boolean = false,
+    val health: SavedCookieAuthHealth = SavedCookieAuthHealth()
 )
 
 sealed interface NeteaseAuthEvent {
     data class ShowSnack(val message: String) : NeteaseAuthEvent
     data class AskConfirmSend(val masked: String) : NeteaseAuthEvent
-    /** 登录成功后弹窗展示 Cookies */
     data class ShowCookies(val cookies: Map<String, String>) : NeteaseAuthEvent
     data object LoginSuccess : NeteaseAuthEvent
+    data class PromptReauth(val health: SavedCookieAuthHealth) : NeteaseAuthEvent
 }
 
 @Suppress("unused")
@@ -59,20 +64,66 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
     private val cookieStore: MutableMap<String, String> = mutableMapOf()
     private val api = AppContainer.neteaseClient
 
-    private val _uiState = MutableStateFlow(NeteaseAuthUiState())
-    val uiState: StateFlow<NeteaseAuthUiState> = _uiState
+    private val _uiState = MutableStateFlow(
+        NeteaseAuthUiState(
+            health = cookieRepo.getAuthHealth(),
+            isLoggedIn = cookieRepo.getAuthHealth().state != SavedCookieAuthState.Missing
+        )
+    )
+    val uiState: StateFlow<NeteaseAuthUiState> = _uiState.asStateFlow()
 
     private val _events = MutableSharedFlow<NeteaseAuthEvent>(extraBufferCapacity = 8)
     val events: MutableSharedFlow<NeteaseAuthEvent> = _events
 
+    private var lastPromptSignature: String? = null
+
     init {
         viewModelScope.launch(Dispatchers.IO) {
             cookieRepo.cookieFlow.collect { saved ->
-                if (saved.isNotEmpty()) {
-                    cookieStore.clear()
-                    cookieStore.putAll(saved)
-                    _uiState.value = _uiState.value.copy(isLoggedIn = cookieStore.containsKey("MUSIC_U"))
+                cookieStore.clear()
+                cookieStore.putAll(saved)
+            }
+        }
+        viewModelScope.launch {
+            cookieRepo.authHealthFlow.collect { health ->
+                _uiState.value = _uiState.value.copy(
+                    health = health,
+                    isLoggedIn = health.state != SavedCookieAuthState.Missing &&
+                        health.state != SavedCookieAuthState.Expired
+                )
+                if (!health.shouldPromptRelogin) {
+                    lastPromptSignature = null
                 }
+            }
+        }
+    }
+
+    fun refreshAuthHealth(
+        promptIfNeeded: Boolean = false,
+        forcePrompt: Boolean = false
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            cookieRepo.refreshHealth()
+            var health = cookieRepo.getAuthHealthOnce()
+            if (health.state != SavedCookieAuthState.Missing) {
+                health = health.copy(
+                    state = SavedCookieAuthState.Checking,
+                    checkedAt = System.currentTimeMillis()
+                )
+                _uiState.value = _uiState.value.copy(
+                    health = health,
+                    isLoggedIn = true
+                )
+                health = validateCurrentAuth(cookieRepo.getAuthHealthOnce())
+            }
+
+            _uiState.value = _uiState.value.copy(
+                health = health,
+                isLoggedIn = health.state != SavedCookieAuthState.Missing &&
+                    health.state != SavedCookieAuthState.Expired
+            )
+            if (promptIfNeeded) {
+                emitPromptIfNeeded(health, forcePrompt)
             }
         }
     }
@@ -88,17 +139,16 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
     fun askConfirmSendCaptcha() {
         val phone = _uiState.value.phone.trim()
         if (!isValidPhone(phone)) {
-            emitSnack("Please enter 11-digit phone number")  // Localized in UI
+            emitSnack("Please enter 11-digit phone number")
             return
         }
         _events.tryEmit(NeteaseAuthEvent.AskConfirmSend(maskPhone(phone)))
     }
 
-    /** 发送验证码 */
     fun sendCaptcha(ctcode: String = "86") {
         val phone = _uiState.value.phone.trim()
         if (!isValidPhone(phone)) {
-            emitSnack("Invalid phone number")  // Localized in UI
+            emitSnack("Invalid phone number")
             return
         }
         if (_uiState.value.countdownSec > 0 || _uiState.value.sending) return
@@ -109,30 +159,29 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
                 val resp = api.sendCaptcha(phone, ctcode.toInt())
                 val ok = JSONObject(resp).optInt("code", -1) == 200
                 if (ok) {
-                    emitSnack("Verification code sent")  // Localized in UI
+                    emitSnack("Verification code sent")
                     startCountdown(60)
                 } else {
-                    val msg = JSONObject(resp).optString("msg", "Send failed")  // Localized in UI
-                    emitSnack("Send failed: $msg")  // Localized in UI
+                    val msg = JSONObject(resp).optString("msg", "Send failed")
+                    emitSnack("Send failed: $msg")
                 }
             } catch (e: Exception) {
-                emitSnack("Send failed: " + (e.message ?: "Network error"))  // Localized in UI
+                emitSnack("Send failed: " + (e.message ?: "Network error"))
             } finally {
                 _uiState.value = _uiState.value.copy(sending = false)
             }
         }
     }
 
-    /** 验证码一键登录 */
     fun loginByCaptcha(countryCode: String = "86") {
         val phone = _uiState.value.phone.trim()
         val captcha = _uiState.value.captcha.trim()
         if (!isValidPhone(phone)) {
-            emitSnack("Invalid phone number")  // Localized in UI
+            emitSnack("Invalid phone number")
             return
         }
         if (captcha.isEmpty()) {
-            emitSnack("Please enter verification code")  // Localized in UI
+            emitSnack("Please enter verification code")
             return
         }
         if (_uiState.value.loggingIn) return
@@ -140,16 +189,14 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.value = _uiState.value.copy(loggingIn = true)
             try {
-                // 校验验证码
                 val verifyResp = api.verifyCaptcha(phone, captcha, countryCode.toInt())
                 val verifyOk = JSONObject(verifyResp).optInt("code", -1) == 200
                 if (!verifyOk) {
-                    val msg = JSONObject(verifyResp).optString("msg", "Verification code error")  // Localized in UI
-                    emitSnack("Login failed: $msg")  // Localized in UI
+                    val msg = JSONObject(verifyResp).optString("msg", "Verification code error")
+                    emitSnack("Login failed: $msg")
                     return@launch
                 }
 
-                // 登录
                 val loginResp = api.loginByCaptcha(
                     phone = phone,
                     captcha = captcha,
@@ -169,23 +216,90 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
                         val withCsrf = api.getCookies()
                         cookieStore.clear()
                         cookieStore.putAll(withCsrf)
-                    } catch (_: Exception) { }
+                    } catch (_: Exception) {
+                    }
 
                     cookieRepo.saveCookies(cookieStore)
 
                     _uiState.value = _uiState.value.copy(isLoggedIn = true)
-                    emitSnack("Login successful")  // Localized in UI
+                    emitSnack("Login successful")
                     _events.tryEmit(NeteaseAuthEvent.ShowCookies(cookieStore.toMap()))
                     _events.tryEmit(NeteaseAuthEvent.LoginSuccess)
                 } else {
-                    val msg = obj.optString("msg", "Login failed, please try another method")  // Localized in UI
-                    emitSnack("Login failed: $msg")  // Localized in UI
+                    val msg = obj.optString("msg", "Login failed, please try another method")
+                    emitSnack("Login failed: $msg")
                 }
             } catch (e: Exception) {
-                emitSnack("Login failed: " + (e.message ?: "Network error"))  // Localized in UI
+                emitSnack("Login failed: " + (e.message ?: "Network error"))
             } finally {
                 _uiState.value = _uiState.value.copy(loggingIn = false)
             }
+        }
+    }
+
+    fun importCookiesFromMap(map: Map<String, String>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val m = map.toMutableMap()
+            m.putIfAbsent("os", "pc")
+            m.putIfAbsent("appver", "8.10.35")
+
+            if (m["MUSIC_U"].isNullOrBlank() && m["MUSIC_A"].isNullOrBlank()) {
+                emitSnack(getApplication<Application>().getString(R.string.auth_cookie_invalid))
+                return@launch
+            }
+
+            cookieStore.clear()
+            cookieStore.putAll(m)
+
+            cookieRepo.saveCookies(cookieStore)
+
+            _uiState.value = _uiState.value.copy(isLoggedIn = true)
+            _events.tryEmit(NeteaseAuthEvent.ShowCookies(cookieStore.toMap()))
+            _events.tryEmit(NeteaseAuthEvent.LoginSuccess)
+            emitSnack(getApplication<Application>().getString(R.string.auth_cookie_saved))
+        }
+    }
+
+    fun importCookiesFromRaw(raw: String) {
+        val parsed = linkedMapOf<String, String>()
+        raw.split(';')
+            .map { it.trim() }
+            .filter { it.isNotBlank() && it.contains('=') }
+            .forEach { s ->
+                val idx = s.indexOf('=')
+                if (idx > 0) {
+                    val key = s.substring(0, idx).trim()
+                    val value = s.substring(idx + 1).trim()
+                    if (key.isNotEmpty()) parsed[key] = value
+                }
+            }
+        if (parsed.isEmpty()) {
+            emitSnack(getApplication<Application>().getString(R.string.auth_cookie_invalid))
+            return
+        }
+        importCookiesFromMap(parsed)
+    }
+
+    private fun validateCurrentAuth(localHealth: SavedCookieAuthHealth): SavedCookieAuthHealth {
+        val checkedAt = System.currentTimeMillis()
+        return runCatching {
+            val raw = api.getCurrentUserAccount()
+            val root = JSONObject(raw)
+            val code = root.optInt("code", -1)
+            val userId = root.optJSONObject("profile")?.optLong("userId", 0L) ?: 0L
+            if (code == 200 && userId > 0L) {
+                localHealth.copy(
+                    state = SavedCookieAuthState.Valid,
+                    checkedAt = checkedAt
+                )
+            } else {
+                localHealth.copy(
+                    state = SavedCookieAuthState.Expired,
+                    checkedAt = checkedAt
+                )
+            }
+        }.getOrElse {
+            localHealth.copy(checkedAt = checkedAt)
         }
     }
 
@@ -200,44 +314,26 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun importCookiesFromMap(map: Map<String, String>) {
-        viewModelScope.launch(Dispatchers.IO) {
-            // 补齐关键字段
-            val m = map.toMutableMap()
-            m.putIfAbsent("os", "pc")
-            m.putIfAbsent("appver", "8.10.35")
-
-            cookieStore.clear()
-            cookieStore.putAll(m)
-
-            cookieRepo.saveCookies(cookieStore)
-
-            _uiState.value = _uiState.value.copy(isLoggedIn = cookieStore.containsKey("MUSIC_U"))
-            _events.tryEmit(NeteaseAuthEvent.ShowCookies(cookieStore.toMap()))
-            _events.tryEmit(NeteaseAuthEvent.LoginSuccess)
-            emitSnack("Cookie saved")  // Localized in UI
-        }
-    }
-
-    /** 接收原始 Cookie 字符串：MUSIC_U=...; __csrf=...; ... */
-    fun importCookiesFromRaw(raw: String) {
-        val parsed = linkedMapOf<String, String>()
-        raw.split(';')
-            .map { it.trim() }
-            .filter { it.isNotBlank() && it.contains('=') }
-            .forEach { s ->
-                val idx = s.indexOf('=')
-                if (idx > 0) {
-                    val k = s.substring(0, idx).trim()
-                    val v = s.substring(idx + 1).trim()
-                    if (k.isNotEmpty()) parsed[k] = v
-                }
-            }
-        if (parsed.isEmpty()) {
-            emitSnack("No valid Cookie found")  // Localized in UI
+    private fun emitPromptIfNeeded(
+        health: SavedCookieAuthHealth,
+        forcePrompt: Boolean
+    ) {
+        if (!health.shouldPromptRelogin) {
+            lastPromptSignature = null
             return
         }
-        importCookiesFromMap(parsed)
+
+        val promptSignature = buildString {
+            append(health.state.name)
+            append(':')
+            append(health.savedAt)
+        }
+        if (!forcePrompt && promptSignature == lastPromptSignature) {
+            return
+        }
+
+        lastPromptSignature = promptSignature
+        _events.tryEmit(NeteaseAuthEvent.PromptReauth(health))
     }
 
     private fun isValidPhone(p: String): Boolean = p.length == 11 && p.all { it.isDigit() }

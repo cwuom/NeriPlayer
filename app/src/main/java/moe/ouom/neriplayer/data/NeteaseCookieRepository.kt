@@ -24,21 +24,25 @@ package moe.ouom.neriplayer.data
  */
 
 import android.content.Context
+import android.content.SharedPreferences
+import androidx.core.content.edit
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
+
+internal const val NETEASE_AUTH_STALE_AFTER_MS: Long = 30L * 24L * 60L * 60L * 1000L
+
+private const val NETEASE_AUTH_PREFS = "netease_auth_secure_prefs"
+private const val KEY_NETEASE_AUTH_BUNDLE = "netease_auth_bundle"
 
 private val Context.cookieDataStore by preferencesDataStore("auth_store")
 
@@ -46,58 +50,223 @@ object CookieKeys {
     val NETEASE_COOKIE_JSON = stringPreferencesKey("netease_cookie_json")
 }
 
+private val NETEASE_LOGIN_COOKIE_KEYS = listOf(
+    "MUSIC_U",
+    "MUSIC_A"
+)
+
+data class NeteaseAuthBundle(
+    val cookies: Map<String, String> = emptyMap(),
+    val savedAt: Long = 0L
+) {
+    fun hasLoginCookies(): Boolean {
+        return NETEASE_LOGIN_COOKIE_KEYS.any { key -> !cookies[key].isNullOrBlank() }
+    }
+
+    fun normalized(savedAt: Long = this.savedAt): NeteaseAuthBundle {
+        return copy(
+            cookies = LinkedHashMap(cookies.filterKeys { it.isNotBlank() }),
+            savedAt = savedAt
+        )
+    }
+
+    fun toJson(): String {
+        return JSONObject().apply {
+            put(
+                "cookies",
+                JSONObject().apply {
+                    cookies.forEach { (key, value) -> put(key, value) }
+                }
+            )
+            put("savedAt", savedAt)
+        }.toString()
+    }
+
+    companion object {
+        fun fromJson(json: String): NeteaseAuthBundle {
+            return runCatching {
+                val root = JSONObject(json)
+                val cookiesJson = root.optJSONObject("cookies") ?: JSONObject()
+                val cookies = linkedMapOf<String, String>()
+                val keys = cookiesJson.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    cookies[key] = cookiesJson.optString(key, "")
+                }
+                val savedAt = root.optLong("savedAt", 0L)
+                NeteaseAuthBundle(
+                    cookies = cookies,
+                    savedAt = savedAt
+                ).normalized(savedAt = savedAt)
+            }.getOrDefault(NeteaseAuthBundle())
+        }
+    }
+}
+
+internal fun evaluateNeteaseAuthHealth(
+    bundle: NeteaseAuthBundle,
+    now: Long = System.currentTimeMillis(),
+    staleAfterMs: Long = NETEASE_AUTH_STALE_AFTER_MS
+): SavedCookieAuthHealth {
+    val normalized = bundle.normalized(savedAt = bundle.savedAt)
+    val loginCookieKeys = NETEASE_LOGIN_COOKIE_KEYS.filter { key ->
+        !normalized.cookies[key].isNullOrBlank()
+    }
+    if (loginCookieKeys.isEmpty()) {
+        return SavedCookieAuthHealth(
+            state = SavedCookieAuthState.Missing,
+            savedAt = normalized.savedAt,
+            checkedAt = now
+        )
+    }
+
+    val savedAt = normalized.savedAt
+    if (savedAt <= 0L) {
+        return SavedCookieAuthHealth(
+            state = SavedCookieAuthState.Stale,
+            savedAt = savedAt,
+            checkedAt = now,
+            loginCookieKeys = loginCookieKeys
+        )
+    }
+
+    val ageMs = (now - savedAt).coerceAtLeast(0L)
+    return SavedCookieAuthHealth(
+        state = if (ageMs >= staleAfterMs) {
+            SavedCookieAuthState.Stale
+        } else {
+            SavedCookieAuthState.Valid
+        },
+        savedAt = savedAt,
+        checkedAt = now,
+        ageMs = ageMs,
+        loginCookieKeys = loginCookieKeys
+    )
+}
+
 class NeteaseCookieRepository(private val context: Context) {
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val encryptedPrefs: SharedPreferences
+    private val _authFlow: MutableStateFlow<NeteaseAuthBundle>
+    private val _cookieFlow: MutableStateFlow<Map<String, String>>
+    private val _authHealthFlow: MutableStateFlow<SavedCookieAuthHealth>
 
-    private val _cookieFlow = MutableStateFlow(runBlocking { getCookiesOnce() })
+    val cookieFlow: StateFlow<Map<String, String>>
+        get() = _cookieFlow.asStateFlow()
 
-    val cookieFlow: StateFlow<Map<String, String>> = _cookieFlow.asStateFlow()
+    val authHealthFlow: StateFlow<SavedCookieAuthHealth>
+        get() = _authHealthFlow.asStateFlow()
 
     init {
-        scope.launch {
-            context.cookieDataStore.data.map { prefs ->
-                val json = prefs[CookieKeys.NETEASE_COOKIE_JSON] ?: "{}"
-                jsonToMap(json)
-            }.collect { newCookies ->
-                _cookieFlow.value = newCookies
-            }
+        val masterKey = MasterKey.Builder(context)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+        encryptedPrefs = EncryptedSharedPreferences.create(
+            context,
+            NETEASE_AUTH_PREFS,
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+        val initialBundle = loadAuthBundle()
+        _authFlow = MutableStateFlow(initialBundle)
+        _cookieFlow = MutableStateFlow(initialBundle.cookies)
+        _authHealthFlow = MutableStateFlow(
+            evaluateNeteaseAuthHealth(initialBundle)
+        )
+    }
+
+    suspend fun getCookiesOnce(): Map<String, String> = _cookieFlow.value
+
+    fun getAuthHealthOnce(): SavedCookieAuthHealth = _authHealthFlow.value
+
+    fun getAuthHealth(
+        now: Long = System.currentTimeMillis(),
+        staleAfterMs: Long = NETEASE_AUTH_STALE_AFTER_MS
+    ): SavedCookieAuthHealth = evaluateNeteaseAuthHealth(_authFlow.value, now, staleAfterMs)
+
+    suspend fun saveCookies(
+        cookies: Map<String, String>,
+        savedAt: Long = System.currentTimeMillis()
+    ) {
+        val normalized = NeteaseAuthBundle(
+            cookies = cookies,
+            savedAt = savedAt
+        ).normalized(savedAt = savedAt)
+        encryptedPrefs.edit {
+            putString(KEY_NETEASE_AUTH_BUNDLE, normalized.toJson())
         }
+        _authFlow.value = normalized
+        _cookieFlow.value = normalized.cookies
+        _authHealthFlow.value = evaluateNeteaseAuthHealth(normalized)
+        NPLogger.d("NERI-CookieRepo", "Saved cookies to secure storage: keys=${cookies.keys.joinToString()}")
     }
 
-    /** 一次性读取 */
-    suspend fun getCookiesOnce(): Map<String, String> {
-        val prefs = context.cookieDataStore.data.first()
-        val json = prefs[CookieKeys.NETEASE_COOKIE_JSON] ?: "{}"
-        return jsonToMap(json)
-    }
-
-    /** 保存 Cookie */
-    suspend fun saveCookies(cookies: Map<String, String>) {
-        // 4. 保存和清除方法不变，DataStore 的变化会通过 init 中的 collect 自动更新 StateFlow
-        context.cookieDataStore.edit { prefs ->
-            prefs[CookieKeys.NETEASE_COOKIE_JSON] = mapToJson(cookies)
-        }
-        NPLogger.d("NERI-CookieRepo", "Saved cookies to DataStore: keys=${cookies.keys.joinToString()}")
-    }
-
-    /** 清空 Cookie */
     suspend fun clear() {
-        context.cookieDataStore.edit { prefs ->
-            prefs[CookieKeys.NETEASE_COOKIE_JSON] = "{}"
+        encryptedPrefs.edit {
+            remove(KEY_NETEASE_AUTH_BUNDLE)
         }
+        val cleared = NeteaseAuthBundle()
+        _authFlow.value = cleared
+        _cookieFlow.value = cleared.cookies
+        _authHealthFlow.value = evaluateNeteaseAuthHealth(cleared)
         NPLogger.d("NERI-CookieRepo", "Cleared all saved cookies.")
     }
 
-    private fun mapToJson(map: Map<String, String>): String {
-        val obj = JSONObject()
-        map.forEach { (k, v) -> obj.put(k, v) }
-        return obj.toString()
+    fun refreshHealth(
+        now: Long = System.currentTimeMillis(),
+        staleAfterMs: Long = NETEASE_AUTH_STALE_AFTER_MS
+    ) {
+        _authHealthFlow.value = evaluateNeteaseAuthHealth(
+            bundle = _authFlow.value,
+            now = now,
+            staleAfterMs = staleAfterMs
+        )
+    }
+
+    private fun loadAuthBundle(): NeteaseAuthBundle {
+        val raw = encryptedPrefs.getString(KEY_NETEASE_AUTH_BUNDLE, null).orEmpty()
+        if (raw.isNotBlank()) {
+            return NeteaseAuthBundle.fromJson(raw)
+        }
+
+        return migrateLegacyCookies() ?: NeteaseAuthBundle()
+    }
+
+    private fun loadLegacyCookies(): Map<String, String> {
+        return runCatching {
+            val prefs = runBlocking { context.cookieDataStore.data.first() }
+            val json = prefs[CookieKeys.NETEASE_COOKIE_JSON] ?: "{}"
+            jsonToMap(json)
+        }.getOrDefault(emptyMap())
+    }
+
+    private fun migrateLegacyCookies(): NeteaseAuthBundle? {
+        val legacyCookies = loadLegacyCookies()
+        if (legacyCookies.isEmpty()) {
+            return null
+        }
+
+        val migrated = NeteaseAuthBundle(
+            cookies = legacyCookies,
+            savedAt = 0L
+        ).normalized(savedAt = 0L)
+        encryptedPrefs.edit {
+            putString(KEY_NETEASE_AUTH_BUNDLE, migrated.toJson())
+        }
+        runBlocking {
+            context.cookieDataStore.edit { prefs ->
+                prefs.remove(CookieKeys.NETEASE_COOKIE_JSON)
+            }
+        }
+        return migrated
     }
 
     private fun jsonToMap(json: String): Map<String, String> {
         val obj = JSONObject(json)
-        val result = mutableMapOf<String, String>()
-        for (key in obj.keys()) {
+        val result = linkedMapOf<String, String>()
+        val keys = obj.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
             result[key] = obj.optString(key, "")
         }
         return result

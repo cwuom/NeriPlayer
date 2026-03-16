@@ -135,6 +135,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
@@ -168,6 +169,9 @@ import androidx.compose.ui.unit.dp
 import androidx.core.graphics.ColorUtils
 import androidx.core.graphics.toColorInt
 import androidx.core.net.toUri
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
@@ -177,9 +181,17 @@ import kotlinx.coroutines.flow.StateFlow
 import moe.ouom.neriplayer.BuildConfig
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.NeteaseWebLoginActivity
+import moe.ouom.neriplayer.activity.YouTubeWebLoginActivity
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.data.BILI_AUTH_STALE_AFTER_MS
+import moe.ouom.neriplayer.data.NETEASE_AUTH_STALE_AFTER_MS
+import moe.ouom.neriplayer.data.SavedCookieAuthHealth
+import moe.ouom.neriplayer.data.SavedCookieAuthState
 import moe.ouom.neriplayer.data.ThemeDefaults
 import moe.ouom.neriplayer.data.BackgroundImageStorage
+import moe.ouom.neriplayer.data.YOUTUBE_AUTH_STALE_AFTER_MS
+import moe.ouom.neriplayer.data.YouTubeAuthHealth
+import moe.ouom.neriplayer.data.YouTubeAuthState
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.debug.NeteaseAuthEvent
 import moe.ouom.neriplayer.ui.viewmodel.debug.NeteaseAuthViewModel
@@ -189,6 +201,8 @@ import moe.ouom.neriplayer.data.github.SecureTokenStorage
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthEvent
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthViewModel
+import moe.ouom.neriplayer.ui.viewmodel.auth.YouTubeAuthEvent
+import moe.ouom.neriplayer.ui.viewmodel.auth.YouTubeAuthViewModel
 import moe.ouom.neriplayer.util.HapticButton
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
@@ -561,7 +575,13 @@ fun SettingsScreen(
     var showDefaultStartDestinationDialog by remember { mutableStateOf(false) }
     var showConfirmDialog by remember { mutableStateOf(false) }
     var showCookieDialog by remember { mutableStateOf(false) }
+    var showBiliSheet by remember { mutableStateOf(false) }
     var showBiliCookieDialog by remember { mutableStateOf(false) }
+    var showBiliReauthDialog by remember { mutableStateOf(false) }
+    var showYouTubeSheet by remember { mutableStateOf(false) }
+    var showYouTubeCookieDialog by remember { mutableStateOf(false) }
+    var showYouTubeReauthDialog by remember { mutableStateOf(false) }
+    var showNeteaseReauthDialog by remember { mutableStateOf(false) }
     var showColorPickerDialog by remember { mutableStateOf(false) }
     var showDpiDialog by remember { mutableStateOf(false) }
     var showGitHubConfigDialog by remember { mutableStateOf(false) }
@@ -569,6 +589,7 @@ fun SettingsScreen(
     // ------------------------------------
 
     val neteaseVm: NeteaseAuthViewModel = viewModel()
+    val neteaseAuthUiState by neteaseVm.uiState.collectAsStateWithLifecycleCompat()
     var inlineMsg by remember { mutableStateOf<String?>(null) }
     var confirmPhoneMasked by remember { mutableStateOf<String?>(null) }
     var cookieText by remember { mutableStateOf("") }
@@ -576,6 +597,16 @@ fun SettingsScreen(
     var versionTapCount by remember { mutableIntStateOf(0) }
     var biliCookieText by remember { mutableStateOf("") }
     val biliVm: BiliAuthViewModel = viewModel()
+    val biliAuthUiState by biliVm.uiState.collectAsStateWithLifecycleCompat()
+    var biliReauthHealth by remember { mutableStateOf<SavedCookieAuthHealth?>(null) }
+    var biliSheetInitialTab by rememberSaveable { mutableIntStateOf(0) }
+    var neteaseReauthHealth by remember { mutableStateOf<SavedCookieAuthHealth?>(null) }
+    var neteaseSheetInitialTab by rememberSaveable { mutableIntStateOf(0) }
+    var youtubeCookieText by remember { mutableStateOf("") }
+    val youtubeVm: YouTubeAuthViewModel = viewModel()
+    val youtubeAuthUiState by youtubeVm.uiState.collectAsStateWithLifecycleCompat()
+    var youtubeReauthHealth by remember { mutableStateOf<YouTubeAuthHealth?>(null) }
+    var youtubeSheetInitialTab by rememberSaveable { mutableIntStateOf(0) }
     
     // 备份与恢复
     val backupRestoreVm: BackupRestoreViewModel = viewModel()
@@ -607,6 +638,17 @@ fun SettingsScreen(
             val json = result.data?.getStringExtra(moe.ouom.neriplayer.activity.BiliWebLoginActivity.RESULT_COOKIE) ?: "{}"
             val map = biliVm.parseJsonToMap(json)
             biliVm.importCookiesFromMap(map)
+        } else {
+            inlineMsg = context.getString(R.string.settings_cookie_cancelled)
+        }
+    }
+
+    val youtubeWebLoginLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            val json = result.data?.getStringExtra(YouTubeWebLoginActivity.RESULT_AUTH_JSON) ?: "{}"
+            youtubeVm.importAuthFromJson(json)
         } else {
             inlineMsg = context.getString(R.string.settings_cookie_cancelled)
         }
@@ -692,6 +734,81 @@ fun SettingsScreen(
             else -> context.getString(R.string.nav_home)
         }
     }
+    val biliStatusText = when (biliAuthUiState.health.state) {
+        SavedCookieAuthState.Valid -> {
+            val relativeTime = biliAuthUiState.health.savedAt
+                .takeIf { it > 0L }
+                ?.let { formatSyncTime(it) }
+                ?: stringResource(R.string.time_just_now)
+            stringResource(R.string.settings_bili_status_valid, relativeTime)
+        }
+        SavedCookieAuthState.Checking -> stringResource(R.string.settings_auth_checking)
+        SavedCookieAuthState.Expired -> stringResource(R.string.settings_bili_status_expired)
+        SavedCookieAuthState.Stale -> {
+            biliAuthUiState.health.savedAt
+                .takeIf { it > 0L }
+                ?.let { stringResource(R.string.settings_bili_status_stale, formatSyncTime(it)) }
+                ?: stringResource(R.string.settings_bili_status_stale_no_time)
+        }
+        SavedCookieAuthState.Missing -> stringResource(R.string.settings_bili_status_missing)
+    }
+    val neteaseStatusText = when (neteaseAuthUiState.health.state) {
+        SavedCookieAuthState.Valid -> {
+            val relativeTime = neteaseAuthUiState.health.savedAt
+                .takeIf { it > 0L }
+                ?.let { formatSyncTime(it) }
+                ?: stringResource(R.string.time_just_now)
+            stringResource(R.string.settings_netease_status_valid, relativeTime)
+        }
+        SavedCookieAuthState.Checking -> stringResource(R.string.settings_auth_checking)
+        SavedCookieAuthState.Expired -> stringResource(R.string.settings_netease_status_expired)
+        SavedCookieAuthState.Stale -> {
+            neteaseAuthUiState.health.savedAt
+                .takeIf { it > 0L }
+                ?.let { stringResource(R.string.settings_netease_status_stale, formatSyncTime(it)) }
+                ?: stringResource(R.string.settings_netease_status_stale_no_time)
+        }
+        SavedCookieAuthState.Missing -> stringResource(R.string.settings_netease_status_missing)
+    }
+    val youtubeStatusText = when (youtubeAuthUiState.health.state) {
+        YouTubeAuthState.Valid -> {
+            val relativeTime = youtubeAuthUiState.health.savedAt
+                .takeIf { it > 0L }
+                ?.let { formatSyncTime(it) }
+                ?: stringResource(R.string.time_just_now)
+            stringResource(R.string.settings_youtube_status_valid, relativeTime)
+        }
+        YouTubeAuthState.Expired -> stringResource(R.string.settings_youtube_status_expired)
+        YouTubeAuthState.Stale -> {
+            youtubeAuthUiState.health.savedAt
+                .takeIf { it > 0L }
+                ?.let { stringResource(R.string.settings_youtube_status_stale, formatSyncTime(it)) }
+                ?: stringResource(R.string.settings_youtube_status_stale_no_time)
+        }
+        YouTubeAuthState.Missing -> stringResource(R.string.settings_youtube_status_missing)
+    }
+    val lifecycleOwner = context as? LifecycleOwner
+
+    DisposableEffect(lifecycleOwner, biliVm, neteaseVm, youtubeVm) {
+        biliVm.refreshAuthHealth(promptIfNeeded = true)
+        neteaseVm.refreshAuthHealth(promptIfNeeded = true)
+        youtubeVm.refreshAuthHealth(promptIfNeeded = true)
+        if (lifecycleOwner == null) {
+            onDispose { }
+        } else {
+            val observer = LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_RESUME) {
+                    biliVm.refreshAuthHealth(promptIfNeeded = true)
+                    neteaseVm.refreshAuthHealth(promptIfNeeded = true)
+                    youtubeVm.refreshAuthHealth(promptIfNeeded = true)
+                }
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            onDispose {
+                lifecycleOwner.lifecycle.removeObserver(observer)
+            }
+        }
+    }
 
     LaunchedEffect(neteaseVm) {
         neteaseVm.events.collect { e ->
@@ -706,10 +823,18 @@ fun SettingsScreen(
                 NeteaseAuthEvent.LoginSuccess -> {
                     inlineMsg = null
                     showNeteaseSheet = false
+                    showNeteaseReauthDialog = false
+                    neteaseReauthHealth = null
+                    inlineMsg = context.getString(R.string.settings_netease_login_success)
+                    neteaseVm.refreshAuthHealth(promptIfNeeded = true, forcePrompt = true)
                 }
                 is NeteaseAuthEvent.ShowCookies -> {
                     cookieText = e.cookies.entries.joinToString("\n") { (k, v) -> "$k=${maskCookieValue(v)}" }
                     showCookieDialog = true
+                }
+                is NeteaseAuthEvent.PromptReauth -> {
+                    neteaseReauthHealth = e.health
+                    showNeteaseReauthDialog = true
                 }
             }
         }
@@ -724,7 +849,39 @@ fun SettingsScreen(
                     showBiliCookieDialog = true
                 }
                 BiliAuthEvent.LoginSuccess -> {
+                    showBiliSheet = false
+                    showBiliReauthDialog = false
+                    biliReauthHealth = null
                     inlineMsg = context.getString(R.string.settings_bili_login_success)
+                    biliVm.refreshAuthHealth(promptIfNeeded = true, forcePrompt = true)
+                }
+                is BiliAuthEvent.PromptReauth -> {
+                    biliReauthHealth = e.health
+                    showBiliReauthDialog = true
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(youtubeVm) {
+        youtubeVm.events.collect { e ->
+            when (e) {
+                is YouTubeAuthEvent.ShowSnack -> inlineMsg = e.message
+                is YouTubeAuthEvent.ShowCookies -> {
+                    youtubeCookieText = e.cookies.entries.joinToString("\n") { (k, v) ->
+                        "$k=${maskCookieValue(v)}"
+                    }
+                    showYouTubeCookieDialog = true
+                }
+                YouTubeAuthEvent.LoginSuccess -> {
+                    showYouTubeReauthDialog = false
+                    youtubeReauthHealth = null
+                    showYouTubeSheet = false
+                    inlineMsg = context.getString(R.string.settings_youtube_login_success)
+                }
+                is YouTubeAuthEvent.PromptReauth -> {
+                    youtubeReauthHealth = e.health
+                    showYouTubeReauthDialog = true
                 }
             }
         }
@@ -868,12 +1025,11 @@ fun SettingsScreen(
                                 )
                             },
                             headlineContent = { Text(stringResource(R.string.platform_bilibili)) },
-                            supportingContent = { Text(stringResource(R.string.login_browser)) },
+                            supportingContent = { Text(biliStatusText) },
                             modifier = Modifier.settingsItemClickable {
                                 inlineMsg = null
-                                biliWebLoginLauncher.launch(
-                                    Intent(context, moe.ouom.neriplayer.activity.BiliWebLoginActivity::class.java)
-                                )
+                                biliSheetInitialTab = 0
+                                showBiliSheet = true
                             },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
@@ -890,8 +1046,12 @@ fun SettingsScreen(
                                 )
                             },
                             headlineContent = { Text(stringResource(R.string.common_youtube)) },
-                            supportingContent = { Text(stringResource(R.string.common_not_implemented)) },
-                            modifier = Modifier.settingsItemClickable { },
+                            supportingContent = { Text(youtubeStatusText) },
+                            modifier = Modifier.settingsItemClickable {
+                                inlineMsg = null
+                                youtubeSheetInitialTab = 0
+                                showYouTubeSheet = true
+                            },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
 
@@ -906,9 +1066,10 @@ fun SettingsScreen(
                                 )
                             },
                             headlineContent = { Text(stringResource(R.string.platform_netease)) },
-                            supportingContent = { Text(stringResource(R.string.login_methods)) },
+                            supportingContent = { Text(neteaseStatusText) },
                             modifier = Modifier.settingsItemClickable {
                                 inlineMsg = null
+                                neteaseSheetInitialTab = 0
                                 showNeteaseSheet = true
                             },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
@@ -3036,7 +3197,9 @@ fun SettingsScreen(
         }
 
         // 0: 浏览器登录 1: 粘贴Cookie 2: 验证码登录
-        var selectedTab by remember { mutableIntStateOf(0) }
+        var selectedTab by remember(neteaseSheetInitialTab) {
+            mutableIntStateOf(neteaseSheetInitialTab)
+        }
         var rawCookie by remember { mutableStateOf("") }
 
         // WebView 登录回调
@@ -3143,6 +3306,162 @@ fun SettingsScreen(
         }
     }
 
+    neteaseReauthHealth?.let { health ->
+        if (showNeteaseReauthDialog) {
+            val title = when (health.state) {
+                SavedCookieAuthState.Missing -> stringResource(R.string.settings_netease_reauth_required_title)
+                SavedCookieAuthState.Expired -> stringResource(R.string.settings_netease_reauth_expired_title)
+                SavedCookieAuthState.Stale -> stringResource(R.string.settings_netease_reauth_stale_title)
+                SavedCookieAuthState.Valid,
+                SavedCookieAuthState.Checking -> stringResource(R.string.settings_netease)
+            }
+            val message = when (health.state) {
+                SavedCookieAuthState.Missing -> stringResource(R.string.settings_netease_reauth_required_message)
+                SavedCookieAuthState.Expired -> stringResource(R.string.settings_netease_reauth_expired_message)
+                SavedCookieAuthState.Stale -> {
+                    val savedAtLabel = health.savedAt
+                        .takeIf { it > 0L }
+                        ?.let { convertTimestampToDate(it) }
+                        ?: stringResource(R.string.settings_netease_reauth_unknown_time)
+                    stringResource(
+                        R.string.settings_netease_reauth_stale_message,
+                        (NETEASE_AUTH_STALE_AFTER_MS / (24L * 60L * 60L * 1000L)).toInt(),
+                        savedAtLabel
+                    )
+                }
+                SavedCookieAuthState.Valid,
+                SavedCookieAuthState.Checking -> ""
+            }
+            AlertDialog(
+                onDismissRequest = {
+                    showNeteaseReauthDialog = false
+                    neteaseReauthHealth = null
+                },
+                title = { Text(title) },
+                text = { Text(message) },
+                confirmButton = {
+                    HapticTextButton(onClick = {
+                        showNeteaseReauthDialog = false
+                        neteaseReauthHealth = null
+                        inlineMsg = null
+                        neteaseSheetInitialTab = 0
+                        showNeteaseSheet = true
+                    }) {
+                        Text(stringResource(R.string.settings_netease_reauth_action_login))
+                    }
+                },
+                dismissButton = {
+                    Row {
+                        HapticTextButton(onClick = {
+                            showNeteaseReauthDialog = false
+                            neteaseReauthHealth = null
+                            inlineMsg = null
+                            neteaseSheetInitialTab = 1
+                            showNeteaseSheet = true
+                        }) {
+                            Text(stringResource(R.string.settings_netease_reauth_action_import))
+                        }
+                        HapticTextButton(onClick = {
+                            showNeteaseReauthDialog = false
+                            neteaseReauthHealth = null
+                        }) {
+                            Text(stringResource(R.string.action_later))
+                        }
+                    }
+                }
+            )
+        }
+    }
+
+    if (showBiliSheet) {
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        var selectedTab by remember(biliSheetInitialTab) {
+            mutableIntStateOf(biliSheetInitialTab)
+        }
+        var rawBiliCookie by remember { mutableStateOf("") }
+
+        ModalBottomSheet(
+            onDismissRequest = { showBiliSheet = false },
+            sheetState = sheetState,
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            Box(
+                modifier = Modifier
+                    .padding(start = 16.dp, end = 16.dp, bottom = 48.dp, top = 12.dp)
+            ) {
+                Column {
+                    Text(
+                        text = stringResource(R.string.platform_bilibili),
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    AnimatedVisibility(visible = inlineMsg != null, enter = fadeIn(), exit = fadeOut()) {
+                        InlineMessage(
+                            text = inlineMsg ?: "",
+                            onClose = { inlineMsg = null }
+                        )
+                    }
+
+                    androidx.compose.material3.PrimaryTabRow(selectedTabIndex = selectedTab) {
+                        Tab(
+                            selected = selectedTab == 0,
+                            onClick = { selectedTab = 0 },
+                            text = { Text(stringResource(R.string.login_browser)) }
+                        )
+                        Tab(
+                            selected = selectedTab == 1,
+                            onClick = { selectedTab = 1 },
+                            text = { Text(stringResource(R.string.login_paste_cookie)) }
+                        )
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+
+                    when (selectedTab) {
+                        0 -> {
+                            Text(
+                                stringResource(R.string.settings_bili_login_browser_hint),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            HapticButton(onClick = {
+                                inlineMsg = null
+                                biliWebLoginLauncher.launch(
+                                    Intent(context, moe.ouom.neriplayer.activity.BiliWebLoginActivity::class.java)
+                                )
+                            }) {
+                                Text(stringResource(R.string.login_start_browser))
+                            }
+                        }
+
+                        1 -> {
+                            OutlinedTextField(
+                                value = rawBiliCookie,
+                                onValueChange = { rawBiliCookie = it },
+                                label = { Text(stringResource(R.string.login_paste_bili_cookie_hint)) },
+                                minLines = 6,
+                                maxLines = 10,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            HapticButton(onClick = {
+                                if (rawBiliCookie.isBlank()) {
+                                    inlineMsg = context.getString(R.string.auth_cookie_empty)
+                                } else {
+                                    biliVm.importCookiesFromRaw(rawBiliCookie)
+                                }
+                            }) {
+                                Text(stringResource(R.string.login_save_cookie))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     if (showBiliCookieDialog) {
         AlertDialog(
             onDismissRequest = { showBiliCookieDialog = false },
@@ -3163,6 +3482,257 @@ fun SettingsScreen(
                 HapticTextButton(onClick = { showBiliCookieDialog = false }) { Text(stringResource(R.string.action_ok)) }
             }
         )
+    }
+
+    biliReauthHealth?.let { health ->
+        if (showBiliReauthDialog) {
+            val title = when (health.state) {
+                SavedCookieAuthState.Missing -> stringResource(R.string.settings_bili_reauth_required_title)
+                SavedCookieAuthState.Expired -> stringResource(R.string.settings_bili_reauth_expired_title)
+                SavedCookieAuthState.Stale -> stringResource(R.string.settings_bili_reauth_stale_title)
+                SavedCookieAuthState.Valid,
+                SavedCookieAuthState.Checking -> stringResource(R.string.platform_bilibili)
+            }
+            val message = when (health.state) {
+                SavedCookieAuthState.Missing -> stringResource(R.string.settings_bili_reauth_required_message)
+                SavedCookieAuthState.Expired -> stringResource(R.string.settings_bili_reauth_expired_message)
+                SavedCookieAuthState.Stale -> {
+                    val savedAtLabel = health.savedAt
+                        .takeIf { it > 0L }
+                        ?.let { convertTimestampToDate(it) }
+                        ?: stringResource(R.string.settings_bili_reauth_unknown_time)
+                    stringResource(
+                        R.string.settings_bili_reauth_stale_message,
+                        (BILI_AUTH_STALE_AFTER_MS / (24L * 60L * 60L * 1000L)).toInt(),
+                        savedAtLabel
+                    )
+                }
+                SavedCookieAuthState.Valid,
+                SavedCookieAuthState.Checking -> ""
+            }
+            AlertDialog(
+                onDismissRequest = {
+                    showBiliReauthDialog = false
+                    biliReauthHealth = null
+                },
+                title = { Text(title) },
+                text = { Text(message) },
+                confirmButton = {
+                    HapticTextButton(onClick = {
+                        showBiliReauthDialog = false
+                        biliReauthHealth = null
+                        inlineMsg = null
+                        biliSheetInitialTab = 0
+                        showBiliSheet = true
+                    }) {
+                        Text(stringResource(R.string.settings_bili_reauth_action_login))
+                    }
+                },
+                dismissButton = {
+                    Row {
+                        HapticTextButton(onClick = {
+                            showBiliReauthDialog = false
+                            biliReauthHealth = null
+                            inlineMsg = null
+                            biliSheetInitialTab = 1
+                            showBiliSheet = true
+                        }) {
+                            Text(stringResource(R.string.settings_bili_reauth_action_import))
+                        }
+                        HapticTextButton(onClick = {
+                            showBiliReauthDialog = false
+                            biliReauthHealth = null
+                        }) {
+                            Text(stringResource(R.string.action_later))
+                        }
+                    }
+                }
+            )
+        }
+    }
+
+    if (showYouTubeSheet) {
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        var selectedTab by remember(youtubeSheetInitialTab) {
+            mutableIntStateOf(youtubeSheetInitialTab)
+        }
+        var rawYouTubeCookie by remember { mutableStateOf("") }
+
+        ModalBottomSheet(
+            onDismissRequest = { showYouTubeSheet = false },
+            sheetState = sheetState,
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            Box(
+                modifier = Modifier
+                    .padding(start = 16.dp, end = 16.dp, bottom = 48.dp, top = 12.dp)
+            ) {
+                Column {
+                    Text(
+                        text = stringResource(R.string.common_youtube),
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    AnimatedVisibility(visible = inlineMsg != null, enter = fadeIn(), exit = fadeOut()) {
+                        InlineMessage(
+                            text = inlineMsg ?: "",
+                            onClose = { inlineMsg = null }
+                        )
+                    }
+
+                    androidx.compose.material3.PrimaryTabRow(selectedTabIndex = selectedTab) {
+                        Tab(
+                            selected = selectedTab == 0,
+                            onClick = { selectedTab = 0 },
+                            text = { Text(stringResource(R.string.login_browser)) }
+                        )
+                        Tab(
+                            selected = selectedTab == 1,
+                            onClick = { selectedTab = 1 },
+                            text = { Text(stringResource(R.string.login_paste_cookie)) }
+                        )
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+
+                    when (selectedTab) {
+                        0 -> {
+                            Text(
+                                stringResource(R.string.settings_youtube_login_browser_hint),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                stringResource(R.string.settings_youtube_login_browser_warning),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            HapticButton(onClick = {
+                                inlineMsg = null
+                                youtubeWebLoginLauncher.launch(
+                                    Intent(context, YouTubeWebLoginActivity::class.java)
+                                )
+                            }) {
+                                Text(stringResource(R.string.login_start_browser))
+                            }
+                        }
+
+                        1 -> {
+                            OutlinedTextField(
+                                value = rawYouTubeCookie,
+                                onValueChange = { rawYouTubeCookie = it },
+                                label = { Text(stringResource(R.string.login_paste_youtube_cookie_hint)) },
+                                minLines = 6,
+                                maxLines = 10,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            HapticButton(onClick = {
+                                if (rawYouTubeCookie.isBlank()) {
+                                    inlineMsg = context.getString(R.string.auth_cookie_empty)
+                                } else {
+                                    youtubeVm.importCookiesFromRaw(rawYouTubeCookie)
+                                }
+                            }) {
+                                Text(stringResource(R.string.login_save_cookie))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showYouTubeCookieDialog) {
+        AlertDialog(
+            onDismissRequest = { showYouTubeCookieDialog = false },
+            title = { Text(stringResource(R.string.settings_youtube_login_success)) },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        text = youtubeCookieText.ifBlank { stringResource(R.string.settings_empty_placeholder) },
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+            },
+            confirmButton = {
+                HapticTextButton(onClick = { showYouTubeCookieDialog = false }) {
+                    Text(stringResource(R.string.action_ok))
+                }
+            }
+        )
+    }
+
+    youtubeReauthHealth?.let { health ->
+        if (showYouTubeReauthDialog) {
+            val title = when (health.state) {
+                YouTubeAuthState.Missing -> stringResource(R.string.settings_youtube_reauth_required_title)
+                YouTubeAuthState.Expired -> stringResource(R.string.settings_youtube_reauth_expired_title)
+                YouTubeAuthState.Stale -> stringResource(R.string.settings_youtube_reauth_stale_title)
+                YouTubeAuthState.Valid -> stringResource(R.string.common_youtube)
+            }
+            val message = when (health.state) {
+                YouTubeAuthState.Missing -> stringResource(R.string.settings_youtube_reauth_required_message)
+                YouTubeAuthState.Expired -> stringResource(R.string.settings_youtube_reauth_expired_message)
+                YouTubeAuthState.Stale -> {
+                    val savedAtLabel = health.savedAt
+                        .takeIf { it > 0L }
+                        ?.let { convertTimestampToDate(it) }
+                        ?: stringResource(R.string.settings_youtube_reauth_unknown_time)
+                    stringResource(
+                        R.string.settings_youtube_reauth_stale_message,
+                        (YOUTUBE_AUTH_STALE_AFTER_MS / (24L * 60L * 60L * 1000L)).toInt(),
+                        savedAtLabel
+                    )
+                }
+                YouTubeAuthState.Valid -> ""
+            }
+            AlertDialog(
+                onDismissRequest = {
+                    showYouTubeReauthDialog = false
+                    youtubeReauthHealth = null
+                },
+                title = { Text(title) },
+                text = { Text(message) },
+                confirmButton = {
+                    HapticTextButton(onClick = {
+                        showYouTubeReauthDialog = false
+                        youtubeReauthHealth = null
+                        inlineMsg = null
+                        youtubeSheetInitialTab = 0
+                        showYouTubeSheet = true
+                    }) {
+                        Text(stringResource(R.string.settings_youtube_reauth_action_login))
+                    }
+                },
+                dismissButton = {
+                    Row {
+                        HapticTextButton(onClick = {
+                            showYouTubeReauthDialog = false
+                            youtubeReauthHealth = null
+                            inlineMsg = null
+                            youtubeSheetInitialTab = 1
+                            showYouTubeSheet = true
+                        }) {
+                            Text(stringResource(R.string.settings_youtube_reauth_action_import))
+                        }
+                        HapticTextButton(onClick = {
+                            showYouTubeReauthDialog = false
+                            youtubeReauthHealth = null
+                        }) {
+                            Text(stringResource(R.string.action_later))
+                        }
+                    }
+                }
+            )
+        }
     }
 
     // 音质选择对话框

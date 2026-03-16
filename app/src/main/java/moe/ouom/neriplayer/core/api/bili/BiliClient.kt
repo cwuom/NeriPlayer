@@ -970,6 +970,30 @@ class BiliClient(
         return ensureAnonCookies()
     }
 
+    suspend fun validateLoginSession(): Boolean? = withContext(Dispatchers.IO) {
+        val stored = cookieRepo.getCookiesOnce()
+        if (stored["SESSDATA"].isNullOrBlank()) {
+            return@withContext false
+        }
+
+        val req = Request.Builder()
+            .url(NAV_URL)
+            .header("User-Agent", DEFAULT_WEB_UA)
+            .header("Referer", REFERER)
+            .apply { headerIfNotBlank("Cookie", stored.toCookieHeader()) }
+            .get()
+            .build()
+
+        runCatching {
+            val text = http.newCall(req).executeOrThrow().use { it.body?.string().orEmpty() }
+            val jo = JSONObject(text)
+            val data = jo.optJSONObject("data") ?: JSONObject()
+            jo.optInt("code", -1) == 0 &&
+                data.optBoolean("isLogin", false) &&
+                data.optLong("mid", 0L) > 0L
+        }.getOrNull()
+    }
+
     private suspend fun ensureAnonCookies(): Map<String, String> {
         val now = System.currentTimeMillis()
         cachedAnonCookies?.let { cached ->

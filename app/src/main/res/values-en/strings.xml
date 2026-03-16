@@ -715,6 +715,53 @@
     <string name="settings_audio_quality_medium">Medium (~128kbps)</string>
     <string name="settings_audio_quality_low">Low (~64kbps)</string>
     <string name="settings_bili_login_success">Bilibili login successful</string>
+    <string name="settings_netease_login_success">NetEase login successful</string>
+    <string name="settings_youtube_login_success">YouTube login successful</string>
+    <string name="settings_auth_checking">Checking sign-in status…</string>
+    <string name="settings_bili_status_valid">Saved and last refreshed %1$s</string>
+    <string name="settings_bili_status_expired">Critical Cookie is no longer usable. Sign in again or import a new one</string>
+    <string name="settings_bili_status_stale">Cookie may be expired, last refreshed %1$s</string>
+    <string name="settings_bili_status_stale_no_time">Cookie may be expired, please sign in again or import a new one</string>
+    <string name="settings_bili_status_missing">No usable Cookie detected. Tap to sign in again or import one</string>
+    <string name="settings_netease_status_valid">Saved and last refreshed %1$s</string>
+    <string name="settings_netease_status_expired">Critical Cookie is no longer usable. Sign in again or import a new one</string>
+    <string name="settings_netease_status_stale">Cookie may be expired, last refreshed %1$s</string>
+    <string name="settings_netease_status_stale_no_time">Cookie may be expired, please sign in again or import a new one</string>
+    <string name="settings_netease_status_missing">No usable Cookie detected. Tap to sign in again or import one</string>
+    <string name="settings_bili_reauth_required_title">Bilibili sign-in is required</string>
+    <string name="settings_bili_reauth_required_message">No usable Bilibili session Cookie was found. Please sign in again or import a fresh Cookie.</string>
+    <string name="settings_bili_reauth_expired_title">Bilibili Cookie is no longer usable</string>
+    <string name="settings_bili_reauth_expired_message">The saved Bilibili Cookie is missing critical session entries, so it will likely fail when reused. Please sign in again or import a fresh Cookie.</string>
+    <string name="settings_bili_reauth_stale_title">Bilibili Cookie may be expired</string>
+    <string name="settings_bili_reauth_stale_message">The current Cookie has been stored for more than %1$d days. The app cannot determine the server-side expiry precisely, but it may fail when used. Last saved at: %2$s. It is recommended to sign in again or import a fresh Cookie now.</string>
+    <string name="settings_bili_reauth_unknown_time">Unknown</string>
+    <string name="settings_bili_reauth_action_login">Sign in again</string>
+    <string name="settings_bili_reauth_action_import">Import Cookie</string>
+    <string name="settings_netease_reauth_required_title">NetEase sign-in is required</string>
+    <string name="settings_netease_reauth_required_message">No usable NetEase session Cookie was found. Please sign in again or import a fresh Cookie.</string>
+    <string name="settings_netease_reauth_expired_title">NetEase Cookie is no longer usable</string>
+    <string name="settings_netease_reauth_expired_message">The saved NetEase Cookie is missing critical session entries, so it will likely fail when reused. Please sign in again or import a fresh Cookie.</string>
+    <string name="settings_netease_reauth_stale_title">NetEase Cookie may be expired</string>
+    <string name="settings_netease_reauth_stale_message">The current Cookie has been stored for more than %1$d days. The app cannot determine the server-side expiry precisely, but it may fail when used. Last saved at: %2$s. It is recommended to sign in again or import a fresh Cookie now.</string>
+    <string name="settings_netease_reauth_unknown_time">Unknown</string>
+    <string name="settings_netease_reauth_action_login">Sign in again</string>
+    <string name="settings_netease_reauth_action_import">Import Cookie</string>
+    <string name="settings_youtube_login_methods">Browser/Cookie Login</string>
+    <string name="settings_youtube_auth_missing">No usable YouTube / YouTube Music auth information was captured</string>
+    <string name="settings_youtube_status_valid">Saved and last refreshed %1$s</string>
+    <string name="settings_youtube_status_expired">Critical Cookie is no longer usable. Sign in again or import a new one</string>
+    <string name="settings_youtube_status_stale">Cookie may be expired, last refreshed %1$s</string>
+    <string name="settings_youtube_status_stale_no_time">Cookie may be expired, please sign in again or import a new one</string>
+    <string name="settings_youtube_status_missing">No usable Cookie detected. Tap to sign in again or import one</string>
+    <string name="settings_youtube_reauth_required_title">YouTube sign-in is required</string>
+    <string name="settings_youtube_reauth_required_message">No usable YouTube / YouTube Music session Cookie was found. Please sign in again or import a fresh Cookie.</string>
+    <string name="settings_youtube_reauth_expired_title">YouTube Cookie is no longer usable</string>
+    <string name="settings_youtube_reauth_expired_message">The saved YouTube Cookie is missing critical session entries, so it will likely fail when reused. Please sign in again or import a fresh Cookie.</string>
+    <string name="settings_youtube_reauth_stale_title">YouTube Cookie may be expired</string>
+    <string name="settings_youtube_reauth_stale_message">The current Cookie has been stored for more than %1$d days. The app cannot determine the server-side expiry precisely, but it may fail when used. Last saved at: %2$s. It is recommended to sign in again or import a fresh Cookie now.</string>
+    <string name="settings_youtube_reauth_unknown_time">Unknown</string>
+    <string name="settings_youtube_reauth_action_login">Sign in again</string>
+    <string name="settings_youtube_reauth_action_import">Import Cookie</string>
     <string name="settings_haptic_feedback">Haptic Feedback</string>
     <string name="settings_login_platforms">Login Platforms</string>
     <string name="settings_login_platforms_expand">Select platform</string>
@@ -740,6 +787,7 @@
     <string name="auth_cookie_saved">Cookie saved</string>
     <string name="auth_cookie_invalid">No valid Cookie found</string>
     <string name="auth_cookie_empty">Cookie is empty</string>
+    <string name="action_later">Later</string>
 
     <!-- Debug/Probe Messages -->
     <string name="probe_keyword_empty">Error: Keyword cannot be empty</string>
@@ -923,6 +971,7 @@
 
     <!-- Netease Login -->
     <string name="netease_web_login">NetEase Login</string>
+    <string name="youtube_web_login">YouTube Login</string>
 
     <!-- MainActivity Disclaimer -->
     <string name="disclaimer_title">Disclaimer &amp; Privacy Policy</string>
@@ -1006,6 +1055,11 @@
     <string name="settings_resend_code_countdown">Resend (%ds)</string>
     <string name="settings_empty_placeholder">(Empty)</string>
     <string name="settings_netease_login_browser_hint">Will open built-in browser (desktop UA) to visit music.163.com. After successful login, tap \"Done\" in the upper right corner.</string>
+    <string name="settings_bili_login_browser_hint">Will open the built-in browser to visit passport.bilibili.com and automatically read cookies after sign-in.</string>
+    <string name="settings_youtube_login_browser_hint">Attempts to use an embedded page for music.youtube.com and automatically read cookies after sign-in.</string>
+    <string name="settings_youtube_login_browser_warning">Google may show \"This browser may not be secure\" or block sign-in entirely. If that happens, use Cookie import below.</string>
+    <string name="login_paste_bili_cookie_hint">Paste Cookie (e.g.: SESSDATA=...; bili_jct=...)</string>
+    <string name="login_paste_youtube_cookie_hint">Paste Cookie (e.g.: SAPISID=...; __Secure-1PSID=...)</string>
     <string name="settings_cookie_input_hint">Please enter Cookie</string>
     <string name="settings_github_token_permission">Required permission: repo (full repository access)</string>
 
