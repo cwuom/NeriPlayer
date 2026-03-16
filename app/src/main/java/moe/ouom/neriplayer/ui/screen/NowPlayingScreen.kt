@@ -15,7 +15,6 @@ import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.core.CubicBezierEasing
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
@@ -248,9 +247,6 @@ fun NowPlayingScreen(
             ?.any { it.sameIdentityAs(song) } == true
     }
     val isFavorite = favOverride ?: isFavoriteComputed
-
-    // 缩放动画
-    if (isFavorite) 1.0f else 1.0f
 
     val queue by PlayerManager.currentQueueFlow.collectAsState()
     val displayedQueue = remember(queue) { queue }
@@ -1097,12 +1093,11 @@ fun NowPlayingScreen(
                 ) {
                     LazyColumn(state = listState) {
                         itemsIndexed(displayedQueue) { index, song ->
-                            val sourceIndex = index
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                        PlayerManager.playFromQueue(sourceIndex)
+                                        PlayerManager.playFromQueue(index)
                                         showQueueSheet = false
                                     }
                                     .padding(horizontal = 24.dp, vertical = 16.dp),

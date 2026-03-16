@@ -39,7 +39,7 @@ class PlayHistoryRepository private constructor(private val app: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val gson = Gson()
     private val file: File by lazy { File(app.filesDir, "play_history.json") }
-    private val _history = MutableStateFlow<List<PlayedEntry>>(loadFromDisk())
+    private val _history = MutableStateFlow(loadFromDisk())
     val historyFlow: StateFlow<List<PlayedEntry>> = _history
     private val storage by lazy { SecureTokenStorage(app) }
     private var lastBatchSyncTime = 0L

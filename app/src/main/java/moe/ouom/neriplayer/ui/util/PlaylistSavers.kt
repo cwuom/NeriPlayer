@@ -69,7 +69,7 @@ val biliPlaylistSaver: Saver<BiliPlaylist?, Any> = mapSaver(
 )
 
 fun restoreNeteaseAlbum(map: Map<*, *>?): NeteaseAlbum? {
-    if (map == null || map.isEmpty()) return null
+    if (map.isNullOrEmpty()) return null
     val id = (map[KEY_ID] as? Number)?.toLong() ?: return null
     val name = map[KEY_NAME] as? String ?: return null
     val picUrl = map[KEY_PIC_URL] as? String ?: ""
@@ -83,7 +83,7 @@ fun restoreNeteaseAlbum(map: Map<*, *>?): NeteaseAlbum? {
 }
 
 fun restoreNeteasePlaylist(map: Map<*, *>?): NeteasePlaylist? {
-    if (map == null || map.isEmpty()) return null
+    if (map.isNullOrEmpty()) return null
     val id = (map[KEY_ID] as? Number)?.toLong() ?: return null
     val name = map[KEY_NAME] as? String ?: return null
     val picUrl = map[KEY_PIC_URL] as? String ?: ""
@@ -99,7 +99,7 @@ fun restoreNeteasePlaylist(map: Map<*, *>?): NeteasePlaylist? {
 }
 
 fun restoreBiliPlaylist(map: Map<*, *>?): BiliPlaylist? {
-    if (map == null || map.isEmpty()) return null
+    if (map.isNullOrEmpty()) return null
     val mediaId = (map[KEY_MEDIA_ID] as? Number)?.toLong() ?: return null
     val fid = (map[KEY_FID] as? Number)?.toLong() ?: 0L
     val mid = (map[KEY_MID] as? Number)?.toLong() ?: 0L

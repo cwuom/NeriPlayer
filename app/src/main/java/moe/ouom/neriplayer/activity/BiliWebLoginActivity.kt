@@ -47,7 +47,6 @@ import androidx.core.net.toUri
  * 通过 Intent Extra 约定返回：
  *   - RESULT_COOKIE: String(JSON of Map<String,String>)
  */
-@Suppress("unused")
 class BiliWebLoginActivity : ComponentActivity() {
 
     companion object {

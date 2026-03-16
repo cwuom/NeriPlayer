@@ -23,10 +23,7 @@ package moe.ouom.neriplayer.core.download
  * Created: 2025/8/20
  */
 
-import android.app.Application
 import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import android.os.Environment
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -199,9 +196,8 @@ object GlobalDownloadManager {
                                 if (coverPath == null) {
                                     // 回退：按 baseName.jpg 命名规则查找
                                     val coverDir = File(downloadDir, "Covers")
-                                    val baseName = nameWithoutExt
                                     listOf("jpg","jpeg","png","webp").forEach { ext ->
-                                        val cf = File(coverDir, "$baseName.$ext")
+                                        val cf = File(coverDir, "$nameWithoutExt.$ext")
                                         if (cf.exists()) { coverPath = cf.absolutePath; return@forEach }
                                     }
                                 }

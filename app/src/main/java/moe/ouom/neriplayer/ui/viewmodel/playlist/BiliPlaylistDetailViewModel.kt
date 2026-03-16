@@ -58,7 +58,6 @@ data class BiliPlaylistDetailUiState(
     val videos: List<BiliVideoItem> = emptyList()
 )
 
-@Suppress("unused")
 class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(application) {
     private val client = AppContainer.biliClient
 

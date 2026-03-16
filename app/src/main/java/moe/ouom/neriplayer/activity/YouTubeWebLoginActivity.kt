@@ -54,7 +54,6 @@ import moe.ouom.neriplayer.data.parseCookieHeader
 import moe.ouom.neriplayer.util.lockPortraitIfPhone
 import org.json.JSONObject
 
-@Suppress("unused")
 class YouTubeWebLoginActivity : ComponentActivity() {
 
     companion object {

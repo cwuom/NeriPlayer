@@ -947,9 +947,9 @@
 
     <!-- Time Relative Strings -->
     <string name="time_just_now">刚刚</string>
-    <string name="time_minutes_ago">%d分钟前</string>
-    <string name="time_hours_ago">%d小时前</string>
-    <string name="time_days_ago">%d天前</string>
+    <string name="time_minutes_ago">%d 分钟前</string>
+    <string name="time_hours_ago">%d 小时前</string>
+    <string name="time_days_ago">%d 天前</string>
 
     <!-- Download Messages -->
     <string name="download_starting">开始下载：%s</string>

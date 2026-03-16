@@ -100,7 +100,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.collect
 import moe.ouom.neriplayer.core.player.AudioPlayerService
 import moe.ouom.neriplayer.core.player.PlayerEvent
 import moe.ouom.neriplayer.core.player.PlayerManager
@@ -119,7 +118,6 @@ import androidx.core.view.WindowInsetsControllerCompat
 
 private enum class AppStage { Loading, Disclaimer, Main }
 
-@Suppress("unused")
 class MainActivity : ComponentActivity() {
     private val settingsRepository by lazy { SettingsRepository(applicationContext) }
     private var externalAudioImportJob: Job? = null

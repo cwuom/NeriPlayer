@@ -37,7 +37,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.SleepTimerMode
-import moe.ouom.neriplayer.core.player.SleepTimerState
 import moe.ouom.neriplayer.R
 
 @Composable

@@ -26,7 +26,6 @@ package moe.ouom.neriplayer.data.github
 import android.content.Context
 import android.util.Base64
 import com.google.gson.Gson
-import com.google.gson.GsonBuilder
 import com.google.gson.annotations.SerializedName
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

@@ -47,7 +47,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.flow.collect
 import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteaseAlbumDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
@@ -66,20 +65,15 @@ import moe.ouom.neriplayer.ui.util.restoreBiliPlaylist
 import moe.ouom.neriplayer.ui.util.restoreNeteaseAlbum
 import moe.ouom.neriplayer.ui.util.restoreNeteasePlaylist
 
-@Suppress("unused")
 @Parcelize
 sealed class LibrarySelectedItem : Parcelable {
     @Parcelize
-    @Suppress("unused")
     data class Local(val playlistId: Long) : LibrarySelectedItem()
     @Parcelize
-    @Suppress("unused")
     data class Netease(val playlist: NeteasePlaylist) : LibrarySelectedItem()
     @Parcelize
-    @Suppress("unused")
     data class NeteaseAlbumlist(val album: NeteaseAlbum) : LibrarySelectedItem()
     @Parcelize
-    @Suppress("unused")
     data class Bili(val playlist: BiliPlaylist) : LibrarySelectedItem()
 }
 

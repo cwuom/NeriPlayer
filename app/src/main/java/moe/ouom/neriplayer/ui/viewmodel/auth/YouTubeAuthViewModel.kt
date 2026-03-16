@@ -50,7 +50,6 @@ sealed interface YouTubeAuthEvent {
     data class PromptReauth(val health: YouTubeAuthHealth) : YouTubeAuthEvent
 }
 
-@Suppress("unused")
 class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = AppContainer.youtubeAuthRepo
 

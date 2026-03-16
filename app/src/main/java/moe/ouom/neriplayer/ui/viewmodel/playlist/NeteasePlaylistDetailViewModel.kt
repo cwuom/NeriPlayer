@@ -90,7 +90,6 @@ data class PlaylistDetailUiState(
     val tracks: List<SongItem> = emptyList()
 )
 
-@Suppress("unused")
 class PlaylistDetailViewModel(application: Application) : AndroidViewModel(application) {
     private val client = AppContainer.neteaseClient
     private val cookieRepo = AppContainer.neteaseCookieRepo

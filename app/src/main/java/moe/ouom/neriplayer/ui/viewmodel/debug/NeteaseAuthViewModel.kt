@@ -57,7 +57,6 @@ sealed interface NeteaseAuthEvent {
     data class PromptReauth(val health: SavedCookieAuthHealth) : NeteaseAuthEvent
 }
 
-@Suppress("unused")
 class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
 
     private val cookieRepo = AppContainer.neteaseCookieRepo

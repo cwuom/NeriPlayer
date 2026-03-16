@@ -224,7 +224,6 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SdStorage
 import moe.ouom.neriplayer.ui.component.HsvPicker
 import moe.ouom.neriplayer.ui.component.LanguageSettingItem
-import android.graphics.Color as AndroidColor
 
 
 /**
