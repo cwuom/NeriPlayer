@@ -1,7 +1,10 @@
+import org.gradle.api.Project
+import com.android.build.OutputFile
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 import java.util.UUID
 
 plugins {
@@ -17,11 +20,14 @@ android {
     compileSdk = 36
 
     val buildUUID = UUID.randomUUID()
+    val buildAllReleaseAbis = (project.findProperty("buildAllReleaseAbis") as String?)?.toBoolean() == true
+    val defaultReleaseAbiFilters = listOf("arm64-v8a")
+    val allReleaseAbiFilters = listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
 
     signingConfigs {
         create("release") {
             val storePath = project.findProperty("KEYSTORE_FILE") as String? ?: "neri.jks"
-            val resolvedStoreFile = file(storePath)
+            val resolvedStoreFile = project.layout.projectDirectory.file(storePath).asFile
 
             if (resolvedStoreFile.exists()) {
                 storeFile = resolvedStoreFile
@@ -50,7 +56,7 @@ android {
         minSdk = 28
         targetSdk = 36
         versionCode = getBuildVersionCode()
-        versionName = getBuildVersionName()
+        versionName = getBuildVersionName(project)
 
         buildConfigField("String", "BUILD_UUID", "\"${buildUUID}\"")
         buildConfigField("String", "TAG", "\"[NeriPlayer]\"")
@@ -70,6 +76,12 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            if (!buildAllReleaseAbis) {
+                ndk {
+                    // Regular release stays lean; manual release can opt into all ABI splits.
+                    abiFilters += defaultReleaseAbiFilters
+                }
+            }
             signingConfig = if (releaseSigningConfig.storeFile?.exists() == true) {
                 releaseSigningConfig
             } else {
@@ -97,6 +109,22 @@ android {
         buildConfig = true
     }
 
+    packaging {
+        dex {
+            // minSdk 28 后 AGP 默认会把 dex 直接存储，恢复 legacy packaging 可显著降低 APK 体积
+            useLegacyPackaging = true
+        }
+    }
+
+    splits {
+        abi {
+            isEnable = buildAllReleaseAbis
+            reset()
+            include(*allReleaseAbiFilters.toTypedArray())
+            isUniversalApk = false
+        }
+    }
+
     bundle {
         language {
             enableSplit = false
@@ -105,12 +133,18 @@ android {
 
 }
 
-fun getBuildVersionName(): String {
-    return "${getShortGitRevision()}.${getCurrentDate()}"
+fun getBuildVersionName(project: Project): String {
+    return "${getShortGitRevision()}.${getCurrentDate(project)}"
 }
 
-private fun getCurrentDate(): String {
-    val sdf = SimpleDateFormat("MMddHHmm", Locale.getDefault())
+private fun getCurrentDate(project: Project): String {
+    val override = project.findProperty("buildVersionTimestamp") as String?
+    if (!override.isNullOrBlank()) {
+        return override
+    }
+
+    val sdf = SimpleDateFormat("MMddHHmm", Locale.ENGLISH)
+    sdf.timeZone = TimeZone.getTimeZone("Asia/Taipei")
     return sdf.format(Date())
 }
 
@@ -136,7 +170,9 @@ android.applicationVariants.all {
             && !this.outputFileName.lowercase().contains("debug")
         ) {
             val versionName = project.android.defaultConfig.versionName
-            this.outputFileName = "NeriPlayer-${versionName}.apk"
+            val abiName = this.getFilter(OutputFile.ABI)
+            val abiSuffix = abiName?.let { "-$it" } ?: ""
+            this.outputFileName = "NeriPlayer-${versionName}${abiSuffix}.apk"
         }
     }
 }

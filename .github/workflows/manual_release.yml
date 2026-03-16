@@ -1,0 +1,124 @@
+name: NeriPlayer Manual Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_ref:
+        description: Branch, tag, or commit SHA to release
+        required: true
+        default: master
+        type: string
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target_ref }}
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+
+      - name: Decode keystore
+        run: |
+          mkdir -p app
+          echo "$KEYSTORE_B64" | base64 -d > app/neri.jks
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+
+      - name: Grant execute permission
+        run: chmod +x gradlew
+
+      - name: Prepare release metadata
+        id: meta
+        run: |
+          set -euo pipefail
+
+          short_sha="$(git rev-parse --short HEAD)"
+          target_sha="$(git rev-parse HEAD)"
+          release_time="$(TZ=Asia/Taipei date +'%m%d%H%M')"
+          tag_name="NeriPlayer-${short_sha}.${release_time}"
+          previous_tag="$(git for-each-ref --merged HEAD --sort=-creatordate --format='%(refname:short)' 'refs/tags/NeriPlayer-*' | head -n 1 || true)"
+
+          echo "tag_name=${tag_name}" >> "$GITHUB_OUTPUT"
+          echo "release_time=${release_time}" >> "$GITHUB_OUTPUT"
+          echo "target_sha=${target_sha}" >> "$GITHUB_OUTPUT"
+          echo "previous_tag=${previous_tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Build signed Release APKs
+        run: |
+          ./gradlew clean assembleRelease \
+            -PbuildAllReleaseAbis=true \
+            -PbuildVersionTimestamp=${{ steps.meta.outputs.release_time }} \
+            -PKEYSTORE_FILE=neri.jks \
+            -PKEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }} \
+            -PKEY_ALIAS=key0 \
+            -PKEY_PASSWORD=${{ secrets.KEY_PASSWORD }} \
+            --warning-mode all --stacktrace
+
+      - name: Generate release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG_NAME: ${{ steps.meta.outputs.tag_name }}
+          TARGET_SHA: ${{ steps.meta.outputs.target_sha }}
+          PREVIOUS_TAG: ${{ steps.meta.outputs.previous_tag }}
+        run: |
+          set -euo pipefail
+
+          api_args=(
+            --method POST
+            "repos/${REPO}/releases/generate-notes"
+            -f "tag_name=${TAG_NAME}"
+            -f "target_commitish=${TARGET_SHA}"
+          )
+
+          if [ -n "${PREVIOUS_TAG}" ]; then
+            api_args+=(-f "previous_tag_name=${PREVIOUS_TAG}")
+          fi
+
+          gh api "${api_args[@]}" --jq '.body' > release-notes.md
+
+          {
+            echo
+            echo
+            echo "## Commits"
+            if [ -n "${PREVIOUS_TAG}" ]; then
+              git log --first-parent --pretty='- %h %s' "${PREVIOUS_TAG}..HEAD"
+            else
+              git log --first-parent --pretty='- %h %s'
+            fi
+          } >> release-notes.md
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG_NAME: ${{ steps.meta.outputs.tag_name }}
+          TARGET_SHA: ${{ steps.meta.outputs.target_sha }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          apk_files=(app/build/outputs/apk/release/*.apk)
+          if [ "${#apk_files[@]}" -eq 0 ]; then
+            echo "No release APKs were produced."
+            exit 1
+          fi
+
+          gh release create "${TAG_NAME}" "${apk_files[@]}" \
+            --repo "${REPO}" \
+            --target "${TARGET_SHA}" \
+            --title "${TAG_NAME}" \
+            --notes-file release-notes.md \
+            --latest
