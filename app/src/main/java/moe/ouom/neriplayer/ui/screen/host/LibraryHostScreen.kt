@@ -51,10 +51,12 @@ import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteaseAlbumDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.BiliPlaylistDetailScreen
+import moe.ouom.neriplayer.ui.screen.playlist.YouTubeMusicPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.tab.LibraryScreen
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -64,6 +66,7 @@ import moe.ouom.neriplayer.ui.util.toSaveMap
 import moe.ouom.neriplayer.ui.util.restoreBiliPlaylist
 import moe.ouom.neriplayer.ui.util.restoreNeteaseAlbum
 import moe.ouom.neriplayer.ui.util.restoreNeteasePlaylist
+import moe.ouom.neriplayer.ui.util.restoreYouTubeMusicPlaylist
 
 @Parcelize
 sealed class LibrarySelectedItem : Parcelable {
@@ -75,6 +78,8 @@ sealed class LibrarySelectedItem : Parcelable {
     data class NeteaseAlbumlist(val album: NeteaseAlbum) : LibrarySelectedItem()
     @Parcelize
     data class Bili(val playlist: BiliPlaylist) : LibrarySelectedItem()
+    @Parcelize
+    data class YouTubeMusic(val playlist: YouTubeMusicPlaylist) : LibrarySelectedItem()
 }
 
 @Composable
@@ -102,6 +107,7 @@ fun LibraryHostScreen(
     val favoriteListSaver: Saver<LazyListState, *> = LazyListState.Saver
     val neteaseAlbumSaver: Saver<LazyListState, *> = LazyListState.Saver
     val neteaseListSaver: Saver<LazyListState, *> = LazyListState.Saver
+    val youtubeMusicListSaver: Saver<LazyListState, *> = LazyListState.Saver
     val biliListSaver: Saver<LazyListState, *> = LazyListState.Saver
     val qqMusicListSaver: Saver<LazyListState, *> = LazyListState.Saver
 
@@ -115,6 +121,9 @@ fun LibraryHostScreen(
         LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
     }
     val neteaseAlbumState = rememberSaveable(saver = neteaseAlbumSaver) {
+        LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
+    }
+    val youtubeMusicListState = rememberSaveable(saver = youtubeMusicListSaver) {
         LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
     }
     val biliListState = rememberSaveable(saver = biliListSaver) {
@@ -148,6 +157,7 @@ fun LibraryHostScreen(
                         favoriteListState = favoriteListState,
                         neteaseAlbumState = neteaseAlbumState,
                         neteaseListState = neteaseListState,
+                        youtubeMusicListState = youtubeMusicListState,
                         biliListState = biliListState,
                         qqMusicListState = qqMusicListState,
                         onLocalPlaylistClick = { playlist ->
@@ -178,6 +188,16 @@ fun LibraryHostScreen(
                                 picUrl = album.picUrl,
                                 trackCount = album.size,
                                 source = "neteaseAlbum"
+                            )
+                        },
+                        onYouTubeMusicPlaylistClick = { playlist ->
+                            selected = LibrarySelectedItem.YouTubeMusic(playlist)
+                            AppContainer.playlistUsageRepo.recordOpen(
+                                id = playlist.playlistId.hashCode().toLong(),
+                                name = playlist.title,
+                                picUrl = playlist.coverUrl,
+                                trackCount = playlist.trackCount,
+                                source = "youtubeMusic"
                             )
                         },
                         onBiliPlaylistClick = { playlist ->
@@ -219,6 +239,13 @@ fun LibraryHostScreen(
                             onSongClick = onSongClick
                         )
                     }
+                    is LibrarySelectedItem.YouTubeMusic -> {
+                        YouTubeMusicPlaylistDetailScreen(
+                            playlist = current.playlist,
+                            onBack = { selected = null },
+                            onSongClick = onSongClick
+                        )
+                    }
                     is LibrarySelectedItem.Bili -> {
                         BiliPlaylistDetailScreen(
                             playlist = current.playlist,
@@ -255,6 +282,10 @@ private val librarySelectedItemSaver = mapSaver<LibrarySelectedItem?>(
                 "type" to "bili",
                 "playlist" to item.playlist.toSaveMap()
             )
+            is LibrarySelectedItem.YouTubeMusic -> hashMapOf(
+                "type" to "ytmusic",
+                "playlist" to item.playlist.toSaveMap()
+            )
         }
     },
     restore = { saved ->
@@ -264,6 +295,7 @@ private val librarySelectedItemSaver = mapSaver<LibrarySelectedItem?>(
             "neteaseAlbum" -> restoreNeteaseAlbum(saved["album"] as? Map<*, *>)?.let { LibrarySelectedItem.NeteaseAlbumlist(it) }
             "netease" -> restoreNeteasePlaylist(saved["playlist"] as? Map<*, *>)?.let { LibrarySelectedItem.Netease(it) }
             "bili" -> restoreBiliPlaylist(saved["playlist"] as? Map<*, *>)?.let { LibrarySelectedItem.Bili(it) }
+            "ytmusic" -> restoreYouTubeMusicPlaylist(saved["playlist"] as? Map<*, *>)?.let { LibrarySelectedItem.YouTubeMusic(it) }
             else -> null
         }
     }

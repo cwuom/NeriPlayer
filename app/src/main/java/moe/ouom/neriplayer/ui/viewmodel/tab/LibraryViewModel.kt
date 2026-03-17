@@ -36,6 +36,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicLibraryPlaylist
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.LocalPlaylist
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
@@ -55,13 +56,14 @@ data class BiliPlaylist(
     val coverUrl: String
 ) : Parcelable
 
-
 /** 媒体库页面 UI 状态 */
 data class LibraryUiState(
     val localPlaylists: List<LocalPlaylist> = emptyList(),
     val neteasePlaylists: List<NeteasePlaylist> = emptyList(),
     val neteaseAlbums: List<NeteaseAlbum> = emptyList(),
     val neteaseError: String? = null,
+    val youtubeMusicPlaylists: List<YouTubeMusicPlaylist> = emptyList(),
+    val youtubeMusicError: String? = null,
     val biliPlaylists: List<BiliPlaylist> = emptyList(),
     val biliError: String? = null
 )
@@ -75,6 +77,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     private val biliCookieRepo = AppContainer.biliCookieRepo
     private val biliClient = AppContainer.biliClient
+    private val youtubeAuthRepo = AppContainer.youtubeAuthRepo
+    private val youtubeMusicClient = AppContainer.youtubeMusicClient
 
 
     private val _uiState = MutableStateFlow(
@@ -98,7 +102,10 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 if (!cookies["MUSIC_U"].isNullOrBlank()) {
                     refreshNeteasePlaylists()
                 } else {
-                    _uiState.value = _uiState.value.copy(neteasePlaylists = emptyList())
+                    _uiState.value = _uiState.value.copy(
+                        neteasePlaylists = emptyList(),
+                        neteaseError = null
+                    )
                 }
             }
         }
@@ -110,7 +117,24 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 if (!cookies["MUSIC_U"].isNullOrBlank()) {
                     refreshNeteaseAlbums()
                 } else {
-                    _uiState.value = _uiState.value.copy(neteaseAlbums = emptyList())
+                    _uiState.value = _uiState.value.copy(
+                        neteaseAlbums = emptyList(),
+                        neteaseError = null
+                    )
+                }
+            }
+        }
+
+        // YouTube Music
+        viewModelScope.launch {
+            youtubeAuthRepo.authFlow.collect { bundle ->
+                if (!bundle.hasLoginCookies()) {
+                    _uiState.value = _uiState.value.copy(
+                        youtubeMusicPlaylists = emptyList(),
+                        youtubeMusicError = null
+                    )
+                } else {
+                    refreshYouTubeMusicPlaylists()
                 }
             }
         }
@@ -121,7 +145,10 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 if (!cookies["SESSDATA"].isNullOrBlank()) {
                     refreshBilibili()
                 } else {
-                    _uiState.value = _uiState.value.copy(biliPlaylists = emptyList())
+                    _uiState.value = _uiState.value.copy(
+                        biliPlaylists = emptyList(),
+                        biliError = null
+                    )
                 }
             }
         }
@@ -215,6 +242,30 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun refreshYouTubeMusicPlaylists() {
+        viewModelScope.launch {
+            try {
+                val playlists = withContext(Dispatchers.IO) {
+                    youtubeMusicClient.getLibraryPlaylists()
+                }
+                _uiState.value = _uiState.value.copy(
+                    youtubeMusicPlaylists = playlists.map(::mapYouTubeMusicPlaylist),
+                    youtubeMusicError = null
+                )
+            } catch (e: IOException) {
+                _uiState.value = _uiState.value.copy(
+                    youtubeMusicPlaylists = emptyList(),
+                    youtubeMusicError = e.message
+                )
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    youtubeMusicPlaylists = emptyList(),
+                    youtubeMusicError = e.message
+                )
+            }
+        }
+    }
+
     fun createLocalPlaylist(name: String) {
         viewModelScope.launch { localRepo.createPlaylist(name) }
     }
@@ -272,5 +323,18 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             }
         }
         return result
+    }
+
+    private fun mapYouTubeMusicPlaylist(
+        playlist: YouTubeMusicLibraryPlaylist
+    ): YouTubeMusicPlaylist {
+        return YouTubeMusicPlaylist(
+            browseId = playlist.browseId,
+            playlistId = playlist.playlistId,
+            title = playlist.title,
+            subtitle = playlist.subtitle,
+            coverUrl = playlist.coverUrl,
+            trackCount = playlist.trackCount ?: 0
+        )
     }
 }

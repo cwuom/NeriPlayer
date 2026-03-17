@@ -1155,6 +1155,7 @@
     <string name="library_tab_favorite">收藏</string>
     <string name="library_tab_netease_playlist">网易云 - 歌单</string>
     <string name="library_tab_netease_album">网易云 - 专辑</string>
+    <string name="library_tab_youtube_music">YouTube Music</string>
     <string name="library_tab_bilibili">哔哩哔哩</string>
     <string name="library_tab_qqmusic">QQ音乐</string>
     <string name="library_create_playlist_default">新建歌单</string>
@@ -1170,12 +1171,15 @@
         <item quantity="other">%d 个视频</item>
     </plurals>
     <string name="library_qqmusic_coming">QQ音乐功能开发中...</string>
+    <string name="library_youtube_music_empty">还没有抓到 YouTube Music 歌单</string>
+    <string name="library_youtube_music_hint">先确认 YouTube 已登录，随后会从媒体库拉取你的歌单</string>
     <string name="library_favorite_source_format" formatted="false">%d首 · %s</string>
     <string name="library_favorite_sort_mode_title">收藏歌单排序</string>
     <string name="library_favorite_sort_mode_desc">长按歌单进入排序，拖动右侧手柄调整顺序</string>
     <string name="library_title">媒体库</string>
     <string name="library_coming_soon">敬请期待</string>
     <string name="library_recent_played">最近播放</string>
+    <string name="nowplaying_youtube_music">YouTube Music</string>
     <string name="library_delete_playlist_confirm">确定要删除歌单“%1$s”吗？</string>
 
     <!-- Bili Playlist Detail -->

@@ -111,6 +111,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.LibraryViewModel
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.formatPlayCount
@@ -126,6 +127,7 @@ enum class LibraryTab(val labelResId: Int) {
     FAVORITE(R.string.library_tab_favorite),
     NETEASE(R.string.library_tab_netease_playlist),
     NETEASEALBUM(R.string.library_tab_netease_album),
+    YTMUSIC(R.string.library_tab_youtube_music),
     BILI(R.string.library_tab_bilibili),
     QQMUSIC(R.string.library_tab_qqmusic)
 }
@@ -139,11 +141,13 @@ fun LibraryScreen(
     favoriteListState: LazyListState,
     neteaseAlbumState: LazyListState,
     neteaseListState: LazyListState,
+    youtubeMusicListState: LazyListState,
     biliListState: LazyListState,
     qqMusicListState: LazyListState,
     onLocalPlaylistClick: (LocalPlaylist) -> Unit = {},
     onNeteasePlaylistClick: (NeteasePlaylist) -> Unit = {},
     onNeteaseAlbumClick: (NeteaseAlbum) -> Unit = {},
+    onYouTubeMusicPlaylistClick: (YouTubeMusicPlaylist) -> Unit = {},
     onBiliPlaylistClick: (BiliPlaylist) -> Unit = {},
     onOpenRecent: () -> Unit = {}
 ) {
@@ -169,6 +173,10 @@ fun LibraryScreen(
         if (pagerState.currentPage != initialTabIndex) {
             onTabIndexChange(pagerState.currentPage)
         }
+    }
+
+    LaunchedEffect(Unit) {
+        vm.refreshYouTubeMusicPlaylists()
     }
 
     Column(
@@ -268,6 +276,14 @@ fun LibraryScreen(
                             onClick = onNeteaseAlbumClick
                         )
 
+                        LibraryTab.YTMUSIC -> YouTubeMusicPlaylistList(
+                            playlists = ui.youtubeMusicPlaylists,
+                            error = ui.youtubeMusicError,
+                            listState = youtubeMusicListState,
+                            onClick = onYouTubeMusicPlaylistClick,
+                            onRetry = { vm.refreshYouTubeMusicPlaylists() }
+                        )
+
                         LibraryTab.BILI -> BiliPlaylistList(
                             playlists = ui.biliPlaylists,
                             listState = biliListState,
@@ -281,6 +297,143 @@ fun LibraryScreen(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun YouTubeMusicPlaylistList(
+    playlists: List<YouTubeMusicPlaylist>,
+    error: String?,
+    listState: LazyListState,
+    onClick: (YouTubeMusicPlaylist) -> Unit,
+    onRetry: () -> Unit
+) {
+    val miniPlayerHeight = LocalMiniPlayerHeight.current
+
+    LazyColumn(
+        state = listState,
+        contentPadding = PaddingValues(
+            start = 8.dp,
+            end = 8.dp,
+            top = 8.dp,
+            bottom = 8.dp + miniPlayerHeight
+        ),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        val cardShape = RoundedCornerShape(12.dp)
+        if (playlists.isEmpty()) {
+            item {
+                Card(
+                    shape = cardShape,
+                    colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                    modifier = Modifier
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .clip(cardShape)
+                ) {
+                    ListItem(
+                        headlineContent = {
+                            Text(
+                                text = error ?: stringResource(R.string.library_youtube_music_empty),
+                                color = if (error != null) {
+                                    MaterialTheme.colorScheme.error
+                                } else {
+                                    Color.Unspecified
+                                }
+                            )
+                        },
+                        supportingContent = {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(
+                                    text = stringResource(R.string.library_youtube_music_hint),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                if (error != null) {
+                                    HapticTextButton(onClick = onRetry) {
+                                        Text(text = stringResource(R.string.action_retry))
+                                    }
+                                }
+                            }
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        leadingContent = {
+                            Icon(
+                                painter = androidx.compose.ui.res.painterResource(id = R.drawable.ic_youtube),
+                                contentDescription = stringResource(R.string.common_youtube),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(56.dp)
+                            )
+                        }
+                    )
+                }
+            }
+        }
+        items(
+            items = playlists,
+            key = { it.browseId }
+        ) { playlist ->
+            Card(
+                shape = cardShape,
+                colors = CardDefaults.cardColors(
+                    containerColor = Color.Transparent
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                modifier = Modifier
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                    .animateItem()
+                    .clip(cardShape)
+                    .clickable { onClick(playlist) }
+            ) {
+                ListItem(
+                    headlineContent = { Text(playlist.title) },
+                    supportingContent = {
+                        val trackCountText = playlist.trackCount
+                            .takeIf { it > 0 }
+                            ?.let { count ->
+                                pluralStringResource(
+                                    R.plurals.library_song_count,
+                                    count,
+                                    count
+                                )
+                            }
+                        val subtitleText = playlist.subtitle.ifBlank {
+                            stringResource(R.string.library_youtube_music_hint)
+                        }
+                        Text(
+                            text = listOfNotNull(subtitleText, trackCountText)
+                                .distinct()
+                                .joinToString(" · "),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    colors = ListItemDefaults.colors(
+                        containerColor = Color.Transparent
+                    ),
+                    leadingContent = {
+                        if (playlist.coverUrl.isNotEmpty()) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(LocalContext.current)
+                                    .data(playlist.coverUrl)
+                                    .build(),
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(56.dp)
+                            )
+                        }
+                    }
+                )
             }
         }
     }

@@ -38,6 +38,8 @@ import moe.ouom.neriplayer.core.api.bili.BiliPlaybackRepository
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
 import moe.ouom.neriplayer.core.api.search.CloudMusicSearchApi
 import moe.ouom.neriplayer.core.api.search.QQMusicSearchApi
+import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicClient
+import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicPlaybackRepository
 import moe.ouom.neriplayer.data.BiliCookieRepository
 import moe.ouom.neriplayer.data.NeteaseCookieRepository
 import moe.ouom.neriplayer.data.PlayHistoryRepository
@@ -88,11 +90,15 @@ object AppContainer {
     }
 
     val biliClient by lazy { BiliClient(biliCookieRepo, client = sharedOkHttpClient) }
+    val youtubeMusicClient by lazy { YouTubeMusicClient(youtubeAuthRepo, sharedOkHttpClient) }
 
     // 功能 Repo 和 API
     val biliPlaybackRepository by lazy {
         val dataSource = BiliClientAudioDataSource(biliClient)
         BiliPlaybackRepository(dataSource, settingsRepo)
+    }
+    val youtubeMusicPlaybackRepository by lazy {
+        YouTubeMusicPlaybackRepository(sharedOkHttpClient)
     }
 
     val cloudMusicSearchApi by lazy { CloudMusicSearchApi(neteaseClient) }

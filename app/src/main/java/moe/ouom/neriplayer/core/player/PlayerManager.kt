@@ -90,6 +90,8 @@ import moe.ouom.neriplayer.data.FavoritesPlaylist
 import moe.ouom.neriplayer.data.LocalSongSupport
 import moe.ouom.neriplayer.data.LocalPlaylist
 import moe.ouom.neriplayer.data.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.extractYouTubeMusicVideoId
+import moe.ouom.neriplayer.data.isYouTubeMusicSong
 import moe.ouom.neriplayer.data.sameIdentityAs
 import moe.ouom.neriplayer.data.stableKey
 import moe.ouom.neriplayer.ui.component.LyricEntry
@@ -133,6 +135,7 @@ private sealed class SongUrlResult {
 object PlayerManager {
     const val BILI_SOURCE_TAG = "Bilibili"
     const val NETEASE_SOURCE_TAG = "Netease"
+    const val YOUTUBE_MUSIC_SOURCE_TAG = "YouTube Music|"
 
     private var initialized = false
     private lateinit var application: Application
@@ -239,7 +242,7 @@ object PlayerManager {
 
     private var playJob: Job? = null
     private var playbackRequestToken = 0L
-    private var lastHandledTrackEndToken = -1L
+    private var lastHandledTrackEndKey: String? = null
 
     val audioLevelFlow get() = AudioReactive.level
     val beatImpulseFlow get() = AudioReactive.beat
@@ -247,6 +250,7 @@ object PlayerManager {
     var biliRepo = AppContainer.biliPlaybackRepository
     var biliClient = AppContainer.biliClient
     var neteaseClient = AppContainer.neteaseClient
+    var youtubeMusicPlaybackRepository = AppContainer.youtubeMusicPlaybackRepository
 
     val cloudMusicSearchApi = AppContainer.cloudMusicSearchApi
     val qqMusicSearchApi = AppContainer.qqMusicSearchApi
@@ -379,6 +383,10 @@ object PlayerManager {
     private fun computeCacheKey(song: SongItem): String {
         return when {
             isLocalSong(song) -> "local-${song.stableKey().hashCode()}"
+            isYouTubeMusicSong(song) -> {
+                val videoId = extractYouTubeMusicVideoId(song.mediaUri).orEmpty()
+                "ytmusic-$videoId"
+            }
             song.album.startsWith(BILI_SOURCE_TAG) -> {
             val parts = song.album.split('|')
             val cidPart = if (parts.size > 1) parts[1] else null
@@ -568,7 +576,11 @@ object PlayerManager {
                 }
 
                 override fun onPlaybackStateChanged(state: Int) {
-                    if (state == Player.STATE_ENDED) handleTrackEndedIfNeeded()
+                    if (state == Player.STATE_ENDED) {
+                        handleTrackEndedIfNeeded(source = "playback_state_changed")
+                    } else if (lastHandledTrackEndKey != null) {
+                        lastHandledTrackEndKey = null
+                    }
                 }
 
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -585,12 +597,18 @@ object PlayerManager {
                 }
 
                 override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                    if (!playWhenReady) {
+                        NPLogger.d(
+                            "NERI-PlayerManager",
+                            "playWhenReady=false, reason=${playWhenReadyChangeReasonName(reason)}, state=${playbackStateName(player.playbackState)}, mediaId=${player.currentMediaItem?.mediaId}"
+                        )
+                    }
                     if (
                         !playWhenReady &&
                         reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM &&
                         player.playbackState == Player.STATE_ENDED
                     ) {
-                        handleTrackEndedIfNeeded()
+                        handleTrackEndedIfNeeded(source = "play_when_ready_end_of_item")
                     }
                 }
 
@@ -1096,6 +1114,10 @@ object PlayerManager {
         playJob = ioScope.launch {
             val result = resolveSongUrl(song)
             if (requestToken != playbackRequestToken || !isActive) {
+                NPLogger.d(
+                    "NERI-PlayerManager",
+                    "忽略已过期的播放请求: song=${song.name}, requestToken=$requestToken, currentToken=$playbackRequestToken, active=$isActive"
+                )
                 return@launch
             }
 
@@ -1115,6 +1137,10 @@ object PlayerManager {
                         shouldResumePlayback = true
                     )
                     if (requestToken != playbackRequestToken || !isActive) {
+                        NPLogger.d(
+                            "NERI-PlayerManager",
+                            "媒体项准备前请求已失效: song=${song.name}, requestToken=$requestToken, currentToken=$playbackRequestToken, active=$isActive"
+                        )
                         return@launch
                     }
 
@@ -1205,10 +1231,10 @@ object PlayerManager {
 
         val cacheKey = computeCacheKey(song)
         val hasCachedData = checkExoPlayerCache(cacheKey)
-        val result = if (song.album.startsWith(BILI_SOURCE_TAG)) {
-            getBiliAudioUrl(song, suppressError = hasCachedData)
-        } else {
-            getNeteaseSongUrl(song.id, suppressError = hasCachedData)
+        val result = when {
+            isYouTubeMusicSong(song) -> getYouTubeMusicAudioUrl(song, suppressError = hasCachedData)
+            song.album.startsWith(BILI_SOURCE_TAG) -> getBiliAudioUrl(song, suppressError = hasCachedData)
+            else -> getNeteaseSongUrl(song.id, suppressError = hasCachedData)
         }
 
         // 如果网络失败但有缓存，使用虚拟URL让ExoPlayer使用缓存
@@ -1460,6 +1486,41 @@ object PlayerManager {
         }
     }
 
+    private suspend fun getYouTubeMusicAudioUrl(
+        song: SongItem,
+        suppressError: Boolean = false
+    ): SongUrlResult = withContext(Dispatchers.IO) {
+        val videoId = extractYouTubeMusicVideoId(song.mediaUri)
+        if (videoId.isNullOrBlank()) {
+            if (!suppressError) {
+                postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(R.string.error_no_play_url)))
+            }
+            return@withContext SongUrlResult.Failure
+        }
+
+        try {
+            val url = youtubeMusicPlaybackRepository.getBestPlayableAudioUrl(videoId)
+            if (!url.isNullOrBlank()) {
+                SongUrlResult.Success(url)
+            } else {
+                if (!suppressError) {
+                    postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(R.string.error_no_play_url)))
+                }
+                SongUrlResult.Failure
+            }
+        } catch (e: Exception) {
+            NPLogger.e("NERI-PlayerManager", "Failed to get YouTube Music play url", e)
+            if (!suppressError) {
+                postPlayerEvent(
+                    PlayerEvent.ShowError(
+                        getLocalizedString(R.string.player_playback_url_error_detail, e.message.orEmpty())
+                    )
+                )
+            }
+            SongUrlResult.Failure
+        }
+    }
+
     /**
      * 播放 Bilibili 视频的所有分 P
      * @param videoInfo 包含所有分 P 信息的视频详情对象
@@ -1526,12 +1587,23 @@ object PlayerManager {
         }
     }
 
-    private fun handleTrackEndedIfNeeded() {
-        val currentToken = playbackRequestToken
-        if (lastHandledTrackEndToken == currentToken) {
+    private fun handleTrackEndedIfNeeded(source: String) {
+        val currentKey = trackEndDeduplicationKey(
+            mediaId = player.currentMediaItem?.mediaId,
+            fallbackSongKey = _currentSongFlow.value?.stableKey()
+        )
+        if (!shouldHandleTrackEnd(lastHandledKey = lastHandledTrackEndKey, currentKey = currentKey)) {
+            NPLogger.d(
+                "NERI-PlayerManager",
+                "忽略重复的结束回调: source=$source, key=$currentKey"
+            )
             return
         }
-        lastHandledTrackEndToken = currentToken
+        lastHandledTrackEndKey = currentKey
+        NPLogger.d(
+            "NERI-PlayerManager",
+            "处理播放结束: source=$source, key=$currentKey, index=$currentIndex, queueSize=${currentPlaylist.size}"
+        )
         handleTrackEnded()
     }
 
@@ -1564,6 +1636,10 @@ object PlayerManager {
         playJob?.cancel()
         playJob = null
         cancelVolumeFade(resetToFull = resetVolumeToFull)
+        NPLogger.d(
+            "NERI-PlayerManager",
+            "pauseInternal: song=${currentSong?.name}, positionMs=$currentPosition, state=${playbackStateName(player.playbackState)}, playWhenReady=${player.playWhenReady}, forcePersist=$forcePersist"
+        )
         player.playWhenReady = false
         player.pause()
         if (shouldForceFlushShortLocalSong) {
@@ -1816,6 +1892,7 @@ object PlayerManager {
         playbackRequestToken += 1
         playJob?.cancel()
         playJob = null
+        lastHandledTrackEndKey = null
         resumePlaybackRequested = false
         stopProgressUpdates()
         cancelVolumeFade(resetToFull = true)
@@ -2073,6 +2150,10 @@ object PlayerManager {
 
         // 本地没有，从网络获取
         // B站歌曲在匹配网易云信息后应使用匹配到的歌曲 ID 获取翻译
+        if (isYouTubeMusicSong(song)) {
+            return emptyList()
+        }
+
         if (song.album.startsWith(BILI_SOURCE_TAG)) {
             return when (song.matchedLyricSource) {
                 MusicPlatform.CLOUD_MUSIC -> {
@@ -2091,6 +2172,9 @@ object PlayerManager {
 
     /** 获取歌词，优先使用本地缓存 */
     suspend fun getLyrics(song: SongItem): List<LyricEntry> {
+        if (isYouTubeMusicSong(song)) {
+            return emptyList()
+        }
         // 最优先使用song.matchedLyric中的歌词
         if (!song.matchedLyric.isNullOrBlank()) {
             try {
@@ -2113,7 +2197,9 @@ object PlayerManager {
         }
 
         // 最后回退到在线获取
-        return if (song.album.startsWith(BILI_SOURCE_TAG)) {
+        return if (isYouTubeMusicSong(song)) {
+            emptyList()
+        } else if (song.album.startsWith(BILI_SOURCE_TAG)) {
             emptyList() // B站暂时没有歌词API
         } else {
             getNeteaseLyrics(song.id)
@@ -2459,8 +2545,31 @@ object PlayerManager {
         ioScope.launch {
             try {
                 val isBili = originalSong.album.startsWith(BILI_SOURCE_TAG)
+                val isYouTubeMusic = isYouTubeMusicSong(originalSong)
 
                 if (isLocalSong(originalSong)) {
+                    val restoredName = originalSong.originalName ?: originalSong.name
+                    val restoredArtist = originalSong.originalArtist ?: originalSong.artist
+                    val restoredCover = originalSong.originalCoverUrl ?: originalSong.coverUrl
+                    val updatedSong = originalSong.copy(
+                        name = restoredName,
+                        artist = restoredArtist,
+                        coverUrl = restoredCover,
+                        matchedLyric = null,
+                        matchedTranslatedLyric = null,
+                        matchedLyricSource = null,
+                        matchedSongId = null,
+                        customCoverUrl = null,
+                        customName = null,
+                        customArtist = null,
+                        originalName = restoredName,
+                        originalArtist = restoredArtist,
+                        originalCoverUrl = restoredCover,
+                        originalLyric = originalSong.originalLyric,
+                        originalTranslatedLyric = originalSong.originalTranslatedLyric
+                    )
+                    updateSongInAllPlaces(originalSong, updatedSong)
+                } else if (isYouTubeMusic) {
                     val restoredName = originalSong.originalName ?: originalSong.name
                     val restoredArtist = originalSong.originalArtist ?: originalSong.artist
                     val restoredCover = originalSong.originalCoverUrl ?: originalSong.coverUrl
@@ -2719,6 +2828,28 @@ object PlayerManager {
         persistState()
     }
 
+}
+
+private fun playbackStateName(state: Int): String {
+    return when (state) {
+        Player.STATE_IDLE -> "IDLE"
+        Player.STATE_BUFFERING -> "BUFFERING"
+        Player.STATE_READY -> "READY"
+        Player.STATE_ENDED -> "ENDED"
+        else -> "UNKNOWN($state)"
+    }
+}
+
+private fun playWhenReadyChangeReasonName(reason: Int): String {
+    return when (reason) {
+        Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST -> "USER_REQUEST"
+        Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS -> "AUDIO_FOCUS_LOSS"
+        Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY -> "AUDIO_BECOMING_NOISY"
+        Player.PLAY_WHEN_READY_CHANGE_REASON_REMOTE -> "REMOTE"
+        Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM -> "END_OF_MEDIA_ITEM"
+        Player.PLAY_WHEN_READY_CHANGE_REASON_SUPPRESSED_TOO_LONG -> "SUPPRESSED_TOO_LONG"
+        else -> "UNKNOWN($reason)"
+    }
 }
 
 private fun BiliVideoItem.toSongItem(): SongItem {

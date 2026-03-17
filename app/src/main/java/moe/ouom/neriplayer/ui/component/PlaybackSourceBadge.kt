@@ -22,6 +22,7 @@ import moe.ouom.neriplayer.R
 enum class PlaybackSourceType {
     NETEASE,
     BILIBILI,
+    YOUTUBE_MUSIC,
     LOCAL
 }
 
@@ -64,6 +65,20 @@ fun PlaybackSourceBadge(
                 )
                 Text(
                     text = stringResource(R.string.nowplaying_bilibili),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            PlaybackSourceType.YOUTUBE_MUSIC -> {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_youtube),
+                    contentDescription = stringResource(R.string.common_youtube),
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(
+                    text = stringResource(R.string.nowplaying_youtube_music),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurface
                 )

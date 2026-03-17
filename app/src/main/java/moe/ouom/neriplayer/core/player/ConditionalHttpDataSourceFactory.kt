@@ -51,6 +51,10 @@ class ConditionalHttpDataSourceFactory(
         private const val BILI_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
                 "AppleWebKit/537.36 (KHTML, like Gecko) " +
                 "Chrome/124.0.0.0 Safari/537.36"
+        private const val YOUTUBE_WEB_REFERER = "https://www.youtube.com/"
+        private const val YOUTUBE_WEB_USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
+                "AppleWebKit/605.1.15 (KHTML, like Gecko) " +
+                "Version/15.5 Safari/605.1.15,gzip(gfe)"
     }
 
     @Volatile
@@ -71,12 +75,21 @@ class ConditionalHttpDataSourceFactory(
 
             override fun open(dataSpec: DataSpec): Long {
                 NPLogger.i("createDataSource", dataSpec.uri)
-                val finalSpec = if (shouldInjectBiliHeaders(dataSpec.uri)) {
-                    val headers = buildBiliHeaders(dataSpec.httpRequestHeaders)
-                    dataSpec.buildUpon()
-                        .setHttpRequestHeaders(headers)
-                        .build()
-                } else dataSpec
+                val finalSpec = when {
+                    shouldInjectBiliHeaders(dataSpec.uri) -> {
+                        val headers = buildBiliHeaders(dataSpec.httpRequestHeaders)
+                        dataSpec.buildUpon()
+                            .setHttpRequestHeaders(headers)
+                            .build()
+                    }
+                    shouldInjectYouTubeHeaders(dataSpec.uri) -> {
+                        val headers = buildYouTubeHeaders(dataSpec.httpRequestHeaders)
+                        dataSpec.buildUpon()
+                            .setHttpRequestHeaders(headers)
+                            .build()
+                    }
+                    else -> dataSpec
+                }
 
                 return delegate.open(finalSpec)
             }
@@ -100,6 +113,15 @@ class ConditionalHttpDataSourceFactory(
         return host.contains("bilivideo.") || uri.toString().contains("https://upos-hz-")
     }
 
+    private fun shouldInjectYouTubeHeaders(uri: Uri): Boolean {
+        val host = uri.host?.lowercase() ?: return false
+        if (!host.contains("googlevideo.com")) return false
+        val rawUrl = uri.toString().lowercase()
+        return rawUrl.contains("source/youtube") ||
+            rawUrl.contains("/api/manifest/") ||
+            rawUrl.contains("/videoplayback")
+    }
+
     /**
      * 基于原始请求头构建 B 站拉流所需的头部（Referer/UA/Cookie）
      */
@@ -108,6 +130,14 @@ class ConditionalHttpDataSourceFactory(
         newHeaders["Referer"] = "https://www.bilibili.com"
         newHeaders["User-Agent"] = BILI_USER_AGENT
         if (latestCookieHeader.isNotBlank()) newHeaders["Cookie"] = latestCookieHeader
+        return newHeaders
+    }
+
+    private fun buildYouTubeHeaders(original: Map<String, String>): Map<String, String> {
+        val newHeaders = LinkedHashMap<String, String>(original)
+        newHeaders.putIfAbsent("Origin", "https://www.youtube.com")
+        newHeaders.putIfAbsent("Referer", YOUTUBE_WEB_REFERER)
+        newHeaders.putIfAbsent("User-Agent", YOUTUBE_WEB_USER_AGENT)
         return newHeaders
     }
 }

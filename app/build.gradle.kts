@@ -206,6 +206,7 @@ dependencies {
     implementation(libs.androidx.foundation)
 
     testImplementation(libs.junit)
+    testImplementation(libs.org.json)
     testImplementation(libs.mockito.core)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -214,6 +215,7 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
 
     implementation(libs.dec)
+    implementation(libs.newpipe.extractor)
     implementation(libs.okhttp)
 
     implementation(libs.kotlinx.serialization.json)

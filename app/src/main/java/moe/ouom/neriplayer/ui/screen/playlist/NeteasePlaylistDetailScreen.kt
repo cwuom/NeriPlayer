@@ -205,10 +205,10 @@ fun NeteasePlaylistDetailScreen(
     }
 
     DetailScreen(
-        vm = vm,
         ui = ui,
         playlistId = playlist.id,
         playlistSource = "netease",
+        onRetry = vm::retry,
         onBack = onBack,
         onSongClick = onSongClick
     )
@@ -257,10 +257,10 @@ fun NeteaseAlbumDetailScreen(
     }
 
     DetailScreen(
-        vm = vm,
         ui = ui,
         playlistId = album.id,
         playlistSource = "neteaseAlbum",
+        onRetry = vm::retry,
         onBack = onBack,
         onSongClick = onSongClick
     )
@@ -269,10 +269,10 @@ fun NeteaseAlbumDetailScreen(
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun DetailScreen(
-    vm: PlaylistDetailViewModel,
     ui: PlaylistDetailUiState,
     playlistId: Long,
     playlistSource: String,
+    onRetry: () -> Unit,
     onBack: () -> Unit = {},
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> }
 ) {
@@ -609,7 +609,7 @@ fun DetailScreen(
                                                 color = MaterialTheme.colorScheme.error
                                             )
                                             Spacer(Modifier.height(8.dp))
-                                            RetryChip { vm.retry() }
+                                            RetryChip(onRetry)
                                         }
                                     }
                                 }

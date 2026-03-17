@@ -608,6 +608,7 @@
     <string name="library_tab_favorite">Favorites</string>
     <string name="library_tab_netease_playlist">Netease - Playlists</string>
     <string name="library_tab_netease_album">Netease - Albums</string>
+    <string name="library_tab_youtube_music">YouTube Music</string>
     <string name="library_tab_bilibili">Bilibili</string>
     <string name="library_tab_qqmusic">QQ Music</string>
     <string name="playlist_favorite_hint">Tap favorite button in playlist details, or long press recommended playlists on home page</string>
@@ -1155,12 +1156,15 @@
         <item quantity="other">%d videos</item>
     </plurals>
     <string name="library_qqmusic_coming">Coming Soon</string>
+    <string name="library_youtube_music_empty">No YouTube Music playlists yet</string>
+    <string name="library_youtube_music_hint">Make sure YouTube is signed in, then the app will load playlists from your library</string>
     <string name="library_favorite_source_format" formatted="false">%d songs · %s</string>
     <string name="library_favorite_sort_mode_title">Favorite Playlist Order</string>
     <string name="library_favorite_sort_mode_desc">Long press a playlist to enter sorting mode, then drag the handle</string>
     <string name="library_title">Library</string>
     <string name="library_coming_soon">Coming Soon</string>
     <string name="library_recent_played">Recent Plays</string>
+    <string name="nowplaying_youtube_music">YouTube Music</string>
     <string name="library_delete_playlist_confirm">Delete playlist \"%1$s\"?</string>
     <string name="bili_loading_favorites">Loading favorites...</string>
     <string name="bili_load_failed">Load failed: %s</string>
