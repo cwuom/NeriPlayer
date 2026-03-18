@@ -197,7 +197,9 @@ fun LibraryHostScreen(
                                 name = playlist.title,
                                 picUrl = playlist.coverUrl,
                                 trackCount = playlist.trackCount,
-                                source = "youtubeMusic"
+                                source = "youtubeMusic",
+                                browseId = playlist.browseId,
+                                playlistId = playlist.playlistId
                             )
                         },
                         onBiliPlaylistClick = { playlist ->

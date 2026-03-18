@@ -10,6 +10,9 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 const val YOUTUBE_MUSIC_MEDIA_URI_SCHEME: String = "ytmusic"
 private const val YOUTUBE_MUSIC_MEDIA_URI_HOST: String = "video"
 private const val YOUTUBE_MUSIC_SOCIALLY_CONSENTED_COOKIE: String = "SOCS=CAI"
+const val YOUTUBE_WEB_ORIGIN: String = "https://www.youtube.com"
+const val YOUTUBE_DEFAULT_WEB_USER_AGENT: String =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:88.0) Gecko/20100101 Firefox/88.0"
 
 fun YouTubeAuthBundle.effectiveCookieHeader(): String {
     val normalized = normalized(savedAt = savedAt)
@@ -27,7 +30,25 @@ fun YouTubeAuthBundle.effectiveCookieHeader(): String {
 fun YouTubeAuthBundle.resolveRequestUserAgent(): String {
     return userAgent
         .takeIf { it.isNotBlank() }
-        ?: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:88.0) Gecko/20100101 Firefox/88.0"
+        ?: YOUTUBE_DEFAULT_WEB_USER_AGENT
+}
+
+fun YouTubeAuthBundle.resolveBootstrapUserAgent(): String {
+    val candidate = resolveRequestUserAgent().trim()
+    if (candidate.isBlank()) {
+        return YOUTUBE_DEFAULT_WEB_USER_AGENT
+    }
+    val normalized = candidate.lowercase(Locale.US)
+    return if (
+        normalized.contains(" mobile") ||
+        normalized.contains("android") ||
+        normalized.contains("iphone") ||
+        normalized.contains("ipad")
+    ) {
+        YOUTUBE_DEFAULT_WEB_USER_AGENT
+    } else {
+        candidate
+    }
 }
 
 fun YouTubeAuthBundle.resolveXGoogAuthUser(): String {
@@ -55,6 +76,94 @@ fun YouTubeAuthBundle.resolveAuthorizationHeader(
         .digest(input.toByteArray(Charsets.UTF_8))
         .joinToString("") { byte -> "%02x".format(Locale.US, byte) }
     return "SAPISIDHASH ${nowEpochSeconds}_$digest"
+}
+
+fun YouTubeAuthBundle.buildYouTubePlaybackRequestHeaders(
+    original: Map<String, String> = emptyMap(),
+    origin: String = YOUTUBE_WEB_ORIGIN,
+    includeAuthorization: Boolean = false,
+    includeXOrigin: Boolean = false
+): Map<String, String> {
+    val headers = LinkedHashMap(original)
+    val cookieHeader = appendYouTubeConsentCookie(effectiveCookieHeader())
+    if (cookieHeader.isNotBlank()) {
+        headers["Cookie"] = cookieHeader
+    }
+
+    headers.putIfAbsent("Referer", "$origin/")
+    headers.putIfAbsent("Origin", origin)
+    headers.putIfAbsent("User-Agent", resolveRequestUserAgent())
+    headers.putIfAbsent("X-Goog-AuthUser", resolveXGoogAuthUser())
+
+    if (includeXOrigin) {
+        headers.putIfAbsent("X-Origin", origin)
+    }
+
+    if (includeAuthorization) {
+        val authorization = resolveAuthorizationHeader(origin = origin)
+        if (authorization.isNotBlank()) {
+            headers.putIfAbsent("Authorization", authorization)
+        }
+    }
+
+    return headers
+}
+
+fun YouTubeAuthBundle.buildYouTubePageRequestHeaders(
+    original: Map<String, String> = emptyMap(),
+    userAgent: String = resolveRequestUserAgent(),
+    includeAuthUser: Boolean = false
+): Map<String, String> {
+    val headers = LinkedHashMap(original)
+    val cookieHeader = appendYouTubeConsentCookie(effectiveCookieHeader())
+    if (cookieHeader.isNotBlank()) {
+        headers["Cookie"] = cookieHeader
+    }
+    headers.putIfAbsent("User-Agent", userAgent)
+    if (includeAuthUser) {
+        headers.putIfAbsent("X-Goog-AuthUser", resolveXGoogAuthUser())
+    }
+    return headers
+}
+
+fun YouTubeAuthBundle.buildYouTubeInnertubeRequestHeaders(
+    original: Map<String, String> = emptyMap(),
+    authorizationOrigin: String = origin.ifBlank { YOUTUBE_MUSIC_ORIGIN },
+    includeAuthorization: Boolean = true
+): Map<String, String> {
+    val headers = LinkedHashMap(original)
+    val cookieHeader = appendYouTubeConsentCookie(effectiveCookieHeader())
+    if (cookieHeader.isNotBlank()) {
+        headers["Cookie"] = cookieHeader
+    }
+    headers.putIfAbsent("User-Agent", resolveRequestUserAgent())
+    headers.putIfAbsent("X-Goog-AuthUser", resolveXGoogAuthUser())
+
+    if (includeAuthorization) {
+        val authorization = resolveAuthorizationHeader(origin = authorizationOrigin)
+        if (authorization.isNotBlank()) {
+            headers.putIfAbsent("Authorization", authorization)
+        }
+    }
+
+    return headers
+}
+
+fun YouTubeAuthBundle.buildYouTubeStreamRequestHeaders(
+    original: Map<String, String> = emptyMap(),
+    refererOrigin: String = origin.ifBlank { YOUTUBE_MUSIC_ORIGIN },
+    includeReferer: Boolean = true
+): Map<String, String> {
+    val headers = LinkedHashMap(original)
+    val cookieHeader = appendYouTubeConsentCookie(effectiveCookieHeader())
+    if (cookieHeader.isNotBlank()) {
+        headers["Cookie"] = cookieHeader
+    }
+    headers.putIfAbsent("User-Agent", resolveRequestUserAgent())
+    if (includeReferer) {
+        headers.putIfAbsent("Referer", "$refererOrigin/")
+    }
+    return headers
 }
 
 fun buildYouTubeMusicMediaUri(videoId: String, playlistId: String? = null): String {

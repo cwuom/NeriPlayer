@@ -46,8 +46,13 @@ import moe.ouom.neriplayer.data.PlayHistoryRepository
 import moe.ouom.neriplayer.data.PlaylistUsageRepository
 import moe.ouom.neriplayer.data.SettingsRepository
 import moe.ouom.neriplayer.data.YouTubeAuthRepository
+import moe.ouom.neriplayer.data.YOUTUBE_MUSIC_ORIGIN
+import moe.ouom.neriplayer.data.buildYouTubeInnertubeRequestHeaders
+import moe.ouom.neriplayer.data.buildYouTubePageRequestHeaders
+import moe.ouom.neriplayer.data.buildYouTubeStreamRequestHeaders
 import moe.ouom.neriplayer.util.DynamicProxySelector
 import okhttp3.OkHttpClient
+import okhttp3.Request
 
 /**
  * 全局依赖容器，使用 Service Locator 模式管理 App 的单例
@@ -77,6 +82,39 @@ object AppContainer {
     val sharedOkHttpClient by lazy {
         OkHttpClient.Builder()
             .proxySelector(DynamicProxySelector)
+            .addInterceptor { chain ->
+                val request = chain.request()
+                val host = request.url.host.lowercase()
+                if (!isYouTubeHost(host)) {
+                    return@addInterceptor chain.proceed(request)
+                }
+
+                val auth = youtubeAuthRepo.getAuthOnce().normalized()
+                val originalHeaders = linkedMapOf<String, String>().apply {
+                    request.headers.names().forEach { name ->
+                        request.header(name)?.let { value -> put(name, value) }
+                    }
+                }
+                val resolvedHeaders = when {
+                    isYouTubeInnertubeRequest(request) -> auth.buildYouTubeInnertubeRequestHeaders(
+                        original = originalHeaders,
+                        authorizationOrigin = auth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN },
+                        includeAuthorization = true
+                    )
+                    isYouTubeStreamRequest(request) -> auth.buildYouTubeStreamRequestHeaders(
+                        original = originalHeaders,
+                        refererOrigin = auth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN }
+                    )
+                    else -> auth.buildYouTubePageRequestHeaders(
+                        original = originalHeaders
+                    )
+                }
+                val builder = request.newBuilder()
+                resolvedHeaders.forEach { (name, value) ->
+                    builder.header(name, value)
+                }
+                chain.proceed(builder.build())
+            }
             .build()
     }
 
@@ -98,7 +136,7 @@ object AppContainer {
         BiliPlaybackRepository(dataSource, settingsRepo)
     }
     val youtubeMusicPlaybackRepository by lazy {
-        YouTubeMusicPlaybackRepository(sharedOkHttpClient)
+        YouTubeMusicPlaybackRepository(sharedOkHttpClient, youtubeAuthRepo::getAuthOnce)
     }
 
     val cloudMusicSearchApi by lazy { CloudMusicSearchApi(neteaseClient) }
@@ -141,5 +179,28 @@ object AppContainer {
                 neteaseClient.evictConnections()
             }
             .launchIn(scope)
+    }
+
+    private fun isYouTubeHost(host: String): Boolean {
+        return host.contains("youtube") ||
+            host == "youtu.be" ||
+            host.contains("googlevideo.com")
+    }
+
+    private fun isYouTubeInnertubeRequest(request: Request): Boolean {
+        val host = request.url.host.lowercase()
+        val path = request.url.encodedPath.lowercase()
+        return host == "youtubei.googleapis.com" || path.startsWith("/youtubei/")
+    }
+
+    private fun isYouTubeStreamRequest(request: Request): Boolean {
+        val host = request.url.host.lowercase()
+        if (!host.contains("googlevideo.com")) {
+            return false
+        }
+        val rawUrl = request.url.toString().lowercase()
+        return rawUrl.contains("source=youtube") ||
+            rawUrl.contains("/api/manifest/") ||
+            rawUrl.contains("/videoplayback")
     }
 }

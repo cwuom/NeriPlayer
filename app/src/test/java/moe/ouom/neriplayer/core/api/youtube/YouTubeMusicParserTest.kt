@@ -129,6 +129,122 @@ class YouTubeMusicParserTest {
     }
 
     @Test
+    fun parsePlaylistTracks_fallsBackWhenOverlayVideoIdIsMissing() {
+        val root = JSONObject(
+            """
+            {
+              "contents": {
+                "twoColumnBrowseResultsRenderer": {
+                  "secondaryContents": {
+                    "sectionListRenderer": {
+                      "contents": [
+                        {
+                          "musicPlaylistShelfRenderer": {
+                            "contents": [
+                              {
+                                "musicResponsiveListItemRenderer": {
+                                  "playlistItemData": {
+                                    "videoId": "video-from-playlist-item-data"
+                                  },
+                                  "flexColumns": [
+                                    {
+                                      "musicResponsiveListItemFlexColumnRenderer": {
+                                        "text": { "simpleText": "Song A" }
+                                      }
+                                    },
+                                    {
+                                      "musicResponsiveListItemFlexColumnRenderer": {
+                                        "text": { "simpleText": "Artist A" }
+                                      }
+                                    },
+                                    {
+                                      "musicResponsiveListItemFlexColumnRenderer": {
+                                        "text": { "simpleText": "Album A" }
+                                      }
+                                    }
+                                  ],
+                                  "fixedColumns": [
+                                    {
+                                      "musicResponsiveListItemFixedColumnRenderer": {
+                                        "text": { "simpleText": "3:21" }
+                                      }
+                                    }
+                                  ]
+                                }
+                              },
+                              {
+                                "musicResponsiveListItemRenderer": {
+                                  "menu": {
+                                    "menuRenderer": {
+                                      "items": [
+                                        {
+                                          "menuServiceItemRenderer": {
+                                            "serviceEndpoint": {
+                                              "queueAddEndpoint": {
+                                                "queueTarget": {
+                                                  "videoId": "video-from-menu"
+                                                }
+                                              }
+                                            }
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "flexColumns": [
+                                    {
+                                      "musicResponsiveListItemFlexColumnRenderer": {
+                                        "text": {
+                                          "runs": [
+                                            {
+                                              "text": "Song B",
+                                              "navigationEndpoint": {
+                                                "watchEndpoint": {
+                                                  "videoId": "video-from-title-run"
+                                                }
+                                              }
+                                            }
+                                          ]
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "musicResponsiveListItemFlexColumnRenderer": {
+                                        "text": { "simpleText": "Artist B" }
+                                      }
+                                    }
+                                  ],
+                                  "fixedColumns": [
+                                    {
+                                      "musicResponsiveListItemFixedColumnRenderer": {
+                                        "text": { "simpleText": "4:05" }
+                                      }
+                                    }
+                                  ]
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+            """.trimIndent()
+        )
+
+        val tracks = YouTubeMusicParser.parsePlaylistTracks(root)
+
+        assertEquals(2, tracks.size)
+        assertEquals("video-from-playlist-item-data", tracks[0].videoId)
+        assertEquals("Song A", tracks[0].title)
+        assertEquals("video-from-title-run", tracks[1].videoId)
+        assertEquals("Song B", tracks[1].title)
+    }
+
+    @Test
     fun extractPlaylistContinuation_readsShelfTokenBeyondFirstSection() {
         val root = JSONObject(
             """
@@ -164,6 +280,71 @@ class YouTubeMusicParserTest {
         )
 
         assertEquals("token-123", YouTubeMusicParser.extractPlaylistContinuation(root))
+    }
+
+    @Test
+    fun parsePlaylistTracks_findsShelfRendererInPrimarySections() {
+        val root = JSONObject(
+            """
+            {
+              "contents": {
+                "twoColumnBrowseResultsRenderer": {
+                  "tabs": [
+                    {
+                      "tabRenderer": {
+                        "content": {
+                          "sectionListRenderer": {
+                            "contents": [
+                              {
+                                "musicResponsiveHeaderRenderer": {
+                                  "title": { "simpleText": "Header" }
+                                }
+                              },
+                              {
+                                "musicPlaylistShelfRenderer": {
+                                  "playlistId": "PL-primary",
+                                  "contents": [
+                                    {
+                                      "musicResponsiveListItemRenderer": {
+                                        "playlistItemData": {
+                                          "videoId": "primary-video"
+                                        },
+                                        "flexColumns": [
+                                          {
+                                            "musicResponsiveListItemFlexColumnRenderer": {
+                                              "text": { "simpleText": "Primary Song" }
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  ]
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+            """.trimIndent()
+        )
+
+        val detail = YouTubeMusicParser.parsePlaylistDetail(
+            root = root,
+            browseId = "VLPL-primary",
+            fallbackTitle = "",
+            fallbackSubtitle = "",
+            fallbackCoverUrl = ""
+        )
+
+        assertEquals("PL-primary", detail.playlistId)
+        assertEquals(1, detail.tracks.size)
+        assertEquals("primary-video", detail.tracks.first().videoId)
+        assertEquals("Primary Song", detail.tracks.first().title)
     }
 
     @Test

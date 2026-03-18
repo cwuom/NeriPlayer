@@ -1,7 +1,10 @@
 package moe.ouom.neriplayer.core.api.youtube
 
+import java.util.Locale
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class YouTubeMusicClientParserTest {
@@ -89,6 +92,64 @@ class YouTubeMusicClientParserTest {
         assertEquals("喜歡的音樂", detail.title)
         assertEquals("自動播放清單 • 2025", detail.subtitle)
         assertEquals(37, detail.trackCount)
+    }
+
+    @Test
+    fun requestCandidates_appendsUsFallbackForNonUsLocale() {
+        val candidates = YouTubeMusicLocaleResolver.requestCandidates(
+            preferredLocale = YouTubeMusicLocaleResolver.preferred(Locale.forLanguageTag("zh-CN"))
+        )
+
+        assertEquals(
+            listOf(
+                YouTubeMusicRequestLocale(hl = "zh-CN", gl = "CN"),
+                YouTubeMusicRequestLocale(hl = "en-US", gl = "US")
+            ),
+            candidates
+        )
+    }
+
+    @Test
+    fun shouldRetryWithSafeFallback_returnsTrueForInitialBrowseWithoutContents() {
+        val payload = JSONObject().put("browseId", "VLLM")
+        val root = JSONObject(
+            """
+            {
+              "responseContext": {},
+              "microformat": {}
+            }
+            """.trimIndent()
+        )
+
+        assertTrue(YouTubeMusicLocaleResolver.shouldRetryWithSafeFallback(payload, root))
+    }
+
+    @Test
+    fun shouldRetryWithSafeFallback_returnsFalseForContinuationPayload() {
+        val payload = JSONObject().put("continuation", "token-123")
+
+        assertFalse(
+            YouTubeMusicLocaleResolver.shouldRetryWithSafeFallback(
+                payload = payload,
+                root = JSONObject()
+            )
+        )
+    }
+
+    @Test
+    fun shouldRetryWithSafeFallback_returnsFalseWhenBrowseContentsExist() {
+        val payload = JSONObject().put("browseId", "VLLM")
+        val root = JSONObject(
+            """
+            {
+              "contents": {
+                "twoColumnBrowseResultsRenderer": {}
+              }
+            }
+            """.trimIndent()
+        )
+
+        assertFalse(YouTubeMusicLocaleResolver.shouldRetryWithSafeFallback(payload, root))
     }
 
     private fun createLikedPlaylistRoot(): JSONObject {

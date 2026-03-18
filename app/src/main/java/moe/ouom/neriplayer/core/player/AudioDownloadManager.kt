@@ -41,6 +41,10 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager.clearSongCancelle
 import moe.ouom.neriplayer.data.BiliAudioStreamInfo
 import moe.ouom.neriplayer.data.LocalMediaSupport
 import moe.ouom.neriplayer.data.LocalSongSupport
+import moe.ouom.neriplayer.data.YOUTUBE_MUSIC_ORIGIN
+import moe.ouom.neriplayer.data.buildYouTubeStreamRequestHeaders
+import moe.ouom.neriplayer.data.extractYouTubeMusicVideoId
+import moe.ouom.neriplayer.data.isYouTubeMusicSong
 import moe.ouom.neriplayer.data.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
@@ -123,8 +127,13 @@ object AudioDownloadManager {
                     return@withContext
                 }
 
+                val isYouTubeMusic = isYouTubeMusicSong(song)
                 val isBili = song.album.startsWith(PlayerManager.BILI_SOURCE_TAG)
-                val resolved = if (isBili) resolveBili(song) else resolveNetease(song.id)
+                val resolved = when {
+                    isYouTubeMusic -> resolveYouTubeMusic(song)
+                    isBili -> resolveBili(song)
+                    else -> resolveNetease(song.id)
+                }
                 if (resolved == null) {
                     NPLogger.e(TAG, context.getString(R.string.download_no_url, song.name))
                     return@withContext
@@ -176,6 +185,13 @@ object AudioDownloadManager {
                         .header("User-Agent", BILI_UA)
                         .header("Referer", BILI_REFERER)
                         .apply { if (cookieHeader.isNotBlank()) header("Cookie", cookieHeader) }
+                } else if (isYouTubeMusic) {
+                    val auth = AppContainer.youtubeAuthRepo.getAuthOnce().normalized()
+                    auth.buildYouTubeStreamRequestHeaders(
+                        refererOrigin = auth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN }
+                    ).forEach { (name, value) ->
+                        reqBuilder.header(name, value)
+                    }
                 }
 
                 val request = reqBuilder.build()
@@ -556,6 +572,14 @@ fun getLocalFilePath(context: Context, song: SongItem): String? {
         } catch (_: Exception) { null }
     }
 
+    private suspend fun resolveYouTubeMusic(song: SongItem): Triple<String, String?, String?>? {
+        val videoId = extractYouTubeMusicVideoId(song.mediaUri) ?: return null
+        val playableAudio = AppContainer.youtubeMusicPlaybackRepository.getBestPlayableAudio(videoId)
+            ?: return null
+        val mimeType = playableAudio.mimeType ?: guessMimeFromUrl(playableAudio.url)
+        return Triple(playableAudio.url, mimeType, extFromUrl(playableAudio.url))
+    }
+
     // Resolve Bili audio direct url.
     private suspend fun resolveBili(song: SongItem): Triple<String, String?, String?>? {
         val resolved = resolveBiliSong(song, AppContainer.biliClient) ?: return null
@@ -616,6 +640,8 @@ fun getLocalFilePath(context: Context, song: SongItem): String? {
         "audio/x-flac" -> "flac"
         "audio/eac3", "audio/e-ac-3" -> "eac3"
         "audio/mp4", "audio/m4a", "audio/aac" -> "m4a"
+        "audio/webm" -> "webm"
+        "audio/ogg" -> "ogg"
         "audio/mpeg" -> "mp3"
         else -> null
     }

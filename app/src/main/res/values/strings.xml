@@ -1173,6 +1173,9 @@
     <string name="library_qqmusic_coming">QQ音乐功能开发中...</string>
     <string name="library_youtube_music_empty">还没有抓到 YouTube Music 歌单</string>
     <string name="library_youtube_music_hint">先确认 YouTube 已登录，随后会从媒体库拉取你的歌单</string>
+    <string name="library_youtube_music_open_playlist">打开歌单</string>
+    <string name="library_youtube_music_copy_browse_id">复制 Browse ID</string>
+    <string name="library_youtube_music_copy_playlist_id">复制 Playlist ID</string>
     <string name="library_favorite_source_format" formatted="false">%d首 · %s</string>
     <string name="library_favorite_sort_mode_title">收藏歌单排序</string>
     <string name="library_favorite_sort_mode_desc">长按歌单进入排序，拖动右侧手柄调整顺序</string>

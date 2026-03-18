@@ -119,7 +119,10 @@ sealed class PlayerEvent {
 }
 
 private sealed class SongUrlResult {
-    data class Success(val url: String) : SongUrlResult()
+    data class Success(
+        val url: String,
+        val durationMs: Long? = null
+    ) : SongUrlResult()
     object RequiresLogin : SongUrlResult()
     object Failure : SongUrlResult()
 }
@@ -352,6 +355,42 @@ object PlayerManager {
         return _currentSongFlow.value?.sameIdentityAs(song) == true
     }
 
+    private fun maybeUpdateSongDuration(song: SongItem, durationMs: Long) {
+        val resolvedDurationMs = durationMs.takeIf { it > 0L && it != C.TIME_UNSET } ?: return
+        var changed = false
+
+        val queueIndex = queueIndexOf(song)
+        if (queueIndex != -1) {
+            val queuedSong = currentPlaylist[queueIndex]
+            if (queuedSong.durationMs <= 0L) {
+                val updatedPlaylist = currentPlaylist.toMutableList()
+                updatedPlaylist[queueIndex] = queuedSong.copy(durationMs = resolvedDurationMs)
+                currentPlaylist = updatedPlaylist
+                _currentQueueFlow.value = currentPlaylist
+                changed = true
+            }
+        }
+
+        val currentSong = _currentSongFlow.value
+        if (currentSong?.sameIdentityAs(song) == true && currentSong.durationMs <= 0L) {
+            _currentSongFlow.value = currentSong.copy(durationMs = resolvedDurationMs)
+            changed = true
+        }
+
+        if (changed) {
+            ioScope.launch { persistState() }
+        }
+    }
+
+    private fun maybeBackfillCurrentSongDurationFromPlayer() {
+        if (!::player.isInitialized) {
+            return
+        }
+        val currentSong = _currentSongFlow.value ?: return
+        val playerDurationMs = player.duration.takeIf { it > 0L && it != C.TIME_UNSET } ?: return
+        maybeUpdateSongDuration(currentSong, playerDurationMs)
+    }
+
     /** 在后台线程发布事件到 UI（非阻塞） */
     private fun postPlayerEvent(event: PlayerEvent) {
         ioScope.launch { _playerEventFlow.emit(event) }
@@ -467,10 +506,14 @@ object PlayerManager {
                 keepPlaybackModeStateEnabled = settingsRepo.keepPlaybackModeStateFlow.first()
             }
 
-            // 基础网络请求工厂，支持 B 站 Cookie 注入
+            // 基础网络请求工厂，支持 B 站 / YouTube 的请求头与 Cookie 注入
             val okHttpClient = AppContainer.sharedOkHttpClient
             val upstreamFactory: HttpDataSource.Factory = OkHttpDataSource.Factory(okHttpClient)
-            val conditionalFactory = ConditionalHttpDataSourceFactory(upstreamFactory, biliCookieRepo)
+            val conditionalFactory = ConditionalHttpDataSourceFactory(
+                upstreamFactory,
+                biliCookieRepo,
+                AppContainer.youtubeAuthRepo
+            )
             conditionalHttpFactory = conditionalFactory
 
             val defaultDsFactory = androidx.media3.datasource.DefaultDataSource.Factory(app, conditionalFactory)
@@ -576,6 +619,9 @@ object PlayerManager {
                 }
 
                 override fun onPlaybackStateChanged(state: Int) {
+                    if (state == Player.STATE_READY) {
+                        maybeBackfillCurrentSongDurationFromPlayer()
+                    }
                     if (state == Player.STATE_ENDED) {
                         handleTrackEndedIfNeeded(source = "playback_state_changed")
                     } else if (lastHandledTrackEndKey != null) {
@@ -1125,10 +1171,11 @@ object PlayerManager {
                 is SongUrlResult.Success -> {
                     consecutivePlayFailures = 0
 
+                    maybeUpdateSongDuration(song, result.durationMs ?: 0L)
                     val cacheKey = computeCacheKey(song)
                     NPLogger.d("NERI-PlayerManager", "Using custom cache key: $cacheKey for song: ${song.name}")
 
-                    val mediaItem = buildMediaItem(song, result.url, cacheKey)
+                    val mediaItem = buildMediaItem(_currentSongFlow.value ?: song, result.url, cacheKey)
 
                     _currentMediaUrl.value = result.url
                     currentMediaUrlResolvedAtMs = SystemClock.elapsedRealtime()
@@ -1175,6 +1222,7 @@ object PlayerManager {
                         )
                     }
                     maybeAutoMatchBiliMetadata(song, requestToken)
+                    maybePrefetchUpcomingYouTubeMusic(index)
                 }
                 is SongUrlResult.RequiresLogin -> {
                     NPLogger.w("NERI-PlayerManager", "Requires login to play: id=${song.id}, source=${song.album}")
@@ -1212,6 +1260,21 @@ object PlayerManager {
             }
 
             replaceMetadataFromSearch(latestSong, candidate, isAuto = true)
+        }
+    }
+
+    private fun maybePrefetchUpcomingYouTubeMusic(currentSongIndex: Int) {
+        val nextSong = currentPlaylist.getOrNull(currentSongIndex + 1) ?: return
+        val nextVideoId = extractYouTubeMusicVideoId(nextSong.mediaUri) ?: return
+        ioScope.launch {
+            runCatching {
+                youtubeMusicPlaybackRepository.prefetchPlayableAudioUrl(nextVideoId)
+            }.onFailure { error ->
+                NPLogger.w(
+                    "NERI-PlayerManager",
+                    "Prefetch YouTube Music stream failed for $nextVideoId: ${error.message}"
+                )
+            }
         }
     }
 
@@ -1301,7 +1364,8 @@ object PlayerManager {
                 if (result is SongUrlResult.Success &&
                     _currentSongFlow.value?.sameIdentityAs(song) == true
                 ) {
-                    applyResolvedMediaItem(song, result.url, resumePositionMs)
+                    maybeUpdateSongDuration(song, result.durationMs ?: 0L)
+                    applyResolvedMediaItem(_currentSongFlow.value ?: song, result.url, resumePositionMs)
                     consecutivePlayFailures = 0
                 } else if (allowFallback) {
                     withContext(Dispatchers.Main) {
@@ -1499,9 +1563,13 @@ object PlayerManager {
         }
 
         try {
-            val url = youtubeMusicPlaybackRepository.getBestPlayableAudioUrl(videoId)
-            if (!url.isNullOrBlank()) {
-                SongUrlResult.Success(url)
+            val playableAudio = youtubeMusicPlaybackRepository.getBestPlayableAudio(videoId)
+            if (!playableAudio?.url.isNullOrBlank()) {
+                maybeUpdateSongDuration(song, playableAudio?.durationMs ?: 0L)
+                SongUrlResult.Success(
+                    url = playableAudio!!.url,
+                    durationMs = playableAudio.durationMs.takeIf { it > 0L }
+                )
             } else {
                 if (!suppressError) {
                     postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(R.string.error_no_play_url)))

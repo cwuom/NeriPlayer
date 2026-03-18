@@ -424,12 +424,11 @@ class MainActivity : ComponentActivity() {
                 }
                 if (result.songs.isNotEmpty()) {
                     PlayerManager.initialize(application)
+                    PlayerManager.playPlaylist(result.songs, startIndex = 0)
                     ContextCompat.startForegroundService(
                         this@MainActivity,
                         Intent(this@MainActivity, AudioPlayerService::class.java).apply {
-                            setAction(AudioPlayerService.ACTION_PLAY)
-                            putParcelableArrayListExtra("playlist", ArrayList(result.songs))
-                            putExtra("index", 0)
+                            setAction(AudioPlayerService.ACTION_SYNC)
                         }
                     )
                 }

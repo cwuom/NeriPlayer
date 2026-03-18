@@ -1158,6 +1158,9 @@
     <string name="library_qqmusic_coming">Coming Soon</string>
     <string name="library_youtube_music_empty">No YouTube Music playlists yet</string>
     <string name="library_youtube_music_hint">Make sure YouTube is signed in, then the app will load playlists from your library</string>
+    <string name="library_youtube_music_open_playlist">Open Playlist</string>
+    <string name="library_youtube_music_copy_browse_id">Copy Browse ID</string>
+    <string name="library_youtube_music_copy_playlist_id">Copy Playlist ID</string>
     <string name="library_favorite_source_format" formatted="false">%d songs · %s</string>
     <string name="library_favorite_sort_mode_title">Favorite Playlist Order</string>
     <string name="library_favorite_sort_mode_desc">Long press a playlist to enter sorting mode, then drag the handle</string>

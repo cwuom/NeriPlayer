@@ -17,11 +17,13 @@ data class UsageEntry(
     val name: String,
     val picUrl: String?,
     val trackCount: Int,
-    val source: String, // "netease" | "bilibili" | "local"
+    val source: String, // "netease" | "neteaseAlbum" | "bili" | "local" | "youtubeMusic"
     val lastOpened: Long,
     val openCount: Int,
     val fid: Long? = null,
     val mid: Long? = null,
+    val browseId: String? = null,
+    val playlistId: String? = null,
 )
 
 class PlaylistUsageRepository(private val app: Context) {
@@ -77,6 +79,8 @@ class PlaylistUsageRepository(private val app: Context) {
         fid: Long = 0,
         mid: Long = 0,
         source: String,
+        browseId: String? = null,
+        playlistId: String? = null,
         now: Long = System.currentTimeMillis()
     ) {
         val data = _flow.value.toMutableList()
@@ -89,6 +93,8 @@ class PlaylistUsageRepository(private val app: Context) {
                 trackCount = trackCount,
                 fid = fid,
                 mid = mid,
+                browseId = browseId,
+                playlistId = playlistId,
                 lastOpened = now,
                 openCount = old.openCount + 1
             ).also { data[idx] = it }
@@ -103,7 +109,9 @@ class PlaylistUsageRepository(private val app: Context) {
                     lastOpened = now,
                     openCount = 1,
                     fid = fid,
-                    mid = mid
+                    mid = mid,
+                    browseId = browseId,
+                    playlistId = playlistId
                 )
             )
         }
@@ -120,7 +128,9 @@ class PlaylistUsageRepository(private val app: Context) {
         trackCount: Int,
         fid: Long = 0,
         mid: Long = 0,
-        source: String
+        source: String,
+        browseId: String? = null,
+        playlistId: String? = null
     ) {
         val data = _flow.value.toMutableList()
         val idx = data.indexOfFirst { it.id == id && it.source == source }
@@ -131,7 +141,9 @@ class PlaylistUsageRepository(private val app: Context) {
                 picUrl = picUrl,
                 trackCount = trackCount,
                 fid = fid,
-                mid = mid
+                mid = mid,
+                browseId = browseId ?: old.browseId,
+                playlistId = playlistId ?: old.playlistId
             )
             _flow.value = data
             saveAsync(data)

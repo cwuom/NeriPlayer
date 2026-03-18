@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.api.youtube
 
 import java.io.IOException
+import java.net.URLDecoder
 import java.security.MessageDigest
 import java.util.Locale
 import java.util.TimeZone
@@ -29,6 +30,8 @@ private const val YOUTUBE_MUSIC_CLIENT_NAME_NUM_WEB_REMIX = "67"
 private const val YOUTUBE_MUSIC_CLIENT_NAME_WEB_REMIX = "WEB_REMIX"
 private const val YOUTUBE_MUSIC_CONTINUATION_PAGE_LIMIT = 20
 private const val YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS = 2
+private const val YOUTUBE_MUSIC_SAFE_FALLBACK_HL = "en-US"
+private const val YOUTUBE_MUSIC_SAFE_FALLBACK_GL = "US"
 
 data class YouTubeMusicLibraryPlaylist(
     val browseId: String,
@@ -59,6 +62,14 @@ data class YouTubeMusicPlaylistDetail(
     val tracks: List<YouTubeMusicPlaylistTrack>
 )
 
+data class YouTubeMusicPlayableAudio(
+    val url: String,
+    val durationMs: Long,
+    val mimeType: String? = null,
+    val contentLength: Long? = null,
+    val bitrate: Int = 0
+)
+
 internal data class YouTubeMusicBootstrapConfig(
     val apiKey: String,
     val webRemixClientVersion: String,
@@ -68,6 +79,62 @@ internal data class YouTubeMusicBootstrapConfig(
     val webUserAgent: String,
     val fetchedAtMs: Long
 )
+
+internal data class YouTubeMusicRequestLocale(
+    val hl: String,
+    val gl: String
+) {
+    val acceptLanguage: String
+        get() = buildString {
+            append(hl)
+            append(",")
+            append(gl.lowercase(Locale.US))
+            append(";q=0.9,en;q=0.8")
+        }
+}
+
+internal data class YouTubeMusicBrowseResponse(
+    val bootstrap: YouTubeMusicBootstrapConfig,
+    val root: JSONObject,
+    val requestLocale: YouTubeMusicRequestLocale
+)
+
+internal object YouTubeMusicLocaleResolver {
+    private val safeFallback = YouTubeMusicRequestLocale(
+        hl = YOUTUBE_MUSIC_SAFE_FALLBACK_HL,
+        gl = YOUTUBE_MUSIC_SAFE_FALLBACK_GL
+    )
+
+    fun preferred(locale: Locale = Locale.getDefault()): YouTubeMusicRequestLocale {
+        val country = locale.country
+        if (country.isBlank()) {
+            return safeFallback
+        }
+        val language = locale.language.ifBlank { safeFallback.hl.substringBefore('-') }
+        return YouTubeMusicRequestLocale(
+            hl = "$language-$country",
+            gl = country
+        )
+    }
+
+    fun requestCandidates(
+        preferredLocale: YouTubeMusicRequestLocale = preferred()
+    ): List<YouTubeMusicRequestLocale> {
+        return if (preferredLocale == safeFallback) {
+            listOf(safeFallback)
+        } else {
+            listOf(preferredLocale, safeFallback)
+        }
+    }
+
+    fun shouldRetryWithSafeFallback(payload: JSONObject, root: JSONObject): Boolean {
+        if (payload.has("continuation")) {
+            return false
+        }
+        return root.optJSONObject("contents") == null &&
+            root.optJSONObject("continuationContents") == null
+    }
+}
 
 internal object YouTubeMusicParser {
     fun parseBootstrapConfig(
@@ -157,17 +224,7 @@ internal object YouTubeMusicParser {
                 val renderer = contents.optJSONObject(index)
                     ?.optJSONObject("musicResponsiveListItemRenderer")
                     ?: continue
-                val videoId = renderer.optJSONObject("overlay")
-                    ?.optJSONObject("musicItemThumbnailOverlayRenderer")
-                    ?.optJSONObject("content")
-                    ?.optJSONObject("musicPlayButtonRenderer")
-                    ?.optJSONObject("playNavigationEndpoint")
-                    ?.optJSONObject("watchEndpoint")
-                    ?.optString("videoId")
-                    ?.ifBlank {
-                        renderer.optJSONObject("playlistItemData")?.optString("videoId", "")
-                    }
-                    .orEmpty()
+                val videoId = extractTrackVideoId(renderer)
                 val title = extractColumnText(
                     columns = renderer.optJSONArray("flexColumns"),
                     index = 0,
@@ -292,21 +349,121 @@ internal object YouTubeMusicParser {
     }
 
     private fun findPlaylistShelfRenderer(root: JSONObject): JSONObject? {
-        val sections = root.optJSONObject("contents")
-            ?.optJSONObject("twoColumnBrowseResultsRenderer")
-            ?.optJSONObject("secondaryContents")
-            ?.optJSONObject("sectionListRenderer")
-            ?.optJSONArray("contents")
-        if (sections != null) {
-            for (index in 0 until sections.length()) {
-                val section = sections.optJSONObject(index) ?: continue
-                section.optJSONObject("musicPlaylistShelfRenderer")?.let { return it }
-                section.optJSONObject("musicShelfRenderer")?.let { return it }
-            }
-        }
+        scanPlaylistSections(
+            root.optJSONObject("contents")
+                ?.optJSONObject("twoColumnBrowseResultsRenderer")
+                ?.optJSONObject("secondaryContents")
+                ?.optJSONObject("sectionListRenderer")
+                ?.optJSONArray("contents")
+        )?.let { return it }
+
+        // 一些歌单响应不会把曲目 shelf 放进 secondaryContents，需要回退到主内容区扫描。
+        scanPlaylistSections(
+            root.optJSONObject("contents")
+                ?.optJSONObject("twoColumnBrowseResultsRenderer")
+                ?.optJSONArray("tabs")
+                ?.optJSONObject(0)
+                ?.optJSONObject("tabRenderer")
+                ?.optJSONObject("content")
+                ?.optJSONObject("sectionListRenderer")
+                ?.optJSONArray("contents")
+        )?.let { return it }
+
         val continuationContents = root.optJSONObject("continuationContents")
         return continuationContents?.optJSONObject("musicPlaylistShelfContinuation")
             ?: continuationContents?.optJSONObject("musicShelfContinuation")
+    }
+
+    private fun scanPlaylistSections(sections: JSONArray?): JSONObject? {
+        if (sections == null) {
+            return null
+        }
+        for (index in 0 until sections.length()) {
+            val section = sections.optJSONObject(index) ?: continue
+            section.optJSONObject("musicPlaylistShelfRenderer")?.let { return it }
+            section.optJSONObject("musicShelfRenderer")?.let { return it }
+        }
+        return null
+    }
+
+    private fun extractTrackVideoId(renderer: JSONObject): String {
+        return firstNonBlank(
+            renderer.optJSONObject("overlay")
+                ?.optJSONObject("musicItemThumbnailOverlayRenderer")
+                ?.optJSONObject("content")
+                ?.optJSONObject("musicPlayButtonRenderer")
+                ?.optJSONObject("playNavigationEndpoint")
+                ?.optJSONObject("watchEndpoint")
+                ?.optString("videoId"),
+            renderer.optJSONObject("playlistItemData")?.optString("videoId"),
+            extractVideoIdFromTextRuns(
+                renderer.optJSONArray("flexColumns")
+                    ?.optJSONObject(0)
+                    ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                    ?.optJSONObject("text")
+                    ?.optJSONArray("runs")
+            ),
+            extractVideoIdFromMenu(renderer.optJSONObject("menu"))
+        )
+    }
+
+    private fun extractVideoIdFromTextRuns(runs: JSONArray?): String {
+        if (runs == null) {
+            return ""
+        }
+        for (index in 0 until runs.length()) {
+            val videoId = runs.optJSONObject(index)
+                ?.optJSONObject("navigationEndpoint")
+                ?.optJSONObject("watchEndpoint")
+                ?.optString("videoId")
+                .orEmpty()
+            if (videoId.isNotBlank()) {
+                return videoId
+            }
+        }
+        return ""
+    }
+
+    private fun extractVideoIdFromMenu(menu: JSONObject?): String {
+        val items = menu?.optJSONObject("menuRenderer")?.optJSONArray("items") ?: return ""
+        for (index in 0 until items.length()) {
+            val item = items.optJSONObject(index) ?: continue
+            val navigationVideoId = item.optJSONObject("menuNavigationItemRenderer")
+                ?.optJSONObject("navigationEndpoint")
+                ?.optJSONObject("watchEndpoint")
+                ?.optString("videoId")
+                .orEmpty()
+            if (navigationVideoId.isNotBlank()) {
+                return navigationVideoId
+            }
+
+            val queueVideoId = item.optJSONObject("menuServiceItemRenderer")
+                ?.optJSONObject("serviceEndpoint")
+                ?.optJSONObject("queueAddEndpoint")
+                ?.optJSONObject("queueTarget")
+                ?.optString("videoId")
+                .orEmpty()
+            if (queueVideoId.isNotBlank()) {
+                return queueVideoId
+            }
+
+            val onEmptyQueueVideoId = item.optJSONObject("menuServiceItemRenderer")
+                ?.optJSONObject("serviceEndpoint")
+                ?.optJSONObject("queueAddEndpoint")
+                ?.optJSONObject("queueTarget")
+                ?.optJSONObject("onEmptyQueue")
+                ?.optJSONObject("watchEndpoint")
+                ?.optString("videoId")
+                .orEmpty()
+            if (onEmptyQueueVideoId.isNotBlank()) {
+                return onEmptyQueueVideoId
+            }
+        }
+        return ""
+    }
+
+    private fun firstNonBlank(vararg values: String?): String {
+        return values.firstOrNull { !it.isNullOrBlank() }.orEmpty()
     }
 
     private fun extractContinuationToken(renderer: JSONObject?): String? {
@@ -383,6 +540,103 @@ internal object YouTubeMusicParser {
     }
 }
 
+internal object YouTubeMusicPlayerParser {
+    fun requirePlayable(root: JSONObject) {
+        val playability = root.optJSONObject("playabilityStatus")
+        val status = playability?.optString("status").orEmpty().trim()
+        if (status.isBlank() || status == "OK") {
+            return
+        }
+        val reason = buildList {
+            playability?.optString("reason")?.trim()?.takeIf { it.isNotBlank() }?.let(::add)
+            val messages = playability?.optJSONArray("messages")
+            if (messages != null) {
+                for (index in 0 until messages.length()) {
+                    messages.optString(index)?.trim()?.takeIf { it.isNotBlank() }?.let(::add)
+                }
+            }
+        }.distinct().joinToString(" | ")
+        val suffix = reason.takeIf { it.isNotBlank() }?.let { ": $it" }.orEmpty()
+        throw IOException("YouTube Music player not playable ($status)$suffix")
+    }
+
+    fun parsePlayableAudio(root: JSONObject): YouTubeMusicPlayableAudio? {
+        val adaptiveFormats = root.optJSONObject("streamingData")
+            ?.optJSONArray("adaptiveFormats")
+            ?: return null
+        val fallbackDurationMs = root.optJSONObject("videoDetails")
+            ?.optString("lengthSeconds")
+            ?.toLongOrNull()
+            ?.times(1000L)
+            ?: 0L
+
+        return (0 until adaptiveFormats.length())
+            .asSequence()
+            .mapNotNull { adaptiveFormats.optJSONObject(it) }
+            .filter { format ->
+                format.optString("mimeType")
+                    .substringBefore(';')
+                    .trim()
+                    .startsWith("audio/")
+            }
+            .mapNotNull { format ->
+                val resolvedUrl = extractPlayableUrl(format) ?: return@mapNotNull null
+                YouTubeMusicPlayableAudio(
+                    url = resolvedUrl,
+                    durationMs = format.optString("approxDurationMs").toLongOrNull()
+                        ?: fallbackDurationMs,
+                    mimeType = format.optString("mimeType").ifBlank { null }?.substringBefore(';'),
+                    contentLength = format.optString("contentLength").toLongOrNull(),
+                    bitrate = format.optInt("bitrate", 0)
+                )
+            }
+            .sortedWith(
+                compareByDescending<YouTubeMusicPlayableAudio> { it.contentLength != null }
+                    .thenByDescending { it.bitrate }
+                    .thenByDescending { it.contentLength ?: -1L }
+                    .thenByDescending { it.durationMs }
+            )
+            .firstOrNull()
+    }
+
+    private fun extractPlayableUrl(format: JSONObject): String? {
+        val directUrl = format.optString("url").trim()
+        if (directUrl.isNotBlank()) {
+            return directUrl
+        }
+
+        val signatureCipher = format.optString("signatureCipher")
+            .ifBlank { format.optString("cipher") }
+            .trim()
+        if (signatureCipher.isBlank()) {
+            return null
+        }
+
+        val fields = signatureCipher
+            .split('&')
+            .mapNotNull { segment ->
+                val delimiterIndex = segment.indexOf('=')
+                if (delimiterIndex <= 0) {
+                    null
+                } else {
+                    val key = segment.substring(0, delimiterIndex)
+                    val value = URLDecoder.decode(
+                        segment.substring(delimiterIndex + 1),
+                        Charsets.UTF_8.name()
+                    )
+                    key to value
+                }
+            }
+            .toMap()
+
+        // 没有签名参数时可以直接复用 url；否则交给 NewPipe 兜底解签。
+        if (!fields["s"].isNullOrBlank()) {
+            return null
+        }
+        return fields["url"]?.takeIf { it.isNotBlank() }
+    }
+}
+
 class YouTubeMusicClient(
     private val authRepo: YouTubeAuthRepository,
     private val okHttpClient: OkHttpClient
@@ -392,6 +646,7 @@ class YouTubeMusicClient(
 
     suspend fun getLibraryPlaylists(): List<YouTubeMusicLibraryPlaylist> = withContext(Dispatchers.IO) {
         var bootstrap = bootstrap()
+        var requestLocale = YouTubeMusicLocaleResolver.preferred()
         val items = mutableListOf<YouTubeMusicLibraryPlaylist>()
         var continuation: String? = null
         var page = 0
@@ -403,9 +658,10 @@ class YouTubeMusicClient(
                 JSONObject().put("continuation", continuation)
             }
             val root = try {
-                val response = postMusicBrowseWithRetry(bootstrap, payload)
-                bootstrap = response.first
-                response.second
+                val response = postMusicBrowseWithRetry(bootstrap, payload, requestLocale)
+                bootstrap = response.bootstrap
+                requestLocale = response.requestLocale
+                response.root
             } catch (error: IOException) {
                 if (page == 0) {
                     throw error
@@ -426,11 +682,18 @@ class YouTubeMusicClient(
                 return@forEach
             }
             val resolvedTrackCount = runCatching {
-                val response = resolvePlaylistTrackCount(bootstrap, playlists[index].browseId)
-                bootstrap = response.first
-                response.second
+                val response = resolvePlaylistTrackCount(
+                    bootstrap = bootstrap,
+                    browseId = playlists[index].browseId,
+                    requestLocale = requestLocale
+                )
+                bootstrap = response.bootstrap
+                requestLocale = response.requestLocale
+                response.root
             }.getOrNull() ?: return@forEach
-            playlists[index] = playlists[index].copy(trackCount = resolvedTrackCount)
+            playlists[index] = playlists[index].copy(
+                trackCount = YouTubeMusicParser.parsePlaylistTrackCount(resolvedTrackCount)
+            )
         }
         playlists
     }
@@ -442,6 +705,7 @@ class YouTubeMusicClient(
         fallbackCoverUrl: String = ""
     ): YouTubeMusicPlaylistDetail = withContext(Dispatchers.IO) {
         var bootstrap = bootstrap()
+        var requestLocale = YouTubeMusicLocaleResolver.preferred()
         var detail: YouTubeMusicPlaylistDetail? = null
         val tracks = mutableListOf<YouTubeMusicPlaylistTrack>()
         var continuation: String? = null
@@ -454,9 +718,10 @@ class YouTubeMusicClient(
                 JSONObject().put("continuation", continuation)
             }
             val root = try {
-                val response = postMusicBrowseWithRetry(bootstrap, payload)
-                bootstrap = response.first
-                response.second
+                val response = postMusicBrowseWithRetry(bootstrap, payload, requestLocale)
+                bootstrap = response.bootstrap
+                requestLocale = response.requestLocale
+                response.root
             } catch (error: IOException) {
                 if (page == 0) {
                     throw error
@@ -496,6 +761,37 @@ class YouTubeMusicClient(
         )
     }
 
+    suspend fun getPlayableAudio(videoId: String): YouTubeMusicPlayableAudio = withContext(Dispatchers.IO) {
+        var bootstrap = bootstrap()
+        var lastError: IOException? = null
+
+        for (requestLocale in YouTubeMusicLocaleResolver.requestCandidates()) {
+            var attempt = 0
+            while (attempt < YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS) {
+                try {
+                    val root = postMusicPlayer(
+                        bootstrap = bootstrap,
+                        videoId = videoId,
+                        requestLocale = requestLocale
+                    )
+                    YouTubeMusicPlayerParser.requirePlayable(root)
+                    return@withContext YouTubeMusicPlayerParser.parsePlayableAudio(root)
+                        ?: throw IOException("YouTube Music player missing playable audio formats")
+                } catch (error: IOException) {
+                    lastError = error
+                    attempt++
+                    if (attempt >= YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS) {
+                        break
+                    }
+                    bootstrapCache = null
+                    bootstrap = bootstrap(forceRefresh = true)
+                }
+            }
+        }
+
+        throw lastError ?: IOException("YouTube Music player request failed")
+    }
+
     fun clearBootstrapCache() {
         bootstrapCache = null
     }
@@ -518,12 +814,13 @@ class YouTubeMusicClient(
         }
 
         val userAgent = auth.resolveRequestUserAgent().ifBlank { YOUTUBE_MUSIC_DEFAULT_WEB_UA }
+        val requestLocale = YouTubeMusicLocaleResolver.preferred()
         val homeHtml = executeText(
             Request.Builder()
                 .url("$YOUTUBE_MUSIC_MUSIC_ORIGIN/")
                 .header("Cookie", cookieHeader)
                 .header("User-Agent", userAgent)
-                .header("Accept-Language", languageHeader())
+                .header("Accept-Language", requestLocale.acceptLanguage)
                 .build()
         )
         val parsedConfig = YouTubeMusicParser.parseBootstrapConfig(
@@ -538,9 +835,10 @@ class YouTubeMusicClient(
 
     private fun postMusicBrowse(
         bootstrap: YouTubeMusicBootstrapConfig,
-        payload: JSONObject
+        payload: JSONObject,
+        requestLocale: YouTubeMusicRequestLocale
     ): JSONObject {
-        val body = JSONObject().put("context", buildMusicContext(bootstrap))
+        val body = JSONObject().put("context", buildMusicContext(bootstrap, requestLocale))
         val keys = payload.keys()
         while (keys.hasNext()) {
             val key = keys.next()
@@ -552,7 +850,38 @@ class YouTubeMusicClient(
                 .url("$YOUTUBE_MUSIC_MUSIC_ORIGIN/youtubei/v1/browse?prettyPrint=false&key=${bootstrap.apiKey}")
                 .header("Cookie", bootstrap.cookieHeader)
                 .header("User-Agent", bootstrap.webUserAgent)
-                .header("Accept-Language", languageHeader())
+                .header("Accept-Language", requestLocale.acceptLanguage)
+                .header("Content-Type", "application/json")
+                .header("Origin", YOUTUBE_MUSIC_MUSIC_ORIGIN)
+                .header("X-Origin", YOUTUBE_MUSIC_MUSIC_ORIGIN)
+                .header("Referer", "$YOUTUBE_MUSIC_MUSIC_ORIGIN/")
+                .header("X-Goog-AuthUser", bootstrap.sessionIndex)
+                .header("X-Goog-Visitor-Id", bootstrap.visitorData)
+                .header("X-YouTube-Client-Name", YOUTUBE_MUSIC_CLIENT_NAME_NUM_WEB_REMIX)
+                .header("X-YouTube-Client-Version", bootstrap.webRemixClientVersion)
+                .applySidAuthorization(bootstrap.cookieHeader, YOUTUBE_MUSIC_MUSIC_ORIGIN)
+                .post(body.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+                .build()
+        )
+    }
+
+    private fun postMusicPlayer(
+        bootstrap: YouTubeMusicBootstrapConfig,
+        videoId: String,
+        requestLocale: YouTubeMusicRequestLocale
+    ): JSONObject {
+        val body = JSONObject()
+            .put("context", buildMusicContext(bootstrap, requestLocale))
+            .put("videoId", videoId)
+            .put("contentCheckOk", true)
+            .put("racyCheckOk", true)
+
+        return executeJson(
+            Request.Builder()
+                .url("$YOUTUBE_MUSIC_MUSIC_ORIGIN/youtubei/v1/player?prettyPrint=false&key=${bootstrap.apiKey}")
+                .header("Cookie", bootstrap.cookieHeader)
+                .header("User-Agent", bootstrap.webUserAgent)
+                .header("Accept-Language", requestLocale.acceptLanguage)
                 .header("Content-Type", "application/json")
                 .header("Origin", YOUTUBE_MUSIC_MUSIC_ORIGIN)
                 .header("X-Origin", YOUTUBE_MUSIC_MUSIC_ORIGIN)
@@ -569,45 +898,77 @@ class YouTubeMusicClient(
 
     private fun resolvePlaylistTrackCount(
         bootstrap: YouTubeMusicBootstrapConfig,
-        browseId: String
-    ): Pair<YouTubeMusicBootstrapConfig, Int?> {
+        browseId: String,
+        requestLocale: YouTubeMusicRequestLocale
+    ): YouTubeMusicBrowseResponse {
         if (browseId.isBlank()) {
-            return bootstrap to null
+            return YouTubeMusicBrowseResponse(
+                bootstrap = bootstrap,
+                root = JSONObject(),
+                requestLocale = requestLocale
+            )
         }
-        val response = postMusicBrowseWithRetry(bootstrap, JSONObject().put("browseId", browseId))
-        return response.first to YouTubeMusicParser.parsePlaylistTrackCount(response.second)
+        return postMusicBrowseWithRetry(
+            bootstrap = bootstrap,
+            payload = JSONObject().put("browseId", browseId),
+            preferredLocale = requestLocale
+        )
     }
 
     private fun postMusicBrowseWithRetry(
         bootstrap: YouTubeMusicBootstrapConfig,
-        payload: JSONObject
-    ): Pair<YouTubeMusicBootstrapConfig, JSONObject> {
+        payload: JSONObject,
+        preferredLocale: YouTubeMusicRequestLocale
+    ): YouTubeMusicBrowseResponse {
         var activeBootstrap = bootstrap
         var lastError: IOException? = null
-        repeat(YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS) { attempt ->
-            try {
-                return activeBootstrap to postMusicBrowse(activeBootstrap, payload)
-            } catch (error: IOException) {
-                lastError = error
-                if (attempt == YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS - 1) {
-                    throw error
+        for (requestLocale in YouTubeMusicLocaleResolver.requestCandidates(preferredLocale)) {
+            var attempt = 0
+            while (attempt < YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS) {
+                try {
+                    val root = postMusicBrowse(
+                        bootstrap = activeBootstrap,
+                        payload = payload,
+                        requestLocale = requestLocale
+                    )
+                    // 某些地区/语言组合会返回只有 microformat 的空壳 browse，需要切到通用 locale 重试。
+                    if (YouTubeMusicLocaleResolver.shouldRetryWithSafeFallback(payload, root)) {
+                        lastError = IOException(
+                            "YouTube Music browse response missing contents for ${requestLocale.hl}/${requestLocale.gl}"
+                        )
+                        break
+                    }
+                    return YouTubeMusicBrowseResponse(
+                        bootstrap = activeBootstrap,
+                        root = root,
+                        requestLocale = requestLocale
+                    )
+                } catch (error: IOException) {
+                    lastError = error
+                    attempt++
+                    if (attempt >= YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS) {
+                        break
+                    }
+                    bootstrapCache = null
+                    activeBootstrap = bootstrap(forceRefresh = true)
                 }
-                bootstrapCache = null
-                activeBootstrap = bootstrap(forceRefresh = true)
             }
         }
         throw lastError ?: IOException("YouTube Music request failed")
     }
 
-    private fun buildMusicContext(bootstrap: YouTubeMusicBootstrapConfig): JSONObject {
+    private fun buildMusicContext(
+        bootstrap: YouTubeMusicBootstrapConfig,
+        requestLocale: YouTubeMusicRequestLocale
+    ): JSONObject {
         return JSONObject()
             .put(
                 "client",
                 JSONObject()
                     .put("clientName", YOUTUBE_MUSIC_CLIENT_NAME_WEB_REMIX)
                     .put("clientVersion", bootstrap.webRemixClientVersion)
-                    .put("hl", localeHl())
-                    .put("gl", localeGl())
+                    .put("hl", requestLocale.hl)
+                    .put("gl", requestLocale.gl)
                     .put("visitorData", bootstrap.visitorData)
                     .put("utcOffsetMinutes", utcOffsetMinutes())
                     .put("userAgent", bootstrap.webUserAgent)
@@ -650,24 +1011,6 @@ class YouTubeMusicClient(
             }
             return body
         }
-    }
-
-    private fun languageHeader(): String = buildString {
-        append(localeHl())
-        append(",")
-        append(localeGl().lowercase(Locale.US))
-        append(";q=0.9,en;q=0.8")
-    }
-
-    private fun localeHl(): String {
-        val locale = Locale.getDefault()
-        val language = locale.language.ifBlank { "en" }
-        val country = locale.country
-        return if (country.isBlank()) language else "$language-$country"
-    }
-
-    private fun localeGl(): String {
-        return Locale.getDefault().country.takeIf { it.isNotBlank() } ?: "US"
     }
 
     private fun utcOffsetMinutes(): Int {

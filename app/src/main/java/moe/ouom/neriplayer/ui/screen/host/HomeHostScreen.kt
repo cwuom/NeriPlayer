@@ -49,14 +49,17 @@ import moe.ouom.neriplayer.ui.screen.playlist.BiliPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteaseAlbumDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
+import moe.ouom.neriplayer.ui.screen.playlist.YouTubeMusicPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.tab.HomeScreen
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.util.restoreBiliPlaylist
 import moe.ouom.neriplayer.ui.util.restoreNeteaseAlbum
 import moe.ouom.neriplayer.ui.util.restoreNeteasePlaylist
+import moe.ouom.neriplayer.ui.util.restoreYouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.util.toSaveMap
 
 // 用密封类承载四种目标
@@ -65,6 +68,7 @@ private sealed class HomeSelectedItem {
     data class NeteaseAlbumList(val album: NeteaseAlbum) : HomeSelectedItem()
     data class Local(val playlistId: Long) : HomeSelectedItem()
     data class Bili(val playlist: BiliPlaylist) : HomeSelectedItem()
+    data class YouTubeMusic(val playlist: YouTubeMusicPlaylist) : HomeSelectedItem()
 }
 
 @Composable
@@ -159,6 +163,13 @@ fun HomeHostScreen(
                             }
                         )
                     }
+                    is HomeSelectedItem.YouTubeMusic -> {
+                        YouTubeMusicPlaylistDetailScreen(
+                            playlist = current.playlist,
+                            onBack = { selected = null },
+                            onSongClick = onSongClick
+                        )
+                    }
                 }
             }
         }
@@ -185,6 +196,10 @@ private val homeSelectedItemSaver = mapSaver<HomeSelectedItem?>(
                 "type" to "bili",
                 "playlist" to item.playlist.toSaveMap()
             )
+            is HomeSelectedItem.YouTubeMusic -> hashMapOf(
+                "type" to "ytmusic",
+                "playlist" to item.playlist.toSaveMap()
+            )
         }
     },
     restore = { saved ->
@@ -194,6 +209,7 @@ private val homeSelectedItemSaver = mapSaver<HomeSelectedItem?>(
             "neteaseAlbum" -> restoreNeteaseAlbum(saved["album"] as? Map<*, *>)?.let { HomeSelectedItem.NeteaseAlbumList(it) }
             "netease" -> restoreNeteasePlaylist(saved["playlist"] as? Map<*, *>)?.let { HomeSelectedItem.Netease(it) }
             "bili" -> restoreBiliPlaylist(saved["playlist"] as? Map<*, *>)?.let { HomeSelectedItem.Bili(it) }
+            "ytmusic" -> restoreYouTubeMusicPlaylist(saved["playlist"] as? Map<*, *>)?.let { HomeSelectedItem.YouTubeMusic(it) }
             else -> null
         }
     }
@@ -243,6 +259,32 @@ private fun openRecent(
                 mid = entry.mid ?: 0L
             )
             onSelected(HomeSelectedItem.Bili(bili))
+        }
+        "youtubemusic" -> {
+            val resolvedBrowseId = entry.browseId
+                ?.takeIf { it.isNotBlank() }
+                ?: entry.playlistId
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { if (it.startsWith("VL")) it else "VL$it" }
+                ?: return
+            onSelected(
+                HomeSelectedItem.YouTubeMusic(
+                    YouTubeMusicPlaylist(
+                        browseId = resolvedBrowseId,
+                        playlistId = entry.playlistId.orEmpty().ifBlank {
+                            if (resolvedBrowseId.startsWith("VL")) {
+                                resolvedBrowseId.removePrefix("VL")
+                            } else {
+                                resolvedBrowseId
+                            }
+                        },
+                        title = entry.name,
+                        subtitle = "",
+                        coverUrl = entry.picUrl ?: "",
+                        trackCount = entry.trackCount
+                    )
+                )
+            )
         }
         else -> {}
     }

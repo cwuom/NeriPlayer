@@ -23,6 +23,10 @@ package moe.ouom.neriplayer.ui.screen.tab
  * Created: 2025/8/8
  */
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
@@ -311,6 +315,16 @@ private fun YouTubeMusicPlaylistList(
     onRetry: () -> Unit
 ) {
     val miniPlayerHeight = LocalMiniPlayerHeight.current
+    val context = LocalContext.current
+    val clipboardManager = remember(context) {
+        context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    }
+    var menuPlaylist by remember { mutableStateOf<YouTubeMusicPlaylist?>(null) }
+
+    fun copyToClipboard(label: String, text: String) {
+        clipboardManager.setPrimaryClip(ClipData.newPlainText(label, text))
+        Toast.makeText(context, context.getString(R.string.toast_copied), Toast.LENGTH_SHORT).show()
+    }
 
     LazyColumn(
         state = listState,
@@ -385,7 +399,10 @@ private fun YouTubeMusicPlaylistList(
                     .padding(horizontal = 8.dp, vertical = 4.dp)
                     .animateItem()
                     .clip(cardShape)
-                    .clickable { onClick(playlist) }
+                    .combinedClickable(
+                        onClick = { onClick(playlist) },
+                        onLongClick = { menuPlaylist = playlist }
+                    )
             ) {
                 ListItem(
                     headlineContent = { Text(playlist.title) },
@@ -434,6 +451,35 @@ private fun YouTubeMusicPlaylistList(
                         }
                     }
                 )
+
+                DropdownMenu(
+                    expanded = menuPlaylist?.browseId == playlist.browseId,
+                    onDismissRequest = { menuPlaylist = null }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.library_youtube_music_open_playlist)) },
+                        onClick = {
+                            menuPlaylist = null
+                            onClick(playlist)
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.library_youtube_music_copy_browse_id)) },
+                        onClick = {
+                            copyToClipboard("ytmusic_browse_id", playlist.browseId)
+                            menuPlaylist = null
+                        }
+                    )
+                    if (playlist.playlistId.isNotBlank()) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.library_youtube_music_copy_playlist_id)) },
+                            onClick = {
+                                copyToClipboard("ytmusic_playlist_id", playlist.playlistId)
+                                menuPlaylist = null
+                            }
+                        )
+                    }
+                }
             }
         }
     }

@@ -27,24 +27,28 @@ package moe.ouom.neriplayer.core.player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.HttpDataSource
+import android.net.Uri
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.data.BiliCookieRepository
-import android.net.Uri
+import moe.ouom.neriplayer.data.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.YouTubeAuthRepository
+import moe.ouom.neriplayer.data.buildYouTubeStreamRequestHeaders
 import moe.ouom.neriplayer.util.NPLogger
 
 /**
  * 自定义的 HttpDataSource.Factory：
- * - 按 host/路径动态注入请求头（B 站拉流需要 Referer/UA/Cookie）
- * - 监听 Cookie 仓库的变化，实时刷新注入的 Cookie 字符串
+ * - 按 host/路径动态注入请求头（B 站 / YouTube 拉流）
+ * - 监听鉴权仓库变化，实时刷新注入的 Cookie 字符串
  */
 @UnstableApi
 class ConditionalHttpDataSourceFactory(
     private val baseFactory: HttpDataSource.Factory,
-    cookieRepo: BiliCookieRepository // 接收 CookieRepository 作为依赖
+    cookieRepo: BiliCookieRepository,
+    youtubeAuthRepo: YouTubeAuthRepository
 ) : HttpDataSource.Factory {
 
     companion object {
@@ -52,19 +56,23 @@ class ConditionalHttpDataSourceFactory(
                 "AppleWebKit/537.36 (KHTML, like Gecko) " +
                 "Chrome/124.0.0.0 Safari/537.36"
         private const val YOUTUBE_WEB_REFERER = "https://www.youtube.com/"
-        private const val YOUTUBE_WEB_USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
-                "AppleWebKit/605.1.15 (KHTML, like Gecko) " +
-                "Version/15.5 Safari/605.1.15,gzip(gfe)"
     }
 
     @Volatile
     private var latestCookieHeader: String = ""
+    @Volatile
+    private var latestYouTubeAuth: YouTubeAuthBundle = YouTubeAuthBundle()
     private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
 
     init {
         scope.launch {
             cookieRepo.cookieFlow.collect { cookies ->
                 latestCookieHeader = cookies.entries.joinToString("; ") { "${it.key}=${it.value}" }
+            }
+        }
+        scope.launch {
+            youtubeAuthRepo.authFlow.collect { auth ->
+                latestYouTubeAuth = auth.normalized()
             }
         }
     }
@@ -134,10 +142,12 @@ class ConditionalHttpDataSourceFactory(
     }
 
     private fun buildYouTubeHeaders(original: Map<String, String>): Map<String, String> {
-        val newHeaders = LinkedHashMap<String, String>(original)
-        newHeaders.putIfAbsent("Origin", "https://www.youtube.com")
-        newHeaders.putIfAbsent("Referer", YOUTUBE_WEB_REFERER)
-        newHeaders.putIfAbsent("User-Agent", YOUTUBE_WEB_USER_AGENT)
-        return newHeaders
+        val refererOrigin = original["Referer"].orEmpty()
+            .removeSuffix("/")
+            .ifBlank { latestYouTubeAuth.origin.ifBlank { YOUTUBE_WEB_REFERER.removeSuffix("/") } }
+        return latestYouTubeAuth.buildYouTubeStreamRequestHeaders(
+            original = original,
+            refererOrigin = refererOrigin
+        )
     }
 }
