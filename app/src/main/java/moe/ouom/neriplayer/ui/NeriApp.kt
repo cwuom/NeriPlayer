@@ -129,8 +129,11 @@ import moe.ouom.neriplayer.core.player.AudioReactive
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.ThemeDefaults
 import moe.ouom.neriplayer.data.ThemePreferenceSnapshot
+import moe.ouom.neriplayer.data.displayArtist
 import moe.ouom.neriplayer.data.displayCoverUrl
+import moe.ouom.neriplayer.data.displayName
 import moe.ouom.neriplayer.data.sameIdentityAs
+import moe.ouom.neriplayer.data.stableKey
 import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.ui.component.NeriBottomBar
 import moe.ouom.neriplayer.ui.component.NeriMiniPlayer
@@ -502,10 +505,16 @@ fun NeriApp(
 
 
         // 跳过初始值，订阅之后的变更，每次切曲写入最近播放
+        var lastRecordedSongKey: String? = null
         PlayerManager.currentSongFlow
             .drop(1)
             .filterNotNull()
             .collect { song ->
+                val songKey = song.stableKey()
+                if (songKey == lastRecordedSongKey) {
+                    return@collect
+                }
+                lastRecordedSongKey = songKey
                 AppContainer.playHistoryRepo.record(song)
             }
     }
@@ -594,6 +603,7 @@ fun NeriApp(
 
     val scope = rememberCoroutineScope()
     val preferredQuality by repo.audioQualityFlow.collectAsState(initial = "exhigh")
+    val youtubePreferredQuality by repo.youtubeAudioQualityFlow.collectAsState(initial = "very_high")
     val biliPreferredQuality by repo.biliAudioQualityFlow.collectAsState(initial = "high")
     val currentThemeBackgroundArgb = MaterialTheme.colorScheme.background.toArgb()
     val themeRevealActive =
@@ -1196,6 +1206,10 @@ fun NeriApp(
                                         onThemeToggleRequest = ::requestThemeToggle,
                                         preferredQuality = preferredQuality,
                                         onQualityChange = { scope.launch { repo.setAudioQuality(it) } },
+                                        youtubePreferredQuality = youtubePreferredQuality,
+                                        onYouTubeQualityChange = {
+                                            scope.launch { repo.setYouTubeAudioQuality(it) }
+                                        },
                                         biliPreferredQuality = biliPreferredQuality,
                                         onBiliQualityChange = { scope.launch { repo.setBiliAudioQuality(it) } },
                                         seedColorHex = themeSeedColor,
@@ -1502,8 +1516,9 @@ fun NeriApp(
                                 )
                             ) {
                                 NeriMiniPlayer(
-                                    title = currentSong?.name ?: context.getString(R.string.nowplaying_no_playback),
-                                    artist = currentSong?.artist ?: "",
+                                    title = currentSong?.displayName()
+                                        ?: context.getString(R.string.nowplaying_no_playback),
+                                    artist = currentSong?.displayArtist() ?: "",
                                     coverUrl = currentSong.resolveUiCoverSource(context),
                                     isPlaying = isPlaying,
                                     onPlayPause = { PlayerManager.togglePlayPause() },

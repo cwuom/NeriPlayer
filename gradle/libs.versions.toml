@@ -1,15 +1,9 @@
 [versions]
 accompanistNavigationAnimation = "0.36.0"
 agp = "8.13.0"
-blurview = "version-3.1.0"
 coilCompose = "2.7.0"
-coilTransformations = "2.4.0"
 datastorePreferences = "1.1.7"
 dec = "0.1.2"
-exoplayerCore = "2.19.1"
-exoplayerProgressive = "2.19.1"
-exoplayerUi = "2.19.1"
-extensionFfmpeg = "2.20.0"
 gson = "2.13.1"
 hazeJetpackCompose = "0.7.0"
 kotlin = "2.2.0"
@@ -22,18 +16,16 @@ appcompat = "1.7.1"
 kotlinxSerializationJson = "1.9.0"
 kotlinxSerializationProtobuf = "1.9.0"
 material = "1.12.0"
-activity = "1.10.1"
 constraintlayout = "2.2.1"
 
 compose-bom = "2025.08.00"
 activity-compose = "1.10.1"
-materialColorUtilities = "1.3.0"
-materialColorUtilitiesAndroid = "3.0.1"
 materialKolor = "3.0.1"
 media = "1.7.0"
 media3Datasource = "1.8.0"
 media3DatasourceOkhttp = "1.8.0"
 media3Exoplayer = "1.8.0"
+media3ExoplayerHls = "1.8.0"
 mockito = "5.16.1"
 navigation = "2.9.3"
 lifecycle = "2.9.2"
@@ -57,12 +49,12 @@ androidx-media = { module = "androidx.media:media", version.ref = "media" }
 androidx-media3-datasource-okhttp = { module = "androidx.media3:media3-datasource-okhttp", version.ref = "media3DatasourceOkhttp" }
 androidx-media3-datasource = { module = "androidx.media3:media3-datasource", version.ref = "media3Datasource" }
 androidx-media3-exoplayer = { module = "androidx.media3:media3-exoplayer", version.ref = "media3Exoplayer" }
+androidx-media3-exoplayer-hls = { module = "androidx.media3:media3-exoplayer-hls", version.ref = "media3ExoplayerHls" }
 androidx-palette-ktx = { module = "androidx.palette:palette-ktx", version.ref = "paletteKtx" }
 androidx-security-crypto = { module = "androidx.security:security-crypto", version.ref = "securityCrypto" }
 taglib = { module = "io.github.kyant0:taglib", version.ref = "taglib" }
 androidx-ui-graphics = { module = "androidx.compose.ui:ui-graphics", version.ref = "uiGraphics" }
 androidx-work-runtime-ktx = { module = "androidx.work:work-runtime-ktx", version.ref = "workRuntimeKtx" }
-blurview = { module = "com.github.Dimezis:BlurView", version.ref = "blurview" }
 coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coilCompose" }
 dec = { module = "org.brotli:dec", version.ref = "dec" }
 gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
@@ -88,7 +80,6 @@ androidx-activity-compose = { module = "androidx.activity:activity-compose", ver
 androidx-lifecycle-runtime-ktx = { module = "androidx.lifecycle:lifecycle-runtime-ktx", version.ref = "lifecycle" }
 androidx-lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }
 androidx-navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigation" }
-material-color-utilities-android = { module = "com.materialkolor:material-color-utilities-android", version.ref = "materialColorUtilitiesAndroid" }
 material-kolor = { module = "com.materialkolor:material-kolor", version.ref = "materialKolor" }
 mockito-core = { module = "org.mockito:mockito-core", version.ref = "mockito" }
 newpipe-extractor = { module = "com.github.TeamNewPipe:NewPipeExtractor", version.ref = "newpipeExtractor" }

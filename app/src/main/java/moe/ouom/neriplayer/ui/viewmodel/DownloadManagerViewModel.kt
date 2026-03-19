@@ -27,6 +27,6 @@ class DownloadManagerViewModel(application: Application) : AndroidViewModel(appl
     }
 
     fun startBatchDownload(context: Context, songs: List<SongItem>) {
-        GlobalDownloadManager.startBatchDownload(context, songs) { }
+        GlobalDownloadManager.startBatchDownload(context, songs)
     }
 }

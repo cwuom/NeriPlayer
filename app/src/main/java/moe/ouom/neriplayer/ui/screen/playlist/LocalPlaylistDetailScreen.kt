@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.ui.screen.playlist
 
 import android.Manifest
 import android.content.ClipData
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.BackHandler
@@ -775,11 +776,10 @@ fun LocalPlaylistDetailScreen(
                                 
                                 if (isLocalFilesPlaylist) {
                                     HapticIconButton(onClick = {
-                                        val hasPermission = Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
-                                            ContextCompat.checkSelfPermission(
-                                                context,
-                                                requiredAudioPermission
-                                            ) == PackageManager.PERMISSION_GRANTED
+                                        val hasPermission = ContextCompat.checkSelfPermission(
+                                            context,
+                                            requiredAudioPermission
+                                        ) == PackageManager.PERMISSION_GRANTED
                                         if (hasPermission) {
                                             startDeviceAudioScan()
                                         } else {
@@ -1632,21 +1632,24 @@ private data class LocalScanPreviewItem(
     val subtitle: String
 )
 
-private fun SongItem.toLocalScanPreviewItem(): LocalScanPreviewItem {
+private fun SongItem.toLocalScanPreviewItem(context: Context): LocalScanPreviewItem {
     val resolvedPath = localFilePath
         ?.takeIf { it.isNotBlank() }
         ?: mediaUri?.takeIf { it.startsWith("/") }
         ?: mediaUri.orEmpty()
+    val displayName = displayName()
+    val displayArtist = displayArtist()
+    val displayAlbum = displayAlbum(context)
     val resolvedFileName = localFilePath
         ?.takeIf { it.isNotBlank() }
         ?.let(::File)
         ?.name
         ?: localFileName?.takeIf { it.isNotBlank() }
-        ?: name
+        ?: displayName
     val subtitle = buildList {
-        name.takeIf { it.isNotBlank() && it != resolvedFileName }?.let(::add)
-        artist.takeIf { it.isNotBlank() }?.let(::add)
-        album.takeIf { it.isNotBlank() }?.let(::add)
+        displayName.takeIf { it.isNotBlank() && it != resolvedFileName }?.let(::add)
+        displayArtist.takeIf { it.isNotBlank() }?.let(::add)
+        displayAlbum.takeIf { it.isNotBlank() }?.let(::add)
         durationMs.takeIf { it > 0L }?.let { add(formatDuration(it)) }
     }.joinToString(" · ")
     return LocalScanPreviewItem(
@@ -1677,7 +1680,7 @@ private fun LocalScanPreviewScreen(
     isBusy: Boolean = false
 ) {
     val context = LocalContext.current
-    val previewItems = remember(songs) { songs.map { it.toLocalScanPreviewItem() } }
+    val previewItems = remember(songs, context) { songs.map { it.toLocalScanPreviewItem(context) } }
     val listState = rememberLazyListState()
     val displayedItems = remember(previewItems, query) {
         val keyword = query.trim()

@@ -160,7 +160,9 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.FavoritesPlaylist
 import moe.ouom.neriplayer.data.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.LocalMediaSupport
+import moe.ouom.neriplayer.data.displayArtist
 import moe.ouom.neriplayer.data.displayCoverUrl
+import moe.ouom.neriplayer.data.displayName
 import moe.ouom.neriplayer.data.isLocalSong
 import moe.ouom.neriplayer.data.sameIdentityAs
 import moe.ouom.neriplayer.data.stableKey
@@ -1110,9 +1112,9 @@ fun NowPlayingScreen(
                                     fontFamily = FontFamily.Monospace
                                 )
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(song.name, maxLines = 1)
+                                    Text(song.displayName(), maxLines = 1)
                                     Text(
-                                        song.artist,
+                                        song.displayArtist(),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1
@@ -1259,44 +1261,6 @@ fun rememberAudioDeviceInfo(): Pair<String, ImageVector> {
     }
 
     return deviceInfo
-}
-
-@Composable
-fun AudioDeviceHandler() {
-    val context = LocalContext.current
-    val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
-
-    var deviceInfo by remember { mutableStateOf(getCurrentAudioDevice(audioManager, context)) }
-
-    DisposableEffect(Unit) {
-        val deviceCallback = object : AudioDeviceCallback() {
-            override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>?) {
-                deviceInfo = getCurrentAudioDevice(audioManager, context)
-            }
-            override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>?) {
-                deviceInfo = getCurrentAudioDevice(audioManager, context)
-            }
-        }
-        audioManager.registerAudioDeviceCallback(deviceCallback, null)
-        onDispose { audioManager.unregisterAudioDeviceCallback(deviceCallback) }
-    }
-
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = deviceInfo.second,
-                contentDescription = stringResource(R.string.cd_audio_device),
-                modifier = Modifier.size(16.dp),
-                tint = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = deviceInfo.first,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-        }
-    }
 }
 
 fun getCurrentAudioDevice(audioManager: AudioManager, context: Context): Pair<String, ImageVector> {
@@ -1507,7 +1471,12 @@ fun MoreOptionsSheet(
                         )
                         if (originalSong.album.startsWith(PlayerManager.NETEASE_SOURCE_TAG)) {
                             val albumName = originalSong.album.replace(PlayerManager.NETEASE_SOURCE_TAG, "")
-                            val album = NeteaseAlbum(id = originalSong.albumId.toLong(), name = albumName, size = 0, picUrl = originalSong?.coverUrl ?:"")
+                            val album = NeteaseAlbum(
+                                id = originalSong.albumId,
+                                name = albumName,
+                                size = 0,
+                                picUrl = originalSong.coverUrl ?: ""
+                            )
                             ListItem(
                                 headlineContent = { Text(stringResource(R.string.music_view_album, albumName)) },
                                 leadingContent = { Icon(Icons.Outlined.LibraryMusic, null) },
@@ -2139,7 +2108,7 @@ fun EditSongInfoSheet(
                                         ""
                                     }
                                 }
-                            } catch (e: Exception) {
+                            } catch (_: Exception) {
                                 ""
                             }
 
@@ -2306,7 +2275,7 @@ fun EditSongInfoSheet(
                 }
                 if (fillLyrics) {
                     selectedSongForFill?.let { selectedSong ->
-                        viewModel.fillLyrics(context, actualSong, selectedSong) { success, message ->
+                        viewModel.fillLyrics(context, actualSong, selectedSong) { _, message ->
                             coroutineScope.launch {
                                 snackbarHostState.showSnackbar(message)
                             }

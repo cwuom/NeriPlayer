@@ -108,6 +108,9 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.FavoritesPlaylist
 import moe.ouom.neriplayer.data.LocalFilesPlaylist
+import moe.ouom.neriplayer.data.displayArtist
+import moe.ouom.neriplayer.data.displayCoverUrl
+import moe.ouom.neriplayer.data.displayName
 import moe.ouom.neriplayer.data.isLocalSong
 import moe.ouom.neriplayer.data.sameIdentityAs
 import moe.ouom.neriplayer.ui.component.AppleMusicLyric
@@ -250,10 +253,10 @@ fun LyricsScreen(
                     .graphicsLayer { translationY = coverOffsetY }
                     .clip(RoundedCornerShape(10.dp))
             ) {
-                currentSong?.coverUrl?.let { cover ->
+                currentSong?.displayCoverUrl(context)?.let { cover ->
                     AsyncImage(
                         model = ImageRequest.Builder(LocalContext.current).data(cover).build(),
-                        contentDescription = currentSong?.name ?: "",
+                        contentDescription = currentSong?.displayName() ?: "",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()
                     )
@@ -269,7 +272,7 @@ fun LyricsScreen(
             ) {
                 Box {
                     Text(
-                        text = currentSong?.name ?: stringResource(R.string.lyrics_unknown_song),
+                        text = currentSong?.displayName() ?: stringResource(R.string.lyrics_unknown_song),
                         style = MaterialTheme.typography.titleMedium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -287,7 +290,7 @@ fun LyricsScreen(
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.action_copy_song_name)) },
                             onClick = {
-                                currentSong?.name?.let { text ->
+                                currentSong?.displayName()?.let { text ->
                                     scope.launch {
                                         clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("text", text)))
                                     }
@@ -299,7 +302,7 @@ fun LyricsScreen(
                 }
                 Box {
                     Text(
-                        text = currentSong?.artist ?: stringResource(R.string.lyrics_unknown_artist),
+                        text = currentSong?.displayArtist() ?: stringResource(R.string.lyrics_unknown_artist),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -328,7 +331,7 @@ fun LyricsScreen(
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.action_copy_artist)) },
                             onClick = {
-                                currentSong?.artist?.let { text ->
+                                currentSong?.displayArtist()?.let { text ->
                                     scope.launch {
                                         clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("text", text)))
                                     }
@@ -807,9 +810,9 @@ fun LyricsScreen(
                                     fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
                                 )
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(song.name, maxLines = 1)
+                                    Text(song.displayName(), maxLines = 1)
                                     Text(
-                                        song.artist,
+                                        song.displayArtist(),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1

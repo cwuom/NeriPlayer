@@ -1,6 +1,5 @@
 ﻿package moe.ouom.neriplayer.ui.screen
 
-import android.text.format.DateFormat
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -59,7 +58,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -91,7 +89,6 @@ import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.formatDuration
 import moe.ouom.neriplayer.util.offlineCachedImageRequest
 import moe.ouom.neriplayer.util.performHapticFeedback
-import java.util.Date
 import kotlin.random.Random
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -113,8 +110,15 @@ fun RecentScreen(
                 coverUrl = it.coverUrl,
                 mediaUri = it.localFilePath ?: it.mediaUri,
                 matchedLyric = it.matchedLyric,
+                matchedTranslatedLyric = it.matchedTranslatedLyric,
+                customCoverUrl = it.customCoverUrl,
+                customName = it.customName,
+                customArtist = it.customArtist,
                 originalName = it.originalName,
                 originalArtist = it.originalArtist,
+                originalCoverUrl = it.originalCoverUrl,
+                originalLyric = it.originalLyric,
+                originalTranslatedLyric = it.originalTranslatedLyric,
                 localFileName = it.localFileName,
                 localFilePath = it.localFilePath
             )
@@ -122,7 +126,6 @@ fun RecentScreen(
     }
 
     val context = LocalContext.current
-    rememberCoroutineScope()
     val mini = LocalMiniPlayerHeight.current
 
     // 搜索
@@ -635,9 +638,3 @@ private fun PlayingIndicator(color: Color, animate: Boolean) {
     }
 }
 
-
-/** 简单时间格式 */
-private fun formatDateTime(millis: Long): String {
-    val pattern = "yyyy-MM-dd HH:mm"
-    return DateFormat.format(pattern, Date(millis)).toString()
-}

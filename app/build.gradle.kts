@@ -1,5 +1,7 @@
+@file:Suppress("UnstableApiUsage")
+
+import com.android.build.api.variant.FilterConfiguration
 import org.gradle.api.Project
-import com.android.build.OutputFile
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -167,12 +169,14 @@ private fun getShortGitRevision(): String {
 android.applicationVariants.all {
     outputs.all {
         if (this is com.android.build.gradle.internal.api.ApkVariantOutputImpl
-            && !this.outputFileName.lowercase().contains("debug")
+            && !outputFileName.lowercase().contains("debug")
         ) {
-            val versionName = project.android.defaultConfig.versionName
-            val abiName = this.getFilter(OutputFile.ABI)
+            val versionName = project.android.defaultConfig.versionName ?: "dev"
+            val abiName = filters
+                .find { it.filterType == FilterConfiguration.FilterType.ABI.name }
+                ?.identifier
             val abiSuffix = abiName?.let { "-$it" } ?: ""
-            this.outputFileName = "NeriPlayer-${versionName}${abiSuffix}.apk"
+            outputFileName = "NeriPlayer-${versionName}${abiSuffix}.apk"
         }
     }
 }
@@ -224,6 +228,7 @@ dependencies {
 
     // Media3
     implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.exoplayer.hls)
     implementation(libs.androidx.media3.datasource)
     implementation(libs.androidx.media3.datasource.okhttp)
 

@@ -78,6 +78,9 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.data.displayCoverUrl
+import moe.ouom.neriplayer.data.displayArtist
+import moe.ouom.neriplayer.data.displayName
 import moe.ouom.neriplayer.data.sameIdentityAs
 import moe.ouom.neriplayer.data.stableKey
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
@@ -147,7 +150,9 @@ fun YouTubeMusicPlaylistDetailScreen(
             ui.tracks
         } else {
             ui.tracks.filter { song ->
-                song.name.contains(searchQuery, ignoreCase = true) ||
+                song.displayName().contains(searchQuery, ignoreCase = true) ||
+                    song.displayArtist().contains(searchQuery, ignoreCase = true) ||
+                    song.name.contains(searchQuery, ignoreCase = true) ||
                     song.artist.contains(searchQuery, ignoreCase = true) ||
                     song.album.contains(searchQuery, ignoreCase = true)
             }
@@ -294,7 +299,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                                         GlobalDownloadManager.startDownload(context, song)
                                         scope.launch {
                                             snackbarHostState.showSnackbar(
-                                                context.getString(R.string.download_starting, song.name)
+                                                context.getString(R.string.download_starting, song.displayName())
                                             )
                                         }
                                     }
@@ -517,7 +522,9 @@ private fun YouTubeMusicSongRow(
             )
         }
 
-        val coverModel = song.coverUrl.takeUnless { it.isNullOrBlank() }
+        val coverModel = song.displayCoverUrl(context).takeUnless { it.isNullOrBlank() }
+        val displayName = song.displayName()
+        val displayArtist = song.displayArtist()
         if (!coverModel.isNullOrBlank()) {
             Box(
                 modifier = Modifier
@@ -530,7 +537,7 @@ private fun YouTubeMusicSongRow(
             ) {
                 AsyncImage(
                     model = offlineCachedImageRequest(context, coverModel),
-                    contentDescription = song.name,
+                    contentDescription = displayName,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -542,14 +549,14 @@ private fun YouTubeMusicSongRow(
             modifier = Modifier.weight(1f)
         ) {
             Text(
-                text = song.name,
+                text = displayName,
                 style = MaterialTheme.typography.titleMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = listOfNotNull(
-                    song.artist.takeIf { it.isNotBlank() },
+                    displayArtist.takeIf { it.isNotBlank() },
                     song.album.takeIf { it.isNotBlank() }
                 ).joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall,
@@ -612,7 +619,7 @@ private fun YouTubeMusicSongRow(
                                 ClipEntry(
                                     ClipData.newPlainText(
                                         "text",
-                                        "${song.name}-${song.artist}"
+                                        "${displayName}-${displayArtist}"
                                     )
                                 )
                             )

@@ -25,7 +25,6 @@ package moe.ouom.neriplayer.core.player
 
 
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.HttpDataSource
 import android.net.Uri
 import kotlinx.coroutines.CoroutineScope
@@ -78,12 +77,11 @@ class ConditionalHttpDataSourceFactory(
     }
 
     override fun createDataSource(): HttpDataSource {
-        val delegate = baseFactory.createDataSource()
-        return object : HttpDataSource by delegate {
-
-            override fun open(dataSpec: DataSpec): Long {
+        return ConditionalChunkedHttpDataSource(
+            upstreamFactory = baseFactory,
+            transformDataSpec = { dataSpec ->
                 NPLogger.i("createDataSource", dataSpec.uri)
-                val finalSpec = when {
+                when {
                     shouldInjectBiliHeaders(dataSpec.uri) -> {
                         val headers = buildBiliHeaders(dataSpec.httpRequestHeaders)
                         dataSpec.buildUpon()
@@ -98,10 +96,8 @@ class ConditionalHttpDataSourceFactory(
                     }
                     else -> dataSpec
                 }
-
-                return delegate.open(finalSpec)
             }
-        }
+        )
     }
 
     override fun setDefaultRequestProperties(defaultRequestProperties: Map<String, String>): HttpDataSource.Factory {
@@ -124,9 +120,12 @@ class ConditionalHttpDataSourceFactory(
     private fun shouldInjectYouTubeHeaders(uri: Uri): Boolean {
         val host = uri.host?.lowercase() ?: return false
         if (!host.contains("googlevideo.com")) return false
+        val path = uri.path?.lowercase().orEmpty()
         val rawUrl = uri.toString().lowercase()
-        return rawUrl.contains("source/youtube") ||
+        return rawUrl.contains("source=youtube") ||
             rawUrl.contains("/api/manifest/") ||
+            path.contains("/playlist/index.m3u8") ||
+            path.contains("/file/seg.ts") ||
             rawUrl.contains("/videoplayback")
     }
 

@@ -1,20 +1,24 @@
 package moe.ouom.neriplayer.core.api.youtube
 
+import androidx.media3.common.MimeTypes
 import java.io.IOException
+import java.net.URI
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.util.Locale
 import java.util.TimeZone
 import kotlin.jvm.Volatile
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.data.SettingsRepository
 import moe.ouom.neriplayer.data.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.appendYouTubeConsentCookie
 import moe.ouom.neriplayer.data.buildYouTubePageRequestHeaders
+import moe.ouom.neriplayer.data.buildYouTubeStreamRequestHeaders
 import moe.ouom.neriplayer.data.effectiveCookieHeader
 import moe.ouom.neriplayer.data.resolveAuthorizationHeader
 import moe.ouom.neriplayer.data.resolveBootstrapUserAgent
-import moe.ouom.neriplayer.data.resolveRequestUserAgent
 import moe.ouom.neriplayer.data.resolveXGoogAuthUser
 import moe.ouom.neriplayer.data.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.YOUTUBE_WEB_ORIGIN
@@ -23,7 +27,6 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONArray
 import org.json.JSONObject
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
@@ -51,16 +54,17 @@ private const val YOUTUBE_PLAYER_IOS_OS_VERSION = "18.7.2.22H124"
 private const val YOUTUBE_PLAYER_API_BASE_URL = "https://youtubei.googleapis.com/youtubei/v1"
 private const val YOUTUBE_PLAYER_API_FORMAT_VERSION = "2"
 
-private val YOUTUBE_PLAYER_REQUEST_LOCALE = YouTubeMusicRequestLocale(
-    hl = "en-US",
-    gl = "US"
-)
+enum class YouTubePlayableStreamType {
+    DIRECT,
+    HLS
+}
 
 data class YouTubePlayableAudio(
     val url: String,
     val durationMs: Long = 0L,
     val mimeType: String? = null,
-    val contentLength: Long? = null
+    val contentLength: Long? = null,
+    val streamType: YouTubePlayableStreamType = YouTubePlayableStreamType.DIRECT
 )
 
 internal data class YouTubeAudioMetadata(
@@ -92,6 +96,15 @@ private data class YouTubePlayerAudioCandidate(
     val durationMs: Long
 )
 
+private fun playableAudioMimePreferenceScore(mimeType: String?): Int {
+    return when (mimeType?.lowercase(Locale.US)) {
+        MimeTypes.APPLICATION_M3U8.lowercase(Locale.US) -> 3
+        "audio/mp4", "audio/m4a", "audio/aac" -> 2
+        "audio/webm" -> 1
+        else -> 0
+    }
+}
+
 internal data class YouTubePlayerPlayabilityStatus(
     val status: String,
     val reason: String
@@ -119,16 +132,41 @@ private data class YouTubePlayerClientProfile(
     val wrapPlayerRequest: Boolean = false
 )
 
+private enum class YouTubeMusicPlaybackQuality {
+    LOW,
+    MEDIUM,
+    HIGH,
+    VERY_HIGH;
+
+    companion object {
+        fun fromSetting(settingKey: String?): YouTubeMusicPlaybackQuality {
+            return when (settingKey?.lowercase(Locale.US)) {
+                "low",
+                "standard" -> LOW
+                "medium" -> MEDIUM
+                "high",
+                "higher" -> HIGH
+                "very_high",
+                "very-high",
+                "exhigh",
+                "lossless",
+                "hires",
+                "jyeffect",
+                "sky",
+                "jymaster" -> VERY_HIGH
+                else -> VERY_HIGH
+            }
+        }
+    }
+}
+
 internal object YouTubeMusicPlaybackParser {
-    fun parsePlayableAudio(root: JSONObject): YouTubePlayableAudio? {
+    fun parsePlayableAudio(
+        root: JSONObject,
+        preferredQualityKey: String? = null
+    ): YouTubePlayableAudio? {
         val candidates = collectAudioCandidates(root, requirePlayableUrl = true)
-        val selected = candidates
-            .sortedWith(
-                compareByDescending<YouTubePlayerAudioCandidate> { it.bitrate }
-                    .thenByDescending { it.audioSampleRate }
-                    .thenByDescending { mimePreferenceScore(it.mimeType) }
-                    .thenByDescending { it.contentLength ?: 0L }
-            )
+        val selected = selectCandidate(candidates, preferredQualityKey)
             .firstOrNull()
             ?: return null
 
@@ -140,16 +178,12 @@ internal object YouTubeMusicPlaybackParser {
         )
     }
 
-    fun parsePreferredAudioMetadata(root: JSONObject): YouTubeAudioMetadata? {
+    fun parsePreferredAudioMetadata(
+        root: JSONObject,
+        preferredQualityKey: String? = null
+    ): YouTubeAudioMetadata? {
         val candidates = collectAudioCandidates(root, requirePlayableUrl = false)
-        val selected = candidates
-            .sortedWith(
-                compareByDescending<YouTubePlayerAudioCandidate> { it.bitrate }
-                    .thenByDescending { it.audioSampleRate }
-                    .thenByDescending { mimePreferenceScore(it.mimeType) }
-                    .thenByDescending { it.contentLength ?: 0L }
-            )
-            .firstOrNull()
+        val selected = selectCandidate(candidates, preferredQualityKey).firstOrNull()
 
         val durationMs = selected?.durationMs?.takeIf { it > 0L } ?: parseDurationMs(root)
         val mimeType = selected?.mimeType
@@ -268,6 +302,36 @@ internal object YouTubeMusicPlaybackParser {
         }
     }
 
+    private fun selectCandidate(
+        candidates: List<YouTubePlayerAudioCandidate>,
+        preferredQualityKey: String?
+    ): List<YouTubePlayerAudioCandidate> {
+        if (candidates.isEmpty()) {
+            return emptyList()
+        }
+        val sortedDescending = candidates.sortedWith(audioCandidateComparator())
+        val sortedAscending = sortedDescending.asReversed()
+        return when (YouTubeMusicPlaybackQuality.fromSetting(preferredQualityKey)) {
+            YouTubeMusicPlaybackQuality.LOW -> listOf(sortedAscending.first())
+            YouTubeMusicPlaybackQuality.MEDIUM -> listOf(
+                sortedAscending.firstOrNull { it.bitrate >= 96_000 }
+                    ?: sortedDescending.first()
+            )
+            YouTubeMusicPlaybackQuality.HIGH -> listOf(
+                sortedAscending.firstOrNull { it.bitrate >= 128_000 }
+                    ?: sortedDescending.first()
+            )
+            YouTubeMusicPlaybackQuality.VERY_HIGH -> listOf(sortedDescending.first())
+        }
+    }
+
+    private fun audioCandidateComparator(): Comparator<YouTubePlayerAudioCandidate> {
+        return compareByDescending<YouTubePlayerAudioCandidate> { it.bitrate }
+            .thenByDescending { it.audioSampleRate }
+            .thenByDescending { mimePreferenceScore(it.mimeType) }
+            .thenByDescending { it.contentLength ?: 0L }
+    }
+
     private fun parseUrlEncodedQuery(rawQuery: String): Map<String, String> {
         return rawQuery.split('&')
             .mapNotNull { segment ->
@@ -325,8 +389,148 @@ internal object YouTubeMusicPlaybackParser {
     }
 }
 
+internal data class YouTubeHlsAudioPlaylist(
+    val uri: String,
+    val contentLength: Long? = null,
+    val estimatedBitrate: Int = 0,
+    val audioItag: Int? = null
+)
+
+internal object YouTubeMusicHlsManifestParser {
+    fun selectAudioPlaylist(
+        masterManifest: String,
+        masterManifestUrl: String? = null,
+        preferredQualityKey: String? = null,
+        durationMs: Long = 0L
+    ): YouTubeHlsAudioPlaylist? {
+        val candidates = collectAudioPlaylists(
+            masterManifest = masterManifest,
+            masterManifestUrl = masterManifestUrl,
+            durationMs = durationMs
+        )
+        if (candidates.isEmpty()) {
+            return null
+        }
+        val sortedDescending = candidates.sortedWith(
+            compareByDescending<YouTubeHlsAudioPlaylist> { it.estimatedBitrate }
+                .thenByDescending { it.contentLength ?: 0L }
+                .thenByDescending { it.audioItag ?: 0 }
+        )
+        val sortedAscending = sortedDescending.asReversed()
+        return when (YouTubeMusicPlaybackQuality.fromSetting(preferredQualityKey)) {
+            YouTubeMusicPlaybackQuality.LOW -> sortedAscending.first()
+            YouTubeMusicPlaybackQuality.MEDIUM -> {
+                sortedAscending.firstOrNull { it.estimatedBitrate >= 96_000 }
+                    ?: sortedDescending.first()
+            }
+            YouTubeMusicPlaybackQuality.HIGH -> {
+                sortedAscending.firstOrNull { it.estimatedBitrate >= 128_000 }
+                    ?: sortedDescending.first()
+            }
+            YouTubeMusicPlaybackQuality.VERY_HIGH -> sortedDescending.first()
+        }
+    }
+
+    fun collectAudioPlaylists(
+        masterManifest: String,
+        masterManifestUrl: String? = null,
+        durationMs: Long = 0L
+    ): List<YouTubeHlsAudioPlaylist> {
+        return masterManifest
+            .lineSequence()
+            .map(String::trim)
+            .filter { it.startsWith("#EXT-X-MEDIA:", ignoreCase = true) }
+            .mapNotNull { line ->
+                val attributes = parseAttributes(line.removePrefix("#EXT-X-MEDIA:"))
+                if (!attributes["TYPE"].equals("AUDIO", ignoreCase = true)) {
+                    return@mapNotNull null
+                }
+                val rawUri = attributes["URI"]?.trim()?.takeIf { it.isNotBlank() }
+                    ?: return@mapNotNull null
+                val audioItag = parseAudioItag(rawUri)
+                val contentLength = parseContentLength(rawUri)
+                YouTubeHlsAudioPlaylist(
+                    uri = resolveRelativeUri(masterManifestUrl, rawUri),
+                    contentLength = contentLength,
+                    estimatedBitrate = estimateBitrate(audioItag, contentLength, durationMs),
+                    audioItag = audioItag
+                )
+            }
+            .distinctBy(YouTubeHlsAudioPlaylist::uri)
+            .toList()
+    }
+
+    private fun parseAttributes(rawAttributes: String): Map<String, String> {
+        val result = linkedMapOf<String, String>()
+        val pattern = Regex("""([A-Z0-9-]+)=("([^"]*)"|[^,]*)""")
+        pattern.findAll(rawAttributes).forEach { match ->
+            val key = match.groupValues[1]
+            val rawValue = match.groupValues[2]
+            result[key] = rawValue.trim().removeSurrounding("\"")
+        }
+        return result
+    }
+
+    private fun resolveRelativeUri(baseUri: String?, candidate: String): String {
+        if (candidate.startsWith("http://", ignoreCase = true) ||
+            candidate.startsWith("https://", ignoreCase = true)
+        ) {
+            return candidate
+        }
+        val resolvedBaseUri = baseUri?.takeIf { it.isNotBlank() } ?: return candidate
+        return runCatching { URI(resolvedBaseUri).resolve(candidate).toString() }
+            .getOrElse { candidate }
+    }
+
+    private fun parseAudioItag(url: String): Int? {
+        val decoded = runCatching { URLDecoder.decode(url, Charsets.UTF_8.name()) }
+            .getOrElse { url }
+        return Regex("""(?:^|[;/?&])itag=(\d+)""")
+            .findAll(decoded)
+            .lastOrNull()
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.toIntOrNull()
+            ?: Regex("""/itag/(\d+)""")
+                .find(decoded)
+                ?.groupValues
+                ?.getOrNull(1)
+                ?.toIntOrNull()
+    }
+
+    private fun parseContentLength(url: String): Long? {
+        val decoded = runCatching { URLDecoder.decode(url, Charsets.UTF_8.name()) }
+            .getOrElse { url }
+        return Regex("""(?:^|[;/?&])clen=(\d+)""")
+            .findAll(decoded)
+            .lastOrNull()
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.toLongOrNull()
+            ?.takeIf { it > 0L }
+    }
+
+    private fun estimateBitrate(audioItag: Int?, contentLength: Long?, durationMs: Long): Int {
+        audioItagToBitrate(audioItag)?.let { return it }
+        if (contentLength != null && durationMs > 0L) {
+            return ((contentLength * 8_000L) / durationMs).toInt()
+        }
+        return 0
+    }
+
+    private fun audioItagToBitrate(itag: Int?): Int? {
+        return when (itag) {
+            139, 233, 249 -> 48_000
+            140, 234, 250 -> 128_000
+            141, 251 -> 256_000
+            else -> null
+        }
+    }
+}
+
 class YouTubeMusicPlaybackRepository(
     private val okHttpClient: OkHttpClient,
+    private val settings: SettingsRepository? = null,
     private val authProvider: () -> YouTubeAuthBundle = { YouTubeAuthBundle() }
 ) {
     private val downloader = NewPipeOkHttpDownloader(okHttpClient, authProvider)
@@ -335,20 +539,27 @@ class YouTubeMusicPlaybackRepository(
     @Volatile
     private var bootstrapCache: YouTubePlaybackBootstrap? = null
 
-    suspend fun getBestPlayableAudio(videoId: String): YouTubePlayableAudio? = withContext(Dispatchers.IO) {
-        getCachedPlayableAudio(videoId)?.let { return@withContext it }
-        resolvePlayableAudio(videoId, logFailure = true)
+    suspend fun getBestPlayableAudio(
+        videoId: String,
+        preferredQualityOverride: String? = null,
+        forceRefresh: Boolean = false
+    ): YouTubePlayableAudio? = withContext(Dispatchers.IO) {
+        val preferredQualityKey = resolvePreferredQualityKey(preferredQualityOverride)
+        if (!forceRefresh) {
+            getCachedPlayableAudio(videoId, preferredQualityKey)?.let { return@withContext it }
+        }
+        resolvePlayableAudio(videoId, preferredQualityKey, logFailure = true)
     }
 
-    suspend fun getBestPlayableAudioUrl(videoId: String): String? {
-        return getBestPlayableAudio(videoId)?.url
-    }
-
-    suspend fun prefetchPlayableAudioUrl(videoId: String) = withContext(Dispatchers.IO) {
-        if (getCachedPlayableAudio(videoId) != null) {
+    suspend fun prefetchPlayableAudioUrl(
+        videoId: String,
+        preferredQualityOverride: String? = null
+    ) = withContext(Dispatchers.IO) {
+        val preferredQualityKey = resolvePreferredQualityKey(preferredQualityOverride)
+        if (getCachedPlayableAudio(videoId, preferredQualityKey) != null) {
             return@withContext
         }
-        resolvePlayableAudio(videoId, logFailure = false)
+        resolvePlayableAudio(videoId, preferredQualityKey, logFailure = false)
     }
 
     private fun ensureInitialized() {
@@ -373,29 +584,33 @@ class YouTubeMusicPlaybackRepository(
 
     private fun resolvePlayableAudio(
         videoId: String,
+        preferredQualityKey: String,
         logFailure: Boolean
     ): YouTubePlayableAudio? {
         val playerResolution = resolvePlayerAudioViaPlayerApi(
             videoId = videoId,
+            preferredQualityKey = preferredQualityKey,
             logFailure = logFailure
         )
         playerResolution?.playableAudio?.let { playableAudio ->
-            cachePlayableAudio(videoId, playableAudio)
+            cachePlayableAudio(videoId, preferredQualityKey, playableAudio)
             return playableAudio
         }
 
         ensureInitialized()
         return resolvePlayableAudioViaNewPipe(
             videoId = videoId,
+            preferredQualityKey = preferredQualityKey,
             logFailure = logFailure
         )?.mergeMetadataFrom(playerResolution?.metadata)
             ?.also { playableAudio ->
-            cachePlayableAudio(videoId, playableAudio)
+            cachePlayableAudio(videoId, preferredQualityKey, playableAudio)
         }
     }
 
     private fun resolvePlayerAudioViaPlayerApi(
         videoId: String,
+        preferredQualityKey: String,
         logFailure: Boolean
     ): PlayerAudioResolution? {
         val auth = authProvider().normalized()
@@ -404,7 +619,11 @@ class YouTubeMusicPlaybackRepository(
         }
 
         return runCatching {
-            fetchPlayerAudioViaPlayerApi(videoId = videoId, auth = auth)
+            fetchPlayerAudioViaPlayerApi(
+                videoId = videoId,
+                preferredQualityKey = preferredQualityKey,
+                auth = auth
+            )
         }.onFailure { error ->
             if (logFailure) {
                 NPLogger.w(
@@ -418,13 +637,15 @@ class YouTubeMusicPlaybackRepository(
 
     private fun fetchPlayerAudioViaPlayerApi(
         videoId: String,
+        preferredQualityKey: String,
         auth: YouTubeAuthBundle
-    ): PlayerAudioResolution? {
+    ): PlayerAudioResolution {
         var bootstrap = bootstrap(auth)
         var lastError: IOException? = null
         var bestMetadata: YouTubeAudioMetadata? = null
 
         repeat(PLAYER_REQUEST_MAX_ATTEMPTS) { attempt ->
+            var bestPlayableAudio: YouTubePlayableAudio? = null
             for (profile in playerClientProfiles()) {
                 try {
                     val root = postPlayerRequest(
@@ -434,14 +655,47 @@ class YouTubeMusicPlaybackRepository(
                         profile = profile
                     )
                     val playability = YouTubeMusicPlaybackParser.parsePlayabilityStatus(root)
-                    val playableAudio = YouTubeMusicPlaybackParser.parsePlayableAudio(root)
-                    val metadata = YouTubeMusicPlaybackParser.parsePreferredAudioMetadata(root)
+                    val metadata = YouTubeMusicPlaybackParser.parsePreferredAudioMetadata(
+                        root = root,
+                        preferredQualityKey = preferredQualityKey
+                    )
                     bestMetadata = bestMetadata.mergePreferred(metadata)
-                    if (playability.status == "OK" && playableAudio != null) {
-                        return PlayerAudioResolution(
-                            playableAudio = playableAudio,
-                            metadata = bestMetadata
+                    val playableAudio = if (playability.status == "OK") {
+                        val hlsPlayableAudio = runCatching {
+                            resolveHlsPlayableAudio(
+                                root = root,
+                                preferredQualityKey = preferredQualityKey,
+                                auth = auth,
+                                durationMs = metadata?.durationMs ?: 0L
+                            )
+                        }.getOrElse { error ->
+                            lastError = error as? IOException ?: IOException(error)
+                            null
+                        }
+                        val directPlayableAudio = YouTubeMusicPlaybackParser.parsePlayableAudio(
+                            root = root,
+                            preferredQualityKey = preferredQualityKey
                         )
+                        selectPreferredPlayableAudio(
+                            current = hlsPlayableAudio,
+                            incoming = directPlayableAudio
+                        )
+                    } else {
+                        null
+                    }
+                    if (playability.status == "OK" && playableAudio != null) {
+                        val resolvedPlayableAudio = selectPreferredPlayableAudio(
+                            current = bestPlayableAudio,
+                            incoming = playableAudio
+                        ) ?: continue
+                        bestPlayableAudio = resolvedPlayableAudio
+                        if (resolvedPlayableAudio.streamType == YouTubePlayableStreamType.HLS) {
+                            return PlayerAudioResolution(
+                                playableAudio = resolvedPlayableAudio.mergeMetadataFrom(bestMetadata),
+                                metadata = bestMetadata
+                            )
+                        }
+                        continue
                     }
 
                     val description = buildString {
@@ -463,6 +717,13 @@ class YouTubeMusicPlaybackRepository(
                 }
             }
 
+            if (bestPlayableAudio != null) {
+                return PlayerAudioResolution(
+                    playableAudio = bestPlayableAudio.mergeMetadataFrom(bestMetadata),
+                    metadata = bestMetadata
+                )
+            }
+
             if (attempt < PLAYER_REQUEST_MAX_ATTEMPTS - 1) {
                 bootstrap = bootstrap(auth, forceRefresh = true)
             }
@@ -474,17 +735,66 @@ class YouTubeMusicPlaybackRepository(
         throw lastError ?: IOException("YouTube Music player request failed")
     }
 
+    private fun resolveHlsPlayableAudio(
+        root: JSONObject,
+        preferredQualityKey: String,
+        auth: YouTubeAuthBundle,
+        durationMs: Long
+    ): YouTubePlayableAudio? {
+        val hlsManifestUrl = root.optJSONObject("streamingData")
+            ?.optString("hlsManifestUrl")
+            .orEmpty()
+            .trim()
+        if (hlsManifestUrl.isBlank()) {
+            return null
+        }
+
+        val masterManifest = executeText(buildYouTubeStreamRequest(hlsManifestUrl, auth))
+        val selectedAudioPlaylist = YouTubeMusicHlsManifestParser.selectAudioPlaylist(
+            masterManifest = masterManifest,
+            masterManifestUrl = hlsManifestUrl,
+            preferredQualityKey = preferredQualityKey,
+            durationMs = durationMs
+        ) ?: return null
+
+        return YouTubePlayableAudio(
+            url = selectedAudioPlaylist.uri,
+            durationMs = durationMs,
+            mimeType = MimeTypes.APPLICATION_M3U8,
+            contentLength = selectedAudioPlaylist.contentLength,
+            streamType = YouTubePlayableStreamType.HLS
+        )
+    }
+
+    private fun buildYouTubeStreamRequest(
+        url: String,
+        auth: YouTubeAuthBundle
+    ): Request {
+        val headers = auth.buildYouTubeStreamRequestHeaders(
+            refererOrigin = auth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN }
+        )
+        return Request.Builder()
+            .url(url)
+            .apply {
+                headers.forEach { (name, value) ->
+                    header(name, value)
+                }
+            }
+            .build()
+    }
+
     private fun postPlayerRequest(
         videoId: String,
         auth: YouTubeAuthBundle,
         bootstrap: YouTubePlaybackBootstrap,
         profile: YouTubePlayerClientProfile
     ): JSONObject {
+        val requestLocale = currentPlayerRequestLocale()
         val body = buildPlayerRequestBody(videoId, bootstrap, profile)
         val requestHeaders = linkedMapOf(
             "Cookie" to bootstrap.cookieHeader,
             "User-Agent" to profile.userAgent,
-            "Accept-Language" to YOUTUBE_PLAYER_REQUEST_LOCALE.acceptLanguage,
+            "Accept-Language" to requestLocale.acceptLanguage,
             "Content-Type" to "application/json",
             "X-Goog-AuthUser" to auth.resolveXGoogAuthUser().ifBlank { bootstrap.sessionIndex },
             "X-Goog-Visitor-Id" to bootstrap.visitorData,
@@ -521,13 +831,14 @@ class YouTubeMusicPlaybackRepository(
         bootstrap: YouTubePlaybackBootstrap,
         profile: YouTubePlayerClientProfile
     ): JSONObject {
+        val requestLocale = currentPlayerRequestLocale()
         val clientContext = JSONObject()
             .put("clientName", profile.clientName)
             .put("clientVersion", profile.clientVersion)
             .put("clientScreen", profile.clientScreen)
             .put("platform", profile.platform)
-            .put("hl", YOUTUBE_PLAYER_REQUEST_LOCALE.hl)
-            .put("gl", YOUTUBE_PLAYER_REQUEST_LOCALE.gl)
+            .put("hl", requestLocale.hl)
+            .put("gl", requestLocale.gl)
             .put("visitorData", bootstrap.visitorData)
             .put("utcOffsetMinutes", utcOffsetMinutes())
         profile.deviceMake?.let { clientContext.put("deviceMake", it) }
@@ -604,10 +915,11 @@ class YouTubeMusicPlaybackRepository(
         cookieHeader: String
     ): String {
         var lastError: IOException? = null
+        val requestLocale = currentPlayerRequestLocale()
         for (origin in BOOTSTRAP_PAGE_ORIGINS) {
             val requestHeaders = auth.buildYouTubePageRequestHeaders(
                 original = linkedMapOf(
-                    "Accept-Language" to YOUTUBE_PLAYER_REQUEST_LOCALE.acceptLanguage
+                    "Accept-Language" to requestLocale.acceptLanguage
                 ),
                 userAgent = userAgent
             )
@@ -635,7 +947,7 @@ class YouTubeMusicPlaybackRepository(
 
     private fun executeText(request: Request): String {
         okHttpClient.newCall(request).execute().use { response ->
-            val body = response.body?.string().orEmpty()
+            val body = response.body.string()
             if (!response.isSuccessful) {
                 throw IOException("YouTube Music request failed: ${response.code} ${body.take(160)}")
             }
@@ -645,6 +957,7 @@ class YouTubeMusicPlaybackRepository(
 
     private fun resolvePlayableAudioViaNewPipe(
         videoId: String,
+        preferredQualityKey: String,
         logFailure: Boolean
     ): YouTubePlayableAudio? {
         return runCatching {
@@ -652,7 +965,7 @@ class YouTubeMusicPlaybackRepository(
                 ServiceList.YouTube,
                 "https://www.youtube.com/watch?v=$videoId"
             )
-            selectPlayableAudio(streamInfo)
+            selectPlayableAudio(streamInfo, preferredQualityKey)
         }.onFailure { error ->
             if (logFailure) {
                 val auth = authProvider().normalized()
@@ -665,8 +978,11 @@ class YouTubeMusicPlaybackRepository(
         }.getOrNull()
     }
 
-    private fun selectPlayableAudio(streamInfo: StreamInfo): YouTubePlayableAudio? {
-        val selectedStream = streamInfo.audioStreams
+    private fun selectPlayableAudio(
+        streamInfo: StreamInfo,
+        preferredQualityKey: String
+    ): YouTubePlayableAudio? {
+        val sortedStreams = streamInfo.audioStreams
             .asSequence()
             .filter { it.isUrl }
             .sortedWith(
@@ -674,7 +990,12 @@ class YouTubeMusicPlaybackRepository(
                     .thenByDescending { it.averageBitrate }
                     .thenByDescending { it.bitrate }
             )
-            .firstOrNull { it.content.isNotBlank() }
+            .filter { it.content.isNotBlank() }
+            .toList()
+        val selectedStream = selectAudioStreamByQuality(
+            streams = sortedStreams,
+            preferredQualityKey = preferredQualityKey
+        )
             ?: return null
 
         val resolvedDurationMs = streamInfo.duration
@@ -688,6 +1009,32 @@ class YouTubeMusicPlaybackRepository(
             mimeType = null,
             contentLength = null
         )
+    }
+
+    private fun selectAudioStreamByQuality(
+        streams: List<AudioStream>,
+        preferredQualityKey: String
+    ): AudioStream? {
+        if (streams.isEmpty()) {
+            return null
+        }
+        val sortedDescending = streams
+        val sortedAscending = streams.asReversed()
+        fun AudioStream.effectiveBitrate(): Int {
+            return averageBitrate.takeIf { it > 0 } ?: bitrate
+        }
+        return when (YouTubeMusicPlaybackQuality.fromSetting(preferredQualityKey)) {
+            YouTubeMusicPlaybackQuality.LOW -> sortedAscending.firstOrNull()
+            YouTubeMusicPlaybackQuality.MEDIUM -> {
+                sortedAscending.firstOrNull { it.effectiveBitrate() >= 96_000 }
+                    ?: sortedDescending.firstOrNull()
+            }
+            YouTubeMusicPlaybackQuality.HIGH -> {
+                sortedAscending.firstOrNull { it.effectiveBitrate() >= 128_000 }
+                    ?: sortedDescending.firstOrNull()
+            }
+            YouTubeMusicPlaybackQuality.VERY_HIGH -> sortedDescending.firstOrNull()
+        }
     }
 
     private fun YouTubeAudioMetadata?.mergePreferred(
@@ -758,21 +1105,74 @@ class YouTubeMusicPlaybackRepository(
         )
     }
 
-    private fun getCachedPlayableAudio(videoId: String): YouTubePlayableAudio? {
+    private suspend fun resolvePreferredQualityKey(preferredQualityOverride: String?): String {
+        return preferredQualityOverride
+            ?.takeIf { it.isNotBlank() }
+            ?: settings?.youtubeAudioQualityFlow?.first()?.takeIf { it.isNotBlank() }
+            ?: "very_high"
+    }
+
+    internal fun selectPreferredPlayableAudio(
+        current: YouTubePlayableAudio?,
+        incoming: YouTubePlayableAudio?
+    ): YouTubePlayableAudio? {
+        if (incoming == null) {
+            return current
+        }
+        if (current == null) {
+            return incoming
+        }
+        return when {
+            incoming.streamType != current.streamType -> {
+                if (incoming.streamType == YouTubePlayableStreamType.HLS) incoming else current
+            }
+            playableAudioMimePreferenceScore(incoming.mimeType) !=
+                playableAudioMimePreferenceScore(current.mimeType) -> {
+                if (
+                    playableAudioMimePreferenceScore(incoming.mimeType) >
+                    playableAudioMimePreferenceScore(current.mimeType)
+                ) {
+                    incoming
+                } else {
+                    current
+                }
+            }
+            (incoming.contentLength ?: 0L) != (current.contentLength ?: 0L) -> {
+                if ((incoming.contentLength ?: 0L) > (current.contentLength ?: 0L)) {
+                    incoming
+                } else {
+                    current
+                }
+            }
+            incoming.durationMs > current.durationMs -> incoming
+            else -> current
+        }
+    }
+
+    private fun getCachedPlayableAudio(
+        videoId: String,
+        preferredQualityKey: String
+    ): YouTubePlayableAudio? {
+        val cacheKey = playableAudioCacheKey(videoId, preferredQualityKey)
         synchronized(playableAudioCache) {
-            val cached = playableAudioCache[videoId] ?: return null
+            val cached = playableAudioCache[cacheKey] ?: return null
             if (System.currentTimeMillis() - cached.cachedAtMs > PLAYABLE_URL_CACHE_TTL_MS) {
-                playableAudioCache.remove(videoId)
+                playableAudioCache.remove(cacheKey)
                 return null
             }
             return cached.audio
         }
     }
 
-    private fun cachePlayableAudio(videoId: String, audio: YouTubePlayableAudio) {
+    private fun cachePlayableAudio(
+        videoId: String,
+        preferredQualityKey: String,
+        audio: YouTubePlayableAudio
+    ) {
+        val cacheKey = playableAudioCacheKey(videoId, preferredQualityKey)
         synchronized(playableAudioCache) {
-            playableAudioCache.remove(videoId)
-            playableAudioCache[videoId] = CachedPlayableAudio(
+            playableAudioCache.remove(cacheKey)
+            playableAudioCache[cacheKey] = CachedPlayableAudio(
                 audio = audio,
                 cachedAtMs = System.currentTimeMillis()
             )
@@ -781,6 +1181,14 @@ class YouTubeMusicPlaybackRepository(
                 playableAudioCache.remove(eldestKey)
             }
         }
+    }
+
+    private fun playableAudioCacheKey(videoId: String, preferredQualityKey: String): String {
+        return "$videoId|${preferredQualityKey.lowercase(Locale.US)}"
+    }
+
+    private fun currentPlayerRequestLocale(): YouTubeMusicRequestLocale {
+        return YouTubeMusicLocaleResolver.preferred()
     }
 
     private fun utcOffsetMinutes(): Int {

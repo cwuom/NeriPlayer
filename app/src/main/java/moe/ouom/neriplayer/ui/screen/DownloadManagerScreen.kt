@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -93,7 +94,7 @@ fun DownloadManagerScreen(
             },
             navigationIcon = {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.Outlined.ArrowBack, contentDescription = stringResource(R.string.action_back))
+                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(R.string.action_back))
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(
@@ -213,7 +214,7 @@ fun DownloadManagerScreen(
                     )
                 }
 
-                Divider(
+                VerticalDivider(
                     modifier = Modifier
                         .height(32.dp)
                         .width(1.dp),
@@ -365,7 +366,9 @@ private fun DownloadedSongsList(
             downloadedSongs
         } else {
             downloadedSongs.filter { song ->
-                song.name.contains(searchQuery, ignoreCase = true) ||
+                song.displayName().contains(searchQuery, ignoreCase = true) ||
+                        song.displayArtist().contains(searchQuery, ignoreCase = true) ||
+                        song.name.contains(searchQuery, ignoreCase = true) ||
                         song.artist.contains(searchQuery, ignoreCase = true) ||
                         song.album.contains(searchQuery, ignoreCase = true)
             }
@@ -460,10 +463,13 @@ private fun DownloadedSongItem(
     onLongClick: () -> Unit
 ) {
     val context = LocalContext.current
-    val resolvedCover = remember(song.coverPath, song.filePath) {
-        song.coverPath
+    val resolvedCover = remember(song.coverPath, song.customCoverUrl, song.coverUrl, song.filePath) {
+        song.customCoverUrl
+            ?.takeIf { it.isNotBlank() }
+            ?: song.coverPath
             ?.takeIf { File(it).exists() }
             ?.let { File(it).toURI().toString() }
+            ?: song.coverUrl?.takeIf { it.isNotBlank() }
             ?: runCatching {
                 LocalMediaSupport.inspect(context, Uri.fromFile(File(song.filePath))).coverUri
             }.getOrNull()
@@ -547,14 +553,14 @@ private fun DownloadedSongItem(
                 modifier = Modifier.weight(1f)
             ) {
                 Text(
-                    text = song.name,
+                    text = song.displayName(),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = song.artist,
+                    text = song.displayArtist(),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,

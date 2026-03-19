@@ -317,7 +317,17 @@ class GitHubSyncManager private constructor(context: Context) {
                         albumId = playedEntry.albumId,
                         durationMs = playedEntry.durationMs,
                         coverUrl = playedEntry.coverUrl,
-                        mediaUri = LocalSongSupport.sanitizeMediaUriForSync(playedEntry.mediaUri)
+                        mediaUri = LocalSongSupport.sanitizeMediaUriForSync(playedEntry.mediaUri),
+                        matchedLyric = playedEntry.matchedLyric,
+                        matchedTranslatedLyric = playedEntry.matchedTranslatedLyric,
+                        customCoverUrl = playedEntry.customCoverUrl,
+                        customName = playedEntry.customName,
+                        customArtist = playedEntry.customArtist,
+                        originalName = playedEntry.originalName,
+                        originalArtist = playedEntry.originalArtist,
+                        originalCoverUrl = playedEntry.originalCoverUrl,
+                        originalLyric = playedEntry.originalLyric,
+                        originalTranslatedLyric = playedEntry.originalTranslatedLyric
                     ),
                     playedAt = playedEntry.playedAt,
                     deviceId = getDeviceId()
@@ -754,6 +764,16 @@ class GitHubSyncManager private constructor(context: Context) {
                     durationMs = syncPlay.song.durationMs,
                     coverUrl = syncPlay.song.coverUrl,
                     mediaUri = LocalSongSupport.sanitizeMediaUriForSync(syncPlay.song.mediaUri),
+                    matchedLyric = syncPlay.song.matchedLyric,
+                    matchedTranslatedLyric = syncPlay.song.matchedTranslatedLyric,
+                    customCoverUrl = syncPlay.song.customCoverUrl,
+                    customName = syncPlay.song.customName,
+                    customArtist = syncPlay.song.customArtist,
+                    originalName = syncPlay.song.originalName,
+                    originalArtist = syncPlay.song.originalArtist,
+                    originalCoverUrl = syncPlay.song.originalCoverUrl,
+                    originalLyric = syncPlay.song.originalLyric,
+                    originalTranslatedLyric = syncPlay.song.originalTranslatedLyric,
                     playedAt = syncPlay.playedAt
                 )
             }

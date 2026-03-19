@@ -28,8 +28,15 @@ data class PlayedEntry(
     val coverUrl: String?,
     val mediaUri: String? = null,
     val matchedLyric: String? = null,
+    val matchedTranslatedLyric: String? = null,
+    val customCoverUrl: String? = null,
+    val customName: String? = null,
+    val customArtist: String? = null,
     val originalName: String? = null,
     val originalArtist: String? = null,
+    val originalCoverUrl: String? = null,
+    val originalLyric: String? = null,
+    val originalTranslatedLyric: String? = null,
     val localFileName: String? = null,
     val localFilePath: String? = null,
     val playedAt: Long
@@ -114,39 +121,10 @@ class PlayHistoryRepository private constructor(private val app: Context) {
             val existingIndex = current.indexOfFirst { it.identityKey() == songIdentityKey }
             val latestEntry = if (existingIndex >= 0) {
                 NPLogger.d("PlayHistoryRepo", "Updating existing entry at index $existingIndex")
-                current[existingIndex].copy(
-                    name = song.name,
-                    artist = song.artist,
-                    album = song.album,
-                    albumId = song.albumId,
-                    durationMs = song.durationMs,
-                    coverUrl = song.coverUrl,
-                    mediaUri = song.mediaUri,
-                    matchedLyric = song.matchedLyric,
-                    originalName = song.originalName,
-                    originalArtist = song.originalArtist,
-                    localFileName = song.localFileName,
-                    localFilePath = song.localFilePath,
-                    playedAt = now
-                )
+                current[existingIndex].mergeSongMetadata(song, playedAt = now)
             } else {
                 NPLogger.d("PlayHistoryRepo", "Creating new entry")
-                PlayedEntry(
-                    id = song.id,
-                    name = song.name,
-                    artist = song.artist,
-                    album = song.album,
-                    albumId = song.albumId,
-                    durationMs = song.durationMs,
-                    coverUrl = song.coverUrl,
-                    mediaUri = song.mediaUri,
-                    matchedLyric = song.matchedLyric,
-                    originalName = song.originalName,
-                    originalArtist = song.originalArtist,
-                    localFileName = song.localFileName,
-                    localFilePath = song.localFilePath,
-                    playedAt = now
-                )
+                song.toPlayedEntry(now)
             }
 
             val updated = buildList {
@@ -168,6 +146,40 @@ class PlayHistoryRepository private constructor(private val app: Context) {
             if (!LocalSongSupport.isLocalSong(song.album, song.mediaUri, song.albumId, app)) {
                 storage.removeRecentPlayDeletion(song.identityKey())
             }
+            triggerSyncIfNeeded()
+        } finally {
+            writing.set(false)
+        }
+    }
+
+    fun updateSongMetadata(originalSong: SongItem, updatedSong: SongItem) {
+        NPLogger.d(
+            "PlayHistoryRepo",
+            "updateSongMetadata() called: songId=${originalSong.id}, writing=${writing.get()}"
+        )
+        if (writing.get()) {
+            NPLogger.w("PlayHistoryRepo", "updateSongMetadata() blocked by writing lock, skipping")
+            return
+        }
+
+        writing.set(true)
+        try {
+            val current = _history.value
+            val existingIndex = current.indexOfFirst { it.identityKey() == originalSong.identityKey() }
+            if (existingIndex == -1) {
+                return
+            }
+
+            val updatedEntry = current[existingIndex].mergeSongMetadata(updatedSong)
+            val updated = current.toMutableList().apply {
+                this[existingIndex] = updatedEntry
+            }
+                .sortedByDescending { it.playedAt }
+                .distinctBy { it.identityKey() }
+                .take(1000)
+
+            _history.value = updated
+            persistAsync(updated)
             triggerSyncIfNeeded()
         } finally {
             writing.set(false)
@@ -248,6 +260,57 @@ class PlayHistoryRepository private constructor(private val app: Context) {
 
     private fun SongItem.identityKey(): SongIdentity {
         return SongIdentity(id, album, localFilePath ?: mediaUri)
+    }
+
+    private fun SongItem.toPlayedEntry(now: Long): PlayedEntry {
+        return PlayedEntry(
+            id = id,
+            name = name,
+            artist = artist,
+            album = album,
+            albumId = albumId,
+            durationMs = durationMs,
+            coverUrl = coverUrl,
+            mediaUri = mediaUri,
+            matchedLyric = matchedLyric,
+            matchedTranslatedLyric = matchedTranslatedLyric,
+            customCoverUrl = customCoverUrl,
+            customName = customName,
+            customArtist = customArtist,
+            originalName = originalName,
+            originalArtist = originalArtist,
+            originalCoverUrl = originalCoverUrl,
+            originalLyric = originalLyric,
+            originalTranslatedLyric = originalTranslatedLyric,
+            localFileName = localFileName,
+            localFilePath = localFilePath,
+            playedAt = now
+        )
+    }
+
+    private fun PlayedEntry.mergeSongMetadata(song: SongItem, playedAt: Long = this.playedAt): PlayedEntry {
+        return copy(
+            name = song.name,
+            artist = song.artist,
+            album = song.album,
+            albumId = song.albumId,
+            durationMs = song.durationMs,
+            coverUrl = song.coverUrl,
+            mediaUri = song.mediaUri,
+            matchedLyric = song.matchedLyric,
+            matchedTranslatedLyric = song.matchedTranslatedLyric,
+            customCoverUrl = song.customCoverUrl,
+            customName = song.customName,
+            customArtist = song.customArtist,
+            originalName = song.originalName,
+            originalArtist = song.originalArtist,
+            originalCoverUrl = song.originalCoverUrl,
+            originalLyric = song.originalLyric,
+            originalTranslatedLyric = song.originalTranslatedLyric,
+            localFileName = song.localFileName,
+            localFilePath = song.localFilePath,
+            playedAt = playedAt
+        )
     }
 
     private fun PlayedEntry.toRecentPlayDeletion(

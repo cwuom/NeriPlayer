@@ -67,16 +67,26 @@ data class LocalMediaDetails(
 
 fun SongItem.isLocalSong(): Boolean = LocalSongSupport.isLocalSong(this)
 
+private fun Uri.isSupportedLocalMediaUri(): Boolean {
+    return when {
+        scheme.equals("file", ignoreCase = true) -> true
+        scheme.equals("content", ignoreCase = true) -> true
+        scheme.isNullOrBlank() && path?.startsWith("/") == true -> true
+        else -> false
+    }
+}
+
 fun SongItem.localMediaUri(): Uri? {
     val source = localFilePath
         ?.takeIf { it.isNotBlank() }
         ?: mediaUri?.takeIf { it.isNotBlank() }
         ?: return null
-    return if (source.startsWith("/")) {
+    val localUri = if (source.startsWith("/")) {
         Uri.fromFile(File(source))
     } else {
         source.toUri()
     }
+    return localUri.takeIf { it.isSupportedLocalMediaUri() }
 }
 
 fun SongItem.toShareableLocalUri(context: Context): Uri? {
@@ -151,19 +161,53 @@ object LocalMediaSupport {
         val sampleRateHz: Int? = null,
         val channelCount: Int? = null,
         val coverBytes: ByteArray? = null
-    )
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (other !is TagLibMetadata) return false
+
+            return title == other.title &&
+                artist == other.artist &&
+                album == other.album &&
+                albumArtist == other.albumArtist &&
+                composer == other.composer &&
+                genre == other.genre &&
+                year == other.year &&
+                trackNumber == other.trackNumber &&
+                discNumber == other.discNumber &&
+                durationMs == other.durationMs &&
+                bitrateKbps == other.bitrateKbps &&
+                sampleRateHz == other.sampleRateHz &&
+                channelCount == other.channelCount &&
+                (coverBytes?.contentEquals(other.coverBytes) ?: (other.coverBytes == null))
+        }
+
+        override fun hashCode(): Int {
+            var result = title?.hashCode() ?: 0
+            result = 31 * result + (artist?.hashCode() ?: 0)
+            result = 31 * result + (album?.hashCode() ?: 0)
+            result = 31 * result + (albumArtist?.hashCode() ?: 0)
+            result = 31 * result + (composer?.hashCode() ?: 0)
+            result = 31 * result + (genre?.hashCode() ?: 0)
+            result = 31 * result + (year ?: 0)
+            result = 31 * result + (trackNumber ?: 0)
+            result = 31 * result + (discNumber ?: 0)
+            result = 31 * result + (durationMs?.hashCode() ?: 0)
+            result = 31 * result + (bitrateKbps ?: 0)
+            result = 31 * result + (sampleRateHz ?: 0)
+            result = 31 * result + (channelCount ?: 0)
+            result = 31 * result + (coverBytes?.contentHashCode() ?: 0)
+            return result
+        }
+    }
 
     fun inspect(context: Context, song: SongItem): LocalMediaDetails? {
-        val uri = song.localMediaUri() ?: return null
+        val uri = song.localMediaUri()?.takeIf { it.isSupportedLocalMediaUri() } ?: return null
         return inspect(context, uri)
     }
 
-    fun resolveLocalFile(context: Context, song: SongItem): File? {
-        val uri = song.localMediaUri() ?: return null
-        return resolveLocalFile(context, uri)
-    }
-
     fun resolveLocalFile(context: Context, uri: Uri): File? {
+        if (!uri.isSupportedLocalMediaUri()) return null
         val resolvedPath = directFilePath(uri)
             ?: queryContentInfo(context, uri).filePath
             ?: resolvePathFromDescriptor(context, uri)
@@ -171,6 +215,7 @@ object LocalMediaSupport {
     }
 
     fun inspect(context: Context, uri: Uri): LocalMediaDetails {
+        require(uri.isSupportedLocalMediaUri()) { "Unsupported local media uri: $uri" }
         val queried = queryContentInfo(context, uri)
         val resolvedPath = directFilePath(uri) ?: queried.filePath ?: resolvePathFromDescriptor(context, uri)
         val file = resolvedPath?.let(::File)?.takeIf(File::exists)
@@ -189,13 +234,12 @@ object LocalMediaSupport {
         val tagLibMetadata = inspectTagLibMetadata(
             context = context,
             uri = playableUri,
-            file = file,
-            readPictures = true
+            file = file
         )
         val nearbyCover = findNearbyCover(file)
         val nearbyLyrics = findNearbyLyrics(file)
         val lyricContent = nearbyLyrics?.let {
-            readTextFile(it)?.also { _ -> }
+            readTextFile(it)
                 ?: run {
                     NPLogger.w(TAG, "read lyric failed for ${it.absolutePath}")
                     null
@@ -279,13 +323,11 @@ object LocalMediaSupport {
             val trackNumber = tagLibMetadata?.trackNumber ?: parseIndexedMetadata(
                 retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER)
             ) ?: containerMetadata?.trackNumber
-            val discNumber = tagLibMetadata?.discNumber ?: if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val discNumber = tagLibMetadata?.discNumber ?: (
                 parseIndexedMetadata(
                     retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DISC_NUMBER)
                 )
-            } else {
-                null
-            } ?: containerMetadata?.discNumber
+            ) ?: containerMetadata?.discNumber
 
             val embeddedPicture = retriever.embeddedPicture
             val embeddedCover = embeddedPicture != null && embeddedPicture.isNotEmpty()
@@ -409,7 +451,7 @@ object LocalMediaSupport {
         }
     }
 
-    fun toSongItem(context: Context, details: LocalMediaDetails): SongItem {
+    fun toSongItem(details: LocalMediaDetails): SongItem {
         val source = details.filePath?.takeIf { it.isNotBlank() } ?: details.sourceUri.toString()
         val stableId = computeStableSongId(source)
         return SongItem(
@@ -563,6 +605,9 @@ object LocalMediaSupport {
     }
 
     private fun resolvePathFromDescriptor(context: Context, uri: Uri): String? {
+        if (!uri.isSupportedLocalMediaUri()) {
+            return null
+        }
         directFilePath(uri)?.let { return it }
         return runCatching {
             context.contentResolver.openFileDescriptor(uri, "r")?.use { descriptor ->
@@ -596,6 +641,9 @@ object LocalMediaSupport {
     }
 
     private fun resolveSizeFromAssetDescriptor(context: Context, uri: Uri): Long? {
+        if (!uri.isSupportedLocalMediaUri()) {
+            return null
+        }
         return runCatching {
             context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { descriptor ->
                 descriptor.length.takeIf { it >= 0L }
@@ -638,12 +686,11 @@ object LocalMediaSupport {
     private fun inspectTagLibMetadata(
         context: Context,
         uri: Uri,
-        file: File?,
-        readPictures: Boolean
+        file: File?
     ): TagLibMetadata? {
         return openTagLibDescriptor(context, uri, file)?.use { descriptor ->
             val metadata = runCatching {
-                TagLib.getMetadata(descriptor.dup().detachFd(), readPictures)
+                TagLib.getMetadata(descriptor.dup().detachFd(), true)
             }.getOrElse {
                 NPLogger.w(TAG, "TagLib metadata failed for $uri: ${it.message}")
                 null
@@ -689,6 +736,9 @@ object LocalMediaSupport {
         uri: Uri,
         file: File?
     ): ParcelFileDescriptor? {
+        if (!uri.isSupportedLocalMediaUri()) {
+            return null
+        }
         return runCatching {
             file?.let {
                 ParcelFileDescriptor.open(it, ParcelFileDescriptor.MODE_READ_ONLY)

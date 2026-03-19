@@ -49,6 +49,7 @@ object SettingsKeys {
     val SILENT_GITHUB_SYNC_FAILURE = booleanPreferencesKey("silent_github_sync_failure")
     val DISCLAIMER_ACCEPTED_V2 = booleanPreferencesKey("disclaimer_accepted_v2")
     val AUDIO_QUALITY = stringPreferencesKey("audio_quality")
+    val YOUTUBE_AUDIO_QUALITY = stringPreferencesKey("youtube_audio_quality")
     val BILI_AUDIO_QUALITY = stringPreferencesKey("bili_audio_quality")
     val KEY_DEV_MODE = booleanPreferencesKey("dev_mode_enabled")
     val THEME_SEED_COLOR = stringPreferencesKey("theme_seed_color")
@@ -152,6 +153,9 @@ class SettingsRepository(private val context: Context) {
     val audioQualityFlow: Flow<String> =
         context.dataStore.data.map { it[SettingsKeys.AUDIO_QUALITY] ?: "exhigh" }
 
+    val youtubeAudioQualityFlow: Flow<String> =
+        context.dataStore.data.map { it[SettingsKeys.YOUTUBE_AUDIO_QUALITY] ?: "very_high" }
+
     val biliAudioQualityFlow: Flow<String> =
         context.dataStore.data.map { it[SettingsKeys.BILI_AUDIO_QUALITY] ?: "high" }
 
@@ -223,15 +227,6 @@ class SettingsRepository(private val context: Context) {
 
     val maxCacheSizeBytesFlow: Flow<Long> =
         context.dataStore.data.map { it[SettingsKeys.MAX_CACHE_SIZE_BYTES] ?: (1024L * 1024 * 1024) }
-
-    val sleepTimerEnabledFlow: Flow<Boolean> =
-        context.dataStore.data.map { it[SettingsKeys.SLEEP_TIMER_ENABLED] ?: false }
-
-    val sleepTimerModeFlow: Flow<String> =
-        context.dataStore.data.map { it[SettingsKeys.SLEEP_TIMER_MODE] ?: "COUNTDOWN" }
-
-    val sleepTimerMinutesFlow: Flow<Long> =
-        context.dataStore.data.map { it[SettingsKeys.SLEEP_TIMER_MINUTES] ?: 30L }
 
     val showLyricTranslationFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.SHOW_LYRIC_TRANSLATION] ?: true }
@@ -310,6 +305,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setAudioQuality(value: String) {
         context.dataStore.edit { it[SettingsKeys.AUDIO_QUALITY] = value }
+    }
+
+    suspend fun setYouTubeAudioQuality(value: String) {
+        context.dataStore.edit { it[SettingsKeys.YOUTUBE_AUDIO_QUALITY] = value }
     }
 
     suspend fun setBiliAudioQuality(value: String) {
@@ -436,18 +435,6 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { it[SettingsKeys.MAX_CACHE_SIZE_BYTES] = bytes }
     }
 
-    suspend fun setSleepTimerEnabled(enabled: Boolean) {
-        context.dataStore.edit { it[SettingsKeys.SLEEP_TIMER_ENABLED] = enabled }
-    }
-
-    suspend fun setSleepTimerMode(mode: String) {
-        context.dataStore.edit { it[SettingsKeys.SLEEP_TIMER_MODE] = mode }
-    }
-
-    suspend fun setSleepTimerMinutes(minutes: Long) {
-        context.dataStore.edit { it[SettingsKeys.SLEEP_TIMER_MINUTES] = minutes }
-    }
-
     suspend fun setShowLyricTranslation(enabled: Boolean) {
         context.dataStore.edit { it[SettingsKeys.SHOW_LYRIC_TRANSLATION] = enabled }
     }
@@ -514,12 +501,6 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setAllowMixedPlayback(enabled: Boolean) {
         context.dataStore.edit { it[SettingsKeys.ALLOW_MIXED_PLAYBACK] = enabled }
-    }
-
-    /** 备用：一次性读取（非 Compose 场景） */
-    suspend fun isDisclaimerAcceptedFirst(): Boolean {
-        val prefs = context.dataStore.data.first()
-        return prefs[SettingsKeys.DISCLAIMER_ACCEPTED_V2] ?: false
     }
 }
 

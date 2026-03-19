@@ -76,14 +76,14 @@
     <string name="playlist_import_failed">Import Failed</string>
     <string name="playlist_export_progress">Export Progress</string>
     <string name="playlist_import_progress">Import Progress</string>
-    <string name="playlist_exporting">Exporting playlists...</string>
-    <string name="playlist_importing">Importing playlists...</string>
+    <string name="playlist_exporting">Exporting playlists…</string>
+    <string name="playlist_importing">Importing playlists…</string>
     <string name="playlist_import_complete">Import Complete!</string>
     <string name="playlist_import_count">Successfully imported: %d playlists</string>
     <string name="playlist_merge_count">Smart merged: %d playlists</string>
     <string name="playlist_skip_count">Skipped duplicates: %d playlists</string>
     <string name="playlist_backup_date">Backup date: %s</string>
-    <string name="playlist_analyzing">Analyzing differences...</string>
+    <string name="playlist_analyzing">Analyzing differences…</string>
     <string name="playlist_analysis_failed">Analysis failed: %s</string>
     <string name="playlist_export_to_local">Export to Local</string>
     <string name="playlist_export_to">Export to Playlist</string>
@@ -322,6 +322,7 @@
     <string name="quality_hd_surround">HD Surround</string>
     <string name="quality_default">Select Default Quality</string>
     <string name="quality_netease_default">NetEase Default Quality</string>
+    <string name="quality_youtube_default">YouTube Default Quality</string>
 
     <!-- Playback Device -->
     <string name="device_speaker">Speaker</string>
@@ -442,7 +443,7 @@
     <string name="debug_hide_hint">After hiding, \"Debug\" will be removed from bottom bar. Tap version 7 times in settings to re-enable</string>
     <string name="debug_search_keyword">Search Keyword</string>
     <string name="debug_search_copy_json">Search (Copy JSON)</string>
-    <string name="debug_bvid_hint">BV ID (e.g.: BV1xx...)</string>
+    <string name="debug_bvid_hint">BV ID (e.g.: BV1xx…)</string>
     <string name="debug_get_info_copy">Get Info/Cover/Stats (Copy JSON)</string>
     <string name="debug_page_setting">Page Setting (Choose One)</string>
     <string name="debug_page_hint">Page (Default 1)</string>
@@ -478,13 +479,13 @@
     <string name="debug_search_qq">Search QQ</string>
     <string name="debug_search_preview_hint">(No preview, enter keyword and click button above~)</string>
     <string name="debug_error_keyword_empty">Error: Keyword cannot be empty</string>
-    <string name="debug_searching">Searching [%1$s]: %2$s ...</string>
+    <string name="debug_searching">Searching [%1$s]: %2$s …</string>
     <string name="debug_search_ok">OK, [%s] search complete and copied to clipboard</string>
     <string name="debug_call_failed">Call/Parse failed: %s</string>
-    <string name="debug_calling">Calling: %s ...</string>
+    <string name="debug_calling">Calling: %s …</string>
     <string name="debug_copied_label">Copied to clipboard: %s</string>
     <string name="debug_network_error">Network/Server error: %s</string>
-    <string name="debug_all_api_calling">Calling all APIs...</string>
+    <string name="debug_all_api_calling">Calling all APIs…</string>
     <string name="debug_all_api_ok">OK, all APIs called and copied to clipboard</string>
     <string name="debug_page_not_found">Page %d not found</string>
 
@@ -598,10 +599,10 @@
     <string name="login_confirm_send_code">Confirm send verification code?</string>
     <string name="login_send_code_to">Will send code to &gt;%s&lt;</string>
     <string name="login_paste_cookie">Paste Cookie</string>
-    <string name="login_paste_cookie_hint">Paste Cookie (e.g.: MUSIC_U=...; __csrf=...)</string>
+    <string name="login_paste_cookie_hint">Paste Cookie (e.g.: MUSIC_U=…; __csrf=…)</string>
     <string name="login_save_cookie">Save Cookie and Login</string>
-    <string name="login_sending">Sending...</string>
-    <string name="login_logging_in">Logging in...</string>
+    <string name="login_sending">Sending…</string>
+    <string name="login_logging_in">Logging in…</string>
 
     <!-- Library & Playlist -->
     <string name="library_tab_local">Local</string>
@@ -621,7 +622,7 @@
     <string name="recent_clear_confirm">Are you sure you want to clear all recent play history? This action cannot be undone.</string>
 
     <!-- Download -->
-    <string name="download_search_hint">Search downloaded songs...</string>
+    <string name="download_search_hint">Search downloaded songs…</string>
     <string name="download_delete_confirm">Are you sure you want to delete song "%s"? This action cannot be undone.</string>
     <string name="download_delete_selected_confirm">Are you sure you want to delete %d selected songs? This action cannot be undone.</string>
 
@@ -792,13 +793,13 @@
 
     <!-- Debug/Probe Messages -->
     <string name="probe_keyword_empty">Error: Keyword cannot be empty</string>
-    <string name="probe_searching" formatted="false">Searching [%s]: %s ...</string>
+    <string name="probe_searching" formatted="false">Searching [%s]: %s …</string>
     <string name="probe_search_complete">OK, [%s] search complete and copied</string>
     <string name="probe_call_failed">Call/parse failed: %s</string>
-    <string name="probe_calling">Calling: %s ...</string>
+    <string name="probe_calling">Calling: %s …</string>
     <string name="probe_copied">Copied to clipboard: %s</string>
     <string name="probe_network_error">Network/server error: %s</string>
-    <string name="probe_all_calling">Calling all APIs...</string>
+    <string name="probe_all_calling">Calling all APIs…</string>
     <string name="probe_all_complete">OK, all APIs called and copied</string>
     <string name="probe_invalid_avid">Please enter valid avid (number) in BV field</string>
     <string name="probe_page_not_found">Cannot find page %d</string>
@@ -1059,8 +1060,8 @@
     <string name="settings_bili_login_browser_hint">Will open the built-in browser to visit passport.bilibili.com and automatically read cookies after sign-in.</string>
     <string name="settings_youtube_login_browser_hint">Attempts to use an embedded page for music.youtube.com and automatically read cookies after sign-in.</string>
     <string name="settings_youtube_login_browser_warning">Google may show \"This browser may not be secure\" or block sign-in entirely. If that happens, use Cookie import below.</string>
-    <string name="login_paste_bili_cookie_hint">Paste Cookie (e.g.: SESSDATA=...; bili_jct=...)</string>
-    <string name="login_paste_youtube_cookie_hint">Paste Cookie (e.g.: SAPISID=...; __Secure-1PSID=...)</string>
+    <string name="login_paste_bili_cookie_hint">Paste Cookie (e.g.: SESSDATA=…; bili_jct=…)</string>
+    <string name="login_paste_youtube_cookie_hint">Paste Cookie (e.g.: SAPISID=…; __Secure-1PSID=…)</string>
     <string name="settings_cookie_input_hint">Please enter Cookie</string>
     <string name="settings_github_token_permission">Required permission: repo (full repository access)</string>
 
@@ -1086,7 +1087,7 @@
 
     <!-- Playlist Info (Additional) -->
     <string name="playlist_play_count_format" formatted="false">%1$s plays · %2$d tracks</string>
-    <string name="playlist_loading_content">Loading playlist content...</string>
+    <string name="playlist_loading_content">Loading playlist content…</string>
     <string name="playlist_load_failed_format">Load failed: %s</string>
 
     <!-- Count Format (Additional) -->
@@ -1099,7 +1100,7 @@
     <string name="download_current_file_progress" formatted="false">Current file: %1$d%% (%2$d KB/s)</string>
 
     <!-- Other Translations -->
-    <string name="local_playlist_play_next">Play Next...</string>
+    <string name="local_playlist_play_next">Play Next…</string>
     <string name="download_manager_title">Download Manager</string>
     <string name="download_manager_subtitle">Manage downloads</string>
     <string name="download_scan_local">Scan Local Music</string>
@@ -1122,7 +1123,7 @@
     <string name="download_space_used">Storage Used</string>
     <string name="download_play">Play</string>
     <string name="download_delete">Delete</string>
-    <string name="home_loading">Loading recommendations for you...</string>
+    <string name="home_loading">Loading recommendations for you…</string>
     <string name="home_load_failed">Load failed: %s</string>
     <string name="home_error_network">Network or server error: %s</string>
     <string name="home_error_unknown">Parse or unknown error: %s</string>
@@ -1169,7 +1170,7 @@
     <string name="library_recent_played">Recent Plays</string>
     <string name="nowplaying_youtube_music">YouTube Music</string>
     <string name="library_delete_playlist_confirm">Delete playlist \"%1$s\"?</string>
-    <string name="bili_loading_favorites">Loading favorites...</string>
+    <string name="bili_loading_favorites">Loading favorites…</string>
     <string name="bili_load_failed">Load failed: %s</string>
     <string name="bili_get_parts_failed">Failed to get parts</string>
     <string name="bili_content_count">%d items</string>

@@ -7,12 +7,15 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 fun SongItem.displayCoverUrl(): String? = customCoverUrl ?: coverUrl
 
 fun SongItem.displayCoverUrl(context: Context): String? {
-    val current = displayCoverUrl()?.takeIf { it.isNotBlank() }
+    customCoverUrl?.takeIf { it.isNotBlank() }?.let { return it }
+
+    val current = coverUrl?.takeIf { it.isNotBlank() }
     if (!current.isNullOrBlank() && !current.isRemoteCoverSource()) {
         return current
     }
 
     AudioDownloadManager.getLocalCoverUri(context, this)?.let { return it }
+    if (!isLocalSong()) return current
     LocalMediaSupport.inspect(context, this)?.coverUri?.takeIf { it.isNotBlank() }?.let { return it }
     return current
 }

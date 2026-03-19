@@ -420,6 +420,8 @@ fun SettingsScreen(
     onThemeToggleRequest: (Offset, Float) -> Unit,
     preferredQuality: String,
     onQualityChange: (String) -> Unit,
+    youtubePreferredQuality: String,
+    onYouTubeQualityChange: (String) -> Unit,
     biliPreferredQuality: String,
     onBiliQualityChange: (String) -> Unit,
     devModeEnabled: Boolean,
@@ -570,6 +572,7 @@ fun SettingsScreen(
     // 各种对话框和弹窗的显示状态 //
     var showQualityDialog by remember { mutableStateOf(false) }
     var showNeteaseSheet by remember { mutableStateOf(false) }
+    var showYouTubeQualityDialog by remember { mutableStateOf(false) }
     var showBiliQualityDialog by remember { mutableStateOf(false) }
     var showDefaultStartDestinationDialog by remember { mutableStateOf(false) }
     var showConfirmDialog by remember { mutableStateOf(false) }
@@ -705,6 +708,16 @@ fun SettingsScreen(
             "medium"  -> context.getString(R.string.settings_audio_quality_medium)
             "low"     -> context.getString(R.string.settings_audio_quality_low)
             else -> biliPreferredQuality
+        }
+    }
+
+    val youtubeQualityLabel = remember(youtubePreferredQuality) {
+        when (youtubePreferredQuality) {
+            "low" -> context.getString(R.string.settings_audio_quality_standard)
+            "medium" -> context.getString(R.string.settings_audio_quality_medium)
+            "high" -> context.getString(R.string.settings_audio_quality_high)
+            "very_high" -> context.getString(R.string.quality_very_high)
+            else -> youtubePreferredQuality
         }
     }
 
@@ -1013,7 +1026,6 @@ fun SettingsScreen(
                             .background(Color.Transparent)
                             .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
                     ) {
-                        // 哔哩哔哩
                         ListItem(
                             leadingContent = {
                                 Icon(
@@ -2209,6 +2221,29 @@ fun SettingsScreen(
                         ListItem(
                             leadingContent = {
                                 Icon(
+                                    painter = painterResource(id = R.drawable.ic_youtube),
+                                    contentDescription = stringResource(R.string.quality_youtube_default),
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = { Text(stringResource(R.string.quality_youtube_default)) },
+                            supportingContent = {
+                                Text(
+                                    stringResource(
+                                        R.string.common_label_value_format,
+                                        youtubeQualityLabel,
+                                        youtubePreferredQuality
+                                    )
+                                )
+                            },
+                            modifier = Modifier.settingsItemClickable { showYouTubeQualityDialog = true },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+
+                        ListItem(
+                            leadingContent = {
+                                Icon(
                                     painter = painterResource(id = R.drawable.ic_bilibili),
                                     contentDescription = stringResource(R.string.settings_bili_quality),
                                     modifier = Modifier.size(24.dp),
@@ -2336,7 +2371,7 @@ fun SettingsScreen(
                                             val dataSize = dataDir.walkTopDown().filter { it.isFile }.map { it.length() }.sum()
                                             details[context.getString(R.string.storage_type_app_data)] = dataSize
 
-                                        } catch (e: Exception) {
+                                        } catch (_: Exception) {
                                             details[context.getString(R.string.storage_type_error)] = 0L
                                         }
                                         storageDetails = details
@@ -3294,8 +3329,6 @@ fun SettingsScreen(
 
                         2 -> {
                             NeteaseLoginContent(
-                                message = null,
-                                onDismissMessage = { },
                                 vm = neteaseVm
                             )
                         }
@@ -3479,6 +3512,47 @@ fun SettingsScreen(
             },
             confirmButton = {
                 HapticTextButton(onClick = { showBiliCookieDialog = false }) { Text(stringResource(R.string.action_ok)) }
+            }
+        )
+    }
+
+    if (showYouTubeQualityDialog) {
+        AlertDialog(
+            onDismissRequest = { showYouTubeQualityDialog = false },
+            title = { Text(stringResource(R.string.quality_youtube_default)) },
+            text = {
+                Column {
+                    val options = listOf(
+                        "low" to stringResource(R.string.settings_audio_quality_standard),
+                        "medium" to stringResource(R.string.settings_audio_quality_medium),
+                        "high" to stringResource(R.string.settings_audio_quality_high),
+                        "very_high" to stringResource(R.string.quality_very_high)
+                    )
+                    options.forEach { (level, label) ->
+                        ListItem(
+                            headlineContent = { Text(label) },
+                            trailingContent = {
+                                if (level == youtubePreferredQuality) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Check,
+                                        contentDescription = stringResource(R.string.common_selected),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            },
+                            modifier = Modifier.settingsItemClickable {
+                                onYouTubeQualityChange(level)
+                                showYouTubeQualityDialog = false
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                HapticTextButton(onClick = { showYouTubeQualityDialog = false }) {
+                    Text(stringResource(R.string.action_close))
+                }
             }
         )
     }
@@ -4081,7 +4155,7 @@ fun SettingsScreen(
                             val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
                             intent.data = "package:${context.packageName}".toUri()
                             context.startActivity(intent)
-                        } catch (e: Exception) {
+                        } catch (_: Exception) {
                             // 忽略错误
                         }
                     }) {
@@ -4396,22 +4470,12 @@ private fun ColorPickerItem(
 
 @Composable
 private fun NeteaseLoginContent(
-    message: String?,
-    onDismissMessage: () -> Unit,
     vm: NeteaseAuthViewModel
 ) {
     val state by vm.uiState.collectAsStateWithLifecycleCompat()
 
     Column {
         Spacer(modifier = Modifier.height(12.dp))
-
-        // 内嵌提示条
-        AnimatedVisibility(visible = message != null, enter = fadeIn(), exit = fadeOut()) {
-            InlineMessage(
-                text = message ?: "",
-                onClose = onDismissMessage
-            )
-        }
 
         OutlinedTextField(
             value = state.phone,

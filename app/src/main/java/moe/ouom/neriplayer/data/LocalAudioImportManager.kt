@@ -44,7 +44,7 @@ object LocalAudioImportManager {
             }
 
             val song = runCatching {
-                LocalMediaSupport.toSongItem(context, LocalMediaSupport.inspect(context, stableUri))
+                LocalMediaSupport.toSongItem(LocalMediaSupport.inspect(context, stableUri))
             }.onFailure {
                 NPLogger.e(TAG, "Failed to import stabilized external audio: $stableUri", it)
             }.getOrNull()
@@ -146,7 +146,6 @@ object LocalAudioImportManager {
                     songs += runCatching {
                         normalizeScannedSong(
                             baseSong = LocalMediaSupport.toSongItem(
-                                context,
                                 LocalMediaSupport.inspect(context, contentUri)
                             ),
                             resolvedFile = resolvedFile,

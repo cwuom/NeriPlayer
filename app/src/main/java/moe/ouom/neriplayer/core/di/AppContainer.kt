@@ -136,7 +136,11 @@ object AppContainer {
         BiliPlaybackRepository(dataSource, settingsRepo)
     }
     val youtubeMusicPlaybackRepository by lazy {
-        YouTubeMusicPlaybackRepository(sharedOkHttpClient, youtubeAuthRepo::getAuthOnce)
+        YouTubeMusicPlaybackRepository(
+            okHttpClient = sharedOkHttpClient,
+            settings = settingsRepo,
+            authProvider = youtubeAuthRepo::getAuthOnce
+        )
     }
 
     val cloudMusicSearchApi by lazy { CloudMusicSearchApi(neteaseClient) }
@@ -198,9 +202,12 @@ object AppContainer {
         if (!host.contains("googlevideo.com")) {
             return false
         }
+        val path = request.url.encodedPath.lowercase()
         val rawUrl = request.url.toString().lowercase()
         return rawUrl.contains("source=youtube") ||
             rawUrl.contains("/api/manifest/") ||
+            path.contains("/playlist/index.m3u8") ||
+            path.contains("/file/seg.ts") ||
             rawUrl.contains("/videoplayback")
     }
 }

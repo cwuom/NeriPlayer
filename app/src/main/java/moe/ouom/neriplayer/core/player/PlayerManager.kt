@@ -82,6 +82,7 @@ import moe.ouom.neriplayer.core.api.bili.buildBiliPartSong
 import moe.ouom.neriplayer.core.api.bili.resolveBiliSong
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.search.SongSearchInfo
+import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.di.AppContainer.biliCookieRepo
 import moe.ouom.neriplayer.core.di.AppContainer.settingsRepo
@@ -121,7 +122,8 @@ sealed class PlayerEvent {
 private sealed class SongUrlResult {
     data class Success(
         val url: String,
-        val durationMs: Long? = null
+        val durationMs: Long? = null,
+        val mimeType: String? = null
     ) : SongUrlResult()
     object RequiresLogin : SongUrlResult()
     object Failure : SongUrlResult()
@@ -138,7 +140,6 @@ private sealed class SongUrlResult {
 object PlayerManager {
     const val BILI_SOURCE_TAG = "Bilibili"
     const val NETEASE_SOURCE_TAG = "Netease"
-    const val YOUTUBE_MUSIC_SOURCE_TAG = "YouTube Music|"
 
     private var initialized = false
     private lateinit var application: Application
@@ -168,6 +169,7 @@ object PlayerManager {
     private lateinit var stateFile: File
 
     private var preferredQuality: String = "exhigh"
+    private var youtubePreferredQuality: String = "very_high"
     private var biliPreferredQuality: String = "high"
     private var playbackFadeInEnabled = false
     private var playbackCrossfadeNextEnabled = false
@@ -356,7 +358,7 @@ object PlayerManager {
     }
 
     private fun maybeUpdateSongDuration(song: SongItem, durationMs: Long) {
-        val resolvedDurationMs = durationMs.takeIf { it > 0L && it != C.TIME_UNSET } ?: return
+        val resolvedDurationMs = durationMs.takeIf { it > 0L } ?: return
         var changed = false
 
         val queueIndex = queueIndexOf(song)
@@ -387,7 +389,7 @@ object PlayerManager {
             return
         }
         val currentSong = _currentSongFlow.value ?: return
-        val playerDurationMs = player.duration.takeIf { it > 0L && it != C.TIME_UNSET } ?: return
+        val playerDurationMs = player.duration.takeIf { it > 0L } ?: return
         maybeUpdateSongDuration(currentSong, playerDurationMs)
     }
 
@@ -424,7 +426,7 @@ object PlayerManager {
             isLocalSong(song) -> "local-${song.stableKey().hashCode()}"
             isYouTubeMusicSong(song) -> {
                 val videoId = extractYouTubeMusicVideoId(song.mediaUri).orEmpty()
-                "ytmusic-$videoId"
+                "ytmusic-$videoId-$youtubePreferredQuality"
             }
             song.album.startsWith(BILI_SOURCE_TAG) -> {
             val parts = song.album.split('|')
@@ -440,10 +442,20 @@ object PlayerManager {
     }
 
     /** 基于 URL 与缓存键构建 MediaItem（含自定义缓存键，便于跨音质/来源复用/隔离） */
-    private fun buildMediaItem(song: SongItem, url: String, cacheKey: String): MediaItem {
+    private fun buildMediaItem(
+        song: SongItem,
+        url: String,
+        cacheKey: String,
+        mimeType: String? = null
+    ): MediaItem {
         return MediaItem.Builder()
             .setMediaId("${song.id}|${song.album}|${song.mediaUri.orEmpty()}")
             .setUri(url.toUri())
+            .apply {
+                if (!mimeType.isNullOrBlank()) {
+                    setMimeType(mimeType)
+                }
+            }
             .setCustomCacheKey(cacheKey)
             .build()
     }
@@ -676,6 +688,22 @@ object PlayerManager {
             settingsRepo.audioQualityFlow.collect { q -> preferredQuality = q }
         }
         ioScope.launch {
+            settingsRepo.youtubeAudioQualityFlow.collect { q ->
+                val previousQuality = youtubePreferredQuality
+                youtubePreferredQuality = q
+                if (previousQuality != q) {
+                    val currentSong = _currentSongFlow.value
+                    if (currentSong != null && isYouTubeMusicSong(currentSong)) {
+                        refreshCurrentSongUrl(
+                            resumePositionMs = player.currentPosition.coerceAtLeast(0L),
+                            allowFallback = true,
+                            reason = "youtube_quality_changed"
+                        )
+                    }
+                }
+            }
+        }
+        ioScope.launch {
             settingsRepo.biliAudioQualityFlow.collect { q -> biliPreferredQuality = q }
         }
         ioScope.launch {
@@ -782,7 +810,7 @@ object PlayerManager {
 
                                 cache.removeResource(key)
                                 apiRemovedCount++
-                            } catch (e: Exception) { /* 忽略单个失败 */ }
+                            } catch (_: Exception) { /* 忽略单个失败 */ }
                         }
                     }
 
@@ -960,8 +988,9 @@ object PlayerManager {
 
     private fun isBluetoothOutputType(type: Int): Boolean {
         return type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
-            type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
-            type == AudioDeviceInfo.TYPE_BLE_SPEAKER
+            (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S &&
+                (type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
+                    type == AudioDeviceInfo.TYPE_BLE_SPEAKER))
     }
 
     private fun isWiredOutputType(type: Int): Boolean {
@@ -1175,7 +1204,12 @@ object PlayerManager {
                     val cacheKey = computeCacheKey(song)
                     NPLogger.d("NERI-PlayerManager", "Using custom cache key: $cacheKey for song: ${song.name}")
 
-                    val mediaItem = buildMediaItem(_currentSongFlow.value ?: song, result.url, cacheKey)
+                    val mediaItem = buildMediaItem(
+                        _currentSongFlow.value ?: song,
+                        result.url,
+                        cacheKey,
+                        result.mimeType
+                    )
 
                     _currentMediaUrl.value = result.url
                     currentMediaUrlResolvedAtMs = SystemClock.elapsedRealtime()
@@ -1268,7 +1302,10 @@ object PlayerManager {
         val nextVideoId = extractYouTubeMusicVideoId(nextSong.mediaUri) ?: return
         ioScope.launch {
             runCatching {
-                youtubeMusicPlaybackRepository.prefetchPlayableAudioUrl(nextVideoId)
+                youtubeMusicPlaybackRepository.prefetchPlayableAudioUrl(
+                    videoId = nextVideoId,
+                    preferredQualityOverride = youtubePreferredQuality
+                )
             }.onFailure { error ->
                 NPLogger.w(
                     "NERI-PlayerManager",
@@ -1278,7 +1315,10 @@ object PlayerManager {
         }
     }
 
-    private suspend fun resolveSongUrl(song: SongItem): SongUrlResult {
+    private suspend fun resolveSongUrl(
+        song: SongItem,
+        forceRefresh: Boolean = false
+    ): SongUrlResult {
         if (isLocalSong(song)) {
             val localMediaUri = localMediaSource(song)
             if (localMediaUri != null && isReadableLocalMediaUri(localMediaUri)) {
@@ -1295,13 +1335,17 @@ object PlayerManager {
         val cacheKey = computeCacheKey(song)
         val hasCachedData = checkExoPlayerCache(cacheKey)
         val result = when {
-            isYouTubeMusicSong(song) -> getYouTubeMusicAudioUrl(song, suppressError = hasCachedData)
+            isYouTubeMusicSong(song) -> getYouTubeMusicAudioUrl(
+                song = song,
+                suppressError = hasCachedData,
+                forceRefresh = forceRefresh
+            )
             song.album.startsWith(BILI_SOURCE_TAG) -> getBiliAudioUrl(song, suppressError = hasCachedData)
             else -> getNeteaseSongUrl(song.id, suppressError = hasCachedData)
         }
 
         // 如果网络失败但有缓存，使用虚拟URL让ExoPlayer使用缓存
-        return if (result is SongUrlResult.Failure && hasCachedData) {
+        return if (result is SongUrlResult.Failure && hasCachedData && !isYouTubeMusicSong(song)) {
             NPLogger.d("NERI-PlayerManager", "网络失败但有缓存，尝试离线播放: $cacheKey")
             // 使用虚拟URL，ExoPlayer会因为customCacheKey自动使用缓存
             SongUrlResult.Success("http://offline.cache/$cacheKey")
@@ -1360,12 +1404,20 @@ object PlayerManager {
         ioScope.launch {
             try {
                 NPLogger.d("NERI-PlayerManager", "Refreshing stream url ($reason): $cacheKey")
-                val result = resolveSongUrl(song)
+                val result = resolveSongUrl(
+                    song = song,
+                    forceRefresh = isYouTubeMusicSong(song)
+                )
                 if (result is SongUrlResult.Success &&
                     _currentSongFlow.value?.sameIdentityAs(song) == true
                 ) {
                     maybeUpdateSongDuration(song, result.durationMs ?: 0L)
-                    applyResolvedMediaItem(_currentSongFlow.value ?: song, result.url, resumePositionMs)
+                    applyResolvedMediaItem(
+                        _currentSongFlow.value ?: song,
+                        result.url,
+                        result.mimeType,
+                        resumePositionMs
+                    )
                     consecutivePlayFailures = 0
                 } else if (allowFallback) {
                     withContext(Dispatchers.Main) {
@@ -1385,12 +1437,13 @@ object PlayerManager {
     private suspend fun applyResolvedMediaItem(
         song: SongItem,
         url: String,
+        mimeType: String?,
         resumePositionMs: Long
     ) {
         if (_currentSongFlow.value?.sameIdentityAs(song) != true) return
 
         val cacheKey = computeCacheKey(song)
-        val mediaItem = buildMediaItem(song, url, cacheKey)
+        val mediaItem = buildMediaItem(song, url, cacheKey, mimeType)
 
         _currentMediaUrl.value = url
         currentMediaUrlResolvedAtMs = SystemClock.elapsedRealtime()
@@ -1552,7 +1605,8 @@ object PlayerManager {
 
     private suspend fun getYouTubeMusicAudioUrl(
         song: SongItem,
-        suppressError: Boolean = false
+        suppressError: Boolean = false,
+        forceRefresh: Boolean = false
     ): SongUrlResult = withContext(Dispatchers.IO) {
         val videoId = extractYouTubeMusicVideoId(song.mediaUri)
         if (videoId.isNullOrBlank()) {
@@ -1563,12 +1617,18 @@ object PlayerManager {
         }
 
         try {
-            val playableAudio = youtubeMusicPlaybackRepository.getBestPlayableAudio(videoId)
-            if (!playableAudio?.url.isNullOrBlank()) {
-                maybeUpdateSongDuration(song, playableAudio?.durationMs ?: 0L)
+            val playableAudio = youtubeMusicPlaybackRepository.getBestPlayableAudio(
+                videoId = videoId,
+                preferredQualityOverride = youtubePreferredQuality,
+                forceRefresh = forceRefresh
+            )
+            val resolvedPlayableAudio = playableAudio?.takeIf { !it.url.isNullOrBlank() }
+            if (resolvedPlayableAudio != null) {
+                maybeUpdateSongDuration(song, resolvedPlayableAudio.durationMs)
                 SongUrlResult.Success(
-                    url = playableAudio!!.url,
-                    durationMs = playableAudio.durationMs.takeIf { it > 0L }
+                    url = resolvedPlayableAudio.url,
+                    durationMs = resolvedPlayableAudio.durationMs.takeIf { it > 0L },
+                    mimeType = resolvedPlayableAudio.mimeType
                 )
             } else {
                 if (!suppressError) {
@@ -2183,24 +2243,6 @@ object PlayerManager {
         }
     }
 
-    /** 同时获取歌词与翻译 */
-    suspend fun getNeteaseLyricsWithTrans(songId: Long): Pair<List<LyricEntry>, List<LyricEntry>> {
-        return withContext(Dispatchers.IO) {
-            try {
-                val raw = neteaseClient.getLyricNew(songId)
-                val obj = JSONObject(raw)
-                val lrc = obj.optJSONObject("lrc")?.optString("lyric") ?: ""
-                val tlyric = obj.optJSONObject("tlyric")?.optString("lyric") ?: ""
-                val base = if (lrc.isBlank()) emptyList() else parseNeteaseLrc(lrc)
-                val trans = if (tlyric.isBlank()) emptyList() else parseNeteaseLrc(tlyric)
-                base to trans
-            } catch (e: Exception) {
-                NPLogger.e("NERI-PlayerManager", "getNeteaseLyricsWithTrans failed: ${e.message}", e)
-                emptyList<LyricEntry>() to emptyList()
-            }
-        }
-    }
-
     /** 根据歌曲来源返回可用的翻译（如果有） */
     suspend fun getTranslatedLyrics(song: SongItem): List<LyricEntry> {
         val context = application
@@ -2474,21 +2516,6 @@ object PlayerManager {
         return resumePositionMs
     }
 
-    fun rearmRestoredPlayback(positionMs: Long): Boolean {
-        ensureInitialized()
-        if (!initialized) return false
-        if (currentPlaylist.isEmpty() || currentIndex !in currentPlaylist.indices) return false
-        val resumePositionMs = positionMs.coerceAtLeast(0L)
-        restoredResumePositionMs = resumePositionMs
-        restoredShouldResumePlayback = true
-        suppressAutoResumeForCurrentSession = false
-        resumePlaybackRequested = true
-        ioScope.launch {
-            persistState(positionMs = resumePositionMs, shouldResumePlayback = true)
-        }
-        return true
-    }
-
     fun suppressFutureAutoResumeForCurrentSession(forcePersist: Boolean = false) {
         ensureInitialized()
         if (!initialized || currentPlaylist.isEmpty()) return
@@ -2583,7 +2610,9 @@ object PlayerManager {
             NPLogger.d("PlayerManager", "updateSongCustomInfo: id=${originalSong.id}, album='${originalSong.album}'")
 
             // 从当前播放列表中获取最新的歌曲状态,保留歌词等字段
-            val currentSong = currentPlaylist.firstOrNull { it.sameIdentityAs(originalSong) } ?: originalSong
+            val currentSong = currentPlaylist.firstOrNull { it.sameIdentityAs(originalSong) }
+                ?: _currentSongFlow.value?.takeIf { it.sameIdentityAs(originalSong) }
+                ?: originalSong
 
             val originalName = currentSong.originalName ?: currentSong.name
             val originalArtist = currentSong.originalArtist ?: currentSong.artist
@@ -2606,140 +2635,6 @@ object PlayerManager {
             )
 
             updateSongInAllPlaces(originalSong, updatedSong)
-        }
-    }
-
-    fun restoreToOriginalMetadata(originalSong: SongItem) {
-        ioScope.launch {
-            try {
-                val isBili = originalSong.album.startsWith(BILI_SOURCE_TAG)
-                val isYouTubeMusic = isYouTubeMusicSong(originalSong)
-
-                if (isLocalSong(originalSong)) {
-                    val restoredName = originalSong.originalName ?: originalSong.name
-                    val restoredArtist = originalSong.originalArtist ?: originalSong.artist
-                    val restoredCover = originalSong.originalCoverUrl ?: originalSong.coverUrl
-                    val updatedSong = originalSong.copy(
-                        name = restoredName,
-                        artist = restoredArtist,
-                        coverUrl = restoredCover,
-                        matchedLyric = null,
-                        matchedTranslatedLyric = null,
-                        matchedLyricSource = null,
-                        matchedSongId = null,
-                        customCoverUrl = null,
-                        customName = null,
-                        customArtist = null,
-                        originalName = restoredName,
-                        originalArtist = restoredArtist,
-                        originalCoverUrl = restoredCover,
-                        originalLyric = originalSong.originalLyric,
-                        originalTranslatedLyric = originalSong.originalTranslatedLyric
-                    )
-                    updateSongInAllPlaces(originalSong, updatedSong)
-                } else if (isYouTubeMusic) {
-                    val restoredName = originalSong.originalName ?: originalSong.name
-                    val restoredArtist = originalSong.originalArtist ?: originalSong.artist
-                    val restoredCover = originalSong.originalCoverUrl ?: originalSong.coverUrl
-                    val updatedSong = originalSong.copy(
-                        name = restoredName,
-                        artist = restoredArtist,
-                        coverUrl = restoredCover,
-                        matchedLyric = null,
-                        matchedTranslatedLyric = null,
-                        matchedLyricSource = null,
-                        matchedSongId = null,
-                        customCoverUrl = null,
-                        customName = null,
-                        customArtist = null,
-                        originalName = restoredName,
-                        originalArtist = restoredArtist,
-                        originalCoverUrl = restoredCover,
-                        originalLyric = originalSong.originalLyric,
-                        originalTranslatedLyric = originalSong.originalTranslatedLyric
-                    )
-                    updateSongInAllPlaces(originalSong, updatedSong)
-                } else if (isBili) {
-                    val resolved = resolveBiliSong(originalSong, biliClient)
-                        ?: throw IllegalStateException("无法解析 B 站视频信息")
-                    val coverUrl = resolved.videoInfo.coverUrl.let {
-                        if (it.startsWith("http://")) it.replaceFirst("http://", "https://") else it
-                    }
-
-                    val updatedSong = originalSong.copy(
-                        name = resolved.pageInfo?.part ?: resolved.videoInfo.title,
-                        artist = resolved.videoInfo.ownerName,
-                        album = "$BILI_SOURCE_TAG|${resolved.cid}",
-                        coverUrl = coverUrl,
-                        matchedLyric = null,
-                        matchedTranslatedLyric = null,
-                        matchedLyricSource = null,
-                        matchedSongId = null,
-                        customCoverUrl = null,
-                        customName = null,
-                        customArtist = null,
-                        originalName = resolved.pageInfo?.part ?: resolved.videoInfo.title,
-                        originalArtist = resolved.videoInfo.ownerName,
-                        originalCoverUrl = coverUrl,
-                        originalLyric = null,
-                        originalTranslatedLyric = null
-                    )
-                    updateSongInAllPlaces(originalSong, updatedSong)
-                } else {
-                    val songDetails = cloudMusicSearchApi?.getSongInfo(originalSong.id.toString())
-
-                    if (songDetails != null) {
-                        val coverUrl = songDetails.coverUrl?.let {
-                            if (it.startsWith("http://")) it.replaceFirst("http://", "https://") else it
-                        }
-
-                        val updatedSong = originalSong.copy(
-                            name = songDetails.songName,
-                            artist = songDetails.singer,
-                            coverUrl = coverUrl,
-                            matchedLyric = null,
-                            matchedTranslatedLyric = null,
-                            matchedLyricSource = null,
-                            matchedSongId = null,
-                            customCoverUrl = null,
-                            customName = null,
-                            customArtist = null,
-                            originalName = songDetails.songName,
-                            originalArtist = songDetails.singer,
-                            originalCoverUrl = coverUrl,
-                            originalLyric = null,
-                            originalTranslatedLyric = null
-                        )
-                        updateSongInAllPlaces(originalSong, updatedSong)
-                    } else {
-                        // 如果API调用失败，至少清除自定义字段
-                        val updatedSong = originalSong.copy(
-                            matchedLyric = null,
-                            matchedTranslatedLyric = null,
-                            matchedLyricSource = null,
-                            matchedSongId = null,
-                            customCoverUrl = null,
-                            customName = null,
-                            customArtist = null,
-                            originalName = null,
-                            originalArtist = null,
-                            originalCoverUrl = null,
-                            originalLyric = null,
-                            originalTranslatedLyric = null
-                        )
-                        updateSongInAllPlaces(originalSong, updatedSong)
-                    }
-                }
-            } catch (e: Exception) {
-                NPLogger.e("NERI-PlayerManager", "恢复原始信息失败", e)
-                mainScope.launch {
-                    postPlayerEvent(
-                        PlayerEvent.ShowError(
-                            getLocalizedString(R.string.player_playback_restore_failed, e.message.orEmpty())
-                        )
-                    )
-                }
-            }
         }
     }
 
@@ -2892,6 +2787,9 @@ object PlayerManager {
         withContext(Dispatchers.IO) {
             localRepo.updateSongMetadata(originalSong, updatedSong)
         }
+        GlobalDownloadManager.syncDownloadedSongMetadata(updatedSong)
+        AppContainer.playHistoryRepo.updateSongMetadata(originalSong, updatedSong)
+        AppContainer.playlistUsageRepo.syncLocalEntries(localRepo.playlists.value)
 
         persistState()
     }

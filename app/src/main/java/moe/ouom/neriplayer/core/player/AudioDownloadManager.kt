@@ -35,6 +35,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.resolveBiliSong
+import moe.ouom.neriplayer.core.api.youtube.YouTubePlayableStreamType
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.clearSongCancelled
@@ -43,12 +44,16 @@ import moe.ouom.neriplayer.data.LocalMediaSupport
 import moe.ouom.neriplayer.data.LocalSongSupport
 import moe.ouom.neriplayer.data.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.buildYouTubeStreamRequestHeaders
+import moe.ouom.neriplayer.data.displayArtist
+import moe.ouom.neriplayer.data.displayCoverUrl
+import moe.ouom.neriplayer.data.displayName
 import moe.ouom.neriplayer.data.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.isYouTubeMusicSong
 import moe.ouom.neriplayer.data.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import okhttp3.Request
+import okio.Buffer
 import okio.buffer
 import okio.sink
 import org.json.JSONArray
@@ -68,6 +73,7 @@ object AudioDownloadManager {
     private const val TAG = "NERI-Downloader"
     private const val BILI_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     private const val BILI_REFERER = "https://www.bilibili.com"
+    private const val DOWNLOAD_READ_BUFFER_BYTES = 8L * 1024L
 
     private val _progressFlow = MutableStateFlow<DownloadProgress?>(null)
     val progressFlow: StateFlow<DownloadProgress?> = _progressFlow
@@ -78,6 +84,14 @@ object AudioDownloadManager {
     // 取消下载控制
     private val _isCancelled = MutableStateFlow(false)
     val isCancelledFlow: StateFlow<Boolean> = _isCancelled
+
+    private data class ResolvedDownloadSource(
+        val url: String,
+        val mimeType: String? = null,
+        val fileExtensionHint: String? = null,
+        val streamType: YouTubePlayableStreamType = YouTubePlayableStreamType.DIRECT,
+        val contentLength: Long? = null
+    )
 
     data class DownloadProgress(
         val songKey: String,
@@ -139,14 +153,18 @@ object AudioDownloadManager {
                     return@withContext
                 }
 
-                val (url, mime, extGuess) = resolved
+                val url = resolved.url
+                val mime = resolved.mimeType
+                val extGuess = resolved.fileExtensionHint
 
                 val ext = when {
+                    resolved.streamType == YouTubePlayableStreamType.HLS ->
+                        resolved.fileExtensionHint ?: "aac"
                     !mime.isNullOrBlank() -> mimeToExt(mime)
                     else -> extFromUrl(url) ?: extGuess
                 }
 
-                val baseName = sanitizeFileName("${song.artist} - ${song.name}")
+                val baseName = sanitizeFileName("${song.displayArtist()} - ${song.displayName()}")
                 val fileName = if (ext.isNullOrBlank()) baseName else "$baseName.$ext"
 
                 val baseDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir
@@ -163,7 +181,7 @@ object AudioDownloadManager {
                     val downloadDir = File(baseDir, "NeriPlayer")
                     val coverDir = File(downloadDir, "Covers").apply { mkdirs() }
                     // 优先用网络封面
-                    val coverUrl = song.coverUrl
+                    val coverUrl = song.displayCoverUrl()
                     if (!coverUrl.isNullOrBlank()) {
                         val coverFile = File(coverDir, "$baseName.jpg")
                         val req = Request.Builder().url(coverUrl).build()
@@ -199,7 +217,18 @@ object AudioDownloadManager {
 
                 // 貌似很多平台都不支持多线程下载(x  所以采用单线程
                 // 传入临时文件
-                singleThreadDownload(client, request, tempFile, song.id, song.stableKey())
+                if (resolved.streamType == YouTubePlayableStreamType.HLS) {
+                    singleThreadHlsDownload(
+                        client = client,
+                        playlistRequest = request,
+                        destFile = tempFile,
+                        songId = song.id,
+                        songKey = song.stableKey(),
+                        totalBytesHint = resolved.contentLength ?: 0L
+                    )
+                } else {
+                    singleThreadDownload(client, request, tempFile, song.id, song.stableKey())
+                }
 
                 // 下载完成后，重命名为正式文件
                 val destFile = uniqueFile(downloadDir, fileName)
@@ -280,7 +309,7 @@ object AudioDownloadManager {
 
                     try {
                         _batchProgressFlow.value = _batchProgressFlow.value?.copy(
-                            currentSong = song.name,
+                            currentSong = song.displayName(),
                             currentProgress = null,
                             currentSongIndex = index
                         )
@@ -314,7 +343,7 @@ object AudioDownloadManager {
                                 currentProgress = null
                             )
                         }
-                    } catch (e: java.util.concurrent.CancellationException) {
+                    } catch (_: java.util.concurrent.CancellationException) {
                         // 下载被取消，继续下一首
                         NPLogger.d(TAG, "歌曲下载被取消: ${song.name}")
                         clearSongCancelled(song.stableKey())
@@ -425,7 +454,7 @@ fun getLocalFilePath(context: Context, song: SongItem): String? {
         if (!downloadDir.exists()) return null
         
         // 查找可能的文件扩展名
-        val possibleExtensions = listOf("flac", "m4a", "mp3", "eac3", "aac", "wav", "ogg")
+        val possibleExtensions = listOf("flac", "m4a", "mp3", "eac3", "aac", "wav", "ogg", "webm")
         val baseNames = candidateBaseNames(song)
         for (baseName in baseNames) {
             for (ext in possibleExtensions) {
@@ -524,7 +553,7 @@ fun getLocalFilePath(context: Context, song: SongItem): String? {
     }
 
     // 解析网易云直链
-    private suspend fun resolveNetease(songId: Long): Triple<String, String?, String?>? {
+    private suspend fun resolveNetease(songId: Long): ResolvedDownloadSource? {
         val quality = try { AppContainer.settingsRepo.audioQualityFlow.first() } catch (_: Exception) { "exhigh" }
         val raw = AppContainer.neteaseClient.getSongDownloadUrl(songId, level = quality)
         return try {
@@ -539,7 +568,11 @@ fun getLocalFilePath(context: Context, song: SongItem): String? {
             if (url.isNullOrBlank()) return tryWeapiFallback(songId, quality)
             val type = data.optString("type", "") // e.g., mp3/flac
             val mime = guessMimeFromUrl(url)
-            Triple(ensureHttps(url), mime, type.lowercase())
+            ResolvedDownloadSource(
+                url = ensureHttps(url),
+                mimeType = mime,
+                fileExtensionHint = type.lowercase()
+            )
         } catch (_: Exception) {
             tryWeapiFallback(songId, quality)
         }
@@ -552,7 +585,7 @@ fun getLocalFilePath(context: Context, song: SongItem): String? {
         else -> 320000
     }
 
-    private fun tryWeapiFallback(songId: Long, level: String): Triple<String, String?, String?>? {
+    private fun tryWeapiFallback(songId: Long, level: String): ResolvedDownloadSource? {
         return try {
             val br = bitrateForQuality(level)
             val raw = AppContainer.neteaseClient.getSongUrl(songId, bitrate = br)
@@ -568,27 +601,44 @@ fun getLocalFilePath(context: Context, song: SongItem): String? {
             val finalUrl = ensureHttps(url)
             val mime = guessMimeFromUrl(finalUrl)
             val ext = extFromUrl(finalUrl)
-            Triple(finalUrl, mime, ext)
+            ResolvedDownloadSource(url = finalUrl, mimeType = mime, fileExtensionHint = ext)
         } catch (_: Exception) { null }
     }
 
-    private suspend fun resolveYouTubeMusic(song: SongItem): Triple<String, String?, String?>? {
+    private suspend fun resolveYouTubeMusic(song: SongItem): ResolvedDownloadSource? {
         val videoId = extractYouTubeMusicVideoId(song.mediaUri) ?: return null
-        val playableAudio = AppContainer.youtubeMusicPlaybackRepository.getBestPlayableAudio(videoId)
+        val playableAudio = AppContainer.youtubeMusicPlaybackRepository.getBestPlayableAudio(
+            videoId = videoId,
+            forceRefresh = true
+        )
             ?: return null
+        if (playableAudio.streamType == YouTubePlayableStreamType.HLS) {
+            return ResolvedDownloadSource(
+                url = playableAudio.url,
+                mimeType = "audio/aac",
+                fileExtensionHint = "aac",
+                streamType = YouTubePlayableStreamType.HLS,
+                contentLength = playableAudio.contentLength
+            )
+        }
         val mimeType = playableAudio.mimeType ?: guessMimeFromUrl(playableAudio.url)
-        return Triple(playableAudio.url, mimeType, extFromUrl(playableAudio.url))
+        return ResolvedDownloadSource(
+            url = playableAudio.url,
+            mimeType = mimeType,
+            fileExtensionHint = extFromUrl(playableAudio.url),
+            contentLength = playableAudio.contentLength
+        )
     }
 
     // Resolve Bili audio direct url.
-    private suspend fun resolveBili(song: SongItem): Triple<String, String?, String?>? {
+    private suspend fun resolveBili(song: SongItem): ResolvedDownloadSource? {
         val resolved = resolveBiliSong(song, AppContainer.biliClient) ?: return null
         val chosen: BiliAudioStreamInfo? = AppContainer.biliPlaybackRepository
             .getBestPlayableAudio(resolved.videoInfo.bvid, resolved.cid)
         val url = chosen?.url ?: return null
         val mime = chosen.mimeType
         val ext = mimeToExt(mime)
-        return Triple(url, mime, ext)
+        return ResolvedDownloadSource(url = url, mimeType = mime, fileExtensionHint = ext)
     }
 
     private fun sanitizeFileName(name: String): String {
@@ -598,7 +648,7 @@ fun getLocalFilePath(context: Context, song: SongItem): String? {
 
     private fun buildLyricFiles(context: Context, song: SongItem): LyricFiles {
         val lyricsDir = getLyricsDirectory(context)
-        val baseName = sanitizeFileName("${song.artist} - ${song.name}")
+        val baseName = sanitizeFileName("${song.displayArtist()} - ${song.displayName()}")
         return LyricFiles(
             lyricById = File(lyricsDir, "${song.id}.lrc"),
             lyricByName = File(lyricsDir, "$baseName.lrc"),
@@ -659,6 +709,105 @@ fun getLocalFilePath(context: Context, song: SongItem): String? {
         return p.substring(dot + 1).lowercase().take(6)
     }
 
+    private suspend fun singleThreadHlsDownload(
+        client: okhttp3.OkHttpClient,
+        playlistRequest: Request,
+        destFile: File,
+        songId: Long,
+        songKey: String,
+        totalBytesHint: Long
+    ) = withContext(Dispatchers.IO) {
+        val startNs = System.nanoTime()
+        NPLogger.d(TAG, "开始 HLS 下载文件: ${destFile.name}, songId=$songId")
+
+        val playlistText = client.newCall(playlistRequest).execute().use { response ->
+            if (!response.isSuccessful) throw IllegalStateException("HTTP ${response.code}")
+            response.body.string()
+        }
+        val segmentUrls = parseHlsSegmentUrls(playlistRequest.url.toString(), playlistText)
+        if (segmentUrls.isEmpty()) {
+            throw IllegalStateException("HLS playlist contains no segments")
+        }
+
+        val headerMap = playlistRequest.headers.names().associateWith { name ->
+            playlistRequest.header(name).orEmpty()
+        }
+
+        var downloadedBytes = 0L
+        destFile.sink().buffer().use { sink ->
+            segmentUrls.forEachIndexed { index, segmentUrl ->
+                ensureDownloadNotCancelled(songId, songKey, destFile)
+
+                val segmentRequest = Request.Builder()
+                    .url(segmentUrl)
+                    .apply {
+                        headerMap.forEach { (name, value) ->
+                            header(name, value)
+                        }
+                    }
+                    .build()
+
+                client.newCall(segmentRequest).execute().use { response ->
+                    if (!response.isSuccessful) throw IllegalStateException("HTTP ${response.code}")
+                    val payload = stripLeadingId3(response.body.bytes())
+                    sink.write(payload)
+                    downloadedBytes += payload.size.toLong()
+                }
+
+                val elapsedSec = ((System.nanoTime() - startNs) / 1_000_000_000.0)
+                    .coerceAtLeast(0.001)
+                _progressFlow.value = DownloadProgress(
+                    songKey = songKey,
+                    songId = songId,
+                    fileName = destFile.name,
+                    bytesRead = downloadedBytes,
+                    totalBytes = totalBytesHint,
+                    speedBytesPerSec = (downloadedBytes / elapsedSec).toLong()
+                )
+                if ((index + 1) % 8 == 0) {
+                    sink.flush()
+                }
+            }
+            sink.flush()
+        }
+
+        NPLogger.d(
+            TAG,
+            "HLS 下载完成: ${destFile.name}, 实际大小: $downloadedBytes bytes, segments=${segmentUrls.size}, songId=$songId"
+        )
+    }
+
+    private fun parseHlsSegmentUrls(playlistUrl: String, playlistText: String): List<String> {
+        return playlistText.lineSequence()
+            .map(String::trim)
+            .filter { it.isNotBlank() && !it.startsWith('#') }
+            .map { segment ->
+                runCatching { java.net.URI(playlistUrl).resolve(segment).toString() }
+                    .getOrElse { segment }
+            }
+            .toList()
+    }
+
+    private fun stripLeadingId3(bytes: ByteArray): ByteArray {
+        if (bytes.size < 10) {
+            return bytes
+        }
+        if (bytes[0] != 'I'.code.toByte() || bytes[1] != 'D'.code.toByte() || bytes[2] != '3'.code.toByte()) {
+            return bytes
+        }
+        val tagSize =
+            ((bytes[6].toInt() and 0x7f) shl 21) or
+                ((bytes[7].toInt() and 0x7f) shl 14) or
+                ((bytes[8].toInt() and 0x7f) shl 7) or
+                (bytes[9].toInt() and 0x7f)
+        val payloadOffset = 10 + tagSize
+        return if (payloadOffset in 1 until bytes.size) {
+            bytes.copyOfRange(payloadOffset, bytes.size)
+        } else {
+            bytes
+        }
+    }
+
     /** 单线程下载 */
     private suspend fun singleThreadDownload(
         client: okhttp3.OkHttpClient,
@@ -667,6 +816,23 @@ fun getLocalFilePath(context: Context, song: SongItem): String? {
         songId: Long,
         songKey: String
     ) = withContext(Dispatchers.IO) {
+        if (YouTubeGoogleVideoRangeSupport.shouldUseChunkedRange(request) &&
+            !YouTubeGoogleVideoRangeSupport.hasExplicitRangeHeader(
+                request.headers.names().associateWith { headerName ->
+                    request.header(headerName).orEmpty()
+                }
+            )
+        ) {
+            singleThreadChunkedDownload(
+                client = client,
+                request = request,
+                destFile = destFile,
+                songId = songId,
+                songKey = songKey
+            )
+            return@withContext
+        }
+
         val startNs = System.nanoTime()
         NPLogger.d(TAG, "开始下载文件: ${destFile.name}, songId=$songId")
         client.newCall(request).execute().use { resp ->
@@ -677,7 +843,7 @@ fun getLocalFilePath(context: Context, song: SongItem): String? {
             val source = resp.body.source()
             destFile.sink().buffer().use { sink ->
                 var readSoFar = 0L
-                val buffer = okio.Buffer()
+                val buffer = Buffer()
                 while (true) {
                     // 检查是否被取消(全局取消或单个任务取消)
                     if (_isCancelled.value || GlobalDownloadManager.isSongCancelled(songKey)) {
@@ -687,7 +853,7 @@ fun getLocalFilePath(context: Context, song: SongItem): String? {
                         throw java.util.concurrent.CancellationException("Download cancelled")
                     }
 
-                    val read = source.read(buffer, 8L * 1024L)
+                    val read = source.read(buffer, DOWNLOAD_READ_BUFFER_BYTES)
                     if (read == -1L) break
                     sink.write(buffer, read)
                     readSoFar += read
@@ -706,6 +872,190 @@ fun getLocalFilePath(context: Context, song: SongItem): String? {
                 sink.flush()
                 NPLogger.d(TAG, "文件下载完成: ${destFile.name}, 实际大小: $readSoFar bytes, songId=$songId")
             }
+        }
+    }
+
+    private suspend fun singleThreadChunkedDownload(
+        client: okhttp3.OkHttpClient,
+        request: Request,
+        destFile: File,
+        songId: Long,
+        songKey: String
+    ) = withContext(Dispatchers.IO) {
+        val startNs = System.nanoTime()
+        NPLogger.d(TAG, "开始分块下载文件: ${destFile.name}, songId=$songId")
+
+        var downloadedBytes = 0L
+        var totalBytes = 0L
+        destFile.sink().buffer().use { sink ->
+            while (true) {
+                if (_isCancelled.value || GlobalDownloadManager.isSongCancelled(songKey)) {
+                    NPLogger.d(TAG, "下载被取消，停止分块下载: songId=$songId")
+                    destFile.delete()
+                    _progressFlow.value = null
+                    throw java.util.concurrent.CancellationException("Download cancelled")
+                }
+
+                val remainingRequestLength = if (totalBytes > 0L) {
+                    (totalBytes - downloadedBytes).coerceAtLeast(0L)
+                } else {
+                    -1L
+                }
+                if (remainingRequestLength == 0L) {
+                    break
+                }
+
+                try {
+                    val chunkResult = YouTubeGoogleVideoRangeSupport.executeChunkLengthFallback(
+                        remainingRequestLength
+                    ) { chunkLength ->
+                        downloadChunk(
+                            client = client,
+                            request = request,
+                            start = downloadedBytes,
+                            requestedChunkLength = chunkLength,
+                            sink = sink,
+                            songId = songId,
+                            songKey = songKey,
+                            destFile = destFile,
+                            startNs = startNs,
+                            currentDownloadedBytes = downloadedBytes,
+                            currentTotalBytes = totalBytes
+                        )
+                    }
+                    downloadedBytes = chunkResult.value.downloadedBytes
+                    totalBytes = chunkResult.value.totalBytes
+                    if (
+                        chunkResult.chunkLength !=
+                        YouTubeGoogleVideoRangeSupport.candidateChunkLengths(remainingRequestLength).first()
+                    ) {
+                        NPLogger.w(
+                            TAG,
+                            "下载分块 fallback 生效: ${chunkResult.chunkLength} bytes, songId=$songId"
+                        )
+                    }
+                    if (chunkResult.value.isEndOfStream) {
+                        break
+                    }
+                } catch (error: ChunkRequestIOException) {
+                    if (error.responseCode == 416 && downloadedBytes > 0L) {
+                        break
+                    }
+                    throw error
+                }
+            }
+            sink.flush()
+        }
+
+        NPLogger.d(TAG, "分块下载完成: ${destFile.name}, 实际大小: $downloadedBytes bytes, songId=$songId")
+    }
+
+    private data class ChunkDownloadResult(
+        val requestedChunkLength: Long,
+        val downloadedBytes: Long,
+        val totalBytes: Long,
+        val isEndOfStream: Boolean
+    )
+
+    private fun downloadChunk(
+        client: okhttp3.OkHttpClient,
+        request: Request,
+        start: Long,
+        requestedChunkLength: Long,
+        sink: okio.BufferedSink,
+        songId: Long,
+        songKey: String,
+        destFile: File,
+        startNs: Long,
+        currentDownloadedBytes: Long,
+        currentTotalBytes: Long
+    ): ChunkDownloadResult {
+        val chunkRequest = YouTubeGoogleVideoRangeSupport.buildChunkedRequest(
+            request = request,
+            start = start,
+            length = requestedChunkLength
+        )
+
+        client.newCall(chunkRequest).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw ChunkRequestIOException(response.code, "HTTP ${response.code}")
+            }
+
+            val responseHeaders = response.headers.toMultimap()
+            var downloadedBytes = currentDownloadedBytes
+            var totalBytes = YouTubeGoogleVideoRangeSupport.resolveTotalContentLength(
+                uri = request.url.toString().toUri(),
+                headers = responseHeaders
+            ) ?: currentTotalBytes
+            val actualChunkLength = YouTubeGoogleVideoRangeSupport.resolveChunkResponseLength(
+                requestedLength = requestedChunkLength,
+                headers = responseHeaders,
+                delegateOpenLength = response.body.contentLength()
+            )
+
+            val source = response.body.source()
+            val buffer = Buffer()
+            var chunkRead = 0L
+            while (true) {
+                ensureDownloadNotCancelled(songId, songKey, destFile)
+
+                val read = source.read(buffer, DOWNLOAD_READ_BUFFER_BYTES)
+                if (read == -1L) {
+                    break
+                }
+                sink.write(buffer, read)
+                chunkRead += read
+                downloadedBytes += read
+
+                val elapsedSec = ((System.nanoTime() - startNs) / 1_000_000_000.0)
+                    .coerceAtLeast(0.001)
+                val speed = (downloadedBytes / elapsedSec).toLong()
+                _progressFlow.value = DownloadProgress(
+                    songKey = songKey,
+                    songId = songId,
+                    fileName = destFile.name,
+                    bytesRead = downloadedBytes,
+                    totalBytes = totalBytes,
+                    speedBytesPerSec = speed
+                )
+            }
+
+            if (chunkRead <= 0L) {
+                return ChunkDownloadResult(
+                    requestedChunkLength = requestedChunkLength,
+                    downloadedBytes = downloadedBytes,
+                    totalBytes = totalBytes,
+                    isEndOfStream = true
+                )
+            }
+
+            if (totalBytes <= 0L && actualChunkLength < requestedChunkLength) {
+                totalBytes = downloadedBytes
+            }
+
+            val isEndOfStream = chunkRead < requestedChunkLength || (
+                totalBytes > 0L && downloadedBytes >= totalBytes
+            )
+
+            return ChunkDownloadResult(
+                requestedChunkLength = requestedChunkLength,
+                downloadedBytes = downloadedBytes,
+                totalBytes = totalBytes,
+                isEndOfStream = isEndOfStream
+            )
+        }
+    }
+
+    private fun ensureDownloadNotCancelled(
+        songId: Long,
+        songKey: String,
+        destFile: File
+    ) {
+        if (_isCancelled.value || GlobalDownloadManager.isSongCancelled(songKey)) {
+            NPLogger.d(TAG, "下载被取消，停止分块下载: songId=$songId")
+            destFile.delete()
+            _progressFlow.value = null
+            throw java.util.concurrent.CancellationException("Download cancelled")
         }
     }
 }

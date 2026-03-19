@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -24,6 +25,8 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.DownloadStatus
 import moe.ouom.neriplayer.core.download.DownloadTask
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.data.displayArtist
+import moe.ouom.neriplayer.data.displayName
 import moe.ouom.neriplayer.data.stableKey
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.util.formatFileSize
@@ -85,7 +88,7 @@ fun DownloadProgressScreen(
             },
             navigationIcon = {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.Outlined.ArrowBack, contentDescription = stringResource(R.string.action_back))
+                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(R.string.action_back))
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(
@@ -143,17 +146,14 @@ fun DownloadProgressScreen(
                     val canDismiss = task.status == DownloadStatus.COMPLETED || task.status == DownloadStatus.CANCELLED
 
                     if (canDismiss) {
-                        val dismissState = rememberSwipeToDismissBoxState(
-                            confirmValueChange = { dismissValue ->
-                                if (dismissValue == SwipeToDismissBoxValue.EndToStart) {
-                                    context.performHapticFeedback()
-                                    GlobalDownloadManager.removeDownloadTask(songKey)
-                                    true
-                                } else {
-                                    false
-                                }
+                        val dismissState = rememberSwipeToDismissBoxState()
+
+                        LaunchedEffect(dismissState.currentValue, songKey) {
+                            if (dismissState.currentValue == SwipeToDismissBoxValue.EndToStart) {
+                                context.performHapticFeedback()
+                                GlobalDownloadManager.removeDownloadTask(songKey)
                             }
-                        )
+                        }
 
                         SwipeToDismissBox(
                             state = dismissState,
@@ -206,8 +206,8 @@ fun DownloadProgressScreen(
 private fun DownloadTaskItem(
     task: DownloadTask,
     onCancel: () -> Unit,
-    onResume: () -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onResume: () -> Unit = {}
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -251,14 +251,14 @@ private fun DownloadTaskItem(
                     modifier = Modifier.weight(1f)
                 ) {
                     Text(
-                        text = task.song.name,
+                        text = task.song.displayName(),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Medium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = task.song.artist,
+                        text = task.song.displayArtist(),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
