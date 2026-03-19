@@ -256,9 +256,11 @@ object PlayerManager {
     var biliClient = AppContainer.biliClient
     var neteaseClient = AppContainer.neteaseClient
     var youtubeMusicPlaybackRepository = AppContainer.youtubeMusicPlaybackRepository
+    var youtubeMusicClient = AppContainer.youtubeMusicClient
 
     val cloudMusicSearchApi = AppContainer.cloudMusicSearchApi
     val qqMusicSearchApi = AppContainer.qqMusicSearchApi
+    var lrcLibClient = AppContainer.lrcLibClient
 
     // 记录当前缓存大小设置
     private var currentCacheSize: Long = 1024L * 1024 * 1024
@@ -2243,6 +2245,80 @@ object PlayerManager {
         }
     }
 
+    /** 获取 YouTube Music 歌词：优先 LRCLIB（同步歌词），回退 YouTube Music API（纯文本） */
+    private suspend fun getYouTubeMusicLyrics(song: SongItem): List<LyricEntry> {
+        return withContext(Dispatchers.IO) {
+            try {
+                // 第一步：尝试 LRCLIB（免费开源同步歌词库）
+                val lrcLibResult = try {
+                    val durationSec = (song.durationMs / 1000).toInt()
+                    lrcLibClient.getLyrics(
+                        trackName = song.name,
+                        artistName = song.artist,
+                        durationSeconds = durationSec
+                    ) ?: lrcLibClient.searchLyrics("${song.name} ${song.artist}")
+                } catch (e: Exception) {
+                    NPLogger.d("NERI-PlayerManager", "LRCLIB lookup failed: ${e.message}")
+                    null
+                }
+
+                // LRCLIB 有同步歌词（LRC 格式），直接解析
+                if (!lrcLibResult?.syncedLyrics.isNullOrBlank()) {
+                    NPLogger.d("NERI-PlayerManager", "Using LRCLIB synced lyrics for '${song.name}'")
+                    return@withContext parseNeteaseLrc(lrcLibResult!!.syncedLyrics!!)
+                }
+
+                // LRCLIB 有纯文本歌词
+                if (!lrcLibResult?.plainLyrics.isNullOrBlank()) {
+                    NPLogger.d("NERI-PlayerManager", "Using LRCLIB plain lyrics for '${song.name}'")
+                    return@withContext convertPlainLyricsToEntries(lrcLibResult!!.plainLyrics!!, song.durationMs)
+                }
+
+                // 第二步：回退到 YouTube Music API
+                val videoId = extractYouTubeMusicVideoId(song.mediaUri)
+                if (videoId.isNullOrBlank()) {
+                    return@withContext emptyList()
+                }
+                val ytResult = youtubeMusicClient.getLyrics(videoId)
+                    ?: return@withContext emptyList()
+                val lyricsText = ytResult.lyrics
+                if (lyricsText.isBlank()) {
+                    return@withContext emptyList()
+                }
+
+                NPLogger.d("NERI-PlayerManager", "Using YouTube Music API lyrics for '${song.name}'")
+
+                // 如果歌词已经是 LRC 格式（带时间标签），直接解析
+                if (lyricsText.contains(Regex("\\[\\d{2}:\\d{2}"))) {
+                    return@withContext parseNeteaseLrc(lyricsText)
+                }
+
+                // 纯文本歌词：根据歌曲总时长均匀分配时间戳
+                convertPlainLyricsToEntries(lyricsText, song.durationMs)
+            } catch (e: Exception) {
+                NPLogger.e("NERI-PlayerManager", "getYouTubeMusicLyrics failed: ${e.message}", e)
+                emptyList()
+            }
+        }
+    }
+
+    /** 将纯文本歌词按歌曲时长均匀分配时间戳 */
+    private fun convertPlainLyricsToEntries(text: String, durationMs: Long): List<LyricEntry> {
+        val lines = text.lines().filter { it.isNotBlank() }
+        if (lines.isEmpty()) return emptyList()
+        val totalMs = durationMs.coerceAtLeast(1L)
+        val intervalMs = totalMs / lines.size.coerceAtLeast(1)
+        return lines.mapIndexed { index, line ->
+            val startMs = index * intervalMs
+            val endMs = if (index < lines.lastIndex) (index + 1) * intervalMs else totalMs
+            LyricEntry(
+                text = line.trim(),
+                startTimeMs = startMs,
+                endTimeMs = endMs
+            )
+        }
+    }
+
     /** 根据歌曲来源返回可用的翻译（如果有） */
     suspend fun getTranslatedLyrics(song: SongItem): List<LyricEntry> {
         val context = application
@@ -2261,6 +2337,7 @@ object PlayerManager {
         // 本地没有，从网络获取
         // B站歌曲在匹配网易云信息后应使用匹配到的歌曲 ID 获取翻译
         if (isYouTubeMusicSong(song)) {
+            // YouTube Music 歌词暂无翻译来源
             return emptyList()
         }
 
@@ -2283,7 +2360,7 @@ object PlayerManager {
     /** 获取歌词，优先使用本地缓存 */
     suspend fun getLyrics(song: SongItem): List<LyricEntry> {
         if (isYouTubeMusicSong(song)) {
-            return emptyList()
+            return getYouTubeMusicLyrics(song)
         }
         // 最优先使用song.matchedLyric中的歌词
         if (!song.matchedLyric.isNullOrBlank()) {
@@ -2308,7 +2385,7 @@ object PlayerManager {
 
         // 最后回退到在线获取
         return if (isYouTubeMusicSong(song)) {
-            emptyList()
+            getYouTubeMusicLyrics(song)
         } else if (song.album.startsWith(BILI_SOURCE_TAG)) {
             emptyList() // B站暂时没有歌词API
         } else {

@@ -145,6 +145,7 @@ object AppContainer {
 
     val cloudMusicSearchApi by lazy { CloudMusicSearchApi(neteaseClient) }
     val qqMusicSearchApi by lazy { QQMusicSearchApi() }
+    val lrcLibClient by lazy { moe.ouom.neriplayer.core.api.lyrics.LrcLibClient(sharedOkHttpClient) }
 
 
     fun initialize(app: Application) {

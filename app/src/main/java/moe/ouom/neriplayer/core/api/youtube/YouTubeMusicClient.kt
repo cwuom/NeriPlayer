@@ -70,6 +70,11 @@ data class YouTubeMusicPlayableAudio(
     val bitrate: Int = 0
 )
 
+data class YouTubeMusicLyrics(
+    val lyrics: String,
+    val source: String = ""
+)
+
 internal data class YouTubeMusicBootstrapConfig(
     val apiKey: String,
     val webRemixClientVersion: String,
@@ -528,7 +533,53 @@ internal object YouTubeMusicParser {
         if (thumbnails.length() == 0) {
             return ""
         }
-        return thumbnails.optJSONObject(thumbnails.length() - 1)?.optString("url").orEmpty()
+        val rawUrl = thumbnails.optJSONObject(thumbnails.length() - 1)?.optString("url").orEmpty()
+        return upgradeYouTubeThumbnailUrl(rawUrl)
+    }
+
+    fun parseLyricsBrowseId(root: JSONObject): String? {
+        val tabs = root.optJSONObject("contents")
+            ?.optJSONObject("singleColumnMusicWatchNextResultsRenderer")
+            ?.optJSONObject("tabbedRenderer")
+            ?.optJSONObject("watchNextTabbedResultsRenderer")
+            ?.optJSONArray("tabs")
+            ?: return null
+        for (index in 0 until tabs.length()) {
+            val tab = tabs.optJSONObject(index) ?: continue
+            val tabRenderer = tab.optJSONObject("tabRenderer") ?: continue
+            val endpoint = tabRenderer.optJSONObject("endpoint") ?: continue
+            val browseId = endpoint.optJSONObject("browseEndpoint")
+                ?.optString("browseId").orEmpty()
+            if (browseId.startsWith("MPLYt")) {
+                return browseId
+            }
+        }
+        return null
+    }
+
+    fun parseLyrics(root: JSONObject): YouTubeMusicLyrics? {
+        val sections = root.optJSONObject("contents")
+            ?.optJSONObject("sectionListRenderer")
+            ?.optJSONArray("contents")
+            ?: return null
+
+        // 优先尝试解析带时间戳的歌词 (timedLyricsRenderer)
+        for (index in 0 until sections.length()) {
+            val section = sections.optJSONObject(index) ?: continue
+            val timedRenderer = section.optJSONObject("musicDescriptionShelfRenderer")
+            if (timedRenderer != null) {
+                val lyricsText = extractText(timedRenderer.optJSONObject("description"))
+                val source = extractText(timedRenderer.optJSONObject("footer"))
+                if (lyricsText.isNotBlank()) {
+                    return YouTubeMusicLyrics(
+                        lyrics = lyricsText,
+                        source = source
+                    )
+                }
+            }
+        }
+
+        return null
     }
 
     private fun playlistIdFromBrowseId(browseId: String): String {
@@ -537,6 +588,25 @@ internal object YouTubeMusicParser {
         } else {
             browseId
         }
+    }
+}
+
+/**
+ * 将 YouTube Music 缩略图 URL 升级为完整尺寸。
+ * YouTube 缩略图 URL 通常以 `=w60-h60-...` 结尾来限制尺寸，
+ * 此函数将其替换为 `=w1200-h1200` 以获取高清封面。
+ */
+fun upgradeYouTubeThumbnailUrl(url: String): String {
+    if (url.isBlank()) return url
+    // lh3.googleusercontent.com 和 yt3.ggpht.com 样式的 URL 使用 = 参数来控制尺寸
+    val sizeParamRegex = Regex("=w\\d+(-h\\d+)?(-[a-zA-Z0-9-]+)*$")
+    return if (sizeParamRegex.containsMatchIn(url)) {
+        url.replace(sizeParamRegex, "=w1200-h1200")
+    } else if (url.contains("lh3.googleusercontent.com") || url.contains("yt3.ggpht.com")) {
+        // 没有尺寸参数但属于 Google 图片服务的 URL，附加尺寸参数
+        if (url.contains('=')) url else "$url=w1200-h1200"
+    } else {
+        url
     }
 }
 
@@ -792,6 +862,24 @@ class YouTubeMusicClient(
         throw lastError ?: IOException("YouTube Music player request failed")
     }
 
+    suspend fun getLyrics(videoId: String): YouTubeMusicLyrics? = withContext(Dispatchers.IO) {
+        val bootstrap = bootstrap()
+        val requestLocale = YouTubeMusicLocaleResolver.preferred()
+
+        // 第一步：调用 next 端点获取歌词 browseId
+        val nextRoot = postMusicNext(bootstrap, videoId, requestLocale)
+        val lyricsBrowseId = YouTubeMusicParser.parseLyricsBrowseId(nextRoot)
+            ?: return@withContext null
+
+        // 第二步：调用 browse 端点获取歌词内容
+        val browseRoot = postMusicBrowse(
+            bootstrap = bootstrap,
+            payload = JSONObject().put("browseId", lyricsBrowseId),
+            requestLocale = requestLocale
+        )
+        YouTubeMusicParser.parseLyrics(browseRoot)
+    }
+
     fun clearBootstrapCache() {
         bootstrapCache = null
     }
@@ -879,6 +967,36 @@ class YouTubeMusicClient(
         return executeJson(
             Request.Builder()
                 .url("$YOUTUBE_MUSIC_MUSIC_ORIGIN/youtubei/v1/player?prettyPrint=false&key=${bootstrap.apiKey}")
+                .header("Cookie", bootstrap.cookieHeader)
+                .header("User-Agent", bootstrap.webUserAgent)
+                .header("Accept-Language", requestLocale.acceptLanguage)
+                .header("Content-Type", "application/json")
+                .header("Origin", YOUTUBE_MUSIC_MUSIC_ORIGIN)
+                .header("X-Origin", YOUTUBE_MUSIC_MUSIC_ORIGIN)
+                .header("Referer", "$YOUTUBE_MUSIC_MUSIC_ORIGIN/")
+                .header("X-Goog-AuthUser", bootstrap.sessionIndex)
+                .header("X-Goog-Visitor-Id", bootstrap.visitorData)
+                .header("X-YouTube-Client-Name", YOUTUBE_MUSIC_CLIENT_NAME_NUM_WEB_REMIX)
+                .header("X-YouTube-Client-Version", bootstrap.webRemixClientVersion)
+                .applySidAuthorization(bootstrap.cookieHeader, YOUTUBE_MUSIC_MUSIC_ORIGIN)
+                .post(body.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+                .build()
+        )
+    }
+
+    private fun postMusicNext(
+        bootstrap: YouTubeMusicBootstrapConfig,
+        videoId: String,
+        requestLocale: YouTubeMusicRequestLocale
+    ): JSONObject {
+        val body = JSONObject()
+            .put("context", buildMusicContext(bootstrap, requestLocale))
+            .put("videoId", videoId)
+            .put("isAudioOnly", true)
+
+        return executeJson(
+            Request.Builder()
+                .url("$YOUTUBE_MUSIC_MUSIC_ORIGIN/youtubei/v1/next?prettyPrint=false&key=${bootstrap.apiKey}")
                 .header("Cookie", bootstrap.cookieHeader)
                 .header("User-Agent", bootstrap.webUserAgent)
                 .header("Accept-Language", requestLocale.acceptLanguage)

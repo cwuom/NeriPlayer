@@ -98,3 +98,11 @@
     <fields>;
     <init>(...);
 }
+
+# jsoup 可选依赖 re2j（Android 上不可用）
+-dontwarn com.google.re2j.**
+
+# Mozilla Rhino JS 引擎 - java.beans / javax.script 在 Android 上不可用
+-dontwarn java.beans.**
+-dontwarn javax.script.**
+-dontwarn org.mozilla.javascript.**
