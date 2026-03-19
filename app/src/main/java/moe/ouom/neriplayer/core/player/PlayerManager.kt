@@ -648,8 +648,10 @@ object PlayerManager {
                     }
                     if (state == Player.STATE_ENDED) {
                         handleTrackEndedIfNeeded(source = "playback_state_changed")
-                    } else if (lastHandledTrackEndKey != null) {
-                        lastHandledTrackEndKey = null
+                    } else if (state == Player.STATE_BUFFERING || state == Player.STATE_READY) {
+                        if (lastHandledTrackEndKey != null) {
+                            lastHandledTrackEndKey = null
+                        }
                     }
                 }
 

@@ -1,4 +1,4 @@
-﻿package moe.ouom.neriplayer.core.player
+package moe.ouom.neriplayer.core.player
 import android.app.Application
 import android.app.Notification
 import android.app.NotificationChannel
@@ -445,11 +445,13 @@ class AudioPlayerService : Service() {
             .putBitmap(MediaMetadataCompat.METADATA_KEY_ART, currentLargeIcon)
             .putBitmap(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON, currentLargeIcon)
 
-        coverUri?.let {
-            metadataBuilder
-                .putString(MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI, it)
-                .putString(MediaMetadataCompat.METADATA_KEY_ART_URI, it)
-                .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON_URI, it)
+        coverUri?.let { uriString ->
+            if (uriString.startsWith("file://") || uriString.startsWith("content://")) {
+                metadataBuilder
+                    .putString(MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI, uriString)
+                    .putString(MediaMetadataCompat.METADATA_KEY_ART_URI, uriString)
+                    .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON_URI, uriString)
+            }
         }
 
         mediaSession.setMetadata(metadataBuilder.build())
