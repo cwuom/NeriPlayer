@@ -90,7 +90,8 @@ object AudioDownloadManager {
         val mimeType: String? = null,
         val fileExtensionHint: String? = null,
         val streamType: YouTubePlayableStreamType = YouTubePlayableStreamType.DIRECT,
-        val contentLength: Long? = null
+        val contentLength: Long? = null,
+        val durationMs: Long? = null
     )
 
     data class DownloadProgress(
@@ -151,6 +152,14 @@ object AudioDownloadManager {
                 if (resolved == null) {
                     NPLogger.e(TAG, context.getString(R.string.download_no_url, song.name))
                     return@withContext
+                }
+
+                // song duration 已经从 resolved 获取，不再写入数据库，只保持在当前上下文中
+                // 真正的持久化由 GlobalDownloadManager 完成
+                val workingSong = if (song.durationMs == 0L && resolved.durationMs != null && resolved.durationMs > 0L) {
+                    song.copy(durationMs = resolved.durationMs)
+                } else {
+                    song
                 }
 
                 val url = resolved.url
@@ -222,12 +231,12 @@ object AudioDownloadManager {
                         client = client,
                         playlistRequest = request,
                         destFile = tempFile,
-                        songId = song.id,
-                        songKey = song.stableKey(),
+                        songId = workingSong.id,
+                        songKey = workingSong.stableKey(),
                         totalBytesHint = resolved.contentLength ?: 0L
                     )
                 } else {
-                    singleThreadDownload(client, request, tempFile, song.id, song.stableKey())
+                    singleThreadDownload(client, request, tempFile, workingSong.id, workingSong.stableKey())
                 }
 
                 // 下载完成后，重命名为正式文件
@@ -394,56 +403,121 @@ object AudioDownloadManager {
 
             // 优先使用song.matchedLyric中的歌词
             if (!song.matchedLyric.isNullOrBlank()) {
-                lyricFile.writeText(song.matchedLyric)
-                baseNameLyricFile.writeText(song.matchedLyric)
+                lyricFile.writeText(song.matchedLyric, Charsets.UTF_8)
+                baseNameLyricFile.writeText(song.matchedLyric, Charsets.UTF_8)
                 NPLogger.d(TAG, context.getString(R.string.download_lyrics_matched, song.name))
-                // 不要return，继续尝试获取翻译歌词
             }
 
-            // 如果是网易云歌曲，尝试从API获取翻译歌词
-            val isFromNetease = !song.album.startsWith("Bilibili")
-            if (!isFromNetease) return
+            val isYouTubeMusic = isYouTubeMusicSong(song)
+            val isBili = song.album.startsWith(PlayerManager.BILI_SOURCE_TAG)
 
-            // 如果已经保存了主歌词，只获取翻译歌词
-            if (!song.matchedLyric.isNullOrBlank()) {
-                try {
-                    val lyrics = AppContainer.neteaseClient.getLyricNew(song.id)
-                    val root = JSONObject(lyrics)
-                    if (root.optInt("code") == 200) {
-                        val tlyric = root.optJSONObject("tlyric")?.optString("lyric") ?: ""
-                        if (tlyric.isNotBlank()) {
-                            transLyricFile.writeText(tlyric)
-                            baseNameTransLyricFile.writeText(tlyric)
-                            NPLogger.d(TAG, context.getString(R.string.download_lyrics_api, song.name))
-                        }
-                    }
-                } catch (e: Exception) {
-                    NPLogger.w(TAG, "翻译歌词下载失败: ${song.name} - ${e.message}")
+            when {
+                isYouTubeMusic -> downloadYouTubeMusicLyrics(song, lyricFile, baseNameLyricFile)
+                isBili -> { /* B站暂无歌词源 */ }
+                else -> downloadNeteaseLyrics(song, lyricFile, baseNameLyricFile, transLyricFile, baseNameTransLyricFile)
+            }
+        } catch (e: Exception) {
+            NPLogger.w(TAG, "歌词下载失败: ${song.name} - ${e.message}")
+        }
+    }
+
+    /** 从 LRCLIB / YouTube Music API 获取歌词并保存 */
+    private fun downloadYouTubeMusicLyrics(
+        song: SongItem,
+        lyricFile: File,
+        baseNameLyricFile: File
+    ) {
+        if (!song.matchedLyric.isNullOrBlank()) return
+        try {
+            val lrcLibResult = try {
+                kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+                    val durationSec = (song.durationMs / 1000).toInt()
+                    AppContainer.lrcLibClient.getLyrics(
+                        trackName = song.name,
+                        artistName = song.artist,
+                        durationSeconds = durationSec
+                    ) ?: AppContainer.lrcLibClient.searchLyrics("${song.name} ${song.artist}")
                 }
-                return
+            } catch (_: Exception) { null }
+
+            val syncedLyrics = lrcLibResult?.syncedLyrics?.takeIf { it.isNotBlank() }
+            val plainLyrics = lrcLibResult?.plainLyrics?.takeIf { it.isNotBlank() }
+
+            when {
+                syncedLyrics != null -> {
+                    lyricFile.writeText(syncedLyrics, Charsets.UTF_8)
+                    baseNameLyricFile.writeText(syncedLyrics, Charsets.UTF_8)
+                    NPLogger.d(TAG, "LRCLIB 同步歌词保存: ${song.name}")
+                    return
+                }
+                plainLyrics != null -> {
+                    lyricFile.writeText(plainLyrics, Charsets.UTF_8)
+                    baseNameLyricFile.writeText(plainLyrics, Charsets.UTF_8)
+                    NPLogger.d(TAG, "LRCLIB 纯文本歌词保存: ${song.name}")
+                    return
+                }
             }
 
-            // 如果没有matchedLyric，从API获取主歌词和翻译歌词
+            // 回退 YouTube Music API
+            val videoId = extractYouTubeMusicVideoId(song.mediaUri) ?: return
+            val ytResult = kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+                AppContainer.youtubeMusicClient.getLyrics(videoId)
+            } ?: return
+            val lyricsText = ytResult.lyrics.takeIf { it.isNotBlank() } ?: return
+            lyricFile.writeText(lyricsText, Charsets.UTF_8)
+            baseNameLyricFile.writeText(lyricsText, Charsets.UTF_8)
+            NPLogger.d(TAG, "YouTube Music API 歌词保存: ${song.name}")
+        } catch (e: Exception) {
+            NPLogger.w(TAG, "YouTube Music 歌词下载失败: ${song.name} - ${e.message}")
+        }
+    }
+
+    /** 从网易云 API 获取歌词并保存 */
+    private fun downloadNeteaseLyrics(
+        song: SongItem,
+        lyricFile: File,
+        baseNameLyricFile: File,
+        transLyricFile: File,
+        baseNameTransLyricFile: File
+    ) {
+        if (!song.matchedLyric.isNullOrBlank()) {
+            try {
+                val lyrics = AppContainer.neteaseClient.getLyricNew(song.id)
+                val root = JSONObject(lyrics)
+                if (root.optInt("code") == 200) {
+                    val tlyric = root.optJSONObject("tlyric")?.optString("lyric") ?: ""
+                    if (tlyric.isNotBlank()) {
+                        transLyricFile.writeText(tlyric, Charsets.UTF_8)
+                        baseNameTransLyricFile.writeText(tlyric, Charsets.UTF_8)
+                        NPLogger.d(TAG, "翻译歌词保存: ${song.name}")
+                    }
+                }
+            } catch (e: Exception) {
+                NPLogger.w(TAG, "翻译歌词下载失败: ${song.name} - ${e.message}")
+            }
+            return
+        }
+
+        try {
             val lyrics = AppContainer.neteaseClient.getLyricNew(song.id)
             val root = JSONObject(lyrics)
             if (root.optInt("code") != 200) return
 
             val lrc = root.optJSONObject("lrc")?.optString("lyric") ?: ""
             if (lrc.isNotBlank()) {
-                lyricFile.writeText(lrc)
-                baseNameLyricFile.writeText(lrc)
+                lyricFile.writeText(lrc, Charsets.UTF_8)
+                baseNameLyricFile.writeText(lrc, Charsets.UTF_8)
                 NPLogger.d(TAG, "从API获取歌词保存: ${song.name}")
             }
 
-            // 同时保存翻译歌词
             val tlyric = root.optJSONObject("tlyric")?.optString("lyric") ?: ""
             if (tlyric.isNotBlank()) {
-                transLyricFile.writeText(tlyric)
-                baseNameTransLyricFile.writeText(tlyric)
+                transLyricFile.writeText(tlyric, Charsets.UTF_8)
+                baseNameTransLyricFile.writeText(tlyric, Charsets.UTF_8)
                 NPLogger.d(TAG, "从API获取翻译歌词保存: ${song.name}")
             }
         } catch (e: Exception) {
-            NPLogger.w(TAG, "歌词下载失败: ${song.name} - ${e.message}")
+            NPLogger.w(TAG, "网易云歌词下载失败: ${song.name} - ${e.message}")
         }
     }
 
@@ -609,7 +683,9 @@ fun getLocalFilePath(context: Context, song: SongItem): String? {
         val videoId = extractYouTubeMusicVideoId(song.mediaUri) ?: return null
         val playableAudio = AppContainer.youtubeMusicPlaybackRepository.getBestPlayableAudio(
             videoId = videoId,
-            forceRefresh = true
+            forceRefresh = true,
+            requireDirect = false,
+            preferM4a = true
         )
             ?: return null
         if (playableAudio.streamType == YouTubePlayableStreamType.HLS) {
@@ -626,7 +702,8 @@ fun getLocalFilePath(context: Context, song: SongItem): String? {
             url = playableAudio.url,
             mimeType = mimeType,
             fileExtensionHint = extFromUrl(playableAudio.url),
-            contentLength = playableAudio.contentLength
+            contentLength = playableAudio.contentLength,
+            durationMs = playableAudio.durationMs
         )
     }
 

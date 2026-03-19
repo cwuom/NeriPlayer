@@ -36,6 +36,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.widget.Toast
+import moe.ouom.neriplayer.data.LocalMediaSupport
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BluetoothAudio
 import androidx.compose.material.icons.filled.Headset
@@ -262,6 +263,9 @@ object PlayerManager {
     val qqMusicSearchApi = AppContainer.qqMusicSearchApi
     var lrcLibClient = AppContainer.lrcLibClient
 
+    // YouTube Music 歌词内存缓存，避免每次打开正在播放页面都重新请求
+    private val ytMusicLyricsCache = android.util.LruCache<String, List<moe.ouom.neriplayer.ui.component.LyricEntry>>(20)
+
     // 记录当前缓存大小设置
     private var currentCacheSize: Long = 1024L * 1024 * 1024
 
@@ -450,6 +454,7 @@ object PlayerManager {
         cacheKey: String,
         mimeType: String? = null
     ): MediaItem {
+        val isLocalFile = url.startsWith("file://")
         return MediaItem.Builder()
             .setMediaId("${song.id}|${song.album}|${song.mediaUri.orEmpty()}")
             .setUri(url.toUri())
@@ -457,8 +462,11 @@ object PlayerManager {
                 if (!mimeType.isNullOrBlank()) {
                     setMimeType(mimeType)
                 }
+                // 本地文件不设缓存键，避免 CacheDataSource 干扰导致 seek 重置
+                if (!isLocalFile) {
+                    setCustomCacheKey(cacheKey)
+                }
             }
-            .setCustomCacheKey(cacheKey)
             .build()
     }
 
@@ -530,8 +538,6 @@ object PlayerManager {
             )
             conditionalHttpFactory = conditionalFactory
 
-            val defaultDsFactory = androidx.media3.datasource.DefaultDataSource.Factory(app, conditionalFactory)
-
             val finalDataSourceFactory: androidx.media3.datasource.DataSource.Factory = if (maxCacheSize > 0) {
                 val cacheDir = File(app.cacheDir, "media_cache")
                 val dbProvider = StandaloneDatabaseProvider(app)
@@ -542,17 +548,21 @@ object PlayerManager {
                     dbProvider
                 )
 
-                CacheDataSource.Factory()
+                val cacheDsFactory = CacheDataSource.Factory()
                     .setCache(cache)
-                    .setUpstreamDataSourceFactory(defaultDsFactory)
+                    .setUpstreamDataSourceFactory(conditionalFactory)
                     .setFlags(CacheDataSource.FLAG_BLOCK_ON_CACHE)
+                    
+                androidx.media3.datasource.DefaultDataSource.Factory(app, cacheDsFactory)
             } else {
                 NPLogger.d("NERI-Player", "Cache disabled by user setting (size=0).")
-                defaultDsFactory
+                androidx.media3.datasource.DefaultDataSource.Factory(app, conditionalFactory)
             }
 
             // 将最终的数据源工厂传给 MediaSourceFactory
-            val mediaSourceFactory = DefaultMediaSourceFactory(finalDataSourceFactory)
+            val extractorsFactory = androidx.media3.extractor.DefaultExtractorsFactory()
+                .setConstantBitrateSeekingEnabled(true)
+            val mediaSourceFactory = DefaultMediaSourceFactory(finalDataSourceFactory, extractorsFactory)
 
             val renderersFactory = ReactiveRenderersFactory(app)
                 .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
@@ -696,8 +706,12 @@ object PlayerManager {
                 if (previousQuality != q) {
                     val currentSong = _currentSongFlow.value
                     if (currentSong != null && isYouTubeMusicSong(currentSong)) {
+                        // 必须在主线程读取 player.currentPosition
+                        val positionMs = withContext(Dispatchers.Main) {
+                            player.currentPosition.coerceAtLeast(0L)
+                        }
                         refreshCurrentSongUrl(
-                            resumePositionMs = player.currentPosition.coerceAtLeast(0L),
+                            resumePositionMs = positionMs,
                             allowFallback = true,
                             reason = "youtube_quality_changed"
                         )
@@ -1414,13 +1428,15 @@ object PlayerManager {
                     _currentSongFlow.value?.sameIdentityAs(song) == true
                 ) {
                     maybeUpdateSongDuration(song, result.durationMs ?: 0L)
-                    applyResolvedMediaItem(
-                        _currentSongFlow.value ?: song,
-                        result.url,
-                        result.mimeType,
-                        resumePositionMs
-                    )
-                    consecutivePlayFailures = 0
+                    withContext(Dispatchers.Main) {
+                        applyResolvedMediaItem(
+                            _currentSongFlow.value ?: song,
+                            result.url,
+                            result.mimeType,
+                            resumePositionMs
+                        )
+                        consecutivePlayFailures = 0
+                    }
                 } else if (allowFallback) {
                     withContext(Dispatchers.Main) {
                         player.playWhenReady = true
@@ -1466,10 +1482,19 @@ object PlayerManager {
     /** 检查歌曲是否有本地缓存，如果有则优先使用本地文件 */
     private fun checkLocalCache(song: SongItem): SongUrlResult? {
         val context = application
-        val localPath = AudioDownloadManager.getLocalFilePath(context, song)
-        return if (localPath != null) {
-            SongUrlResult.Success("file://$localPath")
+        val localPath = AudioDownloadManager.getLocalFilePath(context, song) ?: return null
+        // 如果歌曲时长未知，用 MediaMetadataRetriever 尝试读出来
+        val durationMs = if (song.durationMs <= 0L) {
+            try {
+                val retriever = android.media.MediaMetadataRetriever()
+                retriever.setDataSource(localPath)
+                val d = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
+                    ?.toLongOrNull() ?: 0L
+                retriever.release()
+                d
+            } catch (_: Exception) { null }
         } else null
+        return SongUrlResult.Success("file://$localPath", durationMs = durationMs)
     }
 
     /** 只有完整缓存才允许离线兜底，避免半首歌缓存被误当成可播放资源 */
@@ -2247,6 +2272,15 @@ object PlayerManager {
 
     /** 获取 YouTube Music 歌词：优先 LRCLIB（同步歌词），回退 YouTube Music API（纯文本） */
     private suspend fun getYouTubeMusicLyrics(song: SongItem): List<LyricEntry> {
+        // 先查内存缓存
+        val cacheKey = song.id.toString()
+        ytMusicLyricsCache.get(cacheKey)?.let { cached ->
+            NPLogger.d("NERI-PlayerManager", "Using cached YT Music lyrics for '${song.name}'")
+            return cached
+        }
+
+        val videoId = extractYouTubeMusicVideoId(song.mediaUri)
+
         return withContext(Dispatchers.IO) {
             try {
                 // 第一步：尝试 LRCLIB（免费开源同步歌词库）
@@ -2265,17 +2299,20 @@ object PlayerManager {
                 // LRCLIB 有同步歌词（LRC 格式），直接解析
                 if (!lrcLibResult?.syncedLyrics.isNullOrBlank()) {
                     NPLogger.d("NERI-PlayerManager", "Using LRCLIB synced lyrics for '${song.name}'")
-                    return@withContext parseNeteaseLrc(lrcLibResult!!.syncedLyrics!!)
+                    val entries = parseNeteaseLrc(lrcLibResult!!.syncedLyrics!!)
+                    if (entries.isNotEmpty()) ytMusicLyricsCache.put(cacheKey, entries)
+                    return@withContext entries
                 }
 
                 // LRCLIB 有纯文本歌词
                 if (!lrcLibResult?.plainLyrics.isNullOrBlank()) {
                     NPLogger.d("NERI-PlayerManager", "Using LRCLIB plain lyrics for '${song.name}'")
-                    return@withContext convertPlainLyricsToEntries(lrcLibResult!!.plainLyrics!!, song.durationMs)
+                    val entries = convertPlainLyricsToEntries(lrcLibResult!!.plainLyrics!!, song.durationMs)
+                    if (entries.isNotEmpty()) ytMusicLyricsCache.put(cacheKey, entries)
+                    return@withContext entries
                 }
 
                 // 第二步：回退到 YouTube Music API
-                val videoId = extractYouTubeMusicVideoId(song.mediaUri)
                 if (videoId.isNullOrBlank()) {
                     return@withContext emptyList()
                 }
@@ -2288,13 +2325,13 @@ object PlayerManager {
 
                 NPLogger.d("NERI-PlayerManager", "Using YouTube Music API lyrics for '${song.name}'")
 
-                // 如果歌词已经是 LRC 格式（带时间标签），直接解析
-                if (lyricsText.contains(Regex("\\[\\d{2}:\\d{2}"))) {
-                    return@withContext parseNeteaseLrc(lyricsText)
+                val entries = if (lyricsText.contains(Regex("\\[\\d{2}:\\d{2}"))) {
+                    parseNeteaseLrc(lyricsText)
+                } else {
+                    convertPlainLyricsToEntries(lyricsText, song.durationMs)
                 }
-
-                // 纯文本歌词：根据歌曲总时长均匀分配时间戳
-                convertPlainLyricsToEntries(lyricsText, song.durationMs)
+                if (entries.isNotEmpty()) ytMusicLyricsCache.put(cacheKey, entries)
+                entries
             } catch (e: Exception) {
                 NPLogger.e("NERI-PlayerManager", "getYouTubeMusicLyrics failed: ${e.message}", e)
                 emptyList()
@@ -2376,7 +2413,7 @@ object PlayerManager {
         val localLyricPath = AudioDownloadManager.getLyricFilePath(context, song)
         if (localLyricPath != null) {
             try {
-                val lrcContent = File(localLyricPath).readText()
+                val lrcContent = LocalMediaSupport.readTextFile(File(localLyricPath)) ?: ""
                 return parseNeteaseLrc(lrcContent)
             } catch (e: Exception) {
                 NPLogger.w("NERI-PlayerManager", "本地歌词读取失败: ${e.message}")

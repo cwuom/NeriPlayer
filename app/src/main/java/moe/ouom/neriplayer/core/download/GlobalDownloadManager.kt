@@ -100,9 +100,10 @@ object GlobalDownloadManager {
                             // 验证文件是否真的存在，避免误标记
                             val filePath = AudioDownloadManager.getLocalFilePath(context, task.song)
                             if (filePath != null) {
+                                val latestSong = task.song
                                 persistDownloadedMetadata(
                                     audioFile = File(filePath),
-                                    song = task.song
+                                    song = latestSong
                                 )
                                 NPLogger.d("GlobalDownloadManager", "任务完成，文件已存在: ${task.song.name}")
                                 updateTaskStatus(songKey, DownloadStatus.COMPLETED)
@@ -251,8 +252,8 @@ object GlobalDownloadManager {
             downloadTime = existingDownloadTime ?: audioFile.lastModified(),
             coverPath = coverPath,
             coverUrl = metadata?.coverUrl,
-            matchedLyric = metadata?.matchedLyric ?: findLyricFile(downloadDir, audioFile),
-            matchedTranslatedLyric = metadata?.matchedTranslatedLyric ?: findTranslatedLyricFile(downloadDir, audioFile),
+            matchedLyric = metadata?.matchedLyric ?: findLyricFile(downloadDir, audioFile, metadata?.songId),
+            matchedTranslatedLyric = metadata?.matchedTranslatedLyric ?: findTranslatedLyricFile(downloadDir, audioFile, metadata?.songId),
             matchedLyricSource = metadata?.matchedLyricSource,
             matchedSongId = metadata?.matchedSongId,
             userLyricOffsetMs = metadata?.userLyricOffsetMs ?: 0L,
@@ -263,7 +264,9 @@ object GlobalDownloadManager {
             originalArtist = metadata?.originalArtist,
             originalCoverUrl = metadata?.originalCoverUrl,
             originalLyric = metadata?.originalLyric,
-            originalTranslatedLyric = metadata?.originalTranslatedLyric
+            originalTranslatedLyric = metadata?.originalTranslatedLyric,
+            mediaUri = metadata?.mediaUri,
+            durationMs = metadata?.durationMs ?: 0L
         )
     }
 
@@ -314,7 +317,9 @@ object GlobalDownloadManager {
             put("originalCoverUrl", song.originalCoverUrl)
             put("originalLyric", song.originalLyric)
             put("originalTranslatedLyric", song.originalTranslatedLyric)
+            put("mediaUri", song.mediaUri)
             put("coverPath", coverPath)
+            put("durationMs", song.durationMs)
         }
         runCatching { metadataFile.writeText(json.toString(), Charsets.UTF_8) }
             .onFailure { NPLogger.w("GlobalDownloadManager", "写入下载元数据失败: ${metadataFile.name} - ${it.message}") }
@@ -345,7 +350,9 @@ object GlobalDownloadManager {
                 originalCoverUrl = root.optString("originalCoverUrl").takeIf { it.isNotBlank() },
                 originalLyric = root.optString("originalLyric").takeIf { it.isNotBlank() },
                 originalTranslatedLyric = root.optString("originalTranslatedLyric").takeIf { it.isNotBlank() },
-                coverPath = root.optString("coverPath").takeIf { it.isNotBlank() }
+                coverPath = root.optString("coverPath").takeIf { it.isNotBlank() },
+                mediaUri = root.optString("mediaUri").takeIf { it.isNotBlank() },
+                durationMs = root.optLong("durationMs", 0L)
             )
         }.getOrElse {
             NPLogger.w("GlobalDownloadManager", "解析下载元数据失败: ${metadataFile.name} - ${it.message}")
@@ -379,22 +386,25 @@ object GlobalDownloadManager {
         return null
     }
 
-    private fun findLyricFile(downloadDir: File, audioFile: File): String? {
+    private fun findLyricFile(downloadDir: File, audioFile: File, songId: Long? = null): String? {
         val lyricsDir = File(downloadDir, "Lyrics")
         if (!lyricsDir.exists()) return null
-        return listOf(
-            File(lyricsDir, "${audioFile.hashCode()}.lrc"),
-            File(lyricsDir, "${audioFile.nameWithoutExtension}.lrc")
-        ).firstNotNullOfOrNull(::readTextFileSafely)
+        return buildList {
+            // 按 songId 查找（AudioDownloadManager.buildLyricFiles 用 songId 保存）
+            if (songId != null) add(File(lyricsDir, "${songId}.lrc"))
+            add(File(lyricsDir, "${audioFile.hashCode()}.lrc"))
+            add(File(lyricsDir, "${audioFile.nameWithoutExtension}.lrc"))
+        }.firstNotNullOfOrNull(::readTextFileSafely)
     }
 
-    private fun findTranslatedLyricFile(downloadDir: File, audioFile: File): String? {
+    private fun findTranslatedLyricFile(downloadDir: File, audioFile: File, songId: Long? = null): String? {
         val lyricsDir = File(downloadDir, "Lyrics")
         if (!lyricsDir.exists()) return null
-        return listOf(
-            File(lyricsDir, "${audioFile.hashCode()}_trans.lrc"),
-            File(lyricsDir, "${audioFile.nameWithoutExtension}_trans.lrc")
-        ).firstNotNullOfOrNull(::readTextFileSafely)
+        return buildList {
+            if (songId != null) add(File(lyricsDir, "${songId}_trans.lrc"))
+            add(File(lyricsDir, "${audioFile.hashCode()}_trans.lrc"))
+            add(File(lyricsDir, "${audioFile.nameWithoutExtension}_trans.lrc"))
+        }.firstNotNullOfOrNull(::readTextFileSafely)
     }
 
     private fun readTextFileSafely(file: File): String? {
@@ -477,7 +487,10 @@ object GlobalDownloadManager {
             val file = File(song.filePath)
             if (file.exists()) {
                 // 获取音频文件的实际时长
-                val durationMs = getAudioDuration(file)
+                var durationMs = song.durationMs
+                if (durationMs <= 0L) {
+                    durationMs = getAudioDuration(file)
+                }
                 // 使用PlayerManager播放本地文件
                 val songItem = SongItem(
                     id = song.id,
@@ -487,7 +500,7 @@ object GlobalDownloadManager {
                     albumId = 0L,
                     durationMs = durationMs,
                     coverUrl = song.coverUrl,
-                    mediaUri = file.absolutePath,
+                    mediaUri = song.mediaUri ?: file.absolutePath,
                     matchedLyric = song.matchedLyric,
                     matchedTranslatedLyric = song.matchedTranslatedLyric,
                     matchedLyricSource = song.matchedLyricSource?.let {
@@ -522,6 +535,23 @@ object GlobalDownloadManager {
      * 获取音频文件的实际时长
      */
     private fun getAudioDuration(file: File): Long {
+        try {
+            val extractor = android.media.MediaExtractor()
+            extractor.setDataSource(file.absolutePath)
+            for (i in 0 until extractor.trackCount) {
+                val format = extractor.getTrackFormat(i)
+                val mime = format.getString(android.media.MediaFormat.KEY_MIME)
+                if (mime?.startsWith("audio/") == true) {
+                    val durationUs = format.getLong(android.media.MediaFormat.KEY_DURATION)
+                    extractor.release()
+                    return durationUs / 1000L
+                }
+            }
+            extractor.release()
+        } catch (e: Exception) {
+            NPLogger.w("GlobalDownloadManager", "MediaExtractor 获取音频时长失败: ${e.message}")
+        }
+
         return try {
             val mediaMetadataRetriever = android.media.MediaMetadataRetriever()
             mediaMetadataRetriever.setDataSource(file.absolutePath)
@@ -530,7 +560,7 @@ object GlobalDownloadManager {
             
             durationStr?.toLongOrNull() ?: 0L
         } catch (e: Exception) {
-            NPLogger.w("GlobalDownloadManager", "获取音频时长失败: ${e.message}")
+            NPLogger.w("GlobalDownloadManager", "MediaMetadataRetriever 获取音频时长失败: ${e.message}")
             0L
         }
     }
@@ -795,7 +825,9 @@ private data class DownloadedSongMetadata(
     val originalCoverUrl: String? = null,
     val originalLyric: String? = null,
     val originalTranslatedLyric: String? = null,
-    val coverPath: String? = null
+    val coverPath: String? = null,
+    val mediaUri: String? = null,
+    val durationMs: Long = 0L
 )
 
 data class DownloadedSong(
@@ -820,7 +852,9 @@ data class DownloadedSong(
     val originalArtist: String? = null,
     val originalCoverUrl: String? = null,
     val originalLyric: String? = null,
-    val originalTranslatedLyric: String? = null
+    val originalTranslatedLyric: String? = null,
+    val mediaUri: String? = null,
+    val durationMs: Long = 0L
 ) {
     fun displayName(): String = customName ?: name
     fun displayArtist(): String = customArtist ?: artist

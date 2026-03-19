@@ -142,14 +142,12 @@ class AudioPlayerService : Service() {
             }
         }
 
-        // 鐩戝惉瀹氭椂鍣ㄧ姸鎬佸彉鍖栧苟鏇存柊閫氱煡
         serviceScope.launch {
             PlayerManager.sleepTimerManager.timerState.collect {
                 updateNotification()
             }
         }
 
-        // 鎷斿嚭鑰虫満鑷姩鏆傚仠
         becomingNoisyReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 if (intent.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
@@ -269,11 +267,6 @@ class AudioPlayerService : Service() {
         return if (allowServiceRestart) START_STICKY else START_NOT_STICKY
     }
 
-    /**
-     * 鏋勫缓鍓嶅彴鎾斁閫氱煡锛堝獟浣撴牱寮忥級
-     * - 鏍规嵁 isPlaying 鍐冲畾鏄剧ず 鎾斁/鏆傚仠 鍥炬爣涓庢剰鍥?
-     * - 鏀惰棌鎸夐挳浣跨敤鑷畾涔?Action
-     */
     private fun buildNotification(): Notification {
         val isPlaying = PlayerManager.isPlayingFlow.value
         val song = PlayerManager.currentSongFlow.value

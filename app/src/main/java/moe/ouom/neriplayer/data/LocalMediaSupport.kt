@@ -511,6 +511,11 @@ object LocalMediaSupport {
             return bytes.copyOfRange(offset, bytes.size).toString(charset).normalizeDecodedText()
         }
 
+        val utf8Text = bytes.toString(StandardCharsets.UTF_8).normalizeDecodedText()
+        if (!utf8Text.contains('\uFFFD')) {
+            return utf8Text
+        }
+
         val candidates = buildList {
             add(StandardCharsets.UTF_8)
             add(StandardCharsets.UTF_16LE)

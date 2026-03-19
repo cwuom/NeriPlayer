@@ -31,6 +31,10 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CheckBox
+import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -118,6 +122,14 @@ fun YouTubeMusicPlaylistDetailScreen(
     val scope = rememberCoroutineScope()
     var showSearch by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
+    var selectionMode by remember { mutableStateOf(false) }
+    var selectedKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
+    fun toggleSelect(key: String) {
+        selectedKeys = if (selectedKeys.contains(key)) selectedKeys - key else selectedKeys + key
+    }
+    fun clearSelection() { selectedKeys = emptySet() }
+    fun selectAll() { selectedKeys = ui.tracks.map { it.stableKey() }.toSet() }
+    fun exitSelection() { selectionMode = false; clearSelection() }
 
     LaunchedEffect(playlist.browseId) {
         viewModel.start(playlist)
@@ -164,51 +176,95 @@ fun YouTubeMusicPlaylistDetailScreen(
         containerColor = Color.Transparent,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = resolvedPlaylist.title,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                },
-                navigationIcon = {
-                    HapticIconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.action_back)
+            if (!selectionMode) {
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = resolvedPlaylist.title,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
-                    }
-                },
-                actions = {
-                    HapticIconButton(
-                        onClick = {
-                            showSearch = !showSearch
-                            if (!showSearch) {
-                                searchQuery = ""
-                            }
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Search,
-                            contentDescription = stringResource(R.string.cd_search_songs)
-                        )
-                    }
-                    if (ui.tracks.isNotEmpty()) {
-                        HapticIconButton(onClick = { onSongClick(ui.tracks, 0) }) {
+                    },
+                    navigationIcon = {
+                        HapticIconButton(onClick = onBack) {
                             Icon(
-                                imageVector = Icons.AutoMirrored.Outlined.PlaylistPlay,
-                                contentDescription = stringResource(R.string.player_play_all)
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = stringResource(R.string.action_back)
                             )
                         }
-                    }
-                },
-                windowInsets = WindowInsets.statusBars,
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Transparent,
-                    scrolledContainerColor = MaterialTheme.colorScheme.surface
+                    },
+                    actions = {
+                        HapticIconButton(
+                            onClick = {
+                                showSearch = !showSearch
+                                if (!showSearch) {
+                                    searchQuery = ""
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Search,
+                                contentDescription = stringResource(R.string.cd_search_songs)
+                            )
+                        }
+                        if (ui.tracks.isNotEmpty()) {
+                            HapticIconButton(onClick = { onSongClick(ui.tracks, 0) }) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Outlined.PlaylistPlay,
+                                    contentDescription = stringResource(R.string.player_play_all)
+                                )
+                            }
+                        }
+                    },
+                    windowInsets = WindowInsets.statusBars,
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = Color.Transparent,
+                        scrolledContainerColor = MaterialTheme.colorScheme.surface
+                    )
                 )
-            )
+            } else {
+                val allSelected = selectedKeys.size == ui.tracks.size && ui.tracks.isNotEmpty()
+                TopAppBar(
+                    title = { Text(stringResource(R.string.common_selected_count, selectedKeys.size)) },
+                    navigationIcon = {
+                        HapticIconButton(onClick = { exitSelection() }) {
+                            Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.cd_exit_select))
+                        }
+                    },
+                    actions = {
+                        HapticIconButton(onClick = { if (allSelected) clearSelection() else selectAll() }) {
+                            Icon(
+                                imageVector = if (allSelected) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
+                                contentDescription = if (allSelected) {
+                                    stringResource(R.string.action_deselect_all)
+                                } else {
+                                    stringResource(R.string.action_select_all)
+                                }
+                            )
+                        }
+                        HapticIconButton(
+                            onClick = {
+                                if (selectedKeys.isNotEmpty()) {
+                                    val selectedSongs = ui.tracks.filter { it.stableKey() in selectedKeys }
+                                    GlobalDownloadManager.startBatchDownload(context, selectedSongs)
+                                    exitSelection()
+                                }
+                            },
+                            enabled = selectedKeys.isNotEmpty()
+                        ) {
+                            Icon(
+                                Icons.Outlined.Download,
+                                contentDescription = stringResource(R.string.cd_download_selected)
+                            )
+                        }
+                    },
+                    windowInsets = WindowInsets.statusBars,
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = Color.Transparent,
+                        scrolledContainerColor = MaterialTheme.colorScheme.surface
+                    )
+                )
+            }
         }
     ) { innerPadding ->
         Column(
@@ -285,12 +341,25 @@ fun YouTubeMusicPlaylistDetailScreen(
                                     isCurrentSong = isCurrent,
                                     animatePlayingIndicator = isCurrent && isPlaying,
                                     snackbarHostState = snackbarHostState,
-                                    onClick = {
-                                        val targetIndex = ui.tracks.indexOfFirst {
-                                            it.sameIdentityAs(song)
+                                    selectionMode = selectionMode,
+                                    selected = song.stableKey() in selectedKeys,
+                                    onToggleSelect = { toggleSelect(song.stableKey()) },
+                                    onLongPress = {
+                                        if (!selectionMode) {
+                                            selectionMode = true
+                                            toggleSelect(song.stableKey())
                                         }
-                                        if (targetIndex >= 0) {
-                                            onSongClick(ui.tracks, targetIndex)
+                                    },
+                                    onClick = {
+                                        if (selectionMode) {
+                                            toggleSelect(song.stableKey())
+                                        } else {
+                                            val targetIndex = ui.tracks.indexOfFirst {
+                                                it.sameIdentityAs(song)
+                                            }
+                                            if (targetIndex >= 0) {
+                                                onSongClick(ui.tracks, targetIndex)
+                                            }
                                         }
                                     },
                                     onPlayNext = { PlayerManager.addToQueueNext(song) },
@@ -484,6 +553,10 @@ private fun YouTubeMusicSongRow(
     isCurrentSong: Boolean,
     animatePlayingIndicator: Boolean,
     snackbarHostState: SnackbarHostState,
+    selectionMode: Boolean,
+    selected: Boolean,
+    onToggleSelect: () -> Unit,
+    onLongPress: () -> Unit,
     onClick: () -> Unit,
     onPlayNext: () -> Unit,
     onAddToQueueEnd: () -> Unit,
@@ -504,7 +577,7 @@ private fun YouTubeMusicSongRow(
                 },
                 onLongClick = {
                     context.performHapticFeedback()
-                    onPlayNext()
+                    onLongPress()
                 }
             )
             .padding(horizontal = 16.dp, vertical = 12.dp),
@@ -514,12 +587,19 @@ private fun YouTubeMusicSongRow(
             modifier = Modifier.width(48.dp),
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = index.toString(),
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1
-            )
+            if (selectionMode) {
+                androidx.compose.material3.Checkbox(
+                    checked = selected,
+                    onCheckedChange = { onToggleSelect() }
+                )
+            } else {
+                Text(
+                    text = index.toString(),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
+            }
         }
 
         val coverModel = song.displayCoverUrl(context).takeUnless { it.isNullOrBlank() }
@@ -579,13 +659,14 @@ private fun YouTubeMusicSongRow(
             )
         }
 
-        Box {
-            IconButton(onClick = { showMenu = true }) {
-                Icon(
-                    imageVector = Icons.Filled.MoreVert,
-                    contentDescription = stringResource(R.string.common_more_actions)
-                )
-            }
+        if (!selectionMode) {
+            Box {
+                IconButton(onClick = { showMenu = true }) {
+                    Icon(
+                        imageVector = Icons.Filled.MoreVert,
+                        contentDescription = stringResource(R.string.common_more_actions)
+                    )
+                }
             DropdownMenu(
                 expanded = showMenu,
                 onDismissRequest = { showMenu = false }
@@ -631,6 +712,7 @@ private fun YouTubeMusicSongRow(
                     }
                 )
             }
+        }
         }
     }
 }
