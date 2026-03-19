@@ -1,4 +1,4 @@
-﻿<resources>
+<resources>
     <string name="app_name">音理音理!</string>
 
     <!-- Common Actions -->
@@ -1183,7 +1183,7 @@
     <string name="library_title">媒体库</string>
     <string name="library_coming_soon">敬请期待</string>
     <string name="library_recent_played">最近播放</string>
-    <string name="nowplaying_youtube_music">YouTube Music</string>
+    <string name="nowplaying_youtube_music">YouTube</string>
     <string name="library_delete_playlist_confirm">确定要删除歌单“%1$s”吗？</string>
 
     <!-- Bili Playlist Detail -->

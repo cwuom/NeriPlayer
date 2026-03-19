@@ -1,4 +1,4 @@
-﻿<resources>
+<resources>
     <string name="app_name">NeriPlayer</string>
 
     <!-- Common Actions -->
@@ -1168,7 +1168,7 @@
     <string name="library_title">Library</string>
     <string name="library_coming_soon">Coming Soon</string>
     <string name="library_recent_played">Recent Plays</string>
-    <string name="nowplaying_youtube_music">YouTube Music</string>
+    <string name="nowplaying_youtube_music">YouTube</string>
     <string name="library_delete_playlist_confirm">Delete playlist \"%1$s\"?</string>
     <string name="bili_loading_favorites">Loading favorites…</string>
     <string name="bili_load_failed">Load failed: %s</string>

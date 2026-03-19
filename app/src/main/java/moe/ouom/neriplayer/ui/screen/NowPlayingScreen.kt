@@ -1,4 +1,4 @@
-﻿package moe.ouom.neriplayer.ui.screen
+package moe.ouom.neriplayer.ui.screen
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
@@ -164,6 +164,7 @@ import moe.ouom.neriplayer.data.displayArtist
 import moe.ouom.neriplayer.data.displayCoverUrl
 import moe.ouom.neriplayer.data.displayName
 import moe.ouom.neriplayer.data.isLocalSong
+import moe.ouom.neriplayer.data.isYouTubeMusicSong
 import moe.ouom.neriplayer.data.sameIdentityAs
 import moe.ouom.neriplayer.data.stableKey
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
@@ -226,6 +227,7 @@ fun NowPlayingScreen(
     val isFromBili = isFromBiliTag || (!isFromNeteaseTag && isFromBiliUrl)
     val rawPlaybackSourceType = when {
         currentSong?.isLocalSong() == true -> PlaybackSourceType.LOCAL
+        currentSong?.let { isYouTubeMusicSong(it) } == true -> PlaybackSourceType.YOUTUBE_MUSIC
         isFromNetease -> PlaybackSourceType.NETEASE
         isFromBili -> PlaybackSourceType.BILIBILI
         else -> null
