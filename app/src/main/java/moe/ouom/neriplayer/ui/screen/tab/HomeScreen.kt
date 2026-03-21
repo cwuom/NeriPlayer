@@ -110,10 +110,12 @@ import moe.ouom.neriplayer.data.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.PlaylistUsageRepository
 import moe.ouom.neriplayer.data.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.UsageEntry
+import moe.ouom.neriplayer.data.buildYouTubeMusicMediaUri
 import moe.ouom.neriplayer.data.displayAlbum
 import moe.ouom.neriplayer.data.displayArtist
 import moe.ouom.neriplayer.data.displayCoverUrl
 import moe.ouom.neriplayer.data.displayName
+import moe.ouom.neriplayer.data.stableYouTubeMusicId
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.HomeSectionState
@@ -128,6 +130,7 @@ import moe.ouom.neriplayer.util.formatPlayCount
 import moe.ouom.neriplayer.util.offlineCachedImageRequest
 import kotlin.math.ceil
 import kotlin.math.min
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -178,6 +181,17 @@ fun HomeScreen(
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
 
     val snackbarHostState = remember { SnackbarHostState() }
+    val guessYouLikeTitle = stringResource(R.string.home_ytmusic_guess_you_like)
+    val dailyDiscoverTitle = stringResource(R.string.home_ytmusic_daily_discover)
+    val moreRecommendationsTitle = stringResource(R.string.home_ytmusic_more_recommendations)
+    val ytmSections = remember(ui.ytMusicHomeShelves.items) {
+        classifyYouTubeMusicShelves(ui.ytMusicHomeShelves.items)
+    }
+    val hasVisibleYtMusicFeed = remember(ytmSections) {
+        ytmSections.guessYouLike != null ||
+            ytmSections.dailyDiscover != null ||
+            ytmSections.remaining.isNotEmpty()
+    }
     val scope = rememberCoroutineScope()
     val showContinue = showContinueCard && usage.isNotEmpty()
     val isInternational = ui.internationalizationEnabled
@@ -272,79 +286,129 @@ fun HomeScreen(
                     }
 
                     if (isInternational) {
-                        // 国际化模式：显示 YouTube Music 歌单
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            SectionHeader(
-                                icon = Icons.Outlined.Star,
-                                title = stringResource(R.string.home_ytmusic_playlists)
+                        if (showTrendingCard && ytmSections.guessYouLike != null) {
+                            addYouTubeMusicSongShelfSection(
+                                shelf = ytmSections.guessYouLike,
+                                icon = Icons.Outlined.Bolt,
+                                title = guessYouLikeTitle,
+                                onSongClick = onSongClick
                             )
                         }
-                        when {
-                            ui.ytMusicPlaylists.items.isNotEmpty() -> {
-                                items(
-                                    items = ui.ytMusicPlaylists.items,
-                                    key = { it.browseId }
-                                ) { playlist ->
-                                    YtMusicPlaylistCard(
-                                        playlist = playlist,
-                                        onClick = { onYouTubeMusicPlaylistClick(playlist) }
-                                    )
+
+                        if (showRadarCard && ytmSections.dailyDiscover != null) {
+                            addYouTubeMusicSongShelfSection(
+                                shelf = ytmSections.dailyDiscover,
+                                icon = Icons.Outlined.Explore,
+                                title = dailyDiscoverTitle,
+                                onSongClick = onSongClick
+                            )
+                        }
+
+                        if (showRecommendedCard) {
+                            item(span = { GridItemSpan(maxLineSpan) }) {
+                                SectionHeader(
+                                    icon = Icons.Outlined.Star,
+                                    title = moreRecommendationsTitle
+                                )
+                            }
+
+                            when {
+                                ui.ytMusicPlaylists.items.isNotEmpty() -> {
+                                    items(
+                                        items = ui.ytMusicPlaylists.items,
+                                        key = { it.browseId }
+                                    ) { playlist ->
+                                        YtMusicPlaylistCard(
+                                            playlist = playlist,
+                                            onClick = { onYouTubeMusicPlaylistClick(playlist) }
+                                        )
+                                    }
+                                }
+                                ui.ytMusicPlaylists.loading -> {
+                                    item(span = { GridItemSpan(maxLineSpan) }) {
+                                        SectionLoadingState(homeLoadingText)
+                                    }
+                                }
+                                ui.ytMusicPlaylists.error != null -> {
+                                    item(span = { GridItemSpan(maxLineSpan) }) {
+                                        SectionErrorState(detail = ui.ytMusicPlaylists.error ?: "")
+                                    }
                                 }
                             }
-                            ui.ytMusicPlaylists.loading -> {
-                                item(span = { GridItemSpan(maxLineSpan) }) {
-                                    SectionLoadingState(homeLoadingText)
+
+                            when {
+                                ytmSections.remaining.isNotEmpty() -> {
+                                    ytmSections.remaining.forEach { shelf ->
+                                        if (shelf.shouldRenderAsSongShelf()) {
+                                            addYouTubeMusicSongShelfSection(
+                                                shelf = shelf,
+                                                icon = Icons.Outlined.Explore,
+                                                title = shelf.title,
+                                                onSongClick = onSongClick
+                                            )
+                                        } else {
+                                            item(span = { GridItemSpan(maxLineSpan) }) {
+                                                SectionHeader(
+                                                    icon = Icons.Outlined.Explore,
+                                                    title = shelf.title
+                                                )
+                                            }
+                                            items(
+                                                items = shelf.items,
+                                                key = { shelf.title + it.title + it.browseId + it.videoId }
+                                            ) { homeItem ->
+                                                YtMusicHomeItemCard(
+                                                    item = homeItem,
+                                                    onClick = {
+                                                        if (homeItem.browseId.isNotBlank()) {
+                                                            onYouTubeMusicPlaylistClick(
+                                                                YouTubeMusicPlaylist(
+                                                                    browseId = homeItem.browseId,
+                                                                    playlistId = homeItem.browseId.removePrefix("VL"),
+                                                                    title = homeItem.title,
+                                                                    subtitle = homeItem.subtitle,
+                                                                    coverUrl = homeItem.coverUrl,
+                                                                    trackCount = 0
+                                                                )
+                                                            )
+                                                        } else if (homeItem.videoId.isNotBlank()) {
+                                                            val songs = listOfNotNull(
+                                                                homeItem.toPlayableSongItem(shelf.title)
+                                                            )
+                                                            if (songs.isNotEmpty()) {
+                                                                onSongClick(songs, 0)
+                                                            }
+                                                        }
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
-                            }
-                            ui.ytMusicPlaylists.error != null -> {
-                                item(span = { GridItemSpan(maxLineSpan) }) {
-                                    SectionErrorState(detail = ui.ytMusicPlaylists.error ?: "")
+                                ui.ytMusicHomeShelves.loading -> {
+                                    item(span = { GridItemSpan(maxLineSpan) }) {
+                                        SectionLoadingState(homeLoadingText)
+                                    }
+                                }
+                                ui.ytMusicHomeShelves.error != null -> {
+                                    item(span = { GridItemSpan(maxLineSpan) }) {
+                                        SectionErrorState(detail = ui.ytMusicHomeShelves.error ?: "")
+                                    }
                                 }
                             }
                         }
 
-                        // YouTube Music 推荐栏目
-                        when {
-                            ui.ytMusicHomeShelves.items.isNotEmpty() -> {
-                                ui.ytMusicHomeShelves.items.forEach { shelf ->
+                        if (!hasVisibleYtMusicFeed && (showTrendingCard || showRadarCard || showRecommendedCard)) {
+                            when {
+                                ui.ytMusicHomeShelves.loading -> {
                                     item(span = { GridItemSpan(maxLineSpan) }) {
-                                        SectionHeader(
-                                            icon = Icons.Outlined.Explore,
-                                            title = shelf.title
-                                        )
-                                    }
-                                    items(
-                                        items = shelf.items,
-                                        key = { shelf.title + it.title + it.browseId + it.videoId }
-                                    ) { homeItem ->
-                                        YtMusicHomeItemCard(
-                                            item = homeItem,
-                                            onClick = {
-                                                if (homeItem.browseId.isNotBlank()) {
-                                                    onYouTubeMusicPlaylistClick(
-                                                        YouTubeMusicPlaylist(
-                                                            browseId = homeItem.browseId,
-                                                            playlistId = homeItem.browseId.removePrefix("VL"),
-                                                            title = homeItem.title,
-                                                            subtitle = homeItem.subtitle,
-                                                            coverUrl = homeItem.coverUrl,
-                                                            trackCount = 0
-                                                        )
-                                                    )
-                                                }
-                                            }
-                                        )
+                                        SectionLoadingState(homeLoadingText)
                                     }
                                 }
-                            }
-                            ui.ytMusicHomeShelves.loading -> {
-                                item(span = { GridItemSpan(maxLineSpan) }) {
-                                    SectionLoadingState(homeLoadingText)
-                                }
-                            }
-                            ui.ytMusicHomeShelves.error != null -> {
-                                item(span = { GridItemSpan(maxLineSpan) }) {
-                                    SectionErrorState(detail = ui.ytMusicHomeShelves.error ?: "")
+                                ui.ytMusicHomeShelves.error != null -> {
+                                    item(span = { GridItemSpan(maxLineSpan) }) {
+                                        SectionErrorState(detail = ui.ytMusicHomeShelves.error ?: "")
+                                    }
                                 }
                             }
                         }
@@ -758,6 +822,135 @@ private fun YtMusicHomeItemCard(
                 )
             }
         }
+    }
+}
+
+private data class ClassifiedYouTubeMusicShelves(
+    val guessYouLike: YouTubeMusicHomeShelf?,
+    val dailyDiscover: YouTubeMusicHomeShelf?,
+    val remaining: List<YouTubeMusicHomeShelf>
+)
+
+private val YouTubeMusicGuessYouLikeKeywords = listOf(
+    "猜你喜欢",
+    "guess you like",
+    "recommended for you"
+)
+
+private val YouTubeMusicDailyDiscoverKeywords = listOf(
+    "每日发现",
+    "daily discover",
+    "discover daily"
+)
+
+private val YouTubeMusicSongShelfKeywords = listOf(
+    "再听一遍",
+    "老歌重温",
+    "翻唱与混音",
+    "每日发现",
+    "猜你喜欢",
+    "listen again",
+    "oldies",
+    "covers and remixes",
+    "daily discover"
+)
+
+private fun classifyYouTubeMusicShelves(
+    shelves: List<YouTubeMusicHomeShelf>
+): ClassifiedYouTubeMusicShelves {
+    val guessYouLike = shelves.firstOrNull { shelf ->
+        shelf.shouldRenderAsSongShelf() &&
+            shelf.title.matchesYouTubeMusicShelfKeywords(YouTubeMusicGuessYouLikeKeywords)
+    }
+    val dailyDiscover = shelves.firstOrNull { shelf ->
+        shelf != guessYouLike &&
+            shelf.shouldRenderAsSongShelf() &&
+            shelf.title.matchesYouTubeMusicShelfKeywords(YouTubeMusicDailyDiscoverKeywords)
+    }
+    val remaining = shelves.filterNot { shelf ->
+        shelf == guessYouLike || shelf == dailyDiscover
+    }
+    return ClassifiedYouTubeMusicShelves(
+        guessYouLike = guessYouLike,
+        dailyDiscover = dailyDiscover,
+        remaining = remaining
+    )
+}
+
+private fun YouTubeMusicHomeShelf.shouldRenderAsSongShelf(): Boolean {
+    if (items.isEmpty()) {
+        return false
+    }
+    val playableCount = items.count { it.videoId.isNotBlank() }
+    if (playableCount == 0) {
+        return false
+    }
+    if (playableCount == items.size) {
+        return true
+    }
+    return title.matchesYouTubeMusicShelfKeywords(YouTubeMusicSongShelfKeywords)
+}
+
+private fun String.matchesYouTubeMusicShelfKeywords(keywords: List<String>): Boolean {
+    val normalized = lowercase(Locale.ROOT)
+        .replace(Regex("[\\s·•・/\\\\|:_-]+"), "")
+    return keywords.any { keyword ->
+        val normalizedKeyword = keyword.lowercase(Locale.ROOT)
+            .replace(Regex("[\\s·•・/\\\\|:_-]+"), "")
+        normalized.contains(normalizedKeyword)
+    }
+}
+
+private fun YouTubeMusicHomeItem.toPlayableSongItem(sectionTitle: String): SongItem? {
+    if (videoId.isBlank()) {
+        return null
+    }
+    val subtitleParts = subtitle
+        .split('•', '·', '|')
+        .map(String::trim)
+        .filter(String::isNotBlank)
+    val artist = subtitleParts.firstOrNull().orEmpty().ifBlank { "YouTube Music" }
+    val album = subtitleParts.getOrNull(1).orEmpty().ifBlank { sectionTitle }
+    val playlistId = browseId.removePrefix("VL").ifBlank { null }
+    return SongItem(
+        id = stableYouTubeMusicId(videoId),
+        name = title,
+        artist = artist,
+        album = album,
+        albumId = stableYouTubeMusicId((playlistId ?: sectionTitle).ifBlank { videoId }),
+        durationMs = 0L,
+        coverUrl = coverUrl.ifBlank { null },
+        mediaUri = buildYouTubeMusicMediaUri(
+            videoId = videoId,
+            playlistId = playlistId
+        ),
+        originalName = title,
+        originalArtist = artist,
+        originalCoverUrl = coverUrl.ifBlank { null }
+    )
+}
+
+private fun LazyGridScope.addYouTubeMusicSongShelfSection(
+    shelf: YouTubeMusicHomeShelf,
+    icon: ImageVector,
+    title: String,
+    onSongClick: (List<SongItem>, Int) -> Unit
+) {
+    val songs = shelf.items.mapNotNull { it.toPlayableSongItem(shelf.title) }
+    if (songs.isEmpty()) {
+        return
+    }
+    item(span = { GridItemSpan(maxLineSpan) }) {
+        SectionHeader(
+            icon = icon,
+            title = title
+        )
+    }
+    item(span = { GridItemSpan(maxLineSpan) }) {
+        ResponsiveSongPagerList(
+            songs = songs,
+            onSongClick = onSongClick
+        )
     }
 }
 

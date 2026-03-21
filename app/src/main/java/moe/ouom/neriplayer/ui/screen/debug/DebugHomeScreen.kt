@@ -41,6 +41,7 @@ import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 
 @Composable
 fun DebugHomeScreen(
+    onOpenYouTubeDebug: () -> Unit,
     onOpenBiliDebug: () -> Unit,
     onOpenNeteaseDebug: () -> Unit,
     onOpenSearchDebug: () -> Unit,
@@ -81,6 +82,21 @@ fun DebugHomeScreen(
             )
         ) {
             Column(Modifier.fillMaxWidth()) {
+                ListItem(
+                    leadingContent = {
+                        Icon(
+                            imageVector = Icons.Outlined.Search,
+                            contentDescription = stringResource(R.string.debug_youtube_probe_title),
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    },
+                    headlineContent = { Text(stringResource(R.string.debug_youtube_probe_title)) },
+                    supportingContent = { Text(stringResource(R.string.debug_youtube_probe_desc_short)) },
+                    modifier = Modifier.clickable(onClick = onOpenYouTubeDebug),
+                    colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                )
+
                 ListItem(
                     leadingContent = {
                         Icon(

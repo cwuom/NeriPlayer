@@ -49,6 +49,7 @@ private const val TAG = "NERI-HomeVM"
 private const val HOME_SEARCH_HOT_KEYWORD = "热歌"
 private const val HOME_SEARCH_RADAR_KEYWORD = "私人雷达"
 private const val HOME_MAX_FAILURE_BEFORE_WARNING = 3
+private const val HOME_YT_MUSIC_PLAYLIST_LIMIT = 24
 
 private class ApiCodeException(val code: Int) : IllegalStateException("api_code=$code")
 private fun shouldFallbackRecommend(code: Int): Boolean = code == 301 || code == 50000005
@@ -295,7 +296,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         coverUrl = pl.coverUrl,
                         trackCount = pl.trackCount ?: 0
                     )
-                }
+                }.take(HOME_YT_MUSIC_PLAYLIST_LIMIT)
             }) {
                 is RetryLoadResult.Success -> {
                     _uiState.value = _uiState.value.copy(

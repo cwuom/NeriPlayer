@@ -436,6 +436,31 @@
     <string name="debug_bili_api_desc">Search / Info / Stats / Stream / Favorites</string>
     <string name="debug_netease_api_desc">Account / Playlists / Song URL / Lyrics</string>
     <string name="debug_search_api_desc">QQ / NetEase Cloud</string>
+    <string name="debug_youtube_probe_title">YouTube Music API Debug</string>
+    <string name="debug_youtube_probe_desc">Test YouTube Music Home Feed and library with the current signed-in user session; requests fall back to anonymous mode when not signed in.</string>
+    <string name="debug_youtube_probe_desc_short">Test Home Feed and library with current sign-in; fall back to anonymous mode when signed out</string>
+    <string name="debug_youtube_probe_action_home">Test Home Feed</string>
+    <string name="debug_youtube_probe_action_library">Test Library Playlists</string>
+    <string name="debug_youtube_probe_action_clear_auth">Clear Auth</string>
+    <string name="debug_youtube_probe_status_idle">Waiting for action</string>
+    <string name="debug_youtube_probe_status_loading_home">Requesting YouTube Music Home Feed…</string>
+    <string name="debug_youtube_probe_status_loading_library">Requesting YouTube Music library…</string>
+    <string name="debug_youtube_probe_status_home_success">Home Feed request succeeded with %1$d sections</string>
+    <string name="debug_youtube_probe_status_home_failed">Home Feed request failed: %1$s</string>
+    <string name="debug_youtube_probe_status_library_success">Library request succeeded with %1$d playlists</string>
+    <string name="debug_youtube_probe_status_library_failed">Library request failed: %1$s</string>
+    <string name="debug_youtube_probe_status_auth_cleared">YouTube auth cleared. Subsequent requests will use anonymous mode</string>
+    <string name="debug_youtube_probe_preview_empty">Home Feed / library debug summary will appear here.</string>
+    <string name="debug_youtube_probe_auth_anonymous">Not signed in. Requests will use anonymous mode</string>
+    <string name="debug_youtube_probe_auth_logged_in">User Cookie detected | State: %1$s | Cookie keys: %2$d</string>
+    <string name="debug_youtube_probe_auth_state_missing">Missing</string>
+    <string name="debug_youtube_probe_auth_state_expired">Expired</string>
+    <string name="debug_youtube_probe_auth_state_valid">Valid</string>
+    <string name="debug_youtube_probe_auth_state_stale">Stale</string>
+    <string name="debug_youtube_probe_home_preview_empty">Home Feed returned no sections</string>
+    <string name="debug_youtube_probe_home_preview_item">%1$d. %2$s | items=%3$d | songs=%4$d | collections=%5$d</string>
+    <string name="debug_youtube_probe_library_preview_count">Library playlist count: %1$d</string>
+    <string name="debug_youtube_probe_library_preview_more">… %1$d more omitted</string>
     <string name="debug_view_logs">View App Logs</string>
     <string name="debug_view_logs_desc">View, copy and export runtime logs</string>
     <string name="debug_test_exception">Test Exception Handler</string>
@@ -666,6 +691,9 @@
     <string name="settings_internationalization_unavailable">This feature may not be available in your region</string>
     <string name="settings_internationalization_checking">Checking availability…</string>
     <string name="home_ytmusic_playlists">YouTube Music Playlists</string>
+    <string name="home_ytmusic_guess_you_like">Guess You Like</string>
+    <string name="home_ytmusic_daily_discover">Daily Discover</string>
+    <string name="home_ytmusic_more_recommendations">More Recommendations</string>
 
     <!-- Error Messages -->
     <string name="error_parse">Parse/unknown error: %s</string>
@@ -875,6 +903,10 @@
     <string name="settings_auto_show_keyboard_desc">Auto focus inputs and try to show the keyboard</string>
     <string name="settings_home_cards">Home Cards</string>
     <string name="settings_home_cards_desc">You can hide any home card. Hide all cards to hide Home.</string>
+    <string name="settings_home_cards_desc_international">When internationalization is enabled, these toggles switch to YouTube Music home sections.</string>
+    <string name="settings_home_card_ytmusic_guess_you_like_desc">Control the Guess You Like song shelf.</string>
+    <string name="settings_home_card_ytmusic_daily_discover_desc">Control the Daily Discover song shelf.</string>
+    <string name="settings_home_card_ytmusic_more_recommendations_desc">Control more YouTube Music recommendation and playlist sections.</string>
     <string name="settings_display">Display Settings</string>
     <string name="settings_display_desc">Control cover, lyrics, and background display.</string>
     <string name="settings_home_hidden_notice">All home cards are hidden, so Home will disappear from the bottom bar.</string>

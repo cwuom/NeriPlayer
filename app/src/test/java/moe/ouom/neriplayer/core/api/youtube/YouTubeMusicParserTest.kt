@@ -412,4 +412,138 @@ class YouTubeMusicParserTest {
         assertEquals("Autoplay playlist", detail.subtitle)
         assertTrue(detail.coverUrl.endsWith("liked.jpg"))
     }
+
+    @Test
+    fun parseHomeShelfPages_readsSongItemsAndShelfContinuation() {
+        val root = JSONObject(
+            """
+            {
+              "contents": {
+                "singleColumnBrowseResultsRenderer": {
+                  "tabs": [
+                    {
+                      "tabRenderer": {
+                        "content": {
+                          "sectionListRenderer": {
+                            "contents": [
+                              {
+                                "musicCarouselShelfRenderer": {
+                                  "header": {
+                                    "musicCarouselShelfBasicHeaderRenderer": {
+                                      "title": { "simpleText": "再听一遍" }
+                                    }
+                                  },
+                                  "contents": [
+                                    {
+                                      "musicTwoRowItemRenderer": {
+                                        "title": { "simpleText": "Song A" },
+                                        "subtitle": { "simpleText": "Artist A • Album A" },
+                                        "navigationEndpoint": {
+                                          "watchEndpoint": { "videoId": "video-a" }
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "musicResponsiveListItemRenderer": {
+                                        "playlistItemData": { "videoId": "video-b" },
+                                        "flexColumns": [
+                                          {
+                                            "musicResponsiveListItemFlexColumnRenderer": {
+                                              "text": { "simpleText": "Song B" }
+                                            }
+                                          },
+                                          {
+                                            "musicResponsiveListItemFlexColumnRenderer": {
+                                              "text": { "simpleText": "Artist B" }
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  ],
+                                  "continuations": [
+                                    {
+                                      "nextContinuationData": {
+                                        "continuation": "home-shelf-token"
+                                      }
+                                    }
+                                  ]
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+            """.trimIndent()
+        )
+
+        val shelves = YouTubeMusicParser.parseHomeShelfPages(root)
+
+        assertEquals(1, shelves.size)
+        assertEquals("再听一遍", shelves.first().title)
+        assertEquals("home-shelf-token", shelves.first().continuation)
+        assertEquals(2, shelves.first().items.size)
+        assertEquals("video-a", shelves.first().items[0].videoId)
+        assertEquals("video-b", shelves.first().items[1].videoId)
+    }
+
+    @Test
+    fun extractHomeContinuationAndShelfItems_supportSectionContinuationPayload() {
+        val root = JSONObject(
+            """
+            {
+              "continuationContents": {
+                "sectionListContinuation": {
+                  "contents": [],
+                  "continuations": [
+                    {
+                      "nextContinuationData": {
+                        "continuation": "home-next-token"
+                      }
+                    }
+                  ]
+                },
+                "musicShelfContinuation": {
+                  "contents": [
+                    {
+                      "musicResponsiveListItemRenderer": {
+                        "playlistItemData": { "videoId": "video-c" },
+                        "flexColumns": [
+                          {
+                            "musicResponsiveListItemFlexColumnRenderer": {
+                              "text": { "simpleText": "Song C" }
+                            }
+                          },
+                          {
+                            "musicResponsiveListItemFlexColumnRenderer": {
+                              "text": { "simpleText": "Artist C" }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "continuations": [
+                    {
+                      "nextContinuationData": {
+                        "continuation": "home-shelf-next-token"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+            """.trimIndent()
+        )
+
+        assertEquals("home-next-token", YouTubeMusicParser.extractHomeContinuation(root))
+        assertEquals(1, YouTubeMusicParser.parseHomeShelfContinuationItems(root).size)
+        assertEquals("video-c", YouTubeMusicParser.parseHomeShelfContinuationItems(root).first().videoId)
+        assertEquals("home-shelf-next-token", YouTubeMusicParser.extractHomeShelfContinuation(root))
+    }
 }

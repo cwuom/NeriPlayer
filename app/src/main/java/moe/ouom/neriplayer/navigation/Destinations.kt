@@ -36,6 +36,7 @@ sealed class Destinations(val route: String, val labelResId: Int) {
 
     // DEBUG
     data object Debug : Destinations("debug", moe.ouom.neriplayer.R.string.debug_title)
+    data object DebugYouTube : Destinations("debug/youtube", moe.ouom.neriplayer.R.string.common_youtube)
     data object DebugBili : Destinations("debug/bili", moe.ouom.neriplayer.R.string.debug_bili_api)
     data object DebugNetease : Destinations("debug/netease", moe.ouom.neriplayer.R.string.debug_netease_api)
     data object DebugSearch : Destinations("debug/search", moe.ouom.neriplayer.R.string.debug_search_api)

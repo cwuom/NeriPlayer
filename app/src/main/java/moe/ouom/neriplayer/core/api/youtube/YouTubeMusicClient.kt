@@ -7,7 +7,6 @@ import java.util.Locale
 import java.util.TimeZone
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.data.appendYouTubeConsentCookie
 import moe.ouom.neriplayer.data.YouTubeAuthRepository
 import moe.ouom.neriplayer.data.effectiveCookieHeader
 import moe.ouom.neriplayer.data.resolveRequestUserAgent
@@ -32,6 +31,7 @@ private const val YOUTUBE_MUSIC_CONTINUATION_PAGE_LIMIT = 20
 private const val YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS = 2
 private const val YOUTUBE_MUSIC_SAFE_FALLBACK_HL = "zh-CN"
 private const val YOUTUBE_MUSIC_SAFE_FALLBACK_GL = "JP"
+private const val YOUTUBE_MUSIC_HOME_PLAYLIST_ITEM_LIMIT = 24
 
 data class YouTubeMusicLibraryPlaylist(
     val browseId: String,
@@ -88,6 +88,12 @@ data class YouTubeMusicHomeItem(
     val coverUrl: String,
     val browseId: String = "",
     val videoId: String = ""
+)
+
+internal data class ParsedYouTubeMusicHomeShelf(
+    val title: String,
+    val items: List<YouTubeMusicHomeItem>,
+    val continuation: String? = null
 )
 
 internal data class YouTubeMusicBootstrapConfig(
@@ -213,17 +219,16 @@ internal object YouTubeMusicParser {
 
     /** 解析首页推荐 carousel shelves */
     fun parseHomeShelves(root: JSONObject): List<YouTubeMusicHomeShelf> {
-        val tabs = root.optJSONObject("contents")
-            ?.optJSONObject("singleColumnBrowseResultsRenderer")
-            ?.optJSONArray("tabs")
-        if (tabs == null || tabs.length() == 0) return emptyList()
+        return parseHomeShelfPages(root).map { shelf ->
+            YouTubeMusicHomeShelf(
+                title = shelf.title,
+                items = shelf.items
+            )
+        }
+    }
 
-        val sections = tabs.optJSONObject(0)
-            ?.optJSONObject("tabRenderer")
-            ?.optJSONObject("content")
-            ?.optJSONObject("sectionListRenderer")
-            ?.optJSONArray("contents")
-            ?: return emptyList()
+    fun parseHomeShelfPages(root: JSONObject): List<ParsedYouTubeMusicHomeShelf> {
+        val sections = findHomeSections(root) ?: return emptyList()
 
         return buildList {
             for (i in 0 until sections.length()) {
@@ -233,49 +238,32 @@ internal object YouTubeMusicParser {
                     ?.optJSONObject("musicCarouselShelfBasicHeaderRenderer")
                     ?.let { extractText(it.optJSONObject("title")) }
                     ?: continue
-                val items = carousel.optJSONArray("contents") ?: continue
-                val parsed = buildList {
-                    for (j in 0 until items.length()) {
-                        val item = items.optJSONObject(j) ?: continue
-                        // musicTwoRowItemRenderer 用于歌单/专辑卡片
-                        val twoRow = item.optJSONObject("musicTwoRowItemRenderer")
-                        if (twoRow != null) {
-                            val title = extractText(twoRow.optJSONObject("title"))
-                            if (title.isBlank()) continue
-                            val subtitle = extractText(twoRow.optJSONObject("subtitle"))
-                            val coverUrl = extractMusicThumbnailUrl(twoRow.optJSONObject("thumbnailRenderer"))
-                            val browseId = twoRow.optJSONObject("navigationEndpoint")
-                                ?.optJSONObject("browseEndpoint")
-                                ?.optString("browseId", "") ?: ""
-                            val videoId = twoRow.optJSONObject("navigationEndpoint")
-                                ?.optJSONObject("watchEndpoint")
-                                ?.optString("videoId", "") ?: ""
-                            add(YouTubeMusicHomeItem(title, subtitle, coverUrl, browseId, videoId))
-                            continue
-                        }
-                        // musicResponsiveListItemRenderer 用于歌曲列表项
-                        val listItem = item.optJSONObject("musicResponsiveListItemRenderer")
-                        if (listItem != null) {
-                            val title = extractColumnText(
-                                listItem.optJSONArray("flexColumns"), 0,
-                                "musicResponsiveListItemFlexColumnRenderer"
-                            )
-                            if (title.isBlank()) continue
-                            val subtitle = extractColumnText(
-                                listItem.optJSONArray("flexColumns"), 1,
-                                "musicResponsiveListItemFlexColumnRenderer"
-                            )
-                            val coverUrl = extractMusicThumbnailUrl(listItem.optJSONObject("thumbnail"))
-                            val videoId = extractTrackVideoId(listItem)
-                            add(YouTubeMusicHomeItem(title, subtitle, coverUrl, videoId = videoId))
-                        }
-                    }
-                }
-                if (parsed.isNotEmpty()) {
-                    add(YouTubeMusicHomeShelf(shelfTitle, parsed))
+                val items = parseHomeItems(
+                    contents = carousel.optJSONArray("contents")
+                )
+                if (items.isNotEmpty()) {
+                    add(
+                        ParsedYouTubeMusicHomeShelf(
+                            title = shelfTitle,
+                            items = items,
+                            continuation = extractContinuationToken(carousel)
+                        )
+                    )
                 }
             }
         }
+    }
+
+    fun extractHomeContinuation(root: JSONObject): String? {
+        return extractContinuationToken(findHomeSectionListRenderer(root))
+    }
+
+    fun parseHomeShelfContinuationItems(root: JSONObject): List<YouTubeMusicHomeItem> {
+        return parseHomeItems(findHomeShelfContinuationRenderer(root)?.optJSONArray("contents"))
+    }
+
+    fun extractHomeShelfContinuation(root: JSONObject): String? {
+        return extractContinuationToken(findHomeShelfContinuationRenderer(root))
     }
 
     fun parsePlaylistDetail(
@@ -433,6 +421,27 @@ internal object YouTubeMusicParser {
         return root.optJSONObject("continuationContents")?.optJSONObject("gridContinuation")
     }
 
+    private fun findHomeSectionListRenderer(root: JSONObject): JSONObject? {
+        val tabs = root.optJSONObject("contents")
+            ?.optJSONObject("singleColumnBrowseResultsRenderer")
+            ?.optJSONArray("tabs")
+        if (tabs != null && tabs.length() > 0) {
+            val sectionListRenderer = tabs.optJSONObject(0)
+                ?.optJSONObject("tabRenderer")
+                ?.optJSONObject("content")
+                ?.optJSONObject("sectionListRenderer")
+            if (sectionListRenderer != null) {
+                return sectionListRenderer
+            }
+        }
+        return root.optJSONObject("continuationContents")
+            ?.optJSONObject("sectionListContinuation")
+    }
+
+    private fun findHomeSections(root: JSONObject): JSONArray? {
+        return findHomeSectionListRenderer(root)?.optJSONArray("contents")
+    }
+
     private fun findPlaylistHeaderRenderer(root: JSONObject): JSONObject? {
         val sections = root.optJSONObject("contents")
             ?.optJSONObject("twoColumnBrowseResultsRenderer")
@@ -478,6 +487,70 @@ internal object YouTubeMusicParser {
         val continuationContents = root.optJSONObject("continuationContents")
         return continuationContents?.optJSONObject("musicPlaylistShelfContinuation")
             ?: continuationContents?.optJSONObject("musicShelfContinuation")
+    }
+
+    private fun findHomeShelfContinuationRenderer(root: JSONObject): JSONObject? {
+        val continuationContents = root.optJSONObject("continuationContents")
+        return continuationContents?.optJSONObject("musicShelfContinuation")
+            ?: continuationContents?.optJSONObject("musicCarouselShelfContinuation")
+            ?: continuationContents?.optJSONObject("musicPlaylistShelfContinuation")
+    }
+
+    private fun parseHomeItems(contents: JSONArray?): List<YouTubeMusicHomeItem> {
+        if (contents == null) {
+            return emptyList()
+        }
+        return buildList {
+            for (index in 0 until contents.length()) {
+                val item = contents.optJSONObject(index) ?: continue
+                val twoRow = item.optJSONObject("musicTwoRowItemRenderer")
+                if (twoRow != null) {
+                    val title = extractText(twoRow.optJSONObject("title"))
+                    if (title.isBlank()) continue
+                    val navigationEndpoint = twoRow.optJSONObject("navigationEndpoint")
+                    val browseId = navigationEndpoint
+                        ?.optJSONObject("browseEndpoint")
+                        ?.optString("browseId", "")
+                        .orEmpty()
+                    val videoId = navigationEndpoint
+                        ?.optJSONObject("watchEndpoint")
+                        ?.optString("videoId", "")
+                        .orEmpty()
+                    add(
+                        YouTubeMusicHomeItem(
+                            title = title,
+                            subtitle = extractText(twoRow.optJSONObject("subtitle")),
+                            coverUrl = extractMusicThumbnailUrl(twoRow.optJSONObject("thumbnailRenderer")),
+                            browseId = browseId,
+                            videoId = videoId
+                        )
+                    )
+                    continue
+                }
+
+                val listItem = item.optJSONObject("musicResponsiveListItemRenderer")
+                if (listItem != null) {
+                    val title = extractColumnText(
+                        columns = listItem.optJSONArray("flexColumns"),
+                        index = 0,
+                        rendererKey = "musicResponsiveListItemFlexColumnRenderer"
+                    )
+                    if (title.isBlank()) continue
+                    add(
+                        YouTubeMusicHomeItem(
+                            title = title,
+                            subtitle = extractColumnText(
+                                columns = listItem.optJSONArray("flexColumns"),
+                                index = 1,
+                                rendererKey = "musicResponsiveListItemFlexColumnRenderer"
+                            ),
+                            coverUrl = extractMusicThumbnailUrl(listItem.optJSONObject("thumbnail")),
+                            videoId = extractTrackVideoId(listItem)
+                        )
+                    )
+                }
+            }
+        }
     }
 
     private fun scanPlaylistSections(sections: JSONArray?): JSONObject? {
@@ -871,11 +944,73 @@ class YouTubeMusicClient(
 
     /** 获取 YouTube Music 首页推荐 */
     suspend fun getHomeFeed(): List<YouTubeMusicHomeShelf> = withContext(Dispatchers.IO) {
-        val bootstrap = bootstrap()
-        val requestLocale = YouTubeMusicLocaleResolver.preferred()
-        val payload = JSONObject().put("browseId", "FEmusic_home")
-        val response = postMusicBrowseWithRetry(bootstrap, payload, requestLocale)
-        YouTubeMusicParser.parseHomeShelves(response.root)
+        var bootstrap = bootstrap()
+        var requestLocale = YouTubeMusicLocaleResolver.preferred()
+        val result = mutableListOf<YouTubeMusicHomeShelf>()
+        var continuation: String? = null
+        var page = 0
+
+        while (page < YOUTUBE_MUSIC_CONTINUATION_PAGE_LIMIT) {
+            val payload = if (continuation.isNullOrBlank()) {
+                JSONObject().put("browseId", "FEmusic_home")
+            } else {
+                JSONObject().put("continuation", continuation)
+            }
+            val response = postMusicBrowseWithRetry(bootstrap, payload, requestLocale)
+            bootstrap = response.bootstrap
+            requestLocale = response.requestLocale
+
+            val parsedShelves = YouTubeMusicParser.parseHomeShelfPages(response.root)
+            parsedShelves.forEach { parsedShelf ->
+                var shelfContinuation = parsedShelf.continuation
+                var shelfPage = 0
+                val maxItems = if (parsedShelf.items.all { it.videoId.isBlank() }) {
+                    YOUTUBE_MUSIC_HOME_PLAYLIST_ITEM_LIMIT
+                } else {
+                    Int.MAX_VALUE
+                }
+                val items = parsedShelf.items.toMutableList()
+
+                while (
+                    !shelfContinuation.isNullOrBlank() &&
+                    shelfPage < YOUTUBE_MUSIC_CONTINUATION_PAGE_LIMIT &&
+                    items.size < maxItems
+                ) {
+                    val shelfResponse = try {
+                        postMusicBrowseWithRetry(
+                            bootstrap = bootstrap,
+                            payload = JSONObject().put("continuation", shelfContinuation),
+                            preferredLocale = requestLocale
+                        )
+                    } catch (_: IOException) {
+                        break
+                    }
+                    bootstrap = shelfResponse.bootstrap
+                    requestLocale = shelfResponse.requestLocale
+                    items += YouTubeMusicParser.parseHomeShelfContinuationItems(shelfResponse.root)
+                    shelfContinuation = YouTubeMusicParser.extractHomeShelfContinuation(shelfResponse.root)
+                    shelfPage++
+                }
+
+                val distinctItems = items.distinctBy { item ->
+                    listOf(item.title, item.browseId, item.videoId).joinToString("#")
+                }
+                if (distinctItems.isNotEmpty()) {
+                    result += YouTubeMusicHomeShelf(
+                        title = parsedShelf.title,
+                        items = distinctItems.take(maxItems)
+                    )
+                }
+            }
+
+            continuation = YouTubeMusicParser.extractHomeContinuation(response.root)
+            if (continuation.isNullOrBlank()) {
+                break
+            }
+            page++
+        }
+
+        result
     }
 
     suspend fun getPlaylistDetail(
@@ -996,9 +1131,11 @@ class YouTubeMusicClient(
 
     private fun bootstrap(forceRefresh: Boolean = false): YouTubeMusicBootstrapConfig {
         val auth = authRepo.getAuthOnce().normalized()
-        val cookieHeader = appendYouTubeConsentCookie(auth.effectiveCookieHeader())
-        if (cookieHeader.isBlank()) {
-            throw IOException("YouTube Music auth cookies missing")
+        val authHealth = authRepo.getAuthHealthOnce()
+        val cookieHeader = if (authHealth.activeCookieKeys.isEmpty()) {
+            ""
+        } else {
+            auth.effectiveCookieHeader().trim()
         }
 
         val cached = bootstrapCache
@@ -1016,7 +1153,7 @@ class YouTubeMusicClient(
         val homeHtml = executeText(
             Request.Builder()
                 .url("$YOUTUBE_MUSIC_MUSIC_ORIGIN/")
-                .header("Cookie", cookieHeader)
+                .applyCookieHeader(cookieHeader)
                 .header("User-Agent", userAgent)
                 .header("Accept-Language", requestLocale.acceptLanguage)
                 .build()
@@ -1046,7 +1183,7 @@ class YouTubeMusicClient(
         return executeJson(
             Request.Builder()
                 .url("$YOUTUBE_MUSIC_MUSIC_ORIGIN/youtubei/v1/browse?prettyPrint=false&key=${bootstrap.apiKey}")
-                .header("Cookie", bootstrap.cookieHeader)
+                .applyCookieHeader(bootstrap.cookieHeader)
                 .header("User-Agent", bootstrap.webUserAgent)
                 .header("Accept-Language", requestLocale.acceptLanguage)
                 .header("Content-Type", "application/json")
@@ -1076,7 +1213,7 @@ class YouTubeMusicClient(
         return executeJson(
             Request.Builder()
                 .url("$YOUTUBE_MUSIC_MUSIC_ORIGIN/youtubei/v1/player?prettyPrint=false&key=${bootstrap.apiKey}")
-                .header("Cookie", bootstrap.cookieHeader)
+                .applyCookieHeader(bootstrap.cookieHeader)
                 .header("User-Agent", bootstrap.webUserAgent)
                 .header("Accept-Language", requestLocale.acceptLanguage)
                 .header("Content-Type", "application/json")
@@ -1106,7 +1243,7 @@ class YouTubeMusicClient(
         return executeJson(
             Request.Builder()
                 .url("$YOUTUBE_MUSIC_MUSIC_ORIGIN/youtubei/v1/next?prettyPrint=false&key=${bootstrap.apiKey}")
-                .header("Cookie", bootstrap.cookieHeader)
+                .applyCookieHeader(bootstrap.cookieHeader)
                 .header("User-Agent", bootstrap.webUserAgent)
                 .header("Accept-Language", requestLocale.acceptLanguage)
                 .header("Content-Type", "application/json")
@@ -1201,6 +1338,13 @@ class YouTubeMusicClient(
                     .put("platform", "DESKTOP")
             )
             .put("user", JSONObject().put("lockedSafetyMode", false))
+    }
+
+    private fun Request.Builder.applyCookieHeader(cookieHeader: String): Request.Builder {
+        if (cookieHeader.isBlank()) {
+            return this
+        }
+        return header("Cookie", cookieHeader)
     }
 
     private fun Request.Builder.applySidAuthorization(

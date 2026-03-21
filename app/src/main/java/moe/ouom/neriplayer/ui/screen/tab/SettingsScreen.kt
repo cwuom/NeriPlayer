@@ -106,6 +106,7 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.BluetoothAudio
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material3.AlertDialog
@@ -509,6 +510,8 @@ fun SettingsScreen(
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val internationalEnabled by AppContainer.settingsRepo.internationalizationEnabledFlow
+        .collectAsState(initial = false)
 
     // 登录菜单的状态
     var loginExpanded by rememberSaveable { mutableStateOf(false) }
@@ -732,6 +735,41 @@ fun SettingsScreen(
             showHomeRadarCard ||
             showHomeRecommendedCard ||
             (showHomeContinueCard && recentUsage.isNotEmpty())
+    val homeTrendingLabelRes = if (internationalEnabled) {
+        R.string.home_ytmusic_guess_you_like
+    } else {
+        R.string.recommend_trending
+    }
+    val homeRadarLabelRes = if (internationalEnabled) {
+        R.string.home_ytmusic_daily_discover
+    } else {
+        R.string.recommend_radar
+    }
+    val homeRecommendedLabelRes = if (internationalEnabled) {
+        R.string.home_ytmusic_more_recommendations
+    } else {
+        R.string.recommend_for_you
+    }
+    val homeCardsDescriptionRes = if (internationalEnabled) {
+        R.string.settings_home_cards_desc_international
+    } else {
+        R.string.settings_home_cards_desc
+    }
+    val homeTrendingSupportingRes = if (internationalEnabled) {
+        R.string.settings_home_card_ytmusic_guess_you_like_desc
+    } else {
+        null
+    }
+    val homeRadarSupportingRes = if (internationalEnabled) {
+        R.string.settings_home_card_ytmusic_daily_discover_desc
+    } else {
+        null
+    }
+    val homeRecommendedSupportingRes = if (internationalEnabled) {
+        R.string.settings_home_card_ytmusic_more_recommendations_desc
+    } else {
+        null
+    }
     val effectiveDefaultStartDestination = remember(defaultStartDestination, homeStartAvailable) {
         if (!homeStartAvailable && defaultStartDestination == "home") {
             "explore"
@@ -1003,8 +1041,6 @@ fun SettingsScreen(
 
             // 国际化开关
             item {
-                val internationalEnabled by AppContainer.settingsRepo.internationalizationEnabledFlow
-                    .collectAsState(initial = false)
                 var checking by remember { mutableStateOf(false) }
 
                 ListItem(
@@ -1237,7 +1273,7 @@ fun SettingsScreen(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = stringResource(R.string.settings_home_cards_desc),
+                            text = stringResource(homeCardsDescriptionRes),
                             modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1272,12 +1308,20 @@ fun SettingsScreen(
                             leadingContent = {
                                 Icon(
                                     imageVector = Icons.Outlined.Bolt,
-                                    contentDescription = stringResource(R.string.recommend_trending),
+                                    contentDescription = stringResource(homeTrendingLabelRes),
                                     modifier = Modifier.size(24.dp),
                                     tint = MaterialTheme.colorScheme.onSurface
                                 )
                             },
-                            headlineContent = { Text(stringResource(R.string.recommend_trending)) },
+                            headlineContent = { Text(stringResource(homeTrendingLabelRes)) },
+                            supportingContent = homeTrendingSupportingRes?.let { resId ->
+                                {
+                                    Text(
+                                        text = stringResource(resId),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            },
                             trailingContent = {
                                 Switch(
                                     checked = showHomeTrendingCard,
@@ -1293,13 +1337,25 @@ fun SettingsScreen(
                             },
                             leadingContent = {
                                 Icon(
-                                    imageVector = Icons.Outlined.Search,
-                                    contentDescription = stringResource(R.string.recommend_radar),
+                                    imageVector = if (internationalEnabled) {
+                                        Icons.Outlined.Explore
+                                    } else {
+                                        Icons.Outlined.Search
+                                    },
+                                    contentDescription = stringResource(homeRadarLabelRes),
                                     modifier = Modifier.size(24.dp),
                                     tint = MaterialTheme.colorScheme.onSurface
                                 )
                             },
-                            headlineContent = { Text(stringResource(R.string.recommend_radar)) },
+                            headlineContent = { Text(stringResource(homeRadarLabelRes)) },
+                            supportingContent = homeRadarSupportingRes?.let { resId ->
+                                {
+                                    Text(
+                                        text = stringResource(resId),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            },
                             trailingContent = {
                                 Switch(
                                     checked = showHomeRadarCard,
@@ -1316,12 +1372,20 @@ fun SettingsScreen(
                             leadingContent = {
                                 Icon(
                                     imageVector = Icons.Outlined.LibraryMusic,
-                                    contentDescription = stringResource(R.string.recommend_for_you),
+                                    contentDescription = stringResource(homeRecommendedLabelRes),
                                     modifier = Modifier.size(24.dp),
                                     tint = MaterialTheme.colorScheme.onSurface
                                 )
                             },
-                            headlineContent = { Text(stringResource(R.string.recommend_for_you)) },
+                            headlineContent = { Text(stringResource(homeRecommendedLabelRes)) },
+                            supportingContent = homeRecommendedSupportingRes?.let { resId ->
+                                {
+                                    Text(
+                                        text = stringResource(resId),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            },
                             trailingContent = {
                                 Switch(
                                     checked = showHomeRecommendedCard,

@@ -147,6 +147,7 @@ import moe.ouom.neriplayer.ui.screen.debug.LogListScreen
 import moe.ouom.neriplayer.ui.screen.debug.CrashLogListScreen
 import moe.ouom.neriplayer.ui.screen.debug.NeteaseApiProbeScreen
 import moe.ouom.neriplayer.ui.screen.debug.SearchApiProbeScreen
+import moe.ouom.neriplayer.ui.screen.debug.YouTubeApiProbeScreen
 import moe.ouom.neriplayer.ui.screen.host.ExploreHostScreen
 import moe.ouom.neriplayer.ui.screen.host.HomeHostScreen
 import moe.ouom.neriplayer.ui.screen.host.LibraryHostScreen
@@ -1439,6 +1440,9 @@ fun NeriApp(
                                     }
                                 ) {
                                     DebugHomeScreen(
+                                        onOpenYouTubeDebug = {
+                                            navController.navigate(Destinations.DebugYouTube.route)
+                                        },
                                         onOpenBiliDebug = { navController.navigate(Destinations.DebugBili.route) },
                                         onOpenNeteaseDebug = { navController.navigate(Destinations.DebugNetease.route) },
                                         onOpenSearchDebug = { navController.navigate(Destinations.DebugSearch.route) },
@@ -1458,6 +1462,7 @@ fun NeriApp(
                                         }
                                     )
                                 }
+                                composable(Destinations.DebugYouTube.route) { YouTubeApiProbeScreen() }
                                 composable(Destinations.DebugBili.route) { BiliApiProbeScreen() }
                                 composable(Destinations.DebugNetease.route) { NeteaseApiProbeScreen() }
                                 composable(Destinations.DebugSearch.route) { SearchApiProbeScreen() }
