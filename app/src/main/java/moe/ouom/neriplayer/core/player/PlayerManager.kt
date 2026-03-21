@@ -595,7 +595,6 @@ object PlayerManager {
             player.addListener(object : Player.Listener {
                 override fun onPlayerError(error: PlaybackException) {
                     NPLogger.e("NERI-Player", "onPlayerError: ${error.errorCodeName}", error)
-                    consecutivePlayFailures++
 
                     // 检查是否是离线缓存播放失败
                     val currentUrl = _currentMediaUrl.value
@@ -603,6 +602,7 @@ object PlayerManager {
 
                     val cause = error.cause
                     if (shouldAttemptUrlRefresh(error, _currentSongFlow.value, isOfflineCache)) {
+                        // url 刷新成功后会重置 consecutivePlayFailures，这里不提前累加
                         refreshCurrentSongUrl(
                             resumePositionMs = player.currentPosition,
                             allowFallback = false,
@@ -610,6 +610,10 @@ object PlayerManager {
                         )
                         return
                     }
+
+                    // 走到这里说明不会尝试 url 刷新，累加失败计数
+                    consecutivePlayFailures++
+
                     val msg = when {
                         isOfflineCache -> {
                             NPLogger.w("NERI-Player", "离线缓存播放失败，暂停当前歌曲等待重新恢复")
@@ -630,18 +634,11 @@ object PlayerManager {
                         return
                     }
 
-                    val shouldSkip =
-                        error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
-                        error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ||
-                        error.errorCode == PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND ||
-                        cause?.message?.contains("no protocol: null", ignoreCase = true) == true
-
+                    // 离线缓存错误暂停等待恢复，其余情况一律跳到下一首继续播放
                     if (isOfflineCache) {
                         pause()
-                    } else if (shouldSkip) {
-                        mainScope.launch { handleTrackEnded() }
                     } else {
-                        pause()
+                        mainScope.launch { handleTrackEnded() }
                     }
                 }
 
@@ -1411,8 +1408,14 @@ object PlayerManager {
                     player.play()
                 }
             } else {
+                // url 刷新冷却中且无法回退，跳到下一首继续播放而不是静默暂停
+                consecutivePlayFailures++
                 postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(R.string.player_playback_network_error)))
-                mainScope.launch { pause() }
+                if (consecutivePlayFailures >= MAX_CONSECUTIVE_FAILURES) {
+                    mainScope.launch { stopPlaybackPreservingQueue(clearMediaUrl = true) }
+                } else {
+                    mainScope.launch { handleTrackEnded() }
+                }
             }
             return
         }
