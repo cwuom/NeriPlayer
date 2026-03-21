@@ -600,11 +600,12 @@ class YouTubeMusicPlaybackRepository(
                 return
             }
             val locale = Locale.getDefault()
+            val preferred = YouTubeMusicLocaleResolver.preferred(locale)
             NewPipe.init(
                 downloader,
                 Localization(
-                    locale.language.ifBlank { "en" },
-                    locale.country.ifBlank { "US" }
+                    preferred.hl.substringBefore('-'),
+                    preferred.gl
                 )
             )
             initialized = true
@@ -840,12 +841,16 @@ class YouTubeMusicPlaybackRepository(
             "Accept-Language" to requestLocale.acceptLanguage,
             "Content-Type" to "application/json",
             "X-Goog-AuthUser" to auth.resolveXGoogAuthUser().ifBlank { bootstrap.sessionIndex },
-            "X-Goog-Visitor-Id" to bootstrap.visitorData,
             "X-Goog-Api-Format-Version" to YOUTUBE_PLAYER_API_FORMAT_VERSION,
             "X-YouTube-Client-Name" to profile.clientId,
             "X-YouTube-Client-Version" to profile.clientVersion
         )
-        auth.resolveAuthorizationHeader(origin = YOUTUBE_WEB_ORIGIN)
+        val origin = if (profile.clientName == "WEB_REMIX") YOUTUBE_MUSIC_ORIGIN else YOUTUBE_WEB_ORIGIN
+        
+        requestHeaders["Origin"] = origin
+        requestHeaders["Referer"] = "$origin/"
+        
+        auth.resolveAuthorizationHeader(origin = origin)
             .takeIf { it.isNotBlank() }
             ?.let { requestHeaders["Authorization"] = it }
 
@@ -882,7 +887,6 @@ class YouTubeMusicPlaybackRepository(
             .put("platform", profile.platform)
             .put("hl", requestLocale.hl)
             .put("gl", requestLocale.gl)
-            .put("visitorData", bootstrap.visitorData)
             .put("utcOffsetMinutes", utcOffsetMinutes())
         profile.deviceMake?.let { clientContext.put("deviceMake", it) }
         profile.deviceModel?.let { clientContext.put("deviceModel", it) }
@@ -1115,6 +1119,37 @@ class YouTubeMusicPlaybackRepository(
 
     private fun playerClientProfiles(): List<YouTubePlayerClientProfile> {
         return listOf(
+            YouTubePlayerClientProfile(
+                clientId = "85",
+                clientName = "TVHTML5_SIMPLYLITE",
+                clientVersion = "2.0",
+                userAgent = "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/75.0.3770.143 Safari/537.36; SmartTv/8.5",
+                endpointPath = "player",
+                platform = "TV",
+                osName = "Windows",
+                osVersion = "10.0"
+            ),
+            YouTubePlayerClientProfile(
+                clientId = "43",
+                clientName = "ANDROID_TESTSUITE",
+                clientVersion = "1.9",
+                userAgent = "com.google.android.youtube/1.9 (Linux; U; Android 14; en) gzip",
+                endpointPath = "player",
+                platform = "MOBILE",
+                osName = "Android",
+                osVersion = "14",
+                androidSdkVersion = 34
+            ),
+            YouTubePlayerClientProfile(
+                clientId = "67",
+                clientName = "WEB_REMIX",
+                clientVersion = "1.20250101.01.00",
+                userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                endpointPath = "player",
+                platform = "DESKTOP",
+                osName = "Windows",
+                osVersion = "10.0"
+            ),
             YouTubePlayerClientProfile(
                 clientId = YOUTUBE_PLAYER_IOS_CLIENT_ID,
                 clientName = YOUTUBE_PLAYER_IOS_CLIENT_NAME,

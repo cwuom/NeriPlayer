@@ -30,8 +30,8 @@ private const val YOUTUBE_MUSIC_CLIENT_NAME_NUM_WEB_REMIX = "67"
 private const val YOUTUBE_MUSIC_CLIENT_NAME_WEB_REMIX = "WEB_REMIX"
 private const val YOUTUBE_MUSIC_CONTINUATION_PAGE_LIMIT = 20
 private const val YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS = 2
-private const val YOUTUBE_MUSIC_SAFE_FALLBACK_HL = "en-US"
-private const val YOUTUBE_MUSIC_SAFE_FALLBACK_GL = "US"
+private const val YOUTUBE_MUSIC_SAFE_FALLBACK_HL = "zh-CN"
+private const val YOUTUBE_MUSIC_SAFE_FALLBACK_GL = "JP"
 
 data class YouTubeMusicLibraryPlaylist(
     val browseId: String,
@@ -111,13 +111,13 @@ internal object YouTubeMusicLocaleResolver {
     )
 
     fun preferred(locale: Locale = Locale.getDefault()): YouTubeMusicRequestLocale {
-        val country = locale.country
-        if (country.isBlank()) {
-            return safeFallback
+        var country = locale.country
+        if (country.isBlank() || country.equals("CN", ignoreCase = true)) {
+            country = safeFallback.gl
         }
         val language = locale.language.ifBlank { safeFallback.hl.substringBefore('-') }
         return YouTubeMusicRequestLocale(
-            hl = "$language-$country",
+            hl = if (language.equals("zh", ignoreCase = true)) "zh-CN" else "$language-$country",
             gl = country
         )
     }
@@ -944,7 +944,6 @@ class YouTubeMusicClient(
                 .header("X-Origin", YOUTUBE_MUSIC_MUSIC_ORIGIN)
                 .header("Referer", "$YOUTUBE_MUSIC_MUSIC_ORIGIN/")
                 .header("X-Goog-AuthUser", bootstrap.sessionIndex)
-                .header("X-Goog-Visitor-Id", bootstrap.visitorData)
                 .header("X-YouTube-Client-Name", YOUTUBE_MUSIC_CLIENT_NAME_NUM_WEB_REMIX)
                 .header("X-YouTube-Client-Version", bootstrap.webRemixClientVersion)
                 .applySidAuthorization(bootstrap.cookieHeader, YOUTUBE_MUSIC_MUSIC_ORIGIN)
@@ -1005,7 +1004,6 @@ class YouTubeMusicClient(
                 .header("X-Origin", YOUTUBE_MUSIC_MUSIC_ORIGIN)
                 .header("Referer", "$YOUTUBE_MUSIC_MUSIC_ORIGIN/")
                 .header("X-Goog-AuthUser", bootstrap.sessionIndex)
-                .header("X-Goog-Visitor-Id", bootstrap.visitorData)
                 .header("X-YouTube-Client-Name", YOUTUBE_MUSIC_CLIENT_NAME_NUM_WEB_REMIX)
                 .header("X-YouTube-Client-Version", bootstrap.webRemixClientVersion)
                 .applySidAuthorization(bootstrap.cookieHeader, YOUTUBE_MUSIC_MUSIC_ORIGIN)
