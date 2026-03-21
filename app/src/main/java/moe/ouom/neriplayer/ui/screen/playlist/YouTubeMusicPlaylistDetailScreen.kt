@@ -71,6 +71,7 @@ import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -97,6 +98,22 @@ import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.formatDuration
 import moe.ouom.neriplayer.util.offlineCachedImageRequest
 import moe.ouom.neriplayer.util.performHapticFeedback
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DividerDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
+import moe.ouom.neriplayer.core.player.AudioDownloadManager
+import moe.ouom.neriplayer.data.LocalFilesPlaylist
+import moe.ouom.neriplayer.data.LocalPlaylistRepository
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -130,6 +147,14 @@ fun YouTubeMusicPlaylistDetailScreen(
     fun clearSelection() { selectedKeys = emptySet() }
     fun selectAll() { selectedKeys = ui.tracks.map { it.stableKey() }.toSet() }
     fun exitSelection() { selectionMode = false; clearSelection() }
+
+    var showDownloadManager by remember { mutableStateOf(false) }
+    val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
+
+    var showExportSheet by remember { mutableStateOf(false) }
+    val exportSheetState = rememberModalBottomSheetState()
+    val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
+    val allPlaylists by repo.playlists.collectAsState()
 
     LaunchedEffect(playlist.browseId) {
         viewModel.start(playlist)
@@ -215,6 +240,15 @@ fun YouTubeMusicPlaylistDetailScreen(
                                 )
                             }
                         }
+                        if (batchDownloadProgress != null) {
+                            HapticIconButton(onClick = { showDownloadManager = true }) {
+                                Icon(
+                                    Icons.Outlined.Download,
+                                    contentDescription = stringResource(R.string.cd_download_manager),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
                     },
                     windowInsets = WindowInsets.statusBars,
                     colors = TopAppBarDefaults.topAppBarColors(
@@ -240,6 +274,17 @@ fun YouTubeMusicPlaylistDetailScreen(
                                 } else {
                                     stringResource(R.string.action_select_all)
                                 }
+                            )
+                        }
+                        HapticIconButton(
+                            onClick = {
+                                if (selectedKeys.isNotEmpty()) showExportSheet = true
+                            },
+                            enabled = selectedKeys.isNotEmpty()
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Outlined.PlaylistAdd,
+                                contentDescription = stringResource(R.string.cd_export_playlist)
                             )
                         }
                         HapticIconButton(
@@ -397,6 +442,219 @@ fun YouTubeMusicPlaylistDetailScreen(
                             contentDescription = stringResource(R.string.cd_locate_playing)
                         )
                     }
+                }
+            }
+        }
+        
+        if (showExportSheet) {
+            ModalBottomSheet(
+                onDismissRequest = { showExportSheet = false },
+                sheetState = exportSheetState
+            ) {
+                Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+                    Text(stringResource(R.string.playlist_export_to_local), style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(8.dp))
+
+                    LazyColumn {
+                        itemsIndexed(
+                            allPlaylists.filterNot { LocalFilesPlaylist.isSystemPlaylist(it, context) }
+                        ) { _, pl ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 10.dp)
+                                    .combinedClickable(onClick = {
+                                        val songs = ui.tracks
+                                            .asReversed()
+                                            .filter { selectedKeys.contains(it.stableKey()) }
+                                        scope.launch {
+                                            repo.addSongsToPlaylist(pl.id, songs)
+                                            showExportSheet = false
+                                        }
+                                    }),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(pl.name, style = MaterialTheme.typography.bodyLarge)
+                                Spacer(Modifier.weight(1f))
+                                Text(
+                                    stringResource(R.string.count_songs_format, pl.songs.size),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+                    HorizontalDivider(
+                        Modifier,
+                        DividerDefaults.Thickness,
+                        DividerDefaults.color
+                    )
+                    Spacer(Modifier.height(12.dp))
+
+                    var newName by remember { mutableStateOf("") }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = newName,
+                            onValueChange = { newName = it },
+                            modifier = Modifier.weight(1f),
+                            placeholder = { Text(stringResource(R.string.playlist_create_name)) },
+                            singleLine = true
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        HapticTextButton(
+                            enabled = newName.isNotBlank() && selectedKeys.isNotEmpty(),
+                            onClick = {
+                                val name = newName.trim()
+                                if (name.isBlank()) return@HapticTextButton
+                                val songs = ui.tracks
+                                    .asReversed()
+                                    .filter { selectedKeys.contains(it.stableKey()) }
+                                scope.launch {
+                                    repo.createPlaylist(name)
+                                    val target = repo.playlists.value.lastOrNull { it.name == name }
+                                    if (target != null) {
+                                        repo.addSongsToPlaylist(target.id, songs)
+                                    }
+                                    showExportSheet = false
+                                }
+                            }
+                        ) { Text(stringResource(R.string.playlist_create_and_export)) }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
+            }
+        }
+        
+        BackHandler(enabled = selectionMode) { exitSelection() }
+        
+        if (showDownloadManager) {
+            ModalBottomSheet(
+                onDismissRequest = { showDownloadManager = false }
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            stringResource(R.string.download_manager),
+                            style = MaterialTheme.typography.titleLarge
+                        )
+                        HapticIconButton(onClick = { showDownloadManager = false }) {
+                            Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.cd_close))
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    batchDownloadProgress?.let { progress ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            )
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        stringResource(R.string.download_progress_format, progress.completedSongs, progress.totalSongs),
+                                        style = MaterialTheme.typography.titleMedium
+                                    )
+                                    HapticTextButton(onClick = { AudioDownloadManager.cancelDownload() }) {
+                                        Text(stringResource(R.string.action_cancel), color = MaterialTheme.colorScheme.error)
+                                    }
+                                }
+
+                                if (progress.currentSong.isNotBlank()) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        stringResource(R.string.download_current_song, progress.currentSong),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.height(12.dp))
+
+                                Text(
+                                    stringResource(R.string.download_overall_progress, progress.percentage),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                val animatedOverallProgress by animateFloatAsState(
+                                    targetValue = (progress.percentage / 100f).coerceIn(0f, 1f),
+                                    animationSpec = spring(
+                                        dampingRatio = Spring.DampingRatioNoBouncy,
+                                        stiffness = Spring.StiffnessMedium
+                                    ),
+                                    label = "overallProgress"
+                                )
+                                LinearProgressIndicator(
+                                    progress = { animatedOverallProgress },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+
+                                progress.currentProgress?.let { currentProgress ->
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Text(
+                                        stringResource(R.string.download_current_file_progress, currentProgress.percentage, currentProgress.speedBytesPerSec / 1024),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    val animatedCurrentProgress by animateFloatAsState(
+                                        targetValue = if (currentProgress.totalBytes > 0) {
+                                            (currentProgress.bytesRead.toFloat() / currentProgress.totalBytes).coerceIn(0f, 1f)
+                                        } else 0f,
+                                        animationSpec = spring(
+                                            dampingRatio = Spring.DampingRatioNoBouncy,
+                                            stiffness = Spring.StiffnessMedium
+                                        ),
+                                        label = "currentProgress"
+                                    )
+                                    LinearProgressIndicator(
+                                        progress = { animatedCurrentProgress },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                            }
+                        }
+                    } ?: run {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                Icons.Outlined.Download,
+                                contentDescription = null,
+                                modifier = Modifier.size(64.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                stringResource(R.string.download_no_tasks),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                stringResource(R.string.download_select_hint),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(20.dp))
                 }
             }
         }
