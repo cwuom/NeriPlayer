@@ -249,6 +249,7 @@ object PlayerManager {
     private var playJob: Job? = null
     private var playbackRequestToken = 0L
     private var lastHandledTrackEndKey: String? = null
+    private var lastTrackEndHandledAtMs = 0L
 
     val audioLevelFlow get() = AudioReactive.level
     val beatImpulseFlow get() = AudioReactive.beat
@@ -648,10 +649,6 @@ object PlayerManager {
                     }
                     if (state == Player.STATE_ENDED) {
                         handleTrackEndedIfNeeded(source = "playback_state_changed")
-                    } else if (state == Player.STATE_BUFFERING || state == Player.STATE_READY) {
-                        if (lastHandledTrackEndKey != null) {
-                            lastHandledTrackEndKey = null
-                        }
                     }
                 }
 
@@ -1756,7 +1753,17 @@ object PlayerManager {
             )
             return
         }
+        // 防止歌曲切换期间因 mediaId 变更导致去重失效而重复触发
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastTrackEndHandledAtMs < 500L) {
+            NPLogger.d(
+                "NERI-PlayerManager",
+                "忽略过于频繁的结束回调: source=$source, key=$currentKey, delta=${now - lastTrackEndHandledAtMs}ms"
+            )
+            return
+        }
         lastHandledTrackEndKey = currentKey
+        lastTrackEndHandledAtMs = now
         NPLogger.d(
             "NERI-PlayerManager",
             "处理播放结束: source=$source, key=$currentKey, index=$currentIndex, queueSize=${currentPlaylist.size}"
