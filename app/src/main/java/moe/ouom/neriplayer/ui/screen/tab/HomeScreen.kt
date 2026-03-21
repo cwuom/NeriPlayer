@@ -58,6 +58,7 @@ import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Radar
 import androidx.compose.material.icons.outlined.Star
+import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -118,6 +119,9 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.HomeSectionState
 import moe.ouom.neriplayer.ui.viewmodel.tab.HomeViewModel
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
+import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeShelf
+import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeItem
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.formatDuration
 import moe.ouom.neriplayer.util.formatPlayCount
@@ -133,6 +137,7 @@ fun HomeScreen(
     showRadarCard: Boolean = true,
     showRecommendedCard: Boolean = true,
     onItemClick: (NeteasePlaylist) -> Unit = {},
+    onYouTubeMusicPlaylistClick: (YouTubeMusicPlaylist) -> Unit = {},
     gridState: LazyGridState,
     onOpenRecent: (UsageEntry) -> Unit = {},
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> }
@@ -175,8 +180,9 @@ fun HomeScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val showContinue = showContinueCard && usage.isNotEmpty()
+    val isInternational = ui.internationalizationEnabled
     val hasVisibleSections =
-        showContinue || showTrendingCard || showRadarCard || showRecommendedCard
+        showContinue || showTrendingCard || showRadarCard || showRecommendedCard || isInternational
 
     Box(Modifier.fillMaxSize()) {
         Column(
@@ -189,8 +195,13 @@ fun HomeScreen(
                 actions = {
                     HapticIconButton(
                         onClick = {
-                            vm.refreshRecommend()
-                            vm.loadHomeRecommendations(force = true)
+                            if (isInternational) {
+                                vm.refreshYtMusicPlaylists()
+                                vm.refreshYtMusicHomeFeed()
+                            } else {
+                                vm.refreshRecommend()
+                                vm.loadHomeRecommendations(force = true)
+                            }
                         }
                     ) {
                         Icon(
@@ -260,79 +271,158 @@ fun HomeScreen(
                         }
                     }
 
-                    if (showTrendingCard) {
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            SectionHeader(
-                                icon = Icons.Outlined.Bolt,
-                                title = stringResource(R.string.recommend_trending)
-                            )
-                        }
-                        sectionContent(
-                            section = ui.hotSongs,
-                            loadingText = homeLoadingText,
-                            errorDetail = ui.hotSongs.error
-                        ) {
-                            item(span = { GridItemSpan(maxLineSpan) }) {
-                                ResponsiveSongPagerList(
-                                    songs = ui.hotSongs.items,
-                                    onSongClick = onSongClick
-                                )
-                            }
-                        }
-                    }
-
-                    if (showRadarCard) {
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            SectionHeader(
-                                icon = Icons.Outlined.Radar,
-                                title = stringResource(R.string.recommend_radar)
-                            )
-                        }
-                        sectionContent(
-                            section = ui.radarSongs,
-                            loadingText = homeLoadingText,
-                            errorDetail = ui.radarSongs.error
-                        ) {
-                            item(span = { GridItemSpan(maxLineSpan) }) {
-                                ResponsiveSongPagerList(
-                                    songs = ui.radarSongs.items,
-                                    onSongClick = onSongClick
-                                )
-                            }
-                        }
-                    }
-
-                    if (showRecommendedCard) {
+                    if (isInternational) {
+                        // 国际化模式：显示 YouTube Music 歌单
                         item(span = { GridItemSpan(maxLineSpan) }) {
                             SectionHeader(
                                 icon = Icons.Outlined.Star,
-                                title = stringResource(R.string.recommend_for_you)
+                                title = stringResource(R.string.home_ytmusic_playlists)
                             )
                         }
                         when {
-                            ui.playlists.items.isNotEmpty() -> {
-                                items(items = ui.playlists.items, key = { it.id }) { item ->
-                                    PlaylistCard(
-                                        playlist = item,
-                                        onClick = { onItemClick(item) },
-                                        onShowSnackbar = { message ->
-                                            scope.launch {
-                                                snackbarHostState.showSnackbar(message)
-                                            }
-                                        }
+                            ui.ytMusicPlaylists.items.isNotEmpty() -> {
+                                items(
+                                    items = ui.ytMusicPlaylists.items,
+                                    key = { it.browseId }
+                                ) { playlist ->
+                                    YtMusicPlaylistCard(
+                                        playlist = playlist,
+                                        onClick = { onYouTubeMusicPlaylistClick(playlist) }
                                     )
                                 }
                             }
-
-                            ui.playlists.loading -> {
+                            ui.ytMusicPlaylists.loading -> {
                                 item(span = { GridItemSpan(maxLineSpan) }) {
                                     SectionLoadingState(homeLoadingText)
                                 }
                             }
-
-                            ui.playlists.error != null -> {
+                            ui.ytMusicPlaylists.error != null -> {
                                 item(span = { GridItemSpan(maxLineSpan) }) {
-                                    SectionErrorState(detail = ui.playlists.error ?: "")
+                                    SectionErrorState(detail = ui.ytMusicPlaylists.error ?: "")
+                                }
+                            }
+                        }
+
+                        // YouTube Music 推荐栏目
+                        when {
+                            ui.ytMusicHomeShelves.items.isNotEmpty() -> {
+                                ui.ytMusicHomeShelves.items.forEach { shelf ->
+                                    item(span = { GridItemSpan(maxLineSpan) }) {
+                                        SectionHeader(
+                                            icon = Icons.Outlined.Explore,
+                                            title = shelf.title
+                                        )
+                                    }
+                                    items(
+                                        items = shelf.items,
+                                        key = { shelf.title + it.title + it.browseId + it.videoId }
+                                    ) { homeItem ->
+                                        YtMusicHomeItemCard(
+                                            item = homeItem,
+                                            onClick = {
+                                                if (homeItem.browseId.isNotBlank()) {
+                                                    onYouTubeMusicPlaylistClick(
+                                                        YouTubeMusicPlaylist(
+                                                            browseId = homeItem.browseId,
+                                                            playlistId = homeItem.browseId.removePrefix("VL"),
+                                                            title = homeItem.title,
+                                                            subtitle = homeItem.subtitle,
+                                                            coverUrl = homeItem.coverUrl,
+                                                            trackCount = 0
+                                                        )
+                                                    )
+                                                }
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                            ui.ytMusicHomeShelves.loading -> {
+                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                    SectionLoadingState(homeLoadingText)
+                                }
+                            }
+                            ui.ytMusicHomeShelves.error != null -> {
+                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                    SectionErrorState(detail = ui.ytMusicHomeShelves.error ?: "")
+                                }
+                            }
+                        }
+                    } else {
+                        if (showTrendingCard) {
+                            item(span = { GridItemSpan(maxLineSpan) }) {
+                                SectionHeader(
+                                    icon = Icons.Outlined.Bolt,
+                                    title = stringResource(R.string.recommend_trending)
+                                )
+                            }
+                            sectionContent(
+                                section = ui.hotSongs,
+                                loadingText = homeLoadingText,
+                                errorDetail = ui.hotSongs.error
+                            ) {
+                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                    ResponsiveSongPagerList(
+                                        songs = ui.hotSongs.items,
+                                        onSongClick = onSongClick
+                                    )
+                                }
+                            }
+                        }
+
+                        if (showRadarCard) {
+                            item(span = { GridItemSpan(maxLineSpan) }) {
+                                SectionHeader(
+                                    icon = Icons.Outlined.Radar,
+                                    title = stringResource(R.string.recommend_radar)
+                                )
+                            }
+                            sectionContent(
+                                section = ui.radarSongs,
+                                loadingText = homeLoadingText,
+                                errorDetail = ui.radarSongs.error
+                            ) {
+                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                    ResponsiveSongPagerList(
+                                        songs = ui.radarSongs.items,
+                                        onSongClick = onSongClick
+                                    )
+                                }
+                            }
+                        }
+
+                        if (showRecommendedCard) {
+                            item(span = { GridItemSpan(maxLineSpan) }) {
+                                SectionHeader(
+                                    icon = Icons.Outlined.Star,
+                                    title = stringResource(R.string.recommend_for_you)
+                                )
+                            }
+                            when {
+                                ui.playlists.items.isNotEmpty() -> {
+                                    items(items = ui.playlists.items, key = { it.id }) { item ->
+                                        PlaylistCard(
+                                            playlist = item,
+                                            onClick = { onItemClick(item) },
+                                            onShowSnackbar = { message ->
+                                                scope.launch {
+                                                    snackbarHostState.showSnackbar(message)
+                                                }
+                                            }
+                                        )
+                                    }
+                                }
+
+                                ui.playlists.loading -> {
+                                    item(span = { GridItemSpan(maxLineSpan) }) {
+                                        SectionLoadingState(homeLoadingText)
+                                    }
+                                }
+
+                                ui.playlists.error != null -> {
+                                    item(span = { GridItemSpan(maxLineSpan) }) {
+                                        SectionErrorState(detail = ui.playlists.error ?: "")
+                                    }
                                 }
                             }
                         }
@@ -583,6 +673,90 @@ fun PlaylistCard(
                     }
                 }
             )
+        }
+    }
+}
+
+@Composable
+private fun YtMusicPlaylistCard(
+    playlist: YouTubeMusicPlaylist,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+    ) {
+        AsyncImage(
+            model = ImageRequest.Builder(LocalContext.current)
+                .data(playlist.coverUrl)
+                .crossfade(true)
+                .build(),
+            contentDescription = playlist.title,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .clip(RoundedCornerShape(12.dp))
+        )
+        Column(modifier = Modifier.padding(top = 6.dp, start = 4.dp, end = 4.dp, bottom = 4.dp)) {
+            Text(
+                text = playlist.title,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.titleSmall
+            )
+            if (playlist.subtitle.isNotBlank()) {
+                Text(
+                    text = playlist.subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Clip
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun YtMusicHomeItemCard(
+    item: YouTubeMusicHomeItem,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+    ) {
+        AsyncImage(
+            model = ImageRequest.Builder(LocalContext.current)
+                .data(item.coverUrl)
+                .crossfade(true)
+                .build(),
+            contentDescription = item.title,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .clip(RoundedCornerShape(12.dp))
+        )
+        Column(modifier = Modifier.padding(top = 6.dp, start = 4.dp, end = 4.dp, bottom = 4.dp)) {
+            Text(
+                text = item.title,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.titleSmall
+            )
+            if (item.subtitle.isNotBlank()) {
+                Text(
+                    text = item.subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Clip
+                )
+            }
         }
     }
 }

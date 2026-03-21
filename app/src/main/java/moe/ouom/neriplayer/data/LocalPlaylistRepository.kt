@@ -827,7 +827,7 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
                 continue
             }
             if (!seenNeteaseIds.add(neteaseId)) {
-                // 同一首网易云歌曲只保留最早出现的那条，保证顺序稳定。
+                // 同一首网易云歌曲只保留最早出现的那条，保证顺序稳定
                 skippedExisting += 1
                 continue
             }

@@ -1,4 +1,4 @@
-﻿package moe.ouom.neriplayer.ui.screen.tab
+package moe.ouom.neriplayer.ui.screen.tab
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -219,6 +219,7 @@ import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Keyboard
+import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SdStorage
@@ -998,6 +999,58 @@ fun SettingsScreen(
             // 语言设置
             item {
                 LanguageSettingItem(onBeforeRestart = onBeforeLanguageRestart)
+            }
+
+            // 国际化开关
+            item {
+                val internationalEnabled by AppContainer.settingsRepo.internationalizationEnabledFlow
+                    .collectAsState(initial = false)
+                var checking by remember { mutableStateOf(false) }
+
+                ListItem(
+                    leadingContent = {
+                        Icon(
+                            imageVector = Icons.Outlined.Language,
+                            contentDescription = stringResource(R.string.settings_internationalization),
+                            modifier = Modifier.size(24.dp),
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    headlineContent = { Text(stringResource(R.string.settings_internationalization)) },
+                    supportingContent = {
+                        Text(
+                            if (checking) stringResource(R.string.settings_internationalization_checking)
+                            else stringResource(R.string.settings_internationalization_desc)
+                        )
+                    },
+                    trailingContent = {
+                        Switch(
+                            checked = internationalEnabled,
+                            enabled = !checking,
+                            onCheckedChange = { enabled ->
+                                if (!enabled) {
+                                    scope.launch {
+                                        AppContainer.settingsRepo.setInternationalizationEnabled(false)
+                                    }
+                                } else {
+                                    checking = true
+                                    scope.launch {
+                                        try {
+                                            // 尝试获取歌单列表检测 YouTube Music 可访问性
+                                            AppContainer.youtubeMusicClient.getLibraryPlaylists()
+                                            AppContainer.settingsRepo.setInternationalizationEnabled(true)
+                                        } catch (_: Exception) {
+                                            inlineMsg = context.getString(R.string.settings_internationalization_unavailable)
+                                        } finally {
+                                            checking = false
+                                        }
+                                    }
+                                }
+                            }
+                        )
+                    },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                )
             }
 
             // 登录三方平台

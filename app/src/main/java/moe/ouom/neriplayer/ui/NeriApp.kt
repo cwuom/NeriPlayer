@@ -694,7 +694,7 @@ fun NeriApp(
 
     fun playSongsAndOpenNowPlaying(songs: List<SongItem>, index: Int) {
         showNowPlaying = true
-        // 播放队列可能包含歌词等大字段，避免通过 Binder 传整份歌单导致崩溃。
+        // 播放队列可能包含歌词等大字段，避免通过 Binder 传整份歌单导致崩溃
         PlayerManager.playPlaylist(songs, index)
         ContextCompat.startForegroundService(
             context,

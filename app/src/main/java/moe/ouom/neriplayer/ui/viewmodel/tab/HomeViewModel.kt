@@ -1,4 +1,4 @@
-﻿package moe.ouom.neriplayer.ui.viewmodel.tab
+package moe.ouom.neriplayer.ui.viewmodel.tab
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -32,10 +32,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.parcelize.Parcelize
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeShelf
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.LanguageManager
@@ -61,7 +63,10 @@ data class HomeUiState(
     val playlists: HomeSectionState<NeteasePlaylist> = HomeSectionState(),
     val hotSongs: HomeSectionState<SongItem> = HomeSectionState(),
     val radarSongs: HomeSectionState<SongItem> = HomeSectionState(),
-    val hasLogin: Boolean = false
+    val ytMusicPlaylists: HomeSectionState<YouTubeMusicPlaylist> = HomeSectionState(),
+    val ytMusicHomeShelves: HomeSectionState<YouTubeMusicHomeShelf> = HomeSectionState(),
+    val hasLogin: Boolean = false,
+    val internationalizationEnabled: Boolean = false
 )
 
 /** UI 使用的精简数据模型 */
@@ -99,11 +104,24 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private var playlistJob: Job? = null
     private var hotSongsJob: Job? = null
     private var radarSongsJob: Job? = null
+    private var ytMusicPlaylistJob: Job? = null
+    private var ytMusicHomeFeedJob: Job? = null
     private var hasRecommendLogin = false
 
     private fun localizedAppContext() = LanguageManager.applyLanguage(getApplication())
 
     init {
+        // 观察国际化设置变化，切换推荐源
+        viewModelScope.launch {
+            AppContainer.settingsRepo.internationalizationEnabledFlow.collect { enabled ->
+                _uiState.value = _uiState.value.copy(internationalizationEnabled = enabled)
+                if (enabled) {
+                    refreshYtMusicPlaylists()
+                    refreshYtMusicHomeFeed()
+                }
+            }
+        }
+
         // 登录后自动刷新首页推荐歌单
         viewModelScope.launch {
             repo.cookieFlow.collect { raw ->
@@ -248,6 +266,75 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 is RetryLoadResult.Failure -> {
                     _uiState.value = _uiState.value.copy(
                         radarSongs = _uiState.value.radarSongs.copy(
+                            loading = false,
+                            error = buildHomeErrorMessage(result.throwable)
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    /** 拉取 YouTube Music 歌单 */
+    fun refreshYtMusicPlaylists() {
+        ytMusicPlaylistJob?.cancel()
+        _uiState.value = _uiState.value.copy(
+            ytMusicPlaylists = _uiState.value.ytMusicPlaylists.copy(loading = true, error = null)
+        )
+        ytMusicPlaylistJob = viewModelScope.launch {
+            when (val result = fetchWithRetry {
+                val library = withContext(Dispatchers.IO) {
+                    AppContainer.youtubeMusicClient.getLibraryPlaylists()
+                }
+                library.map { pl ->
+                    YouTubeMusicPlaylist(
+                        browseId = pl.browseId,
+                        playlistId = pl.browseId.removePrefix("VL"),
+                        title = pl.title,
+                        subtitle = pl.subtitle,
+                        coverUrl = pl.coverUrl,
+                        trackCount = pl.trackCount ?: 0
+                    )
+                }
+            }) {
+                is RetryLoadResult.Success -> {
+                    _uiState.value = _uiState.value.copy(
+                        ytMusicPlaylists = HomeSectionState(items = result.items)
+                    )
+                }
+                is RetryLoadResult.Failure -> {
+                    _uiState.value = _uiState.value.copy(
+                        ytMusicPlaylists = _uiState.value.ytMusicPlaylists.copy(
+                            loading = false,
+                            error = buildHomeErrorMessage(result.throwable)
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+
+    /** 拉取 YouTube Music 首页推荐 */
+    fun refreshYtMusicHomeFeed() {
+        ytMusicHomeFeedJob?.cancel()
+        _uiState.value = _uiState.value.copy(
+            ytMusicHomeShelves = _uiState.value.ytMusicHomeShelves.copy(loading = true, error = null)
+        )
+        ytMusicHomeFeedJob = viewModelScope.launch {
+            when (val result = fetchWithRetry {
+                withContext(Dispatchers.IO) {
+                    AppContainer.youtubeMusicClient.getHomeFeed()
+                }
+            }) {
+                is RetryLoadResult.Success -> {
+                    _uiState.value = _uiState.value.copy(
+                        ytMusicHomeShelves = HomeSectionState(items = result.items)
+                    )
+                }
+                is RetryLoadResult.Failure -> {
+                    _uiState.value = _uiState.value.copy(
+                        ytMusicHomeShelves = _uiState.value.ytMusicHomeShelves.copy(
                             loading = false,
                             error = buildHomeErrorMessage(result.throwable)
                         )

@@ -129,9 +129,9 @@ import org.burnoutcrew.reorderable.reorderable
 enum class LibraryTab(val labelResId: Int) {
     LOCAL(R.string.library_tab_local),
     FAVORITE(R.string.library_tab_favorite),
+    YTMUSIC(R.string.library_tab_youtube_music),
     NETEASE(R.string.library_tab_netease_playlist),
     NETEASEALBUM(R.string.library_tab_netease_album),
-    YTMUSIC(R.string.library_tab_youtube_music),
     BILI(R.string.library_tab_bilibili),
     QQMUSIC(R.string.library_tab_qqmusic)
 }

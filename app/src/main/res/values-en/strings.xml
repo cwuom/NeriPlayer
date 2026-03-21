@@ -657,7 +657,15 @@
     <!-- Explore Tags -->
     <string name="explore_tag_netease">Netease</string>
     <string name="explore_tag_bilibili">Bilibili</string>
+    <string name="explore_tag_youtube_music">YouTube Music</string>
     <string name="explore_tag_all">All</string>
+
+    <!-- Internationalization -->
+    <string name="settings_internationalization">Internationalization</string>
+    <string name="settings_internationalization_desc">Switch home recommendations and explore to YouTube Music</string>
+    <string name="settings_internationalization_unavailable">This feature may not be available in your region</string>
+    <string name="settings_internationalization_checking">Checking availability…</string>
+    <string name="home_ytmusic_playlists">YouTube Music Playlists</string>
 
     <!-- Error Messages -->
     <string name="error_parse">Parse/unknown error: %s</string>

@@ -650,7 +650,15 @@
     <!-- Explore Tags -->
     <string name="explore_tag_netease">网易云</string>
     <string name="explore_tag_bilibili">哔哩哔哩</string>
+    <string name="explore_tag_youtube_music">YouTube Music</string>
     <string name="explore_tag_all">全部</string>
+
+    <!-- Internationalization -->
+    <string name="settings_internationalization">国际化</string>
+    <string name="settings_internationalization_desc">开启后首页推荐和探索页将切换为 YouTube Music</string>
+    <string name="settings_internationalization_unavailable">你所在的地区可能无法使用此功能</string>
+    <string name="settings_internationalization_checking">正在检测可用性…</string>
+    <string name="home_ytmusic_playlists">YouTube Music 歌单</string>
 
     <!-- Error Messages -->
     <string name="error_parse">解析/未知错误：%s</string>

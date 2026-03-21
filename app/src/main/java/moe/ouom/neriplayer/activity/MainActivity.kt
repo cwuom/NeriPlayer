@@ -433,7 +433,7 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             } catch (_: CancellationException) {
-                // 只保留最新一次外部唤起请求。
+                // 只保留最新一次外部唤起请求
             }
         }
     }

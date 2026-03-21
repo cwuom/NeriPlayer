@@ -91,6 +91,7 @@ object SettingsKeys {
     val KEEP_PLAYBACK_MODE_STATE = booleanPreferencesKey("keep_playback_mode_state")
     val STOP_ON_BLUETOOTH_DISCONNECT = booleanPreferencesKey("stop_on_bluetooth_disconnect")
     val ALLOW_MIXED_PLAYBACK = booleanPreferencesKey("allow_mixed_playback")
+    val INTERNATIONALIZATION_ENABLED = booleanPreferencesKey("internationalization_enabled")
 }
 
 
@@ -278,6 +279,13 @@ class SettingsRepository(private val context: Context) {
 
     val allowMixedPlaybackFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.ALLOW_MIXED_PLAYBACK] ?: false }
+
+    // 中文系统默认关闭国际化
+    private val defaultInternationalization: Boolean
+        get() = !Locale.getDefault().language.startsWith("zh")
+
+    val internationalizationEnabledFlow: Flow<Boolean> =
+        context.dataStore.data.map { it[SettingsKeys.INTERNATIONALIZATION_ENABLED] ?: defaultInternationalization }
 
     suspend fun setDynamicColor(value: Boolean) {
         context.dataStore.edit { it[SettingsKeys.DYNAMIC_COLOR] = value }
@@ -501,6 +509,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setAllowMixedPlayback(enabled: Boolean) {
         context.dataStore.edit { it[SettingsKeys.ALLOW_MIXED_PLAYBACK] = enabled }
+    }
+
+    suspend fun setInternationalizationEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.INTERNATIONALIZATION_ENABLED] = enabled }
     }
 }
 

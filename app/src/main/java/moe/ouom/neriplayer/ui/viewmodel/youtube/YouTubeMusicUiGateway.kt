@@ -27,8 +27,8 @@ interface YouTubeMusicLibraryGateway {
 }
 
 /**
- * UI 层只依赖一个最小网关。
- * 底层实现由主线程在 data/core 层接入后注入，避免当前分支越权修改底层代码。
+ * UI 层只依赖一个最小网关
+ * 底层实现由主线程在 data/core 层接入后注入，避免当前分支越权修改底层代码
  */
 object YouTubeMusicUiDependencies {
     @Volatile

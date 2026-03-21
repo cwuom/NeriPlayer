@@ -30,7 +30,7 @@ class LrcLibClient(private val okHttpClient: OkHttpClient) {
     }
 
     /**
-     * 通过歌曲名、艺术家和时长精确获取歌词。
+     * 通过歌曲名、艺术家和时长精确获取歌词
      * @param trackName 歌曲名
      * @param artistName 艺术家名
      * @param durationSeconds 歌曲时长（秒）
@@ -74,7 +74,7 @@ class LrcLibClient(private val okHttpClient: OkHttpClient) {
     }
 
     /**
-     * 通过关键词搜索歌词（模糊匹配），返回第一个匹配结果。
+     * 通过关键词搜索歌词（模糊匹配），返回第一个匹配结果
      * @param query 搜索关键词（歌曲名+艺术家）
      * @return LrcLibResult 或 null
      */

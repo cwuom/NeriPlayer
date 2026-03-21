@@ -1,4 +1,4 @@
-﻿package moe.ouom.neriplayer.ui.screen.tab
+package moe.ouom.neriplayer.ui.screen.tab
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -37,6 +37,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -124,6 +125,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.ExploreUiState
 import moe.ouom.neriplayer.ui.viewmodel.tab.ExploreViewModel
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.SearchSource
+import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.NPLogger
@@ -136,6 +138,7 @@ import moe.ouom.neriplayer.util.performHapticFeedback
 fun ExploreScreen(
     gridState: LazyGridState,
     onPlay: (NeteasePlaylist) -> Unit,
+    onYouTubeMusicPlaylistClick: (YouTubeMusicPlaylist) -> Unit = {},
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
     onPlayParts: (BiliClient.VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> }
 ) {
@@ -176,6 +179,9 @@ fun ExploreScreen(
         selectedParts = emptySet()
     }
 
+    val isInternational by AppContainer.settingsRepo.internationalizationEnabledFlow
+        .collectAsState(initial = false)
+
     LaunchedEffect(Unit) {
         if (ui.playlists.isEmpty()) vm.loadHighQuality()
     }
@@ -184,7 +190,23 @@ fun ExploreScreen(
         val currentSource = SearchSource.entries[pagerState.currentPage]
         if (ui.selectedSearchSource != currentSource) {
             vm.setSearchSource(currentSource)
+            if (currentSource == SearchSource.YOUTUBE_MUSIC && ui.ytMusicPlaylists.isEmpty()) {
+                vm.loadYtMusicPlaylists()
+            }
             if (searchQuery.isNotEmpty()) vm.search(searchQuery)
+        }
+    }
+
+    // 国际化模式默认跳到 YouTube Music 标签
+    LaunchedEffect(isInternational) {
+        if (isInternational) {
+            val ytIndex = SearchSource.entries.indexOf(SearchSource.YOUTUBE_MUSIC)
+            if (ytIndex >= 0 && pagerState.currentPage != ytIndex) {
+                pagerState.scrollToPage(ytIndex)
+            }
+            if (ui.ytMusicPlaylists.isEmpty()) {
+                vm.loadYtMusicPlaylists()
+            }
         }
     }
 
@@ -358,6 +380,13 @@ fun ExploreScreen(
                             Box(Modifier.fillMaxSize(), Alignment.Center) {
                                 Text(stringResource(R.string.explore_bili_desc), style = MaterialTheme.typography.bodyLarge)
                             }
+                        }
+                        SearchSource.YOUTUBE_MUSIC -> {
+                            YouTubeMusicExploreContent(
+                                ui = ui,
+                                vm = vm,
+                                onClick = onYouTubeMusicPlaylistClick
+                            )
                         }
                     }
                 }
@@ -775,5 +804,119 @@ private fun SongRow(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+    }
+}
+
+@Composable
+private fun YouTubeMusicExploreContent(
+    ui: ExploreUiState,
+    vm: ExploreViewModel,
+    onClick: (YouTubeMusicPlaylist) -> Unit
+) {
+    val miniPlayerHeight = LocalMiniPlayerHeight.current
+    when {
+        ui.ytMusicPlaylistsLoading -> {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .padding(bottom = miniPlayerHeight),
+                Alignment.Center
+            ) { CircularProgressIndicator() }
+        }
+        ui.ytMusicPlaylistsError != null -> {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .padding(bottom = miniPlayerHeight),
+                Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        ui.ytMusicPlaylistsError!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    HapticTextButton(onClick = { vm.loadYtMusicPlaylists() }) {
+                        Text(stringResource(R.string.home_retry_hint))
+                    }
+                }
+            }
+        }
+        ui.ytMusicPlaylists.isEmpty() -> {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .padding(bottom = miniPlayerHeight),
+                Alignment.Center
+            ) {
+                Text(
+                    stringResource(R.string.explore_tag_youtube_music),
+                    style = MaterialTheme.typography.bodyLarge
+                )
+            }
+        }
+        else -> {
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(120.dp),
+                contentPadding = PaddingValues(
+                    start = 16.dp, end = 16.dp,
+                    top = 8.dp,
+                    bottom = 16.dp + miniPlayerHeight
+                ),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                items(
+                    items = ui.ytMusicPlaylists,
+                    key = { it.browseId }
+                ) { playlist ->
+                    YtMusicExploreCard(playlist = playlist, onClick = { onClick(playlist) })
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun YtMusicExploreCard(
+    playlist: YouTubeMusicPlaylist,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+    ) {
+        AsyncImage(
+            model = coil.request.ImageRequest.Builder(LocalContext.current)
+                .data(playlist.coverUrl)
+                .crossfade(true)
+                .build(),
+            contentDescription = playlist.title,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .clip(RoundedCornerShape(12.dp))
+        )
+        Column(modifier = Modifier.padding(top = 6.dp, start = 4.dp, end = 4.dp, bottom = 4.dp)) {
+            Text(
+                text = playlist.title,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.titleSmall
+            )
+            if (playlist.subtitle.isNotBlank()) {
+                Text(
+                    text = playlist.subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Clip
+                )
+            }
+        }
     }
 }

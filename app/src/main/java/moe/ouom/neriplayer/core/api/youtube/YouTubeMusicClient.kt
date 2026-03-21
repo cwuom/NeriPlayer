@@ -75,6 +75,21 @@ data class YouTubeMusicLyrics(
     val source: String = ""
 )
 
+/** 首页推荐栏 */
+data class YouTubeMusicHomeShelf(
+    val title: String,
+    val items: List<YouTubeMusicHomeItem>
+)
+
+/** 推荐栏中的单个项（歌单/专辑/单曲） */
+data class YouTubeMusicHomeItem(
+    val title: String,
+    val subtitle: String,
+    val coverUrl: String,
+    val browseId: String = "",
+    val videoId: String = ""
+)
+
 internal data class YouTubeMusicBootstrapConfig(
     val apiKey: String,
     val webRemixClientVersion: String,
@@ -194,6 +209,73 @@ internal object YouTubeMusicParser {
 
     fun extractLibraryContinuation(root: JSONObject): String? {
         return extractContinuationToken(findLibraryGridRenderer(root))
+    }
+
+    /** 解析首页推荐 carousel shelves */
+    fun parseHomeShelves(root: JSONObject): List<YouTubeMusicHomeShelf> {
+        val tabs = root.optJSONObject("contents")
+            ?.optJSONObject("singleColumnBrowseResultsRenderer")
+            ?.optJSONArray("tabs")
+        if (tabs == null || tabs.length() == 0) return emptyList()
+
+        val sections = tabs.optJSONObject(0)
+            ?.optJSONObject("tabRenderer")
+            ?.optJSONObject("content")
+            ?.optJSONObject("sectionListRenderer")
+            ?.optJSONArray("contents")
+            ?: return emptyList()
+
+        return buildList {
+            for (i in 0 until sections.length()) {
+                val section = sections.optJSONObject(i) ?: continue
+                val carousel = section.optJSONObject("musicCarouselShelfRenderer") ?: continue
+                val shelfTitle = carousel.optJSONObject("header")
+                    ?.optJSONObject("musicCarouselShelfBasicHeaderRenderer")
+                    ?.let { extractText(it.optJSONObject("title")) }
+                    ?: continue
+                val items = carousel.optJSONArray("contents") ?: continue
+                val parsed = buildList {
+                    for (j in 0 until items.length()) {
+                        val item = items.optJSONObject(j) ?: continue
+                        // musicTwoRowItemRenderer 用于歌单/专辑卡片
+                        val twoRow = item.optJSONObject("musicTwoRowItemRenderer")
+                        if (twoRow != null) {
+                            val title = extractText(twoRow.optJSONObject("title"))
+                            if (title.isBlank()) continue
+                            val subtitle = extractText(twoRow.optJSONObject("subtitle"))
+                            val coverUrl = extractMusicThumbnailUrl(twoRow.optJSONObject("thumbnailRenderer"))
+                            val browseId = twoRow.optJSONObject("navigationEndpoint")
+                                ?.optJSONObject("browseEndpoint")
+                                ?.optString("browseId", "") ?: ""
+                            val videoId = twoRow.optJSONObject("navigationEndpoint")
+                                ?.optJSONObject("watchEndpoint")
+                                ?.optString("videoId", "") ?: ""
+                            add(YouTubeMusicHomeItem(title, subtitle, coverUrl, browseId, videoId))
+                            continue
+                        }
+                        // musicResponsiveListItemRenderer 用于歌曲列表项
+                        val listItem = item.optJSONObject("musicResponsiveListItemRenderer")
+                        if (listItem != null) {
+                            val title = extractColumnText(
+                                listItem.optJSONArray("flexColumns"), 0,
+                                "musicResponsiveListItemFlexColumnRenderer"
+                            )
+                            if (title.isBlank()) continue
+                            val subtitle = extractColumnText(
+                                listItem.optJSONArray("flexColumns"), 1,
+                                "musicResponsiveListItemFlexColumnRenderer"
+                            )
+                            val coverUrl = extractMusicThumbnailUrl(listItem.optJSONObject("thumbnail"))
+                            val videoId = extractTrackVideoId(listItem)
+                            add(YouTubeMusicHomeItem(title, subtitle, coverUrl, videoId = videoId))
+                        }
+                    }
+                }
+                if (parsed.isNotEmpty()) {
+                    add(YouTubeMusicHomeShelf(shelfTitle, parsed))
+                }
+            }
+        }
     }
 
     fun parsePlaylistDetail(
@@ -381,7 +463,7 @@ internal object YouTubeMusicParser {
                 ?.optJSONArray("contents")
         )?.let { return it }
 
-        // 一些歌单响应不会把曲目 shelf 放进 secondaryContents，需要回退到主内容区扫描。
+        // 一些歌单响应不会把曲目 shelf 放进 secondaryContents，需要回退到主内容区扫描
         scanPlaylistSections(
             root.optJSONObject("contents")
                 ?.optJSONObject("twoColumnBrowseResultsRenderer")
@@ -611,9 +693,9 @@ internal object YouTubeMusicParser {
 }
 
 /**
- * 将 YouTube Music 缩略图 URL 升级为完整尺寸。
+ * 将 YouTube Music 缩略图 URL 升级为完整尺寸
  * YouTube 缩略图 URL 通常以 `=w60-h60-...` 结尾来限制尺寸，
- * 此函数将其替换为 `=w1200-h1200` 以获取高清封面。
+ * 此函数将其替换为 `=w1200-h1200` 以获取高清封面
  */
 fun upgradeYouTubeThumbnailUrl(url: String): String {
     if (url.isBlank()) return url
@@ -718,7 +800,7 @@ internal object YouTubeMusicPlayerParser {
             }
             .toMap()
 
-        // 没有签名参数时可以直接复用 url；否则交给 NewPipe 兜底解签。
+        // 没有签名参数时可以直接复用 url；否则交给 NewPipe 兜底解签
         if (!fields["s"].isNullOrBlank()) {
             return null
         }
@@ -785,6 +867,15 @@ class YouTubeMusicClient(
             )
         }
         playlists
+    }
+
+    /** 获取 YouTube Music 首页推荐 */
+    suspend fun getHomeFeed(): List<YouTubeMusicHomeShelf> = withContext(Dispatchers.IO) {
+        val bootstrap = bootstrap()
+        val requestLocale = YouTubeMusicLocaleResolver.preferred()
+        val payload = JSONObject().put("browseId", "FEmusic_home")
+        val response = postMusicBrowseWithRetry(bootstrap, payload, requestLocale)
+        YouTubeMusicParser.parseHomeShelves(response.root)
     }
 
     suspend fun getPlaylistDetail(
@@ -1066,7 +1157,7 @@ class YouTubeMusicClient(
                         payload = payload,
                         requestLocale = requestLocale
                     )
-                    // 某些地区/语言组合会返回只有 microformat 的空壳 browse，需要切到通用 locale 重试。
+                    // 某些地区/语言组合会返回只有 microformat 的空壳 browse，需要切到通用 locale 重试
                     if (YouTubeMusicLocaleResolver.shouldRetryWithSafeFallback(payload, root)) {
                         lastError = IOException(
                             "YouTube Music browse response missing contents for ${requestLocale.hl}/${requestLocale.gl}"

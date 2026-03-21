@@ -122,6 +122,9 @@ fun HomeHostScreen(
                         )
                         selected = HomeSelectedItem.Netease(pl)
                     },
+                    onYouTubeMusicPlaylistClick = { pl ->
+                        selected = HomeSelectedItem.YouTubeMusic(pl)
+                    },
                     onOpenRecent = { entry ->
                         openRecent(entry) { next -> selected = next }
                     },

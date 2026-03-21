@@ -1,4 +1,4 @@
-﻿package moe.ouom.neriplayer.ui.viewmodel.tab
+package moe.ouom.neriplayer.ui.viewmodel.tab
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -36,6 +36,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.api.bili.buildBiliPartSong
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.PlayerManager.biliClient
 import moe.ouom.neriplayer.core.player.PlayerManager.neteaseClient
@@ -82,8 +83,9 @@ val TAG_TO_API_CATEGORY = mapOf(
  * @param displayName 用于在UI上显示的名称
  */
 enum class SearchSource(val displayName: String) {
-    NETEASE("Netease"),  // Will use string resource in UI
-    BILIBILI("Bilibili")  // Will use string resource in UI
+    YOUTUBE_MUSIC("YouTube"),
+    NETEASE("Netease"),
+    BILIBILI("Bilibili")
 }
 
 data class ExploreUiState(
@@ -95,7 +97,10 @@ data class ExploreUiState(
     val searching: Boolean = false,
     val searchError: String? = null,
     val searchResults: List<SongItem> = emptyList(),
-    val selectedSearchSource: SearchSource = SearchSource.NETEASE
+    val selectedSearchSource: SearchSource = SearchSource.NETEASE,
+    val ytMusicPlaylists: List<YouTubeMusicPlaylist> = emptyList(),
+    val ytMusicPlaylistsLoading: Boolean = false,
+    val ytMusicPlaylistsError: String? = null
 )
 
 class ExploreViewModel(application: Application) : AndroidViewModel(application) {
@@ -133,6 +138,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         when (_uiState.value.selectedSearchSource) {
             SearchSource.NETEASE -> searchNetease(keyword)
             SearchSource.BILIBILI -> searchBilibili(keyword)
+            SearchSource.YOUTUBE_MUSIC -> searchYouTubeMusic(keyword)
         }
     }
 
@@ -302,6 +308,44 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
      */
     fun toSongItem(page: BiliClient.VideoPage, basicInfo: BiliClient.VideoBasicInfo, coverUrl: String): SongItem {
         return buildBiliPartSong(page, basicInfo, coverUrl)
+    }
+
+    /** 搜索 YouTube Music - 暂不支持，切换到该标签时自动加载歌单 */
+    private fun searchYouTubeMusic(keyword: String) {
+        // YouTube Music 客户端暂无搜索 API，忽略搜索请求
+    }
+
+    /** 加载 YouTube Music 歌单列表 */
+    fun loadYtMusicPlaylists() {
+        _uiState.value = _uiState.value.copy(ytMusicPlaylistsLoading = true, ytMusicPlaylistsError = null)
+        viewModelScope.launch {
+            try {
+                val library = withContext(Dispatchers.IO) {
+                    AppContainer.youtubeMusicClient.getLibraryPlaylists()
+                }
+                val playlists = library.map { pl ->
+                    YouTubeMusicPlaylist(
+                        browseId = pl.browseId,
+                        playlistId = pl.browseId.removePrefix("VL"),
+                        title = pl.title,
+                        subtitle = pl.subtitle,
+                        coverUrl = pl.coverUrl,
+                        trackCount = pl.trackCount ?: 0
+                    )
+                }
+                _uiState.value = _uiState.value.copy(
+                    ytMusicPlaylistsLoading = false,
+                    ytMusicPlaylists = playlists,
+                    ytMusicPlaylistsError = null
+                )
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                _uiState.value = _uiState.value.copy(
+                    ytMusicPlaylistsLoading = false,
+                    ytMusicPlaylistsError = "YouTube Music: ${e.message ?: "unknown error"}"
+                )
+            }
+        }
     }
 }
 
