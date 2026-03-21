@@ -1297,7 +1297,7 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
 
     private fun normalizeArtistToken(raw: String?): String {
         if (raw.isNullOrBlank()) return ""
-        return raw.split("/", "&", " feat. ", " feat ", ",", "，", "、")
+        return raw.splitToSequence("/", "&", " feat. ", " feat ", ",", "，", "、")
             .map(::normalizeFingerprintToken)
             .filter { it.isNotBlank() }
             .distinct()

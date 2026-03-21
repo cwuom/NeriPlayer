@@ -1,4 +1,4 @@
-﻿package moe.ouom.neriplayer.ui.component
+package moe.ouom.neriplayer.ui.component
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -43,7 +43,7 @@ fun HsvPicker(
         val g = (argb shr 8) and 0xFF
         val b = (argb) and 0xFF
         val hsv = FloatArray(3)
-        android.graphics.Color.RGBToHSV(r, g, b, hsv)
+        AndroidColor.RGBToHSV(r, g, b, hsv)
         return hsv
     }
 

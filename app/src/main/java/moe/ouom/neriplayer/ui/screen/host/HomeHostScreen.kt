@@ -80,7 +80,7 @@ fun HomeHostScreen(
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> }
 ) {
     var selected by rememberSaveable(stateSaver = homeSelectedItemSaver) {
-        mutableStateOf<HomeSelectedItem?>(null)
+        mutableStateOf(null)
     }
     PredictiveBackHandler(enabled = selected != null) { progress ->
         try {
@@ -179,7 +179,7 @@ fun HomeHostScreen(
 private val homeSelectedItemSaver = mapSaver<HomeSelectedItem?>(
     save = { item ->
         when (item) {
-            null -> emptyMap<String, Any?>()
+            null -> emptyMap()
             is HomeSelectedItem.Local -> hashMapOf(
                 "type" to "local",
                 "playlistId" to item.playlistId

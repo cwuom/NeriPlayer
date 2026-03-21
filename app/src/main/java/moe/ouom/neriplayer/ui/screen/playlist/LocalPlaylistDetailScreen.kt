@@ -199,11 +199,11 @@ fun LocalPlaylistDetailScreen(
         }
     }
 
-    val playlistOrNull = ui.value.playlist
+    val playlist = ui.value.playlist
     val isResolved = ui.value.isResolved
 
-    LaunchedEffect(isResolved, playlistOrNull, playlistId) {
-        if (isResolved && playlistOrNull == null) {
+    LaunchedEffect(isResolved, playlist, playlistId) {
+        if (isResolved && playlist == null) {
             AppContainer.playlistUsageRepo.removeEntry(playlistId, "local")
             onDeleted()
         }
@@ -219,7 +219,7 @@ fun LocalPlaylistDetailScreen(
             targetOffsetY = { it }) + fadeOut(tween(150))
     ) {
         Surface(Modifier.fillMaxSize(), color = Color.Transparent) {
-            if (playlistOrNull == null) {
+            if (playlist == null) {
                 if (isResolved) {
                     return@Surface
                 }
@@ -258,7 +258,6 @@ fun LocalPlaylistDetailScreen(
 
             val context = LocalContext.current
             val clipboard = LocalClipboard.current
-            val playlist = playlistOrNull
             val isFavorites = FavoritesPlaylist.isSystemPlaylist(playlist, context)
             val isLocalFilesPlaylist = LocalFilesPlaylist.isSystemPlaylist(playlist, context)
             val isSystemPlaylist = isFavorites || isLocalFilesPlaylist

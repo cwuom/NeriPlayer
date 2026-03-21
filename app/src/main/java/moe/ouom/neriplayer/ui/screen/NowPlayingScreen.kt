@@ -1493,10 +1493,9 @@ fun MoreOptionsSheet(
                             headlineContent = { Text(stringResource(R.string.action_share)) },
                             leadingContent = { Icon(Icons.Outlined.Share, null) },
                             modifier = Modifier.clickable {
-                                val song = originalSong
-                                if (song.isLocalSong()) {
+                                if (originalSong.isLocalSong()) {
                                     val shared = runCatching {
-                                        LocalMediaSupport.shareSongFile(context, song)
+                                        LocalMediaSupport.shareSongFile(context, originalSong)
                                     }.getOrElse { false }
                                     if (!shared) {
                                         coroutineScope.launch {
@@ -1508,31 +1507,31 @@ fun MoreOptionsSheet(
                                         onDismiss()
                                     }
                                 } else {
-                                    val isFromBili = song.album.startsWith(PlayerManager.BILI_SOURCE_TAG)
+                                    val isFromBili = originalSong.album.startsWith(PlayerManager.BILI_SOURCE_TAG)
 
                                     val url = if (isFromBili) {
                                         // 筛选出队列中属于同一个B站视频的所有分P
                                         val videoParts = queue.filter {
-                                            it.id == song.id && it.album.startsWith(PlayerManager.BILI_SOURCE_TAG)
+                                            it.id == originalSong.id && it.album.startsWith(PlayerManager.BILI_SOURCE_TAG)
                                         }
                                         if (videoParts.size > 1) {
                                             val pageIndex = videoParts.indexOfFirst {
-                                                it.album == song.album
+                                                it.album == originalSong.album
                                             }
                                             val pageNumber = pageIndex + 1
                                             if (pageIndex != -1) {
-                                                "https://www.bilibili.com/video/av${song.id}/?p=${pageNumber}"
+                                                "https://www.bilibili.com/video/av${originalSong.id}/?p=${pageNumber}"
                                             } else {
-                                                "https://www.bilibili.com/video/av${song.id}"
+                                                "https://www.bilibili.com/video/av${originalSong.id}"
                                             }
                                         } else {
-                                            "https://www.bilibili.com/video/av${song.id}"
+                                            "https://www.bilibili.com/video/av${originalSong.id}"
                                         }
                                     } else {
-                                        "https://music.163.com/#/song?id=${song.id}"
+                                        "https://music.163.com/#/song?id=${originalSong.id}"
                                     }
 
-                                    val shareText = context.getString(R.string.nowplaying_share_song, song.name, song.artist, url)
+                                    val shareText = context.getString(R.string.nowplaying_share_song, originalSong.name, originalSong.artist, url)
 
                                     val sendIntent: Intent = Intent().apply {
                                         action = Intent.ACTION_SEND
@@ -1865,12 +1864,12 @@ fun EditSongInfoSheet(
     val scrollState = rememberScrollState()
     val nestedScrollConnection = remember {
         object : NestedScrollConnection {
-            override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: NestedScrollSource): androidx.compose.ui.geometry.Offset {
+            override fun onPreScroll(_available: androidx.compose.ui.geometry.Offset, _source: NestedScrollSource): androidx.compose.ui.geometry.Offset {
                 // 在滚动前不消费，让 verticalScroll 正常处理
                 return androidx.compose.ui.geometry.Offset.Zero
             }
 
-            override fun onPostScroll(consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset, source: NestedScrollSource): androidx.compose.ui.geometry.Offset {
+            override fun onPostScroll(_consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset, _source: NestedScrollSource): androidx.compose.ui.geometry.Offset {
                 // 消费所有剩余滚动事件，防止传递给 ModalBottomSheet
                 return available
             }
@@ -1880,7 +1879,7 @@ fun EditSongInfoSheet(
                 return available
             }
 
-            override suspend fun onPostFling(consumed: androidx.compose.ui.unit.Velocity, available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
+            override suspend fun onPostFling(_consumed: androidx.compose.ui.unit.Velocity, available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
                 // 消费所有剩余 fling 速度
                 return available
             }
@@ -2430,12 +2429,12 @@ fun LyricsEditorSheet(
     // 创建嵌套滚动连接来消费滚动事件，防止传递给 ModalBottomSheet
     val nestedScrollConnection = remember {
         object : NestedScrollConnection {
-            override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: NestedScrollSource): androidx.compose.ui.geometry.Offset {
+            override fun onPreScroll(_available: androidx.compose.ui.geometry.Offset, _source: NestedScrollSource): androidx.compose.ui.geometry.Offset {
                 // 在滚动前不消费，让内部滚动正常处理
                 return androidx.compose.ui.geometry.Offset.Zero
             }
 
-            override fun onPostScroll(consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset, source: NestedScrollSource): androidx.compose.ui.geometry.Offset {
+            override fun onPostScroll(_consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset, _source: NestedScrollSource): androidx.compose.ui.geometry.Offset {
                 // 消费所有剩余滚动事件，防止传递给 ModalBottomSheet
                 return available
             }
@@ -2445,7 +2444,7 @@ fun LyricsEditorSheet(
                 return available
             }
 
-            override suspend fun onPostFling(consumed: androidx.compose.ui.unit.Velocity, available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
+            override suspend fun onPostFling(_consumed: androidx.compose.ui.unit.Velocity, available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
                 // 消费所有剩余 fling 速度
                 return available
             }

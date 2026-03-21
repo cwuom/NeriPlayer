@@ -722,10 +722,10 @@ fun BiliPlaylistDetailScreen(
                                 },
                                 actions = {
                                     HapticIconButton(onClick = {
-                                        if (allSelected) {
-                                            selectedParts = emptySet()
+                                        selectedParts = if (allSelected) {
+                                            emptySet()
                                         } else {
-                                            selectedParts = currentPartsInfo.pages.map { it.page }.toSet()
+                                            currentPartsInfo.pages.map { it.page }.toSet()
                                         }
                                     }) {
                                         Icon(

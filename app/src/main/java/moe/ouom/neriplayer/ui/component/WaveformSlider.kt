@@ -133,12 +133,11 @@ fun WaveformSlider(
             )
         }
 
-        val thumbX = progressPx
-        val thumbY = centerY + sin(thumbX * WAVE_FREQUENCY + phase) * animatedAmplitude
+        val thumbY = centerY + sin(progressPx * WAVE_FREQUENCY + phase) * animatedAmplitude
         drawCircle(
             color = thumbColor,
             radius = 16f,
-            center = Offset(thumbX, thumbY)
+            center = Offset(progressPx, thumbY)
         )
     }
 }

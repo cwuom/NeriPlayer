@@ -216,7 +216,6 @@ fun AppleMusicLyric(
     translatedLyrics: List<LyricEntry>? = null,
     translationFontSize: TextUnit = 14.sp
 ) {
-    val spec = visualSpec
     val listState = rememberLazyListState()
     var manualClearHoldIndex by remember(lyrics) { mutableStateOf<Int?>(null) }
     var isAutoScrolling by remember { mutableStateOf(false) }
@@ -320,7 +319,7 @@ fun AppleMusicLyric(
                     } else {
                         // 播放时：显示带动画的复杂文本
                         val targetScale =
-                            if (isActive) spec.activeScale else scaleForDistance(distance, spec)
+                            if (isActive) visualSpec.activeScale else scaleForDistance(distance, visualSpec)
                         val scale by animateFloatAsState(
                             targetValue = targetScale,
                             animationSpec = spring(
@@ -331,10 +330,10 @@ fun AppleMusicLyric(
                         )
 
                         val tilt =
-                            if (isActive) 0f else if (index < currentIndex) spec.pageTiltDeg else -spec.pageTiltDeg
+                            if (isActive) 0f else if (index < currentIndex) visualSpec.pageTiltDeg else -visualSpec.pageTiltDeg
                         val rotationX by animateFloatAsState(
                             targetValue = tilt,
-                            animationSpec = tween(durationMillis = spec.flipDurationMs),
+                            animationSpec = tween(durationMillis = visualSpec.flipDurationMs),
                             label = "lyric_flip"
                         )
 
@@ -365,7 +364,7 @@ fun AppleMusicLyric(
                                 inactiveColor = textColor.copy(alpha = 0.5f),
                                 fontSize = fontSize,
                                 fadeWidth = 12.dp,
-                                spec = spec
+                                spec = visualSpec
                             )
                         } else {
                             var colorStyle = textColor.copy(
@@ -445,7 +444,7 @@ fun AppleMusicLyric(
                                     softWrap = true
                                 )
                             }
-                        } else { }
+                        }
                     }
                 }
             }

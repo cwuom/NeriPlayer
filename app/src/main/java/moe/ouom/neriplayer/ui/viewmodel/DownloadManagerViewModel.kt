@@ -22,8 +22,8 @@ class DownloadManagerViewModel(application: Application) : AndroidViewModel(appl
         GlobalDownloadManager.deleteDownloadedSong(appContext, song)
     }
 
-    fun playDownloadedSong(context: Context, song: DownloadedSong) {
-        GlobalDownloadManager.playDownloadedSong(context, song)
+    fun playDownloadedSong(song: DownloadedSong) {
+        GlobalDownloadManager.playDownloadedSong(song)
     }
 
     fun startBatchDownload(context: Context, songs: List<SongItem>) {

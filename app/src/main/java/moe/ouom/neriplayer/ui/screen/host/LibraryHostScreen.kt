@@ -89,7 +89,7 @@ fun LibraryHostScreen(
     onOpenRecent: () -> Unit
 ) {
     var selected by rememberSaveable(stateSaver = librarySelectedItemSaver) {
-        mutableStateOf<LibrarySelectedItem?>(null)
+        mutableStateOf(null)
     }
     // 保存当前选中的标签页索引
     var selectedTabIndex by rememberSaveable { mutableStateOf(0) }
@@ -267,7 +267,7 @@ fun LibraryHostScreen(
 private val librarySelectedItemSaver = mapSaver<LibrarySelectedItem?>(
     save = { item ->
         when (item) {
-            null -> emptyMap<String, Any?>()
+            null -> emptyMap()
             is LibrarySelectedItem.Local -> hashMapOf(
                 "type" to "local",
                 "playlistId" to item.playlistId

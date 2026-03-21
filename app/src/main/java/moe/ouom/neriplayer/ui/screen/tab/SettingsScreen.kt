@@ -2342,33 +2342,33 @@ fun SettingsScreen(
                                         try {
                                             // 音频缓存
                                             val mediaCacheDir = File(context.cacheDir, "media_cache")
-                                            details[context.getString(R.string.storage_type_audio_cache)] = mediaCacheDir.walkTopDown().filter { it.isFile }.map { it.length() }.sum()
+                                            details[context.getString(R.string.storage_type_audio_cache)] = mediaCacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
 
                                             // 图片缓存
                                             val imageCacheDir = File(context.cacheDir, "image_cache")
-                                            details[context.getString(R.string.storage_type_image_cache)] = imageCacheDir.walkTopDown().filter { it.isFile }.map { it.length() }.sum()
+                                            details[context.getString(R.string.storage_type_image_cache)] = imageCacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
 
                                             // 下载的音乐
                                             val musicDir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_MUSIC)?.let { File(it, "NeriPlayer") }
-                                            details[context.getString(R.string.storage_type_downloaded_music)] = musicDir?.walkTopDown()?.filter { it.isFile && !it.name.endsWith(".downloading") }?.map { it.length() }?.sum() ?: 0L
+                                            details[context.getString(R.string.storage_type_downloaded_music)] = musicDir?.walkTopDown()?.filter { it.isFile && !it.name.endsWith(".downloading") }?.sumOf { it.length() } ?: 0L
 
                                             // 日志文件
                                             val logDir = context.getExternalFilesDir(null)?.let { File(it, "logs") }
-                                            details[context.getString(R.string.storage_type_log_files)] = logDir?.walkTopDown()?.filter { it.isFile }?.map { it.length() }?.sum() ?: 0L
+                                            details[context.getString(R.string.storage_type_log_files)] = logDir?.walkTopDown()?.filter { it.isFile }?.sumOf { it.length() } ?: 0L
 
                                             // 崩溃日志
                                             val crashDir = context.getExternalFilesDir(null)?.let { File(it, "crashes") }
-                                            details[context.getString(R.string.storage_type_crash_logs)] = crashDir?.walkTopDown()?.filter { it.isFile }?.map { it.length() }?.sum() ?: 0L
+                                            details[context.getString(R.string.storage_type_crash_logs)] = crashDir?.walkTopDown()?.filter { it.isFile }?.sumOf { it.length() } ?: 0L
 
                                             // 其他缓存
                                             val otherCache = context.cacheDir.walkTopDown()
                                                 .filter { it.isFile && !it.path.contains("media_cache") && !it.path.contains("image_cache") }
-                                                .map { it.length() }.sum()
+                                                .sumOf { it.length() }
                                             details[context.getString(R.string.storage_type_other_cache)] = otherCache
 
                                             // 应用数据
                                             val dataDir = context.filesDir
-                                            val dataSize = dataDir.walkTopDown().filter { it.isFile }.map { it.length() }.sum()
+                                            val dataSize = dataDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
                                             details[context.getString(R.string.storage_type_app_data)] = dataSize
 
                                         } catch (_: Exception) {

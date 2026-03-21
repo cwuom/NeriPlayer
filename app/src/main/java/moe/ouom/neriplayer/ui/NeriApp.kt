@@ -235,7 +235,7 @@ private suspend fun captureThemeRevealSnapshot(
     fallbackView: View
 ): ImageBitmap? {
     val windowBitmap = activity?.let { currentActivity ->
-        suspendCancellableCoroutine<Bitmap?> { continuation ->
+        suspendCancellableCoroutine { continuation ->
             val decorView = currentActivity.window.decorView
             if (decorView.width <= 0 || decorView.height <= 0) {
                 continuation.resume(null)
@@ -280,7 +280,7 @@ private suspend fun awaitNextDraw(view: View) {
     }
 
     withTimeoutOrNull(120L) {
-        suspendCancellableCoroutine<Unit> { continuation ->
+        suspendCancellableCoroutine { continuation ->
             val observer = view.viewTreeObserver
             var handled = false
             val drawListener = object : ViewTreeObserver.OnDrawListener {
@@ -532,14 +532,13 @@ fun NeriApp(
     }
 
     LaunchedEffect(displayCoverUrl, fallbackPrimary) {
-        val url = displayCoverUrl
-        if (url.isNullOrBlank()) {
+        if (displayCoverUrl.isNullOrBlank()) {
             coverSeedHex = null
             return@LaunchedEffect
         }
 
         val loader = Coil.imageLoader(context)
-        val req = ImageRequest.Builder(context).data(url).allowHardware(false).build()
+        val req = ImageRequest.Builder(context).data(displayCoverUrl).allowHardware(false).build()
         val result = withContext(Dispatchers.IO) { loader.execute(req) }
         val bmp = (result as? SuccessResult)?.drawable.let { it as? BitmapDrawable }?.bitmap
 
@@ -733,15 +732,14 @@ fun NeriApp(
     }
 
     CompositionLocalProvider(LocalDensity provides finalDensity) {
-        val currentCoverUrl = displayCoverUrl
-        val activeCoverSeedHex = if (currentCoverUrl == null) null else coverSeedHex
+        val activeCoverSeedHex = if (displayCoverUrl == null) null else coverSeedHex
         val effectiveSeedHex = if (dynamicColorEnabled) {
             activeCoverSeedHex ?: themeSeedColor
         } else {
             themeSeedColor
         }
         val useSystemDynamic =
-            dynamicColorEnabled && activeCoverSeedHex == null && currentCoverUrl == null
+            dynamicColorEnabled && activeCoverSeedHex == null && displayCoverUrl == null
 
         NeriTheme(
             followSystemDark = followSystemDark,

@@ -116,10 +116,10 @@ fun DownloadManagerScreen(
                     IconButton(
                         onClick = {
                             context.performHapticFeedback()
-                            if (allSelected) {
-                                selectedSongs = emptySet()
+                            selectedSongs = if (allSelected) {
+                                emptySet()
                             } else {
-                                selectedSongs = downloadedSongs.map { it.id }.toSet()
+                                downloadedSongs.map { it.id }.toSet()
                             }
                         }
                     ) {
@@ -419,7 +419,7 @@ private fun DownloadedSongsList(
                         song = song,
                         isSelected = selectedSongs.contains(song.id),
                         selectionMode = selectionMode,
-                        onPlay = { viewModel.playDownloadedSong(context, song) },
+                        onPlay = { viewModel.playDownloadedSong(song) },
                         onDelete = { onDeleteRequest(song) },
                         onSelectionChanged = { selected ->
                             if (selected) {

@@ -138,7 +138,6 @@ fun HomeScreen(
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
-    val configuration = LocalConfiguration.current
     val vm: HomeViewModel = viewModel(
         factory = viewModelFactory {
             initializer {
@@ -175,11 +174,9 @@ fun HomeScreen(
 
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    val showTrending = showTrendingCard
-    val showRadar = showRadarCard
     val showContinue = showContinueCard && usage.isNotEmpty()
     val hasVisibleSections =
-        showContinue || showTrending || showRadar || showRecommendedCard
+        showContinue || showTrendingCard || showRadarCard || showRecommendedCard
 
     Box(Modifier.fillMaxSize()) {
         Column(
@@ -263,7 +260,7 @@ fun HomeScreen(
                         }
                     }
 
-                    if (showTrending) {
+                    if (showTrendingCard) {
                         item(span = { GridItemSpan(maxLineSpan) }) {
                             SectionHeader(
                                 icon = Icons.Outlined.Bolt,
@@ -284,7 +281,7 @@ fun HomeScreen(
                         }
                     }
 
-                    if (showRadar) {
+                    if (showRadarCard) {
                         item(span = { GridItemSpan(maxLineSpan) }) {
                             SectionHeader(
                                 icon = Icons.Outlined.Radar,

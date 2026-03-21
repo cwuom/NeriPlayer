@@ -482,7 +482,7 @@ object GlobalDownloadManager {
     /**
      * 播放已下载的歌曲
      */
-    fun playDownloadedSong(context: Context, song: DownloadedSong) {
+    fun playDownloadedSong(song: DownloadedSong) {
         try {
             val file = File(song.filePath)
             if (file.exists()) {
@@ -692,7 +692,7 @@ object GlobalDownloadManager {
             progress = null,
             status = DownloadStatus.DOWNLOADING
         )
-        _downloadTasks.value = _downloadTasks.value + newTask
+        _downloadTasks.value += newTask
         NPLogger.d("GlobalDownloadManager", "添加新下载任务: ${song.name}")
         return true
     }

@@ -265,7 +265,7 @@ object PlayerManager {
     var lrcLibClient = AppContainer.lrcLibClient
 
     // YouTube Music 歌词内存缓存，避免每次打开正在播放页面都重新请求
-    private val ytMusicLyricsCache = android.util.LruCache<String, List<moe.ouom.neriplayer.ui.component.LyricEntry>>(20)
+    private val ytMusicLyricsCache = android.util.LruCache<String, List<LyricEntry>>(20)
 
     // 记录当前缓存大小设置
     private var currentCacheSize: Long = 1024L * 1024 * 1024
@@ -2499,10 +2499,10 @@ object PlayerManager {
         // 更新列表
         currentPlaylist = newPlaylist
         _currentQueueFlow.value = currentPlaylist
-        if (currentSong != null) {
-            currentIndex = queueIndexOf(currentSong, newPlaylist)
+        currentIndex = if (currentSong != null) {
+            queueIndexOf(currentSong, newPlaylist)
         } else {
-            currentIndex = currentIndex.coerceIn(0, newPlaylist.lastIndex)
+            currentIndex.coerceIn(0, newPlaylist.lastIndex)
         }
         if (player.shuffleModeEnabled) {
             val newSongRealIndex = queueIndexOf(song, newPlaylist)

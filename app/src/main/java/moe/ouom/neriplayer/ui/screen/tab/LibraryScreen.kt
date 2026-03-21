@@ -295,9 +295,9 @@ fun LibraryScreen(
                         )
 
                         LibraryTab.QQMUSIC -> QqMusicPlaylistList(
-                            playlists = emptyList(), // TODO: Add qqMusicPlaylists to LibraryUiState when QQ Music is implemented
+                            _playlists = emptyList(), // TODO: Add qqMusicPlaylists to LibraryUiState when QQ Music is implemented
                             listState = qqMusicListState,
-                            onClick = { /* TODO: Implement QQ Music playlist click */ }
+                            _onClick = { /* TODO: Implement QQ Music playlist click */ }
                         )
                     }
                 }
@@ -1522,9 +1522,9 @@ private fun FavoritePlaylistList(
 
 @Composable
 private fun QqMusicPlaylistList(
-    playlists: List<Any>, // TODO: Replace with proper QQ Music playlist type
+    _playlists: List<Any>, // TODO: Replace with proper QQ Music playlist type
     listState: LazyListState,
-    onClick: (Any) -> Unit
+    _onClick: (Any) -> Unit
 ) {
     val miniPlayerHeight = LocalMiniPlayerHeight.current
 

@@ -516,5 +516,5 @@ private fun parseColorPalette(raw: String?): List<String> {
     val parsed = raw.split(',')
         .mapNotNull(::normalizeHex)
         .distinct()
-    return if (parsed.isEmpty()) ThemeDefaults.PRESET_COLORS else parsed
+    return parsed.ifEmpty { ThemeDefaults.PRESET_COLORS }
 }

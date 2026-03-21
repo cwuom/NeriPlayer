@@ -134,7 +134,7 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
                 coverUrl = coverUrl ?: existing?.coverUrl,
                 trackCount = maxOf(trackCount, existing?.trackCount ?: 0, mergedSongs.size),
                 source = source,
-                songs = if (mergedSongs.isNotEmpty()) mergedSongs else existing?.songs.orEmpty(),
+                songs = mergedSongs.ifEmpty { existing?.songs.orEmpty() },
                 addedTime = existing?.takeUnless { it.isDeleted }?.addedTime ?: now,
                 sortOrder = existing?.takeUnless { it.isDeleted }?.normalizeSortOrder()?.sortOrder ?: now,
                 modifiedAt = now,
@@ -192,7 +192,7 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
             val existing = list[existingIndex]
             if (existing.isDeleted) return@withContext
 
-            val mergedSongs = if (songs.isNotEmpty()) songs else existing.songs
+            val mergedSongs = songs.ifEmpty { existing.songs }
             val resolvedName = name.ifBlank { existing.name }
             val resolvedCover = coverUrl ?: existing.coverUrl
             val resolvedTrackCount = maxOf(trackCount, mergedSongs.size, existing.trackCount)

@@ -63,15 +63,14 @@ fun ThemeRevealOverlay(
                 compositingStrategy = CompositingStrategy.Offscreen
             }
             .drawWithContent {
-                val bitmap = snapshot
-                if (bitmap != null) {
+                if (snapshot != null) {
                     val snapshotAlpha = if (legacySnapshotDim) {
                         0.78f + (1f - progress.value) * 0.18f
                     } else {
                         1f
                     }
                     drawImage(
-                        image = bitmap,
+                        image = snapshot,
                         dstSize = IntSize(
                             width = size.width.roundToInt().coerceAtLeast(1),
                             height = size.height.roundToInt().coerceAtLeast(1)
@@ -111,7 +110,7 @@ fun ThemeRevealOverlay(
     )
 }
 
-private fun DrawScope.maxRevealRadius(origin: Offset, size: Size): Float {
+private fun maxRevealRadius(origin: Offset, size: Size): Float {
     val corners = listOf(
         Offset.Zero,
         Offset(size.width, 0f),

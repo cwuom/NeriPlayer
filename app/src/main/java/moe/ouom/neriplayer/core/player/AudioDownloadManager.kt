@@ -32,6 +32,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.resolveBiliSong
@@ -430,7 +431,7 @@ object AudioDownloadManager {
         if (!song.matchedLyric.isNullOrBlank()) return
         try {
             val lrcLibResult = try {
-                kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+                runBlocking(Dispatchers.IO) {
                     val durationSec = (song.durationMs / 1000).toInt()
                     AppContainer.lrcLibClient.getLyrics(
                         trackName = song.name,
@@ -460,7 +461,7 @@ object AudioDownloadManager {
 
             // 回退 YouTube Music API
             val videoId = extractYouTubeMusicVideoId(song.mediaUri) ?: return
-            val ytResult = kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+            val ytResult = runBlocking(Dispatchers.IO) {
                 AppContainer.youtubeMusicClient.getLyrics(videoId)
             } ?: return
             val lyricsText = ytResult.lyrics.takeIf { it.isNotBlank() } ?: return
@@ -916,7 +917,7 @@ fun getLocalFilePath(context: Context, song: SongItem): String? {
             if (!resp.isSuccessful) throw IllegalStateException("HTTP ${resp.code}")
 
             val total = resp.body.contentLength()
-            NPLogger.d(TAG, "文件总大小: ${total} bytes, songId=$songId")
+            NPLogger.d(TAG, "文件总大小: $total bytes, songId=$songId")
             val source = resp.body.source()
             destFile.sink().buffer().use { sink ->
                 var readSoFar = 0L
@@ -1111,7 +1112,7 @@ fun getLocalFilePath(context: Context, song: SongItem): String? {
             }
 
             val isEndOfStream = chunkRead < requestedChunkLength || (
-                totalBytes > 0L && downloadedBytes >= totalBytes
+                totalBytes in 1..downloadedBytes
             )
 
             return ChunkDownloadResult(

@@ -423,7 +423,6 @@ class AudioPlayerService : Service() {
         val song = PlayerManager.currentSongFlow.value
         val duration = song?.durationMs ?: 0L
         val coverSource = song.effectiveCoverSource()
-        val coverUri = normalizeArtworkUri(coverSource)
 
         // 灏侀潰 URL 鍙樻洿鍒欏紓姝ュ姞杞?
         if (coverSource != currentCoverSource) {

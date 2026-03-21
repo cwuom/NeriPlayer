@@ -577,8 +577,7 @@ class YouTubeMusicPlaybackRepository(
         preferredQualityOverride: String? = null
     ) = withContext(Dispatchers.IO) {
         val preferredQualityKey = resolvePreferredQualityKey(preferredQualityOverride)
-        val cacheKey = preferredQualityKey
-        if (getCachedPlayableAudio(videoId, cacheKey) != null) {
+        if (getCachedPlayableAudio(videoId, preferredQualityKey) != null) {
             return@withContext
         }
         resolvePlayableAudio(
@@ -587,7 +586,7 @@ class YouTubeMusicPlaybackRepository(
             requireDirect = false,
             logFailure = false,
             preferM4a = false,
-            cacheKey = cacheKey
+            cacheKey = preferredQualityKey
         )
     }
 
@@ -834,7 +833,7 @@ class YouTubeMusicPlaybackRepository(
         profile: YouTubePlayerClientProfile
     ): JSONObject {
         val requestLocale = currentPlayerRequestLocale()
-        val body = buildPlayerRequestBody(videoId, bootstrap, profile)
+        val body = buildPlayerRequestBody(videoId, profile)
         val requestHeaders = linkedMapOf(
             "Cookie" to bootstrap.cookieHeader,
             "User-Agent" to profile.userAgent,
@@ -876,7 +875,6 @@ class YouTubeMusicPlaybackRepository(
 
     private fun buildPlayerRequestBody(
         videoId: String,
-        bootstrap: YouTubePlaybackBootstrap,
         profile: YouTubePlayerClientProfile
     ): JSONObject {
         val requestLocale = currentPlayerRequestLocale()
@@ -1068,7 +1066,6 @@ class YouTubeMusicPlaybackRepository(
         if (streams.isEmpty()) {
             return null
         }
-        val sortedDescending = streams
         val sortedAscending = streams.asReversed()
         fun AudioStream.effectiveBitrate(): Int {
             return averageBitrate.takeIf { it > 0 } ?: bitrate
@@ -1077,13 +1074,13 @@ class YouTubeMusicPlaybackRepository(
             YouTubeMusicPlaybackQuality.LOW -> sortedAscending.firstOrNull()
             YouTubeMusicPlaybackQuality.MEDIUM -> {
                 sortedAscending.firstOrNull { it.effectiveBitrate() >= 96_000 }
-                    ?: sortedDescending.firstOrNull()
+                    ?: streams.firstOrNull()
             }
             YouTubeMusicPlaybackQuality.HIGH -> {
                 sortedAscending.firstOrNull { it.effectiveBitrate() >= 128_000 }
-                    ?: sortedDescending.firstOrNull()
+                    ?: streams.firstOrNull()
             }
-            YouTubeMusicPlaybackQuality.VERY_HIGH -> sortedDescending.firstOrNull()
+            YouTubeMusicPlaybackQuality.VERY_HIGH -> streams.firstOrNull()
         }
     }
 
