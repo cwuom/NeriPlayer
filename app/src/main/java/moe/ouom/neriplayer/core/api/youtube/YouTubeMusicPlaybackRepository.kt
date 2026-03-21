@@ -1202,7 +1202,7 @@ class YouTubeMusicPlaybackRepository(
         }
         return when {
             incoming.streamType != current.streamType -> {
-                if (incoming.streamType == YouTubePlayableStreamType.HLS) incoming else current
+                if (incoming.streamType == YouTubePlayableStreamType.DIRECT) incoming else current
             }
             playableAudioMimePreferenceScore(incoming.mimeType) !=
                 playableAudioMimePreferenceScore(current.mimeType) -> {
