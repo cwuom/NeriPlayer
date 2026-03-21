@@ -44,7 +44,12 @@ object LanguageManager {
         // 保存设置
         val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
         prefs.edit().putString(KEY_LANGUAGE, language.code).apply()
+        cachedAppContext = null
+        cachedAppLocale = null
     }
+
+    private var cachedAppContext: Context? = null
+    private var cachedAppLocale: Locale? = null
 
     /**
      * 应用语言设置到 Context
@@ -65,11 +70,37 @@ object LanguageManager {
             }
         }
 
-        Locale.setDefault(locale)
+        val isAppContext = context.applicationContext === context
+        if (isAppContext && cachedAppContext != null && cachedAppLocale == locale) {
+            if (Locale.getDefault() != locale) {
+                Locale.setDefault(locale)
+            }
+            return cachedAppContext!!
+        }
+
+        val currentLocale = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            context.resources.configuration.locales[0]
+        } else {
+            @Suppress("DEPRECATION")
+            context.resources.configuration.locale
+        }
+
+        if (currentLocale == locale && Locale.getDefault() == locale) {
+            return context
+        }
+
+        if (Locale.getDefault() != locale) {
+            Locale.setDefault(locale)
+        }
         val config = Configuration(context.resources.configuration)
         config.setLocale(locale)
 
-        return context.createConfigurationContext(config)
+        val newContext = context.createConfigurationContext(config)
+        if (isAppContext) {
+            cachedAppContext = newContext
+            cachedAppLocale = locale
+        }
+        return newContext
     }
 
     /**

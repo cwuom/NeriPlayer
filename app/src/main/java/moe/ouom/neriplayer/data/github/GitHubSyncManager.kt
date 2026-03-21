@@ -65,7 +65,7 @@ class GitHubSyncManager private constructor(context: Context) {
 
             val apiClient = GitHubApiClient(appContext, token)
             val startMutationVersion = storage.getSyncMutationVersion()
-            val localData = sanitizeSyncData(buildLocalSyncData())
+            val localData = sanitizeSyncData(buildLocalSyncData(localizedContext))
             val uploadedDeletedPlaylistIds = localData.playlists
                 .asSequence()
                 .filter(SyncPlaylist::isDeleted)
@@ -280,10 +280,10 @@ class GitHubSyncManager private constructor(context: Context) {
         )
     }
 
-    private fun buildLocalSyncData(): SyncData {
+    private fun buildLocalSyncData(localizedContext: Context): SyncData {
         val playlists = playlistRepo.playlists.value
         val syncPlaylists = playlists.map { playlist ->
-            SyncPlaylist.fromLocalPlaylist(playlist, playlist.modifiedAt, appContext)
+            SyncPlaylist.fromLocalPlaylist(playlist, playlist.modifiedAt, localizedContext)
         }.toMutableList()
 
         storage.getDeletedPlaylistIds().forEach { deletedId ->
@@ -300,11 +300,11 @@ class GitHubSyncManager private constructor(context: Context) {
         }
 
         val syncFavoritePlaylists = favoriteRepo.getSyncSnapshots().map {
-            SyncFavoritePlaylist.fromFavoritePlaylist(it, appContext)
+            SyncFavoritePlaylist.fromFavoritePlaylist(it, localizedContext)
         }
 
         val syncRecentPlays = playHistoryRepo.historyFlow.value
-            .filterNot { LocalSongSupport.isLocalSong(it.album, it.mediaUri, it.albumId, appContext) }
+            .filterNot { LocalSongSupport.isLocalSong(it.album, it.mediaUri, it.albumId, localizedContext) }
             .take(500)
             .map { playedEntry ->
                 SyncRecentPlay(
