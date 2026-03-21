@@ -425,8 +425,10 @@ object PlayerManager {
 
     /**
      * 基于歌曲来源与所选音质构建缓存键
+     * - 本地：local-hash
      * - B 站：bili-avid-可选cid-音质
      * - 网易云：netease-songId-音质
+     * - YouTube Music：ytmusic-videoId-音质
      */
     private fun computeCacheKey(song: SongItem): String {
         return when {
@@ -667,9 +669,12 @@ object PlayerManager {
 
                 override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                     if (!playWhenReady) {
+                        val stackHint = Throwable().stackTrace.take(6).joinToString(" <- ") {
+                            "${it.fileName}:${it.lineNumber}"
+                        }
                         NPLogger.d(
                             "NERI-PlayerManager",
-                            "playWhenReady=false, reason=${playWhenReadyChangeReasonName(reason)}, state=${playbackStateName(player.playbackState)}, mediaId=${player.currentMediaItem?.mediaId}"
+                            "playWhenReady=false, reason=${playWhenReadyChangeReasonName(reason)}, state=${playbackStateName(player.playbackState)}, mediaId=${player.currentMediaItem?.mediaId}, stack=[$stackHint]"
                         )
                     }
                     if (
@@ -1800,9 +1805,12 @@ object PlayerManager {
         playJob?.cancel()
         playJob = null
         cancelVolumeFade(resetToFull = resetVolumeToFull)
+        val stackHint = Throwable().stackTrace.take(6).joinToString(" <- ") {
+            "${it.fileName}:${it.lineNumber}"
+        }
         NPLogger.d(
             "NERI-PlayerManager",
-            "pauseInternal: song=${currentSong?.name}, positionMs=$currentPosition, state=${playbackStateName(player.playbackState)}, playWhenReady=${player.playWhenReady}, forcePersist=$forcePersist"
+            "pauseInternal: song=${currentSong?.name}, positionMs=$currentPosition, state=${playbackStateName(player.playbackState)}, playWhenReady=${player.playWhenReady}, forcePersist=$forcePersist, stack=[$stackHint]"
         )
         player.playWhenReady = false
         player.pause()

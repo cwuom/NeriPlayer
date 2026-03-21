@@ -238,11 +238,30 @@ internal object YouTubeMusicParser {
                 if (videoId.isBlank() || title.isBlank()) {
                     continue
                 }
-                val durationText = extractColumnText(
+                var durationText = extractColumnText(
                     columns = renderer.optJSONArray("fixedColumns"),
                     index = 0,
                     rendererKey = "musicResponsiveListItemFixedColumnRenderer"
                 )
+                if (durationText.isBlank() || !durationText.contains(":")) {
+                    val flex = renderer.optJSONArray("flexColumns")
+                    if (flex != null) {
+                        for (i in 0 until flex.length()) {
+                            val text = extractColumnText(
+                                columns = flex,
+                                index = i,
+                                rendererKey = "musicResponsiveListItemFlexColumnRenderer"
+                            )
+                            if (text.contains(":")) {
+                                val parts = text.split(":")
+                                if (parts.isNotEmpty() && parts.all { it.toLongOrNull() != null }) {
+                                    durationText = text
+                                    break
+                                }
+                            }
+                        }
+                    }
+                }
                 add(
                     YouTubeMusicPlaylistTrack(
                         videoId = videoId,

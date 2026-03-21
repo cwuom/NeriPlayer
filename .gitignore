@@ -22,3 +22,4 @@ local.properties
 /.ck/
 /.tmp/
 /tools/
+/.kotlin/
