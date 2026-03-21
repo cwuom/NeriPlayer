@@ -136,11 +136,35 @@ enum class LibraryTab(val labelResId: Int) {
     QQMUSIC(R.string.library_tab_qqmusic)
 }
 
+private fun libraryTabDisplayOrder(isInternational: Boolean): List<LibraryTab> {
+    return if (isInternational) {
+        listOf(
+            LibraryTab.LOCAL,
+            LibraryTab.FAVORITE,
+            LibraryTab.YTMUSIC,
+            LibraryTab.NETEASE,
+            LibraryTab.NETEASEALBUM,
+            LibraryTab.BILI,
+            LibraryTab.QQMUSIC
+        )
+    } else {
+        listOf(
+            LibraryTab.LOCAL,
+            LibraryTab.FAVORITE,
+            LibraryTab.NETEASE,
+            LibraryTab.NETEASEALBUM,
+            LibraryTab.YTMUSIC,
+            LibraryTab.BILI,
+            LibraryTab.QQMUSIC
+        )
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun LibraryScreen(
-    initialTabIndex: Int = 0,
-    onTabIndexChange: (Int) -> Unit = {},
+    initialTab: LibraryTab = LibraryTab.LOCAL,
+    onTabChange: (LibraryTab) -> Unit = {},
     localListState: LazyListState,
     favoriteListState: LazyListState,
     neteaseAlbumState: LazyListState,
@@ -159,23 +183,30 @@ fun LibraryScreen(
     val ui by vm.uiState.collectAsState()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val defaultPlaylistName = stringResource(R.string.library_create_playlist_default)
+    val isInternational by AppContainer.settingsRepo.internationalizationEnabledFlow
+        .collectAsState(initial = false)
+    val orderedTabs = remember(isInternational) { libraryTabDisplayOrder(isInternational) }
+    val initialPage = remember(orderedTabs, initialTab) {
+        orderedTabs.indexOf(initialTab).takeIf { it >= 0 } ?: 0
+    }
 
     val pagerState = rememberPagerState(
-        initialPage = initialTabIndex.coerceIn(0, LibraryTab.entries.lastIndex),
-        pageCount = { LibraryTab.entries.size }
+        initialPage = initialPage,
+        pageCount = { orderedTabs.size }
     )
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(initialTabIndex) {
-        val targetPage = initialTabIndex.coerceIn(0, LibraryTab.entries.lastIndex)
+    LaunchedEffect(initialTab, orderedTabs) {
+        val targetPage = orderedTabs.indexOf(initialTab).takeIf { it >= 0 } ?: 0
         if (pagerState.currentPage != targetPage) {
             pagerState.scrollToPage(targetPage)
         }
     }
 
-    LaunchedEffect(pagerState.currentPage) {
-        if (pagerState.currentPage != initialTabIndex) {
-            onTabIndexChange(pagerState.currentPage)
+    LaunchedEffect(pagerState.currentPage, orderedTabs, initialTab) {
+        val currentTab = orderedTabs.getOrNull(pagerState.currentPage) ?: return@LaunchedEffect
+        if (currentTab != initialTab) {
+            onTabChange(currentTab)
         }
     }
 
@@ -222,7 +253,7 @@ fun LibraryScreen(
                     containerColor = Color.Transparent,
                     contentColor = MaterialTheme.colorScheme.primary
                 ) {
-                    LibraryTab.entries.forEachIndexed { index, tab ->
+                    orderedTabs.forEachIndexed { index, tab ->
                         Tab(
                             selected = pagerState.currentPage == index,
                             onClick = {
@@ -242,7 +273,7 @@ fun LibraryScreen(
                     modifier = Modifier.fillMaxSize(),
                     pageSpacing = 0.dp
                 ) { page ->
-                    when (LibraryTab.entries[page]) {
+                    when (orderedTabs[page]) {
                         LibraryTab.LOCAL -> LocalPlaylistList(
                             playlists = ui.localPlaylists,
                             listState = localListState,

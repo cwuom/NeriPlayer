@@ -168,7 +168,30 @@ fun ExploreScreen(
     var showExportSheet by remember { mutableStateOf(false) }
     val exportSheetState = rememberModalBottomSheetState()
 
-    val pagerState = rememberPagerState(pageCount = { SearchSource.entries.size })
+    val isInternational by AppContainer.settingsRepo.internationalizationEnabledFlow
+        .collectAsState(initial = false)
+    val orderedSearchSources = remember(isInternational) {
+        if (isInternational) {
+            listOf(
+                SearchSource.YOUTUBE_MUSIC,
+                SearchSource.NETEASE,
+                SearchSource.BILIBILI
+            )
+        } else {
+            listOf(
+                SearchSource.NETEASE,
+                SearchSource.BILIBILI,
+                SearchSource.YOUTUBE_MUSIC
+            )
+        }
+    }
+    val initialSearchPage = remember(orderedSearchSources, ui.selectedSearchSource) {
+        orderedSearchSources.indexOf(ui.selectedSearchSource).takeIf { it >= 0 } ?: 0
+    }
+    val pagerState = rememberPagerState(
+        initialPage = initialSearchPage,
+        pageCount = { orderedSearchSources.size }
+    )
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     val tagChipSelectedAlpha = if (backgroundImageUri == null) 1f else 0.86f
     val tagChipUnselectedAlpha = if (backgroundImageUri == null) 1f else 0.74f
@@ -179,30 +202,36 @@ fun ExploreScreen(
         selectedParts = emptySet()
     }
 
-    val isInternational by AppContainer.settingsRepo.internationalizationEnabledFlow
-        .collectAsState(initial = false)
-
     LaunchedEffect(Unit) {
         if (ui.playlists.isEmpty()) vm.loadHighQuality()
     }
 
-    LaunchedEffect(pagerState.currentPage, ui.selectedSearchSource) {
-        val currentSource = SearchSource.entries[pagerState.currentPage]
+    LaunchedEffect(ui.selectedSearchSource, orderedSearchSources) {
+        val targetPage = orderedSearchSources.indexOf(ui.selectedSearchSource)
+            .takeIf { it >= 0 }
+            ?: return@LaunchedEffect
+        if (pagerState.currentPage != targetPage) {
+            pagerState.scrollToPage(targetPage)
+        }
+    }
+
+    LaunchedEffect(pagerState.currentPage, orderedSearchSources, ui.selectedSearchSource) {
+        val currentSource = orderedSearchSources.getOrNull(pagerState.currentPage)
+            ?: return@LaunchedEffect
         if (ui.selectedSearchSource != currentSource) {
             vm.setSearchSource(currentSource)
-            if (currentSource == SearchSource.YOUTUBE_MUSIC && ui.ytMusicPlaylists.isEmpty()) {
-                vm.loadYtMusicPlaylists()
-            }
             if (searchQuery.isNotEmpty()) vm.search(searchQuery)
+        }
+        if (currentSource == SearchSource.YOUTUBE_MUSIC && ui.ytMusicPlaylists.isEmpty()) {
+            vm.loadYtMusicPlaylists()
         }
     }
 
     // 国际化模式默认跳到 YouTube Music 标签
     LaunchedEffect(isInternational) {
         if (isInternational) {
-            val ytIndex = SearchSource.entries.indexOf(SearchSource.YOUTUBE_MUSIC)
-            if (ytIndex >= 0 && pagerState.currentPage != ytIndex) {
-                pagerState.scrollToPage(ytIndex)
+            if (ui.selectedSearchSource != SearchSource.YOUTUBE_MUSIC) {
+                vm.setSearchSource(SearchSource.YOUTUBE_MUSIC)
             }
             if (ui.ytMusicPlaylists.isEmpty()) {
                 vm.loadYtMusicPlaylists()
@@ -282,7 +311,7 @@ fun ExploreScreen(
                         containerColor = Color.Transparent,
                         contentColor = MaterialTheme.colorScheme.primary
                     ) {
-                        SearchSource.entries.forEachIndexed { index, source ->
+                        orderedSearchSources.forEachIndexed { index, source ->
                             Tab(
                                 selected = pagerState.currentPage == index,
                                 onClick = {
@@ -300,7 +329,7 @@ fun ExploreScreen(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize()
             ) { page ->
-                val currentSource = SearchSource.entries[page]
+                val currentSource = orderedSearchSources[page]
                 if (searchQuery.isNotEmpty()) {
                     when {
                         ui.searching -> {

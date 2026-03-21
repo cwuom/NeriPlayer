@@ -52,6 +52,7 @@ import moe.ouom.neriplayer.ui.screen.playlist.NeteaseAlbumDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.BiliPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.YouTubeMusicPlaylistDetailScreen
+import moe.ouom.neriplayer.ui.screen.tab.LibraryTab
 import moe.ouom.neriplayer.ui.screen.tab.LibraryScreen
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
@@ -91,8 +92,8 @@ fun LibraryHostScreen(
     var selected by rememberSaveable(stateSaver = librarySelectedItemSaver) {
         mutableStateOf(null)
     }
-    // 保存当前选中的标签页索引
-    var selectedTabIndex by rememberSaveable { mutableStateOf(0) }
+    // 保存当前选中的标签页类型，避免国际化切换后索引错位
+    var selectedTab by rememberSaveable { mutableStateOf(LibraryTab.LOCAL) }
     val libraryStateHolder = rememberSaveableStateHolder()
     PredictiveBackHandler(enabled = selected != null) { progress ->
         try {
@@ -151,8 +152,8 @@ fun LibraryHostScreen(
             if (current == null) {
                 libraryStateHolder.SaveableStateProvider("library_screen") {
                     LibraryScreen(
-                        initialTabIndex = selectedTabIndex,
-                        onTabIndexChange = { selectedTabIndex = it },
+                        initialTab = selectedTab,
+                        onTabChange = { selectedTab = it },
                         localListState = localListState,
                         favoriteListState = favoriteListState,
                         neteaseAlbumState = neteaseAlbumState,
