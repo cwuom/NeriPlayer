@@ -619,6 +619,10 @@ object PlayerManager {
             // 启动时就禁止 Exo 列表循环，由我们自己接管（仅单曲循环放给 Exo）
             player.repeatMode = Player.REPEAT_MODE_OFF
 
+            ioScope.launch {
+                youtubeMusicPlaybackRepository.warmBootstrap()
+            }
+
             player.addListener(object : Player.Listener {
                 override fun onPlayerError(error: PlaybackException) {
                     NPLogger.e("NERI-Player", "onPlayerError: ${error.errorCodeName}", error)
@@ -1187,6 +1191,7 @@ object PlayerManager {
             shuffleBag.clear()
         }
 
+        maybeWarmCurrentAndUpcomingYouTubeMusic(currentIndex)
         playAtIndex(currentIndex)
         ioScope.launch {
             persistState()
@@ -1244,6 +1249,7 @@ object PlayerManager {
         val requestToken = playbackRequestToken
         clearPendingSeekPosition()
         _playbackPositionMs.value = 0L
+        maybeWarmCurrentAndUpcomingYouTubeMusic(index)
         playJob = ioScope.launch {
             val result = resolveSongUrl(song)
             if (requestToken != playbackRequestToken || !isActive) {
@@ -1314,7 +1320,7 @@ object PlayerManager {
                         )
                     }
                     maybeAutoMatchBiliMetadata(song, requestToken)
-                    maybePrefetchUpcomingYouTubeMusic(index)
+                    maybeWarmCurrentAndUpcomingYouTubeMusic(index)
                 }
                 is SongUrlResult.RequiresLogin -> {
                     NPLogger.w("NERI-PlayerManager", "Requires login to play: id=${song.id}, source=${song.album}")
@@ -1355,20 +1361,54 @@ object PlayerManager {
         }
     }
 
-    private fun maybePrefetchUpcomingYouTubeMusic(currentSongIndex: Int) {
-        val nextSong = currentPlaylist.getOrNull(currentSongIndex + 1) ?: return
-        val nextVideoId = extractYouTubeMusicVideoId(nextSong.mediaUri) ?: return
+    private fun maybeWarmCurrentAndUpcomingYouTubeMusic(currentSongIndex: Int) {
+        val currentVideoId = currentPlaylist.getOrNull(currentSongIndex)
+            ?.let { extractYouTubeMusicVideoId(it.mediaUri) }
+        val nextVideoId = currentPlaylist.getOrNull(currentSongIndex + 1)
+            ?.let { extractYouTubeMusicVideoId(it.mediaUri) }
+        if (currentVideoId == null && nextVideoId == null) {
+            return
+        }
         ioScope.launch {
             runCatching {
-                youtubeMusicPlaybackRepository.prefetchPlayableAudioUrl(
-                    videoId = nextVideoId,
-                    preferredQualityOverride = youtubePreferredQuality
-                )
+                youtubeMusicPlaybackRepository.warmBootstrap()
             }.onFailure { error ->
                 NPLogger.w(
                     "NERI-PlayerManager",
-                    "Prefetch YouTube Music stream failed for $nextVideoId: ${error.message}"
+                    "Warm YouTube Music bootstrap failed: ${error.message}"
                 )
+            }
+        }
+        currentVideoId?.let { videoId ->
+            ioScope.launch {
+                runCatching {
+                    youtubeMusicPlaybackRepository.prefetchPlayableAudioUrl(
+                        videoId = videoId,
+                        preferredQualityOverride = youtubePreferredQuality,
+                        requireDirect = true
+                    )
+                }.onFailure { error ->
+                    NPLogger.w(
+                        "NERI-PlayerManager",
+                        "Warm current YouTube Music stream failed for $videoId: ${error.message}"
+                    )
+                }
+            }
+        }
+        nextVideoId?.let { videoId ->
+            ioScope.launch {
+                runCatching {
+                    youtubeMusicPlaybackRepository.prefetchPlayableAudioUrl(
+                        videoId = videoId,
+                        preferredQualityOverride = youtubePreferredQuality,
+                        requireDirect = true
+                    )
+                }.onFailure { error ->
+                    NPLogger.w(
+                        "NERI-PlayerManager",
+                        "Prefetch next YouTube Music stream failed for $videoId: ${error.message}"
+                    )
+                }
             }
         }
     }

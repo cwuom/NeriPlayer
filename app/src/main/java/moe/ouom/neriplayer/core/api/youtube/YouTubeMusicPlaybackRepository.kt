@@ -11,7 +11,11 @@ import java.util.Locale
 import java.util.TimeZone
 import kotlin.random.Random
 import kotlin.jvm.Volatile
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -122,6 +126,13 @@ private data class YouTubeWebRemixRequestMetadata(
 private data class CachedPlayableAudio(
     val audio: YouTubePlayableAudio,
     val cachedAtMs: Long
+)
+
+private data class InFlightPlayableAudioRequest(
+    val videoId: String,
+    val preferredQualityKey: String,
+    val requireDirect: Boolean,
+    val preferM4a: Boolean
 )
 
 private data class YouTubePlayerAudioCandidate(
@@ -718,6 +729,8 @@ class YouTubeMusicPlaybackRepository(
 ) {
     private val downloader = NewPipeOkHttpDownloader(okHttpClient, authProvider)
     private val playableAudioCache = linkedMapOf<String, CachedPlayableAudio>()
+    private val inFlightPlayableAudio = linkedMapOf<InFlightPlayableAudioRequest, kotlinx.coroutines.Deferred<YouTubePlayableAudio?>>()
+    private val inFlightPlayableAudioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val ejsChallengeSolver = applicationContext?.let {
         YouTubeEjsChallengeSolver(it, okHttpClient)
     }
@@ -735,9 +748,13 @@ class YouTubeMusicPlaybackRepository(
         val preferredQualityKey = resolvePreferredQualityKey(preferredQualityOverride)
         val cacheKey = if (preferM4a) "${preferredQualityKey}_m4a" else preferredQualityKey
         if (!forceRefresh) {
-            getCachedPlayableAudio(videoId, cacheKey)?.let { return@withContext it }
+            getCachedPlayableAudio(
+                videoId = videoId,
+                preferredQualityKey = cacheKey,
+                requireDirect = requireDirect
+            )?.let { return@withContext it }
         }
-        resolvePlayableAudio(
+        resolvePlayableAudioShared(
             videoId = videoId,
             preferredQualityKey = preferredQualityKey,
             requireDirect = requireDirect,
@@ -749,20 +766,43 @@ class YouTubeMusicPlaybackRepository(
 
     suspend fun prefetchPlayableAudioUrl(
         videoId: String,
-        preferredQualityOverride: String? = null
+        preferredQualityOverride: String? = null,
+        requireDirect: Boolean = false
     ) = withContext(Dispatchers.IO) {
         val preferredQualityKey = resolvePreferredQualityKey(preferredQualityOverride)
-        if (getCachedPlayableAudio(videoId, preferredQualityKey) != null) {
+        if (
+            getCachedPlayableAudio(
+                videoId = videoId,
+                preferredQualityKey = preferredQualityKey,
+                requireDirect = requireDirect
+            ) != null
+        ) {
             return@withContext
         }
-        resolvePlayableAudio(
+        resolvePlayableAudioShared(
             videoId = videoId,
             preferredQualityKey = preferredQualityKey,
-            requireDirect = false,
+            requireDirect = requireDirect,
             logFailure = false,
             preferM4a = false,
             cacheKey = preferredQualityKey
         )
+    }
+
+    suspend fun warmBootstrap() = withContext(Dispatchers.IO) {
+        val auth = authProvider().normalized()
+        if (!auth.hasLoginCookies()) {
+            return@withContext
+        }
+        runCatching {
+            bootstrap(auth = auth, forceRefresh = false)
+        }.onFailure { error ->
+            NPLogger.w(
+                "YouTubeMusicPlayback",
+                "Warm bootstrap failed",
+                error
+            )
+        }
     }
 
     private fun ensureInitialized() {
@@ -815,6 +855,52 @@ class YouTubeMusicPlaybackRepository(
         )?.mergeMetadataFrom(playerResolution?.metadata)
             ?.also { playableAudio ->
             cachePlayableAudio(videoId, cacheKey, playableAudio)
+        }
+    }
+
+    private suspend fun resolvePlayableAudioShared(
+        videoId: String,
+        preferredQualityKey: String,
+        requireDirect: Boolean,
+        logFailure: Boolean,
+        preferM4a: Boolean,
+        cacheKey: String
+    ): YouTubePlayableAudio? {
+        val request = InFlightPlayableAudioRequest(
+            videoId = videoId,
+            preferredQualityKey = preferredQualityKey,
+            requireDirect = requireDirect,
+            preferM4a = preferM4a
+        )
+        val deferred = synchronized(inFlightPlayableAudio) {
+            inFlightPlayableAudio[request] ?: inFlightPlayableAudioScope.async(
+                start = CoroutineStart.LAZY
+            ) {
+                resolvePlayableAudio(
+                    videoId = videoId,
+                    preferredQualityKey = preferredQualityKey,
+                    requireDirect = requireDirect,
+                    logFailure = logFailure,
+                    preferM4a = preferM4a,
+                    cacheKey = cacheKey
+                )
+            }.also { created ->
+                inFlightPlayableAudio[request] = created
+            }
+        }
+        if (!deferred.isActive && !deferred.isCompleted && !deferred.isCancelled) {
+            deferred.start()
+        }
+        return try {
+            deferred.await()
+        } finally {
+            synchronized(inFlightPlayableAudio) {
+                if (inFlightPlayableAudio[request] === deferred &&
+                    (deferred.isCompleted || deferred.isCancelled)
+                ) {
+                    inFlightPlayableAudio.remove(request)
+                }
+            }
         }
     }
 
@@ -1715,13 +1801,17 @@ class YouTubeMusicPlaybackRepository(
 
     private fun getCachedPlayableAudio(
         videoId: String,
-        preferredQualityKey: String
+        preferredQualityKey: String,
+        requireDirect: Boolean = false
     ): YouTubePlayableAudio? {
         val cacheKey = playableAudioCacheKey(videoId, preferredQualityKey)
         synchronized(playableAudioCache) {
             val cached = playableAudioCache[cacheKey] ?: return null
             if (System.currentTimeMillis() - cached.cachedAtMs > PLAYABLE_URL_CACHE_TTL_MS) {
                 playableAudioCache.remove(cacheKey)
+                return null
+            }
+            if (requireDirect && cached.audio.streamType != YouTubePlayableStreamType.DIRECT) {
                 return null
             }
             return cached.audio

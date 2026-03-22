@@ -888,4 +888,129 @@ class YouTubeMusicPlaybackRepositoryTest {
         assertTrue(manifestRequest.header("Authorization").isNullOrBlank())
         assertTrue(manifestRequest.header("Cookie").isNullOrBlank())
     }
+
+    @Test
+    fun getBestPlayableAudio_requireDirect_ignoresCachedHlsAndRefetchesDirect() = runBlocking {
+        val requests = mutableListOf<okhttp3.Request>()
+        var webRemixRequestCount = 0
+        val bootstrapHtml = """
+            <html>
+            <script>
+            ytcfg.set({
+              "INNERTUBE_API_KEY":"test-api-key",
+              "INNERTUBE_CLIENT_VERSION":"1.20260321.00.00",
+              "VISITOR_DATA":"visitor-data-123",
+              "jsUrl":"/s/player/test-player/base.js",
+              "SESSION_INDEX":"7",
+              "remoteHost":"13.114.209.29",
+              "STS":20529
+            });
+            </script>
+            </html>
+        """.trimIndent()
+        val webRemixHlsResponse = """
+            {
+              "playabilityStatus":{"status":"OK"},
+              "streamingData":{
+                "hlsManifestUrl":"https://manifest.googlevideo.com/api/manifest/hls_variant/id/demo/playlist/master.m3u8"
+              },
+              "videoDetails":{"lengthSeconds":"223"}
+            }
+        """.trimIndent()
+        val webRemixDirectResponse = """
+            {
+              "playabilityStatus":{"status":"OK"},
+              "streamingData":{
+                "adaptiveFormats":[
+                  {
+                    "mimeType":"audio/webm; codecs=\"opus\"",
+                    "url":"https://rr1---sn.googlevideo.com/videoplayback?id=web-remix-direct",
+                    "bitrate":128646,
+                    "audioSampleRate":"48000",
+                    "contentLength":"3586688",
+                    "approxDurationMs":"223041"
+                  }
+                ]
+              },
+              "videoDetails":{"lengthSeconds":"223"}
+            }
+        """.trimIndent()
+        val blockedPlayerResponse = """
+            {"playabilityStatus":{"status":"LOGIN_REQUIRED","reason":"blocked"}}
+        """.trimIndent()
+        val masterManifest = """
+            #EXTM3U
+            #EXT-X-MEDIA:URI="https://manifest.googlevideo.com/api/manifest/hls_variant/id/demo/playlist/audio/itag/234/playlist/index.m3u8",TYPE=AUDIO,GROUP-ID="234",NAME="Default"
+        """.trimIndent()
+
+        val client = OkHttpClient.Builder()
+            .addInterceptor(
+                Interceptor { chain ->
+                    val request = chain.request()
+                    requests += request
+                    val body = when {
+                        request.url.host == "music.youtube.com" && request.url.encodedPath == "/" -> {
+                            bootstrapHtml to "text/html; charset=utf-8"
+                        }
+                        request.url.encodedPath.contains("/youtubei/v1/player") -> {
+                            when (request.header("X-YouTube-Client-Name")) {
+                                "67" -> {
+                                    webRemixRequestCount += 1
+                                    if (webRemixRequestCount == 1) {
+                                        webRemixHlsResponse to "application/json; charset=utf-8"
+                                    } else {
+                                        webRemixDirectResponse to "application/json; charset=utf-8"
+                                    }
+                                }
+                                else -> blockedPlayerResponse to "application/json; charset=utf-8"
+                            }
+                        }
+                        request.url.host == "manifest.googlevideo.com" -> {
+                            masterManifest to "application/x-mpegURL"
+                        }
+                        else -> "{}" to "application/json; charset=utf-8"
+                    }
+                    Response.Builder()
+                        .request(request)
+                        .protocol(Protocol.HTTP_1_1)
+                        .code(200)
+                        .message("OK")
+                        .body(body.first.toResponseBody(body.second.toMediaType()))
+                        .build()
+                }
+            )
+            .build()
+
+        val authBundle = moe.ouom.neriplayer.data.YouTubeAuthBundle(
+            cookieHeader = "SAPISID=sap-value; SID=sid-value",
+            xGoogAuthUser = "7",
+            userAgent = "RepoUserAgent/1.0"
+        )
+        val playbackRepository = YouTubeMusicPlaybackRepository(
+            okHttpClient = client,
+            authProvider = { authBundle }
+        )
+
+        playbackRepository.prefetchPlayableAudioUrl(
+            videoId = "demo-video",
+            preferredQualityOverride = "very_high",
+            requireDirect = false
+        )
+        val playableAudio = playbackRepository.getBestPlayableAudio(
+            videoId = "demo-video",
+            preferredQualityOverride = "very_high",
+            requireDirect = true
+        )
+
+        assertNotNull(playableAudio)
+        assertEquals(YouTubePlayableStreamType.DIRECT, playableAudio?.streamType)
+        assertEquals(
+            "https://rr1---sn.googlevideo.com/videoplayback?id=web-remix-direct",
+            playableAudio?.url
+        )
+        assertEquals(2, webRemixRequestCount)
+        assertTrue(
+            requests.any { request -> request.url.host == "manifest.googlevideo.com" }
+        )
+    }
 }
