@@ -1,3 +1,5 @@
+[English](./CONTRIBUTING_EN.md) | [中文](./CONTRIBUTING.md)
+
 ## Contributing to NeriPlayer / 贡献指南
 
 感谢你愿意为 NeriPlayer 做出贡献。
@@ -8,7 +10,7 @@
 ### 项目定位 / Scope
 
 - NeriPlayer 是一个**原生 Android 音频播放器**，不是公共云端曲库服务。
-- 当前在线内容能力主要来自 **网易云音乐** 与 **Bilibili**。
+- 当前在线内容能力主要来自 **网易云音乐** 与 **Bilibili**，目前正在尝试适配 **YouTube Music**。
 - 播放页的元数据/歌词补全链路目前使用 **网易云 + QQ 音乐**。
 - 数据默认保存在本地；GitHub 同步是**可选**能力，且同步对象是歌单、
   收藏、播放历史等元数据，不是媒体文件本身。
@@ -20,7 +22,7 @@
 - **Android Studio**：最新稳定版
 - **compileSdk**：36
 - **targetSdk**：36
-- **minSdk**：29
+- **minSdk**：28
 - **Java / Kotlin**：Java 17，Kotlin `jvmTarget = 17`
 - **版本名格式**：`<git短哈希>.<MMddHHmm>`
 - **Release APK 文件名**：`NeriPlayer-<versionName>.apk`
@@ -88,8 +90,8 @@
 - `app/src/main/java/moe/ouom/neriplayer/activity/`
   - `MainActivity.kt` 是唯一对外入口，负责启动流程、免责声明、
     外部音频导入与顶层 Compose 宿主。
-  - `NeteaseWebLoginActivity.kt` 与 `BiliWebLoginActivity.kt`
-    是内部登录页，不是对外主入口。
+  - `NeteaseWebLoginActivity.kt`、`BiliWebLoginActivity.kt`
+    与 `YouTubeWebLoginActivity.kt` 是内部登录页，不是对外主入口。
 
 - `app/src/main/java/moe/ouom/neriplayer/ui/NeriApp.kt`
   - 顶层 Compose 应用骨架，负责 `NavHost`、动态底栏、
@@ -98,8 +100,11 @@
 - `app/src/main/java/moe/ouom/neriplayer/core/api/`
   - `netease/`：网易云接口与账号能力。
   - `bili/`：Bilibili 搜索、播放信息与音频拉流相关实现。
+  - `youtube/`：YouTube Music 客户端（基于 NewPipe Extractor）、
+    播放仓库、PoToken 与 JS Challenge 相关支持。
   - `search/`：播放页元数据/歌词补全接口，
     当前实现为 `CloudMusicSearchApi` 与 `QQMusicSearchApi`。
+  - `lyrics/`：歌词外部来源，当前实现为 `LrcLibClient`。
 
 - `app/src/main/java/moe/ouom/neriplayer/util/SearchManager.kt`
   - 统一封装播放页元数据匹配逻辑。
@@ -113,9 +118,13 @@
     为特定域名动态附加 `Referer / User-Agent / Cookie`。
   - `ReactiveRenderersFactory.kt`、`AudioReactive.kt`：
     为 Now Playing 的音频反应式动态背景提供实时音频能量。
+  - `YouTubeGoogleVideoRangeSupport.kt`、`YouTubeSeekRefreshPolicy.kt`：
+    YouTube Music 播放时处理 Google Video Range 请求与 Seek 刷新策略。
+  - `SleepTimerManager.kt`：睡眠定时器管理。
+  - `AudioDownloadManager.kt`：音频下载核心链路，解析多平台流获取直链，并保存到本地。
 
 - `app/src/main/java/moe/ouom/neriplayer/core/download/`
-  - `GlobalDownloadManager.kt` 维护下载任务与本地已下载列表。
+  - `GlobalDownloadManager.kt` 维护全局下载任务与本地已下载列表。
 
 - `app/src/main/java/moe/ouom/neriplayer/data/`
   - `SettingsDataStore.kt`：设置与常规状态。
@@ -133,10 +142,12 @@
 
 ### 当前能力边界 / Current Boundaries
 
-- `Explore` 当前是**网易精选歌单 + 网易/Bilibili 搜索**，
+- `Explore` 当前是**网易精选歌单 + YouTube Music 歌单 +
+  网易/Bilibili/YouTube Music 搜索**（YouTube Music 搜索暂未实现），
   Bilibili 还不是完整的发现流页面。
 - `Library` 中的 QQ 音乐入口仍为占位状态，不要按“完整平台已接入”理解。
-- `YouTube` 当前只有资源占位，尚无可用入口或播放实现。
+- `YouTube Music` 已实现登录、歌单浏览/详情、播放与下载；
+  Explore 中已作为搜索源注册，但搜索功能暂未实现。
 - 下载使用共享 `OkHttpClient` 写入应用专属目录，
   **不是**系统 `DownloadManager`、**不是**前台下载服务，
   当前也**没有断点续传**。
@@ -202,13 +213,7 @@
 ### 调试与日志 / Debugging & Logs
 
 - 开发者模式开启方式：设置页连续点击**版本号** 7 次。
-- 开启后底栏会出现独立 `Debug` 页，内含：
-  - Bilibili API Probe
-  - Netease API Probe
-  - Search API Probe
-  - 普通日志列表
-  - 崩溃日志列表
-  - 异常处理测试入口
+- 开启后底栏会出现独立 `Debug` 页
 
 日志说明：
 
