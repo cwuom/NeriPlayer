@@ -5,25 +5,27 @@ on:
     branches:
       - master
     paths-ignore:
+      - '*.md'
       - '**/*.md'
+      - '*.txt'
       - '**/*.txt'
       - 'renovate.json'
       - '.editorconfig'
       - '.gitignore'
       - '.github/**'
-      - '.github/workflows/**'
       - '.idea/**'
   pull_request:
     branches:
       - master
     paths-ignore:
+      - '*.md'
       - '**/*.md'
+      - '*.txt'
       - '**/*.txt'
       - 'renovate.json'
       - '.editorconfig'
       - '.gitignore'
       - '.github/**'
-      - '.github/workflows/**'
       - '.idea/**'
   workflow_dispatch:
 
