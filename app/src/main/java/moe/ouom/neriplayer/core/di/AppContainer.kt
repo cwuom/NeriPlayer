@@ -31,6 +31,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.api.bili.BiliClientAudioDataSource
@@ -148,6 +149,8 @@ object AppContainer {
     val cloudMusicSearchApi by lazy { CloudMusicSearchApi(neteaseClient) }
     val qqMusicSearchApi by lazy { QQMusicSearchApi() }
     val lrcLibClient by lazy { moe.ouom.neriplayer.core.api.lyrics.LrcLibClient(sharedOkHttpClient) }
+
+    fun launchBackgroundIo(block: suspend CoroutineScope.() -> Unit) = scope.launch(block = block)
 
 
     fun initialize(app: Application) {

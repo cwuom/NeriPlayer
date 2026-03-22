@@ -163,6 +163,7 @@ import moe.ouom.neriplayer.data.LocalMediaSupport
 import moe.ouom.neriplayer.data.displayArtist
 import moe.ouom.neriplayer.data.displayCoverUrl
 import moe.ouom.neriplayer.data.displayName
+import moe.ouom.neriplayer.data.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.isLocalSong
 import moe.ouom.neriplayer.data.isYouTubeMusicSong
 import moe.ouom.neriplayer.data.sameIdentityAs
@@ -194,6 +195,35 @@ private const val LyricsPageTransitionDurationMs = 300
 private const val CoverSourceBadgeRevealBufferMs = 120
 private const val CoverSourceBadgeRevealDelayMs =
     LyricsPageTransitionDurationMs + CoverSourceBadgeRevealBufferMs
+
+private fun buildRemoteSongShareUrl(originalSong: SongItem, queue: List<SongItem>): String {
+    extractYouTubeMusicVideoId(originalSong.mediaUri)?.let { videoId ->
+        return "https://music.youtube.com/watch?v=$videoId"
+    }
+
+    if (originalSong.album.startsWith(PlayerManager.BILI_SOURCE_TAG)) {
+        val videoParts = queue.filter {
+            it.id == originalSong.id && it.album.startsWith(PlayerManager.BILI_SOURCE_TAG)
+        }
+        if (videoParts.size > 1) {
+            val pageIndex = videoParts.indexOfFirst { it.album == originalSong.album }
+            val pageNumber = pageIndex + 1
+            if (pageIndex != -1) {
+                return "https://www.bilibili.com/video/av${originalSong.id}/?p=${pageNumber}"
+            }
+        }
+        return "https://www.bilibili.com/video/av${originalSong.id}"
+    }
+
+    val mediaUri = originalSong.mediaUri
+    return when {
+        originalSong.album.startsWith(PlayerManager.NETEASE_SOURCE_TAG) ->
+            "https://music.163.com/#/song?id=${originalSong.id}"
+        !mediaUri.isNullOrBlank() &&
+            (mediaUri.startsWith("https://") || mediaUri.startsWith("http://")) -> mediaUri
+        else -> "https://music.163.com/#/song?id=${originalSong.id}"
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalSharedTransitionApi::class)
 @Composable
@@ -1507,29 +1537,7 @@ fun MoreOptionsSheet(
                                         onDismiss()
                                     }
                                 } else {
-                                    val isFromBili = originalSong.album.startsWith(PlayerManager.BILI_SOURCE_TAG)
-
-                                    val url = if (isFromBili) {
-                                        // 筛选出队列中属于同一个B站视频的所有分P
-                                        val videoParts = queue.filter {
-                                            it.id == originalSong.id && it.album.startsWith(PlayerManager.BILI_SOURCE_TAG)
-                                        }
-                                        if (videoParts.size > 1) {
-                                            val pageIndex = videoParts.indexOfFirst {
-                                                it.album == originalSong.album
-                                            }
-                                            val pageNumber = pageIndex + 1
-                                            if (pageIndex != -1) {
-                                                "https://www.bilibili.com/video/av${originalSong.id}/?p=${pageNumber}"
-                                            } else {
-                                                "https://www.bilibili.com/video/av${originalSong.id}"
-                                            }
-                                        } else {
-                                            "https://www.bilibili.com/video/av${originalSong.id}"
-                                        }
-                                    } else {
-                                        "https://music.163.com/#/song?id=${originalSong.id}"
-                                    }
+                                    val url = buildRemoteSongShareUrl(originalSong, queue)
 
                                     val shareText = context.getString(R.string.nowplaying_share_song, originalSong.name, originalSong.artist, url)
 

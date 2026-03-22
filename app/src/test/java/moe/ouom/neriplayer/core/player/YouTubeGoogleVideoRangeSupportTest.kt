@@ -49,10 +49,46 @@ class YouTubeGoogleVideoRangeSupportTest {
     }
 
     @Test
+    fun shouldForceExplicitFullRange_matchesResolvedWebRemixDirectUrlWithContentLength() {
+        val url =
+            "https://rr1---sn-aigl6ney.googlevideo.com/videoplayback" +
+                "?source=youtube&id=audio-demo&n=resolved-n&sig=resolved-signature&mime=audio%2Fwebm&clen=3965665"
+
+        assertTrue(YouTubeGoogleVideoRangeSupport.shouldForceExplicitFullRange(url))
+    }
+
+    @Test
+    fun resolveQueryContentLength_readsClenFromUrl() {
+        val url =
+            "https://rr1---sn-aigl6ney.googlevideo.com/videoplayback" +
+                "?source=youtube&clen=3965665&mime=audio%2Fwebm"
+
+        assertEquals(3_965_665L, YouTubeGoogleVideoRangeSupport.resolveQueryContentLength(url))
+    }
+
+    @Test
+    fun buildFullRangeHeader_buildsInclusiveRange() {
+        assertEquals("bytes=0-3965664", YouTubeGoogleVideoRangeSupport.buildFullRangeHeader(3_965_665L))
+    }
+
+    @Test
     fun candidateChunkLengths_clampsToRequestedLength() {
         val candidates = YouTubeGoogleVideoRangeSupport.candidateChunkLengths(300_000L)
 
         assertEquals(listOf(300_000L, 150_000L, 131_072L), candidates)
+    }
+
+    @Test
+    fun candidateChunkLengths_respectsLargerPreferredChunkSize() {
+        val candidates = YouTubeGoogleVideoRangeSupport.candidateChunkLengths(
+            requestLength = 10L * 1024L * 1024L,
+            preferredChunkSize = 4L * 1024L * 1024L
+        )
+
+        assertEquals(
+            listOf(4_194_304L, 2_097_152L, 1_048_576L, 524_288L, 262_144L, 131_072L),
+            candidates
+        )
     }
 
     @Test

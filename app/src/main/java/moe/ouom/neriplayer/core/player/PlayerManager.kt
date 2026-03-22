@@ -1723,11 +1723,24 @@ object PlayerManager {
         }
 
         try {
-            val playableAudio = youtubeMusicPlaybackRepository.getBestPlayableAudio(
+            val directPlayableAudio = youtubeMusicPlaybackRepository.getBestPlayableAudio(
                 videoId = videoId,
                 preferredQualityOverride = youtubePreferredQuality,
-                forceRefresh = forceRefresh
+                forceRefresh = forceRefresh,
+                requireDirect = true
             )
+            val playableAudio = directPlayableAudio?.takeIf { !it.url.isNullOrBlank() }
+                ?: run {
+                    NPLogger.d(
+                        "NERI-PlayerManager",
+                        "YouTube Music direct stream unavailable, falling back for $videoId"
+                    )
+                    youtubeMusicPlaybackRepository.getBestPlayableAudio(
+                        videoId = videoId,
+                        preferredQualityOverride = youtubePreferredQuality,
+                        forceRefresh = forceRefresh
+                    )
+                }
             val resolvedPlayableAudio = playableAudio?.takeIf { !it.url.isNullOrBlank() }
             if (resolvedPlayableAudio != null) {
                 maybeUpdateSongDuration(song, resolvedPlayableAudio.durationMs)

@@ -270,6 +270,7 @@ class YouTubeMusicPlaybackRepositoryTest {
 
     @Test
     fun getBestPlayableAudio_prefersWebRemixDirectOverEarlierHlsProfile() = runBlocking {
+        val requests = mutableListOf<okhttp3.Request>()
         val bootstrapHtml = """
             <html>
             <script>
@@ -321,6 +322,7 @@ class YouTubeMusicPlaybackRepositoryTest {
             .addInterceptor(
                 Interceptor { chain ->
                     val request = chain.request()
+                    requests += request
                     val body = when {
                         request.url.host == "music.youtube.com" && request.url.encodedPath == "/" -> {
                             bootstrapHtml to "text/html; charset=utf-8"
@@ -383,6 +385,14 @@ class YouTubeMusicPlaybackRepositoryTest {
         assertEquals(
             "https://rr1---sn.googlevideo.com/videoplayback?id=audio-web-remix&n=resolved-n&sig=resolved-signature",
             playableAudio?.url
+        )
+        assertEquals(
+            "67",
+            requests.firstOrNull { it.url.encodedPath.contains("/youtubei/v1/player") }
+                ?.header("X-YouTube-Client-Name")
+        )
+        assertTrue(
+            requests.none { request -> request.url.host == "manifest.googlevideo.com" }
         )
     }
 
@@ -623,7 +633,7 @@ class YouTubeMusicPlaybackRepositoryTest {
     }
 
     @Test
-    fun getBestPlayableAudio_prefersLaterDirectOverEarlierHlsAcrossPlayerClients() = runBlocking {
+    fun getBestPlayableAudio_prefersWebRemixDirectWithoutFetchingEarlierHlsManifest() = runBlocking {
         val requests = mutableListOf<okhttp3.Request>()
         val bootstrapHtml = """
             <html>
@@ -735,16 +745,13 @@ class YouTubeMusicPlaybackRepositoryTest {
             "https://rr1---sn.googlevideo.com/videoplayback?id=web-remix-direct&n=resolved-n&sig=resolved-signature",
             playableAudio?.url
         )
-        assertTrue(
-            requests.any { request ->
-                request.url.host == "manifest.googlevideo.com"
-            }
+        assertEquals(
+            "67",
+            requests.firstOrNull { it.url.encodedPath.contains("/youtubei/v1/player") }
+                ?.header("X-YouTube-Client-Name")
         )
         assertTrue(
-            requests.any { request ->
-                request.url.encodedPath.contains("/youtubei/v1/player") &&
-                    request.header("X-YouTube-Client-Name") == "67"
-            }
+            requests.none { request -> request.url.host == "manifest.googlevideo.com" }
         )
     }
 

@@ -883,23 +883,27 @@ class YouTubeMusicPlaybackRepository(
                     )
                     bestMetadata = bestMetadata.mergePreferred(metadata)
                     val playableAudio = if (playability.status == "OK") {
-                        val hlsPlayableAudio = runCatching {
-                            if (requireDirect) null else resolveHlsPlayableAudio(
-                                root = root,
-                                preferredQualityKey = preferredQualityKey,
-                                auth = auth,
-                                durationMs = metadata?.durationMs ?: 0L
-                            )
-                        }.getOrElse { error ->
-                            lastError = error as? IOException ?: IOException(error)
-                            null
-                        }
                         val directPlayableAudio = YouTubeMusicPlaybackParser.parsePlayableAudio(
                             root = root,
                             preferredQualityKey = preferredQualityKey,
                             preferM4a = preferM4a,
                             cipherResolver = cipherResolver
                         )
+                        val hlsPlayableAudio = runCatching {
+                            if (requireDirect || directPlayableAudio != null) {
+                                null
+                            } else {
+                                resolveHlsPlayableAudio(
+                                    root = root,
+                                    preferredQualityKey = preferredQualityKey,
+                                    auth = auth,
+                                    durationMs = metadata?.durationMs ?: 0L
+                                )
+                            }
+                        }.getOrElse { error ->
+                            lastError = error as? IOException ?: IOException(error)
+                            null
+                        }
                         selectPreferredPlayableAudio(
                             current = hlsPlayableAudio,
                             incoming = directPlayableAudio,
@@ -1585,6 +1589,17 @@ class YouTubeMusicPlaybackRepository(
     private fun playerClientProfiles(): List<YouTubePlayerClientProfile> {
         return listOf(
             YouTubePlayerClientProfile(
+                clientId = YOUTUBE_PLAYER_WEB_REMIX_CLIENT_ID,
+                clientName = YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME,
+                clientVersion = "1.20250101.01.00",
+                userAgent = YOUTUBE_PLAYER_WEB_REMIX_USER_AGENT,
+                endpointPath = "player",
+                platform = "DESKTOP",
+                clientScreen = YOUTUBE_PLAYER_WEB_REMIX_CLIENT_SCREEN,
+                osName = "Windows",
+                osVersion = "10.0"
+            ),
+            YouTubePlayerClientProfile(
                 clientId = "85",
                 clientName = "TVHTML5_SIMPLYLITE",
                 clientVersion = "2.0",
@@ -1604,17 +1619,6 @@ class YouTubeMusicPlaybackRepository(
                 osName = "Android",
                 osVersion = "14",
                 androidSdkVersion = 34
-            ),
-            YouTubePlayerClientProfile(
-                clientId = YOUTUBE_PLAYER_WEB_REMIX_CLIENT_ID,
-                clientName = YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME,
-                clientVersion = "1.20250101.01.00",
-                userAgent = YOUTUBE_PLAYER_WEB_REMIX_USER_AGENT,
-                endpointPath = "player",
-                platform = "DESKTOP",
-                clientScreen = YOUTUBE_PLAYER_WEB_REMIX_CLIENT_SCREEN,
-                osName = "Windows",
-                osVersion = "10.0"
             ),
             YouTubePlayerClientProfile(
                 clientId = YOUTUBE_PLAYER_IOS_CLIENT_ID,

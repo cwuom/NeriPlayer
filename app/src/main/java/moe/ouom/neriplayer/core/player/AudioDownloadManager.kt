@@ -31,6 +31,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -74,7 +75,8 @@ object AudioDownloadManager {
     private const val TAG = "NERI-Downloader"
     private const val BILI_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     private const val BILI_REFERER = "https://www.bilibili.com"
-    private const val DOWNLOAD_READ_BUFFER_BYTES = 8L * 1024L
+    private const val DOWNLOAD_READ_BUFFER_BYTES = 64L * 1024L
+    private const val YOUTUBE_DOWNLOAD_PREFERRED_CHUNK_SIZE_BYTES = 4L * 1024L * 1024L
 
     private val _progressFlow = MutableStateFlow<DownloadProgress?>(null)
     val progressFlow: StateFlow<DownloadProgress?> = _progressFlow
@@ -127,6 +129,7 @@ object AudioDownloadManager {
     suspend fun downloadSong(context: Context, song: SongItem) {
         withContext(Dispatchers.IO) {
             val songKey = song.stableKey()
+            var sidecarJob: Job? = null
             try {
                 // 检查文件是否已存在
                 if (LocalSongSupport.isLocalSong(song, context)) {
@@ -182,28 +185,7 @@ object AudioDownloadManager {
                 val tempFile = File(downloadDir, "$fileName.downloading")
                 if (tempFile.exists()) tempFile.delete()
 
-                // 同时下载歌词（所有歌曲都尝试，downloadLyrics内部会判断）
-                downloadLyrics(context, song)
-
-                // 封面缓存（使用 baseName 作为关联名，保证扫描可命中）
-                try {
-                    val baseDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir
-                    val downloadDir = File(baseDir, "NeriPlayer")
-                    val coverDir = File(downloadDir, "Covers").apply { mkdirs() }
-                    // 优先用网络封面
-                    val coverUrl = song.displayCoverUrl()
-                    if (!coverUrl.isNullOrBlank()) {
-                        val coverFile = File(coverDir, "$baseName.jpg")
-                        val req = Request.Builder().url(coverUrl).build()
-                        val resp = AppContainer.sharedOkHttpClient.newCall(req).execute()
-                        if (resp.isSuccessful) {
-                            resp.body.byteStream().use { input ->
-                                coverFile.outputStream().use { output -> input.copyTo(output) }
-                            }
-                        }
-                        resp.close()
-                    }
-                } catch (_: Exception) {}
+                sidecarJob = launchSidecarDownload(context, song, baseName)
 
                 val reqBuilder = Request.Builder().url(url)
                 if (isBili) {
@@ -220,6 +202,18 @@ object AudioDownloadManager {
                         streamUrl = url
                     ).forEach { (name, value) ->
                         reqBuilder.header(name, value)
+                    }
+                    val totalContentLength = resolved.contentLength
+                        ?: YouTubeGoogleVideoRangeSupport.resolveQueryContentLength(url)
+                    if (
+                        resolved.streamType == YouTubePlayableStreamType.DIRECT &&
+                        totalContentLength != null &&
+                        YouTubeGoogleVideoRangeSupport.shouldForceExplicitFullRange(url)
+                    ) {
+                        reqBuilder.header(
+                            "Range",
+                            YouTubeGoogleVideoRangeSupport.buildFullRangeHeader(totalContentLength)
+                        )
                     }
                 }
 
@@ -261,6 +255,7 @@ object AudioDownloadManager {
                 } catch (_: Exception) { }
 
             } catch (e: Exception) {
+                sidecarJob?.cancel()
                 if (
                     e is java.util.concurrent.CancellationException ||
                         _isCancelled.value ||
@@ -274,6 +269,54 @@ object AudioDownloadManager {
                 NPLogger.e(TAG, "下载失败: ${song.name}, 错误: ${e.javaClass.simpleName} - ${e.message}", e)
                 _progressFlow.value = null
                 throw e  // 重新抛出异常，让调用方知道下载失败
+            }
+        }
+    }
+
+    private fun launchSidecarDownload(
+        context: Context,
+        song: SongItem,
+        baseName: String
+    ): Job {
+        return AppContainer.launchBackgroundIo {
+            runCatching {
+                downloadLyrics(context, song)
+            }.onFailure { error ->
+                NPLogger.w(TAG, "歌词后台下载失败: ${song.name} - ${error.message}")
+            }
+            runCatching {
+                cacheCover(context, song, baseName)
+            }.onFailure { error ->
+                NPLogger.w(TAG, "封面后台下载失败: ${song.name} - ${error.message}")
+            }
+        }
+    }
+
+    private fun cacheCover(
+        context: Context,
+        song: SongItem,
+        baseName: String
+    ) {
+        val baseDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir
+        val downloadDir = File(baseDir, "NeriPlayer")
+        val coverDir = File(downloadDir, "Covers").apply { mkdirs() }
+        val coverUrl = song.displayCoverUrl()
+        if (coverUrl.isNullOrBlank()) {
+            return
+        }
+
+        val coverFile = File(coverDir, "$baseName.jpg")
+        if (coverFile.exists() && coverFile.length() > 0L) {
+            return
+        }
+
+        val req = Request.Builder().url(coverUrl).build()
+        AppContainer.sharedOkHttpClient.newCall(req).execute().use { response ->
+            if (!response.isSuccessful) {
+                return
+            }
+            response.body.byteStream().use { input ->
+                coverFile.outputStream().use { output -> input.copyTo(output) }
             }
         }
     }
@@ -683,13 +726,23 @@ fun getLocalFilePath(context: Context, song: SongItem): String? {
 
     private suspend fun resolveYouTubeMusic(song: SongItem): ResolvedDownloadSource? {
         val videoId = extractYouTubeMusicVideoId(song.mediaUri) ?: return null
-        val playableAudio = AppContainer.youtubeMusicPlaybackRepository.getBestPlayableAudio(
-            videoId = videoId,
-            forceRefresh = true,
-            requireDirect = false,
-            preferM4a = true
-        )
+        val playbackRepository = AppContainer.youtubeMusicPlaybackRepository
+        suspend fun resolve(forceRefresh: Boolean, requireDirect: Boolean) =
+            playbackRepository.getBestPlayableAudio(
+                videoId = videoId,
+                forceRefresh = forceRefresh,
+                requireDirect = requireDirect,
+                preferM4a = true
+            )
+        val directPlayableAudio = resolve(forceRefresh = false, requireDirect = true)
+            ?: resolve(forceRefresh = true, requireDirect = true)
+        val playableAudio = directPlayableAudio
+            ?: resolve(forceRefresh = false, requireDirect = false)
+            ?: resolve(forceRefresh = true, requireDirect = false)
             ?: return null
+        if (directPlayableAudio == null && playableAudio.streamType == YouTubePlayableStreamType.HLS) {
+            NPLogger.w(TAG, "YouTube Music 下载未拿到直链，回退 HLS: videoId=$videoId")
+        }
         if (playableAudio.streamType == YouTubePlayableStreamType.HLS) {
             return ResolvedDownloadSource(
                 url = playableAudio.url,
@@ -986,7 +1039,8 @@ fun getLocalFilePath(context: Context, song: SongItem): String? {
 
                 try {
                     val chunkResult = YouTubeGoogleVideoRangeSupport.executeChunkLengthFallback(
-                        remainingRequestLength
+                        requestLength = remainingRequestLength,
+                        preferredChunkSize = YOUTUBE_DOWNLOAD_PREFERRED_CHUNK_SIZE_BYTES
                     ) { chunkLength ->
                         downloadChunk(
                             client = client,
@@ -1006,7 +1060,10 @@ fun getLocalFilePath(context: Context, song: SongItem): String? {
                     totalBytes = chunkResult.value.totalBytes
                     if (
                         chunkResult.chunkLength !=
-                        YouTubeGoogleVideoRangeSupport.candidateChunkLengths(remainingRequestLength).first()
+                        YouTubeGoogleVideoRangeSupport.candidateChunkLengths(
+                            requestLength = remainingRequestLength,
+                            preferredChunkSize = YOUTUBE_DOWNLOAD_PREFERRED_CHUNK_SIZE_BYTES
+                        ).first()
                     ) {
                         NPLogger.w(
                             TAG,

@@ -68,17 +68,51 @@ internal object YouTubeGoogleVideoRangeSupport {
         return shouldUseChunkedRange(request.url.toString())
     }
 
+    fun resolveQueryContentLength(url: String): Long? {
+        return Regex("""(?:\?|&)clen=(\d+)""")
+            .find(url)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.toLongOrNull()
+            ?.takeIf { it > 0L }
+    }
+
+    fun shouldForceExplicitFullRange(url: String): Boolean {
+        val uri = runCatching { java.net.URI(url) }.getOrNull() ?: return false
+        val host = uri.host?.lowercase(Locale.US) ?: return false
+        if (!host.contains("googlevideo.com")) {
+            return false
+        }
+        val path = uri.path?.lowercase(Locale.US).orEmpty()
+        if (host.startsWith("manifest.") || path.contains("/api/manifest/")) {
+            return false
+        }
+        if (path.contains("/playlist/index.m3u8") || path.contains("/file/seg.ts")) {
+            return false
+        }
+        return supportsSeekingWithoutUrlRefresh(url) && resolveQueryContentLength(url) != null
+    }
+
+    fun buildFullRangeHeader(totalContentLength: Long): String {
+        require(totalContentLength > 0L) { "totalContentLength must be positive" }
+        return "bytes=0-${totalContentLength - 1L}"
+    }
+
     fun hasExplicitRangeHeader(headers: Map<String, String>): Boolean {
         return headers.keys.any { it.equals("Range", ignoreCase = true) }
     }
 
-    fun candidateChunkLengths(requestLength: Long): List<Long> {
+    fun candidateChunkLengths(
+        requestLength: Long,
+        preferredChunkSize: Long = DEFAULT_CHUNK_SIZE_BYTES
+    ): List<Long> {
+        val normalizedPreferredChunkSize = preferredChunkSize.coerceAtLeast(MIN_CHUNK_SIZE_BYTES)
         val maxChunk = when {
-            requestLength in 1 until DEFAULT_CHUNK_SIZE_BYTES -> requestLength
-            else -> DEFAULT_CHUNK_SIZE_BYTES
+            requestLength in 1 until normalizedPreferredChunkSize -> requestLength
+            else -> normalizedPreferredChunkSize
         }
         if (maxChunk <= 0L) {
-            return listOf(DEFAULT_CHUNK_SIZE_BYTES)
+            return listOf(normalizedPreferredChunkSize)
         }
 
         val candidates = linkedSetOf<Long>()
@@ -116,9 +150,13 @@ internal object YouTubeGoogleVideoRangeSupport {
 
     inline fun <T> executeChunkLengthFallback(
         requestLength: Long,
+        preferredChunkSize: Long = DEFAULT_CHUNK_SIZE_BYTES,
         execute: (Long) -> T
     ): ChunkLengthFallbackResult<T> {
-        val chunkCandidates = candidateChunkLengths(requestLength)
+        val chunkCandidates = candidateChunkLengths(
+            requestLength = requestLength,
+            preferredChunkSize = preferredChunkSize
+        )
         var lastError: IOException? = null
         chunkCandidates.forEachIndexed { index, chunkLength ->
             try {
@@ -149,12 +187,7 @@ internal object YouTubeGoogleVideoRangeSupport {
             return fromContentRange
         }
 
-        val fromQuery = Regex("""(?:\?|&)clen=(\d+)""")
-            .find(url)
-            ?.groupValues
-            ?.getOrNull(1)
-            ?.toLongOrNull()
-            ?.takeIf { it > 0L }
+        val fromQuery = resolveQueryContentLength(url)
         if (fromQuery != null) {
             return fromQuery
         }
