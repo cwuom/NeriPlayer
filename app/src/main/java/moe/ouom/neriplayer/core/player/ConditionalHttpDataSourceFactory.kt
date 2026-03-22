@@ -151,10 +151,21 @@ class ConditionalHttpDataSourceFactory(
         val refererOrigin = original["Referer"].orEmpty()
             .removeSuffix("/")
             .ifBlank { latestYouTubeAuth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN } }
-        return latestYouTubeAuth.buildYouTubeStreamRequestHeaders(
+        val headers = latestYouTubeAuth.buildYouTubeStreamRequestHeaders(
             original = original,
             refererOrigin = refererOrigin,
             streamUrl = streamUrl
         )
+        if (YouTubeGoogleVideoRangeSupport.hasExplicitRangeHeader(headers)) {
+            return headers
+        }
+        if (!YouTubeGoogleVideoRangeSupport.shouldForceExplicitFullRange(streamUrl)) {
+            return headers
+        }
+        val totalContentLength =
+            YouTubeGoogleVideoRangeSupport.resolveQueryContentLength(streamUrl) ?: return headers
+        return LinkedHashMap(headers).apply {
+            put("Range", YouTubeGoogleVideoRangeSupport.buildFullRangeHeader(totalContentLength))
+        }
     }
 }
