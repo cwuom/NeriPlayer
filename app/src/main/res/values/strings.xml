@@ -426,7 +426,7 @@
     <string name="debug_search_probe">多平台搜索接口探针</string>
     <string name="debug_netease">网易云调试</string>
     <string name="debug_netease_api">网易云接口调试</string>
-    <string name="debug_netease_probe">网易云接口探针</string>
+    <string name="debug_netease_probe">网易云接口调试</string>
     <string name="debug_bili_api">哔哩哔哩接口调试</string>
     <string name="debug_copy_all">复制全部</string>
     <string name="debug_call_all_copy">一键调用全部并复制到剪贴板</string>
@@ -435,7 +435,7 @@
     <string name="debug_bili_api_desc">搜索 / 取封面简介 / 统计 / 取流 / 收藏夹</string>
     <string name="debug_netease_api_desc">账户 / 歌单 / 歌曲 URL / 歌词</string>
     <string name="debug_search_api_desc">QQ / 网易云</string>
-    <string name="debug_youtube_probe_title">YouTube Music API Debug</string>
+    <string name="debug_youtube_probe_title">YouTube Music 接口调试</string>
     <string name="debug_youtube_probe_desc">使用当前用户登录态测试 YouTube Music 的 Home Feed 与媒体库；未登录时将自动走匿名请求。</string>
     <string name="debug_youtube_probe_desc_short">使用当前登录态测试 Home Feed 与媒体库；未登录则匿名请求</string>
     <string name="debug_youtube_probe_action_home">测试 Home Feed</string>
