@@ -1046,7 +1046,7 @@ fun SettingsScreen(
                 ListItem(
                     leadingContent = {
                         Icon(
-                            imageVector = Icons.Outlined.Language,
+                            painter = painterResource(id = R.drawable.ic_i18n),
                             contentDescription = stringResource(R.string.settings_internationalization),
                             modifier = Modifier.size(24.dp),
                             tint = MaterialTheme.colorScheme.onSurface
