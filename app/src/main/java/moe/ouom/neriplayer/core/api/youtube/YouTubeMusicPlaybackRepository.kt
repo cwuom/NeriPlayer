@@ -6,8 +6,10 @@ import java.io.IOException
 import java.net.URI
 import java.net.URLDecoder
 import java.net.URLEncoder
+import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
+import kotlin.random.Random
 import kotlin.jvm.Volatile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -29,6 +31,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
 import org.json.JSONObject
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
@@ -53,7 +56,26 @@ private const val YOUTUBE_PLAYER_IOS_USER_AGENT =
     "com.google.ios.youtube/21.03.2(iPhone16,2; U; CPU iOS 18_7_2 like Mac OS X; US)"
 private const val YOUTUBE_PLAYER_IOS_DEVICE_MODEL = "iPhone16,2"
 private const val YOUTUBE_PLAYER_IOS_OS_VERSION = "18.7.2.22H124"
+private const val YOUTUBE_PLAYER_WEB_REMIX_CLIENT_ID = "67"
 private const val YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME = "WEB_REMIX"
+private const val YOUTUBE_PLAYER_WEB_REMIX_USER_AGENT =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+        "(KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+private const val YOUTUBE_PLAYER_WEB_REMIX_PARAMS = "igMDCNgE"
+private const val YOUTUBE_PLAYER_WEB_REMIX_ACCEPT_HEADER =
+    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp," +
+        "image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
+private const val YOUTUBE_PLAYER_WEB_REMIX_CLIENT_FORM_FACTOR = "UNKNOWN_FORM_FACTOR"
+private const val YOUTUBE_PLAYER_WEB_REMIX_PLAYER_TYPE = "UNIPLAYER"
+private const val YOUTUBE_PLAYER_WEB_REMIX_UI_THEME = "USER_INTERFACE_THEME_DARK"
+private const val YOUTUBE_PLAYER_WEB_REMIX_CLIENT_SCREEN = "WATCH_FULL_SCREEN"
+private const val YOUTUBE_PLAYER_WEB_REMIX_BROWSER_CHANNEL = "stable"
+private const val YOUTUBE_PLAYER_WEB_REMIX_BROWSER_VALIDATION = "ay2VkFgiz37bVmZ/apUEVmB+zrQ="
+private const val YOUTUBE_PLAYER_WEB_REMIX_CONNECTION_TYPE = "CONN_WIFI"
+private const val YOUTUBE_PLAYER_WEB_REMIX_SCREEN_WIDTH_POINTS = 982
+private const val YOUTUBE_PLAYER_WEB_REMIX_SCREEN_HEIGHT_POINTS = 1511
+private const val YOUTUBE_PLAYER_WEB_REMIX_SCREEN_PIXEL_DENSITY = 1
+private const val YOUTUBE_PLAYER_WEB_REMIX_SCREEN_DENSITY_FLOAT = 1.0
 
 private const val YOUTUBE_PLAYER_API_BASE_URL = "https://youtubei.googleapis.com/youtubei/v1"
 private const val YOUTUBE_PLAYER_API_FORMAT_VERSION = "2"
@@ -85,7 +107,16 @@ private data class YouTubePlaybackBootstrap(
     val cookieHeader: String,
     val sessionIndex: String,
     val userAgent: String,
+    val remoteHost: String,
+    val signatureTimestamp: Int?,
     val fetchedAtMs: Long
+)
+
+private data class YouTubeWebRemixRequestMetadata(
+    val originalUrl: String,
+    val playlistId: String,
+    val cpn: String,
+    val clientScreenNonce: String
 )
 
 private data class CachedPlayableAudio(
@@ -1054,7 +1085,8 @@ class YouTubeMusicPlaybackRepository(
         auth: YouTubeAuthBundle
     ): Request {
         val headers = auth.buildYouTubeStreamRequestHeaders(
-            refererOrigin = auth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN }
+            refererOrigin = auth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN },
+            streamUrl = url
         )
         return Request.Builder()
             .url(url)
@@ -1077,12 +1109,18 @@ class YouTubeMusicPlaybackRepository(
         val origin = resolvePlayerRequestOrigin(profile)
         val clientVersion = resolvePlayerClientVersion(profile, bootstrap)
         val userAgent = resolvePlayerRequestUserAgent(profile, bootstrap)
+        val webRemixMetadata = if (profile.clientName == YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME) {
+            buildWebRemixRequestMetadata(videoId)
+        } else {
+            null
+        }
         val body = buildPlayerRequestBody(
             videoId = videoId,
             profile = profile,
             bootstrap = bootstrap,
             clientVersion = clientVersion,
-            userAgent = userAgent
+            userAgent = userAgent,
+            webRemixMetadata = webRemixMetadata
         )
         val requestHeaders = linkedMapOf(
             "Cookie" to bootstrap.cookieHeader,
@@ -1100,8 +1138,13 @@ class YouTubeMusicPlaybackRepository(
         requestHeaders["Origin"] = origin
         if (profile.clientName == "WEB_REMIX") {
             requestHeaders["X-Origin"] = origin
+            requestHeaders["X-YouTube-Bootstrap-Logged-In"] = auth.hasLoginCookies().toString()
+            requestHeaders["X-Browser-Channel"] = YOUTUBE_PLAYER_WEB_REMIX_BROWSER_CHANNEL
+            requestHeaders["X-Browser-Copyright"] = currentBrowserCopyright()
+            requestHeaders["X-Browser-Validation"] = YOUTUBE_PLAYER_WEB_REMIX_BROWSER_VALIDATION
+            requestHeaders["X-Browser-Year"] = currentBrowserYear().toString()
         }
-        requestHeaders["Referer"] = "$origin/"
+        requestHeaders["Referer"] = webRemixMetadata?.originalUrl ?: "$origin/"
 
         auth.resolveAuthorizationHeader(origin = origin)
             .takeIf { it.isNotBlank() }
@@ -1128,7 +1171,8 @@ class YouTubeMusicPlaybackRepository(
         profile: YouTubePlayerClientProfile,
         bootstrap: YouTubePlaybackBootstrap,
         clientVersion: String,
-        userAgent: String
+        userAgent: String,
+        webRemixMetadata: YouTubeWebRemixRequestMetadata? = null
     ): JSONObject {
         val requestLocale = currentPlayerRequestLocale()
         val clientContext = JSONObject()
@@ -1138,14 +1182,37 @@ class YouTubeMusicPlaybackRepository(
             .put("hl", requestLocale.hl)
             .put("gl", requestLocale.gl)
             .put("utcOffsetMinutes", utcOffsetMinutes())
-        if (profile.clientName != "WEB_REMIX") {
+        if (profile.clientScreen.isNotBlank()) {
             clientContext.put("clientScreen", profile.clientScreen)
         }
         if (bootstrap.visitorData.isNotBlank()) {
             clientContext.put("visitorData", bootstrap.visitorData)
         }
-        if (profile.clientName == "WEB_REMIX" && userAgent.isNotBlank()) {
-            clientContext.put("userAgent", userAgent)
+        if (profile.clientName == YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME && userAgent.isNotBlank()) {
+            // WEB_REMIX 需要更接近浏览器 watch 页的 client 上下文，避免退回到风险更高的移动端直链。
+            clientContext.put("deviceMake", "")
+            clientContext.put("deviceModel", "")
+            clientContext.put("userAgent", ensureGfeUserAgent(userAgent))
+            clientContext.put("browserName", resolveBrowserName(userAgent))
+            clientContext.put("browserVersion", resolveBrowserVersion(userAgent))
+            clientContext.put("timeZone", currentTimeZoneId())
+            clientContext.put("originalUrl", webRemixMetadata?.originalUrl.orEmpty())
+            clientContext.put("acceptHeader", YOUTUBE_PLAYER_WEB_REMIX_ACCEPT_HEADER)
+            clientContext.put("clientFormFactor", YOUTUBE_PLAYER_WEB_REMIX_CLIENT_FORM_FACTOR)
+            clientContext.put("playerType", YOUTUBE_PLAYER_WEB_REMIX_PLAYER_TYPE)
+            clientContext.put("userInterfaceTheme", YOUTUBE_PLAYER_WEB_REMIX_UI_THEME)
+            clientContext.put("connectionType", YOUTUBE_PLAYER_WEB_REMIX_CONNECTION_TYPE)
+            clientContext.put("screenWidthPoints", YOUTUBE_PLAYER_WEB_REMIX_SCREEN_WIDTH_POINTS)
+            clientContext.put("screenHeightPoints", YOUTUBE_PLAYER_WEB_REMIX_SCREEN_HEIGHT_POINTS)
+            clientContext.put("screenPixelDensity", YOUTUBE_PLAYER_WEB_REMIX_SCREEN_PIXEL_DENSITY)
+            clientContext.put("screenDensityFloat", YOUTUBE_PLAYER_WEB_REMIX_SCREEN_DENSITY_FLOAT)
+            clientContext.put("tvAppInfo", JSONObject())
+            clientContext.put("configInfo", JSONObject().put("appInstallData", ""))
+            clientContext.put("rolloutToken", "")
+            clientContext.put("deviceExperimentId", "")
+            bootstrap.remoteHost.takeIf { it.isNotBlank() }?.let { remoteHost ->
+                clientContext.put("remoteHost", remoteHost)
+            }
         }
         profile.deviceMake?.let { clientContext.put("deviceMake", it) }
         profile.deviceModel?.let { clientContext.put("deviceModel", it) }
@@ -1153,13 +1220,37 @@ class YouTubeMusicPlaybackRepository(
         profile.osVersion?.let { clientContext.put("osVersion", it) }
         profile.androidSdkVersion?.let { clientContext.put("androidSdkVersion", it) }
 
+        val requestContext = JSONObject()
+            .put("useSsl", true)
+            .put("internalExperimentFlags", JSONArray())
+            .put("consistencyTokenJars", JSONArray())
+
+        val context = JSONObject()
+            .put("client", clientContext)
+            .put("request", requestContext)
+            .put("user", JSONObject().put("lockedSafetyMode", false))
+        webRemixMetadata?.let { metadata ->
+            context.put("clientScreenNonce", metadata.clientScreenNonce)
+            context.put("clickTracking", JSONObject().put("clickTrackingParams", ""))
+            context.put("adSignalsInfo", JSONObject().put("params", JSONArray()))
+        }
+
         return JSONObject()
-            .put(
-                "context",
-                JSONObject()
-                    .put("client", clientContext)
-                    .put("user", JSONObject().put("lockedSafetyMode", false))
-            ).apply {
+            .put("context", context)
+            .apply {
+                webRemixMetadata?.let { metadata ->
+                    put("cpn", metadata.cpn)
+                    put("params", YOUTUBE_PLAYER_WEB_REMIX_PARAMS)
+                    put("captionParams", JSONObject())
+                    put("playlistId", metadata.playlistId)
+                    put(
+                        "playbackContext",
+                        buildWebRemixPlaybackContext(
+                            refererUrl = metadata.originalUrl,
+                            signatureTimestamp = bootstrap.signatureTimestamp
+                        )
+                    )
+                }
                 if (profile.wrapPlayerRequest) {
                     put(
                         "playerRequest",
@@ -1273,6 +1364,10 @@ class YouTubeMusicPlaybackRepository(
                 findOptional(homeHtml, "\"SESSION_INDEX\":\"?([0-9]+)\"?").ifBlank { "0" }
             },
             userAgent = userAgent,
+            remoteHost = findOptional(homeHtml, "\"remoteHost\":\"([^\"]+)\""),
+            signatureTimestamp = findOptional(homeHtml, "\"STS\":(\\d+)")
+                .ifBlank { findOptional(homeHtml, "\"signatureTimestamp\":(\\d+)") }
+                .toIntOrNull(),
             fetchedAtMs = now
         )
         if (cached != null && cached.webRemixClientVersion != parsedBootstrap.webRemixClientVersion) {
@@ -1511,12 +1606,13 @@ class YouTubeMusicPlaybackRepository(
                 androidSdkVersion = 34
             ),
             YouTubePlayerClientProfile(
-                clientId = "67",
+                clientId = YOUTUBE_PLAYER_WEB_REMIX_CLIENT_ID,
                 clientName = YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME,
                 clientVersion = "1.20250101.01.00",
-                userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                userAgent = YOUTUBE_PLAYER_WEB_REMIX_USER_AGENT,
                 endpointPath = "player",
                 platform = "DESKTOP",
+                clientScreen = YOUTUBE_PLAYER_WEB_REMIX_CLIENT_SCREEN,
                 osName = "Windows",
                 osVersion = "10.0"
             ),
@@ -1657,6 +1753,82 @@ class YouTubeMusicPlaybackRepository(
 
     private fun utcOffsetMinutes(): Int {
         return TimeZone.getDefault().getOffset(System.currentTimeMillis()) / (60 * 1000)
+    }
+
+    private fun currentTimeZoneId(): String = TimeZone.getDefault().id
+
+    private fun currentBrowserYear(): Int = Calendar.getInstance().get(Calendar.YEAR)
+
+    private fun currentBrowserCopyright(): String {
+        return "Copyright ${currentBrowserYear()} Google LLC. All rights reserved."
+    }
+
+    private fun buildWebRemixRequestMetadata(videoId: String): YouTubeWebRemixRequestMetadata {
+        val playlistId = "RDAMVM$videoId"
+        val originalUrl = "$YOUTUBE_MUSIC_ORIGIN/watch?v=$videoId&list=$playlistId"
+        return YouTubeWebRemixRequestMetadata(
+            originalUrl = originalUrl,
+            playlistId = playlistId,
+            cpn = generateRequestNonce(16),
+            clientScreenNonce = generateRequestNonce(16)
+        )
+    }
+
+    private fun buildWebRemixPlaybackContext(
+        refererUrl: String,
+        signatureTimestamp: Int?
+    ): JSONObject {
+        val contentPlaybackContext = JSONObject()
+            .put("html5Preference", "HTML5_PREF_WANTS")
+            .put("lactMilliseconds", "0")
+            .put("referer", refererUrl)
+            .put("autonavState", "STATE_OFF")
+            .put("autoCaptionsDefaultOn", false)
+            .put("mdxContext", JSONObject())
+            .put("vis", 10)
+        signatureTimestamp?.let { contentPlaybackContext.put("signatureTimestamp", it) }
+        return JSONObject()
+            .put("contentPlaybackContext", contentPlaybackContext)
+            .put(
+                "devicePlaybackCapabilities",
+                JSONObject()
+                    .put("supportsVp9Encoding", true)
+                    .put("supportXhr", true)
+            )
+    }
+
+    private fun resolveBrowserName(userAgent: String): String {
+        val lowerCaseUserAgent = userAgent.lowercase(Locale.US)
+        return when {
+            "edg/" in lowerCaseUserAgent -> "Edge"
+            "chrome/" in lowerCaseUserAgent -> "Chrome"
+            "firefox/" in lowerCaseUserAgent -> "Firefox"
+            else -> "Chrome"
+        }
+    }
+
+    private fun resolveBrowserVersion(userAgent: String): String {
+        val patterns = listOf("Edg/([\\d.]+)", "Chrome/([\\d.]+)", "Firefox/([\\d.]+)")
+        return patterns.firstNotNullOfOrNull { pattern ->
+            Regex(pattern).find(userAgent)?.groupValues?.getOrNull(1)
+        }.orEmpty()
+    }
+
+    private fun ensureGfeUserAgent(userAgent: String): String {
+        return if (userAgent.contains("gzip(gfe)")) {
+            userAgent
+        } else {
+            "$userAgent,gzip(gfe)"
+        }
+    }
+
+    private fun generateRequestNonce(length: Int): String {
+        val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+        return buildString(length) {
+            repeat(length) {
+                append(alphabet[Random.nextInt(alphabet.length)])
+            }
+        }
     }
 
     private fun findRequired(source: String, pattern: String): String {

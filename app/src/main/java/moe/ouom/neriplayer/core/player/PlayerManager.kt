@@ -194,7 +194,7 @@ object PlayerManager {
     private var consecutivePlayFailures = 0
     private const val MAX_CONSECUTIVE_FAILURES = 10
     private const val MEDIA_URL_STALE_MS = 10 * 60 * 1000L
-    private const val URL_REFRESH_COOLDOWN_MS = 30 * 1000L
+    private const val URL_REFRESH_COOLDOWN_MS = 10 * 1000L
     private const val STATE_PERSIST_INTERVAL_MS = 15 * 1000L
     private const val DEFAULT_FADE_DURATION_MS = 500L
     private const val BLUETOOTH_DISCONNECT_CONFIRM_DELAY_MS = 1200L

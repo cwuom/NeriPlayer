@@ -90,7 +90,10 @@ class ConditionalHttpDataSourceFactory(
                             .build()
                     }
                     shouldInjectYouTubeHeaders(dataSpec.uri) -> {
-                        val headers = buildYouTubeHeaders(dataSpec.httpRequestHeaders)
+                        val headers = buildYouTubeHeaders(
+                            original = dataSpec.httpRequestHeaders,
+                            streamUrl = dataSpec.uri.toString()
+                        )
                         dataSpec.buildUpon()
                             .setHttpRequestHeaders(headers)
                             .build()
@@ -141,13 +144,17 @@ class ConditionalHttpDataSourceFactory(
         return newHeaders
     }
 
-    private fun buildYouTubeHeaders(original: Map<String, String>): Map<String, String> {
+    private fun buildYouTubeHeaders(
+        original: Map<String, String>,
+        streamUrl: String
+    ): Map<String, String> {
         val refererOrigin = original["Referer"].orEmpty()
             .removeSuffix("/")
             .ifBlank { latestYouTubeAuth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN } }
         return latestYouTubeAuth.buildYouTubeStreamRequestHeaders(
             original = original,
-            refererOrigin = refererOrigin
+            refererOrigin = refererOrigin,
+            streamUrl = streamUrl
         )
     }
 }

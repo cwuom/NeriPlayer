@@ -216,7 +216,8 @@ object AudioDownloadManager {
                 } else if (isYouTubeMusic) {
                     val auth = AppContainer.youtubeAuthRepo.getAuthOnce().normalized()
                     auth.buildYouTubeStreamRequestHeaders(
-                        refererOrigin = auth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN }
+                        refererOrigin = auth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN },
+                        streamUrl = url
                     ).forEach { (name, value) ->
                         reqBuilder.header(name, value)
                     }

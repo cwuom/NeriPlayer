@@ -75,7 +75,7 @@ class YouTubeMusicSupportTest {
     }
 
     @Test
-    fun buildYouTubeStreamRequestHeaders_attachesOriginAndAuthorizationHeaders() {
+    fun buildYouTubeStreamRequestHeaders_keepsGoogleVideoHeadersMinimal() {
         val headers = YouTubeAuthBundle(
             cookieHeader = "SAPISID=sap-value; SID=sid-value",
             xGoogAuthUser = "5",
@@ -84,29 +84,73 @@ class YouTubeMusicSupportTest {
             refererOrigin = YOUTUBE_MUSIC_ORIGIN
         )
 
-        assertTrue(headers["Cookie"].orEmpty().contains("SAPISID=sap-value"))
         assertEquals("UnitTestAgent/5.0", headers["User-Agent"])
-        assertEquals("5", headers["X-Goog-AuthUser"])
         assertEquals(YOUTUBE_MUSIC_ORIGIN, headers["Origin"])
-        assertEquals(YOUTUBE_MUSIC_ORIGIN, headers["X-Origin"])
         assertEquals("$YOUTUBE_MUSIC_ORIGIN/", headers["Referer"])
-        assertTrue(headers["Authorization"].orEmpty().startsWith("SAPISIDHASH "))
+        assertFalse(headers.containsKey("Cookie"))
+        assertFalse(headers.containsKey("X-Goog-AuthUser"))
+        assertFalse(headers.containsKey("X-Origin"))
+        assertFalse(headers.containsKey("Authorization"))
     }
 
     @Test
-    fun buildYouTubeStreamRequestHeaders_skipsAuthorizationWhenAuthMissing() {
+    fun buildYouTubeStreamRequestHeaders_usesStableDesktopUserAgentWhenAuthUserAgentIsMobile() {
         val headers = YouTubeAuthBundle(
-            userAgent = "UnitTestAgent/6.0"
+            userAgent = "Mozilla/5.0 (Linux; Android 15; Pixel 9 Pro) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
         ).buildYouTubeStreamRequestHeaders(
             refererOrigin = YOUTUBE_MUSIC_ORIGIN
         )
 
-        assertEquals("SOCS=CAI", headers["Cookie"])
-        assertEquals("UnitTestAgent/6.0", headers["User-Agent"])
-        assertEquals("0", headers["X-Goog-AuthUser"])
+        assertEquals(YOUTUBE_DEFAULT_WEB_USER_AGENT, headers["User-Agent"])
         assertEquals(YOUTUBE_MUSIC_ORIGIN, headers["Origin"])
-        assertEquals(YOUTUBE_MUSIC_ORIGIN, headers["X-Origin"])
         assertEquals("$YOUTUBE_MUSIC_ORIGIN/", headers["Referer"])
+        assertFalse(headers.containsKey("Cookie"))
+        assertFalse(headers.containsKey("X-Goog-AuthUser"))
+        assertFalse(headers.containsKey("X-Origin"))
         assertFalse(headers.containsKey("Authorization"))
+    }
+
+    @Test
+    fun buildYouTubeStreamRequestHeaders_stripsSensitiveOriginalHeadersButPreservesRange() {
+        val headers = YouTubeAuthBundle(
+            cookieHeader = "SAPISID=sap-value; SID=sid-value",
+            xGoogAuthUser = "5",
+            userAgent = "UnitTestAgent/7.0"
+        ).buildYouTubeStreamRequestHeaders(
+            original = mapOf(
+                "Cookie" to "SAPISID=old",
+                "Authorization" to "SAPISIDHASH old",
+                "X-Goog-AuthUser" to "7",
+                "X-Origin" to YOUTUBE_MUSIC_ORIGIN,
+                "Range" to "bytes=0-1023"
+            ),
+            refererOrigin = YOUTUBE_MUSIC_ORIGIN
+        )
+
+        assertEquals("bytes=0-1023", headers["Range"])
+        assertEquals("UnitTestAgent/7.0", headers["User-Agent"])
+        assertFalse(headers.containsKey("Cookie"))
+        assertFalse(headers.containsKey("Authorization"))
+        assertFalse(headers.containsKey("X-Goog-AuthUser"))
+        assertFalse(headers.containsKey("X-Origin"))
+    }
+
+    @Test
+    fun buildYouTubeStreamRequestHeaders_usesClientAlignedUaForIosGoogleVideo() {
+        val headers = YouTubeAuthBundle(
+            userAgent = "UnitTestAgent/8.0"
+        ).buildYouTubeStreamRequestHeaders(
+            refererOrigin = YOUTUBE_MUSIC_ORIGIN,
+            streamUrl = "https://rr1---sn.googlevideo.com/videoplayback?source=youtube&c=IOS"
+        )
+
+        assertEquals(YOUTUBE_STREAM_IOS_USER_AGENT, headers["User-Agent"])
+        assertEquals(YOUTUBE_MUSIC_ORIGIN, headers["Origin"])
+        assertEquals("$YOUTUBE_MUSIC_ORIGIN/", headers["Referer"])
+        assertFalse(headers.containsKey("Cookie"))
+        assertFalse(headers.containsKey("Authorization"))
+        assertFalse(headers.containsKey("X-Goog-AuthUser"))
+        assertFalse(headers.containsKey("X-Origin"))
     }
 }

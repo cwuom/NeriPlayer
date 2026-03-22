@@ -166,7 +166,8 @@ class YouTubeMusicPlaybackRepositoryTest {
               "INNERTUBE_CLIENT_VERSION":"1.20260321.00.00",
               "VISITOR_DATA":"visitor-data-123",
               "jsUrl":"/s/player/test-player/base.js",
-              "SESSION_INDEX":"7"
+              "SESSION_INDEX":"7",
+              "STS":20529
             });
             </script>
             </html>
@@ -277,7 +278,9 @@ class YouTubeMusicPlaybackRepositoryTest {
               "INNERTUBE_CLIENT_VERSION":"1.20260321.00.00",
               "VISITOR_DATA":"visitor-data-123",
               "jsUrl":"/s/player/test-player/base.js",
-              "SESSION_INDEX":"7"
+              "SESSION_INDEX":"7",
+              "remoteHost":"13.114.209.29",
+              "STS":20529
             });
             </script>
             </html>
@@ -630,7 +633,9 @@ class YouTubeMusicPlaybackRepositoryTest {
               "INNERTUBE_CLIENT_VERSION":"1.20260321.00.00",
               "VISITOR_DATA":"visitor-data-123",
               "jsUrl":"/s/player/test-player/base.js",
-              "SESSION_INDEX":"7"
+              "SESSION_INDEX":"7",
+              "remoteHost":"13.114.209.29",
+              "STS":20529
             });
             </script>
             </html>
@@ -709,7 +714,14 @@ class YouTubeMusicPlaybackRepositoryTest {
         )
         val playbackRepository = YouTubeMusicPlaybackRepository(
             okHttpClient = client,
-            authProvider = { authBundle }
+            authProvider = { authBundle },
+            streamingCipherResolverFactory = { _ ->
+                object : YouTubeStreamingCipherResolver {
+                    override fun resolveSignature(encryptedSignature: String): String? = null
+
+                    override fun resolveStreamingUrl(url: String): String = url
+                }
+            }
         )
 
         val playableAudio = playbackRepository.getBestPlayableAudio(
@@ -747,7 +759,9 @@ class YouTubeMusicPlaybackRepositoryTest {
               "INNERTUBE_CLIENT_VERSION":"1.20260321.00.00",
               "VISITOR_DATA":"visitor-data-123",
               "jsUrl":"/s/player/test-player/base.js",
-              "SESSION_INDEX":"7"
+              "SESSION_INDEX":"7",
+              "remoteHost":"13.114.209.29",
+              "STS":20529
             });
             </script>
             </html>
@@ -830,21 +844,41 @@ class YouTubeMusicPlaybackRepositoryTest {
         assertEquals("visitor-data-123", webRemixRequest.header("X-Goog-Visitor-Id"))
         assertEquals("https://music.youtube.com", webRemixRequest.header("Origin"))
         assertEquals("https://music.youtube.com", webRemixRequest.header("X-Origin"))
+        assertEquals(
+            "https://music.youtube.com/watch?v=demo-video&list=RDAMVMdemo-video",
+            webRemixRequest.header("Referer")
+        )
         assertEquals("1.20260321.00.00", webRemixRequest.header("X-YouTube-Client-Version"))
+        assertEquals("true", webRemixRequest.header("X-YouTube-Bootstrap-Logged-In"))
+        assertEquals("stable", webRemixRequest.header("X-Browser-Channel"))
+        assertEquals("Copyright 2026 Google LLC. All rights reserved.", webRemixRequest.header("X-Browser-Copyright"))
+        assertEquals("2026", webRemixRequest.header("X-Browser-Year"))
+        assertEquals("ay2VkFgiz37bVmZ/apUEVmB+zrQ=", webRemixRequest.header("X-Browser-Validation"))
 
         val requestBody = Buffer().apply {
             webRemixRequest.body?.writeTo(this)
         }.readUtf8()
         assertTrue(requestBody.contains("\"visitorData\":\"visitor-data-123\""))
         assertTrue(requestBody.contains("\"clientVersion\":\"1.20260321.00.00\""))
+        assertTrue(requestBody.contains("\"clientScreen\":\"WATCH_FULL_SCREEN\""))
+        assertTrue(requestBody.contains("\"remoteHost\":\"13.114.209.29\""))
+        assertTrue(requestBody.contains("\"playlistId\":\"RDAMVMdemo-video\""))
+        assertTrue(requestBody.contains("\"playbackContext\""))
+        assertTrue(requestBody.contains("\"signatureTimestamp\":20529"))
+        assertTrue(requestBody.contains("\"originalUrl\":\"https://music.youtube.com/watch?v=demo-video&list=RDAMVMdemo-video\""))
+        assertTrue(requestBody.contains("\"connectionType\":\"CONN_WIFI\""))
+        assertTrue(requestBody.contains("\"screenWidthPoints\":982"))
+        assertTrue(Regex("\"cpn\":\"[A-Za-z0-9_-]{16}\"").containsMatchIn(requestBody))
 
         val manifestRequest = requests.first { request ->
             request.url.host == "manifest.googlevideo.com"
         }
         assertEquals("https://music.youtube.com", manifestRequest.header("Origin"))
-        assertEquals("https://music.youtube.com", manifestRequest.header("X-Origin"))
         assertEquals("https://music.youtube.com/", manifestRequest.header("Referer"))
-        assertEquals("7", manifestRequest.header("X-Goog-AuthUser"))
-        assertTrue(manifestRequest.header("Authorization").orEmpty().startsWith("SAPISIDHASH "))
+        assertEquals("RepoUserAgent/1.0", manifestRequest.header("User-Agent"))
+        assertTrue(manifestRequest.header("X-Origin").isNullOrBlank())
+        assertTrue(manifestRequest.header("X-Goog-AuthUser").isNullOrBlank())
+        assertTrue(manifestRequest.header("Authorization").isNullOrBlank())
+        assertTrue(manifestRequest.header("Cookie").isNullOrBlank())
     }
 }

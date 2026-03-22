@@ -103,7 +103,8 @@ object AppContainer {
                     )
                     isYouTubeStreamRequest(request) -> auth.buildYouTubeStreamRequestHeaders(
                         original = originalHeaders,
-                        refererOrigin = auth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN }
+                        refererOrigin = auth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN },
+                        streamUrl = request.url.toString()
                     )
                     else -> auth.buildYouTubePageRequestHeaders(
                         original = originalHeaders

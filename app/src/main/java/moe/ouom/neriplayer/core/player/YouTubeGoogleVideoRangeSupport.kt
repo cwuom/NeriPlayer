@@ -420,7 +420,7 @@ internal class ConditionalChunkedHttpDataSource(
             openChunk(startPosition = baseSpec.position + bytesReadFromRequest)
             true
         } catch (error: HttpDataSource.InvalidResponseCodeException) {
-            if (error.responseCode == 416) {
+            if (error.responseCode == 416 || error.responseCode == 403) {
                 bytesRemainingInRequest = 0L
                 false
             } else {

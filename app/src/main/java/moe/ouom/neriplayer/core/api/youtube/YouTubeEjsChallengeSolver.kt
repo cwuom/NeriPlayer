@@ -180,9 +180,55 @@ internal class YouTubeEjsChallengeSolver(
 
         return """
             const _input = $input;
+            const _decodeUtf8FromBuffer = (buffer) => {
+              const _bytes = new Uint8Array(buffer);
+              if (typeof TextDecoder !== "undefined") {
+                return new TextDecoder("utf-8").decode(_bytes);
+              }
+              let _result = "";
+              for (let _index = 0; _index < _bytes.length;) {
+                const _byte1 = _bytes[_index++];
+                if (_byte1 < 0x80) {
+                  _result += String.fromCharCode(_byte1);
+                  continue;
+                }
+                if (_byte1 < 0xE0 && _index < _bytes.length) {
+                  const _byte2 = _bytes[_index++];
+                  _result += String.fromCharCode(((_byte1 & 0x1F) << 6) | (_byte2 & 0x3F));
+                  continue;
+                }
+                if (_byte1 < 0xF0 && _index + 1 < _bytes.length) {
+                  const _byte2 = _bytes[_index++];
+                  const _byte3 = _bytes[_index++];
+                  _result += String.fromCharCode(
+                    ((_byte1 & 0x0F) << 12) |
+                    ((_byte2 & 0x3F) << 6) |
+                    (_byte3 & 0x3F)
+                  );
+                  continue;
+                }
+                if (_index + 2 < _bytes.length) {
+                  const _byte2 = _bytes[_index++];
+                  const _byte3 = _bytes[_index++];
+                  const _byte4 = _bytes[_index++];
+                  let _codePoint =
+                    ((_byte1 & 0x07) << 18) |
+                    ((_byte2 & 0x3F) << 12) |
+                    ((_byte3 & 0x3F) << 6) |
+                    (_byte4 & 0x3F);
+                  _codePoint -= 0x10000;
+                  _result += String.fromCharCode(
+                    0xD800 + (_codePoint >> 10),
+                    0xDC00 + (_codePoint & 0x3FF)
+                  );
+                  continue;
+                }
+                _result += String.fromCharCode(_byte1);
+              }
+              return _result;
+            };
             android.consumeNamedDataAsArrayBuffer("$playerDataName").then((buffer) => {
-              const _decoder = new TextDecoder("utf-8");
-              _input.player = _decoder.decode(new Uint8Array(buffer));
+              _input.player = _decodeUtf8FromBuffer(buffer);
               return JSON.stringify(jsc(_input));
             });
         """.trimIndent()

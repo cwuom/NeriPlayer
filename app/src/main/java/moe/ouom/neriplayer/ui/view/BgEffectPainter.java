@@ -155,7 +155,7 @@ public class BgEffectPainter {
 
     private String loadShader() {
         StringBuilder shaderCode = new StringBuilder();
-        try (InputStream is = mContext.getAssets().open("hyper_background_effect.frag");
+        try (InputStream is = mContext.getAssets().open("hyper_background_effect.glsl");
              BufferedReader reader = new BufferedReader(new InputStreamReader(is))) {
             String line;
             while ((line = reader.readLine()) != null) {
