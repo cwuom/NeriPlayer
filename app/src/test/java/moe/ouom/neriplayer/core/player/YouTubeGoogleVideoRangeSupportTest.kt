@@ -58,6 +58,17 @@ class YouTubeGoogleVideoRangeSupportTest {
     }
 
     @Test
+    fun supportsSeekingWithoutUrlRefresh_acceptsSigOnlyDirectUrl() {
+        val url =
+            "https://rr4---sn-3pm7dnes.googlevideo.com/videoplayback" +
+                "?source=youtube&mime=audio%2Fwebm&sig=resolved-signature&clen=3433755"
+
+        assertTrue(YouTubeGoogleVideoRangeSupport.supportsSeekingWithoutUrlRefresh(url))
+        assertFalse(YouTubeGoogleVideoRangeSupport.shouldUseChunkedRange(url))
+        assertTrue(YouTubeGoogleVideoRangeSupport.shouldForceExplicitFullRange(url))
+    }
+
+    @Test
     fun resolveQueryContentLength_readsClenFromUrl() {
         val url =
             "https://rr1---sn-aigl6ney.googlevideo.com/videoplayback" +
@@ -69,6 +80,18 @@ class YouTubeGoogleVideoRangeSupportTest {
     @Test
     fun buildFullRangeHeader_buildsInclusiveRange() {
         assertEquals("bytes=0-3965664", YouTubeGoogleVideoRangeSupport.buildFullRangeHeader(3_965_665L))
+    }
+
+    @Test
+    fun buildRangeHeader_respectsStartPositionAndKnownLength() {
+        assertEquals(
+            "bytes=1048576-2097151",
+            YouTubeGoogleVideoRangeSupport.buildRangeHeader(
+                startPosition = 1_048_576L,
+                requestedLength = 1_048_576L,
+                totalContentLength = 3_965_665L
+            )
+        )
     }
 
     @Test

@@ -454,14 +454,14 @@ object PlayerManager {
      * - 本地：local-hash
      * - B 站：bili-avid-可选cid-音质
      * - 网易云：netease-songId-音质
-     * - YouTube Music：ytmusic-videoId-音质
+     * - YouTube Music：ytmusic-videoId-音质-流选择策略
      */
     private fun computeCacheKey(song: SongItem): String {
         return when {
             isLocalSong(song) -> "local-${song.stableKey().hashCode()}"
             isYouTubeMusicSong(song) -> {
                 val videoId = extractYouTubeMusicVideoId(song.mediaUri).orEmpty()
-                "ytmusic-$videoId-$youtubePreferredQuality"
+                "ytmusic-$videoId-$youtubePreferredQuality-m4a"
             }
             song.album.startsWith(BILI_SOURCE_TAG) -> {
             val parts = song.album.split('|')
@@ -1385,7 +1385,8 @@ object PlayerManager {
                     youtubeMusicPlaybackRepository.prefetchPlayableAudioUrl(
                         videoId = videoId,
                         preferredQualityOverride = youtubePreferredQuality,
-                        requireDirect = true
+                        requireDirect = true,
+                        preferM4a = true
                     )
                 }.onFailure { error ->
                     NPLogger.w(
@@ -1401,7 +1402,8 @@ object PlayerManager {
                     youtubeMusicPlaybackRepository.prefetchPlayableAudioUrl(
                         videoId = videoId,
                         preferredQualityOverride = youtubePreferredQuality,
-                        requireDirect = true
+                        requireDirect = true,
+                        preferM4a = true
                     )
                 }.onFailure { error ->
                     NPLogger.w(
@@ -1767,7 +1769,8 @@ object PlayerManager {
                 videoId = videoId,
                 preferredQualityOverride = youtubePreferredQuality,
                 forceRefresh = forceRefresh,
-                requireDirect = true
+                requireDirect = true,
+                preferM4a = true
             )
             val playableAudio = directPlayableAudio?.takeIf { !it.url.isNullOrBlank() }
                 ?: run {
@@ -1778,12 +1781,17 @@ object PlayerManager {
                     youtubeMusicPlaybackRepository.getBestPlayableAudio(
                         videoId = videoId,
                         preferredQualityOverride = youtubePreferredQuality,
-                        forceRefresh = forceRefresh
+                        forceRefresh = forceRefresh,
+                        preferM4a = true
                     )
                 }
             val resolvedPlayableAudio = playableAudio?.takeIf { !it.url.isNullOrBlank() }
             if (resolvedPlayableAudio != null) {
                 maybeUpdateSongDuration(song, resolvedPlayableAudio.durationMs)
+                NPLogger.d(
+                    "NERI-PlayerManager",
+                    "Resolved YouTube Music stream: videoId=$videoId, type=${resolvedPlayableAudio.streamType}, mime=${resolvedPlayableAudio.mimeType}, contentLength=${resolvedPlayableAudio.contentLength}"
+                )
                 SongUrlResult.Success(
                     url = resolvedPlayableAudio.url,
                     durationMs = resolvedPlayableAudio.durationMs.takeIf { it > 0L },
@@ -1835,11 +1843,15 @@ object PlayerManager {
                 } else {
                     Long.MAX_VALUE
                 }
-                if (ageMs >= MEDIA_URL_STALE_MS) {
+                if (
+                    ageMs >= MEDIA_URL_STALE_MS ||
+                    YouTubeSeekRefreshPolicy.shouldRefreshUrlBeforeResume(song, url)
+                ) {
                     refreshCurrentSongUrl(
                         resumePositionMs = player.currentPosition,
-                        allowFallback = true,
-                        reason = "stale_resume"
+                        allowFallback = false,
+                        reason = "stale_resume",
+                        bypassCooldown = true
                     )
                     return
                 }

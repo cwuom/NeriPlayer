@@ -74,25 +74,57 @@ fun YouTubeAuthBundle.resolveXGoogAuthUser(): String {
 
 fun YouTubeAuthBundle.resolveAuthorizationHeader(
     origin: String = this.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN },
-    nowEpochSeconds: Long = System.currentTimeMillis() / 1000L
+    nowEpochSeconds: Long = System.currentTimeMillis() / 1000L,
+    userSessionId: String = ""
 ): String {
     val cookies = normalized(savedAt = savedAt).cookies.ifEmpty { parseCookieHeader(cookieHeader) }
-    val sapisid = listOf(
-        cookies["__Secure-3PAPISID"],
+    val sapisid = firstNonBlank(
         cookies["SAPISID"],
+        cookies["__Secure-3PAPISID"],
         cookies["__Secure-1PAPISID"],
         cookies["APISID"]
-    ).firstOrNull { !it.isNullOrBlank() }
+    )
+    val sapisid1P = firstNonBlank(cookies["__Secure-1PAPISID"])
+    val sapisid3P = firstNonBlank(cookies["__Secure-3PAPISID"])
 
-    if (sapisid.isNullOrBlank()) {
+    if (sapisid.isNullOrBlank() && sapisid1P.isNullOrBlank() && sapisid3P.isNullOrBlank()) {
         return authorization.takeIf { it.isNotBlank() }.orEmpty()
     }
-
-    val input = "$nowEpochSeconds $sapisid $origin"
-    val digest = MessageDigest.getInstance("SHA-1")
-        .digest(input.toByteArray(Charsets.UTF_8))
-        .joinToString("") { byte -> "%02x".format(Locale.US, byte) }
-    return "SAPISIDHASH ${nowEpochSeconds}_$digest"
+    return buildList {
+        sapisid?.let {
+            add(
+                buildSidAuthorization(
+                    scheme = "SAPISIDHASH",
+                    sid = it,
+                    origin = origin,
+                    nowEpochSeconds = nowEpochSeconds,
+                    userSessionId = userSessionId
+                )
+            )
+        }
+        sapisid1P?.let {
+            add(
+                buildSidAuthorization(
+                    scheme = "SAPISID1PHASH",
+                    sid = it,
+                    origin = origin,
+                    nowEpochSeconds = nowEpochSeconds,
+                    userSessionId = userSessionId
+                )
+            )
+        }
+        sapisid3P?.let {
+            add(
+                buildSidAuthorization(
+                    scheme = "SAPISID3PHASH",
+                    sid = it,
+                    origin = origin,
+                    nowEpochSeconds = nowEpochSeconds,
+                    userSessionId = userSessionId
+                )
+            )
+        }
+    }.joinToString(" ")
 }
 
 fun YouTubeAuthBundle.buildYouTubePlaybackRequestHeaders(
@@ -277,6 +309,38 @@ private fun parseQueryParameters(rawQuery: String?): Map<String, String> {
             }
         }
         .toMap()
+}
+
+private fun firstNonBlank(vararg values: String?): String? {
+    return values.firstOrNull { !it.isNullOrBlank() }
+}
+
+private fun buildSidAuthorization(
+    scheme: String,
+    sid: String,
+    origin: String,
+    nowEpochSeconds: Long,
+    userSessionId: String
+): String {
+    val additionalParts = linkedMapOf<String, String>()
+    if (userSessionId.isNotBlank()) {
+        additionalParts["u"] = userSessionId
+    }
+    val hashParts = mutableListOf<String>()
+    if (additionalParts.isNotEmpty()) {
+        hashParts += additionalParts.values.joinToString(":")
+    }
+    hashParts += nowEpochSeconds.toString()
+    hashParts += sid
+    hashParts += origin
+    val digest = MessageDigest.getInstance("SHA-1")
+        .digest(hashParts.joinToString(" ").toByteArray(Charsets.UTF_8))
+        .joinToString("") { byte -> "%02x".format(Locale.US, byte) }
+    val headerParts = mutableListOf(nowEpochSeconds.toString(), digest)
+    if (additionalParts.isNotEmpty()) {
+        headerParts += additionalParts.keys.joinToString("")
+    }
+    return "$scheme ${headerParts.joinToString("_")}"
 }
 
 private fun parseYouTubeStreamClientName(streamUrl: String?): String? {

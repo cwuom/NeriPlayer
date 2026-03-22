@@ -75,6 +75,20 @@ class YouTubeMusicSupportTest {
     }
 
     @Test
+    fun resolveAuthorizationHeader_appendsUserSessionMarkerWhenProvided() {
+        val authorization = YouTubeAuthBundle(
+            cookieHeader = "SAPISID=sap-value; SID=sid-value"
+        ).resolveAuthorizationHeader(
+            origin = YOUTUBE_WEB_ORIGIN,
+            nowEpochSeconds = 1234L,
+            userSessionId = "user-session-123"
+        )
+
+        assertTrue(authorization.startsWith("SAPISIDHASH "))
+        assertTrue(authorization.contains("_u"))
+    }
+
+    @Test
     fun buildYouTubeStreamRequestHeaders_keepsGoogleVideoHeadersMinimal() {
         val headers = YouTubeAuthBundle(
             cookieHeader = "SAPISID=sap-value; SID=sid-value",

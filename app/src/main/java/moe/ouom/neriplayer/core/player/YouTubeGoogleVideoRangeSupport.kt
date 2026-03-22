@@ -43,7 +43,7 @@ internal object YouTubeGoogleVideoRangeSupport {
         val hasResolvedSignature =
             queryParameters["sig"]?.isNotBlank() == true ||
                 queryParameters["signature"]?.isNotBlank() == true
-        return hasResolvedThrottling && hasResolvedSignature
+        return hasResolvedThrottling || hasResolvedSignature
     }
 
     fun shouldUseChunkedRange(uri: Uri): Boolean {
@@ -96,6 +96,22 @@ internal object YouTubeGoogleVideoRangeSupport {
     fun buildFullRangeHeader(totalContentLength: Long): String {
         require(totalContentLength > 0L) { "totalContentLength must be positive" }
         return "bytes=0-${totalContentLength - 1L}"
+    }
+
+    fun buildRangeHeader(
+        startPosition: Long,
+        requestedLength: Long,
+        totalContentLength: Long
+    ): String {
+        require(startPosition >= 0L) { "startPosition must be non-negative" }
+        require(totalContentLength > 0L) { "totalContentLength must be positive" }
+        val end = when {
+            requestedLength == C.LENGTH_UNSET.toLong() || requestedLength <= 0L -> {
+                totalContentLength - 1L
+            }
+            else -> (startPosition + requestedLength - 1L).coerceAtMost(totalContentLength - 1L)
+        }
+        return "bytes=$startPosition-$end"
     }
 
     fun hasExplicitRangeHeader(headers: Map<String, String>): Boolean {

@@ -25,7 +25,9 @@ package moe.ouom.neriplayer.core.player
 
 
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.common.C
 import androidx.media3.datasource.HttpDataSource
+import androidx.media3.datasource.DataSpec
 import android.net.Uri
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -90,13 +92,7 @@ class ConditionalHttpDataSourceFactory(
                             .build()
                     }
                     shouldInjectYouTubeHeaders(dataSpec.uri) -> {
-                        val headers = buildYouTubeHeaders(
-                            original = dataSpec.httpRequestHeaders,
-                            streamUrl = dataSpec.uri.toString()
-                        )
-                        dataSpec.buildUpon()
-                            .setHttpRequestHeaders(headers)
-                            .build()
+                        buildYouTubeDataSpec(dataSpec)
                     }
                     else -> dataSpec
                 }
@@ -151,21 +147,43 @@ class ConditionalHttpDataSourceFactory(
         val refererOrigin = original["Referer"].orEmpty()
             .removeSuffix("/")
             .ifBlank { latestYouTubeAuth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN } }
-        val headers = latestYouTubeAuth.buildYouTubeStreamRequestHeaders(
+        return latestYouTubeAuth.buildYouTubeStreamRequestHeaders(
             original = original,
             refererOrigin = refererOrigin,
             streamUrl = streamUrl
         )
-        if (YouTubeGoogleVideoRangeSupport.hasExplicitRangeHeader(headers)) {
-            return headers
-        }
-        if (!YouTubeGoogleVideoRangeSupport.shouldForceExplicitFullRange(streamUrl)) {
-            return headers
+    }
+
+    private fun buildYouTubeDataSpec(dataSpec: DataSpec): DataSpec {
+        val streamUrl = dataSpec.uri.toString()
+        val headers = buildYouTubeHeaders(
+            original = dataSpec.httpRequestHeaders,
+            streamUrl = streamUrl
+        )
+        if (
+            !YouTubeGoogleVideoRangeSupport.shouldForceExplicitFullRange(streamUrl) ||
+            YouTubeGoogleVideoRangeSupport.hasExplicitRangeHeader(headers)
+        ) {
+            return dataSpec.buildUpon()
+                .setHttpRequestHeaders(headers)
+                .build()
         }
         val totalContentLength =
-            YouTubeGoogleVideoRangeSupport.resolveQueryContentLength(streamUrl) ?: return headers
-        return LinkedHashMap(headers).apply {
-            put("Range", YouTubeGoogleVideoRangeSupport.buildFullRangeHeader(totalContentLength))
-        }
+            YouTubeGoogleVideoRangeSupport.resolveQueryContentLength(streamUrl) ?: return dataSpec
+                .buildUpon()
+                .setHttpRequestHeaders(headers)
+                .build()
+        val rangeHeader = YouTubeGoogleVideoRangeSupport.buildRangeHeader(
+            startPosition = dataSpec.position,
+            requestedLength = dataSpec.length.takeIf { it > 0L } ?: C.LENGTH_UNSET.toLong(),
+            totalContentLength = totalContentLength
+        )
+        return dataSpec.buildUpon()
+            .setHttpRequestHeaders(
+                LinkedHashMap(headers).apply {
+                    put("Range", rangeHeader)
+                }
+            )
+            .build()
     }
 }

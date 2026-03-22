@@ -102,8 +102,7 @@ class YouTubeMusicClientParserTest {
 
         assertEquals(
             listOf(
-                YouTubeMusicRequestLocale(hl = "zh-CN", gl = "CN"),
-                YouTubeMusicRequestLocale(hl = "en-US", gl = "US")
+                YouTubeMusicRequestLocale(hl = "zh-CN", gl = "JP")
             ),
             candidates
         )
