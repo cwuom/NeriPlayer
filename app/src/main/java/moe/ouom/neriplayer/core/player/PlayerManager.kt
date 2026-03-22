@@ -198,10 +198,13 @@ object PlayerManager {
     private const val STATE_PERSIST_INTERVAL_MS = 15 * 1000L
     private const val DEFAULT_FADE_DURATION_MS = 500L
     private const val BLUETOOTH_DISCONNECT_CONFIRM_DELAY_MS = 1200L
+    private const val PENDING_SEEK_POSITION_TOLERANCE_MS = 1_500L
     private const val MIN_FADE_STEPS = 4
     private const val MAX_FADE_STEPS = 30
     @Volatile
     private var urlRefreshInProgress = false
+    @Volatile
+    private var pendingSeekPositionMs: Long = C.TIME_UNSET
     private var lastUrlRefreshKey: String? = null
     private var lastUrlRefreshAtMs: Long = 0L
     private var currentMediaUrlResolvedAtMs: Long = 0L
@@ -306,6 +309,29 @@ object PlayerManager {
             player.playbackState == Player.STATE_READY ||
                 player.playbackState == Player.STATE_BUFFERING
             )
+
+    private fun pendingSeekPositionOrNull(): Long? {
+        return pendingSeekPositionMs.takeIf { it != C.TIME_UNSET }
+    }
+
+    private fun rememberPendingSeekPosition(positionMs: Long) {
+        pendingSeekPositionMs = positionMs.coerceAtLeast(0L)
+    }
+
+    private fun clearPendingSeekPosition() {
+        pendingSeekPositionMs = C.TIME_UNSET
+    }
+
+    private fun resolveDisplayedPlaybackPosition(actualPositionMs: Long): Long {
+        val actual = actualPositionMs.coerceAtLeast(0L)
+        val pending = pendingSeekPositionOrNull() ?: return actual
+        return if (kotlin.math.abs(actual - pending) <= PENDING_SEEK_POSITION_TOLERANCE_MS) {
+            clearPendingSeekPosition()
+            actual
+        } else {
+            pending
+        }
+    }
 
     private val gson = Gson()
 
@@ -475,6 +501,7 @@ object PlayerManager {
 
     /** 处理单曲播放结束：根据循环模式与随机三栈推进或停止 */
     private fun handleTrackEnded() {
+        clearPendingSeekPosition()
         _playbackPositionMs.value = 0L
 
         // 检查睡眠定时器
@@ -602,11 +629,22 @@ object PlayerManager {
 
                     val cause = error.cause
                     if (shouldAttemptUrlRefresh(error, _currentSongFlow.value, isOfflineCache)) {
+                        val shouldBypassRefreshCooldown = pendingSeekPositionOrNull() != null &&
+                            YouTubeSeekRefreshPolicy.shouldRefreshUrlBeforeSeek(
+                                _currentSongFlow.value,
+                                currentUrl
+                            )
+                        val resumePositionMs = pendingSeekPositionOrNull()
+                            ?: player.currentPosition.coerceAtLeast(0L)
+                        val resumePlaybackAfterRefresh = player.playWhenReady || player.isPlaying
                         // url 刷新成功后会重置 consecutivePlayFailures，这里不提前累加
                         refreshCurrentSongUrl(
-                            resumePositionMs = player.currentPosition,
+                            resumePositionMs = resumePositionMs,
                             allowFallback = false,
-                            reason = "playback_error_${error.errorCodeName}"
+                            reason = "playback_error_${error.errorCodeName}",
+                            bypassCooldown = shouldBypassRefreshCooldown,
+                            fallbackSeekPositionMs = resumePositionMs,
+                            resumePlaybackAfterRefresh = resumePlaybackAfterRefresh
                         )
                         return
                     }
@@ -708,13 +746,15 @@ object PlayerManager {
                     val currentSong = _currentSongFlow.value
                     if (currentSong != null && isYouTubeMusicSong(currentSong)) {
                         // 必须在主线程读取 player.currentPosition
-                        val positionMs = withContext(Dispatchers.Main) {
-                            player.currentPosition.coerceAtLeast(0L)
+                        val (positionMs, shouldResumePlaybackAfterRefresh) = withContext(Dispatchers.Main) {
+                            player.currentPosition.coerceAtLeast(0L) to (player.playWhenReady || player.isPlaying)
                         }
                         refreshCurrentSongUrl(
                             resumePositionMs = positionMs,
                             allowFallback = true,
-                            reason = "youtube_quality_changed"
+                            reason = "youtube_quality_changed",
+                            fallbackSeekPositionMs = positionMs,
+                            resumePlaybackAfterRefresh = shouldResumePlaybackAfterRefresh
                         )
                     }
                 }
@@ -1202,6 +1242,7 @@ object PlayerManager {
         playJob?.cancel()
         playbackRequestToken += 1
         val requestToken = playbackRequestToken
+        clearPendingSeekPosition()
         _playbackPositionMs.value = 0L
         playJob = ioScope.launch {
             val result = resolveSongUrl(song)
@@ -1382,32 +1423,55 @@ object PlayerManager {
             error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED
     }
 
+    private fun resumePlaybackFallback(
+        seekPositionMs: Long?,
+        resumePlaybackAfterRefresh: Boolean
+    ) {
+        mainScope.launch {
+            val resolvedSeekPositionMs = seekPositionMs?.coerceAtLeast(0L)
+            if (resolvedSeekPositionMs != null) {
+                player.seekTo(resolvedSeekPositionMs)
+                _playbackPositionMs.value = resolvedSeekPositionMs
+            }
+            player.playWhenReady = resumePlaybackAfterRefresh
+            if (resumePlaybackAfterRefresh) {
+                player.play()
+            } else {
+                player.pause()
+            }
+        }
+    }
+
     private fun refreshCurrentSongUrl(
         resumePositionMs: Long,
         allowFallback: Boolean,
-        reason: String
+        reason: String,
+        bypassCooldown: Boolean = false,
+        fallbackSeekPositionMs: Long? = null,
+        resumePlaybackAfterRefresh: Boolean = true
     ) {
         val song = _currentSongFlow.value ?: return
         if (isLocalSong(song)) return
         if (urlRefreshInProgress) {
             if (allowFallback) {
-                mainScope.launch {
-                    player.playWhenReady = true
-                    player.play()
-                }
+                resumePlaybackFallback(
+                    seekPositionMs = fallbackSeekPositionMs,
+                    resumePlaybackAfterRefresh = resumePlaybackAfterRefresh
+                )
             }
             return
         }
 
         val cacheKey = computeCacheKey(song)
         val now = SystemClock.elapsedRealtime()
-        if (lastUrlRefreshKey == cacheKey && now - lastUrlRefreshAtMs < URL_REFRESH_COOLDOWN_MS) {
+        if (!bypassCooldown && lastUrlRefreshKey == cacheKey && now - lastUrlRefreshAtMs < URL_REFRESH_COOLDOWN_MS) {
             if (allowFallback) {
-                mainScope.launch {
-                    player.playWhenReady = true
-                    player.play()
-                }
+                resumePlaybackFallback(
+                    seekPositionMs = fallbackSeekPositionMs,
+                    resumePlaybackAfterRefresh = resumePlaybackAfterRefresh
+                )
             } else {
+                clearPendingSeekPosition()
                 // url 刷新冷却中且无法回退，跳到下一首继续播放而不是静默暂停
                 consecutivePlayFailures++
                 postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(R.string.player_playback_network_error)))
@@ -1440,16 +1504,18 @@ object PlayerManager {
                             _currentSongFlow.value ?: song,
                             result.url,
                             result.mimeType,
-                            resumePositionMs
+                            resumePositionMs,
+                            resumePlaybackAfterRefresh
                         )
                         consecutivePlayFailures = 0
                     }
                 } else if (allowFallback) {
-                    withContext(Dispatchers.Main) {
-                        player.playWhenReady = true
-                        player.play()
-                    }
+                    resumePlaybackFallback(
+                        seekPositionMs = fallbackSeekPositionMs,
+                        resumePlaybackAfterRefresh = resumePlaybackAfterRefresh
+                    )
                 } else {
+                    clearPendingSeekPosition()
                     postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(R.string.player_playback_network_error)))
                     withContext(Dispatchers.Main) { pause() }
                 }
@@ -1463,7 +1529,8 @@ object PlayerManager {
         song: SongItem,
         url: String,
         mimeType: String?,
-        resumePositionMs: Long
+        resumePositionMs: Long,
+        resumePlaybackAfterRefresh: Boolean
     ) {
         if (_currentSongFlow.value?.sameIdentityAs(song) != true) return
 
@@ -1480,9 +1547,14 @@ object PlayerManager {
             player.prepare()
             if (resumePositionMs > 0) {
                 player.seekTo(resumePositionMs)
+                _playbackPositionMs.value = resumePositionMs
             }
-            player.playWhenReady = true
-            player.play()
+            player.playWhenReady = resumePlaybackAfterRefresh
+            if (resumePlaybackAfterRefresh) {
+                player.play()
+            } else {
+                player.pause()
+            }
         }
     }
 
@@ -1855,11 +1927,17 @@ object PlayerManager {
     fun seekTo(positionMs: Long) {
         ensureInitialized()
         if (!initialized) return
-        player.seekTo(positionMs)
-        _playbackPositionMs.value = positionMs
+        val resolvedPositionMs = positionMs.coerceAtLeast(0L)
+        if (YouTubeSeekRefreshPolicy.shouldRefreshUrlBeforeSeek(_currentSongFlow.value, _currentMediaUrl.value)) {
+            rememberPendingSeekPosition(resolvedPositionMs)
+        } else {
+            clearPendingSeekPosition()
+        }
+        player.seekTo(resolvedPositionMs)
+        _playbackPositionMs.value = resolvedPositionMs
         ioScope.launch {
             persistState(
-                positionMs = positionMs.coerceAtLeast(0L),
+                positionMs = resolvedPositionMs,
                 shouldResumePlayback = shouldResumePlaybackSnapshot()
             )
         }
@@ -2009,6 +2087,7 @@ object PlayerManager {
         currentMediaUrlResolvedAtMs = 0L
         _currentSongFlow.value = null
         _currentQueueFlow.value = emptyList()
+        clearPendingSeekPosition()
         _playbackPositionMs.value = 0L
 
         currentPlaylist = emptyList()
@@ -2042,7 +2121,9 @@ object PlayerManager {
         stopProgressUpdates()
         progressJob = mainScope.launch {
             while (isActive) {
-                val positionMs = player.currentPosition.coerceAtLeast(0L)
+                val positionMs = resolveDisplayedPlaybackPosition(
+                    player.currentPosition.coerceAtLeast(0L)
+                )
                 _playbackPositionMs.value = positionMs
                 maybePersistPlaybackProgress(positionMs)
                 delay(40)
@@ -2074,6 +2155,7 @@ object PlayerManager {
         runCatching { player.stop() }
         runCatching { player.clearMediaItems() }
         _isPlayingFlow.value = false
+        clearPendingSeekPosition()
         _playbackPositionMs.value = 0L
         if (currentPlaylist.isEmpty()) {
             currentIndex = -1

@@ -40,6 +40,15 @@ class YouTubeGoogleVideoRangeSupportTest {
     }
 
     @Test
+    fun shouldUseChunkedRange_rejectsResolvedWebRemixDirectUrl() {
+        val url =
+            "https://rr1---sn-aigl6ney.googlevideo.com/videoplayback" +
+                "?source=youtube&id=audio-demo&n=resolved-n&sig=resolved-signature&mime=audio%2Fwebm"
+
+        assertFalse(YouTubeGoogleVideoRangeSupport.shouldUseChunkedRange(url))
+    }
+
+    @Test
     fun candidateChunkLengths_clampsToRequestedLength() {
         val candidates = YouTubeGoogleVideoRangeSupport.candidateChunkLengths(300_000L)
 
@@ -75,13 +84,29 @@ class YouTubeGoogleVideoRangeSupportTest {
     }
 
     @Test
-    fun executeChunkLengthFallback_retriesWithSmallerChunkOn403() {
+    fun executeChunkLengthFallback_doesNotRetryOn403() {
+        val attempts = mutableListOf<Long>()
+
+        val error = runCatching {
+            YouTubeGoogleVideoRangeSupport.executeChunkLengthFallback(300_000L) { chunkLength ->
+                attempts += chunkLength
+                throw ChunkRequestIOException(403, "HTTP 403")
+            }
+        }.exceptionOrNull()
+
+        // 403 不再 fallback，只尝试一次就抛出
+        assertEquals(listOf(300_000L), attempts)
+        assertTrue(error is ChunkRequestIOException)
+    }
+
+    @Test
+    fun executeChunkLengthFallback_retriesWithSmallerChunkOn416() {
         val attempts = mutableListOf<Long>()
 
         val result = YouTubeGoogleVideoRangeSupport.executeChunkLengthFallback(300_000L) { chunkLength ->
             attempts += chunkLength
             if (chunkLength == 300_000L) {
-                throw ChunkRequestIOException(403, "HTTP 403")
+                throw ChunkRequestIOException(416, "HTTP 416")
             }
             "ok-$chunkLength"
         }

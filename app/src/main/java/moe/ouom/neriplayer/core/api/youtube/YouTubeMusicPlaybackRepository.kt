@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.api.youtube
 
+import android.content.Context
 import androidx.media3.common.MimeTypes
 import java.io.IOException
 import java.net.URI
@@ -10,6 +11,7 @@ import java.util.TimeZone
 import kotlin.jvm.Volatile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.SettingsRepository
 import moe.ouom.neriplayer.data.YouTubeAuthBundle
@@ -31,6 +33,7 @@ import org.json.JSONObject
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.localization.Localization
+import org.schabi.newpipe.extractor.services.youtube.YoutubeJavaScriptPlayerManager
 import org.schabi.newpipe.extractor.stream.AudioStream
 import org.schabi.newpipe.extractor.stream.DeliveryMethod
 import org.schabi.newpipe.extractor.stream.StreamInfo
@@ -50,6 +53,7 @@ private const val YOUTUBE_PLAYER_IOS_USER_AGENT =
     "com.google.ios.youtube/21.03.2(iPhone16,2; U; CPU iOS 18_7_2 like Mac OS X; US)"
 private const val YOUTUBE_PLAYER_IOS_DEVICE_MODEL = "iPhone16,2"
 private const val YOUTUBE_PLAYER_IOS_OS_VERSION = "18.7.2.22H124"
+private const val YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME = "WEB_REMIX"
 
 private const val YOUTUBE_PLAYER_API_BASE_URL = "https://youtubei.googleapis.com/youtubei/v1"
 private const val YOUTUBE_PLAYER_API_FORMAT_VERSION = "2"
@@ -75,7 +79,9 @@ internal data class YouTubeAudioMetadata(
 
 private data class YouTubePlaybackBootstrap(
     val apiKey: String,
+    val webRemixClientVersion: String,
     val visitorData: String,
+    val playerJsUrl: String,
     val cookieHeader: String,
     val sessionIndex: String,
     val userAgent: String,
@@ -95,6 +101,11 @@ private data class YouTubePlayerAudioCandidate(
     val contentLength: Long?,
     val durationMs: Long
 )
+
+interface YouTubeStreamingCipherResolver {
+    fun resolveSignature(encryptedSignature: String): String?
+    fun resolveStreamingUrl(url: String): String
+}
 
 private fun playableAudioMimePreferenceScore(mimeType: String?): Int {
     return when (mimeType?.lowercase(Locale.US)) {
@@ -164,9 +175,14 @@ internal object YouTubeMusicPlaybackParser {
     fun parsePlayableAudio(
         root: JSONObject,
         preferredQualityKey: String? = null,
-        preferM4a: Boolean = false
+        preferM4a: Boolean = false,
+        cipherResolver: YouTubeStreamingCipherResolver? = null
     ): YouTubePlayableAudio? {
-        val candidates = collectAudioCandidates(root, requirePlayableUrl = true)
+        val candidates = collectAudioCandidates(
+            root = root,
+            requirePlayableUrl = true,
+            cipherResolver = cipherResolver
+        )
         val selected = selectCandidate(candidates, preferredQualityKey, preferM4a)
             .firstOrNull()
             ?: return null
@@ -210,7 +226,8 @@ internal object YouTubeMusicPlaybackParser {
 
     private fun collectAudioCandidates(
         root: JSONObject,
-        requirePlayableUrl: Boolean
+        requirePlayableUrl: Boolean,
+        cipherResolver: YouTubeStreamingCipherResolver? = null
     ): List<YouTubePlayerAudioCandidate> {
         val streamingData = root.optJSONObject("streamingData") ?: return emptyList()
         val formatArrays = listOfNotNull(
@@ -226,7 +243,7 @@ internal object YouTubeMusicPlaybackParser {
                     if (mimeType?.startsWith("audio/") != true) {
                         continue
                     }
-                    val url = resolveFormatUrl(format)
+                    val url = resolveFormatUrl(format, cipherResolver)
                     if (requirePlayableUrl && url.isBlank()) {
                         continue
                     }
@@ -249,10 +266,13 @@ internal object YouTubeMusicPlaybackParser {
         }
     }
 
-    private fun resolveFormatUrl(format: JSONObject): String {
+    private fun resolveFormatUrl(
+        format: JSONObject,
+        cipherResolver: YouTubeStreamingCipherResolver?
+    ): String {
         val directUrl = format.optString("url").trim()
         if (directUrl.isNotBlank()) {
-            return directUrl
+            return resolveStreamingUrl(directUrl, cipherResolver)
         }
 
         val cipher = format.optString("signatureCipher")
@@ -270,11 +290,38 @@ internal object YouTubeMusicPlaybackParser {
 
         val signature = params["sig"].orEmpty().ifBlank { params["signature"].orEmpty() }
         if (signature.isBlank()) {
-            return if (params.containsKey("s")) "" else url
+            if (!params.containsKey("s")) {
+                return resolveStreamingUrl(url, cipherResolver)
+            }
+            val decryptedSignature = params["s"]
+                ?.takeIf { it.isNotBlank() }
+                ?.let { cipherResolver?.resolveSignature(it) }
+                .orEmpty()
+            if (decryptedSignature.isBlank()) {
+                return ""
+            }
+            val signatureParameter = params["sp"].orEmpty().ifBlank { "sig" }
+            return resolveStreamingUrl(
+                appendQueryParameter(url, signatureParameter, decryptedSignature),
+                cipherResolver
+            )
         }
 
         val signatureParameter = params["sp"].orEmpty().ifBlank { "sig" }
-        return appendQueryParameter(url, signatureParameter, signature)
+        return resolveStreamingUrl(
+            appendQueryParameter(url, signatureParameter, signature),
+            cipherResolver
+        )
+    }
+
+    private fun resolveStreamingUrl(
+        url: String,
+        cipherResolver: YouTubeStreamingCipherResolver?
+    ): String {
+        if (url.isBlank()) {
+            return ""
+        }
+        return cipherResolver?.resolveStreamingUrl(url).orEmpty().ifBlank { url }
     }
 
     private fun parseDurationMs(root: JSONObject): Long {
@@ -367,6 +414,52 @@ internal object YouTubeMusicPlaybackParser {
                 append(key)
                 append('=')
                 append(value.encodeUrlComponent())
+            }
+        }
+    }
+
+    private fun extractQueryParameterFromUrl(url: String, key: String): String? {
+        val rawQuery = runCatching { URI(url).rawQuery }.getOrNull().orEmpty()
+        return rawQuery.split('&')
+            .asSequence()
+            .mapNotNull { segment ->
+                val resolvedKey = URLDecoder.decode(
+                    segment.substringBefore('='),
+                    Charsets.UTF_8.name()
+                )
+                if (resolvedKey.isBlank()) {
+                    null
+                } else {
+                    resolvedKey to URLDecoder.decode(
+                        segment.substringAfter('=', ""),
+                        Charsets.UTF_8.name()
+                    )
+                }
+            }
+            .firstOrNull { (resolvedKey, _) -> resolvedKey == key }
+            ?.second
+    }
+
+    private fun replaceQueryParameterInUrl(url: String, key: String, value: String): String {
+        val pattern = Regex("([?&])${Regex.escape(key)}=[^&]*")
+        return if (pattern.containsMatchIn(url)) {
+            val match = pattern.find(url) ?: return url
+            buildString(url.length + value.length) {
+                append(url, 0, match.range.first)
+                append(match.groupValues[1])
+                append(key)
+                append('=')
+                append(URLEncoder.encode(value, Charsets.UTF_8.name()))
+                append(url, match.range.last + 1, url.length)
+            }
+        } else {
+            val separator = if (url.contains('?')) '&' else '?'
+            buildString(url.length + key.length + value.length + 2) {
+                append(url)
+                append(separator)
+                append(key)
+                append('=')
+                append(URLEncoder.encode(value, Charsets.UTF_8.name()))
             }
         }
     }
@@ -539,13 +632,64 @@ internal object YouTubeMusicHlsManifestParser {
     }
 }
 
+private fun extractStreamQueryParameter(url: String, key: String): String? {
+    val rawQuery = runCatching { URI(url).rawQuery }.getOrNull().orEmpty()
+    return rawQuery.split('&')
+        .asSequence()
+        .mapNotNull { segment ->
+            val resolvedKey = URLDecoder.decode(
+                segment.substringBefore('='),
+                Charsets.UTF_8.name()
+            )
+            if (resolvedKey.isBlank()) {
+                null
+            } else {
+                resolvedKey to URLDecoder.decode(
+                    segment.substringAfter('=', ""),
+                    Charsets.UTF_8.name()
+                )
+            }
+        }
+        .firstOrNull { (resolvedKey, _) -> resolvedKey == key }
+        ?.second
+}
+
+private fun replaceStreamQueryParameter(url: String, key: String, value: String): String {
+    val pattern = Regex("([?&])${Regex.escape(key)}=[^&]*")
+    return if (pattern.containsMatchIn(url)) {
+        val match = pattern.find(url) ?: return url
+        buildString(url.length + value.length) {
+            append(url, 0, match.range.first)
+            append(match.groupValues[1])
+            append(key)
+            append('=')
+            append(URLEncoder.encode(value, Charsets.UTF_8.name()))
+            append(url, match.range.last + 1, url.length)
+        }
+    } else {
+        val separator = if (url.contains('?')) '&' else '?'
+        buildString(url.length + key.length + value.length + 2) {
+            append(url)
+            append(separator)
+            append(key)
+            append('=')
+            append(URLEncoder.encode(value, Charsets.UTF_8.name()))
+        }
+    }
+}
+
 class YouTubeMusicPlaybackRepository(
     private val okHttpClient: OkHttpClient,
     private val settings: SettingsRepository? = null,
-    private val authProvider: () -> YouTubeAuthBundle = { YouTubeAuthBundle() }
+    private val authProvider: () -> YouTubeAuthBundle = { YouTubeAuthBundle() },
+    private val streamingCipherResolverFactory: ((String) -> YouTubeStreamingCipherResolver)? = null,
+    private val applicationContext: Context? = null
 ) {
     private val downloader = NewPipeOkHttpDownloader(okHttpClient, authProvider)
     private val playableAudioCache = linkedMapOf<String, CachedPlayableAudio>()
+    private val ejsChallengeSolver = applicationContext?.let {
+        YouTubeEjsChallengeSolver(it, okHttpClient)
+    }
 
     @Volatile
     private var bootstrapCache: YouTubePlaybackBootstrap? = null
@@ -686,7 +830,12 @@ class YouTubeMusicPlaybackRepository(
         var bestMetadata: YouTubeAudioMetadata? = null
 
         repeat(PLAYER_REQUEST_MAX_ATTEMPTS) { attempt ->
+            val cipherResolver = createStreamingCipherResolver(
+                videoId = videoId,
+                playerJsUrl = bootstrap.playerJsUrl
+            )
             var bestPlayableAudio: YouTubePlayableAudio? = null
+            var bestPlayableAudioClientName: String? = null
             for (profile in playerClientProfiles()) {
                 try {
                     val root = postPlayerRequest(
@@ -717,27 +866,37 @@ class YouTubeMusicPlaybackRepository(
                         val directPlayableAudio = YouTubeMusicPlaybackParser.parsePlayableAudio(
                             root = root,
                             preferredQualityKey = preferredQualityKey,
-                            preferM4a = preferM4a
+                            preferM4a = preferM4a,
+                            cipherResolver = cipherResolver
                         )
                         selectPreferredPlayableAudio(
                             current = hlsPlayableAudio,
-                            incoming = directPlayableAudio
+                            incoming = directPlayableAudio,
+                            currentClientName = profile.clientName,
+                            incomingClientName = profile.clientName
                         )
                     } else {
                         null
                     }
                     if (playability.status == "OK" && playableAudio != null) {
-                        val resolvedPlayableAudio = selectPreferredPlayableAudio(
-                            current = bestPlayableAudio,
-                            incoming = playableAudio
-                        ) ?: continue
-                        bestPlayableAudio = resolvedPlayableAudio
-                        if (resolvedPlayableAudio.streamType == YouTubePlayableStreamType.HLS) {
+                        if (profile.clientName == YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME &&
+                            playableAudio.streamType == YouTubePlayableStreamType.DIRECT
+                        ) {
                             return PlayerAudioResolution(
-                                playableAudio = resolvedPlayableAudio.mergeMetadataFrom(bestMetadata),
+                                playableAudio = playableAudio.mergeMetadataFrom(bestMetadata),
                                 metadata = bestMetadata
                             )
                         }
+                        val resolvedPlayableAudio = selectPreferredPlayableAudio(
+                            current = bestPlayableAudio,
+                            incoming = playableAudio,
+                            currentClientName = bestPlayableAudioClientName,
+                            incomingClientName = profile.clientName
+                        ) ?: continue
+                        if (resolvedPlayableAudio === playableAudio) {
+                            bestPlayableAudioClientName = profile.clientName
+                        }
+                        bestPlayableAudio = resolvedPlayableAudio
                         continue
                     }
 
@@ -776,6 +935,87 @@ class YouTubeMusicPlaybackRepository(
             return PlayerAudioResolution(metadata = bestMetadata)
         }
         throw lastError ?: IOException("YouTube Music player request failed")
+    }
+
+    private fun createStreamingCipherResolver(
+        videoId: String,
+        playerJsUrl: String
+    ): YouTubeStreamingCipherResolver {
+        streamingCipherResolverFactory?.let { factory ->
+            return factory(videoId)
+        }
+        ensureInitialized()
+
+        var signatureErrorLogged = false
+        var throttlingErrorLogged = false
+
+        return object : YouTubeStreamingCipherResolver {
+            override fun resolveSignature(encryptedSignature: String): String? {
+                val resolvedPlayerJsUrl = playerJsUrl.ifBlank { bootstrapCache?.playerJsUrl.orEmpty() }
+                if (resolvedPlayerJsUrl.isNotBlank()) {
+                    val resolvedByEjs = runCatching {
+                        runBlocking {
+                            ejsChallengeSolver?.solve(
+                                playerJsUrl = resolvedPlayerJsUrl,
+                                encryptedSignature = encryptedSignature
+                            )?.signature
+                        }
+                    }.getOrNull()?.takeIf { it.isNotBlank() }
+                    if (resolvedByEjs != null) {
+                        return resolvedByEjs
+                    }
+                }
+                return runCatching {
+                    YoutubeJavaScriptPlayerManager.deobfuscateSignature(videoId, encryptedSignature)
+                }.onFailure { error ->
+                    if (!signatureErrorLogged) {
+                        signatureErrorLogged = true
+                        NPLogger.w(
+                            "YouTubeMusicPlayback",
+                            "Failed to deobfuscate streaming signature for $videoId",
+                            error
+                        )
+                    }
+                }.getOrNull()?.takeIf { it.isNotBlank() }
+            }
+
+            override fun resolveStreamingUrl(url: String): String {
+                val obfuscatedN = extractStreamQueryParameter(url, "n")
+                val resolvedPlayerJsUrl = playerJsUrl.ifBlank { bootstrapCache?.playerJsUrl.orEmpty() }
+                if (!obfuscatedN.isNullOrBlank() && resolvedPlayerJsUrl.isNotBlank()) {
+                    val resolvedByEjs = runCatching {
+                        runBlocking {
+                            ejsChallengeSolver?.solve(
+                                playerJsUrl = resolvedPlayerJsUrl,
+                                throttlingParameter = obfuscatedN
+                            )?.throttlingParameter
+                        }
+                    }.getOrNull()?.takeIf { it.isNotBlank() }
+                    if (resolvedByEjs != null && resolvedByEjs != obfuscatedN) {
+                        return replaceStreamQueryParameter(
+                            url,
+                            "n",
+                            resolvedByEjs
+                        )
+                    }
+                }
+                return runCatching {
+                    YoutubeJavaScriptPlayerManager.getUrlWithThrottlingParameterDeobfuscated(
+                        videoId,
+                        url
+                    )
+                }.onFailure { error ->
+                    if (!throttlingErrorLogged) {
+                        throttlingErrorLogged = true
+                        NPLogger.w(
+                            "YouTubeMusicPlayback",
+                            "Failed to deobfuscate throttling parameter for $videoId",
+                            error
+                        )
+                    }
+                }.getOrDefault(url)
+            }
+        }
     }
 
     private fun resolveHlsPlayableAudio(
@@ -833,32 +1073,42 @@ class YouTubeMusicPlaybackRepository(
         profile: YouTubePlayerClientProfile
     ): JSONObject {
         val requestLocale = currentPlayerRequestLocale()
-        val body = buildPlayerRequestBody(videoId, profile)
+        val requestUrl = resolvePlayerRequestUrl(profile, bootstrap, videoId)
+        val origin = resolvePlayerRequestOrigin(profile)
+        val clientVersion = resolvePlayerClientVersion(profile, bootstrap)
+        val userAgent = resolvePlayerRequestUserAgent(profile, bootstrap)
+        val body = buildPlayerRequestBody(
+            videoId = videoId,
+            profile = profile,
+            bootstrap = bootstrap,
+            clientVersion = clientVersion,
+            userAgent = userAgent
+        )
         val requestHeaders = linkedMapOf(
             "Cookie" to bootstrap.cookieHeader,
-            "User-Agent" to profile.userAgent,
+            "User-Agent" to userAgent,
             "Accept-Language" to requestLocale.acceptLanguage,
             "Content-Type" to "application/json",
             "X-Goog-AuthUser" to auth.resolveXGoogAuthUser().ifBlank { bootstrap.sessionIndex },
-            "X-Goog-Api-Format-Version" to YOUTUBE_PLAYER_API_FORMAT_VERSION,
+            "X-Goog-Visitor-Id" to bootstrap.visitorData,
             "X-YouTube-Client-Name" to profile.clientId,
-            "X-YouTube-Client-Version" to profile.clientVersion
+            "X-YouTube-Client-Version" to clientVersion
         )
-        val origin = if (profile.clientName == "WEB_REMIX") YOUTUBE_MUSIC_ORIGIN else YOUTUBE_WEB_ORIGIN
-        
+        if (profile.clientName != "WEB_REMIX") {
+            requestHeaders["X-Goog-Api-Format-Version"] = YOUTUBE_PLAYER_API_FORMAT_VERSION
+        }
         requestHeaders["Origin"] = origin
+        if (profile.clientName == "WEB_REMIX") {
+            requestHeaders["X-Origin"] = origin
+        }
         requestHeaders["Referer"] = "$origin/"
-        
+
         auth.resolveAuthorizationHeader(origin = origin)
             .takeIf { it.isNotBlank() }
             ?.let { requestHeaders["Authorization"] = it }
 
         val request = Request.Builder()
-            .url(
-                "$YOUTUBE_PLAYER_API_BASE_URL/${profile.endpointPath}" +
-                    "?prettyPrint=false&id=$videoId&key=${bootstrap.apiKey}" +
-                    if (profile.responseField != null) "&\$fields=${profile.responseField}" else ""
-            )
+            .url(requestUrl)
             .apply {
                 requestHeaders.forEach { (name, value) ->
                     header(name, value)
@@ -875,17 +1125,28 @@ class YouTubeMusicPlaybackRepository(
 
     private fun buildPlayerRequestBody(
         videoId: String,
-        profile: YouTubePlayerClientProfile
+        profile: YouTubePlayerClientProfile,
+        bootstrap: YouTubePlaybackBootstrap,
+        clientVersion: String,
+        userAgent: String
     ): JSONObject {
         val requestLocale = currentPlayerRequestLocale()
         val clientContext = JSONObject()
             .put("clientName", profile.clientName)
-            .put("clientVersion", profile.clientVersion)
-            .put("clientScreen", profile.clientScreen)
+            .put("clientVersion", clientVersion)
             .put("platform", profile.platform)
             .put("hl", requestLocale.hl)
             .put("gl", requestLocale.gl)
             .put("utcOffsetMinutes", utcOffsetMinutes())
+        if (profile.clientName != "WEB_REMIX") {
+            clientContext.put("clientScreen", profile.clientScreen)
+        }
+        if (bootstrap.visitorData.isNotBlank()) {
+            clientContext.put("visitorData", bootstrap.visitorData)
+        }
+        if (profile.clientName == "WEB_REMIX" && userAgent.isNotBlank()) {
+            clientContext.put("userAgent", userAgent)
+        }
         profile.deviceMake?.let { clientContext.put("deviceMake", it) }
         profile.deviceModel?.let { clientContext.put("deviceModel", it) }
         profile.osName?.let { clientContext.put("osName", it) }
@@ -916,6 +1177,67 @@ class YouTubeMusicPlaybackRepository(
             }
     }
 
+    private fun resolvePlayerRequestOrigin(profile: YouTubePlayerClientProfile): String {
+        return if (profile.clientName == "WEB_REMIX") YOUTUBE_MUSIC_ORIGIN else YOUTUBE_WEB_ORIGIN
+    }
+
+    private fun resolvePlayerRequestUrl(
+        profile: YouTubePlayerClientProfile,
+        bootstrap: YouTubePlaybackBootstrap,
+        videoId: String
+    ): String {
+        val baseUrl = if (profile.clientName == "WEB_REMIX") {
+            "$YOUTUBE_MUSIC_ORIGIN/youtubei/v1/${profile.endpointPath}"
+        } else {
+            "$YOUTUBE_PLAYER_API_BASE_URL/${profile.endpointPath}"
+        }
+        return buildString {
+            append(baseUrl)
+            append("?prettyPrint=false")
+            if (profile.clientName != "WEB_REMIX") {
+                append("&id=")
+                append(videoId)
+            }
+            append("&key=")
+            append(bootstrap.apiKey)
+            if (profile.responseField != null) {
+                append("&\$fields=")
+                append(profile.responseField)
+            }
+        }
+    }
+
+    private fun resolvePlayerClientVersion(
+        profile: YouTubePlayerClientProfile,
+        bootstrap: YouTubePlaybackBootstrap
+    ): String {
+        return if (profile.clientName == "WEB_REMIX") {
+            bootstrap.webRemixClientVersion.ifBlank { profile.clientVersion }
+        } else {
+            profile.clientVersion
+        }
+    }
+
+    private fun resolvePlayerRequestUserAgent(
+        profile: YouTubePlayerClientProfile,
+        bootstrap: YouTubePlaybackBootstrap
+    ): String {
+        return if (profile.clientName == "WEB_REMIX") {
+            bootstrap.userAgent.ifBlank { profile.userAgent }
+        } else {
+            profile.userAgent
+        }
+    }
+
+    private fun resolvePlayerJavaScriptUrl(rawUrl: String): String {
+        return when {
+            rawUrl.startsWith("https://") || rawUrl.startsWith("http://") -> rawUrl
+            rawUrl.startsWith("//") -> "https:$rawUrl"
+            rawUrl.startsWith("/") -> "$YOUTUBE_MUSIC_ORIGIN$rawUrl"
+            else -> "$YOUTUBE_MUSIC_ORIGIN/$rawUrl"
+        }
+    }
+
     private fun bootstrap(
         auth: YouTubeAuthBundle,
         forceRefresh: Boolean = false
@@ -941,9 +1263,11 @@ class YouTubeMusicPlaybackRepository(
             userAgent = userAgent,
             cookieHeader = cookieHeader
         )
-        return YouTubePlaybackBootstrap(
+        val parsedBootstrap = YouTubePlaybackBootstrap(
             apiKey = findRequired(homeHtml, "\"INNERTUBE_API_KEY\":\"([^\"]+)\""),
+            webRemixClientVersion = findRequired(homeHtml, "\"INNERTUBE_CLIENT_VERSION\":\"([^\"]+)\""),
             visitorData = findRequired(homeHtml, "\"VISITOR_DATA\":\"([^\"]+)\""),
+            playerJsUrl = resolvePlayerJavaScriptUrl(findRequired(homeHtml, "\"jsUrl\":\"([^\"]+)\"")),
             cookieHeader = cookieHeader,
             sessionIndex = auth.resolveXGoogAuthUser().ifBlank {
                 findOptional(homeHtml, "\"SESSION_INDEX\":\"?([0-9]+)\"?").ifBlank { "0" }
@@ -951,7 +1275,10 @@ class YouTubeMusicPlaybackRepository(
             userAgent = userAgent,
             fetchedAtMs = now
         )
-            .also { bootstrapCache = it }
+        if (cached != null && cached.webRemixClientVersion != parsedBootstrap.webRemixClientVersion) {
+            YoutubeJavaScriptPlayerManager.clearAllCaches()
+        }
+        return parsedBootstrap.also { bootstrapCache = it }
     }
 
     private fun fetchBootstrapHtml(
@@ -1114,6 +1441,52 @@ class YouTubeMusicPlaybackRepository(
         )
     }
 
+    internal fun extractQueryParameterFromUrl(url: String, key: String): String? {
+        val rawQuery = runCatching { URI(url).rawQuery }.getOrNull().orEmpty()
+        return rawQuery.split('&')
+            .asSequence()
+            .mapNotNull { segment ->
+                val resolvedKey = URLDecoder.decode(
+                    segment.substringBefore('='),
+                    Charsets.UTF_8.name()
+                )
+                if (resolvedKey.isBlank()) {
+                    null
+                } else {
+                    resolvedKey to URLDecoder.decode(
+                        segment.substringAfter('=', ""),
+                        Charsets.UTF_8.name()
+                    )
+                }
+            }
+            .firstOrNull { (resolvedKey, _) -> resolvedKey == key }
+            ?.second
+    }
+
+    internal fun replaceQueryParameterInUrl(url: String, key: String, value: String): String {
+        val pattern = Regex("([?&])${Regex.escape(key)}=[^&]*")
+        return if (pattern.containsMatchIn(url)) {
+            val match = pattern.find(url) ?: return url
+            buildString(url.length + value.length) {
+                append(url, 0, match.range.first)
+                append(match.groupValues[1])
+                append(key)
+                append('=')
+                append(URLEncoder.encode(value, Charsets.UTF_8.name()))
+                append(url, match.range.last + 1, url.length)
+            }
+        } else {
+            val separator = if (url.contains('?')) '&' else '?'
+            buildString(url.length + key.length + value.length + 2) {
+                append(url)
+                append(separator)
+                append(key)
+                append('=')
+                append(URLEncoder.encode(value, Charsets.UTF_8.name()))
+            }
+        }
+    }
+
     private fun playerClientProfiles(): List<YouTubePlayerClientProfile> {
         return listOf(
             YouTubePlayerClientProfile(
@@ -1139,7 +1512,7 @@ class YouTubeMusicPlaybackRepository(
             ),
             YouTubePlayerClientProfile(
                 clientId = "67",
-                clientName = "WEB_REMIX",
+                clientName = YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME,
                 clientVersion = "1.20250101.01.00",
                 userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
                 endpointPath = "player",
@@ -1192,7 +1565,9 @@ class YouTubeMusicPlaybackRepository(
 
     internal fun selectPreferredPlayableAudio(
         current: YouTubePlayableAudio?,
-        incoming: YouTubePlayableAudio?
+        incoming: YouTubePlayableAudio?,
+        currentClientName: String? = null,
+        incomingClientName: String? = null
     ): YouTubePlayableAudio? {
         if (incoming == null) {
             return current
@@ -1200,8 +1575,19 @@ class YouTubeMusicPlaybackRepository(
         if (current == null) {
             return incoming
         }
+        if (current.streamType == YouTubePlayableStreamType.DIRECT &&
+            incoming.streamType == YouTubePlayableStreamType.DIRECT &&
+            currentClientName != incomingClientName
+        ) {
+            val incomingIsPreferredClient = incomingClientName == YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME
+            val currentIsPreferredClient = currentClientName == YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME
+            if (incomingIsPreferredClient != currentIsPreferredClient) {
+                return if (incomingIsPreferredClient) incoming else current
+            }
+        }
         return when {
             incoming.streamType != current.streamType -> {
+                // 优先 progressive 直链，seek 更快且能绕过数据中心 IP 下的 HLS/SABR 403
                 if (incoming.streamType == YouTubePlayableStreamType.DIRECT) incoming else current
             }
             playableAudioMimePreferenceScore(incoming.mimeType) !=

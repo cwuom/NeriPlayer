@@ -25,6 +25,27 @@ internal object YouTubeGoogleVideoRangeSupport {
     private const val DEFAULT_CHUNK_SIZE_BYTES = 1024L * 1024L
     private const val MIN_CHUNK_SIZE_BYTES = 128L * 1024L
 
+    fun supportsSeekingWithoutUrlRefresh(url: String): Boolean {
+        val uri = runCatching { java.net.URI(url) }.getOrNull() ?: return false
+        val host = uri.host?.lowercase(Locale.US) ?: return false
+        if (!host.contains("googlevideo.com")) {
+            return false
+        }
+        val path = uri.path?.lowercase(Locale.US).orEmpty()
+        if (host.startsWith("manifest.") || path.contains("/api/manifest/")) {
+            return true
+        }
+        if (path.contains("/playlist/index.m3u8") || path.contains("/file/seg.ts")) {
+            return true
+        }
+        val queryParameters = parseQueryParameters(uri.rawQuery)
+        val hasResolvedThrottling = queryParameters["n"]?.isNotBlank() == true
+        val hasResolvedSignature =
+            queryParameters["sig"]?.isNotBlank() == true ||
+                queryParameters["signature"]?.isNotBlank() == true
+        return hasResolvedThrottling && hasResolvedSignature
+    }
+
     fun shouldUseChunkedRange(uri: Uri): Boolean {
         return shouldUseChunkedRange(uri.toString())
     }
@@ -36,11 +57,7 @@ internal object YouTubeGoogleVideoRangeSupport {
         if (!host.contains("googlevideo.com")) {
             return false
         }
-        val path = uri.path?.lowercase(Locale.US).orEmpty()
-        if (host.startsWith("manifest.") || path.contains("/api/manifest/")) {
-            return false
-        }
-        if (path.contains("/playlist/index.m3u8") || path.contains("/file/seg.ts")) {
+        if (supportsSeekingWithoutUrlRefresh(url)) {
             return false
         }
         val rawUrl = url.lowercase(Locale.US)
@@ -84,12 +101,14 @@ internal object YouTubeGoogleVideoRangeSupport {
     }
 
     fun shouldRetryChunkError(error: IOException): Boolean {
+        // 只对 416 (Range Not Satisfiable) 做 chunk 大小 fallback
+        // 403 是 CDN 拒绝访问，缩小 chunk 无法解决，应直接抛出让上层刷新 URL
         return when (error) {
             is HttpDataSource.InvalidResponseCodeException -> {
-                error.responseCode == 403 || error.responseCode == 416
+                error.responseCode == 416
             }
             is ChunkRequestIOException -> {
-                error.responseCode == 403 || error.responseCode == 416
+                error.responseCode == 416
             }
             else -> false
         }
@@ -198,6 +217,29 @@ internal object YouTubeGoogleVideoRangeSupport {
         val start = rangePart.substringBefore('-').trim().toLongOrNull() ?: return null
         val end = rangePart.substringAfter('-', "").trim().toLongOrNull() ?: return null
         return (end - start + 1L).takeIf { it > 0L }
+    }
+
+    private fun parseQueryParameters(rawQuery: String?): Map<String, String> {
+        if (rawQuery.isNullOrBlank()) {
+            return emptyMap()
+        }
+        return rawQuery
+            .split('&')
+            .mapNotNull { segment ->
+                val rawKey = segment.substringBefore('=')
+                if (rawKey.isBlank()) {
+                    null
+                } else {
+                    val rawValue = segment.substringAfter('=', "")
+                    runCatching {
+                        java.net.URLDecoder.decode(rawKey, Charsets.UTF_8.name()) to
+                            java.net.URLDecoder.decode(rawValue, Charsets.UTF_8.name())
+                    }.getOrElse {
+                        rawKey to rawValue
+                    }
+                }
+            }
+            .toMap()
     }
 }
 

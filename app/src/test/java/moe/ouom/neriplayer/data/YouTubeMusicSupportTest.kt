@@ -75,9 +75,10 @@ class YouTubeMusicSupportTest {
     }
 
     @Test
-    fun buildYouTubeStreamRequestHeaders_avoidsAuthorizationAndOriginHeaders() {
+    fun buildYouTubeStreamRequestHeaders_attachesOriginAndAuthorizationHeaders() {
         val headers = YouTubeAuthBundle(
             cookieHeader = "SAPISID=sap-value; SID=sid-value",
+            xGoogAuthUser = "5",
             userAgent = "UnitTestAgent/5.0"
         ).buildYouTubeStreamRequestHeaders(
             refererOrigin = YOUTUBE_MUSIC_ORIGIN
@@ -85,9 +86,27 @@ class YouTubeMusicSupportTest {
 
         assertTrue(headers["Cookie"].orEmpty().contains("SAPISID=sap-value"))
         assertEquals("UnitTestAgent/5.0", headers["User-Agent"])
+        assertEquals("5", headers["X-Goog-AuthUser"])
+        assertEquals(YOUTUBE_MUSIC_ORIGIN, headers["Origin"])
+        assertEquals(YOUTUBE_MUSIC_ORIGIN, headers["X-Origin"])
+        assertEquals("$YOUTUBE_MUSIC_ORIGIN/", headers["Referer"])
+        assertTrue(headers["Authorization"].orEmpty().startsWith("SAPISIDHASH "))
+    }
+
+    @Test
+    fun buildYouTubeStreamRequestHeaders_skipsAuthorizationWhenAuthMissing() {
+        val headers = YouTubeAuthBundle(
+            userAgent = "UnitTestAgent/6.0"
+        ).buildYouTubeStreamRequestHeaders(
+            refererOrigin = YOUTUBE_MUSIC_ORIGIN
+        )
+
+        assertEquals("SOCS=CAI", headers["Cookie"])
+        assertEquals("UnitTestAgent/6.0", headers["User-Agent"])
+        assertEquals("0", headers["X-Goog-AuthUser"])
+        assertEquals(YOUTUBE_MUSIC_ORIGIN, headers["Origin"])
+        assertEquals(YOUTUBE_MUSIC_ORIGIN, headers["X-Origin"])
         assertEquals("$YOUTUBE_MUSIC_ORIGIN/", headers["Referer"])
         assertFalse(headers.containsKey("Authorization"))
-        assertFalse(headers.containsKey("Origin"))
-        assertFalse(headers.containsKey("X-Origin"))
     }
 }

@@ -253,6 +253,7 @@ dependencies {
 
     // WorkManager - 后台同步
     implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.androidx.javascriptengine)
 
     // 取主题色
     implementation(libs.androidx.palette.ktx)

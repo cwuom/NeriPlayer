@@ -35,6 +35,7 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.data.BiliCookieRepository
 import moe.ouom.neriplayer.data.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.YouTubeAuthRepository
+import moe.ouom.neriplayer.data.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.buildYouTubeStreamRequestHeaders
 import moe.ouom.neriplayer.util.NPLogger
 
@@ -143,7 +144,7 @@ class ConditionalHttpDataSourceFactory(
     private fun buildYouTubeHeaders(original: Map<String, String>): Map<String, String> {
         val refererOrigin = original["Referer"].orEmpty()
             .removeSuffix("/")
-            .ifBlank { latestYouTubeAuth.origin.ifBlank { YOUTUBE_WEB_REFERER.removeSuffix("/") } }
+            .ifBlank { latestYouTubeAuth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN } }
         return latestYouTubeAuth.buildYouTubeStreamRequestHeaders(
             original = original,
             refererOrigin = refererOrigin

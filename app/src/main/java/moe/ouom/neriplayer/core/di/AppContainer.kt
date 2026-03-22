@@ -139,7 +139,8 @@ object AppContainer {
         YouTubeMusicPlaybackRepository(
             okHttpClient = sharedOkHttpClient,
             settings = settingsRepo,
-            authProvider = youtubeAuthRepo::getAuthOnce
+            authProvider = youtubeAuthRepo::getAuthOnce,
+            applicationContext = application
         )
     }
 

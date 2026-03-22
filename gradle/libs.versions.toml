@@ -38,6 +38,7 @@ securityCrypto = "1.1.0"
 taglib = "1.0.5"
 uiGraphics = "1.9.0"
 workRuntimeKtx = "2.11.0"
+javascriptengine = "1.0.0"
 
 [libraries]
 accompanist-navigation-animation = { module = "com.google.accompanist:accompanist-navigation-animation", version.ref = "accompanistNavigationAnimation" }
@@ -55,6 +56,7 @@ androidx-security-crypto = { module = "androidx.security:security-crypto", versi
 taglib = { module = "io.github.kyant0:taglib", version.ref = "taglib" }
 androidx-ui-graphics = { module = "androidx.compose.ui:ui-graphics", version.ref = "uiGraphics" }
 androidx-work-runtime-ktx = { module = "androidx.work:work-runtime-ktx", version.ref = "workRuntimeKtx" }
+androidx-javascriptengine = { module = "androidx.javascriptengine:javascriptengine", version.ref = "javascriptengine" }
 coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coilCompose" }
 dec = { module = "org.brotli:dec", version.ref = "dec" }
 gson = { module = "com.google.code.gson:gson", version.ref = "gson" }

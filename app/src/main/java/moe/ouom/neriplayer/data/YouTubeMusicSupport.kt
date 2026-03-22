@@ -160,8 +160,15 @@ fun YouTubeAuthBundle.buildYouTubeStreamRequestHeaders(
         headers["Cookie"] = cookieHeader
     }
     headers.putIfAbsent("User-Agent", resolveRequestUserAgent())
+    headers.putIfAbsent("X-Goog-AuthUser", resolveXGoogAuthUser())
+    headers.putIfAbsent("Origin", refererOrigin)
+    headers.putIfAbsent("X-Origin", refererOrigin)
     if (includeReferer) {
         headers.putIfAbsent("Referer", "$refererOrigin/")
+    }
+    val authorization = resolveAuthorizationHeader(origin = refererOrigin)
+    if (authorization.isNotBlank()) {
+        headers.putIfAbsent("Authorization", authorization)
     }
     return headers
 }

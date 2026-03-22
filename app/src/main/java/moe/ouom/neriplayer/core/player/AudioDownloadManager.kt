@@ -1016,7 +1016,8 @@ fun getLocalFilePath(context: Context, song: SongItem): String? {
                         break
                     }
                 } catch (error: ChunkRequestIOException) {
-                    if (error.responseCode == 416 && downloadedBytes > 0L) {
+                    if ((error.responseCode == 416 || error.responseCode == 403) && downloadedBytes > 0L) {
+                        // 416 = range 越界，403 = CDN 拒绝，已有部分数据时保留
                         break
                     }
                     throw error
