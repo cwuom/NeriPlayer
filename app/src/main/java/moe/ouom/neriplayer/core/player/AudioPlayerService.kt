@@ -73,6 +73,16 @@ import java.io.File
 import android.content.pm.ServiceInfo
 import androidx.core.net.toUri
 
+private data class PlaybackNotificationSnapshot(
+    val title: String,
+    val text: String,
+    val isTransportActive: Boolean,
+    val isFavorite: Boolean,
+    val requiresInteractiveFavoriteConfirmation: Boolean,
+    val largeIconReady: Boolean,
+    val coverSource: String?,
+)
+
 @Suppress("unused")
 class AudioPlayerService : Service() {
 
@@ -100,6 +110,7 @@ class AudioPlayerService : Service() {
     private var allowServiceRestart = true
     private var hasReceivedStartCommand = false
     private var isForegroundStarted = false
+    private var lastNotificationSnapshot: PlaybackNotificationSnapshot? = null
 
     private val mediaSessionCallback = object : MediaSessionCompat.Callback() {
         override fun onPlay() { PlayerManager.play(); updateAll() }
@@ -181,19 +192,19 @@ class AudioPlayerService : Service() {
 
         serviceScope.launch {
             PlayerManager.isPlayingFlow.collect {
-                updatePlaybackState(force = true)
+                updatePlaybackState()
                 updateNotification()
             }
         }
         serviceScope.launch {
             PlayerManager.playWhenReadyFlow.collect {
-                updatePlaybackState(force = true)
+                updatePlaybackState()
                 updateNotification()
             }
         }
         serviceScope.launch {
             PlayerManager.playerPlaybackStateFlow.collect {
-                updatePlaybackState(force = true)
+                updatePlaybackState()
                 updateNotification()
             }
         }
@@ -467,8 +478,43 @@ class AudioPlayerService : Service() {
         if (!isForegroundStarted) {
             return
         }
+        val snapshot = buildNotificationSnapshot()
+        if (snapshot == lastNotificationSnapshot) {
+            return
+        }
+        lastNotificationSnapshot = snapshot
         val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         nm.notify(NOTIFICATION_ID, buildNotification())
+    }
+
+    private fun buildNotificationSnapshot(): PlaybackNotificationSnapshot {
+        val song = PlayerManager.currentSongFlow.value
+        val timerState = PlayerManager.sleepTimerManager.timerState.value
+        val text = if (timerState.isActive) {
+            val timerInfo = when (timerState.mode) {
+                SleepTimerMode.COUNTDOWN -> {
+                    val remaining = PlayerManager.sleepTimerManager.formatRemainingTime()
+                    getString(R.string.notification_timer_remaining, remaining)
+                }
+                SleepTimerMode.FINISH_CURRENT -> getString(R.string.notification_stop_after_current)
+                SleepTimerMode.FINISH_PLAYLIST -> getString(R.string.notification_stop_after_playlist)
+            }
+            song?.displayArtist()
+                ?.takeIf { it.isNotBlank() }
+                ?.let { "$it | $timerInfo" }
+                ?: timerInfo
+        } else {
+            song?.displayArtist() ?: ""
+        }
+        return PlaybackNotificationSnapshot(
+            title = song?.displayName() ?: "NeriPlayer",
+            text = text,
+            isTransportActive = PlayerManager.isTransportActive(),
+            isFavorite = isFavoriteSong(song),
+            requiresInteractiveFavoriteConfirmation = requiresInteractiveFavoriteConfirmation(song),
+            largeIconReady = currentLargeIcon != null,
+            coverSource = currentCoverSource,
+        )
     }
 
     private fun updateMetadata() {
@@ -533,12 +579,18 @@ class AudioPlayerService : Service() {
             else -> PlaybackStateCompat.STATE_PAUSED
         }
         val playbackSpeed = if (playbackState == PlaybackStateCompat.STATE_PLAYING) 1.0f else 0.0f
+        val controlFingerprint = when {
+            !canToggleFavoriteFromExternalSurface(song) -> 0
+            isFav -> 2
+            else -> 1
+        }
         val nowElapsedRealtimeMs = SystemClock.elapsedRealtime()
 
         if (!mediaSessionPlaybackStateThrottler.shouldDispatch(
                 playbackState = playbackState,
                 positionMs = pos,
                 speed = playbackSpeed,
+                controlFingerprint = controlFingerprint,
                 nowElapsedRealtimeMs = nowElapsedRealtimeMs,
                 force = force,
             )
@@ -563,6 +615,7 @@ class AudioPlayerService : Service() {
             playbackState = playbackState,
             positionMs = pos,
             speed = playbackSpeed,
+            controlFingerprint = controlFingerprint,
             nowElapsedRealtimeMs = nowElapsedRealtimeMs,
         )
     }

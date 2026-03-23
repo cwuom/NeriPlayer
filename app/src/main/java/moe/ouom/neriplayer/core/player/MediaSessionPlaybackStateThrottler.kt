@@ -7,6 +7,7 @@ private data class MediaSessionPlaybackStateSnapshot(
     val playbackState: Int,
     val positionMs: Long,
     val speed: Float,
+    val controlFingerprint: Int,
     val elapsedRealtimeMs: Long,
 )
 
@@ -21,13 +22,22 @@ internal class MediaSessionPlaybackStateThrottler(
         playbackState: Int,
         positionMs: Long,
         speed: Float,
+        controlFingerprint: Int,
         nowElapsedRealtimeMs: Long,
         force: Boolean = false,
     ): Boolean {
         val snapshot = lastSnapshot ?: return true
-        if (force) return true
+        if (snapshot.playbackState == playbackState &&
+            snapshot.positionMs == positionMs &&
+            snapshot.speed == speed &&
+            snapshot.controlFingerprint == controlFingerprint
+        ) {
+            return false
+        }
+        if (snapshot.controlFingerprint != controlFingerprint) return true
         if (snapshot.playbackState != playbackState) return true
         if (snapshot.speed != speed) return true
+        if (force) return true
 
         if (playbackState == PlaybackStateCompat.STATE_PLAYING) {
             val expectedPositionMs = snapshot.positionMs +
@@ -46,12 +56,14 @@ internal class MediaSessionPlaybackStateThrottler(
         playbackState: Int,
         positionMs: Long,
         speed: Float,
+        controlFingerprint: Int,
         nowElapsedRealtimeMs: Long,
     ) {
         lastSnapshot = MediaSessionPlaybackStateSnapshot(
             playbackState = playbackState,
             positionMs = positionMs,
             speed = speed,
+            controlFingerprint = controlFingerprint,
             elapsedRealtimeMs = nowElapsedRealtimeMs,
         )
     }
