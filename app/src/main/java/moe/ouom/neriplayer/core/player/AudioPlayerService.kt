@@ -102,12 +102,11 @@ class AudioPlayerService : Service() {
 
     private val mediaSessionCallback = object : MediaSessionCompat.Callback() {
         override fun onPlay() { PlayerManager.play(); updateAll() }
-        override fun onPause() { handleMediaSessionPause() }
+        override fun onPause() { handleExternalPauseCommand("media_session_pause") }
         override fun onSkipToNext() { PlayerManager.next(); updateAll() }
         override fun onSkipToPrevious() { PlayerManager.previous(); updateAll() }
         override fun onStop() {
-            PlayerManager.pause()
-            updateAll()
+            handleExternalPauseCommand("media_session_stop", stopService = true)
         }
         override fun onSeekTo(pos: Long) { PlayerManager.seekTo(pos); updatePlaybackState(); updateNotification() }
         override fun onCustomAction(action: String?, extras: Bundle?) {
@@ -120,11 +119,12 @@ class AudioPlayerService : Service() {
         }
     }
 
-    private fun handleMediaSessionPause() {
+    private fun handleExternalPauseCommand(source: String, stopService: Boolean = false) {
+        NPLogger.d("NERI-APS", "Received external pause command: source=$source")
         if (PlayerManager.shouldIgnoreExternalPauseCommand()) {
             NPLogger.w(
                 "NERI-APS",
-                "Ignored stale external pause during auto track transition."
+                "Ignored stale external pause during auto track transition: source=$source"
             )
             updatePlaybackState()
             updateNotification()
@@ -132,6 +132,11 @@ class AudioPlayerService : Service() {
         }
         PlayerManager.pause()
         updateAll()
+        if (stopService) {
+            allowServiceRestart = false
+            stopForegroundIfStarted()
+            stopSelf()
+        }
     }
 
     override fun onCreate() {
@@ -253,7 +258,7 @@ class AudioPlayerService : Service() {
                 updateAll()
             }
             ACTION_PAUSE -> {
-                handleMediaSessionPause()
+                handleExternalPauseCommand("intent_pause")
             }
             ACTION_NEXT -> {
                 PlayerManager.next()
@@ -264,10 +269,7 @@ class AudioPlayerService : Service() {
                 updateAll()
             }
             ACTION_STOP -> {
-                allowServiceRestart = false
-                PlayerManager.pause()
-                stopForegroundIfStarted()
-                stopSelf()
+                handleExternalPauseCommand("intent_stop", stopService = true)
                 return START_NOT_STICKY
             }
 

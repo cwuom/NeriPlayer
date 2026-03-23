@@ -309,17 +309,20 @@ object PlayerManager {
             return true
         }
 
+        val currentPositionMs = runCatching { player.currentPosition.coerceAtLeast(0L) }
+            .getOrDefault(Long.MAX_VALUE)
         val playbackState = _playerPlaybackStateFlow.value
         if (playbackState == Player.STATE_ENDED) {
             return true
         }
-        if (playbackState != Player.STATE_BUFFERING || !_playWhenReadyFlow.value) {
+        if (!_playWhenReadyFlow.value) {
             return false
         }
-
-        val currentPositionMs = runCatching { player.currentPosition.coerceAtLeast(0L) }
-            .getOrDefault(Long.MAX_VALUE)
-        return currentPositionMs <= AUTO_TRANSITION_BUFFER_POSITION_GUARD_MS
+        return when (playbackState) {
+            Player.STATE_BUFFERING,
+            Player.STATE_READY -> currentPositionMs <= AUTO_TRANSITION_BUFFER_POSITION_GUARD_MS
+            else -> false
+        }
     }
 
     private fun markAutoTrackAdvance() {
