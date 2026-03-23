@@ -300,11 +300,22 @@ object PlayerManager {
     fun shouldIgnoreExternalPauseCommand(): Boolean {
         ensureInitialized()
         if (!initialized || _currentSongFlow.value == null) return false
-        if (!resumePlaybackRequested || !_playWhenReadyFlow.value) return false
-        if (_playerPlaybackStateFlow.value != Player.STATE_BUFFERING) return false
+        if (!resumePlaybackRequested) return false
 
         val autoAdvanceAgeMs = SystemClock.elapsedRealtime() - lastAutoTrackAdvanceAtMs
         if (autoAdvanceAgeMs !in 0L..AUTO_TRANSITION_EXTERNAL_PAUSE_GUARD_MS) return false
+
+        if (playJob?.isActive == true) {
+            return true
+        }
+
+        val playbackState = _playerPlaybackStateFlow.value
+        if (playbackState == Player.STATE_ENDED) {
+            return true
+        }
+        if (playbackState != Player.STATE_BUFFERING || !_playWhenReadyFlow.value) {
+            return false
+        }
 
         val currentPositionMs = runCatching { player.currentPosition.coerceAtLeast(0L) }
             .getOrDefault(Long.MAX_VALUE)

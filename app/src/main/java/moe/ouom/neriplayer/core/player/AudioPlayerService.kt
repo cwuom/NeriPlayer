@@ -253,8 +253,7 @@ class AudioPlayerService : Service() {
                 updateAll()
             }
             ACTION_PAUSE -> {
-                PlayerManager.pause()
-                updateAll()
+                handleMediaSessionPause()
             }
             ACTION_NEXT -> {
                 PlayerManager.next()
