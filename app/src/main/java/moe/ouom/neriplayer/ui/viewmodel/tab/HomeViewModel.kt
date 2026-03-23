@@ -19,7 +19,7 @@ package moe.ouom.neriplayer.ui.viewmodel.tab
  * along with this software.
  * If not, see <https://www.gnu.org/licenses/>.
  *
- * File: moe.ouom.neriplayer.ui.viewmodel/HomeViewModel
+ * File: moe.ouom.neriplayer.ui.viewmodel.tab/HomeViewModel
  * Created: 2025/8/10
  */
 
@@ -32,7 +32,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.parcelize.Parcelize

@@ -19,7 +19,7 @@ package moe.ouom.neriplayer.ui.viewmodel.debug
  * along with this software.
  * If not, see <https://www.gnu.org/licenses/>.
  *
- * File: moe.ouom.neriplayer.ui.viewmodel/LogViewerScreen
+ * File: moe.ouom.neriplayer.ui.viewmodel.debug/LogViewerScreen
  * Created: 2025/8/17
  */
 

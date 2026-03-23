@@ -25,9 +25,9 @@ package moe.ouom.neriplayer.core.api.bili
 
 import kotlinx.coroutines.flow.first
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.BiliAudioStreamInfo
-import moe.ouom.neriplayer.data.SettingsRepository
-import moe.ouom.neriplayer.data.selectStreamByPreference
+import moe.ouom.neriplayer.data.platform.bili.BiliAudioStreamInfo
+import moe.ouom.neriplayer.data.settings.SettingsRepository
+import moe.ouom.neriplayer.data.platform.bili.selectStreamByPreference
 
 interface BiliAudioDataSource {
     val client: BiliClient

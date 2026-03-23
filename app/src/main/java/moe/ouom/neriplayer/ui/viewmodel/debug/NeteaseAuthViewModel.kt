@@ -19,7 +19,7 @@ package moe.ouom.neriplayer.ui.viewmodel.debug
  * along with this software.
  * If not, see <https://www.gnu.org/licenses/>.
  *
- * File: moe.ouom.neriplayer.ui.viewmodel/NeteaseAuthViewModel
+ * File: moe.ouom.neriplayer.ui.viewmodel.debug/NeteaseAuthViewModel
  * Created: 2025/8/9
  */
 
@@ -35,8 +35,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.SavedCookieAuthHealth
-import moe.ouom.neriplayer.data.SavedCookieAuthState
+import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthHealth
+import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import org.json.JSONObject
 
 data class NeteaseAuthUiState(

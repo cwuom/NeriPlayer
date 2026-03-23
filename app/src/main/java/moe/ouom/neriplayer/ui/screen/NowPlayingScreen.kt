@@ -1,4 +1,28 @@
 package moe.ouom.neriplayer.ui.screen
+
+/*
+ * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
+ * Copyright (C) 2025-2025 NeriPlayer developers
+ * https://github.com/cwuom/NeriPlayer
+ *
+ * This software is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This software is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this software.
+ * If not, see <https://www.gnu.org/licenses/>.
+ *
+ * File: moe.ouom.neriplayer.ui.screen/NowPlayingScreen
+ * Updated: 2026/3/23
+ */
+
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
@@ -157,17 +181,17 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.data.FavoritesPlaylist
-import moe.ouom.neriplayer.data.LocalFilesPlaylist
-import moe.ouom.neriplayer.data.LocalMediaSupport
-import moe.ouom.neriplayer.data.displayArtist
-import moe.ouom.neriplayer.data.displayCoverUrl
-import moe.ouom.neriplayer.data.displayName
-import moe.ouom.neriplayer.data.extractYouTubeMusicVideoId
-import moe.ouom.neriplayer.data.isLocalSong
-import moe.ouom.neriplayer.data.isYouTubeMusicSong
-import moe.ouom.neriplayer.data.sameIdentityAs
-import moe.ouom.neriplayer.data.stableKey
+import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
+import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
+import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
+import moe.ouom.neriplayer.data.model.displayArtist
+import moe.ouom.neriplayer.data.model.displayCoverUrl
+import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
+import moe.ouom.neriplayer.data.local.media.isLocalSong
+import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
+import moe.ouom.neriplayer.data.model.sameIdentityAs
+import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.AppleMusicLyric
 import moe.ouom.neriplayer.ui.component.LocalSongDetailsDialog
@@ -1872,14 +1896,37 @@ fun EditSongInfoSheet(
     val scrollState = rememberScrollState()
     val nestedScrollConnection = remember {
         object : NestedScrollConnection {
-            override fun onPreScroll(_available: androidx.compose.ui.geometry.Offset, _source: NestedScrollSource): androidx.compose.ui.geometry.Offset {
+            override fun onPreScroll(
+                available: androidx.compose.ui.geometry.Offset,
+                source: NestedScrollSource
+            ): androidx.compose.ui.geometry.Offset {
                 // 在滚动前不消费，让 verticalScroll 正常处理
-                return androidx.compose.ui.geometry.Offset.Zero
+                return when (source) {
+                    NestedScrollSource.UserInput,
+                    NestedScrollSource.SideEffect -> if (available == androidx.compose.ui.geometry.Offset.Zero) {
+                        androidx.compose.ui.geometry.Offset.Zero
+                    } else {
+                        androidx.compose.ui.geometry.Offset.Zero
+                    }
+                    else -> androidx.compose.ui.geometry.Offset.Zero
+                }
             }
 
-            override fun onPostScroll(_consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset, _source: NestedScrollSource): androidx.compose.ui.geometry.Offset {
+            override fun onPostScroll(
+                consumed: androidx.compose.ui.geometry.Offset,
+                available: androidx.compose.ui.geometry.Offset,
+                source: NestedScrollSource
+            ): androidx.compose.ui.geometry.Offset {
                 // 消费所有剩余滚动事件，防止传递给 ModalBottomSheet
-                return available
+                return when (source) {
+                    NestedScrollSource.UserInput,
+                    NestedScrollSource.SideEffect -> if (consumed == androidx.compose.ui.geometry.Offset.Zero) {
+                        available
+                    } else {
+                        available
+                    }
+                    else -> available
+                }
             }
 
             override suspend fun onPreFling(available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
@@ -1887,9 +1934,12 @@ fun EditSongInfoSheet(
                 return available
             }
 
-            override suspend fun onPostFling(_consumed: androidx.compose.ui.unit.Velocity, available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
+            override suspend fun onPostFling(
+                consumed: androidx.compose.ui.unit.Velocity,
+                available: androidx.compose.ui.unit.Velocity
+            ): androidx.compose.ui.unit.Velocity {
                 // 消费所有剩余 fling 速度
-                return available
+                return if (consumed == androidx.compose.ui.unit.Velocity.Zero) available else available
             }
         }
     }
@@ -2140,7 +2190,10 @@ fun EditSongInfoSheet(
             }
         }
 
-        val actionButtonFontSize = if (LocalConfiguration.current.screenWidthDp < 420) 11.sp else 13.sp
+        val actionButtonContainerWidth = with(LocalDensity.current) {
+            LocalWindowInfo.current.containerSize.width.toDp()
+        }
+        val actionButtonFontSize = if (actionButtonContainerWidth < 420.dp) 11.sp else 13.sp
 
         // 搜索自动填充按钮
         Row(
@@ -2437,14 +2490,37 @@ fun LyricsEditorSheet(
     // 创建嵌套滚动连接来消费滚动事件，防止传递给 ModalBottomSheet
     val nestedScrollConnection = remember {
         object : NestedScrollConnection {
-            override fun onPreScroll(_available: androidx.compose.ui.geometry.Offset, _source: NestedScrollSource): androidx.compose.ui.geometry.Offset {
+            override fun onPreScroll(
+                available: androidx.compose.ui.geometry.Offset,
+                source: NestedScrollSource
+            ): androidx.compose.ui.geometry.Offset {
                 // 在滚动前不消费，让内部滚动正常处理
-                return androidx.compose.ui.geometry.Offset.Zero
+                return when (source) {
+                    NestedScrollSource.UserInput,
+                    NestedScrollSource.SideEffect -> if (available == androidx.compose.ui.geometry.Offset.Zero) {
+                        androidx.compose.ui.geometry.Offset.Zero
+                    } else {
+                        androidx.compose.ui.geometry.Offset.Zero
+                    }
+                    else -> androidx.compose.ui.geometry.Offset.Zero
+                }
             }
 
-            override fun onPostScroll(_consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset, _source: NestedScrollSource): androidx.compose.ui.geometry.Offset {
+            override fun onPostScroll(
+                consumed: androidx.compose.ui.geometry.Offset,
+                available: androidx.compose.ui.geometry.Offset,
+                source: NestedScrollSource
+            ): androidx.compose.ui.geometry.Offset {
                 // 消费所有剩余滚动事件，防止传递给 ModalBottomSheet
-                return available
+                return when (source) {
+                    NestedScrollSource.UserInput,
+                    NestedScrollSource.SideEffect -> if (consumed == androidx.compose.ui.geometry.Offset.Zero) {
+                        available
+                    } else {
+                        available
+                    }
+                    else -> available
+                }
             }
 
             override suspend fun onPreFling(available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
@@ -2452,9 +2528,12 @@ fun LyricsEditorSheet(
                 return available
             }
 
-            override suspend fun onPostFling(_consumed: androidx.compose.ui.unit.Velocity, available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
+            override suspend fun onPostFling(
+                consumed: androidx.compose.ui.unit.Velocity,
+                available: androidx.compose.ui.unit.Velocity
+            ): androidx.compose.ui.unit.Velocity {
                 // 消费所有剩余 fling 速度
-                return available
+                return if (consumed == androidx.compose.ui.unit.Velocity.Zero) available else available
             }
         }
     }

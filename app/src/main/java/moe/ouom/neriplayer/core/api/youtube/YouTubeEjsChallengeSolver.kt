@@ -1,5 +1,30 @@
 package moe.ouom.neriplayer.core.api.youtube
 
+/*
+ * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
+ * Copyright (C) 2025-2025 NeriPlayer developers
+ * https://github.com/cwuom/NeriPlayer
+ *
+ * This software is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This software is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this software.
+ * If not, see <https://www.gnu.org/licenses/>.
+ *
+ * File: moe.ouom.neriplayer.core.api.youtube/YouTubeEjsChallengeSolver
+ * Updated: 2026/3/23
+ */
+
+
+import android.annotation.SuppressLint
 import android.content.Context
 import androidx.javascriptengine.JavaScriptIsolate
 import androidx.javascriptengine.JavaScriptSandbox
@@ -42,6 +67,7 @@ internal class YouTubeEjsChallengeSolver(
         appContext.assets.open(CORE_ASSET_PATH).bufferedReader().use { it.readText() }
     }
 
+    @SuppressLint("RequiresFeature")
     fun solve(
         playerJsUrl: String,
         encryptedSignature: String? = null,
@@ -101,6 +127,9 @@ internal class YouTubeEjsChallengeSolver(
                 }
 
                 val isolate = sandbox.createIsolate()
+                val supportsProvideNamedData = sandbox.isFeatureSupported(
+                    JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER
+                )
                 try {
                     val playerScript = getPlayerScript(resolvedPlayerJsUrl)
                     isolate.evaluateJavaScriptAsync(
@@ -113,6 +142,10 @@ internal class YouTubeEjsChallengeSolver(
                     ).get(SCRIPT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
 
                     val playerDataName = "player_js_${UUID.randomUUID().toString().replace("-", "")}"
+                    if (!sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)) {
+                        NPLogger.w(TAG, "JavaScriptSandbox does not support provideNamedData")
+                        return@synchronized null
+                    }
                     isolate.provideNamedData(playerDataName, playerScript.toByteArray(Charsets.UTF_8))
                     val responseJson = isolate.evaluateJavaScriptAsync(
                         buildSolveScript(

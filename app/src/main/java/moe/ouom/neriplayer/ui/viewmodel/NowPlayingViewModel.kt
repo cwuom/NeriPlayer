@@ -1,4 +1,4 @@
-﻿package moe.ouom.neriplayer.ui.viewmodel
+package moe.ouom.neriplayer.ui.viewmodel
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -38,7 +38,7 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.SearchManager
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.stableKey
+import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.R
 

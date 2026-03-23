@@ -1,5 +1,29 @@
 package moe.ouom.neriplayer.core.api.youtube
 
+/*
+ * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
+ * Copyright (C) 2025-2025 NeriPlayer developers
+ * https://github.com/cwuom/NeriPlayer
+ *
+ * This software is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This software is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this software.
+ * If not, see <https://www.gnu.org/licenses/>.
+ *
+ * File: moe.ouom.neriplayer.core.api.youtube/YouTubeMusicPlaybackRepository
+ * Updated: 2026/3/23
+ */
+
+
 import android.content.Context
 import androidx.media3.common.MimeTypes
 import java.io.IOException
@@ -20,17 +44,17 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.data.SettingsRepository
-import moe.ouom.neriplayer.data.YouTubeAuthBundle
-import moe.ouom.neriplayer.data.YOUTUBE_MUSIC_ORIGIN
-import moe.ouom.neriplayer.data.YOUTUBE_WEB_ORIGIN
-import moe.ouom.neriplayer.data.appendYouTubeConsentCookie
-import moe.ouom.neriplayer.data.buildYouTubePageRequestHeaders
-import moe.ouom.neriplayer.data.buildYouTubeStreamRequestHeaders
-import moe.ouom.neriplayer.data.effectiveCookieHeader
-import moe.ouom.neriplayer.data.resolveAuthorizationHeader
-import moe.ouom.neriplayer.data.resolveBootstrapUserAgent
-import moe.ouom.neriplayer.data.resolveXGoogAuthUser
+import moe.ouom.neriplayer.data.settings.SettingsRepository
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
+import moe.ouom.neriplayer.data.platform.youtube.YOUTUBE_WEB_ORIGIN
+import moe.ouom.neriplayer.data.platform.youtube.appendYouTubeConsentCookie
+import moe.ouom.neriplayer.data.platform.youtube.buildYouTubePageRequestHeaders
+import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeStreamRequestHeaders
+import moe.ouom.neriplayer.data.platform.youtube.effectiveCookieHeader
+import moe.ouom.neriplayer.data.platform.youtube.resolveAuthorizationHeader
+import moe.ouom.neriplayer.data.platform.youtube.resolveBootstrapUserAgent
+import moe.ouom.neriplayer.data.platform.youtube.resolveXGoogAuthUser
 import moe.ouom.neriplayer.util.NPLogger
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -757,7 +781,7 @@ class YouTubeMusicPlaybackRepository(
     private val settings: SettingsRepository? = null,
     private val authProvider: () -> YouTubeAuthBundle = { YouTubeAuthBundle() },
     private val streamingCipherResolverFactory: ((String) -> YouTubeStreamingCipherResolver)? = null,
-    private val applicationContext: Context? = null,
+    applicationContext: Context? = null,
     poTokenProvider: YouTubePoTokenProvider? = null
 ) {
     private val downloader = NewPipeOkHttpDownloader(okHttpClient, authProvider)

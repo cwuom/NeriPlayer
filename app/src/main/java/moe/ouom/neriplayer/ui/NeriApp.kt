@@ -75,6 +75,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -100,6 +101,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.createBitmap
 import androidx.core.graphics.ColorUtils
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -127,13 +129,13 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.AudioPlayerService
 import moe.ouom.neriplayer.core.player.AudioReactive
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.data.ThemeDefaults
-import moe.ouom.neriplayer.data.ThemePreferenceSnapshot
-import moe.ouom.neriplayer.data.displayArtist
-import moe.ouom.neriplayer.data.displayCoverUrl
-import moe.ouom.neriplayer.data.displayName
-import moe.ouom.neriplayer.data.sameIdentityAs
-import moe.ouom.neriplayer.data.stableKey
+import moe.ouom.neriplayer.data.settings.ThemeDefaults
+import moe.ouom.neriplayer.data.settings.ThemePreferenceSnapshot
+import moe.ouom.neriplayer.data.model.displayArtist
+import moe.ouom.neriplayer.data.model.displayCoverUrl
+import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.model.sameIdentityAs
+import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.ui.component.NeriBottomBar
 import moe.ouom.neriplayer.ui.component.NeriMiniPlayer
@@ -243,7 +245,7 @@ private suspend fun captureThemeRevealSnapshot(
                 return@suspendCancellableCoroutine
             }
 
-            val bitmap = Bitmap.createBitmap(
+            val bitmap = createBitmap(
                 decorView.width,
                 decorView.height,
                 Bitmap.Config.ARGB_8888
@@ -469,11 +471,11 @@ fun NeriApp(
     var pendingForceDark by remember { mutableStateOf<Boolean?>(null) }
     var themeRevealSnapshot by remember { mutableStateOf<ImageBitmap?>(null) }
     var themeRevealOriginWindow by remember { mutableStateOf<Offset?>(null) }
-    var themeRevealStartRadiusPx by remember { mutableStateOf(0f) }
+    var themeRevealStartRadiusPx by remember { mutableFloatStateOf(0f) }
     var themeRevealFallbackColorArgb by remember { mutableStateOf<Int?>(null) }
     var themeRevealCaptureInFlight by remember { mutableStateOf(false) }
     var themeRevealCaptureJob by remember { mutableStateOf<Job?>(null) }
-    var themeRevealCaptureToken by remember { mutableStateOf(0) }
+    var themeRevealCaptureToken by remember { mutableIntStateOf(0) }
     val lifecycleOwner = LocalLifecycleOwner.current
 
     val followSystemDark = pendingFollowSystemDark ?: storedFollowSystemDark
@@ -1524,6 +1526,7 @@ fun NeriApp(
                                     artist = currentSong?.displayArtist() ?: "",
                                     coverUrl = currentSong.resolveUiCoverSource(context),
                                     isPlaying = isPlaying,
+                                    modifier = Modifier,
                                     onPlayPause = { PlayerManager.togglePlayPause() },
                                     onExpand = { showNowPlaying = true },
                                     onHeightChanged = { heightInPixels ->
@@ -1759,9 +1762,9 @@ fun NeriApp(
                         snapshot = themeRevealSnapshot,
                         fallbackColor = revealFallbackColor,
                         originInWindow = revealOrigin,
+                        modifier = Modifier.fillMaxSize(),
                         startRadiusPx = themeRevealStartRadiusPx,
                         legacySnapshotDim = true,
-                        modifier = Modifier.fillMaxSize(),
                         durationMillis = 720,
                         onFinished = clearThemeRevealState
                     )

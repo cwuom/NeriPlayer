@@ -46,11 +46,11 @@ import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.snackbar.Snackbar
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.YouTubeAuthBundle
-import moe.ouom.neriplayer.data.YouTubeAuthRepository
-import moe.ouom.neriplayer.data.YouTubeCookieSupport
-import moe.ouom.neriplayer.data.YOUTUBE_MUSIC_ORIGIN
-import moe.ouom.neriplayer.data.parseCookieHeader
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRepository
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeCookieSupport
+import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
+import moe.ouom.neriplayer.data.auth.youtube.parseCookieHeader
 import moe.ouom.neriplayer.util.lockPortraitIfPhone
 import org.json.JSONObject
 

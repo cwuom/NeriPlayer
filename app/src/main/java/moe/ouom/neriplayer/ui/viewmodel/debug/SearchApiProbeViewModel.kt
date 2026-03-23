@@ -19,7 +19,7 @@ package moe.ouom.neriplayer.ui.viewmodel.debug
  * along with this software.
  * If not, see <https://www.gnu.org/licenses/>.
  *
- * File: moe.ouom.neriplayer.ui.viewmodel/SearchApiProbeViewModel
+ * File: moe.ouom.neriplayer.ui.viewmodel.debug/SearchApiProbeViewModel
  * Created: 2025/8/17
  */
 import android.app.Application

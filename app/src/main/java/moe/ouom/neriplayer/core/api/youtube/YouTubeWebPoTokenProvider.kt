@@ -1,5 +1,28 @@
 package moe.ouom.neriplayer.core.api.youtube
 
+/*
+ * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
+ * Copyright (C) 2025-2025 NeriPlayer developers
+ * https://github.com/cwuom/NeriPlayer
+ *
+ * This software is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This software is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this software.
+ * If not, see <https://www.gnu.org/licenses/>.
+ *
+ * File: moe.ouom.neriplayer.core.api.youtube/YouTubeWebPoTokenProvider
+ * Updated: 2026/3/23
+ */
+
 import android.annotation.SuppressLint
 import android.content.Context
 import android.util.Base64
@@ -16,10 +39,10 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import moe.ouom.neriplayer.data.YouTubeAuthBundle
-import moe.ouom.neriplayer.data.YouTubeCookieSupport
-import moe.ouom.neriplayer.data.effectiveCookieHeader
-import moe.ouom.neriplayer.data.resolveBootstrapUserAgent
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeCookieSupport
+import moe.ouom.neriplayer.data.platform.youtube.effectiveCookieHeader
+import moe.ouom.neriplayer.data.platform.youtube.resolveBootstrapUserAgent
 import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
 import org.json.JSONTokener
@@ -256,7 +279,6 @@ internal class YouTubeWebPoTokenProvider(
         WebView(applicationContext).apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
-            settings.databaseEnabled = true
             settings.cacheMode = WebSettings.LOAD_DEFAULT
             settings.loadsImagesAutomatically = false
             settings.mediaPlaybackRequiresUserGesture = false

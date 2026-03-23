@@ -1,4 +1,4 @@
-﻿package moe.ouom.neriplayer.activity
+package moe.ouom.neriplayer.activity
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -158,10 +158,12 @@ class NeteaseWebLoginActivity : ComponentActivity() {
     private fun onToolbarMenu(item: MenuItem): Boolean {
         return when (item.itemId) {
             R.id.action_refresh -> {
-                webView.reload(); true
+                webView.reload()
+                true
             }
             R.id.action_read_cookie -> {
-                readAndReturnCookies(); true
+                readAndReturnCookies()
+                true
             }
             else -> false
         }

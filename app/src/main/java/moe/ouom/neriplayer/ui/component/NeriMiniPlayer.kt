@@ -1,4 +1,4 @@
-﻿package moe.ouom.neriplayer.ui.component
+package moe.ouom.neriplayer.ui.component
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -19,7 +19,7 @@
  * along with this software.
  * If not, see <https://www.gnu.org/licenses/>.
  *
- * File: moe.ouom.neriplayer.ui.components/NeriMiniPlayer
+ * File: moe.ouom.neriplayer.ui.component/NeriMiniPlayer
  * Created: 2025/8/8
  */
 
@@ -74,12 +74,12 @@ fun NeriMiniPlayer(
     artist: String,
     coverUrl: String?,
     isPlaying: Boolean,
+    modifier: Modifier = Modifier,
     onPlayPause: () -> Unit,
     onExpand: () -> Unit,
     onHeightChanged: (height: Int) -> Unit,
     hazeState: HazeState,
-    enableHaze: Boolean = true,
-    modifier: Modifier = Modifier
+    enableHaze: Boolean = true
 ) {
     val shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
     val supportsBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S

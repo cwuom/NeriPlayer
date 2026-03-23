@@ -178,10 +178,7 @@ object NPLogger {
 
     /** Ensures the log tag length is valid on all Android versions. */
     private fun ensureLogTag(tag: String): String {
-        // Prior to Android O (26), tags longer than 23 characters may crash/log incorrectly
-        return if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.O && tag.length > 23) {
-            tag.take(23)
-        } else tag
+        return tag
     }
 
     /**

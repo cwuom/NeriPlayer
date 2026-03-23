@@ -103,13 +103,13 @@ import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.FavoritePlaylistRepository
-import moe.ouom.neriplayer.data.FavoritesPlaylist
-import moe.ouom.neriplayer.data.LocalFilesPlaylist
-import moe.ouom.neriplayer.data.LocalPlaylist
-import moe.ouom.neriplayer.data.LocalPlaylistRepository
-import moe.ouom.neriplayer.data.SystemLocalPlaylists
-import moe.ouom.neriplayer.data.displayCoverUrl
+import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
+import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
+import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
+import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
+import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.LibraryViewModel
@@ -1326,7 +1326,7 @@ private fun FavoritePlaylistList(
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     val scope = rememberCoroutineScope()
     var sortMode by rememberSaveable { mutableStateOf(false) }
-    val reorderableFavorites = remember { mutableStateListOf<moe.ouom.neriplayer.data.FavoritePlaylist>() }
+    val reorderableFavorites = remember { mutableStateListOf<moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylist>() }
 
     BackHandler(enabled = sortMode) { sortMode = false }
 

@@ -34,11 +34,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.data.BiliCookieRepository
-import moe.ouom.neriplayer.data.YouTubeAuthBundle
-import moe.ouom.neriplayer.data.YouTubeAuthRepository
-import moe.ouom.neriplayer.data.YOUTUBE_MUSIC_ORIGIN
-import moe.ouom.neriplayer.data.buildYouTubeStreamRequestHeaders
+import moe.ouom.neriplayer.data.auth.bili.BiliCookieRepository
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRepository
+import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
+import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeStreamRequestHeaders
 import moe.ouom.neriplayer.util.NPLogger
 
 /**

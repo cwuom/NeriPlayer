@@ -1,4 +1,4 @@
-﻿package moe.ouom.neriplayer.ui.viewmodel.tab
+package moe.ouom.neriplayer.ui.viewmodel.tab
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -19,7 +19,7 @@
  * along with this software.
  * If not, see <https://www.gnu.org/licenses/>.
  *
- * File: moe.ouom.neriplayer.ui.viewmodel/LibraryViewModel
+ * File: moe.ouom.neriplayer.ui.viewmodel.tab/LibraryViewModel
  * Created: 2025/8/11
  */
 
@@ -38,8 +38,8 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicLibraryPlaylist
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.LocalPlaylist
-import moe.ouom.neriplayer.data.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject

@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package moe.ouom.neriplayer.ui
 
 /*
@@ -46,6 +48,7 @@ import coil.size.Size
 import coil.transform.Transformation
 import androidx.compose.material3.MaterialTheme
 import androidx.core.graphics.createBitmap
+import androidx.core.graphics.scale
 
 
 @Composable
@@ -122,7 +125,7 @@ class BlurTransformation(
             val targetBitmap = if (scaleFactor > 1f) {
                 val targetWidth = (input.width / scaleFactor).toInt().coerceAtLeast(1)
                 val targetHeight = (input.height / scaleFactor).toInt().coerceAtLeast(1)
-                Bitmap.createScaledBitmap(input, targetWidth, targetHeight, true)
+                input.scale(targetWidth, targetHeight, true)
             } else {
                 input
             }
@@ -141,7 +144,7 @@ class BlurTransformation(
             outputAllocation.copyTo(intermediate)
 
             return if (scaleFactor > 1f) {
-                Bitmap.createScaledBitmap(intermediate, input.width, input.height, true)
+                intermediate.scale(input.width, input.height, true)
             } else {
                 intermediate
             }

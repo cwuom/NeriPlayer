@@ -1,4 +1,4 @@
-﻿package moe.ouom.neriplayer.ui.screen
+package moe.ouom.neriplayer.ui.screen
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -106,13 +106,13 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.data.FavoritesPlaylist
-import moe.ouom.neriplayer.data.LocalFilesPlaylist
-import moe.ouom.neriplayer.data.displayArtist
-import moe.ouom.neriplayer.data.displayCoverUrl
-import moe.ouom.neriplayer.data.displayName
-import moe.ouom.neriplayer.data.isLocalSong
-import moe.ouom.neriplayer.data.sameIdentityAs
+import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
+import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
+import moe.ouom.neriplayer.data.model.displayArtist
+import moe.ouom.neriplayer.data.model.displayCoverUrl
+import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.local.media.isLocalSong
+import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.ui.component.AppleMusicLyric
 import moe.ouom.neriplayer.ui.component.LyricEntry
 import moe.ouom.neriplayer.ui.component.LocalSongDetailsDialog

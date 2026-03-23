@@ -158,7 +158,6 @@ fun HyperBackground(
 
                     fun to01(x: Int) = (x and 0xFF) / 255f
                     fun argbToVec4(c: Int): FloatArray {
-                        val a = to01(c ushr 24)
                         val r = to01(c ushr 16)
                         val g = to01(c ushr 8)
                         val b = to01(c)
@@ -178,10 +177,10 @@ fun HyperBackground(
                         val r = to01(c ushr 16); val g = to01(c ushr 8); val b = to01(c)
                         return (0.2126f*r + 0.7152f*g + 0.0722f*b)
                     }
-                    val L = luma(c1)
+                    val lumaValue = luma(c1)
                     val lightOffset = when {
-                        currentIsDark -> (-0.06f + (0.12f * (L - 0.5f)))  // 暗色下略降亮，偏亮封面就少降一点
-                        else          -> ( 0.08f + (0.10f * (0.5f - L)))  // 亮色下略升亮，偏暗封面就多升一点
+                        currentIsDark -> (-0.06f + (0.12f * (lumaValue - 0.5f)))  // 暗色下略降亮，偏亮封面就少降一点
+                        else          -> ( 0.08f + (0.10f * (0.5f - lumaValue)))  // 亮色下略升亮，偏暗封面就多升一点
                     }.coerceIn(-0.12f, 0.12f)
 
                     val saturateOffset = (if (currentIsDark) 0.24f else 0.16f)

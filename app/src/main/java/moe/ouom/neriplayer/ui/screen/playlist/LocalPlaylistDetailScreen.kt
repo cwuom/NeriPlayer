@@ -1,5 +1,29 @@
 package moe.ouom.neriplayer.ui.screen.playlist
 
+/*
+ * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
+ * Copyright (C) 2025-2025 NeriPlayer developers
+ * https://github.com/cwuom/NeriPlayer
+ *
+ * This software is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This software is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this software.
+ * If not, see <https://www.gnu.org/licenses/>.
+ *
+ * File: moe.ouom.neriplayer.ui.screen.playlist/LocalPlaylistDetailScreen
+ * Updated: 2026/3/23
+ */
+
+
 import android.Manifest
 import android.content.ClipData
 import android.content.Context
@@ -130,19 +154,19 @@ import kotlinx.coroutines.DelicateCoroutinesApi
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.data.FavoritesPlaylist
-import moe.ouom.neriplayer.data.LocalFilesPlaylist
-import moe.ouom.neriplayer.data.LocalMediaSupport
-import moe.ouom.neriplayer.data.LocalPlaylistRepository
-import moe.ouom.neriplayer.data.SystemLocalPlaylists
-import moe.ouom.neriplayer.data.displayAlbum
-import moe.ouom.neriplayer.data.displayArtist
-import moe.ouom.neriplayer.data.displayCoverUrl
-import moe.ouom.neriplayer.data.displayName
-import moe.ouom.neriplayer.data.identity
-import moe.ouom.neriplayer.data.isLocalSong
-import moe.ouom.neriplayer.data.sameIdentityAs
-import moe.ouom.neriplayer.data.stableKey
+import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
+import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
+import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
+import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
+import moe.ouom.neriplayer.data.local.media.displayAlbum
+import moe.ouom.neriplayer.data.model.displayArtist
+import moe.ouom.neriplayer.data.model.displayCoverUrl
+import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.model.identity
+import moe.ouom.neriplayer.data.local.media.isLocalSong
+import moe.ouom.neriplayer.data.model.sameIdentityAs
+import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.LocalSongDetailsDialog
 import moe.ouom.neriplayer.ui.component.LocalSongSyncConfirmDialog
@@ -179,7 +203,7 @@ fun LocalPlaylistDetailScreen(
     LaunchedEffect(playlistId) { vm.start(playlistId) }
 
     // 保存最新的歌单数据，用于在Screen销毁时更新使用记录
-    var latestPlaylist by remember { mutableStateOf<moe.ouom.neriplayer.data.LocalPlaylist?>(null) }
+    var latestPlaylist by remember { mutableStateOf<moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist?>(null) }
     LaunchedEffect(ui.value.playlist) {
         ui.value.playlist?.let { latestPlaylist = it }
     }
@@ -423,7 +447,7 @@ fun LocalPlaylistDetailScreen(
                 }
             }
 
-            fun handleNeteaseSyncResult(result: moe.ouom.neriplayer.data.NeteaseLikeSyncResult) {
+            fun handleNeteaseSyncResult(result: moe.ouom.neriplayer.data.local.playlist.sync.NeteaseLikeSyncResult) {
                 syncInProgress = false
                 val message = result.message ?: if (result.totalSongs == 0) {
                     context.getString(R.string.local_playlist_sync_netease_empty)

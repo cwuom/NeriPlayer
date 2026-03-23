@@ -30,8 +30,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.BiliAudioStreamInfo
-import moe.ouom.neriplayer.data.BiliCookieRepository
+import moe.ouom.neriplayer.data.platform.bili.BiliAudioStreamInfo
+import moe.ouom.neriplayer.data.auth.bili.BiliCookieRepository
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -53,8 +53,7 @@ import moe.ouom.neriplayer.util.NPLogger
  */
 class BiliClient(
     private val cookieRepo: BiliCookieRepository = AppContainer.biliCookieRepo,
-    client: OkHttpClient? = null,
-    bypassProxy: Boolean = true
+    client: OkHttpClient? = null
 ) {
 
     companion object {
@@ -805,7 +804,7 @@ class BiliClient(
             .url(url)
             .header("User-Agent", DEFAULT_WEB_UA)
             .header("Referer", REFERER)
-            .apply { headerIfNotBlank("Cookie", cookieHeader) }
+            .apply { headerCookieIfPresent(cookieHeader) }
             .get()
             .build()
 
@@ -898,7 +897,7 @@ class BiliClient(
             .url(NAV_URL)
             .header("User-Agent", DEFAULT_WEB_UA)
             .header("Referer", REFERER)
-            .apply { headerIfNotBlank("Cookie", cookieHeader) }
+            .apply { headerCookieIfPresent(cookieHeader) }
             .get()
             .build()
 
@@ -980,7 +979,7 @@ class BiliClient(
             .url(NAV_URL)
             .header("User-Agent", DEFAULT_WEB_UA)
             .header("Referer", REFERER)
-            .apply { headerIfNotBlank("Cookie", stored.toCookieHeader()) }
+            .apply { headerCookieIfPresent(stored.toCookieHeader()) }
             .get()
             .build()
 
@@ -1049,8 +1048,12 @@ class BiliClient(
     // 工具 / 扩展 //
 
     /** 只在值非空且非空白时设置 Header（避免递归） */
-    private fun Request.Builder.headerIfNotBlank(name: String, value: String?): Request.Builder {
-        return if (!value.isNullOrBlank()) this.header(name, value) else this
+    private fun Request.Builder.headerCookieIfPresent(value: String?): Request.Builder {
+        return if (value.isNullOrBlank()) {
+            this
+        } else {
+            header("Cookie", value)
+        }
     }
 
     private fun JSONArray?.toStringList(): List<String> {
@@ -1072,7 +1075,7 @@ class BiliClient(
         val resp = execute()
         if (!resp.isSuccessful) {
             val code = resp.code
-            val text = resp.body.string().orEmpty()
+            val text = resp.body.string()
             resp.close()
             throw IOException("HTTP $code: $text")
         }

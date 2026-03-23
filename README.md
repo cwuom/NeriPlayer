@@ -49,8 +49,7 @@
 
 ## 项目简介 / About
 NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
-音频播放器。当前实现重点不是构建公共云端服务，而是在用户已具备
-第三方平台账号能力的前提下，整合 **网易云音乐**、**Bilibili** 与 **YouTube Music** 的
+音频播放器。当前实现重点不是构建公共云端服务，而是在用户已具备第三方平台账号能力的前提下，整合 **网易云音乐**、**Bilibili** 与 **YouTube Music** 的
 在线内容，并提供 **流媒体缓存、应用内下载、本地导入、本地歌单管理、
 可选 GitHub 私有仓库同步** 等能力。
 
@@ -130,12 +129,9 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 - 播放状态会定期持久化，用于进程重启后的队列与状态恢复。
 
 ### 搜索与数据来源
-- **UI 搜索**：`ExploreViewModel` 当前接入 `Netease` 与 `Bilibili`。
-- **元数据补全搜索**：`SearchManager` 当前使用
-  `CloudMusicSearchApi` 与 `QQMusicSearchApi`。
-- 当前 UI 层搜索是**按平台切换**，不是混合聚合结果列表。
-- QQ 音乐目前主要用于播放页的元数据/歌词补全，
-  Library 中的 QQ 音乐入口仍处于占位/开发中状态。
+- **UI 搜索**：当前接入 **网易云、Bilibili 与 YouTube Music**，采用按平台独立搜索，而非混合聚合结果。
+- **元数据补全**：底层使用 **网易云与 QQ 音乐**，专门用于跨平台播放时的封面、歌词及曲目信息补全。
+- ⚠️ **QQ 音乐**目前仅作为后台补全源，Library 中的入口仍处于占位开发阶段。
 
 ### 本地数据与安全
 - 设置与平台 Cookie 使用 `DataStore` 持久化。

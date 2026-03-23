@@ -1,4 +1,4 @@
-﻿package moe.ouom.neriplayer.util
+package moe.ouom.neriplayer.util
 
 import android.app.Application
 import android.content.Context

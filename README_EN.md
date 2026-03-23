@@ -104,10 +104,9 @@ The current focus is not to build a public cloud service, but to integrate onlin
 - Playback states are periodically persisted for queue and state recovery upon app restarts.
 
 ### Search and Data Sources
-- **UI Search**: `ExploreViewModel` currently connects to `Netease` and `Bilibili`.
-- **Metadata Completion Search**: `SearchManager` currently uses `CloudMusicSearchApi` and `QQMusicSearchApi`.
-- The current UI layer search acts by **switching platforms** rather than blending aggregated results.
-- QQ Music is primarily used for cross-checking lyrics and metadata for playback right now, with its Library entry still functioning as a WIP stub.
+- **UI Search**: Currently integrates **NetEase, Bilibili, and YouTube Music**. Searches are platform-specific and do not aggregate results.
+- **Metadata Completion**: Underlying processes rely on **NetEase and QQ Music** exclusively for completing cover art, lyrics, and track metadata across different sources during playback.
+- ⚠️ **QQ Music** currently acts strictly as a background metadata provider. Its Library entry remains an inactive placeholder.
 
 ### Local Data and Security
 - Settings and platform Cookies are persisted using `DataStore`.

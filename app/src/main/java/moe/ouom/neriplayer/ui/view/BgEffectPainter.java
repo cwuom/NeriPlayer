@@ -49,8 +49,8 @@ import moe.ouom.neriplayer.R;
 public class BgEffectPainter {
     private static final String TAG = "BgEffectPainter";
     private float[] bound;
-    RuntimeShader mBgRuntimeShader;
-    Context mContext;
+    final RuntimeShader mBgRuntimeShader;
+    final Context mContext;
     private float[] uResolution;
     private float uAnimTime = ((float) System.nanoTime()) / 1.0E9f;
     private float[] uBgBound = {0.0f, 0.4489f, 1.0f, 0.5511f};

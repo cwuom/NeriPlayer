@@ -42,7 +42,7 @@ import java.util.Locale
 import java.util.zip.GZIPInputStream
 import moe.ouom.neriplayer.util.DynamicProxySelector
 
-class NeteaseClient(bypassProxy: Boolean = true) {
+class NeteaseClient {
     private val okHttpClient: OkHttpClient
     private val cookieStore: MutableMap<String, MutableList<Cookie>> = mutableMapOf()
     private val cookieLock = Any()
@@ -128,11 +128,11 @@ class NeteaseClient(bypassProxy: Boolean = true) {
         persistedCookies = emptyMap()
     }
 
-    private fun getCookie(name: String): String? = synchronized(cookieLock) {
+    private fun getCsrfCookie(): String? = synchronized(cookieLock) {
         cookieStore.values
             .asSequence()
             .flatMap { it.asSequence() }
-            .firstOrNull { it.name == name }
+            .firstOrNull { it.name == "__csrf" }
             ?.value
     }
 
@@ -190,9 +190,9 @@ class NeteaseClient(bypassProxy: Boolean = true) {
         // WEAPI 的 csrf_token 优先用持久化 Cookie，再回退本地 CookieJar
         if (mode == CryptoMode.WEAPI) {
             val csrf = if (usePersistedCookies) {
-                persistedCookies["__csrf"] ?: getCookie("__csrf") ?: ""
+                persistedCookies["__csrf"] ?: getCsrfCookie() ?: ""
             } else {
-                getCookie("__csrf") ?: ""
+                getCsrfCookie() ?: ""
             }
             reqUrl = requestUrl.newBuilder()
                 .setQueryParameter("csrf_token", csrf)

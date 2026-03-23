@@ -1,5 +1,29 @@
 package moe.ouom.neriplayer.core.api.youtube
 
+/*
+ * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
+ * Copyright (C) 2025-2025 NeriPlayer developers
+ * https://github.com/cwuom/NeriPlayer
+ *
+ * This software is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This software is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this software.
+ * If not, see <https://www.gnu.org/licenses/>.
+ *
+ * File: moe.ouom.neriplayer.core.api.youtube/YouTubeMusicClient
+ * Updated: 2026/3/23
+ */
+
+
 import java.io.IOException
 import java.net.URLDecoder
 import java.net.URLEncoder
@@ -8,10 +32,10 @@ import java.util.Locale
 import java.util.TimeZone
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.data.YouTubeAuthRepository
-import moe.ouom.neriplayer.data.effectiveCookieHeader
-import moe.ouom.neriplayer.data.resolveRequestUserAgent
-import moe.ouom.neriplayer.data.resolveXGoogAuthUser
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRepository
+import moe.ouom.neriplayer.data.platform.youtube.effectiveCookieHeader
+import moe.ouom.neriplayer.data.platform.youtube.resolveRequestUserAgent
+import moe.ouom.neriplayer.data.platform.youtube.resolveXGoogAuthUser
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -1790,8 +1814,7 @@ class YouTubeMusicClient(
         var lastError: IOException? = null
 
         for (requestLocale in YouTubeMusicLocaleResolver.requestCandidates()) {
-            var attempt = 0
-            while (attempt < YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS) {
+            for (attempt in 0 until YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS) {
                 try {
                     val root = postMusicPlayer(
                         bootstrap = bootstrap,
@@ -1803,8 +1826,7 @@ class YouTubeMusicClient(
                         ?: throw IOException("YouTube Music player missing playable audio formats")
                 } catch (error: IOException) {
                     lastError = error
-                    attempt++
-                    if (attempt >= YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS) {
+                    if (attempt == YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS - 1) {
                         break
                     }
                     bootstrapCache = null
@@ -2125,8 +2147,7 @@ class YouTubeMusicClient(
         var activeBootstrap = bootstrap
         var lastError: IOException? = null
         for (requestLocale in YouTubeMusicLocaleResolver.requestCandidates(preferredLocale)) {
-            var attempt = 0
-            while (attempt < YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS) {
+            for (attempt in 0 until YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS) {
                 try {
                     val root = postMusicBrowse(
                         bootstrap = activeBootstrap,
@@ -2147,8 +2168,7 @@ class YouTubeMusicClient(
                     )
                 } catch (error: IOException) {
                     lastError = error
-                    attempt++
-                    if (attempt >= YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS) {
+                    if (attempt == YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS - 1) {
                         break
                     }
                     bootstrapCache = null
@@ -2168,8 +2188,7 @@ class YouTubeMusicClient(
         var activeBootstrap = bootstrap
         var lastError: IOException? = null
         for (requestLocale in YouTubeMusicLocaleResolver.requestCandidates(preferredLocale)) {
-            var attempt = 0
-            while (attempt < YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS) {
+            for (attempt in 0 until YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS) {
                 try {
                     val root = postMusicSearch(
                         bootstrap = activeBootstrap,
@@ -2195,8 +2214,7 @@ class YouTubeMusicClient(
                     )
                 } catch (error: IOException) {
                     lastError = error
-                    attempt++
-                    if (attempt >= YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS) {
+                    if (attempt == YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS - 1) {
                         break
                     }
                     bootstrapCache = null

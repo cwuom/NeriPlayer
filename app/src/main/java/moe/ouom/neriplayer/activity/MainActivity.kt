@@ -101,11 +101,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.player.AudioPlayerService
-import moe.ouom.neriplayer.core.player.PlayerEvent
+import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.data.LocalAudioImportManager
-import moe.ouom.neriplayer.data.SettingsRepository
-import moe.ouom.neriplayer.data.readThemePreferenceSnapshotSync
+import moe.ouom.neriplayer.data.local.import.LocalAudioImportManager
+import moe.ouom.neriplayer.data.settings.SettingsRepository
+import moe.ouom.neriplayer.data.settings.readThemePreferenceSnapshotSync
 import moe.ouom.neriplayer.ui.NeriApp
 import moe.ouom.neriplayer.util.ExceptionHandler
 import moe.ouom.neriplayer.util.HapticButton
@@ -181,9 +181,9 @@ class MainActivity : ComponentActivity() {
             // GitHub自动同步 - 应用启动时拉取最新数据(异步,不阻塞UI)
             LaunchedEffect(Unit) {
                     delay(1000) // 延迟1秒,避免阻塞启动
-                    val storage = moe.ouom.neriplayer.data.github.SecureTokenStorage(this@MainActivity)
+                    val storage = moe.ouom.neriplayer.data.sync.github.SecureTokenStorage(this@MainActivity)
                     if (storage.isConfigured()) {
-                        moe.ouom.neriplayer.data.github.GitHubSyncWorker.scheduleDelayedSync(
+                        moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker.scheduleDelayedSync(
                             this@MainActivity,
                             markMutation = false
                         )
@@ -268,7 +268,7 @@ class MainActivity : ComponentActivity() {
                             LaunchedEffect(lifecycleOwner.lifecycle) {
                                 lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
                                     while (true) {
-                                        val storage = moe.ouom.neriplayer.data.github.SecureTokenStorage(this@MainActivity)
+                                        val storage = moe.ouom.neriplayer.data.sync.github.SecureTokenStorage(this@MainActivity)
                                         // 如果有仓库信息但token缺失，或者曾经同步过但现在未配置，显示警告
                                         val hasRepoInfo = !storage.getRepoOwner().isNullOrEmpty() || !storage.getRepoName().isNullOrEmpty()
                                         val hasSyncHistory = storage.getLastSyncTime() > 0
@@ -359,7 +359,7 @@ class MainActivity : ComponentActivity() {
                                     dismissButton = {
                                         HapticTextButton(
                                             onClick = {
-                                                val storage = moe.ouom.neriplayer.data.github.SecureTokenStorage(this@MainActivity)
+                                                val storage = moe.ouom.neriplayer.data.sync.github.SecureTokenStorage(this@MainActivity)
                                                 storage.setTokenWarningDismissed(true)
                                                 showTokenWarningDialog = false
                                             },

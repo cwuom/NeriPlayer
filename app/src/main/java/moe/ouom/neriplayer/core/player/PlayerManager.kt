@@ -36,12 +36,10 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.widget.Toast
-import moe.ouom.neriplayer.data.LocalMediaSupport
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BluetoothAudio
 import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.SpeakerGroup
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.media3.common.C
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.MediaItem
@@ -78,7 +76,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.api.bili.buildBiliPartSong
 import moe.ouom.neriplayer.core.api.bili.resolveBiliSong
@@ -89,16 +86,14 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.di.AppContainer.biliCookieRepo
 import moe.ouom.neriplayer.core.di.AppContainer.settingsRepo
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.FavoritesPlaylist
-import moe.ouom.neriplayer.data.LocalSongSupport
-import moe.ouom.neriplayer.data.LocalPlaylist
-import moe.ouom.neriplayer.data.LocalPlaylistRepository
-import moe.ouom.neriplayer.data.extractYouTubeMusicVideoId
-import moe.ouom.neriplayer.data.isYouTubeMusicSong
-import moe.ouom.neriplayer.data.sameIdentityAs
-import moe.ouom.neriplayer.data.stableKey
+import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
+import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
+import moe.ouom.neriplayer.data.model.sameIdentityAs
+import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.component.LyricEntry
-import moe.ouom.neriplayer.ui.component.parseNeteaseLrc
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
@@ -108,28 +103,16 @@ import org.json.JSONObject
 import java.io.File
 import kotlin.random.Random
 import androidx.core.net.toUri
-
-data class AudioDevice(
-    val name: String,
-    val type: Int,
-    val icon: ImageVector
-)
-
-/** 用于封装播放器需要通知UI的事件 */
-sealed class PlayerEvent {
-    data class ShowLoginPrompt(val message: String) : PlayerEvent()
-    data class ShowError(val message: String) : PlayerEvent()
-}
-
-private sealed class SongUrlResult {
-    data class Success(
-        val url: String,
-        val durationMs: Long? = null,
-        val mimeType: String? = null
-    ) : SongUrlResult()
-    object RequiresLogin : SongUrlResult()
-    object Failure : SongUrlResult()
-}
+import moe.ouom.neriplayer.core.player.model.AudioDevice
+import moe.ouom.neriplayer.core.player.model.PersistedState
+import moe.ouom.neriplayer.core.player.model.PlayerEvent
+import moe.ouom.neriplayer.core.player.model.SongUrlResult
+import moe.ouom.neriplayer.core.player.debug.playWhenReadyChangeReasonName
+import moe.ouom.neriplayer.core.player.debug.playbackStateName
+import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
+import moe.ouom.neriplayer.core.player.playlist.PlayerFavoritesController
+import moe.ouom.neriplayer.core.player.source.toSongItem
+import moe.ouom.neriplayer.core.player.state.blockingIo
 
 /**
  * PlayerManager 负责：
@@ -534,17 +517,6 @@ object PlayerManager {
         }
     }
 
-    private data class PersistedState(
-        val playlist: List<SongItem>,
-        val index: Int,
-        val mediaUrl: String? = null,
-        val positionMs: Long = 0L,
-        val shouldResumePlayback: Boolean = false,
-        val repeatMode: Int? = null,
-        val shuffleEnabled: Boolean? = null
-    )
-
-
     fun initialize(app: Application, maxCacheSize: Long = 1024L * 1024 * 1024) {
         if (initialized) return
         application = app
@@ -555,7 +527,7 @@ object PlayerManager {
 
         runCatching {
             stateFile = File(app.filesDir, "last_playlist.json")
-            runBlocking(Dispatchers.IO) {
+            blockingIo {
                 keepLastPlaybackProgressEnabled = settingsRepo.keepLastPlaybackProgressFlow.first()
                 keepPlaybackModeStateEnabled = settingsRepo.keepPlaybackModeStateFlow.first()
             }
@@ -830,7 +802,7 @@ object PlayerManager {
         // 同步本地歌单
         ioScope.launch {
             localRepo.playlists.collect { repoLists ->
-                _playlistsFlow.value = deepCopyPlaylists(repoLists)
+                _playlistsFlow.value = PlayerFavoritesController.deepCopyPlaylists(repoLists)
             }
         }
 
@@ -1034,19 +1006,32 @@ object PlayerManager {
         if (bluetoothDevice != null) {
             return try {
                 AudioDevice(
-                    name = bluetoothDevice.productName.toString().ifBlank { getLocalizedString(R.string.device_bluetooth_headset) },
+                    name = bluetoothDevice.productName.toString()
+                        .ifBlank { getLocalizedString(R.string.device_bluetooth_headset) },
                     type = bluetoothDevice.type,
                     icon = Icons.Default.BluetoothAudio
                 )
             } catch (_: SecurityException) {
-                AudioDevice(getLocalizedString(R.string.device_bluetooth_headset), AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, Icons.Default.BluetoothAudio)
+                AudioDevice(
+                    getLocalizedString(R.string.device_bluetooth_headset),
+                    AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+                    Icons.Default.BluetoothAudio
+                )
             }
         }
         val wiredHeadset = devices.firstOrNull { isWiredOutputType(it.type) }
         if (wiredHeadset != null) {
-            return AudioDevice(getLocalizedString(R.string.device_wired_headset), wiredHeadset.type, Icons.Default.Headset)
+            return AudioDevice(
+                getLocalizedString(R.string.device_wired_headset),
+                wiredHeadset.type,
+                Icons.Default.Headset
+            )
         }
-        return AudioDevice(getLocalizedString(R.string.device_speaker), AudioDeviceInfo.TYPE_BUILTIN_SPEAKER, Icons.Default.SpeakerGroup)
+        return AudioDevice(
+            getLocalizedString(R.string.device_speaker),
+            AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
+            Icons.Default.SpeakerGroup
+        )
     }
 
     private fun isBluetoothOutputType(type: Int): Boolean {
@@ -1790,7 +1775,7 @@ object PlayerManager {
                 requireDirect = true,
                 preferM4a = true
             )
-            val playableAudio = directPlayableAudio?.takeIf { !it.url.isNullOrBlank() }
+            val playableAudio = directPlayableAudio?.takeIf { it.url.isNotBlank() }
                 ?: run {
                     NPLogger.d(
                         "NERI-PlayerManager",
@@ -1803,7 +1788,7 @@ object PlayerManager {
                         preferM4a = true
                     )
                 }
-            val resolvedPlayableAudio = playableAudio?.takeIf { !it.url.isNullOrBlank() }
+            val resolvedPlayableAudio = playableAudio?.takeIf { it.url.isNotBlank() }
             if (resolvedPlayableAudio != null) {
                 maybeUpdateSongDuration(song, resolvedPlayableAudio.durationMs)
                 NPLogger.d(
@@ -2011,7 +1996,7 @@ object PlayerManager {
             }
         }
         if (forcePersist) {
-            runBlocking(Dispatchers.IO) {
+            blockingIo {
                 persistState(positionMs = currentPosition, shouldResumePlayback = false)
             }
         } else {
@@ -2287,21 +2272,36 @@ object PlayerManager {
 
     fun hasItems(): Boolean = currentPlaylist.isNotEmpty()
 
+    private fun updateCurrentFavorite(song: SongItem, add: Boolean) {
+        val updatedLists = PlayerFavoritesController.optimisticUpdateFavorites(
+            playlists = _playlistsFlow.value,
+            add = add,
+            song = song,
+            application = application,
+            favoritePlaylistName = getLocalizedString(R.string.favorite_my_music)
+        )
+        _playlistsFlow.value = PlayerFavoritesController.deepCopyPlaylists(updatedLists)
+
+        ioScope.launch {
+            try {
+                if (add) {
+                    localRepo.addToFavorites(song)
+                } else {
+                    localRepo.removeFromFavorites(song)
+                }
+            } catch (error: Exception) {
+                val action = if (add) "addToFavorites" else "removeFromFavorites"
+                NPLogger.e("NERI-PlayerManager", "$action failed: ${error.message}", error)
+            }
+        }
+    }
 
     /** 添加当前歌到“我喜欢的音乐” */
     fun addCurrentToFavorites() {
         ensureInitialized()
         if (!initialized) return
         val song = _currentSongFlow.value ?: return
-        val updatedLists = optimisticUpdateFavorites(add = true, song = song)
-        _playlistsFlow.value = deepCopyPlaylists(updatedLists)
-        ioScope.launch {
-            try {
-                localRepo.addToFavorites(song)
-            } catch (e: Exception) {
-                NPLogger.e("NERI-PlayerManager", "addToFavorites failed: ${e.message}", e)
-            }
-        }
+        updateCurrentFavorite(song = song, add = true)
     }
 
     /** 从“我喜欢的音乐”移除当前歌 */
@@ -2309,15 +2309,7 @@ object PlayerManager {
         ensureInitialized()
         if (!initialized) return
         val song = _currentSongFlow.value ?: return
-        val updatedLists = optimisticUpdateFavorites(add = false, song = song)
-        _playlistsFlow.value = deepCopyPlaylists(updatedLists)
-        ioScope.launch {
-            try {
-                localRepo.removeFromFavorites(song)
-            } catch (e: Exception) {
-                NPLogger.e("NERI-PlayerManager", "removeFromFavorites failed: ${e.message}", e)
-            }
-        }
+        updateCurrentFavorite(song = song, add = false)
     }
 
     /** 切换收藏状态 */
@@ -2325,57 +2317,10 @@ object PlayerManager {
         ensureInitialized()
         if (!initialized) return
         val song = _currentSongFlow.value ?: return
-        val fav = FavoritesPlaylist.firstOrNull(_playlistsFlow.value, application)
-        val isFav = fav?.songs?.any { it.sameIdentityAs(song) } == true
-        if (isFav) removeCurrentFromFavorites() else addCurrentToFavorites()
-    }
-
-    /** 本地乐观修改收藏歌单 */
-    private fun optimisticUpdateFavorites(
-        add: Boolean,
-        song: SongItem? = null
-    ): List<LocalPlaylist> {
-        val lists = _playlistsFlow.value
-        val favIdx = lists.indexOfFirst { FavoritesPlaylist.isSystemPlaylist(it, application) }
-        val base = lists.map {
-            LocalPlaylist(
-                id = it.id,
-                name = it.name,
-                songs = it.songs.toMutableList(),
-                modifiedAt = it.modifiedAt,
-                customCoverUrl = it.customCoverUrl
-            )
-        }.toMutableList()
-
-        if (favIdx >= 0) {
-            val fav = base[favIdx]
-            if (add && song != null) {
-                if (fav.songs.none { it.sameIdentityAs(song) }) fav.songs.add(song)
-            } else if (!add && song != null) {
-                fav.songs.removeAll { it.sameIdentityAs(song) }
-            }
+        if (PlayerFavoritesController.isFavorite(_playlistsFlow.value, song, application)) {
+            updateCurrentFavorite(song = song, add = false)
         } else {
-            if (add && song != null) {
-                base += LocalPlaylist(
-                    id = FavoritesPlaylist.SYSTEM_ID,
-                    name = getLocalizedString(R.string.favorite_my_music),
-                    songs = mutableListOf(song)
-                )
-            }
-        }
-        return base
-    }
-
-    /** 深拷贝列表，确保 Compose 稳定重组 */
-    private fun deepCopyPlaylists(src: List<LocalPlaylist>): List<LocalPlaylist> {
-        return src.map { pl ->
-            LocalPlaylist(
-                id = pl.id,
-                name = pl.name,
-                songs = pl.songs.toMutableList(),
-                modifiedAt = pl.modifiedAt,
-                customCoverUrl = pl.customCoverUrl
-            )
+            updateCurrentFavorite(song = song, add = true)
         }
     }
 
@@ -2455,190 +2400,35 @@ object PlayerManager {
 
     /** 获取网易云歌词 */
     suspend fun getNeteaseLyrics(songId: Long): List<LyricEntry> {
-        return withContext(Dispatchers.IO) {
-            try {
-                val raw = neteaseClient.getLyricNew(songId)
-                val lrc = JSONObject(raw).optJSONObject("lrc")?.optString("lyric") ?: ""
-                parseNeteaseLrc(lrc)
-            } catch (e: Exception) {
-                NPLogger.e("NERI-PlayerManager", "getNeteaseLyrics failed: ${e.message}", e)
-                emptyList()
-            }
-        }
+        return PlayerLyricsProvider.getNeteaseLyrics(songId, neteaseClient)
     }
 
     /** 获取网易云歌词翻译（tlyric） */
     suspend fun getNeteaseTranslatedLyrics(songId: Long): List<LyricEntry> {
-        return withContext(Dispatchers.IO) {
-            try {
-                val raw = neteaseClient.getLyricNew(songId)
-                val tlyric = JSONObject(raw).optJSONObject("tlyric")?.optString("lyric") ?: ""
-                if (tlyric.isBlank()) emptyList() else parseNeteaseLrc(tlyric)
-            } catch (e: Exception) {
-                NPLogger.e("NERI-PlayerManager", "getNeteaseTranslatedLyrics failed: ${e.message}", e)
-                emptyList()
-            }
-        }
-    }
-
-    /** 获取 YouTube Music 歌词：优先 LRCLIB（同步歌词），回退 YouTube Music API（纯文本） */
-    private suspend fun getYouTubeMusicLyrics(song: SongItem): List<LyricEntry> {
-        // 先查内存缓存
-        val cacheKey = song.id.toString()
-        ytMusicLyricsCache.get(cacheKey)?.let { cached ->
-            NPLogger.d("NERI-PlayerManager", "Using cached YT Music lyrics for '${song.name}'")
-            return cached
-        }
-
-        val videoId = extractYouTubeMusicVideoId(song.mediaUri)
-
-        return withContext(Dispatchers.IO) {
-            try {
-                // 第一步：尝试 LRCLIB（免费开源同步歌词库）
-                val lrcLibResult = try {
-                    val durationSec = (song.durationMs / 1000).toInt()
-                    lrcLibClient.getLyrics(
-                        trackName = song.name,
-                        artistName = song.artist,
-                        durationSeconds = durationSec
-                    ) ?: lrcLibClient.searchLyrics("${song.name} ${song.artist}")
-                } catch (e: Exception) {
-                    NPLogger.d("NERI-PlayerManager", "LRCLIB lookup failed: ${e.message}")
-                    null
-                }
-
-                // LRCLIB 有同步歌词（LRC 格式），直接解析
-                if (!lrcLibResult?.syncedLyrics.isNullOrBlank()) {
-                    NPLogger.d("NERI-PlayerManager", "Using LRCLIB synced lyrics for '${song.name}'")
-                    val entries = parseNeteaseLrc(lrcLibResult!!.syncedLyrics!!)
-                    if (entries.isNotEmpty()) ytMusicLyricsCache.put(cacheKey, entries)
-                    return@withContext entries
-                }
-
-                // LRCLIB 有纯文本歌词
-                if (!lrcLibResult?.plainLyrics.isNullOrBlank()) {
-                    NPLogger.d("NERI-PlayerManager", "Using LRCLIB plain lyrics for '${song.name}'")
-                    val entries = convertPlainLyricsToEntries(lrcLibResult!!.plainLyrics!!, song.durationMs)
-                    if (entries.isNotEmpty()) ytMusicLyricsCache.put(cacheKey, entries)
-                    return@withContext entries
-                }
-
-                // 第二步：回退到 YouTube Music API
-                if (videoId.isNullOrBlank()) {
-                    return@withContext emptyList()
-                }
-                val ytResult = youtubeMusicClient.getLyrics(videoId)
-                    ?: return@withContext emptyList()
-                val lyricsText = ytResult.lyrics
-                if (lyricsText.isBlank()) {
-                    return@withContext emptyList()
-                }
-
-                NPLogger.d("NERI-PlayerManager", "Using YouTube Music API lyrics for '${song.name}'")
-
-                val entries = if (lyricsText.contains(Regex("\\[\\d{2}:\\d{2}"))) {
-                    parseNeteaseLrc(lyricsText)
-                } else {
-                    convertPlainLyricsToEntries(lyricsText, song.durationMs)
-                }
-                if (entries.isNotEmpty()) ytMusicLyricsCache.put(cacheKey, entries)
-                entries
-            } catch (e: Exception) {
-                NPLogger.e("NERI-PlayerManager", "getYouTubeMusicLyrics failed: ${e.message}", e)
-                emptyList()
-            }
-        }
-    }
-
-    /** 将纯文本歌词按歌曲时长均匀分配时间戳 */
-    private fun convertPlainLyricsToEntries(text: String, durationMs: Long): List<LyricEntry> {
-        val lines = text.lines().filter { it.isNotBlank() }
-        if (lines.isEmpty()) return emptyList()
-        val totalMs = durationMs.coerceAtLeast(1L)
-        val intervalMs = totalMs / lines.size.coerceAtLeast(1)
-        return lines.mapIndexed { index, line ->
-            val startMs = index * intervalMs
-            val endMs = if (index < lines.lastIndex) (index + 1) * intervalMs else totalMs
-            LyricEntry(
-                text = line.trim(),
-                startTimeMs = startMs,
-                endTimeMs = endMs
-            )
-        }
+        return PlayerLyricsProvider.getNeteaseTranslatedLyrics(songId, neteaseClient)
     }
 
     /** 根据歌曲来源返回可用的翻译（如果有） */
     suspend fun getTranslatedLyrics(song: SongItem): List<LyricEntry> {
-        val context = application
-
-        // 优先检查本地翻译歌词缓存
-        val localTransPath = AudioDownloadManager.getTranslatedLyricFilePath(context, song)
-        if (localTransPath != null) {
-            try {
-                val transContent = File(localTransPath).readText()
-                return parseNeteaseLrc(transContent)
-            } catch (e: Exception) {
-                NPLogger.w("NERI-PlayerManager", "本地翻译歌词读取失败: ${e.message}")
-            }
-        }
-
-        // 本地没有，从网络获取
-        // B站歌曲在匹配网易云信息后应使用匹配到的歌曲 ID 获取翻译
-        if (isYouTubeMusicSong(song)) {
-            // YouTube Music 歌词暂无翻译来源
-            return emptyList()
-        }
-
-        if (song.album.startsWith(BILI_SOURCE_TAG)) {
-            return when (song.matchedLyricSource) {
-                MusicPlatform.CLOUD_MUSIC -> {
-                    val matchedId = song.matchedSongId?.toLongOrNull()
-                    if (matchedId != null) getNeteaseTranslatedLyrics(matchedId) else emptyList()
-                }
-                else -> emptyList()
-            }
-        }
-
-        return when (song.matchedLyricSource) {
-            null, MusicPlatform.CLOUD_MUSIC -> getNeteaseTranslatedLyrics(song.id)
-            else -> emptyList()
-        }
+        return PlayerLyricsProvider.getTranslatedLyrics(
+            song = song,
+            application = application,
+            neteaseClient = neteaseClient,
+            biliSourceTag = BILI_SOURCE_TAG
+        )
     }
 
     /** 获取歌词，优先使用本地缓存 */
     suspend fun getLyrics(song: SongItem): List<LyricEntry> {
-        if (isYouTubeMusicSong(song)) {
-            return getYouTubeMusicLyrics(song)
-        }
-        // 最优先使用song.matchedLyric中的歌词
-        if (!song.matchedLyric.isNullOrBlank()) {
-            try {
-                return parseNeteaseLrc(song.matchedLyric)
-            } catch (e: Exception) {
-                NPLogger.w("NERI-PlayerManager", "匹配歌词解析失败: ${e.message}")
-            }
-        }
-
-        // 其次检查本地歌词缓存
-        val context = application
-        val localLyricPath = AudioDownloadManager.getLyricFilePath(context, song)
-        if (localLyricPath != null) {
-            try {
-                val lrcContent = LocalMediaSupport.readTextFile(File(localLyricPath)) ?: ""
-                return parseNeteaseLrc(lrcContent)
-            } catch (e: Exception) {
-                NPLogger.w("NERI-PlayerManager", "本地歌词读取失败: ${e.message}")
-            }
-        }
-
-        // 最后回退到在线获取
-        return if (isYouTubeMusicSong(song)) {
-            getYouTubeMusicLyrics(song)
-        } else if (song.album.startsWith(BILI_SOURCE_TAG)) {
-            emptyList() // B站暂时没有歌词API
-        } else {
-            getNeteaseLyrics(song.id)
-        }
+        return PlayerLyricsProvider.getLyrics(
+            song = song,
+            application = application,
+            neteaseClient = neteaseClient,
+            youtubeMusicClient = youtubeMusicClient,
+            lrcLibClient = lrcLibClient,
+            ytMusicLyricsCache = ytMusicLyricsCache,
+            biliSourceTag = BILI_SOURCE_TAG
+        )
     }
 
     fun playFromQueue(index: Int) {
@@ -2853,7 +2643,7 @@ object PlayerManager {
         }
         _playbackPositionMs.value = positionMs
         if (forcePersist) {
-            runBlocking(Dispatchers.IO) {
+            blockingIo {
                 persistState(positionMs = positionMs, shouldResumePlayback = false)
             }
         } else {
@@ -3119,38 +2909,4 @@ object PlayerManager {
         persistState()
     }
 
-}
-
-private fun playbackStateName(state: Int): String {
-    return when (state) {
-        Player.STATE_IDLE -> "IDLE"
-        Player.STATE_BUFFERING -> "BUFFERING"
-        Player.STATE_READY -> "READY"
-        Player.STATE_ENDED -> "ENDED"
-        else -> "UNKNOWN($state)"
-    }
-}
-
-private fun playWhenReadyChangeReasonName(reason: Int): String {
-    return when (reason) {
-        Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST -> "USER_REQUEST"
-        Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS -> "AUDIO_FOCUS_LOSS"
-        Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY -> "AUDIO_BECOMING_NOISY"
-        Player.PLAY_WHEN_READY_CHANGE_REASON_REMOTE -> "REMOTE"
-        Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM -> "END_OF_MEDIA_ITEM"
-        Player.PLAY_WHEN_READY_CHANGE_REASON_SUPPRESSED_TOO_LONG -> "SUPPRESSED_TOO_LONG"
-        else -> "UNKNOWN($reason)"
-    }
-}
-
-private fun BiliVideoItem.toSongItem(): SongItem {
-    return SongItem(
-        id = this.id, // avid
-        name = this.title,
-        artist = this.uploader,
-        album = PlayerManager.BILI_SOURCE_TAG,
-        albumId = 0,
-        durationMs = this.durationSec * 1000L,
-        coverUrl = this.coverUrl
-    )
 }

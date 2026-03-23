@@ -1287,7 +1287,7 @@
     <string name="disclaimer_section5_bullet6">No third-party statistics, crash analysis, or advertising SDKs are integrated;</string>
     <string name="disclaimer_section5_bullet7">Third-party platform access logs are handled by that platform according to its privacy policy;</string>
     <string name="disclaimer_section5_bullet8">GitHub Sync Feature (Optional): Users can choose to back up playlist data to their own GitHub private repository. Tokens are encrypted and stored locally using Android Keystore, and developers cannot access them;</string>
-    <string name="disclaimer_section5_bullet9">This privacy statement was last updated: 2025-01-07.</string>
+    <string name="disclaimer_section5_bullet9">This privacy statement was last updated: 2025–01–07.</string>
     <string name="disclaimer_section6_bullet1">This software is provided &quot;as is&quot; without any warranty regarding stability, etc.;</string>
     <string name="disclaimer_section6_bullet2">To the extent permitted by law, the developer is not responsible for losses caused by use (including download actions);</string>
     <string name="disclaimer_section6_bullet3">The above limitations apply even if the developer has been advised of the possibility of such losses.</string>

@@ -19,7 +19,7 @@ package moe.ouom.neriplayer.ui.viewmodel.tab
  * along with this software.
  * If not, see <https://www.gnu.org/licenses/>.
  *
- * File: moe.ouom.neriplayer.ui.viewmodel/ExploreViewModel
+ * File: moe.ouom.neriplayer.ui.viewmodel.tab/ExploreViewModel
  * Created: 2025/8/11
  */
 
@@ -42,9 +42,9 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.PlayerManager.biliClient
 import moe.ouom.neriplayer.core.player.PlayerManager.neteaseClient
-import moe.ouom.neriplayer.data.NeteaseCookieRepository
-import moe.ouom.neriplayer.data.buildYouTubeMusicMediaUri
-import moe.ouom.neriplayer.data.stableYouTubeMusicId
+import moe.ouom.neriplayer.data.auth.netease.NeteaseCookieRepository
+import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeMusicMediaUri
+import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import org.json.JSONObject
 

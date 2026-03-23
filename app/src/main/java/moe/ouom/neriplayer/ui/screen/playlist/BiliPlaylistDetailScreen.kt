@@ -79,9 +79,9 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.FavoritePlaylistRepository
-import moe.ouom.neriplayer.data.LocalFilesPlaylist
-import moe.ouom.neriplayer.data.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
+import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
+import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliPlaylistDetailViewModel
@@ -127,7 +127,7 @@ fun BiliPlaylistDetailScreen(
 
     // 保存最新的header和videos数据，用于在Screen销毁时更新使用记录
     var latestHeader by remember { mutableStateOf<BiliPlaylist?>(null) }
-    var latestVideosSize by remember { mutableStateOf(0) }
+    var latestVideosSize by remember { mutableIntStateOf(0) }
     LaunchedEffect(ui.header, ui.videos.size) {
         ui.header?.let { latestHeader = it }
         latestVideosSize = ui.videos.size
