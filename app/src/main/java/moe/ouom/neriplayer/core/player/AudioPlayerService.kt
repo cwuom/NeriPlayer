@@ -40,6 +40,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.IBinder
 import android.os.Build
+import android.os.SystemClock
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
@@ -92,10 +93,10 @@ class AudioPlayerService : Service() {
 
     private lateinit var mediaSession: MediaSessionCompat
 
-    // 灏侀潰缂撳瓨
     private var currentCoverSource: String? = null
     private var currentLargeIcon: Bitmap? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val mediaSessionPlaybackStateThrottler = MediaSessionPlaybackStateThrottler()
     private var allowServiceRestart = true
     private var hasReceivedStartCommand = false
     private var isForegroundStarted = false
@@ -108,7 +109,11 @@ class AudioPlayerService : Service() {
         override fun onStop() {
             handleExternalPauseCommand("media_session_stop", stopService = true)
         }
-        override fun onSeekTo(pos: Long) { PlayerManager.seekTo(pos); updatePlaybackState(); updateNotification() }
+        override fun onSeekTo(pos: Long) {
+            PlayerManager.seekTo(pos)
+            updatePlaybackState(force = true)
+            updateNotification()
+        }
         override fun onCustomAction(action: String?, extras: Bundle?) {
             if (action == ACTION_TOGGLE_FAV) {
                 if (canToggleFavoriteFromExternalSurface(PlayerManager.currentSongFlow.value)) {
@@ -126,7 +131,7 @@ class AudioPlayerService : Service() {
                 "NERI-APS",
                 "Ignored stale external pause during auto track transition: source=$source"
             )
-            updatePlaybackState()
+            updatePlaybackState(force = true)
             updateNotification()
             return
         }
@@ -169,26 +174,26 @@ class AudioPlayerService : Service() {
                     return@collect
                 }
                 updateMetadata()
-                updatePlaybackState()
+                updatePlaybackState(force = true)
                 updateNotification()
             }
         }
 
         serviceScope.launch {
             PlayerManager.isPlayingFlow.collect {
-                updatePlaybackState()
+                updatePlaybackState(force = true)
                 updateNotification()
             }
         }
         serviceScope.launch {
             PlayerManager.playWhenReadyFlow.collect {
-                updatePlaybackState()
+                updatePlaybackState(force = true)
                 updateNotification()
             }
         }
         serviceScope.launch {
             PlayerManager.playerPlaybackStateFlow.collect {
-                updatePlaybackState()
+                updatePlaybackState(force = true)
                 updateNotification()
             }
         }
@@ -209,7 +214,7 @@ class AudioPlayerService : Service() {
                 if (intent.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
                     if (PlayerManager.handleAudioBecomingNoisy()) {
                         NPLogger.d("NERI-APS", "Handled audio becoming noisy according to playback policy.")
-                        updatePlaybackState()
+                        updatePlaybackState(force = true)
                         updateNotification()
                     }
                 }
@@ -218,7 +223,7 @@ class AudioPlayerService : Service() {
         registerReceiver(becomingNoisyReceiver, IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY))
 
         updateMetadata()
-        updatePlaybackState()
+        updatePlaybackState(force = true)
         updateNotification()
     }
 
@@ -377,10 +382,8 @@ class AudioPlayerService : Service() {
         builder.addAction(favAction)
         builder.addAction(R.drawable.round_skip_next_24, getString(R.string.player_next), nextIntent)
 
-        // 璁剧疆鏍囬鍜屽壇鏍囬
         builder.setContentTitle(song?.displayName() ?: "NeriPlayer")
 
-        // 濡傛灉瀹氭椂鍣ㄦ縺娲伙紝鍦ㄥ壇鏍囬涓樉绀哄墿浣欐椂闂?
         val timerState = PlayerManager.sleepTimerManager.timerState.value
         val contentText = if (timerState.isActive) {
             val timerInfo = when (timerState.mode) {
@@ -427,9 +430,6 @@ class AudioPlayerService : Service() {
             .build()
     }
 
-    /**
-     * 鑱氬悎鏇存柊
-     */
     private fun isFavoriteSong(song: SongItem?): Boolean {
         if (song == null) return false
         val favorites = PlayerManager.playlistsFlow.value
@@ -449,7 +449,7 @@ class AudioPlayerService : Service() {
 
     private fun updateAll() {
         updateMetadata()
-        updatePlaybackState()
+        updatePlaybackState(force = true)
         updateNotification()
     }
 
@@ -476,7 +476,6 @@ class AudioPlayerService : Service() {
         val duration = song?.durationMs ?: 0L
         val coverSource = song.effectiveCoverSource()
 
-        // 灏侀潰 URL 鍙樻洿鍒欏紓姝ュ姞杞?
         if (coverSource != currentCoverSource) {
             currentCoverSource = coverSource
             currentLargeIcon = null
@@ -498,12 +497,12 @@ class AudioPlayerService : Service() {
 
         // Do not set local URIs to METADATA_KEY_ALBUM_ART_URI, as it may prompt the System UI
         // to attempt loading them directly (which can fail due to permission issues) and
-        // override the bitmap we already provided via METADATA_KEY_ALBUM_ART.
+        // override the bitmap we already provided via METADATA_KEY_ALBUM_ART
 
         mediaSession.setMetadata(metadataBuilder.build())
     }
 
-    private fun updatePlaybackState() {
+    private fun updatePlaybackState(force: Boolean = false) {
         val isTransportActive = PlayerManager.isTransportActive()
         val isBuffering = PlayerManager.isTransportBuffering()
         val pos = PlayerManager.playbackPositionFlow.value
@@ -534,6 +533,18 @@ class AudioPlayerService : Service() {
             else -> PlaybackStateCompat.STATE_PAUSED
         }
         val playbackSpeed = if (playbackState == PlaybackStateCompat.STATE_PLAYING) 1.0f else 0.0f
+        val nowElapsedRealtimeMs = SystemClock.elapsedRealtime()
+
+        if (!mediaSessionPlaybackStateThrottler.shouldDispatch(
+                playbackState = playbackState,
+                positionMs = pos,
+                speed = playbackSpeed,
+                nowElapsedRealtimeMs = nowElapsedRealtimeMs,
+                force = force,
+            )
+        ) {
+            return
+        }
 
         val stateBuilder = PlaybackStateCompat.Builder()
             .setActions(actions)
@@ -548,15 +559,16 @@ class AudioPlayerService : Service() {
         }
 
         mediaSession.setPlaybackState(stateBuilder.build())
+        mediaSessionPlaybackStateThrottler.recordDispatch(
+            playbackState = playbackState,
+            positionMs = pos,
+            speed = playbackSpeed,
+            nowElapsedRealtimeMs = nowElapsedRealtimeMs,
+        )
     }
 
-    /**
-     * 浣跨敤 Coil 寮傛鍔犺浇閫氱煡澶у浘鏍囧皝闈?
-     * 浠呭綋鍥炶皟鏃?URL 浠嶆槸褰撳墠鏇茬洰鐨勫皝闈㈡椂鎵嶅簲鐢紝閬垮厤绔炴€佸鑷寸殑灏侀潰閿欎綅
-     */
     private fun requestLargeIconAsync(url: String?) {
         if (url.isNullOrBlank()) {
-            // 娓呯┖灏侀潰 UI
             currentLargeIcon = null
             updateNotification()
             return
