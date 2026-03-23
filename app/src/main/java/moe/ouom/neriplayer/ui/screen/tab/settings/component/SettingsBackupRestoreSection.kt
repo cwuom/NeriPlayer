@@ -106,20 +106,6 @@ internal fun SettingsBackupRestoreSection(
     onOpenGitHubConfig: () -> Unit,
     onOpenClearGitHubConfig: () -> Unit
 ) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val githubVm: GitHubSyncViewModel = viewModel()
-    val githubState by githubVm.uiState.collectAsState()
-
-    var showPlayHistoryModeDialog by remember { mutableStateOf(false) }
-    val storage = remember(context) { SecureTokenStorage(context) }
-    val currentMode = remember { mutableStateOf(storage.getPlayHistoryUpdateMode()) }
-    var dataSaverMode by remember { mutableStateOf(storage.isDataSaverMode()) }
-    var pendingDataSaverMode by remember { mutableStateOf<Boolean?>(null) }
-
-    LaunchedEffect(githubVm, context) {
-        githubVm.initialize(context)
-    }
-
     ExpandableHeader(
         icon = Icons.Outlined.Backup,
         title = stringResource(R.string.settings_backup_restore),
@@ -130,11 +116,24 @@ internal fun SettingsBackupRestoreSection(
         arrowRotation = arrowRotation
     )
 
-    AnimatedVisibility(
+    LazyAnimatedVisibility(
         visible = expanded,
         enter = fadeIn() + expandVertically(),
         exit = fadeOut() + shrinkVertically()
     ) {
+        val context = androidx.compose.ui.platform.LocalContext.current
+        val githubVm: GitHubSyncViewModel = viewModel()
+        val githubState by githubVm.uiState.collectAsState()
+        var showPlayHistoryModeDialog by remember { mutableStateOf(false) }
+        val storage = remember(context) { SecureTokenStorage(context) }
+        val currentMode = remember { mutableStateOf(storage.getPlayHistoryUpdateMode()) }
+        var dataSaverMode by remember { mutableStateOf(storage.isDataSaverMode()) }
+        var pendingDataSaverMode by remember { mutableStateOf<Boolean?>(null) }
+
+        LaunchedEffect(githubVm, context) {
+            githubVm.initialize(context)
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -453,43 +452,43 @@ internal fun SettingsBackupRestoreSection(
                 )
             }
         }
-    }
 
-    if (showPlayHistoryModeDialog) {
-        PlayHistoryModeDialog(
-            currentMode = currentMode.value,
-            onDismiss = { showPlayHistoryModeDialog = false },
-            onSelect = { mode ->
-                storage.setPlayHistoryUpdateMode(mode)
-                currentMode.value = mode
-                showPlayHistoryModeDialog = false
-            }
-        )
-    }
+        if (showPlayHistoryModeDialog) {
+            PlayHistoryModeDialog(
+                currentMode = currentMode.value,
+                onDismiss = { showPlayHistoryModeDialog = false },
+                onSelect = { mode ->
+                    storage.setPlayHistoryUpdateMode(mode)
+                    currentMode.value = mode
+                    showPlayHistoryModeDialog = false
+                }
+            )
+        }
 
-    if (pendingDataSaverMode != null) {
-        AlertDialog(
-            onDismissRequest = { pendingDataSaverMode = null },
-            title = { Text(stringResource(R.string.sync_data_saver_warning_title)) },
-            text = { Text(stringResource(R.string.sync_data_saver_warning_message)) },
-            confirmButton = {
-                HapticTextButton(
-                    onClick = {
-                        val enabled = pendingDataSaverMode ?: return@HapticTextButton
-                        dataSaverMode = enabled
-                        storage.setDataSaverMode(enabled)
-                        pendingDataSaverMode = null
+        if (pendingDataSaverMode != null) {
+            AlertDialog(
+                onDismissRequest = { pendingDataSaverMode = null },
+                title = { Text(stringResource(R.string.sync_data_saver_warning_title)) },
+                text = { Text(stringResource(R.string.sync_data_saver_warning_message)) },
+                confirmButton = {
+                    HapticTextButton(
+                        onClick = {
+                            val enabled = pendingDataSaverMode ?: return@HapticTextButton
+                            dataSaverMode = enabled
+                            storage.setDataSaverMode(enabled)
+                            pendingDataSaverMode = null
+                        }
+                    ) {
+                        Text(stringResource(R.string.sync_data_saver_warning_confirm))
                     }
-                ) {
-                    Text(stringResource(R.string.sync_data_saver_warning_confirm))
+                },
+                dismissButton = {
+                    HapticTextButton(onClick = { pendingDataSaverMode = null }) {
+                        Text(stringResource(R.string.action_cancel))
+                    }
                 }
-            },
-            dismissButton = {
-                HapticTextButton(onClick = { pendingDataSaverMode = null }) {
-                    Text(stringResource(R.string.action_cancel))
-                }
-            }
-        )
+            )
+        }
     }
 }
 

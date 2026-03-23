@@ -103,7 +103,7 @@ internal fun SettingsStorageCacheSection(
         arrowRotation = arrowRotation
     )
 
-    AnimatedVisibility(
+    LazyAnimatedVisibility(
         visible = expanded,
         enter = fadeIn() + expandVertically(),
         exit = fadeOut() + shrinkVertically()

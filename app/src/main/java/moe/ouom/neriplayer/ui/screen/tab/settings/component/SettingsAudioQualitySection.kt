@@ -82,7 +82,7 @@ internal fun SettingsAudioQualitySection(
         arrowRotation = arrowRotation
     )
 
-    AnimatedVisibility(
+    LazyAnimatedVisibility(
         visible = expanded,
         enter = fadeIn() + expandVertically(),
         exit = fadeOut() + shrinkVertically()

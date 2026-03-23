@@ -114,6 +114,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsBiliAuthDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsNeteaseAuthDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsYouTubeAuthDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.ExpandableHeader
+import moe.ouom.neriplayer.ui.screen.tab.settings.component.LazyAnimatedVisibility
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsAudioQualitySection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsBackupRestoreSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsDownloadSection
@@ -712,7 +713,7 @@ fun SettingsScreen(
 
             // 展开区域
             item {
-                AnimatedVisibility(
+                LazyAnimatedVisibility(
                     visible = loginExpanded,
                     enter = fadeIn() + expandVertically(),
                     exit = fadeOut() + shrinkVertically()
@@ -754,7 +755,7 @@ fun SettingsScreen(
 
               // 展开区域
               item {
-                  AnimatedVisibility(
+                  LazyAnimatedVisibility(
                       visible = personalizationExpanded,
                       enter = fadeIn() + expandVertically(),
                       exit = fadeOut() + shrinkVertically()
@@ -1157,7 +1158,7 @@ fun SettingsScreen(
 
             // 展开区域
             item {
-                AnimatedVisibility(
+                LazyAnimatedVisibility(
                     visible = networkExpanded,
                     enter = fadeIn() + expandVertically(),
                     exit = fadeOut() + shrinkVertically()

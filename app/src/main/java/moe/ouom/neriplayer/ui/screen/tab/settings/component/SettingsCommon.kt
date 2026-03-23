@@ -27,6 +27,13 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -121,6 +128,27 @@ internal fun ExpandableHeader(
         modifier = Modifier.settingsItemClickable(onClick = onToggle),
         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
     )
+}
+
+@Composable
+internal fun LazyAnimatedVisibility(
+    visible: Boolean,
+    enter: EnterTransition = fadeIn() + expandVertically(),
+    exit: ExitTransition = fadeOut() + shrinkVertically(),
+    content: @Composable () -> Unit
+) {
+    val visibilityState = remember { MutableTransitionState(false) }
+    visibilityState.targetState = visible
+
+    if (visibilityState.currentState || visibilityState.targetState) {
+        androidx.compose.animation.AnimatedVisibility(
+            visibleState = visibilityState,
+            enter = enter,
+            exit = exit
+        ) {
+            content()
+        }
+    }
 }
 
 /** 主题色预览行（当关闭系统动态取色时显示） */
