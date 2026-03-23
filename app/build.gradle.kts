@@ -196,6 +196,7 @@ dependencies {
     implementation(libs.material)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.constraintlayout)
+    implementation(libs.androidx.documentfile)
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)

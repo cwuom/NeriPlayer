@@ -40,8 +40,6 @@ import moe.ouom.neriplayer.ui.component.parseNeteaseLrc
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
-import java.io.File
-
 internal object PlayerLyricsProvider {
 
     suspend fun getNeteaseLyrics(
@@ -90,11 +88,10 @@ internal object PlayerLyricsProvider {
         neteaseClient: NeteaseClient,
         biliSourceTag: String
     ): List<LyricEntry> {
-        val localTransPath = AudioDownloadManager.getTranslatedLyricFilePath(application, song)
-        if (localTransPath != null) {
+        val localTranslatedLyrics = AudioDownloadManager.getTranslatedLyricContent(application, song)
+        if (!localTranslatedLyrics.isNullOrBlank()) {
             try {
-                val translatedContent = File(localTransPath).readText()
-                return parseNeteaseLrc(translatedContent)
+                return parseNeteaseLrc(localTranslatedLyrics)
             } catch (error: Exception) {
                 NPLogger.w("NERI-PlayerManager", "本地翻译歌词读取失败: ${error.message}")
             }
@@ -146,11 +143,10 @@ internal object PlayerLyricsProvider {
             }
         }
 
-        val localLyricPath = AudioDownloadManager.getLyricFilePath(application, song)
-        if (localLyricPath != null) {
+        val localLyricContent = AudioDownloadManager.getLyricContent(application, song)
+        if (!localLyricContent.isNullOrBlank()) {
             try {
-                val lyricContent = LocalMediaSupport.readTextFile(File(localLyricPath)) ?: ""
-                return parseNeteaseLrc(lyricContent)
+                return parseNeteaseLrc(localLyricContent)
             } catch (error: Exception) {
                 NPLogger.w("NERI-PlayerManager", "本地歌词读取失败: ${error.message}")
             }

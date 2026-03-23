@@ -43,6 +43,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material.icons.outlined.SdStorage
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
@@ -68,7 +70,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import java.io.File
+import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.formatFileSize
 
@@ -77,6 +81,10 @@ internal fun SettingsStorageCacheSection(
     expanded: Boolean,
     arrowRotation: Float,
     onExpandedChange: (Boolean) -> Unit,
+    currentDownloadDirectorySummary: String,
+    isCustomDownloadDirectory: Boolean,
+    onPickDownloadDirectory: () -> Unit,
+    onResetDownloadDirectory: () -> Unit,
     maxCacheSizeBytes: Long,
     onMaxCacheSizeBytesChange: (Long) -> Unit,
     showStorageDetails: Boolean,
@@ -113,6 +121,60 @@ internal fun SettingsStorageCacheSection(
                 .fillMaxWidth()
                 .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
         ) {
+            ListItem(
+                leadingContent = {
+                    Icon(
+                        Icons.Outlined.Download,
+                        contentDescription = stringResource(R.string.settings_download_directory),
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                },
+                headlineContent = { Text(stringResource(R.string.settings_download_directory)) },
+                supportingContent = {
+                    Column {
+                        Text(stringResource(R.string.settings_download_directory_desc))
+                        Text(
+                            text = stringResource(
+                                R.string.settings_download_directory_current,
+                                currentDownloadDirectorySummary
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = stringResource(R.string.settings_download_directory_hint),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                    }
+                },
+                trailingContent = {
+                    HapticTextButton(onClick = onPickDownloadDirectory) {
+                        Text(stringResource(R.string.settings_download_directory_choose))
+                    }
+                },
+                modifier = Modifier.settingsItemClickable(onClick = onPickDownloadDirectory),
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+            )
+
+            AnimatedVisibility(visible = isCustomDownloadDirectory) {
+                ListItem(
+                    leadingContent = {
+                        Icon(
+                            Icons.Outlined.Restore,
+                            contentDescription = stringResource(R.string.settings_download_directory_reset),
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    headlineContent = { Text(stringResource(R.string.settings_download_directory_reset)) },
+                    supportingContent = {
+                        Text(stringResource(R.string.settings_download_directory_reset_desc))
+                    },
+                    modifier = Modifier.settingsItemClickable(onClick = onResetDownloadDirectory),
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                )
+            }
+
             ListItem(
                 headlineContent = { Text(stringResource(R.string.settings_cache_limit)) },
                 supportingContent = {
@@ -362,13 +424,10 @@ private fun calculateStorageDetails(context: android.content.Context): Map<Strin
         details[context.getString(R.string.storage_type_image_cache)] =
             imageCacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
 
-        val musicDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC)
-            ?.let { File(it, "NeriPlayer") }
         details[context.getString(R.string.storage_type_downloaded_music)] =
-            musicDir?.walkTopDown()
-                ?.filter { it.isFile && !it.name.endsWith(".downloading") }
-                ?.sumOf { it.length() }
-                ?: 0L
+            runBlocking {
+                ManagedDownloadStorage.listDownloadedAudio(context).sumOf { it.sizeBytes }
+            }
 
         val logDir = context.getExternalFilesDir(null)?.let { File(it, "logs") }
         details[context.getString(R.string.storage_type_log_files)] =

@@ -430,9 +430,29 @@ object PlayerManager {
         return isReadableLocalMediaUri(localMediaSource(song))
     }
 
+    private fun isRestorableLocalMediaUri(mediaUri: String?): Boolean {
+        val uriString = mediaUri?.takeIf { it.isNotBlank() } ?: return false
+        if (uriString.startsWith("/")) {
+            return File(uriString).exists()
+        }
+
+        val uri = runCatching { uriString.toUri() }.getOrNull() ?: return false
+        return when (uri.scheme?.lowercase()) {
+            null, "" -> File(uriString).exists()
+            "file" -> uri.path?.let(::File)?.exists() == true
+            // 恢复播放状态时不阻塞探测 SAF 文件，真正播放时再做严格校验。
+            "content", "android.resource" -> true
+            else -> false
+        }
+    }
+
+    private fun isRestorableLocalSong(song: SongItem): Boolean {
+        return isRestorableLocalMediaUri(localMediaSource(song))
+    }
+
     private fun sanitizeRestoredPlaylist(playlist: List<SongItem>): List<SongItem> {
         return playlist.filter { song ->
-            !isLocalSong(song) || isReadableLocalSong(song)
+            !isLocalSong(song) || isRestorableLocalSong(song)
         }
     }
 
@@ -1707,19 +1727,25 @@ object PlayerManager {
     /** 检查歌曲是否有本地缓存，如果有则优先使用本地文件 */
     private fun checkLocalCache(song: SongItem): SongUrlResult? {
         val context = application
-        val localPath = AudioDownloadManager.getLocalFilePath(context, song) ?: return null
+        val localReference = AudioDownloadManager.getLocalPlaybackUri(context, song) ?: return null
         // 如果歌曲时长未知，用 MediaMetadataRetriever 尝试读出来
         val durationMs = if (song.durationMs <= 0L) {
             try {
                 val retriever = android.media.MediaMetadataRetriever()
-                retriever.setDataSource(localPath)
+                val localUri = localReference.toUri()
+                when (localUri.scheme?.lowercase()) {
+                    "content", "android.resource" -> retriever.setDataSource(context, localUri)
+                    "file" -> retriever.setDataSource(localUri.path)
+                    null, "" -> retriever.setDataSource(localReference)
+                    else -> retriever.setDataSource(context, localUri)
+                }
                 val d = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
                     ?.toLongOrNull() ?: 0L
                 retriever.release()
                 d
             } catch (_: Exception) { null }
         } else null
-        return SongUrlResult.Success("file://$localPath", durationMs = durationMs)
+        return SongUrlResult.Success(localReference, durationMs = durationMs)
     }
 
     /** 只有完整缓存才允许离线兜底，避免半首歌缓存被误当成可播放资源 */
@@ -2801,7 +2827,7 @@ object PlayerManager {
             _currentSongFlow.value = currentPlaylist.getOrNull(currentIndex)
             _currentMediaUrl.value = data.mediaUrl?.takeIf {
                 _currentSongFlow.value?.let(::isLocalSong) != true ||
-                    _currentSongFlow.value?.let(::isReadableLocalSong) == true
+                    _currentSongFlow.value?.let(::isRestorableLocalSong) == true
             }
             repeatModeSetting = if (keepPlaybackModeStateEnabled) {
                 when (data.repeatMode) {

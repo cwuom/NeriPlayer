@@ -41,6 +41,7 @@ import moe.ouom.neriplayer.core.api.search.CloudMusicSearchApi
 import moe.ouom.neriplayer.core.api.search.QQMusicSearchApi
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicClient
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicPlaybackRepository
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.auth.bili.BiliCookieRepository
 import moe.ouom.neriplayer.data.auth.netease.NeteaseCookieRepository
 import moe.ouom.neriplayer.data.history.PlayHistoryRepository
@@ -61,6 +62,8 @@ import okhttp3.Request
 object AppContainer {
 
     private lateinit var application: Application
+    val applicationContext: Application
+        get() = application
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -168,6 +171,15 @@ object AppContainer {
                 settingsRepo.bypassProxyFlow.first()
             }
         }.getOrDefault(DynamicProxySelector.bypassProxy)
+
+        ManagedDownloadStorage.primeSettings(
+            directoryUri = runCatching {
+                runBlocking(Dispatchers.IO) { settingsRepo.downloadDirectoryUriFlow.first() }
+            }.getOrNull(),
+            directoryLabel = runCatching {
+                runBlocking(Dispatchers.IO) { settingsRepo.downloadDirectoryLabelFlow.first() }
+            }.getOrNull()
+        )
     }
 
     private fun startCookieObserver() {
@@ -187,6 +199,18 @@ object AppContainer {
                 DynamicProxySelector.bypassProxy = enabled
                 sharedOkHttpClient.connectionPool.evictAll()
                 neteaseClient.evictConnections()
+            }
+            .launchIn(scope)
+
+        settingsRepo.downloadDirectoryUriFlow
+            .onEach { uri ->
+                ManagedDownloadStorage.updateCustomDirectoryUri(uri)
+            }
+            .launchIn(scope)
+
+        settingsRepo.downloadDirectoryLabelFlow
+            .onEach { label ->
+                ManagedDownloadStorage.updateCustomDirectoryLabel(label)
             }
             .launchIn(scope)
     }

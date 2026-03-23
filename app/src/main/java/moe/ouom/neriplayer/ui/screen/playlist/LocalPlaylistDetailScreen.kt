@@ -1150,10 +1150,10 @@ fun LocalPlaylistDetailScreen(
                                                     )
                                                     // 下载完成标志
                                                     if (remember(downloadedSongs, song, itemContext) {
-                                                            AudioDownloadManager.getLocalFilePath(
+                                                            AudioDownloadManager.hasLocalDownload(
                                                                 itemContext,
                                                                 song
-                                                            ) != null
+                                                            )
                                                         }) {
                                                         Icon(
                                                             imageVector = Icons.Outlined.DownloadDone,

@@ -24,6 +24,7 @@ package moe.ouom.neriplayer.data.model
  */
 
 import android.content.Context
+import android.os.Looper
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.isLocalSong
@@ -42,6 +43,7 @@ fun SongItem.displayCoverUrl(context: Context): String? {
 
     AudioDownloadManager.getLocalCoverUri(context, this)?.let { return it }
     if (!isLocalSong()) return current
+    if (Looper.myLooper() == Looper.getMainLooper()) return current
     LocalMediaSupport.inspect(context, this)?.coverUri?.takeIf { it.isNotBlank() }?.let { return it }
     return current
 }

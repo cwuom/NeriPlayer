@@ -104,6 +104,12 @@ class SettingsRepository(private val context: Context) {
     val backgroundImageUriFlow: Flow<String?> =
         context.dataStore.data.map { it[SettingsKeys.BACKGROUND_IMAGE_URI] }
 
+    val downloadDirectoryUriFlow: Flow<String?> =
+        context.dataStore.data.map { it[SettingsKeys.DOWNLOAD_DIRECTORY_URI] }
+
+    val downloadDirectoryLabelFlow: Flow<String?> =
+        context.dataStore.data.map { it[SettingsKeys.DOWNLOAD_DIRECTORY_LABEL] }
+
     val backgroundImageBlurFlow: Flow<Float> =
         context.dataStore.data.map { it[SettingsKeys.BACKGROUND_IMAGE_BLUR] ?: 0f }
 
@@ -342,6 +348,16 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
+    suspend fun setDownloadDirectoryUri(uri: String?) {
+        context.dataStore.edit {
+            if (uri == null) {
+                it.remove(SettingsKeys.DOWNLOAD_DIRECTORY_URI)
+            } else {
+                it[SettingsKeys.DOWNLOAD_DIRECTORY_URI] = uri
+            }
+        }
+    }
+
     suspend fun setBackgroundImageBlur(blur: Float) {
         context.dataStore.edit { it[SettingsKeys.BACKGROUND_IMAGE_BLUR] = blur }
     }
@@ -352,6 +368,22 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setMaxCacheSizeBytes(bytes: Long) {
         context.dataStore.edit { it[SettingsKeys.MAX_CACHE_SIZE_BYTES] = bytes }
+    }
+
+    suspend fun setDownloadDirectory(uri: String?, label: String?) {
+        context.dataStore.edit {
+            if (uri.isNullOrBlank()) {
+                it.remove(SettingsKeys.DOWNLOAD_DIRECTORY_URI)
+                it.remove(SettingsKeys.DOWNLOAD_DIRECTORY_LABEL)
+            } else {
+                it[SettingsKeys.DOWNLOAD_DIRECTORY_URI] = uri
+                if (label.isNullOrBlank()) {
+                    it.remove(SettingsKeys.DOWNLOAD_DIRECTORY_LABEL)
+                } else {
+                    it[SettingsKeys.DOWNLOAD_DIRECTORY_LABEL] = label
+                }
+            }
+        }
     }
 
     suspend fun setShowLyricTranslation(enabled: Boolean) {

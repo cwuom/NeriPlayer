@@ -38,7 +38,7 @@ class DownloadManagerViewModel(application: Application) : AndroidViewModel(appl
 
     fun refreshDownloadedSongs() {
         val appContext = getApplication<Application>()
-        GlobalDownloadManager.scanLocalFiles(appContext)
+        GlobalDownloadManager.scanLocalFiles(appContext, forceRefresh = true)
     }
 
     fun deleteDownloadedSong(song: DownloadedSong) {
@@ -47,7 +47,8 @@ class DownloadManagerViewModel(application: Application) : AndroidViewModel(appl
     }
 
     fun playDownloadedSong(song: DownloadedSong) {
-        GlobalDownloadManager.playDownloadedSong(song)
+        val appContext = getApplication<Application>()
+        GlobalDownloadManager.playDownloadedSong(appContext, song)
     }
 
     fun startBatchDownload(context: Context, songs: List<SongItem>) {

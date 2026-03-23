@@ -1547,7 +1547,7 @@ fun MoreOptionsSheet(
                                     onDismiss()
                                 }
                             )
-                        } else if (AudioDownloadManager.getLocalFilePath(context, originalSong) == null) {
+                        } else if (!AudioDownloadManager.hasLocalDownload(context, originalSong)) {
                             val songKey = remember(originalSong) { originalSong.stableKey() }
                             val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsState()
                             val currentDownloadTask = remember(downloadTasks, songKey) {

@@ -957,6 +957,29 @@
     <string name="settings_download_songs_count" formatted="false">%d/%d songs</string>
     <string name="settings_downloading">Downloading: %s</string>
     <string name="settings_download_manager">Download Manager</string>
+    <string name="settings_download_directory">Download Directory</string>
+    <string name="settings_download_directory_desc">Songs, lyrics, and covers will be saved here</string>
+    <string name="settings_download_directory_current">Current: %1$s</string>
+    <string name="settings_download_directory_hint">A folder on your SD card is usually the easiest choice</string>
+    <string name="settings_download_directory_choose">Choose Folder</string>
+    <string name="settings_download_directory_reset">Restore Default Folder</string>
+    <string name="settings_download_directory_reset_desc">Switch back to the app private download folder</string>
+    <string name="settings_download_directory_default_label">App private folder</string>
+    <string name="settings_download_directory_custom_label">Custom Directory</string>
+    <string name="settings_download_directory_internal_storage">Internal Storage</string>
+    <string name="settings_download_directory_sd_card">SD Card</string>
+    <string name="settings_download_directory_selected">Download directory updated</string>
+    <string name="settings_download_directory_reset_done">Download directory reset to default</string>
+    <string name="settings_download_directory_pick_failed">Failed to choose download directory: %1$s</string>
+    <string name="settings_download_directory_migrate_title">Move Existing Downloads</string>
+    <string name="settings_download_directory_migrate_message">Move your downloaded songs, lyrics, and covers to \"%1$s\"?</string>
+    <string name="settings_download_directory_migrate_confirm">Move Files</string>
+    <string name="settings_download_directory_migrate_skip">Keep Old Files</string>
+    <string name="settings_download_directory_migrating">Moving download files</string>
+    <string name="settings_download_directory_migrating_desc">Songs, lyrics, and covers are being moved to the new folder</string>
+    <string name="settings_download_directory_migrated">Moved %1$d downloaded files and switched folders</string>
+    <string name="settings_download_directory_migrated_partial">Moved %1$d files, but %2$d old files could not be removed</string>
+    <string name="settings_download_directory_migrate_failed">Failed to move %1$d files, so the original folder was kept</string>
     <string name="settings_backup_restore">Backup &amp; Restore</string>
     <string name="settings_backup_expand">Manage backups</string>
 

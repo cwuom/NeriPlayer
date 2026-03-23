@@ -523,12 +523,31 @@ object LocalMediaSupport {
         return File(baseDir, "NeriPlayer")
     }
 
+    fun readTextContent(context: Context, reference: String): String? {
+        val bytes = when {
+            reference.startsWith("/") -> runCatching { File(reference).readBytes() }
+                .onFailure { NPLogger.w(TAG, "read bytes failed for $reference: ${it.message}") }
+                .getOrNull()
+            else -> runCatching {
+                context.contentResolver.openInputStream(reference.toUri())?.use { it.readBytes() }
+            }.onFailure {
+                NPLogger.w(TAG, "read stream failed for $reference: ${it.message}")
+            }.getOrNull()
+        } ?: return null
+
+        return decodeTextBytes(bytes)
+    }
+
     fun readTextFile(file: File): String? {
         val bytes = runCatching { file.readBytes() }
             .onFailure { NPLogger.w(TAG, "read bytes failed for ${file.absolutePath}: ${it.message}") }
             .getOrNull()
             ?: return null
 
+        return decodeTextBytes(bytes)
+    }
+
+    private fun decodeTextBytes(bytes: ByteArray): String? {
         if (bytes.isEmpty()) return ""
 
         detectBomCharset(bytes)?.let { (charset, offset) ->

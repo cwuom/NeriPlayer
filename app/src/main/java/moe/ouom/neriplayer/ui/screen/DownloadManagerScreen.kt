@@ -84,7 +84,9 @@ fun DownloadManagerScreen(
     val miniPlayerHeight = LocalMiniPlayerHeight.current
 
     LaunchedEffect(Unit) {
-        viewModel.refreshDownloadedSongs()
+        if (viewModel.downloadedSongs.value.isEmpty() && !viewModel.isRefreshing.value) {
+            viewModel.refreshDownloadedSongs()
+        }
     }
 
     var searchQuery by remember { mutableStateOf("") }
@@ -476,13 +478,14 @@ private fun DownloadedSongsList(
         }
 
         if (isRefreshing) {
-            CircularProgressIndicator(
+            LinearProgressIndicator(
                 modifier = Modifier
-                    .size(48.dp)
-                    .background(
-                        MaterialTheme.colorScheme.surface,
-                        RoundedCornerShape(24.dp)
-                    )
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .height(3.dp),
+                trackColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.18f)
             )
         }
     }
@@ -503,11 +506,22 @@ private fun DownloadedSongItem(
         song.customCoverUrl
             ?.takeIf { it.isNotBlank() }
             ?: song.coverPath
-            ?.takeIf { File(it).exists() }
-            ?.let { File(it).toURI().toString() }
+            ?.takeIf { it.isNotBlank() }
+            ?.let { coverPath ->
+                if (coverPath.startsWith("/")) {
+                    File(coverPath).takeIf(File::exists)?.toURI()?.toString()
+                } else {
+                    coverPath
+                }
+            }
             ?: song.coverUrl?.takeIf { it.isNotBlank() }
             ?: runCatching {
-                LocalMediaSupport.inspect(context, Uri.fromFile(File(song.filePath))).coverUri
+                val localUri = if (song.filePath.startsWith("/")) {
+                    Uri.fromFile(File(song.filePath))
+                } else {
+                    Uri.parse(song.filePath)
+                }
+                LocalMediaSupport.inspect(context, localUri).coverUri
             }.getOrNull()
     }
 

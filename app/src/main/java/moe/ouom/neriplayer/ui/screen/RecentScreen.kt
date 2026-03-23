@@ -574,7 +574,7 @@ private fun RecentRowRich(
                 )
                 // 已下载标志
                 if (remember(downloadedSongFilePaths, song) {
-                        AudioDownloadManager.getLocalFilePath(ctx, song) != null
+                        AudioDownloadManager.hasLocalDownload(ctx, song)
                     }) {
                     Spacer(Modifier.width(6.dp))
                     Icon(

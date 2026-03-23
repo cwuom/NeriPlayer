@@ -4,6 +4,7 @@ agp = "8.13.0"
 coilCompose = "2.7.0"
 datastorePreferences = "1.1.7"
 dec = "0.1.2"
+documentfile = "1.0.1"
 gson = "2.13.1"
 hazeJetpackCompose = "0.7.0"
 kotlin = "2.2.0"
@@ -45,6 +46,7 @@ accompanist-navigation-animation = { module = "com.google.accompanist:accompanis
 androidx-animation = { module = "androidx.compose.animation:animation" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastorePreferences" }
+androidx-documentfile = { module = "androidx.documentfile:documentfile", version.ref = "documentfile" }
 androidx-foundation = { module = "androidx.compose.foundation:foundation" }
 androidx-media = { module = "androidx.media:media", version.ref = "media" }
 androidx-media3-datasource-okhttp = { module = "androidx.media3:media3-datasource-okhttp", version.ref = "media3DatasourceOkhttp" }

@@ -126,6 +126,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.AudioPlayerService
 import moe.ouom.neriplayer.core.player.AudioReactive
 import moe.ouom.neriplayer.core.player.PlayerManager
@@ -443,6 +444,7 @@ fun NeriApp(
     val uiDensityScale by repo.uiDensityScaleFlow.collectAsState(initial = 1.0f)
     val bypassProxy by repo.bypassProxyFlow.collectAsState(initial = true)
     val backgroundImageUri by repo.backgroundImageUriFlow.collectAsState(initial = null)
+    val downloadDirectoryUri by repo.downloadDirectoryUriFlow.collectAsState(initial = null)
     val backgroundImageBlur by repo.backgroundImageBlurFlow.collectAsState(initial = 0f)
     val backgroundImageAlpha by repo.backgroundImageAlphaFlow.collectAsState(initial = 0.3f)
     val hapticFeedbackEnabled by repo.hapticFeedbackEnabledFlow.collectAsState(initial = true)
@@ -1267,6 +1269,18 @@ fun NeriApp(
                                         backgroundImageUri = backgroundImageUri,
                                         onBackgroundImageChange = { uri ->
                                             scope.launch { repo.setBackgroundImageUri(uri?.toString()) }
+                                        },
+                                        downloadDirectoryUri = downloadDirectoryUri,
+                                        onDownloadDirectoryUriChange = { uri ->
+                                            val label = ManagedDownloadStorage.describeConfiguredDirectory(
+                                                context,
+                                                uri
+                                            ).takeIf { !uri.isNullOrBlank() }
+                                            scope.launch {
+                                                repo.setDownloadDirectory(uri, label)
+                                                ManagedDownloadStorage.updateConfiguredTreeUri(uri)
+                                                ManagedDownloadStorage.updateCustomDirectoryLabel(label)
+                                            }
                                         },
                                         backgroundImageBlur = backgroundImageBlur,
                                         onBackgroundImageBlurChange = { blur ->

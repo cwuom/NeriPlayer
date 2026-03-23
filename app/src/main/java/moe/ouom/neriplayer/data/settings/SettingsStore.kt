@@ -59,6 +59,8 @@ object SettingsKeys {
     val UI_DENSITY_SCALE = floatPreferencesKey("ui_density_scale")
     val BYPASS_PROXY = booleanPreferencesKey("bypass_proxy")
     val BACKGROUND_IMAGE_URI = stringPreferencesKey("background_image_uri")
+    val DOWNLOAD_DIRECTORY_URI = stringPreferencesKey("download_directory_uri")
+    val DOWNLOAD_DIRECTORY_LABEL = stringPreferencesKey("download_directory_label")
     val BACKGROUND_IMAGE_BLUR = floatPreferencesKey("background_image_blur")
     val BACKGROUND_IMAGE_ALPHA = floatPreferencesKey("background_image_alpha")
     val HAPTIC_FEEDBACK_ENABLED = booleanPreferencesKey("haptic_feedback_enabled")
