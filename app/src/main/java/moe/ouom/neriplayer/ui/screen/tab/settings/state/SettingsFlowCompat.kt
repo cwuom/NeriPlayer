@@ -28,6 +28,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.flow.StateFlow
 import moe.ouom.neriplayer.R
@@ -49,10 +50,14 @@ internal fun formatSyncTime(timestamp: Long): String {
     val now = System.currentTimeMillis()
     val diff = now - timestamp
 
+    val minutesAgo = (diff / 60_000).toInt()
+    val hoursAgo = (diff / 3_600_000).toInt()
+    val daysAgo = (diff / 86_400_000).toInt()
+
     return when {
         diff < 60_000 -> stringResource(R.string.time_just_now)
-        diff < 3_600_000 -> stringResource(R.string.time_minutes_ago, diff / 60_000)
-        diff < 86_400_000 -> stringResource(R.string.time_hours_ago, diff / 3_600_000)
-        else -> stringResource(R.string.time_days_ago, diff / 86_400_000)
+        diff < 3_600_000 -> pluralStringResource(R.plurals.time_minutes_ago, minutesAgo, minutesAgo)
+        diff < 86_400_000 -> pluralStringResource(R.plurals.time_hours_ago, hoursAgo, hoursAgo)
+        else -> pluralStringResource(R.plurals.time_days_ago, daysAgo, daysAgo)
     }
 }

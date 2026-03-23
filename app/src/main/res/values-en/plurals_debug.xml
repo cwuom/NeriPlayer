@@ -1,0 +1,27 @@
+<resources>
+    <!-- Debug & Logs -->
+    <plurals name="debug_youtube_probe_status_home_success">
+        <item quantity="one">Home Feed request succeeded with %1$d section</item>
+        <item quantity="other">Home Feed request succeeded with %1$d sections</item>
+    </plurals>
+    <plurals name="debug_youtube_probe_status_library_success">
+        <item quantity="one">Library request succeeded with %1$d playlist</item>
+        <item quantity="other">Library request succeeded with %1$d playlists</item>
+    </plurals>
+    <plurals name="debug_youtube_probe_library_preview_more">
+        <item quantity="one">… %1$d more omitted</item>
+        <item quantity="other">… %1$d more omitted</item>
+    </plurals>
+    <plurals name="debug_page_not_found">
+        <item quantity="one">Page %d not found</item>
+        <item quantity="other">Page %d not found</item>
+    </plurals>
+    <plurals name="crash_log_cleared">
+        <item quantity="one">Cleared %d crash log</item>
+        <item quantity="other">Cleared %d crash logs</item>
+    </plurals>
+    <plurals name="log_cleared_count">
+        <item quantity="one">Cleared %d log file</item>
+        <item quantity="other">Cleared %d log files</item>
+    </plurals>
+</resources>

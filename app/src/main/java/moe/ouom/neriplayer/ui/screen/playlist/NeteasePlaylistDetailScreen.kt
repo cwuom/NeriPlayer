@@ -106,6 +106,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -414,7 +415,15 @@ fun DetailScreen(
                         val allSelected =
                             selectedIds.size == ui.tracks.size && ui.tracks.isNotEmpty()
                         TopAppBar(
-                            title = { Text(stringResource(R.string.common_selected_count, selectedIds.size)) },
+                    title = {
+                        Text(
+                            pluralStringResource(
+                                R.plurals.common_selected_count,
+                                selectedIds.size,
+                                selectedIds.size
+                            )
+                        )
+                    },
                             navigationIcon = {
                                 HapticIconButton(onClick = { exitSelection() }) {
                                     Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.cd_exit_select))
@@ -702,7 +711,11 @@ fun DetailScreen(
                                         Text(pl.name, style = MaterialTheme.typography.bodyLarge)
                                         Spacer(Modifier.weight(1f))
                                         Text(
-                                            stringResource(R.string.count_songs_format, pl.songs.size),
+                                        pluralStringResource(
+                                            R.plurals.count_songs_format,
+                                            pl.songs.size,
+                                            pl.songs.size
+                                        ),
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }

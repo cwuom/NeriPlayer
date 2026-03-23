@@ -79,6 +79,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -150,7 +151,13 @@ internal fun SettingsBackupRestoreSection(
                 },
                 headlineContent = { Text(stringResource(R.string.playlist_count)) },
                 supportingContent = {
-                    Text(stringResource(R.string.playlist_count_format, currentPlaylistCount))
+                    Text(
+                        pluralStringResource(
+                            R.plurals.playlist_count_format,
+                            currentPlaylistCount,
+                            currentPlaylistCount
+                        )
+                    )
                 },
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent)
             )

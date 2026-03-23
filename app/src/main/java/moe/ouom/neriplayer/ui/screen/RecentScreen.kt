@@ -90,6 +90,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -250,7 +251,15 @@ fun RecentScreen(
             } else {
                 val allSelected = selectedKeys.size == displayedSongs.size && displayedSongs.isNotEmpty()
                 TopAppBar(
-                    title = { Text(stringResource(R.string.common_selected_count, selectedKeys.size)) },
+                    title = {
+                        Text(
+                            pluralStringResource(
+                                R.plurals.common_selected_count,
+                                selectedKeys.size,
+                                selectedKeys.size
+                            )
+                        )
+                    },
                     navigationIcon = {
                         HapticIconButton(onClick = { exitSelection() }) {
                             Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.cd_exit_select))
@@ -419,7 +428,11 @@ fun RecentScreen(
             val songName = pendingDeleteSongs.firstOrNull()?.displayName().orEmpty()
             stringResource(R.string.download_delete_confirm, songName)
         } else {
-            stringResource(R.string.download_delete_selected_confirm, deleteCount)
+            pluralStringResource(
+                R.plurals.download_delete_selected_confirm,
+                deleteCount,
+                deleteCount
+            )
         }
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },

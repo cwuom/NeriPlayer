@@ -54,6 +54,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.R
@@ -153,8 +154,9 @@ internal fun SettingsBiliAuthDialogs(
                     .takeIf { it > 0L }
                     ?.let(::convertTimestampToDate)
                     ?: stringResource(R.string.settings_bili_reauth_unknown_time)
-                stringResource(
-                    R.string.settings_bili_reauth_stale_message,
+                pluralStringResource(
+                    R.plurals.settings_bili_reauth_stale_message,
+                    (BILI_AUTH_STALE_AFTER_MS / (24L * 60L * 60L * 1000L)).toInt(),
                     (BILI_AUTH_STALE_AFTER_MS / (24L * 60L * 60L * 1000L)).toInt(),
                     savedAtLabel
                 )

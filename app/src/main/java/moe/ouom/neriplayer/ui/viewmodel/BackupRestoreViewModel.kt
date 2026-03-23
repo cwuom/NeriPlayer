@@ -34,7 +34,6 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.backup.BackupManager
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.util.NPLogger
-import java.util.Locale
 
 /**
  * 备份与恢复的ViewModel
@@ -227,55 +226,50 @@ class BackupRestoreViewModel : ViewModel() {
     }
 
     private data class BackupRestoreStrings(
-        val exportProgress: String,
-        val exportSuccessPrefix: String,
-        val exportFailedPrefix: String,
-        val importProgress: String,
-        val importComplete: String,
-        val importCountFormat: String,
-        val mergeCountFormat: String,
-        val skipCountFormat: String,
-        val backupDateFormat: String,
-        val importFailedPrefix: String,
-        val analysisProgress: String,
-        val analysisFailedFormat: String
+        private val context: Context
     ) {
+        private val resources = context.resources
+
+        val exportProgress: String = context.getString(R.string.playlist_export_progress)
+        private val exportSuccessPrefix: String = context.getString(R.string.playlist_export_success)
+        private val exportFailedPrefix: String = context.getString(R.string.playlist_export_failed)
+        val importProgress: String = context.getString(R.string.playlist_importing)
+        val importComplete: String = context.getString(R.string.playlist_import_complete)
+        private val importFailedPrefix: String = context.getString(R.string.playlist_import_failed)
+        val analysisProgress: String = context.getString(R.string.playlist_analyzing)
+
         fun exportSuccess(fileName: String): String = "$exportSuccessPrefix: $fileName"
 
         fun exportFailed(message: String?): String = "$exportFailedPrefix: $message"
 
-        fun importCount(count: Int): String = format(importCountFormat, count)
+        fun importCount(count: Int): String = resources.getQuantityString(
+            R.plurals.playlist_import_count,
+            count,
+            count
+        )
 
-        fun mergeCount(count: Int): String = format(mergeCountFormat, count)
+        fun mergeCount(count: Int): String = resources.getQuantityString(
+            R.plurals.playlist_merge_count,
+            count,
+            count
+        )
 
-        fun skipCount(count: Int): String = format(skipCountFormat, count)
+        fun skipCount(count: Int): String = resources.getQuantityString(
+            R.plurals.playlist_skip_count,
+            count,
+            count
+        )
 
-        fun backupDate(date: String): String = format(backupDateFormat, date)
+        fun backupDate(date: String): String = context.getString(R.string.playlist_backup_date, date)
 
         fun importFailed(message: String?): String = "$importFailedPrefix: $message"
 
-        fun analysisFailed(message: String): String = format(analysisFailedFormat, message)
+        fun analysisFailed(message: String): String =
+            context.getString(R.string.playlist_analysis_failed, message)
 
         companion object {
             fun from(context: Context): BackupRestoreStrings {
-                return BackupRestoreStrings(
-                    exportProgress = context.getString(R.string.playlist_export_progress),
-                    exportSuccessPrefix = context.getString(R.string.playlist_export_success),
-                    exportFailedPrefix = context.getString(R.string.playlist_export_failed),
-                    importProgress = context.getString(R.string.playlist_importing),
-                    importComplete = context.getString(R.string.playlist_import_complete),
-                    importCountFormat = context.getString(R.string.playlist_import_count),
-                    mergeCountFormat = context.getString(R.string.playlist_merge_count),
-                    skipCountFormat = context.getString(R.string.playlist_skip_count),
-                    backupDateFormat = context.getString(R.string.playlist_backup_date),
-                    importFailedPrefix = context.getString(R.string.playlist_import_failed),
-                    analysisProgress = context.getString(R.string.playlist_analyzing),
-                    analysisFailedFormat = context.getString(R.string.playlist_analysis_failed)
-                )
-            }
-
-            private fun format(template: String, vararg args: Any): String {
-                return String.format(Locale.getDefault(), template, *args)
+                return BackupRestoreStrings(context)
             }
         }
     }

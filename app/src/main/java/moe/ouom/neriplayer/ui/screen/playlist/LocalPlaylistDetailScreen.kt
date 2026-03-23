@@ -135,6 +135,7 @@ import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.TextFieldValue
@@ -330,23 +331,32 @@ fun LocalPlaylistDetailScreen(
 
             fun showAudioImportResult(result: moe.ouom.neriplayer.ui.viewmodel.playlist.LocalAudioImportUiResult) {
                 scope.launch {
+                    val resources = context.resources
                     val message = when {
                         result.importedCount > 0 && result.failedCount > 0 -> {
-                            context.getString(
-                                R.string.local_playlist_import_audio_partial,
-                                result.importedCount,
+                            val failedSummary = resources.getQuantityString(
+                                R.plurals.local_playlist_import_audio_failed_summary,
+                                result.failedCount,
                                 result.failedCount
+                            )
+                            resources.getQuantityString(
+                                R.plurals.local_playlist_import_audio_partial,
+                                result.importedCount,
+                                result.importedCount,
+                                failedSummary
                             )
                         }
                         result.importedCount > 0 -> {
-                            context.getString(
-                                R.string.local_playlist_import_audio_success,
+                            resources.getQuantityString(
+                                R.plurals.local_playlist_import_audio_success,
+                                result.importedCount,
                                 result.importedCount
                             )
                         }
                         else -> {
-                            context.getString(
-                                R.string.local_playlist_import_audio_failed,
+                            resources.getQuantityString(
+                                R.plurals.local_playlist_import_audio_failed,
+                                result.failedCount,
                                 result.failedCount
                             )
                         }
@@ -368,7 +378,11 @@ fun LocalPlaylistDetailScreen(
 
                         if (result.failedCount > 0) {
                             snackbarHostState.showSnackbar(
-                                context.getString(R.string.download_scan_failed, result.failedCount)
+                                context.resources.getQuantityString(
+                                    R.plurals.download_scan_failed,
+                                    result.failedCount,
+                                    result.failedCount
+                                )
                             )
                         }
                     }
@@ -862,7 +876,15 @@ fun LocalPlaylistDetailScreen(
                         val allSelected =
                             selectedKeysState.value.size == localSongs.size && localSongs.isNotEmpty()
                         TopAppBar(
-                            title = { Text(stringResource(R.string.common_selected_count, selectedKeysState.value.size)) },
+                            title = {
+                                Text(
+                                    pluralStringResource(
+                                        R.plurals.common_selected_count,
+                                        selectedKeysState.value.size,
+                                        selectedKeysState.value.size
+                                    )
+                                )
+                            },
                             navigationIcon = {
                                 HapticIconButton(onClick = { exitSelectionMode() }) {
                                     Icon(
@@ -1330,7 +1352,15 @@ fun LocalPlaylistDetailScreen(
                     AlertDialog(
                         onDismissRequest = { showDeleteMultiConfirm = false },
                         title = { Text(stringResource(R.string.local_playlist_delete_songs)) },
-                        text = { Text(stringResource(R.string.local_playlist_delete_songs_confirm, count)) },
+                        text = {
+                            Text(
+                                pluralStringResource(
+                                    R.plurals.local_playlist_delete_songs_confirm,
+                                    count,
+                                    count
+                                )
+                            )
+                        },
                         confirmButton = {
                             HapticTextButton(onClick = {
                                 val songsToRemove = localSongs.filter {
@@ -1397,7 +1427,11 @@ fun LocalPlaylistDetailScreen(
                                         Text(pl.name, style = MaterialTheme.typography.bodyLarge)
                                         Spacer(Modifier.weight(1f))
                                         Text(
-                                            stringResource(R.string.explore_song_count, pl.songs.size),
+                                            pluralStringResource(
+                                                R.plurals.explore_song_count,
+                                                pl.songs.size,
+                                                pl.songs.size
+                                            ),
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
@@ -1789,7 +1823,11 @@ private fun LocalScanPreviewScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Text(
-                            text = stringResource(R.string.common_selected_count, selectedKeys.size),
+                            text = pluralStringResource(
+                                R.plurals.common_selected_count,
+                                selectedKeys.size,
+                                selectedKeys.size
+                            ),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.weight(1f)

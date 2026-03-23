@@ -93,6 +93,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -282,7 +283,15 @@ fun YouTubeMusicPlaylistDetailScreen(
             } else {
                 val allSelected = selectedKeys.size == ui.tracks.size && ui.tracks.isNotEmpty()
                 TopAppBar(
-                    title = { Text(stringResource(R.string.common_selected_count, selectedKeys.size)) },
+                    title = {
+                        Text(
+                            pluralStringResource(
+                                R.plurals.common_selected_count,
+                                selectedKeys.size,
+                                selectedKeys.size
+                            )
+                        )
+                    },
                     navigationIcon = {
                         HapticIconButton(onClick = { exitSelection() }) {
                             Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.cd_exit_select))
@@ -500,7 +509,11 @@ fun YouTubeMusicPlaylistDetailScreen(
                                 Text(pl.name, style = MaterialTheme.typography.bodyLarge)
                                 Spacer(Modifier.weight(1f))
                                 Text(
-                                    stringResource(R.string.count_songs_format, pl.songs.size),
+                                        pluralStringResource(
+                                            R.plurals.count_songs_format,
+                                            pl.songs.size,
+                                            pl.songs.size
+                                        ),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }

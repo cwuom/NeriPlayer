@@ -96,7 +96,13 @@ fun CrashLogListScreen(
                                 }
                             }
                             crashLogFilesState.value = emptyList()
-                            snackbarHostState.showSnackbar(context.getString(R.string.crash_log_cleared, clearedCount))
+                            snackbarHostState.showSnackbar(
+                                context.resources.getQuantityString(
+                                    R.plurals.crash_log_cleared,
+                                    clearedCount,
+                                    clearedCount
+                                )
+                            )
                         }
                     }
                 ) {

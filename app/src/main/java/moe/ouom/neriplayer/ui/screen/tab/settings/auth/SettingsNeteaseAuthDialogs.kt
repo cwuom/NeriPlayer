@@ -55,6 +55,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -252,8 +253,9 @@ internal fun SettingsNeteaseAuthDialogs(
                     .takeIf { it > 0L }
                     ?.let(::convertTimestampToDate)
                     ?: stringResource(R.string.settings_netease_reauth_unknown_time)
-                stringResource(
-                    R.string.settings_netease_reauth_stale_message,
+                pluralStringResource(
+                    R.plurals.settings_netease_reauth_stale_message,
+                    (NETEASE_AUTH_STALE_AFTER_MS / (24L * 60L * 60L * 1000L)).toInt(),
                     (NETEASE_AUTH_STALE_AFTER_MS / (24L * 60L * 60L * 1000L)).toInt(),
                     savedAtLabel
                 )

@@ -93,7 +93,13 @@ fun LogListScreen(
                             }
                             // 更新UI
                             logFilesState.value = emptyList()
-                            snackbarHostState.showSnackbar(context.getString(R.string.log_cleared_count, clearedCount))
+                            snackbarHostState.showSnackbar(
+                                context.resources.getQuantityString(
+                                    R.plurals.log_cleared_count,
+                                    clearedCount,
+                                    clearedCount
+                                )
+                            )
                         }
                     }
                 ) {

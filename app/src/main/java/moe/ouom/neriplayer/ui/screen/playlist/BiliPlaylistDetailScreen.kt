@@ -65,6 +65,7 @@ import android.content.ClipData
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -293,7 +294,15 @@ fun BiliPlaylistDetailScreen(
                 } else {
                     val allSelected = selectedIds.size == ui.videos.size && ui.videos.isNotEmpty()
                     TopAppBar(
-                        title = { Text(stringResource(R.string.common_selected_count, selectedIds.size)) },
+                    title = {
+                        Text(
+                            pluralStringResource(
+                                R.plurals.common_selected_count,
+                                selectedIds.size,
+                                selectedIds.size
+                            )
+                        )
+                    },
                         navigationIcon = {
                             HapticIconButton(onClick = { exitSelection() }) {
                                 Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.action_exit_multi_select))
@@ -513,7 +522,14 @@ fun BiliPlaylistDetailScreen(
                                 ) {
                                     Text(pl.name, style = MaterialTheme.typography.bodyLarge)
                                     Spacer(Modifier.weight(1f))
-                                    Text(stringResource(R.string.explore_song_count, pl.songs.size), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            pluralStringResource(
+                                R.plurals.explore_song_count,
+                                pl.songs.size,
+                                pl.songs.size
+                            ),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                                 }
                             }
                         }
@@ -714,7 +730,15 @@ fun BiliPlaylistDetailScreen(
                         AnimatedVisibility(visible = partsSelectionMode) {
                             val allSelected = selectedParts.size == currentPartsInfo.pages.size
                             TopAppBar(
-                                title = { Text(stringResource(R.string.common_selected_count, selectedParts.size)) },
+                    title = {
+                        Text(
+                            pluralStringResource(
+                                R.plurals.common_selected_count,
+                                selectedParts.size,
+                                selectedParts.size
+                            )
+                        )
+                    },
                                 navigationIcon = {
                                     HapticIconButton(onClick = { exitPartsSelection() }) {
                                         Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.action_exit_multi_select))
@@ -896,7 +920,11 @@ private fun Header(playlist: BiliPlaylist, headerData: BiliPlaylist?) {
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                text = stringResource(R.string.bili_content_count, displayData.count),
+                text = pluralStringResource(
+                    R.plurals.bili_content_count,
+                    displayData.count,
+                    displayData.count
+                ),
                 style = MaterialTheme.typography.bodySmall.copy(
                     shadow = Shadow(color = Color.Black.copy(alpha = 0.6f), offset = Offset(2f, 2f), blurRadius = 4f)
                 ),

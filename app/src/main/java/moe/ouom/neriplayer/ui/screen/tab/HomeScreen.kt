@@ -91,6 +91,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -1014,7 +1015,11 @@ private fun ContinueCard(entry: UsageEntry, onClick: () -> Unit, onRemove: () ->
                 style = MaterialTheme.typography.titleSmall
             )
             Text(
-                text = stringResource(R.string.home_song_count_format, entry.trackCount),
+                                text = pluralStringResource(
+                                    R.plurals.home_song_count_format,
+                                    entry.trackCount,
+                                    entry.trackCount
+                                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1

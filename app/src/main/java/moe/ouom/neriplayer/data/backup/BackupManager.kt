@@ -158,7 +158,15 @@ class BackupManager(private val context: Context) {
                     if (mergeResult.hasChanges) {
                         currentPlaylists[existingIndex] = mergeResult.mergedPlaylist
                         mergedCount++
-                        NPLogger.d(TAG, context.getString(R.string.backup_playlist_merged, importedPlaylist.name, mergeResult.addedSongs))
+                        NPLogger.d(
+                            TAG,
+                            context.resources.getQuantityString(
+                                R.plurals.backup_playlist_merged,
+                                mergeResult.addedSongs,
+                                importedPlaylist.name,
+                                mergeResult.addedSongs
+                            )
+                        )
                     } else {
                         skippedCount++
                         NPLogger.d(TAG, context.getString(R.string.backup_playlist_no_update, importedPlaylist.name))
@@ -173,7 +181,15 @@ class BackupManager(private val context: Context) {
 
                     currentPlaylists.add(newPlaylist)
                     importedCount++
-                    NPLogger.d(TAG, context.getString(R.string.backup_playlist_created, importedPlaylist.name, newPlaylist.songs.size))
+                    NPLogger.d(
+                        TAG,
+                        context.resources.getQuantityString(
+                            R.plurals.backup_playlist_created,
+                            newPlaylist.songs.size,
+                            importedPlaylist.name,
+                            newPlaylist.songs.size
+                        )
+                    )
                 }
             }
 

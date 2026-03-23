@@ -98,6 +98,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -437,7 +438,15 @@ fun ExploreScreen(
                 AnimatedVisibility(visible = partsSelectionMode) {
                     val allSelected = selectedParts.size == currentPartsInfo.pages.size
                     TopAppBar(
-                        title = { Text(stringResource(R.string.common_selected_count, selectedParts.size)) },
+                    title = {
+                        Text(
+                            pluralStringResource(
+                                R.plurals.common_selected_count,
+                                selectedParts.size,
+                                selectedParts.size
+                            )
+                        )
+                    },
                         navigationIcon = {
                             HapticIconButton(onClick = { exitPartsSelection() }) {
                                 Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.explore_exit_selection))
@@ -580,7 +589,14 @@ fun ExploreScreen(
                         ) {
                             Text(pl.name, style = MaterialTheme.typography.bodyLarge)
                             Spacer(Modifier.weight(1f))
-                            Text(stringResource(R.string.explore_song_count, pl.songs.size), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(
+                                    pluralStringResource(
+                                        R.plurals.explore_song_count,
+                                        pl.songs.size,
+                                        pl.songs.size
+                                    ),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                         }
                     }
                 }

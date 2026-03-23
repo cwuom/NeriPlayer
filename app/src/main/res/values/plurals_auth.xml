@@ -1,0 +1,12 @@
+<resources>
+    <!-- Authentication -->
+    <plurals name="settings_bili_reauth_stale_message">
+        <item quantity="other">当前 Cookie 已保存超过 %1$d 天，本地无法精确判断服务端过期时间，但继续使用时很可能失效。上次保存时间：%2$s。建议现在重新登录或导入新的 Cookie。</item>
+    </plurals>
+    <plurals name="settings_netease_reauth_stale_message">
+        <item quantity="other">当前 Cookie 已保存超过 %1$d 天，本地无法精确判断服务端过期时间，但继续使用时很可能失效。上次保存时间：%2$s。建议现在重新登录或导入新的 Cookie。</item>
+    </plurals>
+    <plurals name="settings_youtube_reauth_stale_message">
+        <item quantity="other">当前 Cookie 已保存超过 %1$d 天，本地无法精确判断服务端过期时间，但继续使用时很可能失效。上次保存时间：%2$s。建议现在重新登录或导入新的 Cookie。</item>
+    </plurals>
+</resources>

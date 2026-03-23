@@ -45,6 +45,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -129,7 +130,11 @@ fun DownloadManagerScreen(
                 if (selectionMode) {
                     // 多选模式下的操作按钮
                     Text(
-                        text = stringResource(R.string.download_selected_count, selectedSongs.size),
+                        text = pluralStringResource(
+                            R.plurals.download_selected_count,
+                            selectedSongs.size,
+                            selectedSongs.size
+                        ),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(end = 8.dp)
@@ -343,7 +348,15 @@ fun DownloadManagerScreen(
         AlertDialog(
             onDismissRequest = { showMultiDeleteDialog = false },
             title = { Text(stringResource(R.string.dialog_confirm_delete)) },
-            text = { Text(stringResource(R.string.download_delete_selected_confirm, selectedSongs.size)) },
+            text = {
+                Text(
+                    pluralStringResource(
+                        R.plurals.download_delete_selected_confirm,
+                        selectedSongs.size,
+                        selectedSongs.size
+                    )
+                )
+            },
             confirmButton = {
                 TextButton(
                     onClick = {

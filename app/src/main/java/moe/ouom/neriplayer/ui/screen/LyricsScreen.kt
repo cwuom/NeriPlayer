@@ -97,6 +97,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -897,7 +898,14 @@ fun LyricsScreen(
                             ) {
                                 Text(pl.name, style = MaterialTheme.typography.bodyLarge)
                                 Spacer(modifier = Modifier.weight(1f))
-                                Text(stringResource(R.string.lyrics_song_count, pl.songs.size), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                pluralStringResource(
+                                    R.plurals.lyrics_song_count,
+                                    pl.songs.size,
+                                    pl.songs.size
+                                ),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                             }
                         }
                     }

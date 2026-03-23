@@ -551,7 +551,7 @@ private fun BiliPlaylistList(
                     headlineContent = { Text(pl.title) },
                     supportingContent = {
                         Text(
-                            pluralStringResource(R.plurals.library_video_count_plural, pl.count, pl.count),
+                            pluralStringResource(R.plurals.library_video_count, pl.count, pl.count),
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     },
@@ -713,7 +713,15 @@ private fun LocalPlaylistList(
                         .clip(cardShape)
                 ) {
                     ListItem(
-                        headlineContent = { Text(stringResource(R.string.common_selected_count, selectedIds.size)) },
+                        headlineContent = {
+                            Text(
+                                pluralStringResource(
+                                    R.plurals.common_selected_count,
+                                    selectedIds.size,
+                                    selectedIds.size
+                                )
+                            )
+                        },
                         colors = ListItemDefaults.colors(
                             containerColor = Color.Transparent
                         ),
@@ -836,8 +844,9 @@ private fun LocalPlaylistList(
                     title = { Text(stringResource(R.string.dialog_confirm_delete)) },
                     text = {
                         Text(
-                            stringResource(
-                                R.string.library_delete_selected_confirm,
+                            pluralStringResource(
+                                R.plurals.library_delete_selected_confirm,
+                                selectedIds.size,
                                 selectedIds.size
                             )
                         )
