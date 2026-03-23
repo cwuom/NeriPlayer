@@ -36,11 +36,15 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.api.bili.buildBiliPartSong
+import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicSearchResult
+import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicSearchResultType
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.PlayerManager.biliClient
 import moe.ouom.neriplayer.core.player.PlayerManager.neteaseClient
 import moe.ouom.neriplayer.data.NeteaseCookieRepository
+import moe.ouom.neriplayer.data.buildYouTubeMusicMediaUri
+import moe.ouom.neriplayer.data.stableYouTubeMusicId
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import org.json.JSONObject
 
@@ -107,6 +111,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     private val app = application
     private val neteaseRepo = NeteaseCookieRepository(application)
     private var highQualityLoadJob: Job? = null
+    private var searchJob: Job? = null
 
     private val _uiState = MutableStateFlow(ExploreUiState())
     val uiState: StateFlow<ExploreUiState> = _uiState
@@ -132,7 +137,12 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     /** 统一搜索入口 */
     fun search(keyword: String) {
         if (keyword.isBlank()) {
-            _uiState.value = _uiState.value.copy(searchResults = emptyList(), searchError = null)
+            searchJob?.cancel()
+            _uiState.value = _uiState.value.copy(
+                searching = false,
+                searchResults = emptyList(),
+                searchError = null
+            )
             return
         }
         when (_uiState.value.selectedSearchSource) {
@@ -145,7 +155,8 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     /** 搜索 Bilibili 视频 */
     private fun searchBilibili(keyword: String) {
         _uiState.value = _uiState.value.copy(searching = true, searchError = null)
-        viewModelScope.launch {
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
             try {
                 val searchPage = withContext(Dispatchers.IO) {
                     biliClient.searchVideos(keyword = keyword, page = 1)
@@ -157,6 +168,8 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                     searchError = null,
                     searchResults = songs
                 )
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     searching = false,
@@ -239,7 +252,8 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     /** 搜索网易云歌曲 */
     private fun searchNetease(keyword: String) {
         _uiState.value = _uiState.value.copy(searching = true, searchError = null)
-        viewModelScope.launch {
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
             try {
                 val raw = withContext(Dispatchers.IO) {
                     neteaseClient.searchSongs(
@@ -256,6 +270,8 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                     searchError = null,
                     searchResults = songs
                 )
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     searching = false,
@@ -310,9 +326,36 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         return buildBiliPartSong(page, basicInfo, coverUrl)
     }
 
-    /** 搜索 YouTube Music - 暂不支持，切换到该标签时自动加载歌单 */
+    /** 搜索 YouTube Music：只返回歌曲结果 */
     private fun searchYouTubeMusic(keyword: String) {
-        // YouTube Music 客户端暂无搜索 API，忽略搜索请求
+        _uiState.value = _uiState.value.copy(searching = true, searchError = null)
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
+            try {
+                val songs = withContext(Dispatchers.IO) {
+                    AppContainer.youtubeMusicClient.search(
+                        query = keyword,
+                        limit = 30
+                    ).map { it.toSongItem(app) }
+                }
+                _uiState.value = _uiState.value.copy(
+                    searching = false,
+                    searchError = null,
+                    searchResults = songs
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    searching = false,
+                    searchError = app.getString(
+                        R.string.error_youtube_search,
+                        e.message ?: app.getString(R.string.github_sync_failed_message)
+                    ),
+                    searchResults = emptyList()
+                )
+            }
+        }
     }
 
     /** 加载 YouTube Music 歌单列表 */
@@ -359,5 +402,28 @@ private fun BiliClient.SearchVideoItem.toSongItem(): SongItem {
         albumId = 0L,
         durationMs = this.durationSec * 1000L,
         coverUrl = this.coverUrl
+    )
+}
+
+private fun YouTubeMusicSearchResult.toSongItem(app: Application): SongItem {
+    val displayArtist = artist.ifBlank { "YouTube" }
+    val displayAlbum = album.ifBlank {
+        when (type) {
+            YouTubeMusicSearchResultType.Song -> app.getString(R.string.youtube_search_type_song)
+            YouTubeMusicSearchResultType.Video -> app.getString(R.string.youtube_search_type_video)
+        }
+    }
+    return SongItem(
+        id = stableYouTubeMusicId(videoId),
+        name = title,
+        artist = displayArtist,
+        album = displayAlbum,
+        albumId = stableYouTubeMusicId("$videoId|$displayAlbum"),
+        durationMs = durationMs,
+        coverUrl = coverUrl.ifBlank { null },
+        mediaUri = buildYouTubeMusicMediaUri(videoId),
+        originalName = title,
+        originalArtist = displayArtist,
+        originalCoverUrl = coverUrl.ifBlank { null }
     )
 }

@@ -47,7 +47,6 @@ sealed interface YouTubeAuthEvent {
     data class ShowSnack(val message: String) : YouTubeAuthEvent
     data class ShowCookies(val cookies: Map<String, String>) : YouTubeAuthEvent
     data object LoginSuccess : YouTubeAuthEvent
-    data class PromptReauth(val health: YouTubeAuthHealth) : YouTubeAuthEvent
 }
 
 class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
@@ -63,30 +62,19 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _events = Channel<YouTubeAuthEvent>(Channel.BUFFERED)
     val events = _events.receiveAsFlow()
-    private var lastPromptSignature: String? = null
-
     init {
         viewModelScope.launch {
             repo.authHealthFlow.collect { health ->
                 _uiState.value = YouTubeAuthUiState(health = health)
-                if (!health.shouldPromptRelogin) {
-                    lastPromptSignature = null
-                }
             }
         }
     }
 
-    fun refreshAuthHealth(
-        promptIfNeeded: Boolean = false,
-        forcePrompt: Boolean = false
-    ) {
+    fun refreshAuthHealth() {
         viewModelScope.launch(Dispatchers.IO) {
             repo.refreshHealth()
             val health = repo.getAuthHealthOnce()
             _uiState.value = YouTubeAuthUiState(health = health)
-            if (promptIfNeeded) {
-                emitPromptIfNeeded(health, forcePrompt)
-            }
         }
     }
 
@@ -131,7 +119,6 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
 
             repo.saveAuth(normalized)
             _uiState.value = YouTubeAuthUiState(health = repo.getAuthHealthOnce())
-            lastPromptSignature = null
             _events.send(
                 YouTubeAuthEvent.ShowCookies(
                     normalized.cookies.ifEmpty { parseCookieString(normalized.cookieHeader) }
@@ -152,29 +139,6 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun emitPromptIfNeeded(
-        health: YouTubeAuthHealth,
-        forcePrompt: Boolean
-    ) {
-        if (!health.shouldPromptRelogin) {
-            lastPromptSignature = null
-            return
-        }
-
-        val promptSignature = buildString {
-            append(health.state.name)
-            append(':')
-            append(health.savedAt)
-        }
-        if (!forcePrompt && promptSignature == lastPromptSignature) {
-            return
-        }
-
-        lastPromptSignature = promptSignature
-        viewModelScope.launch {
-            _events.send(YouTubeAuthEvent.PromptReauth(health))
-        }
-    }
 
     private fun parseCookieString(raw: String): LinkedHashMap<String, String> {
         val result = linkedMapOf<String, String>()

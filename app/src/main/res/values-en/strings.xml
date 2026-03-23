@@ -722,6 +722,9 @@
     <string name="error_netease_search">Netease search failed: %s</string>
     <string name="error_load_playlist">Load playlist failed: %s</string>
     <string name="error_search_failed">Search failed: %s</string>
+    <string name="error_youtube_search">YouTube search failed: %s</string>
+    <string name="youtube_search_type_song">YouTube Song</string>
+    <string name="youtube_search_type_video">YouTube Video</string>
     <string name="error_get_user_id">Cannot get user ID, please log in again</string>
     <string name="error_api_code">API returned error code=%d</string>
     <string name="error_missing_node">Missing %s node</string>

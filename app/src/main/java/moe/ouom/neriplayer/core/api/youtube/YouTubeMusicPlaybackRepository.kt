@@ -1041,7 +1041,7 @@ class YouTubeMusicPlaybackRepository(
                             ) {
                                 null
                             } else {
-                                // 已有 direct 候选时不再额外拉 manifest，减少无效请求和风控暴露面。
+                                // 已有 direct 候选时不再额外拉 manifest，减少无效请求和风控暴露面
                                 resolveHlsPlayableAudio(
                                     root = root,
                                     preferredQualityKey = preferredQualityKey,
@@ -1083,7 +1083,7 @@ class YouTubeMusicPlaybackRepository(
                             resolvedPlayableAudio.streamType == YouTubePlayableStreamType.DIRECT
                         ) {
                             // 官方 WEB_REMIX 直链已经足够稳定，命中后立即停止后续 fallback，
-                            // 避免额外触发 IOS/TV 探测而增加风控概率。
+                            // 避免额外触发 IOS/TV 探测而增加风控概率
                             return PlayerAudioResolution(
                                 playableAudio = resolvedPlayableAudio.mergeMetadataFrom(bestMetadata),
                                 metadata = bestMetadata
@@ -1496,7 +1496,7 @@ class YouTubeMusicPlaybackRepository(
             clientContext.put("visitorData", bootstrap.visitorData)
         }
         if (profile.clientName == YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME && userAgent.isNotBlank()) {
-            // WEB_REMIX 需要更接近浏览器 watch 页的 client 上下文，避免退回到风险更高的移动端直链。
+            // WEB_REMIX 需要更接近浏览器 watch 页的 client 上下文，避免退回到风险更高的移动端直链
             clientContext.put("deviceMake", "")
             clientContext.put("deviceModel", "")
             clientContext.put("userAgent", ensureGfeUserAgent(userAgent))

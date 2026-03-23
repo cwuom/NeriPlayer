@@ -546,4 +546,628 @@ class YouTubeMusicParserTest {
         assertEquals("video-c", YouTubeMusicParser.parseHomeShelfContinuationItems(root).first().videoId)
         assertEquals("home-shelf-next-token", YouTubeMusicParser.extractHomeShelfContinuation(root))
     }
+
+    @Test
+    fun hasSearchSectionList_detectsSearchTabRenderer() {
+        val root = createMixedSearchResultsRoot()
+
+        assertTrue(YouTubeMusicParser.hasSearchSectionList(root))
+        assertTrue(!YouTubeMusicParser.hasSearchSectionList(JSONObject()))
+    }
+
+    @Test
+    fun parseSearchResults_extractsPlayableSongAndVideoFromMixedShelf() {
+        val results = YouTubeMusicParser.parseSearchResults(createMixedSearchResultsRoot())
+
+        assertEquals(2, results.size)
+
+        val song = results[0]
+        assertEquals("song-video-id", song.videoId)
+        assertEquals("Song Result", song.title)
+        assertEquals("Artist A", song.artist)
+        assertEquals("Album A", song.album)
+        assertEquals("Song • Artist A • Album A", song.subtitle)
+        assertEquals("https://i.ytimg.com/vi/song-video-id/hqdefault.jpg", song.coverUrl)
+        assertEquals("3:21", song.durationText)
+        assertEquals(201_000L, song.durationMs)
+        assertEquals(YouTubeMusicSearchResultType.Song, song.type)
+
+        val video = results[1]
+        assertEquals("video-video-id", video.videoId)
+        assertEquals("Video Result", video.title)
+        assertEquals("Artist B", video.artist)
+        assertEquals("", video.album)
+        assertEquals("Video • Artist B", video.subtitle)
+        assertEquals("https://i.ytimg.com/vi/video-video-id/hqdefault.jpg", video.coverUrl)
+        assertEquals("4:05", video.durationText)
+        assertEquals(245_000L, video.durationMs)
+        assertEquals(YouTubeMusicSearchResultType.Video, video.type)
+    }
+
+    @Test
+    fun parseSearchResults_filtersNonPlayableEntriesAndHonorsLimit() {
+        val results = YouTubeMusicParser.parseSearchResults(
+            root = createMixedSearchResultsRoot(),
+            limit = 1
+        )
+
+        assertEquals(1, results.size)
+        assertEquals("song-video-id", results.single().videoId)
+        assertTrue(results.none { it.title == "Artist Result" })
+        assertTrue(results.none { it.title == "Unavailable Song" })
+    }
+
+    @Test
+    fun hasSongSearchShelf_andParseSongSearchResults_readFilteredSongShelf() {
+        val root = createSongSearchResultsRoot()
+
+        assertTrue(YouTubeMusicParser.hasSongSearchShelf(root))
+        assertTrue(!YouTubeMusicParser.hasSongSearchShelf(JSONObject()))
+
+        val results = YouTubeMusicParser.parseSongSearchResults(root)
+
+        assertEquals(1, results.size)
+        val song = results.single()
+        assertEquals("song-qt", song.videoId)
+        assertEquals("晴天", song.title)
+        assertEquals("周杰倫", song.artist)
+        assertEquals("葉惠美", song.album)
+        assertEquals("周杰倫 • 葉惠美 • 4:30", song.subtitle)
+        assertEquals("4:30", song.durationText)
+        assertEquals(270_000L, song.durationMs)
+        assertEquals(YouTubeMusicSearchResultType.Song, song.type)
+    }
+
+    @Test
+    fun extractSearchContinuation_readsContinuationFromFilteredSongShelf() {
+        assertEquals(
+            "song-shelf-token",
+            YouTubeMusicParser.extractSearchContinuation(createSongSearchResultsRoot())
+        )
+    }
+
+    @Test
+    fun hasSongSearchShelf_andParseSongSearchResults_supportWrappedItemSectionShelf() {
+        val root = createWrappedSongSearchResultsRoot()
+
+        assertTrue(YouTubeMusicParser.hasSongSearchShelf(root))
+
+        val results = YouTubeMusicParser.parseSongSearchResults(root)
+
+        assertEquals(1, results.size)
+        val song = results.single()
+        assertEquals("song-qt", song.videoId)
+        assertEquals("晴天", song.title)
+        assertEquals("周杰倫", song.artist)
+        assertEquals("葉惠美", song.album)
+        assertEquals("周杰倫 • 葉惠美 • 4:30", song.subtitle)
+        assertEquals("4:30", song.durationText)
+        assertEquals(270_000L, song.durationMs)
+        assertEquals("wrapped-song-shelf-token", YouTubeMusicParser.extractSearchContinuation(root))
+    }
+
+    @Test
+    fun parseSongSearchResults_supportsMusicShelfContinuation() {
+        val root = createSongSearchContinuationRoot()
+
+        val results = YouTubeMusicParser.parseSongSearchResults(root)
+
+        assertEquals(1, results.size)
+        val song = results.single()
+        assertEquals("song-anjing", song.videoId)
+        assertEquals("安静", song.title)
+        assertEquals("周杰倫", song.artist)
+        assertEquals("范特西", song.album)
+        assertEquals("5:34", song.durationText)
+        assertEquals(334_000L, song.durationMs)
+        assertEquals("song-shelf-next-token", YouTubeMusicParser.extractSearchContinuation(root))
+    }
+
+    private fun createMixedSearchResultsRoot(): JSONObject {
+        return JSONObject(
+            """
+            {
+              "contents": {
+                "tabbedSearchResultsRenderer": {
+                  "tabs": [
+                    {
+                      "tabRenderer": {
+                        "content": {
+                          "sectionListRenderer": {
+                            "contents": [
+                              {
+                                "messageRenderer": {
+                                  "text": { "simpleText": "ignored" }
+                                }
+                              },
+                              {
+                                "musicShelfRenderer": {
+                                  "title": { "simpleText": "Top results" },
+                                  "contents": [
+                                    {
+                                      "musicResponsiveListItemRenderer": {
+                                        "thumbnail": {
+                                          "musicThumbnailRenderer": {
+                                            "thumbnail": {
+                                              "thumbnails": [
+                                                {
+                                                  "url": "https://i.ytimg.com/vi/song-video-id/hqdefault.jpg"
+                                                }
+                                              ]
+                                            }
+                                          }
+                                        },
+                                        "overlay": {
+                                          "musicItemThumbnailOverlayRenderer": {
+                                            "content": {
+                                              "musicPlayButtonRenderer": {
+                                                "playNavigationEndpoint": {
+                                                  "watchEndpoint": {
+                                                    "videoId": "song-video-id",
+                                                    "watchEndpointMusicSupportedConfigs": {
+                                                      "watchEndpointMusicConfig": {
+                                                        "musicVideoType": "MUSIC_VIDEO_TYPE_ATV"
+                                                      }
+                                                    }
+                                                  }
+                                                }
+                                              }
+                                            }
+                                          }
+                                        },
+                                        "flexColumns": [
+                                          {
+                                            "musicResponsiveListItemFlexColumnRenderer": {
+                                              "text": {
+                                                "runs": [
+                                                  {
+                                                    "text": "Song Result",
+                                                    "navigationEndpoint": {
+                                                      "watchEndpoint": {
+                                                        "videoId": "song-video-id"
+                                                      }
+                                                    }
+                                                  }
+                                                ]
+                                              }
+                                            }
+                                          },
+                                          {
+                                            "musicResponsiveListItemFlexColumnRenderer": {
+                                              "text": {
+                                                "runs": [
+                                                  { "text": "Song" },
+                                                  { "text": " • " },
+                                                  { "text": "Artist A" },
+                                                  { "text": " • " },
+                                                  { "text": "Album A" }
+                                                ]
+                                              }
+                                            }
+                                          }
+                                        ],
+                                        "fixedColumns": [
+                                          {
+                                            "musicResponsiveListItemFixedColumnRenderer": {
+                                              "text": { "simpleText": "3:21" }
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    {
+                                      "musicResponsiveListItemRenderer": {
+                                        "thumbnail": {
+                                          "musicThumbnailRenderer": {
+                                            "thumbnail": {
+                                              "thumbnails": [
+                                                {
+                                                  "url": "https://i.ytimg.com/vi/video-video-id/hqdefault.jpg"
+                                                }
+                                              ]
+                                            }
+                                          }
+                                        },
+                                        "flexColumns": [
+                                          {
+                                            "musicResponsiveListItemFlexColumnRenderer": {
+                                              "text": {
+                                                "runs": [
+                                                  {
+                                                    "text": "Video Result",
+                                                    "navigationEndpoint": {
+                                                      "watchEndpoint": {
+                                                        "videoId": "video-video-id"
+                                                      }
+                                                    }
+                                                  }
+                                                ]
+                                              }
+                                            }
+                                          },
+                                          {
+                                            "musicResponsiveListItemFlexColumnRenderer": {
+                                              "text": {
+                                                "runs": [
+                                                  { "text": "Video" },
+                                                  { "text": " • " },
+                                                  { "text": "Artist B" }
+                                                ]
+                                              }
+                                            }
+                                          },
+                                          {
+                                            "musicResponsiveListItemFlexColumnRenderer": {
+                                              "text": { "simpleText": "4:05" }
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    {
+                                      "musicResponsiveListItemRenderer": {
+                                        "thumbnail": {
+                                          "musicThumbnailRenderer": {
+                                            "thumbnail": {
+                                              "thumbnails": [
+                                                {
+                                                  "url": "https://i.ytimg.com/vi/artist-result/hqdefault.jpg"
+                                                }
+                                              ]
+                                            }
+                                          }
+                                        },
+                                        "flexColumns": [
+                                          {
+                                            "musicResponsiveListItemFlexColumnRenderer": {
+                                              "text": { "simpleText": "Artist Result" }
+                                            }
+                                          },
+                                          {
+                                            "musicResponsiveListItemFlexColumnRenderer": {
+                                              "text": {
+                                                "runs": [
+                                                  { "text": "Artist" },
+                                                  { "text": " • " },
+                                                  { "text": "1M subscribers" }
+                                                ]
+                                              }
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    {
+                                      "musicResponsiveListItemRenderer": {
+                                        "thumbnail": {
+                                          "musicThumbnailRenderer": {
+                                            "thumbnail": {
+                                              "thumbnails": [
+                                                {
+                                                  "url": "https://i.ytimg.com/vi/unavailable-song/hqdefault.jpg"
+                                                }
+                                              ]
+                                            }
+                                          }
+                                        },
+                                        "flexColumns": [
+                                          {
+                                            "musicResponsiveListItemFlexColumnRenderer": {
+                                              "text": { "simpleText": "Unavailable Song" }
+                                            }
+                                          },
+                                          {
+                                            "musicResponsiveListItemFlexColumnRenderer": {
+                                              "text": {
+                                                "runs": [
+                                                  { "text": "Song" },
+                                                  { "text": " • " },
+                                                  { "text": "Artist C" },
+                                                  { "text": " • " },
+                                                  { "text": "Album C" }
+                                                ]
+                                              }
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  ]
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+            """.trimIndent()
+        )
+    }
+
+    private fun createSongSearchResultsRoot(): JSONObject {
+        return JSONObject(
+            """
+            {
+              "contents": {
+                "tabbedSearchResultsRenderer": {
+                  "tabs": [
+                    {
+                      "tabRenderer": {
+                        "content": {
+                          "sectionListRenderer": {
+                            "contents": [
+                              {
+                                "musicShelfRenderer": {
+                                  "title": { "simpleText": "Songs" },
+                                  "contents": [
+                                    {
+                                      "musicResponsiveListItemRenderer": {
+                                        "thumbnail": {
+                                          "musicThumbnailRenderer": {
+                                            "thumbnail": {
+                                              "thumbnails": [
+                                                {
+                                                  "url": "https://i.ytimg.com/vi/song-qt/hqdefault.jpg"
+                                                }
+                                              ]
+                                            }
+                                          }
+                                        },
+                                        "flexColumns": [
+                                          {
+                                            "musicResponsiveListItemFlexColumnRenderer": {
+                                              "text": {
+                                                "runs": [
+                                                  {
+                                                    "text": "晴天",
+                                                    "navigationEndpoint": {
+                                                      "watchEndpoint": {
+                                                        "videoId": "song-qt"
+                                                      }
+                                                    }
+                                                  }
+                                                ]
+                                              }
+                                            }
+                                          },
+                                          {
+                                            "musicResponsiveListItemFlexColumnRenderer": {
+                                              "text": {
+                                                "runs": [
+                                                  {
+                                                    "text": "周杰倫",
+                                                    "navigationEndpoint": {
+                                                      "browseEndpoint": {
+                                                        "browseId": "UC-artist"
+                                                      }
+                                                    }
+                                                  },
+                                                  { "text": " • " },
+                                                  {
+                                                    "text": "葉惠美",
+                                                    "navigationEndpoint": {
+                                                      "browseEndpoint": {
+                                                        "browseId": "MPREb_yehuimei"
+                                                      }
+                                                    }
+                                                  },
+                                                  { "text": " • " },
+                                                  { "text": "4:30" }
+                                                ]
+                                              }
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  ],
+                                  "continuations": [
+                                    {
+                                      "nextContinuationData": {
+                                        "continuation": "song-shelf-token"
+                                      }
+                                    }
+                                  ]
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+            """.trimIndent()
+        )
+    }
+
+    private fun createSongSearchContinuationRoot(): JSONObject {
+        return JSONObject(
+            """
+            {
+              "continuationContents": {
+                "musicShelfContinuation": {
+                  "contents": [
+                    {
+                      "musicResponsiveListItemRenderer": {
+                        "playlistItemData": {
+                          "videoId": "song-anjing"
+                        },
+                        "thumbnail": {
+                          "musicThumbnailRenderer": {
+                            "thumbnail": {
+                              "thumbnails": [
+                                {
+                                  "url": "https://i.ytimg.com/vi/song-anjing/hqdefault.jpg"
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        "flexColumns": [
+                          {
+                            "musicResponsiveListItemFlexColumnRenderer": {
+                              "text": { "simpleText": "安静" }
+                            }
+                          },
+                          {
+                            "musicResponsiveListItemFlexColumnRenderer": {
+                              "text": {
+                                "runs": [
+                                  {
+                                    "text": "周杰倫",
+                                    "navigationEndpoint": {
+                                      "browseEndpoint": {
+                                        "browseId": "UC-artist"
+                                      }
+                                    }
+                                  },
+                                  { "text": " • " },
+                                  {
+                                    "text": "范特西",
+                                    "navigationEndpoint": {
+                                      "browseEndpoint": {
+                                        "browseId": "MPREb_fantasy"
+                                      }
+                                    }
+                                  },
+                                  { "text": " • " },
+                                  { "text": "5:34" }
+                                ]
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "continuations": [
+                    {
+                      "nextContinuationData": {
+                        "continuation": "song-shelf-next-token"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+            """.trimIndent()
+        )
+    }
+
+    private fun createWrappedSongSearchResultsRoot(): JSONObject {
+        return JSONObject(
+            """
+            {
+              "contents": {
+                "tabbedSearchResultsRenderer": {
+                  "tabs": [
+                    {
+                      "tabRenderer": {
+                        "content": {
+                          "sectionListRenderer": {
+                            "contents": [
+                              {
+                                "itemSectionRenderer": {
+                                  "contents": [
+                                    {
+                                      "messageRenderer": {
+                                        "text": { "simpleText": "ignored" }
+                                      }
+                                    },
+                                    {
+                                      "musicShelfRenderer": {
+                                        "title": { "simpleText": "Songs" },
+                                        "contents": [
+                                          {
+                                            "musicResponsiveListItemRenderer": {
+                                              "thumbnail": {
+                                                "musicThumbnailRenderer": {
+                                                  "thumbnail": {
+                                                    "thumbnails": [
+                                                      {
+                                                        "url": "https://i.ytimg.com/vi/song-qt/hqdefault.jpg"
+                                                      }
+                                                    ]
+                                                  }
+                                                }
+                                              },
+                                              "flexColumns": [
+                                                {
+                                                  "musicResponsiveListItemFlexColumnRenderer": {
+                                                    "text": {
+                                                      "runs": [
+                                                        {
+                                                          "text": "晴天",
+                                                          "navigationEndpoint": {
+                                                            "watchEndpoint": {
+                                                              "videoId": "song-qt"
+                                                            }
+                                                          }
+                                                        }
+                                                      ]
+                                                    }
+                                                  }
+                                                },
+                                                {
+                                                  "musicResponsiveListItemFlexColumnRenderer": {
+                                                    "text": {
+                                                      "runs": [
+                                                        {
+                                                          "text": "周杰倫",
+                                                          "navigationEndpoint": {
+                                                            "browseEndpoint": {
+                                                              "browseId": "UC-artist"
+                                                            }
+                                                          }
+                                                        },
+                                                        { "text": " • " },
+                                                        {
+                                                          "text": "葉惠美",
+                                                          "navigationEndpoint": {
+                                                            "browseEndpoint": {
+                                                              "browseId": "MPREb_yehuimei"
+                                                            }
+                                                          }
+                                                        },
+                                                        { "text": " • " },
+                                                        { "text": "4:30" }
+                                                      ]
+                                                    }
+                                                  }
+                                                }
+                                              ]
+                                            }
+                                          }
+                                        ],
+                                        "continuations": [
+                                          {
+                                            "nextContinuationData": {
+                                              "continuation": "wrapped-song-shelf-token"
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  ]
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+            """.trimIndent()
+        )
+    }
 }

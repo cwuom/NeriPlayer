@@ -586,7 +586,7 @@ fun SettingsScreen(
     var showBiliReauthDialog by remember { mutableStateOf(false) }
     var showYouTubeSheet by remember { mutableStateOf(false) }
     var showYouTubeCookieDialog by remember { mutableStateOf(false) }
-    var showYouTubeReauthDialog by remember { mutableStateOf(false) }
+
     var showNeteaseReauthDialog by remember { mutableStateOf(false) }
     var showColorPickerDialog by remember { mutableStateOf(false) }
     var showDpiDialog by remember { mutableStateOf(false) }
@@ -611,7 +611,6 @@ fun SettingsScreen(
     var youtubeCookieText by remember { mutableStateOf("") }
     val youtubeVm: YouTubeAuthViewModel = viewModel()
     val youtubeAuthUiState by youtubeVm.uiState.collectAsStateWithLifecycleCompat()
-    var youtubeReauthHealth by remember { mutableStateOf<YouTubeAuthHealth?>(null) }
     var youtubeSheetInitialTab by rememberSaveable { mutableIntStateOf(0) }
     
     // 备份与恢复
@@ -843,7 +842,7 @@ fun SettingsScreen(
     DisposableEffect(lifecycleOwner, biliVm, neteaseVm, youtubeVm) {
         biliVm.refreshAuthHealth(promptIfNeeded = true)
         neteaseVm.refreshAuthHealth(promptIfNeeded = true)
-        youtubeVm.refreshAuthHealth(promptIfNeeded = true)
+        youtubeVm.refreshAuthHealth()
         if (lifecycleOwner == null) {
             onDispose { }
         } else {
@@ -851,7 +850,7 @@ fun SettingsScreen(
                 if (event == Lifecycle.Event.ON_RESUME) {
                     biliVm.refreshAuthHealth(promptIfNeeded = true)
                     neteaseVm.refreshAuthHealth(promptIfNeeded = true)
-                    youtubeVm.refreshAuthHealth(promptIfNeeded = true)
+                    youtubeVm.refreshAuthHealth()
                 }
             }
             lifecycleOwner.lifecycle.addObserver(observer)
@@ -925,15 +924,10 @@ fun SettingsScreen(
                     showYouTubeCookieDialog = true
                 }
                 YouTubeAuthEvent.LoginSuccess -> {
-                    showYouTubeReauthDialog = false
-                    youtubeReauthHealth = null
                     showYouTubeSheet = false
                     inlineMsg = context.getString(R.string.settings_youtube_login_success)
                 }
-                is YouTubeAuthEvent.PromptReauth -> {
-                    youtubeReauthHealth = e.health
-                    showYouTubeReauthDialog = true
-                }
+
             }
         }
     }
@@ -3860,70 +3854,7 @@ fun SettingsScreen(
         )
     }
 
-    youtubeReauthHealth?.let { health ->
-        if (showYouTubeReauthDialog) {
-            val title = when (health.state) {
-                YouTubeAuthState.Missing -> stringResource(R.string.settings_youtube_reauth_required_title)
-                YouTubeAuthState.Expired -> stringResource(R.string.settings_youtube_reauth_expired_title)
-                YouTubeAuthState.Stale -> stringResource(R.string.settings_youtube_reauth_stale_title)
-                YouTubeAuthState.Valid -> stringResource(R.string.common_youtube)
-            }
-            val message = when (health.state) {
-                YouTubeAuthState.Missing -> stringResource(R.string.settings_youtube_reauth_required_message)
-                YouTubeAuthState.Expired -> stringResource(R.string.settings_youtube_reauth_expired_message)
-                YouTubeAuthState.Stale -> {
-                    val savedAtLabel = health.savedAt
-                        .takeIf { it > 0L }
-                        ?.let { convertTimestampToDate(it) }
-                        ?: stringResource(R.string.settings_youtube_reauth_unknown_time)
-                    stringResource(
-                        R.string.settings_youtube_reauth_stale_message,
-                        (YOUTUBE_AUTH_STALE_AFTER_MS / (24L * 60L * 60L * 1000L)).toInt(),
-                        savedAtLabel
-                    )
-                }
-                YouTubeAuthState.Valid -> ""
-            }
-            AlertDialog(
-                onDismissRequest = {
-                    showYouTubeReauthDialog = false
-                    youtubeReauthHealth = null
-                },
-                title = { Text(title) },
-                text = { Text(message) },
-                confirmButton = {
-                    HapticTextButton(onClick = {
-                        showYouTubeReauthDialog = false
-                        youtubeReauthHealth = null
-                        inlineMsg = null
-                        youtubeSheetInitialTab = 0
-                        showYouTubeSheet = true
-                    }) {
-                        Text(stringResource(R.string.settings_youtube_reauth_action_login))
-                    }
-                },
-                dismissButton = {
-                    Row {
-                        HapticTextButton(onClick = {
-                            showYouTubeReauthDialog = false
-                            youtubeReauthHealth = null
-                            inlineMsg = null
-                            youtubeSheetInitialTab = 1
-                            showYouTubeSheet = true
-                        }) {
-                            Text(stringResource(R.string.settings_youtube_reauth_action_import))
-                        }
-                        HapticTextButton(onClick = {
-                            showYouTubeReauthDialog = false
-                            youtubeReauthHealth = null
-                        }) {
-                            Text(stringResource(R.string.action_later))
-                        }
-                    }
-                }
-            )
-        }
-    }
+
 
     // 音质选择对话框
     if (showDefaultStartDestinationDialog) {

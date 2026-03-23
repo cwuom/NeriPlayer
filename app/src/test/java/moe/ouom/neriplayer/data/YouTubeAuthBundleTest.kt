@@ -51,7 +51,7 @@ class YouTubeAuthBundleTest {
         )
 
         assertEquals(YouTubeAuthState.Missing, health.state)
-        assertTrue(health.shouldPromptRelogin)
+        assertFalse(health.shouldPromptRelogin)
     }
 
     @Test

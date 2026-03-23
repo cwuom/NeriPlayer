@@ -204,7 +204,7 @@ fun YouTubeAuthBundle.buildYouTubeStreamRequestHeaders(
     includeReferer: Boolean = true,
     streamUrl: String? = null
 ): Map<String, String> {
-    // googlevideo/manifest 是跨域媒体请求，不应继续附带 YouTube 登录态头。
+    // googlevideo/manifest 是跨域媒体请求，不应继续附带 YouTube 登录态头
     val headers = LinkedHashMap<String, String>()
     original.forEach { (name, value) ->
         if (name.lowercase(Locale.US) !in YOUTUBE_GOOGLE_VIDEO_STRIPPED_HEADERS) {

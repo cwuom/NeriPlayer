@@ -141,7 +141,7 @@ data class YouTubeAuthHealth(
     val activeCookieKeys: List<String> = emptyList()
 ) {
     val shouldPromptRelogin: Boolean
-        get() = state != YouTubeAuthState.Valid
+        get() = state == YouTubeAuthState.Expired || state == YouTubeAuthState.Stale
 }
 
 fun evaluateYouTubeAuthHealth(

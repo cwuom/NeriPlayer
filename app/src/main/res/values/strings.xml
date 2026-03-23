@@ -713,8 +713,11 @@
     <string name="error_parse">解析/未知错误：%s</string>
     <string name="error_bilibili_search">Bilibili 搜索失败: %s</string>
     <string name="error_netease_search">网易云搜索失败: %s</string>
+    <string name="error_youtube_search">YouTube 搜索失败: %s</string>
     <string name="error_load_playlist">加载歌单失败: %s</string>
     <string name="error_search_failed">搜索失败: %s</string>
+    <string name="youtube_search_type_song">YouTube 歌曲</string>
+    <string name="youtube_search_type_video">YouTube 视频</string>
     <string name="error_get_user_id">无法获取用户ID，请重新登录</string>
     <string name="error_api_code">接口返回异常 code=%d</string>
     <string name="error_missing_node">缺少 %s 节点</string>

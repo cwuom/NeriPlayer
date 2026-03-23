@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.api.youtube
 
 import java.io.IOException
 import java.net.URLDecoder
+import java.net.URLEncoder
 import java.security.MessageDigest
 import java.util.Locale
 import java.util.TimeZone
@@ -32,6 +33,7 @@ private const val YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS = 2
 private const val YOUTUBE_MUSIC_SAFE_FALLBACK_HL = "zh-CN"
 private const val YOUTUBE_MUSIC_SAFE_FALLBACK_GL = "JP"
 private const val YOUTUBE_MUSIC_HOME_PLAYLIST_ITEM_LIMIT = 24
+private const val YOUTUBE_MUSIC_SEARCH_ITEM_LIMIT = 30
 
 data class YouTubeMusicLibraryPlaylist(
     val browseId: String,
@@ -80,6 +82,23 @@ data class YouTubeMusicDebugProbeResult(
     val rawJson: String
 )
 
+enum class YouTubeMusicSearchResultType {
+    Song,
+    Video
+}
+
+data class YouTubeMusicSearchResult(
+    val videoId: String,
+    val title: String,
+    val artist: String,
+    val album: String,
+    val subtitle: String,
+    val coverUrl: String,
+    val durationText: String,
+    val durationMs: Long,
+    val type: YouTubeMusicSearchResultType
+)
+
 /** 首页推荐栏 */
 data class YouTubeMusicHomeShelf(
     val title: String,
@@ -99,6 +118,12 @@ internal data class ParsedYouTubeMusicHomeShelf(
     val title: String,
     val items: List<YouTubeMusicHomeItem>,
     val continuation: String? = null
+)
+
+private data class ParsedYouTubeMusicSearchMetadata(
+    val artists: List<String> = emptyList(),
+    val album: String = "",
+    val durationText: String = ""
 )
 
 internal data class YouTubeMusicBootstrapConfig(
@@ -164,6 +189,30 @@ internal object YouTubeMusicLocaleResolver {
         }
         return root.optJSONObject("contents") == null &&
             root.optJSONObject("continuationContents") == null
+    }
+}
+
+internal object YouTubeMusicSearchParams {
+    private const val FILTERED_PREFIX = "EgWKAQ"
+    private const val FILTER_SUFFIX_DEFAULT = "AWoMEA4QChADEAQQCRAF"
+    private const val FILTER_SUFFIX_IGNORE_SPELLING = "AUICCAFqDBAOEAoQAxAEEAkQBQ%3D%3D"
+
+    /**
+     * YouTube Music Web search filter params.
+     * 当前 songs -> "II" 为固定协议片段，但属于未公开内部参数，未来可能变化
+     */
+    fun songs(ignoreSpelling: Boolean = false): String {
+        return buildString {
+            append(FILTERED_PREFIX)
+            append("II")
+            append(
+                if (ignoreSpelling) {
+                    FILTER_SUFFIX_IGNORE_SPELLING
+                } else {
+                    FILTER_SUFFIX_DEFAULT
+                }
+            )
+        }
     }
 }
 
@@ -570,6 +619,49 @@ internal object YouTubeMusicParser {
         return null
     }
 
+    fun hasSearchSectionList(root: JSONObject): Boolean {
+        return findSearchSectionListRenderer(root) != null
+    }
+
+    fun parseSearchResults(
+        root: JSONObject,
+        limit: Int = YOUTUBE_MUSIC_SEARCH_ITEM_LIMIT
+    ): List<YouTubeMusicSearchResult> {
+        val items = buildList {
+            for (shelf in findSearchShelfRenderers(root)) {
+                addAll(parseSearchRendererItems(shelf.optJSONArray("contents")))
+            }
+        }
+        return items
+            .distinctBy { it.videoId }
+            .take(limit.coerceAtLeast(1))
+    }
+
+    fun hasSongSearchShelf(root: JSONObject): Boolean {
+        return findSearchSongShelfRenderer(root) != null
+    }
+
+    fun parseSongSearchResults(
+        root: JSONObject,
+        limit: Int = YOUTUBE_MUSIC_SEARCH_ITEM_LIMIT
+    ): List<YouTubeMusicSearchResult> {
+        val items = parseSearchRendererItems(
+            contents = findSearchSongContents(root),
+            forcedType = YouTubeMusicSearchResultType.Song
+        )
+        return items
+            .distinctBy { it.videoId }
+            .take(limit.coerceAtLeast(1))
+    }
+
+    fun extractSearchContinuation(root: JSONObject): String? {
+        return extractContinuationToken(findSearchSongShelfRenderer(root))
+            ?: extractContinuationToken(
+                root.optJSONObject("continuationContents")
+                    ?.optJSONObject("musicShelfContinuation")
+            )
+    }
+
     private fun extractTrackVideoId(renderer: JSONObject): String {
         return firstNonBlank(
             renderer.optJSONObject("overlay")
@@ -646,6 +738,268 @@ internal object YouTubeMusicParser {
         return ""
     }
 
+    private fun findSearchSectionListRenderer(root: JSONObject): JSONObject? {
+        return root.optJSONObject("contents")
+            ?.optJSONObject("tabbedSearchResultsRenderer")
+            ?.optJSONArray("tabs")
+            ?.optJSONObject(0)
+            ?.optJSONObject("tabRenderer")
+            ?.optJSONObject("content")
+            ?.optJSONObject("sectionListRenderer")
+    }
+
+    private fun findSearchSongShelfRenderer(root: JSONObject): JSONObject? {
+        return findSearchShelfRenderers(root).firstOrNull()
+    }
+
+    private fun findSearchSongContents(root: JSONObject): JSONArray? {
+        return findSearchSongShelfRenderer(root)?.optJSONArray("contents")
+            ?: root.optJSONObject("continuationContents")
+                ?.optJSONObject("musicShelfContinuation")
+                ?.optJSONArray("contents")
+    }
+
+    private fun findSearchShelfRenderers(root: JSONObject): List<JSONObject> {
+        val sections = findSearchSectionListRenderer(root)?.optJSONArray("contents") ?: return emptyList()
+        return buildList {
+            for (sectionIndex in 0 until sections.length()) {
+                val section = sections.optJSONObject(sectionIndex) ?: continue
+                section.optJSONObject("musicShelfRenderer")?.let(::add)
+
+                val itemSectionContents = section.optJSONObject("itemSectionRenderer")
+                    ?.optJSONArray("contents")
+                    ?: continue
+                for (itemIndex in 0 until itemSectionContents.length()) {
+                    itemSectionContents.optJSONObject(itemIndex)
+                        ?.optJSONObject("musicShelfRenderer")
+                        ?.let(::add)
+                }
+            }
+        }
+    }
+
+    private fun parseSearchRendererItems(
+        contents: JSONArray?,
+        forcedType: YouTubeMusicSearchResultType? = null
+    ): List<YouTubeMusicSearchResult> {
+        if (contents == null) {
+            return emptyList()
+        }
+        return buildList {
+            for (itemIndex in 0 until contents.length()) {
+                val renderer = contents.optJSONObject(itemIndex)
+                    ?.optJSONObject("musicResponsiveListItemRenderer")
+                    ?: continue
+                parseSearchResult(renderer, forcedType)?.let(::add)
+            }
+        }
+    }
+
+    private fun parseSearchResult(
+        renderer: JSONObject,
+        forcedType: YouTubeMusicSearchResultType? = null
+    ): YouTubeMusicSearchResult? {
+        val videoId = extractTrackVideoId(renderer)
+        val title = extractColumnText(
+            columns = renderer.optJSONArray("flexColumns"),
+            index = 0,
+            rendererKey = "musicResponsiveListItemFlexColumnRenderer"
+        )
+        val type = forcedType ?: resolveSearchResultType(renderer) ?: return null
+        if (videoId.isBlank() || title.isBlank()) {
+            return null
+        }
+
+        val metadata = parseSearchMetadata(renderer, type)
+        val durationText = metadata.durationText.ifBlank { extractSearchDurationText(renderer) }
+        return YouTubeMusicSearchResult(
+            videoId = videoId,
+            title = title,
+            artist = metadata.artists.joinToString(" / ").ifBlank { "" },
+            album = metadata.album,
+            subtitle = extractColumnText(
+                columns = renderer.optJSONArray("flexColumns"),
+                index = 1,
+                rendererKey = "musicResponsiveListItemFlexColumnRenderer"
+            ),
+            coverUrl = extractMusicThumbnailUrl(renderer.optJSONObject("thumbnail")),
+            durationText = durationText,
+            durationMs = parseDurationTextToMs(durationText),
+            type = type
+        )
+    }
+
+    private fun resolveSearchResultType(renderer: JSONObject): YouTubeMusicSearchResultType? {
+        val musicVideoType = firstNonBlank(
+            renderer.optJSONObject("overlay")
+                ?.optJSONObject("musicItemThumbnailOverlayRenderer")
+                ?.optJSONObject("content")
+                ?.optJSONObject("musicPlayButtonRenderer")
+                ?.optJSONObject("playNavigationEndpoint")
+                ?.optJSONObject("watchEndpoint")
+                ?.optJSONObject("watchEndpointMusicSupportedConfigs")
+                ?.optJSONObject("watchEndpointMusicConfig")
+                ?.optString("musicVideoType"),
+            renderer.optJSONObject("navigationEndpoint")
+                ?.optJSONObject("watchEndpoint")
+                ?.optJSONObject("watchEndpointMusicSupportedConfigs")
+                ?.optJSONObject("watchEndpointMusicConfig")
+                ?.optString("musicVideoType")
+        ).uppercase(Locale.US)
+        when {
+            musicVideoType.contains("ATV") -> return YouTubeMusicSearchResultType.Song
+            musicVideoType.contains("OMV") || musicVideoType.contains("UGC") -> {
+                return YouTubeMusicSearchResultType.Video
+            }
+        }
+
+        return when (normalizeSearchTypeToken(extractSearchMetadataParts(renderer).firstOrNull().orEmpty())) {
+            "song", "songs", "歌曲", "曲" -> YouTubeMusicSearchResultType.Song
+            "video", "videos", "视频", "mv" -> YouTubeMusicSearchResultType.Video
+            else -> null
+        }
+    }
+
+    private fun extractSearchMetadataParts(renderer: JSONObject): List<String> {
+        return extractTextParts(
+            renderer.optJSONArray("flexColumns")
+                ?.optJSONObject(1)
+                ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                ?.optJSONObject("text")
+        )
+    }
+
+    private fun parseSearchMetadata(
+        renderer: JSONObject,
+        type: YouTubeMusicSearchResultType
+    ): ParsedYouTubeMusicSearchMetadata {
+        val runs = renderer.optJSONArray("flexColumns")
+            ?.optJSONObject(1)
+            ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+            ?.optJSONObject("text")
+            ?.optJSONArray("runs")
+            ?: return ParsedYouTubeMusicSearchMetadata(
+                artists = extractSearchMetadataParts(renderer)
+                    .filterNot(::looksLikeDurationText)
+                    .take(1),
+                durationText = extractSearchDurationText(renderer)
+            )
+
+        val entries = mutableListOf<String>()
+        var album = ""
+        var durationText = ""
+        for (index in 0 until runs.length()) {
+            if (index % 2 == 1) {
+                continue
+            }
+            val run = runs.optJSONObject(index) ?: continue
+            val text = run.optString("text", "").trim()
+            if (text.isBlank()) {
+                continue
+            }
+            if (looksLikeSearchTypeLabel(text, type, index == 0 && runs.length() >= 3)) {
+                continue
+            }
+            if (looksLikeDurationText(text)) {
+                durationText = text
+                continue
+            }
+            val browseId = run.optJSONObject("navigationEndpoint")
+                ?.optJSONObject("browseEndpoint")
+                ?.optString("browseId")
+                .orEmpty()
+            when {
+                browseId.startsWith("MPRE") || browseId.contains("release_detail") -> album = text
+                !looksLikeSearchStatText(text) -> entries += text
+            }
+        }
+
+        if (album.isBlank() && entries.size >= 2) {
+            album = entries.last()
+            entries.removeLastOrNull()
+        }
+
+        return ParsedYouTubeMusicSearchMetadata(
+            artists = entries,
+            album = album,
+            durationText = durationText
+        )
+    }
+
+    private fun extractSearchDurationText(renderer: JSONObject): String {
+        val fixedDuration = findDurationText(
+            columns = renderer.optJSONArray("fixedColumns"),
+            rendererKey = "musicResponsiveListItemFixedColumnRenderer"
+        )
+        if (fixedDuration.isNotBlank()) {
+            return fixedDuration
+        }
+        return findDurationText(
+            columns = renderer.optJSONArray("flexColumns"),
+            rendererKey = "musicResponsiveListItemFlexColumnRenderer"
+        )
+    }
+
+    private fun findDurationText(columns: JSONArray?, rendererKey: String): String {
+        if (columns == null) {
+            return ""
+        }
+        for (index in 0 until columns.length()) {
+            val text = extractColumnText(columns, index, rendererKey)
+            if (looksLikeDurationText(text)) {
+                return text
+            }
+        }
+        return ""
+    }
+
+    private fun looksLikeDurationText(text: String): Boolean {
+        val trimmed = text.trim()
+        if (!trimmed.contains(':')) {
+            return false
+        }
+        val parts = trimmed.split(':')
+        return parts.isNotEmpty() && parts.all { it.trim().toLongOrNull() != null }
+    }
+
+    private fun looksLikeSearchStatText(text: String): Boolean {
+        val normalized = text.trim().lowercase(Locale.US)
+        if (normalized.isBlank()) {
+            return false
+        }
+        return normalized.contains("播放") ||
+            normalized.contains("观看") ||
+            normalized.contains("views") ||
+            normalized.contains("view") ||
+            normalized.contains("listeners") ||
+            normalized.contains("listener") ||
+            normalized.contains("monthly") ||
+            normalized.contains("观众") ||
+            normalized.contains("订阅者") ||
+            normalized.contains("subscriber")
+    }
+
+    private fun normalizeSearchTypeToken(token: String): String {
+        return token.trim()
+            .lowercase(Locale.US)
+            .replace(" ", "")
+    }
+
+    private fun looksLikeSearchTypeLabel(
+        text: String,
+        type: YouTubeMusicSearchResultType,
+        canSkip: Boolean
+    ): Boolean {
+        if (!canSkip) {
+            return false
+        }
+        return when (normalizeSearchTypeToken(text)) {
+            "song", "songs", "歌曲", "曲" -> type == YouTubeMusicSearchResultType.Song
+            "video", "videos", "视频", "mv" -> type == YouTubeMusicSearchResultType.Video
+            else -> false
+        }
+    }
+
     private fun firstNonBlank(vararg values: String?): String {
         return values.firstOrNull { !it.isNullOrBlank() }.orEmpty()
     }
@@ -680,6 +1034,31 @@ internal object YouTubeMusicParser {
                 ?.optJSONObject(rendererKey)
                 ?.optJSONObject("text")
         )
+    }
+
+    private fun extractTextParts(node: JSONObject?): List<String> {
+        if (node == null) {
+            return emptyList()
+        }
+        val runs = node.optJSONArray("runs")
+        if (runs != null) {
+            return buildList {
+                for (index in 0 until runs.length()) {
+                    val text = runs.optJSONObject(index)?.optString("text").orEmpty().trim()
+                    if (text.isBlank()) {
+                        continue
+                    }
+                    if (text.all { it == '•' || it == '·' || it == '|' }) {
+                        continue
+                    }
+                    add(text)
+                }
+            }
+        }
+        return node.optString("simpleText", "")
+            .split('•', '·', '|')
+            .map(String::trim)
+            .filter(String::isNotBlank)
     }
 
     private fun extractText(node: JSONObject?): String {
@@ -1162,6 +1541,62 @@ class YouTubeMusicClient(
         )
     }
 
+    suspend fun search(
+        query: String,
+        limit: Int = YOUTUBE_MUSIC_SEARCH_ITEM_LIMIT
+    ): List<YouTubeMusicSearchResult> = withContext(Dispatchers.IO) {
+        if (query.isBlank()) {
+            return@withContext emptyList()
+        }
+        val requestedLimit = limit.coerceAtLeast(1)
+        var bootstrap = bootstrap()
+        var requestLocale = YouTubeMusicLocaleResolver.preferred()
+        val items = mutableListOf<YouTubeMusicSearchResult>()
+        val seenVideoIds = linkedSetOf<String>()
+        var continuation: String? = null
+        var page = 0
+
+        while (page < YOUTUBE_MUSIC_CONTINUATION_PAGE_LIMIT && items.size < requestedLimit) {
+            val payload = JSONObject()
+                .put("query", query)
+                .put("params", YouTubeMusicSearchParams.songs())
+            if (!continuation.isNullOrBlank()) {
+                payload.put("continuation", continuation)
+            }
+            val root = try {
+                val response = postMusicSearchWithRetry(
+                    bootstrap = bootstrap,
+                    payload = payload,
+                    preferredLocale = requestLocale,
+                    expectSongShelf = continuation.isNullOrBlank()
+                )
+                bootstrap = response.bootstrap
+                requestLocale = response.requestLocale
+                response.root
+            } catch (error: IOException) {
+                if (page == 0) {
+                    throw error
+                }
+                break
+            }
+            YouTubeMusicParser.parseSongSearchResults(
+                root = root,
+                limit = requestedLimit - items.size
+            ).forEach { result ->
+                if (seenVideoIds.add(result.videoId)) {
+                    items += result
+                }
+            }
+            continuation = YouTubeMusicParser.extractSearchContinuation(root)
+            if (continuation.isNullOrBlank()) {
+                break
+            }
+            page++
+        }
+
+        items.take(requestedLimit)
+    }
+
     suspend fun getLibraryPlaylists(): List<YouTubeMusicLibraryPlaylist> = withContext(Dispatchers.IO) {
         var bootstrap = bootstrap()
         var requestLocale = YouTubeMusicLocaleResolver.preferred()
@@ -1484,6 +1919,22 @@ class YouTubeMusicClient(
         return "$YOUTUBE_MUSIC_MUSIC_ORIGIN/youtubei/v1/next?prettyPrint=false&key=${bootstrap.apiKey}"
     }
 
+    private fun musicSearchUrl(
+        bootstrap: YouTubeMusicBootstrapConfig,
+        continuation: String? = null
+    ): String {
+        return buildString {
+            append("$YOUTUBE_MUSIC_MUSIC_ORIGIN/youtubei/v1/search?prettyPrint=false&key=${bootstrap.apiKey}")
+            continuation?.takeIf { it.isNotBlank() }?.let {
+                val encodedContinuation = URLEncoder.encode(it, Charsets.UTF_8.name())
+                append("&ctoken=")
+                append(encodedContinuation)
+                append("&continuation=")
+                append(encodedContinuation)
+            }
+        }
+    }
+
     private fun bootstrap(forceRefresh: Boolean = false): YouTubeMusicBootstrapConfig {
         val auth = authRepo.getAuthOnce().normalized()
         val authHealth = authRepo.getAuthHealthOnce()
@@ -1546,6 +1997,39 @@ class YouTubeMusicClient(
                 .header("X-Origin", YOUTUBE_MUSIC_MUSIC_ORIGIN)
                 .header("Referer", "$YOUTUBE_MUSIC_MUSIC_ORIGIN/")
                 .header("X-Goog-AuthUser", bootstrap.sessionIndex)
+                .header("X-YouTube-Client-Name", YOUTUBE_MUSIC_CLIENT_NAME_NUM_WEB_REMIX)
+                .header("X-YouTube-Client-Version", bootstrap.webRemixClientVersion)
+                .applySidAuthorization(bootstrap.cookieHeader, YOUTUBE_MUSIC_MUSIC_ORIGIN)
+                .post(body.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+                .build()
+        )
+    }
+
+    private fun postMusicSearch(
+        bootstrap: YouTubeMusicBootstrapConfig,
+        payload: JSONObject,
+        requestLocale: YouTubeMusicRequestLocale
+    ): JSONObject {
+        val body = JSONObject().put("context", buildMusicContext(bootstrap, requestLocale))
+        copyJsonFields(from = payload, to = body)
+
+        return executeJson(
+            Request.Builder()
+                .url(
+                    musicSearchUrl(
+                        bootstrap = bootstrap,
+                        continuation = payload.optString("continuation").ifBlank { null }
+                    )
+                )
+                .applyCookieHeader(bootstrap.cookieHeader)
+                .header("User-Agent", bootstrap.webUserAgent)
+                .header("Accept-Language", requestLocale.acceptLanguage)
+                .header("Content-Type", "application/json")
+                .header("Origin", YOUTUBE_MUSIC_MUSIC_ORIGIN)
+                .header("X-Origin", YOUTUBE_MUSIC_MUSIC_ORIGIN)
+                .header("Referer", "$YOUTUBE_MUSIC_MUSIC_ORIGIN/")
+                .header("X-Goog-AuthUser", bootstrap.sessionIndex)
+                .header("X-Goog-Visitor-Id", bootstrap.visitorData)
                 .header("X-YouTube-Client-Name", YOUTUBE_MUSIC_CLIENT_NAME_NUM_WEB_REMIX)
                 .header("X-YouTube-Client-Version", bootstrap.webRemixClientVersion)
                 .applySidAuthorization(bootstrap.cookieHeader, YOUTUBE_MUSIC_MUSIC_ORIGIN)
@@ -1673,6 +2157,62 @@ class YouTubeMusicClient(
             }
         }
         throw lastError ?: IOException("YouTube Music request failed")
+    }
+
+    private fun postMusicSearchWithRetry(
+        bootstrap: YouTubeMusicBootstrapConfig,
+        payload: JSONObject,
+        preferredLocale: YouTubeMusicRequestLocale,
+        expectSongShelf: Boolean
+    ): YouTubeMusicBrowseResponse {
+        var activeBootstrap = bootstrap
+        var lastError: IOException? = null
+        for (requestLocale in YouTubeMusicLocaleResolver.requestCandidates(preferredLocale)) {
+            var attempt = 0
+            while (attempt < YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS) {
+                try {
+                    val root = postMusicSearch(
+                        bootstrap = activeBootstrap,
+                        payload = payload,
+                        requestLocale = requestLocale
+                    )
+                    if (YouTubeMusicLocaleResolver.shouldRetryWithSafeFallback(payload, root)) {
+                        lastError = IOException(
+                            "YouTube Music search response missing contents for ${requestLocale.hl}/${requestLocale.gl}"
+                        )
+                        break
+                    }
+                    if (expectSongShelf && !YouTubeMusicParser.hasSongSearchShelf(root)) {
+                        lastError = IOException(
+                            "YouTube Music songs search missing song shelf for ${requestLocale.hl}/${requestLocale.gl}"
+                        )
+                        break
+                    }
+                    return YouTubeMusicBrowseResponse(
+                        bootstrap = activeBootstrap,
+                        root = root,
+                        requestLocale = requestLocale
+                    )
+                } catch (error: IOException) {
+                    lastError = error
+                    attempt++
+                    if (attempt >= YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS) {
+                        break
+                    }
+                    bootstrapCache = null
+                    activeBootstrap = bootstrap(forceRefresh = true)
+                }
+            }
+        }
+        throw lastError ?: IOException("YouTube Music search failed")
+    }
+
+    private fun copyJsonFields(from: JSONObject, to: JSONObject) {
+        val keys = from.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            to.put(key, from.get(key))
+        }
     }
 
     private fun buildMusicContext(
