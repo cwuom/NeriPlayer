@@ -107,6 +107,7 @@ import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.settings.readThemePreferenceSnapshotSync
 import moe.ouom.neriplayer.ui.NeriApp
+import moe.ouom.neriplayer.ui.onboarding.StartupOnboardingScreen
 import moe.ouom.neriplayer.util.ExceptionHandler
 import moe.ouom.neriplayer.util.HapticButton
 import moe.ouom.neriplayer.util.HapticTextButton
@@ -116,7 +117,7 @@ import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.lockPortraitIfPhone
 import androidx.core.view.WindowInsetsControllerCompat
 
-private enum class AppStage { Loading, Disclaimer, Main }
+private enum class AppStage { Loading, Disclaimer, Onboarding, Main }
 
 class MainActivity : ComponentActivity() {
     private val settingsRepository by lazy { SettingsRepository(applicationContext) }
@@ -159,6 +160,7 @@ class MainActivity : ComponentActivity() {
                 initial = startupThemeSnapshot.followSystemDark
             )
             val disclaimerAcceptedNullable by settingsRepository.disclaimerAcceptedFlow.collectAsState(initial = null)
+            val startupOnboardingCompletedNullable by settingsRepository.startupOnboardingCompletedFlow.collectAsState(initial = null)
 
             val systemDark = isSystemInDarkTheme()
             val useDark = remember(forceDark, followSystemDark, systemDark) {
@@ -206,7 +208,11 @@ class MainActivity : ComponentActivity() {
 
                 val stage = when (disclaimerAcceptedNullable) {
                     null -> AppStage.Loading
-                    true -> AppStage.Main
+                    true -> when (startupOnboardingCompletedNullable) {
+                        null -> AppStage.Loading
+                        true -> AppStage.Main
+                        false -> AppStage.Onboarding
+                    }
                     false -> AppStage.Disclaimer
                 }
 
@@ -243,6 +249,9 @@ class MainActivity : ComponentActivity() {
                             DisclaimerScreen(
                                 onAgree = { scope.launch { settingsRepository.setDisclaimerAccepted(true) } }
                             )
+                        }
+                        AppStage.Onboarding -> {
+                            StartupOnboardingScreen()
                         }
                         AppStage.Main -> {
                             // 弹窗状态管理和事件监听

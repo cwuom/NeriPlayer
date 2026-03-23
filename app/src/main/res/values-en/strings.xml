@@ -1041,6 +1041,37 @@
     <string name="language_display_english">English / 英语</string>
     <string name="language_display_system">Follow system / 跟随系统</string>
 
+    <!-- Startup Onboarding -->
+    <string name="onboarding_badge">Quick setup</string>
+    <string name="onboarding_title">Set a few basics first</string>
+    <string name="onboarding_subtitle">Pick your language, connect platforms, then tune the UI and background.</string>
+    <string name="onboarding_step_counter">Step %1$d of %2$d</string>
+    <string name="onboarding_language_title">Choose language</string>
+    <string name="onboarding_language_desc">The next screens will use this language.</string>
+    <string name="onboarding_language_hint_title">Switching refreshes the page</string>
+    <string name="onboarding_language_hint_body">It refreshes right away and moves to the next step.</string>
+    <string name="onboarding_platforms_title">Connect platforms</string>
+    <string name="onboarding_platforms_desc">Connect the ones you use most so it is easier to find what you want.</string>
+    <string name="onboarding_platforms_hint">You can skip this for now and sign in or import Cookies later in settings.</string>
+    <string name="onboarding_personalize_title">Adjust the interface</string>
+    <string name="onboarding_personalize_desc">Set the UI scale and background now, and they will apply in the main screen.</string>
+    <string name="onboarding_ui_scale_hint">Preview is about %1$d%% right now. Drag to see the change.</string>
+    <string name="onboarding_background_hint">Pick a background, then adjust blur and opacity if you want.</string>
+    <string name="onboarding_background_select">Choose background</string>
+    <string name="onboarding_background_change">Change background</string>
+    <string name="onboarding_background_clear">Clear background</string>
+    <string name="onboarding_preview_title">Live preview</string>
+    <string name="onboarding_preview_subtitle">Background, corners, and layering update here as you adjust them.</string>
+    <string name="onboarding_complete_hint">You will go straight into the app after this, and you can still adjust everything later.</string>
+    <string name="onboarding_action_next">Continue</string>
+    <string name="onboarding_action_enter_app">Start using</string>
+    <string name="onboarding_platform_action_connect">Connect</string>
+    <string name="onboarding_platform_action_manage">Manage</string>
+    <string name="onboarding_platform_action_logout">Sign out</string>
+    <string name="onboarding_platform_status_not_connected">Not connected</string>
+    <string name="onboarding_platform_status_connected">Connected</string>
+    <string name="onboarding_platform_status_attention">Sign in again</string>
+
     <!-- Time / Format -->
     <string name="time_zero_minutes">0 minutes</string>
 

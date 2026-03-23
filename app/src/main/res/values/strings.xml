@@ -1051,6 +1051,37 @@
     <string name="language_restart_now_bilingual">立即重启 / Restart now</string>
     <string name="language_restart_later_bilingual">稍后 / Later</string>
 
+    <!-- Startup Onboarding -->
+    <string name="onboarding_badge">首次设置</string>
+    <string name="onboarding_title">先做几个常用设置</string>
+    <string name="onboarding_subtitle">为了让 NeriPlayer 更加符合您的使用习惯，我们建议您先做几个常用设置</string>
+    <string name="onboarding_step_counter">第 %1$d 步 / 共 %2$d 步</string>
+    <string name="onboarding_language_title">选择语言</string>
+    <string name="onboarding_language_desc">后续页面会按这里的语言显示</string>
+    <string name="onboarding_language_hint_title">切换后会刷新</string>
+    <string name="onboarding_language_hint_body">改完会立刻刷新，并继续到下一步</string>
+    <string name="onboarding_platforms_title">连接平台</string>
+    <string name="onboarding_platforms_desc">常用平台先连上，可以帮助你快速找到需要的资源</string>
+    <string name="onboarding_platforms_hint">这一步可以跳过，之后也能在设置里登录或导入 Cookie</string>
+    <string name="onboarding_personalize_title">调整界面</string>
+    <string name="onboarding_personalize_desc">先调 UI 大小和背景图，进入主界面后会直接生效</string>
+    <string name="onboarding_ui_scale_hint">当前预览约 %1$d%%，拖动就能看效果</string>
+    <string name="onboarding_background_hint">先选一张背景图，再按需要调模糊和透明度</string>
+    <string name="onboarding_background_select">选背景图</string>
+    <string name="onboarding_background_change">换背景图</string>
+    <string name="onboarding_background_clear">清除背景</string>
+    <string name="onboarding_preview_title">当前效果预览</string>
+    <string name="onboarding_preview_subtitle">背景、圆角和层次会在这里同步变化</string>
+    <string name="onboarding_complete_hint">完成后直接进入主界面，之后也能在设置里继续调整</string>
+    <string name="onboarding_action_next">继续</string>
+    <string name="onboarding_action_enter_app">开始使用</string>
+    <string name="onboarding_platform_action_connect">连接</string>
+    <string name="onboarding_platform_action_manage">管理</string>
+    <string name="onboarding_platform_action_logout">退登</string>
+    <string name="onboarding_platform_status_not_connected">未连接</string>
+    <string name="onboarding_platform_status_connected">已连接</string>
+    <string name="onboarding_platform_status_attention">需重新登录</string>
+
     <!-- Time / Format -->
     <string name="time_zero_minutes">0分钟</string>
 
