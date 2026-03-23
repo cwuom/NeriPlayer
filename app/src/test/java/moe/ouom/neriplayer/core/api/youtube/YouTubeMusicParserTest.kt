@@ -568,6 +568,39 @@ class YouTubeMusicParserTest {
     }
 
     @Test
+    fun parseHomeSongMetadata_skipsSongTypeLabelAndDuration() {
+        val metadata = YouTubeMusicParser.parseHomeSongMetadata(
+            subtitle = "歌曲 • 陈芳语 • 爱你 • 3:27",
+            fallbackAlbum = "猜你喜欢"
+        )
+
+        assertEquals("陈芳语", metadata.artist)
+        assertEquals("爱你", metadata.album)
+    }
+
+    @Test
+    fun parseHomeSongMetadata_preservesNormalArtistAndAlbum() {
+        val metadata = YouTubeMusicParser.parseHomeSongMetadata(
+            subtitle = "Artist A • Album A",
+            fallbackAlbum = "每日发现"
+        )
+
+        assertEquals("Artist A", metadata.artist)
+        assertEquals("Album A", metadata.album)
+    }
+
+    @Test
+    fun parseHomeSongMetadata_dropsVideoStatsAndFallsBackAlbum() {
+        val metadata = YouTubeMusicParser.parseHomeSongMetadata(
+            subtitle = "视频 • Owner A • 1M views",
+            fallbackAlbum = "翻唱与混音"
+        )
+
+        assertEquals("Owner A", metadata.artist)
+        assertEquals("翻唱与混音", metadata.album)
+    }
+
+    @Test
     fun extractHomeContinuationAndShelfItems_supportSectionContinuationPayload() {
         val root = JSONObject(
             """

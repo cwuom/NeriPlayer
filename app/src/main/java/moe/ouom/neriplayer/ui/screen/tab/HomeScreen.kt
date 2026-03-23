@@ -126,6 +126,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.favoriteId
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeShelf
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeItem
+import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicParser
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.formatDuration
 import moe.ouom.neriplayer.util.formatPlayCount
@@ -1066,18 +1067,16 @@ private fun YouTubeMusicHomeItem.toPlayableSongItem(sectionTitle: String): SongI
     if (videoId.isBlank()) {
         return null
     }
-    val subtitleParts = subtitle
-        .split('•', '·', '|')
-        .map(String::trim)
-        .filter(String::isNotBlank)
-    val artist = subtitleParts.firstOrNull().orEmpty().ifBlank { "YouTube Music" }
-    val album = subtitleParts.getOrNull(1).orEmpty().ifBlank { sectionTitle }
+    val metadata = YouTubeMusicParser.parseHomeSongMetadata(
+        subtitle = subtitle,
+        fallbackAlbum = sectionTitle
+    )
     val playlistId = browseId.removePrefix("VL").ifBlank { null }
     return SongItem(
         id = stableYouTubeMusicId(videoId),
         name = title,
-        artist = artist,
-        album = album,
+        artist = metadata.artist,
+        album = metadata.album,
         albumId = stableYouTubeMusicId((playlistId ?: sectionTitle).ifBlank { videoId }),
         durationMs = 0L,
         coverUrl = coverUrl.ifBlank { null },
@@ -1086,7 +1085,7 @@ private fun YouTubeMusicHomeItem.toPlayableSongItem(sectionTitle: String): SongI
             playlistId = playlistId
         ),
         originalName = title,
-        originalArtist = artist,
+        originalArtist = metadata.artist,
         originalCoverUrl = coverUrl.ifBlank { null }
     )
 }

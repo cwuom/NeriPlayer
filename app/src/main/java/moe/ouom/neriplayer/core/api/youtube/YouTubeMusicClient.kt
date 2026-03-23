@@ -241,6 +241,11 @@ internal object YouTubeMusicSearchParams {
     }
 }
 
+internal data class YouTubeMusicHomeSongMetadata(
+    val artist: String,
+    val album: String
+)
+
 internal object YouTubeMusicParser {
     fun parseBootstrapConfig(
         html: String,
@@ -343,6 +348,27 @@ internal object YouTubeMusicParser {
 
     fun extractHomeShelfContinuation(root: JSONObject): String? {
         return extractContinuationToken(findHomeShelfContinuationRenderer(root))
+    }
+
+    fun parseHomeSongMetadata(
+        subtitle: String,
+        fallbackAlbum: String,
+        fallbackArtist: String = "YouTube Music"
+    ): YouTubeMusicHomeSongMetadata {
+        val metadataParts = subtitle
+            .split('•', '·', '|')
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .filterNot(::looksLikeHomeSongTypeLabel)
+            .filterNot(::looksLikeDurationText)
+            .filterNot(::looksLikeSearchStatText)
+
+        val artist = metadataParts.firstOrNull().orEmpty().ifBlank { fallbackArtist }
+        val album = metadataParts.drop(1).firstOrNull().orEmpty().ifBlank { fallbackAlbum }
+        return YouTubeMusicHomeSongMetadata(
+            artist = artist,
+            album = album
+        )
     }
 
     fun parsePlaylistDetail(
@@ -1027,6 +1053,14 @@ internal object YouTubeMusicParser {
         return when (normalizeSearchTypeToken(text)) {
             "song", "songs", "歌曲", "曲" -> type == YouTubeMusicSearchResultType.Song
             "video", "videos", "视频", "mv" -> type == YouTubeMusicSearchResultType.Video
+            else -> false
+        }
+    }
+
+    private fun looksLikeHomeSongTypeLabel(text: String): Boolean {
+        return when (normalizeSearchTypeToken(text)) {
+            "song", "songs", "歌曲", "曲" -> true
+            "video", "videos", "视频", "mv" -> true
             else -> false
         }
     }
