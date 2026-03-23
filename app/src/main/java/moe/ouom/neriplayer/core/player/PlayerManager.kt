@@ -63,6 +63,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -1701,6 +1702,7 @@ object PlayerManager {
                 }
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             NPLogger.e("NERI-PlayerManager", "Failed to get url", e)
             if (!suppressError) {
                 postPlayerEvent(
@@ -1739,6 +1741,7 @@ object PlayerManager {
                 SongUrlResult.Failure
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             NPLogger.e("NERI-PlayerManager", "Failed to get Bili play url", e)
             if (!suppressError) {
                 postPlayerEvent(
@@ -1804,6 +1807,7 @@ object PlayerManager {
                 SongUrlResult.Failure
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             NPLogger.e("NERI-PlayerManager", "Failed to get YouTube Music play url", e)
             if (!suppressError) {
                 postPlayerEvent(

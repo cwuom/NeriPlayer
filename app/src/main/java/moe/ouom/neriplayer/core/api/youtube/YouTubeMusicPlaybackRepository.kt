@@ -12,6 +12,7 @@ import java.util.TimeZone
 import kotlin.random.Random
 import kotlin.jvm.Volatile
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -837,6 +838,7 @@ class YouTubeMusicPlaybackRepository(
             bootstrap(auth = auth, forceRefresh = false)
             poTokenProvider?.warmSession()
         } catch (error: Exception) {
+            if (error is CancellationException) throw error
             NPLogger.w(
                 "YouTubeMusicPlayback",
                 "Warm bootstrap failed",
@@ -972,6 +974,7 @@ class YouTubeMusicPlaybackRepository(
                 forceRefresh = forceRefresh
             )
         } catch (error: Exception) {
+            if (error is CancellationException) throw error
             if (logFailure) {
                 NPLogger.w(
                     "YouTubeMusicPlayback",
@@ -1051,6 +1054,7 @@ class YouTubeMusicPlaybackRepository(
                                 )
                             }
                         } catch (error: Exception) {
+                            if (error is CancellationException) throw error
                             lastError = error as? IOException ?: IOException(error)
                             null
                         }

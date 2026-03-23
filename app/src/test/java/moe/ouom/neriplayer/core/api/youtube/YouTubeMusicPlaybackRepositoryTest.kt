@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.api.youtube
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
@@ -9,6 +10,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -1565,5 +1567,95 @@ class YouTubeMusicPlaybackRepositoryTest {
         assertTrue(
             requests.any { request -> request.url.host == "manifest.googlevideo.com" }
         )
+    }
+
+    @Test
+    fun getBestPlayableAudio_propagatesCancellationDuringPlayerProfileFallback() = runBlocking {
+        val bootstrapHtml = """
+            <html>
+            <script>
+            ytcfg.set({
+              "INNERTUBE_API_KEY":"test-api-key",
+              "INNERTUBE_CLIENT_VERSION":"1.20260321.00.00",
+              "VISITOR_DATA":"visitor-data-123",
+              "jsUrl":"/s/player/test-player/base.js",
+              "SESSION_INDEX":"7",
+              "remoteHost":"13.114.209.29",
+              "STS":20529,
+              "LOGGED_IN":true
+            });
+            </script>
+            </html>
+        """.trimIndent()
+        val blockedPlayerResponse = """
+            {"playabilityStatus":{"status":"LOGIN_REQUIRED","reason":"blocked"}}
+        """.trimIndent()
+
+        val client = OkHttpClient.Builder()
+            .addInterceptor(
+                Interceptor { chain ->
+                    val request = chain.request()
+                    when {
+                        request.url.host == "music.youtube.com" && request.url.encodedPath == "/" -> {
+                            Response.Builder()
+                                .request(request)
+                                .protocol(Protocol.HTTP_1_1)
+                                .code(200)
+                                .message("OK")
+                                .body(bootstrapHtml.toResponseBody("text/html; charset=utf-8".toMediaType()))
+                                .build()
+                        }
+                        request.url.encodedPath.contains("/youtubei/v1/player") &&
+                            request.header("X-YouTube-Client-Name") == "67" -> {
+                            Response.Builder()
+                                .request(request)
+                                .protocol(Protocol.HTTP_1_1)
+                                .code(200)
+                                .message("OK")
+                                .body(
+                                    blockedPlayerResponse.toResponseBody(
+                                        "application/json; charset=utf-8".toMediaType()
+                                    )
+                                )
+                                .build()
+                        }
+                        request.url.encodedPath.contains("/youtubei/v1/player") &&
+                            request.header("X-YouTube-Client-Name") == "7" -> {
+                            throw CancellationException("cancelled during tv player request")
+                        }
+                        else -> {
+                            Response.Builder()
+                                .request(request)
+                                .protocol(Protocol.HTTP_1_1)
+                                .code(200)
+                                .message("OK")
+                                .body("{}".toResponseBody("application/json; charset=utf-8".toMediaType()))
+                                .build()
+                        }
+                    }
+                }
+            )
+            .build()
+
+        val authBundle = moe.ouom.neriplayer.data.YouTubeAuthBundle(
+            cookieHeader = "SAPISID=sap-value; SID=sid-value",
+            xGoogAuthUser = "7",
+            userAgent = "RepoUserAgent/1.0"
+        )
+        val playbackRepository = YouTubeMusicPlaybackRepository(
+            okHttpClient = client,
+            authProvider = { authBundle }
+        )
+
+        try {
+            playbackRepository.getBestPlayableAudio(
+                videoId = "demo-video",
+                forceRefresh = true,
+                preferM4a = true
+            )
+            fail("Expected cancellation to be propagated")
+        } catch (error: CancellationException) {
+            assertEquals("cancelled during tv player request", error.message)
+        }
     }
 }
