@@ -23,14 +23,19 @@ package moe.ouom.neriplayer.ui.screen
  * Updated: 2026/3/23
  */
 
+import android.Manifest
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
+import android.os.Build
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -169,6 +174,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.Player
 import coil.compose.AsyncImage
@@ -214,6 +220,7 @@ import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.formatDuration
 import moe.ouom.neriplayer.util.offlineCachedImageRequest
+import moe.ouom.neriplayer.util.saveCoverToPictures
 import kotlin.math.roundToInt
 
 private const val LyricsPageTransitionDurationMs = 300
@@ -295,6 +302,7 @@ fun NowPlayingScreen(
 
     val playlists by PlayerManager.playlistsFlow.collectAsState()
     val context = LocalContext.current
+    val currentCoverUrl = currentSong?.displayCoverUrl(context)
 
     // 点击即切换，回流后撤销覆盖
     var favOverride by remember(currentSong) { mutableStateOf<Boolean?>(null) }
@@ -320,6 +328,7 @@ fun NowPlayingScreen(
     var showCoverPageSourceBadge by remember { mutableStateOf(false) }
     var animateCoverPageSourceBadge by remember { mutableStateOf(false) }
     var previousLyricsScreenState by remember { mutableStateOf(false) }
+    var showCoverMenu by remember { mutableStateOf(false) }
     var showSongNameMenu by remember { mutableStateOf(false) }
     var showArtistMenu by remember { mutableStateOf(false) }
     val addSheetState = rememberModalBottomSheetState()
@@ -332,7 +341,67 @@ fun NowPlayingScreen(
     var pendingSyncConfirmLabel by remember { mutableStateOf("") }
 
     val clipboard = LocalClipboard.current
-    val clipboardScope = rememberCoroutineScope()
+    val screenScope = rememberCoroutineScope()
+
+    val downloadCurrentCover: () -> Unit = {
+        val song = currentSong
+        val coverUrl = currentCoverUrl
+        if (song == null || coverUrl.isNullOrBlank()) {
+            screenScope.launch {
+                snackbarHostState.showSnackbar(
+                    context.getString(R.string.cover_download_unavailable)
+                )
+            }
+        } else {
+            screenScope.launch {
+                saveCoverToPictures(
+                    context = context,
+                    imageUrl = coverUrl,
+                    suggestedName = "${song.displayArtist()} - ${song.displayName()} 封面"
+                ).onSuccess { fileName ->
+                    snackbarHostState.showSnackbar(
+                        context.getString(R.string.cover_download_success, fileName)
+                    )
+                }.onFailure { error ->
+                    val errorMessage = error.message ?: context.getString(R.string.download_failed)
+                    snackbarHostState.showSnackbar(
+                        context.getString(R.string.cover_download_failed, errorMessage)
+                    )
+                }
+            }
+        }
+    }
+
+    val coverPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            downloadCurrentCover()
+        } else {
+            screenScope.launch {
+                snackbarHostState.showSnackbar(
+                    context.getString(R.string.cover_download_permission_required)
+                )
+            }
+        }
+    }
+
+    val requestCoverDownload: () -> Unit = {
+        showCoverMenu = false
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
+            val hasPermission = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE
+            ) == PackageManager.PERMISSION_GRANTED
+            if (hasPermission) {
+                downloadCurrentCover()
+            } else {
+                coverPermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            }
+        } else {
+            downloadCurrentCover()
+        }
+    }
 
     // 是否拖拽进度条
     var isUserDraggingSlider by remember(currentSong?.id) { mutableStateOf(false) }
@@ -659,16 +728,30 @@ fun NowPlayingScreen(
                                     )
                                     .clip(RoundedCornerShape(24.dp))
                                     .background(
-                                        color = if (currentSong?.displayCoverUrl(LocalContext.current) != null) {
+                                        color = if (currentCoverUrl != null) {
                                             Color.Transparent
                                         } else {
                                             MaterialTheme.colorScheme.primaryContainer
                                         }
                                     )
+                                    .combinedClickable(
+                                        onClick = {},
+                                        onLongClick = {
+                                            if (currentCoverUrl.isNullOrBlank()) {
+                                                screenScope.launch {
+                                                    snackbarHostState.showSnackbar(
+                                                        context.getString(
+                                                            R.string.cover_download_unavailable
+                                                        )
+                                                    )
+                                                }
+                                            } else {
+                                                showCoverMenu = true
+                                            }
+                                        }
+                                    )
                             ) {
-                                val displayCoverUrl = currentSong?.displayCoverUrl(LocalContext.current)
-                                displayCoverUrl?.let { cover ->
-                                    val context = LocalContext.current
+                                currentCoverUrl?.let { cover ->
                                     AsyncImage(
                                         model = offlineCachedImageRequest(context, cover),
                                         contentDescription = currentSong?.customName ?: currentSong?.name ?: "",
@@ -676,6 +759,22 @@ fun NowPlayingScreen(
                                         modifier = Modifier.fillMaxSize()
                                     )
                                 }
+                            }
+
+                            DropdownMenu(
+                                expanded = showCoverMenu,
+                                onDismissRequest = { showCoverMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.action_download_cover)) },
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Outlined.Download,
+                                            contentDescription = null
+                                        )
+                                    },
+                                    onClick = requestCoverDownload
+                                )
                             }
 
                             val coverPageSourceBadgeScale by animateFloatAsState(
@@ -747,7 +846,7 @@ fun NowPlayingScreen(
                                         onClick = {
                                             val displayName = currentSong?.customName ?: currentSong?.name
                                             displayName?.let { text ->
-                                                clipboardScope.launch {
+                                                screenScope.launch {
                                                     clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("text", text)))
                                                 }
                                             }
@@ -783,7 +882,7 @@ fun NowPlayingScreen(
                                         onClick = {
                                             val displayArtist = currentSong?.customArtist ?: currentSong?.artist
                                             displayArtist?.let { text ->
-                                                clipboardScope.launch {
+                                                screenScope.launch {
                                                     clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("text", text)))
                                                 }
                                             }

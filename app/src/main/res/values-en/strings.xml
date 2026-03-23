@@ -16,6 +16,7 @@
     <string name="action_create">Create</string>
     <string name="action_rename">Rename</string>
     <string name="action_reset">Reset</string>
+    <string name="action_download_cover">Download Cover</string>
     <string name="action_retry">Tap to Retry</string>
     <string name="action_back">Back</string>
     <string name="action_hide">Hide</string>
@@ -353,6 +354,10 @@
     <string name="music_auto_fill_cover">Fill Cover</string>
     <string name="music_auto_fill_title">Fill Title</string>
     <string name="music_auto_fill_artist">Fill Artist</string>
+    <string name="cover_download_unavailable">No cover is available to download</string>
+    <string name="cover_download_success">Cover saved: %s</string>
+    <string name="cover_download_failed">Failed to save cover: %s</string>
+    <string name="cover_download_permission_required">Grant storage permission before saving covers</string>
 
     <!-- Recent -->
     <string name="recent_title">Recent</string>

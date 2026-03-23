@@ -16,6 +16,7 @@
     <string name="action_search">搜索</string>
     <string name="action_create">创建</string>
     <string name="action_reset">重置</string>
+    <string name="action_download_cover">下载封面</string>
     <string name="action_retry">点我重试</string>
     <string name="action_back">返回</string>
     <string name="action_hide">隐藏</string>
@@ -353,6 +354,10 @@
     <string name="music_auto_fill_cover">填充封面</string>
     <string name="music_auto_fill_title">填充标题</string>
     <string name="music_auto_fill_artist">填充歌手</string>
+    <string name="cover_download_unavailable">当前没有可下载封面</string>
+    <string name="cover_download_success">封面已保存：%s</string>
+    <string name="cover_download_failed">封面保存失败：%s</string>
+    <string name="cover_download_permission_required">保存封面前请先授予存储权限</string>
 
     <!-- Recent -->
     <string name="recent_title">最近播放</string>
