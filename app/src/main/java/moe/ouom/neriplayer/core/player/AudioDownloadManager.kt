@@ -727,19 +727,15 @@ fun getLocalFilePath(context: Context, song: SongItem): String? {
         return try {
             val root = JSONObject(raw)
             if (root.optInt("code") != 200) return tryWeapiFallback(songId, quality)
-            val data = when (val d = root.opt("data")) {
-                is JSONObject -> d
-                is JSONArray -> d.optJSONObject(0)
-                else -> null
-            } ?: return tryWeapiFallback(songId, quality)
-            val url = data.optString("url", "")
-            if (url.isNullOrBlank()) return tryWeapiFallback(songId, quality)
-            val type = data.optString("type", "") // e.g., mp3/flac
+            val data = NeteasePlaybackResponseParser.parseDownloadInfo(raw)
+                ?: return tryWeapiFallback(songId, quality)
+            val url = data.url
+            val type = data.type.orEmpty() // e.g., mp3/flac
             val mime = guessMimeFromUrl(url)
             ResolvedDownloadSource(
                 url = ensureHttps(url),
                 mimeType = mime,
-                fileExtensionHint = type.lowercase()
+                fileExtensionHint = type.lowercase().ifBlank { extFromUrl(url) }
             )
         } catch (_: Exception) {
             tryWeapiFallback(songId, quality)
@@ -757,15 +753,8 @@ fun getLocalFilePath(context: Context, song: SongItem): String? {
         return try {
             val br = bitrateForQuality(level)
             val raw = AppContainer.neteaseClient.getSongUrl(songId, bitrate = br)
-            val root = JSONObject(raw)
-            if (root.optInt("code", -1) != 200) return null
-            val data = when (val d = root.opt("data")) {
-                is JSONObject -> d
-                is JSONArray -> d.optJSONObject(0)
-                else -> null
-            } ?: return null
-            val url = data.optString("url", "")
-            if (url.isNullOrBlank()) return null
+            val data = NeteasePlaybackResponseParser.parseDownloadInfo(raw) ?: return null
+            val url = data.url
             val finalUrl = ensureHttps(url)
             val mime = guessMimeFromUrl(finalUrl)
             val ext = extFromUrl(finalUrl)

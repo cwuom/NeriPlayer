@@ -247,6 +247,8 @@ object PlayerManager {
     private var playbackRequestToken = 0L
     private var lastHandledTrackEndKey: String? = null
     private var lastTrackEndHandledAtMs = 0L
+    private var currentTrackIsNeteasePreview = false
+    private var currentTrackPreviewFinishedNotified = false
 
     val audioLevelFlow get() = AudioReactive.level
     val beatImpulseFlow get() = AudioReactive.beat
@@ -473,6 +475,40 @@ object PlayerManager {
         ioScope.launch { _playerEventFlow.emit(event) }
     }
 
+    private fun updateCurrentTrackPlaybackNoticeState(success: SongUrlResult.Success) {
+        currentTrackIsNeteasePreview = success.previewOnly
+        currentTrackPreviewFinishedNotified = false
+    }
+
+    private fun clearCurrentTrackPlaybackNoticeState() {
+        currentTrackIsNeteasePreview = false
+        currentTrackPreviewFinishedNotified = false
+    }
+
+    private fun isNeteaseSong(song: SongItem): Boolean {
+        return !isLocalSong(song) &&
+            !isYouTubeMusicSong(song) &&
+            !song.album.startsWith(BILI_SOURCE_TAG)
+    }
+
+    private fun resetTrackEndDeduplicationState() {
+        lastHandledTrackEndKey = null
+        lastTrackEndHandledAtMs = 0L
+    }
+
+    private fun shouldTreatEndedTrackAsPreview(song: SongItem?, endedDurationMs: Long): Boolean {
+        val currentSong = song ?: return false
+        if (!isNeteaseSong(currentSong)) return false
+
+        val originalDurationMs = currentSong.durationMs.takeIf { it > 0L } ?: return false
+        val actualEndedDurationMs = endedDurationMs.takeIf { it > 0L } ?: return false
+        val durationGapMs = originalDurationMs - actualEndedDurationMs
+
+        return actualEndedDurationMs >= 15_000L &&
+            durationGapMs >= 10_000L &&
+            actualEndedDurationMs * 100L < originalDurationMs * 85L
+    }
+
     /**
      * 仅允许 ExoPlayer 在“单曲循环”时循环；其余一律 OFF，由队列逻辑接管
      */
@@ -543,6 +579,24 @@ object PlayerManager {
 
     /** 处理单曲播放结束：根据循环模式与随机三栈推进或停止 */
     private fun handleTrackEnded() {
+        val endedDurationMs = listOf(
+            player.currentPosition,
+            player.duration,
+            _playbackPositionMs.value
+        ).maxOrNull()?.coerceAtLeast(0L) ?: 0L
+        if (!currentTrackIsNeteasePreview &&
+            shouldTreatEndedTrackAsPreview(_currentSongFlow.value, endedDurationMs)
+        ) {
+            currentTrackIsNeteasePreview = true
+        }
+        if (currentTrackIsNeteasePreview && !currentTrackPreviewFinishedNotified) {
+            currentTrackPreviewFinishedNotified = true
+            postPlayerEvent(
+                PlayerEvent.ShowError(
+                    getLocalizedString(R.string.player_netease_preview_finished)
+                )
+            )
+        }
         clearPendingSeekPosition()
         _playbackPositionMs.value = 0L
 
@@ -1305,6 +1359,7 @@ object PlayerManager {
 
         val song = currentPlaylist[index]
         cancelPendingPauseRequest()
+        clearCurrentTrackPlaybackNoticeState()
         _currentSongFlow.value = song
         _currentMediaUrl.value = null
         currentMediaUrlResolvedAtMs = 0L
@@ -1340,6 +1395,10 @@ object PlayerManager {
                 is SongUrlResult.Success -> {
                     consecutivePlayFailures = 0
 
+                    updateCurrentTrackPlaybackNoticeState(result)
+                    result.noticeMessage?.let { message ->
+                        postPlayerEvent(PlayerEvent.ShowError(message))
+                    }
                     maybeUpdateSongDuration(song, result.durationMs ?: 0L)
                     val cacheKey = computeCacheKey(song)
                     NPLogger.d("NERI-PlayerManager", "Using custom cache key: $cacheKey for song: ${song.name}")
@@ -1377,6 +1436,7 @@ object PlayerManager {
                         if (requestToken != playbackRequestToken) {
                             return@withContext
                         }
+                        resetTrackEndDeduplicationState()
                         player.setMediaItem(mediaItem)
                         // 每次切歌后都钳制 Exo 的循环状态，避免单媒体项“列表循环”
                         syncExoRepeatMode()
@@ -1399,6 +1459,7 @@ object PlayerManager {
                     maybeWarmCurrentAndUpcomingYouTubeMusic(index)
                 }
                 is SongUrlResult.RequiresLogin -> {
+                    clearCurrentTrackPlaybackNoticeState()
                     NPLogger.w("NERI-PlayerManager", "Requires login to play: id=${song.id}, source=${song.album}")
                     postPlayerEvent(
                         PlayerEvent.ShowLoginPrompt(
@@ -1408,6 +1469,7 @@ object PlayerManager {
                     withContext(Dispatchers.Main) { next() }
                 }
                 is SongUrlResult.Failure -> {
+                    clearCurrentTrackPlaybackNoticeState()
                     NPLogger.e("NERI-PlayerManager", "获取播放 URL 失败, 跳过: id=${song.id}, source=${song.album}")
                     consecutivePlayFailures++
                     withContext(Dispatchers.Main) { next() } // 自动跳到下一首
@@ -1517,7 +1579,7 @@ object PlayerManager {
                 forceRefresh = forceRefresh
             )
             song.album.startsWith(BILI_SOURCE_TAG) -> getBiliAudioUrl(song, suppressError = hasCachedData)
-            else -> getNeteaseSongUrl(song.id, suppressError = hasCachedData)
+            else -> getNeteaseSongUrl(song, suppressError = hasCachedData)
         }
 
         // 如果网络失败但有缓存，使用虚拟URL让ExoPlayer使用缓存
@@ -1617,6 +1679,7 @@ object PlayerManager {
                     _currentSongFlow.value?.sameIdentityAs(song) == true
                 ) {
                     maybeUpdateSongDuration(song, result.durationMs ?: 0L)
+                    updateCurrentTrackPlaybackNoticeState(result)
                     withContext(Dispatchers.Main) {
                         applyResolvedMediaItem(
                             _currentSongFlow.value ?: song,
@@ -1660,6 +1723,7 @@ object PlayerManager {
         persistState()
 
         withContext(Dispatchers.Main) {
+            resetTrackEndDeduplicationState()
             player.setMediaItem(mediaItem)
             syncExoRepeatMode()
             player.prepare()
@@ -1742,36 +1806,44 @@ object PlayerManager {
         }
     }
 
-    private suspend fun getNeteaseSongUrl(songId: Long, suppressError: Boolean = false): SongUrlResult = withContext(Dispatchers.IO) {
+    private suspend fun getNeteaseSongUrl(song: SongItem, suppressError: Boolean = false): SongUrlResult = withContext(Dispatchers.IO) {
         try {
             val resp = neteaseClient.getSongDownloadUrl(
-                songId,
+                song.id,
                 level = preferredQuality
             )
-            NPLogger.d("NERI-PlayerManager", "id=$songId, resp=$resp")
+            NPLogger.d("NERI-PlayerManager", "id=${song.id}, resp=$resp")
 
-            val root = JSONObject(resp)
-            when (root.optInt("code")) {
-                301 -> SongUrlResult.RequiresLogin
-                200 -> {
-                    val url = when (val dataObj = root.opt("data")) {
-                        is JSONObject -> dataObj.optString("url", "")
-                        is JSONArray -> dataObj.optJSONObject(0)?.optString("url", "")
-                        else -> ""
-                    }
-                    if (url.isNullOrBlank()) {
-                        if (!suppressError) {
-                            postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(R.string.error_no_play_url)))
-                        }
-                        SongUrlResult.Failure
+            when (val parsed = NeteasePlaybackResponseParser.parsePlayback(resp, song.durationMs)) {
+                is NeteasePlaybackResponseParser.PlaybackResult.RequiresLogin -> SongUrlResult.RequiresLogin
+                is NeteasePlaybackResponseParser.PlaybackResult.Success -> {
+                    val finalUrl = if (parsed.url.startsWith("http://")) {
+                        parsed.url.replaceFirst("http://", "https://")
                     } else {
-                        val finalUrl = if (url.startsWith("http://")) url.replaceFirst("http://", "https://") else url
-                        SongUrlResult.Success(finalUrl)
+                        parsed.url
                     }
+                    val noticeMessage = when (parsed.notice) {
+                        NeteasePlaybackResponseParser.Notice.PREVIEW_CLIP ->
+                            getLocalizedString(R.string.player_netease_preview_only)
+                        null -> null
+                    }
+                    SongUrlResult.Success(
+                        url = finalUrl,
+                        noticeMessage = noticeMessage,
+                        previewOnly = parsed.notice == NeteasePlaybackResponseParser.Notice.PREVIEW_CLIP
+                    )
                 }
-                else -> {
+
+                is NeteasePlaybackResponseParser.PlaybackResult.Failure -> {
                     if (!suppressError) {
-                        postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(R.string.error_no_play_url)))
+                        val messageRes = when (parsed.reason) {
+                            NeteasePlaybackResponseParser.FailureReason.NO_PERMISSION ->
+                                R.string.player_netease_no_permission_switch_platform
+                            NeteasePlaybackResponseParser.FailureReason.NO_PLAY_URL,
+                            NeteasePlaybackResponseParser.FailureReason.UNKNOWN ->
+                                R.string.error_no_play_url
+                        }
+                        postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(messageRes)))
                     }
                     SongUrlResult.Failure
                 }
@@ -2337,6 +2409,7 @@ object PlayerManager {
             _currentSongFlow.value = null
             _currentMediaUrl.value = null
             currentMediaUrlResolvedAtMs = 0L
+            clearCurrentTrackPlaybackNoticeState()
         } else {
             currentIndex = currentIndex.coerceIn(0, currentPlaylist.lastIndex)
             _currentSongFlow.value = currentPlaylist.getOrNull(currentIndex)

@@ -27,7 +27,9 @@ internal sealed class SongUrlResult {
     data class Success(
         val url: String,
         val durationMs: Long? = null,
-        val mimeType: String? = null
+        val mimeType: String? = null,
+        val noticeMessage: String? = null,
+        val previewOnly: Boolean = false
     ) : SongUrlResult()
 
     object RequiresLogin : SongUrlResult()
