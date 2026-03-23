@@ -123,6 +123,16 @@ class SettingsRepository(private val context: Context) {
             emitAll(realFlow)
         }
 
+    val startupOnboardingCompletedFlow: Flow<Boolean?> =
+        flow {
+            emit(null)
+            val realFlow: Flow<Boolean> =
+                context.dataStore.data.map { prefs ->
+                    prefs[SettingsKeys.STARTUP_ONBOARDING_COMPLETED] ?: false
+                }
+            emitAll(realFlow)
+        }
+
     val maxCacheSizeBytesFlow: Flow<Long> =
         context.dataStore.data.map { it[SettingsKeys.MAX_CACHE_SIZE_BYTES] ?: (1024L * 1024 * 1024) }
 
@@ -206,6 +216,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setDisclaimerAccepted(accepted: Boolean) {
         context.dataStore.edit { it[SettingsKeys.DISCLAIMER_ACCEPTED_V2] = accepted }
+    }
+
+    suspend fun setStartupOnboardingCompleted(completed: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.STARTUP_ONBOARDING_COMPLETED] = completed }
     }
 
     suspend fun setAudioQuality(value: String) {

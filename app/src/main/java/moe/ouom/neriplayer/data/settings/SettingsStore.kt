@@ -39,6 +39,7 @@ object SettingsKeys {
     val SHOW_COVER_SOURCE_BADGE = booleanPreferencesKey("show_cover_source_badge")
     val SILENT_GITHUB_SYNC_FAILURE = booleanPreferencesKey("silent_github_sync_failure")
     val DISCLAIMER_ACCEPTED_V2 = booleanPreferencesKey("disclaimer_accepted_v2")
+    val STARTUP_ONBOARDING_COMPLETED = booleanPreferencesKey("startup_onboarding_completed")
     val AUDIO_QUALITY = stringPreferencesKey("audio_quality")
     val YOUTUBE_AUDIO_QUALITY = stringPreferencesKey("youtube_audio_quality")
     val BILI_AUDIO_QUALITY = stringPreferencesKey("bili_audio_quality")

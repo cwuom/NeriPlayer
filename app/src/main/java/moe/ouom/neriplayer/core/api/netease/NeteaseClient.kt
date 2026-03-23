@@ -329,21 +329,26 @@ class NeteaseClient {
      * */
     @Throws(IOException::class)
     fun getSongDownloadUrl(songId: Long, level: String = "lossless"): String {
-        fun call(): String {
+        fun call(usePersistedCookies: Boolean): String {
             val params = mutableMapOf<String, Any>(
                 "ids" to "[$songId]",
                 "level" to level,
                 "encodeType" to "flac",
             )
-            return callEApi("/song/enhance/player/url/v1", params, usePersistedCookies = false)
+            return callEApi(
+                "/song/enhance/player/url/v1",
+                params,
+                usePersistedCookies = usePersistedCookies
+            )
         }
 
-        var resp = call()
+        val preferPersistedCookies = hasLogin()
+        var resp = call(usePersistedCookies = preferPersistedCookies)
         return try {
             val code = JSONObject(resp).optInt("code", -1)
             if (code == 301 && hasLogin()) {
                 try { ensureWeapiSession() } catch (_: Exception) {}
-                resp = call()
+                resp = call(usePersistedCookies = true)
             }
             resp
         } catch (_: Exception) {

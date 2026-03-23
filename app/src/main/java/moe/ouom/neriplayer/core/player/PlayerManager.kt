@@ -125,6 +125,15 @@ import moe.ouom.neriplayer.core.player.state.blockingIo
 object PlayerManager {
     const val BILI_SOURCE_TAG = "Bilibili"
     const val NETEASE_SOURCE_TAG = "Netease"
+    private val NETEASE_QUALITY_FALLBACK_ORDER = listOf(
+        "jymaster",
+        "sky",
+        "jyeffect",
+        "hires",
+        "lossless",
+        "exhigh",
+        "standard"
+    )
 
     private var initialized = false
     private lateinit var application: Application
@@ -247,9 +256,6 @@ object PlayerManager {
     private var playbackRequestToken = 0L
     private var lastHandledTrackEndKey: String? = null
     private var lastTrackEndHandledAtMs = 0L
-    private var currentTrackIsNeteasePreview = false
-    private var currentTrackPreviewFinishedNotified = false
-
     val audioLevelFlow get() = AudioReactive.level
     val beatImpulseFlow get() = AudioReactive.beat
 
@@ -475,38 +481,9 @@ object PlayerManager {
         ioScope.launch { _playerEventFlow.emit(event) }
     }
 
-    private fun updateCurrentTrackPlaybackNoticeState(success: SongUrlResult.Success) {
-        currentTrackIsNeteasePreview = success.previewOnly
-        currentTrackPreviewFinishedNotified = false
-    }
-
-    private fun clearCurrentTrackPlaybackNoticeState() {
-        currentTrackIsNeteasePreview = false
-        currentTrackPreviewFinishedNotified = false
-    }
-
-    private fun isNeteaseSong(song: SongItem): Boolean {
-        return !isLocalSong(song) &&
-            !isYouTubeMusicSong(song) &&
-            !song.album.startsWith(BILI_SOURCE_TAG)
-    }
-
     private fun resetTrackEndDeduplicationState() {
         lastHandledTrackEndKey = null
         lastTrackEndHandledAtMs = 0L
-    }
-
-    private fun shouldTreatEndedTrackAsPreview(song: SongItem?, endedDurationMs: Long): Boolean {
-        val currentSong = song ?: return false
-        if (!isNeteaseSong(currentSong)) return false
-
-        val originalDurationMs = currentSong.durationMs.takeIf { it > 0L } ?: return false
-        val actualEndedDurationMs = endedDurationMs.takeIf { it > 0L } ?: return false
-        val durationGapMs = originalDurationMs - actualEndedDurationMs
-
-        return actualEndedDurationMs >= 15_000L &&
-            durationGapMs >= 10_000L &&
-            actualEndedDurationMs * 100L < originalDurationMs * 85L
     }
 
     /**
@@ -579,24 +556,6 @@ object PlayerManager {
 
     /** 处理单曲播放结束：根据循环模式与随机三栈推进或停止 */
     private fun handleTrackEnded() {
-        val endedDurationMs = listOf(
-            player.currentPosition,
-            player.duration,
-            _playbackPositionMs.value
-        ).maxOrNull()?.coerceAtLeast(0L) ?: 0L
-        if (!currentTrackIsNeteasePreview &&
-            shouldTreatEndedTrackAsPreview(_currentSongFlow.value, endedDurationMs)
-        ) {
-            currentTrackIsNeteasePreview = true
-        }
-        if (currentTrackIsNeteasePreview && !currentTrackPreviewFinishedNotified) {
-            currentTrackPreviewFinishedNotified = true
-            postPlayerEvent(
-                PlayerEvent.ShowError(
-                    getLocalizedString(R.string.player_netease_preview_finished)
-                )
-            )
-        }
         clearPendingSeekPosition()
         _playbackPositionMs.value = 0L
 
@@ -1359,7 +1318,6 @@ object PlayerManager {
 
         val song = currentPlaylist[index]
         cancelPendingPauseRequest()
-        clearCurrentTrackPlaybackNoticeState()
         _currentSongFlow.value = song
         _currentMediaUrl.value = null
         currentMediaUrlResolvedAtMs = 0L
@@ -1395,7 +1353,6 @@ object PlayerManager {
                 is SongUrlResult.Success -> {
                     consecutivePlayFailures = 0
 
-                    updateCurrentTrackPlaybackNoticeState(result)
                     result.noticeMessage?.let { message ->
                         postPlayerEvent(PlayerEvent.ShowError(message))
                     }
@@ -1459,7 +1416,6 @@ object PlayerManager {
                     maybeWarmCurrentAndUpcomingYouTubeMusic(index)
                 }
                 is SongUrlResult.RequiresLogin -> {
-                    clearCurrentTrackPlaybackNoticeState()
                     NPLogger.w("NERI-PlayerManager", "Requires login to play: id=${song.id}, source=${song.album}")
                     postPlayerEvent(
                         PlayerEvent.ShowLoginPrompt(
@@ -1469,7 +1425,6 @@ object PlayerManager {
                     withContext(Dispatchers.Main) { next() }
                 }
                 is SongUrlResult.Failure -> {
-                    clearCurrentTrackPlaybackNoticeState()
                     NPLogger.e("NERI-PlayerManager", "获取播放 URL 失败, 跳过: id=${song.id}, source=${song.album}")
                     consecutivePlayFailures++
                     withContext(Dispatchers.Main) { next() } // 自动跳到下一首
@@ -1679,7 +1634,6 @@ object PlayerManager {
                     _currentSongFlow.value?.sameIdentityAs(song) == true
                 ) {
                     maybeUpdateSongDuration(song, result.durationMs ?: 0L)
-                    updateCurrentTrackPlaybackNoticeState(result)
                     withContext(Dispatchers.Main) {
                         applyResolvedMediaItem(
                             _currentSongFlow.value ?: song,
@@ -1806,48 +1760,112 @@ object PlayerManager {
         }
     }
 
+    private fun buildNeteaseQualityCandidates(preferredQuality: String): List<String> {
+        val normalizedQuality = preferredQuality.trim().lowercase().ifBlank { "exhigh" }
+        val preferredIndex = NETEASE_QUALITY_FALLBACK_ORDER.indexOf(normalizedQuality)
+        return if (preferredIndex >= 0) {
+            NETEASE_QUALITY_FALLBACK_ORDER.drop(preferredIndex)
+        } else {
+            listOf(normalizedQuality, "exhigh", "standard").distinct()
+        }
+    }
+
+    private fun shouldRetryNeteaseWithLowerQuality(
+        reason: NeteasePlaybackResponseParser.FailureReason
+    ): Boolean {
+        return reason == NeteasePlaybackResponseParser.FailureReason.NO_PERMISSION ||
+            reason == NeteasePlaybackResponseParser.FailureReason.NO_PLAY_URL
+    }
+
+    private fun buildNeteaseSuccessResult(
+        parsed: NeteasePlaybackResponseParser.PlaybackResult.Success
+    ): SongUrlResult.Success {
+        val finalUrl = if (parsed.url.startsWith("http://")) {
+            parsed.url.replaceFirst("http://", "https://")
+        } else {
+            parsed.url
+        }
+        val noticeMessage = when (parsed.notice) {
+            NeteasePlaybackResponseParser.Notice.PREVIEW_CLIP ->
+                getLocalizedString(R.string.player_netease_preview_only)
+            null -> null
+        }
+        return SongUrlResult.Success(
+            url = finalUrl,
+            noticeMessage = noticeMessage
+        )
+    }
+
     private suspend fun getNeteaseSongUrl(song: SongItem, suppressError: Boolean = false): SongUrlResult = withContext(Dispatchers.IO) {
         try {
-            val resp = neteaseClient.getSongDownloadUrl(
-                song.id,
-                level = preferredQuality
-            )
-            NPLogger.d("NERI-PlayerManager", "id=${song.id}, resp=$resp")
+            val qualityCandidates = buildNeteaseQualityCandidates(preferredQuality)
+            var previewFallback: SongUrlResult.Success? = null
+            var lastFailureReason: NeteasePlaybackResponseParser.FailureReason? = null
 
-            when (val parsed = NeteasePlaybackResponseParser.parsePlayback(resp, song.durationMs)) {
-                is NeteasePlaybackResponseParser.PlaybackResult.RequiresLogin -> SongUrlResult.RequiresLogin
-                is NeteasePlaybackResponseParser.PlaybackResult.Success -> {
-                    val finalUrl = if (parsed.url.startsWith("http://")) {
-                        parsed.url.replaceFirst("http://", "https://")
-                    } else {
-                        parsed.url
-                    }
-                    val noticeMessage = when (parsed.notice) {
-                        NeteasePlaybackResponseParser.Notice.PREVIEW_CLIP ->
-                            getLocalizedString(R.string.player_netease_preview_only)
-                        null -> null
-                    }
-                    SongUrlResult.Success(
-                        url = finalUrl,
-                        noticeMessage = noticeMessage,
-                        previewOnly = parsed.notice == NeteasePlaybackResponseParser.Notice.PREVIEW_CLIP
-                    )
-                }
+            for ((index, quality) in qualityCandidates.withIndex()) {
+                val resp = neteaseClient.getSongDownloadUrl(
+                    song.id,
+                    level = quality
+                )
+                NPLogger.d("NERI-PlayerManager", "id=${song.id}, level=$quality, resp=$resp")
 
-                is NeteasePlaybackResponseParser.PlaybackResult.Failure -> {
-                    if (!suppressError) {
-                        val messageRes = when (parsed.reason) {
-                            NeteasePlaybackResponseParser.FailureReason.NO_PERMISSION ->
-                                R.string.player_netease_no_permission_switch_platform
-                            NeteasePlaybackResponseParser.FailureReason.NO_PLAY_URL,
-                            NeteasePlaybackResponseParser.FailureReason.UNKNOWN ->
-                                R.string.error_no_play_url
+                when (val parsed = NeteasePlaybackResponseParser.parsePlayback(resp, song.durationMs)) {
+                    is NeteasePlaybackResponseParser.PlaybackResult.RequiresLogin -> {
+                        return@withContext SongUrlResult.RequiresLogin
+                    }
+
+                    is NeteasePlaybackResponseParser.PlaybackResult.Success -> {
+                        val success = buildNeteaseSuccessResult(parsed)
+                        if (parsed.notice != NeteasePlaybackResponseParser.Notice.PREVIEW_CLIP) {
+                            if (quality != preferredQuality) {
+                                NPLogger.w(
+                                    "NERI-PlayerManager",
+                                    "网易云音质已降级取流: id=${song.id}, preferred=$preferredQuality, resolved=$quality"
+                                )
+                            }
+                            return@withContext success
                         }
-                        postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(messageRes)))
+
+                        previewFallback = success
+                        if (index < qualityCandidates.lastIndex) {
+                            NPLogger.w(
+                                "NERI-PlayerManager",
+                                "网易云返回试听流，尝试降级音质重试: id=${song.id}, level=$quality"
+                            )
+                            continue
+                        }
+                        return@withContext success
                     }
-                    SongUrlResult.Failure
+
+                    is NeteasePlaybackResponseParser.PlaybackResult.Failure -> {
+                        lastFailureReason = parsed.reason
+                        if (index < qualityCandidates.lastIndex &&
+                            shouldRetryNeteaseWithLowerQuality(parsed.reason)
+                        ) {
+                            NPLogger.w(
+                                "NERI-PlayerManager",
+                                "网易云取流失败，尝试降级音质重试: id=${song.id}, level=$quality, reason=${parsed.reason}"
+                            )
+                            continue
+                        }
+                        break
+                    }
                 }
             }
+
+            previewFallback?.let { return@withContext it }
+
+            if (!suppressError) {
+                val messageRes = when (lastFailureReason) {
+                    NeteasePlaybackResponseParser.FailureReason.NO_PERMISSION ->
+                        R.string.player_netease_no_permission_switch_platform
+                    NeteasePlaybackResponseParser.FailureReason.NO_PLAY_URL,
+                    NeteasePlaybackResponseParser.FailureReason.UNKNOWN,
+                    null -> R.string.error_no_play_url
+                }
+                postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(messageRes)))
+            }
+            SongUrlResult.Failure
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             NPLogger.e("NERI-PlayerManager", "Failed to get url", e)
@@ -2409,7 +2427,6 @@ object PlayerManager {
             _currentSongFlow.value = null
             _currentMediaUrl.value = null
             currentMediaUrlResolvedAtMs = 0L
-            clearCurrentTrackPlaybackNoticeState()
         } else {
             currentIndex = currentIndex.coerceIn(0, currentPlaylist.lastIndex)
             _currentSongFlow.value = currentPlaylist.getOrNull(currentIndex)
