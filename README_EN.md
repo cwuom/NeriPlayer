@@ -201,8 +201,8 @@ For procedures spanning systematic builds or subsequent isolated app signature l
 - [x] Internationalization
 - [x] NetEase Cloud Music adaptation
 - [x] Bilibili adaptation
-- [x] YouTube Music basic adaptation (login, playlist, playback, download)
-- [ ] YouTube Music search capabilities
+- [x] YouTube Music basic adaptation
+- [x] YouTube Music search capabilities
 - [ ] Continuous extension for third-party platforms
 
 > ⚠️ Currently, QQ Music is primarily used for playback page metadata completion.

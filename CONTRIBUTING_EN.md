@@ -10,7 +10,7 @@ This document describes the **actual implementation of the Android client** and 
 ### Scope
 
 - NeriPlayer is a **native Android audio player**, not a public cloud music service.
-- Online source capabilities are currently provided by **NetEase Cloud Music** and **Bilibili**, with ongoing support for **YouTube Music**.
+- Online source capabilities are currently provided by **NetEase Cloud Music**, **Bilibili**, and **YouTube Music**.
 - Metadata and lyrics completion in the player screen currently utilize **NetEase Cloud Music + QQ Music**.
 - Data is saved locally by default. GitHub sync is an **optional** feature, and it only syncs metadata such as playlists, favorites, and play history (not the actual media files).
 
