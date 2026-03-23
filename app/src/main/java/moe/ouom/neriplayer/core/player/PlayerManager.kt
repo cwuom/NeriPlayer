@@ -163,6 +163,7 @@ object PlayerManager {
     private var mainScope = newMainScope()
     private var progressJob: Job? = null
     private var volumeFadeJob: Job? = null
+    private var pendingPauseJob: Job? = null
     private var bluetoothDisconnectPauseJob: Job? = null
 
     private val localRepo: LocalPlaylistRepository
@@ -1086,6 +1087,19 @@ object PlayerManager {
         }
     }
 
+    private fun cancelPendingPauseRequest(resetVolumeToFull: Boolean = false) {
+        val hadPendingPause = pendingPauseJob?.isActive == true
+        pendingPauseJob?.cancel()
+        pendingPauseJob = null
+        if (resetVolumeToFull && hadPendingPause && ::player.isInitialized) {
+            mainScope.launch {
+                if (::player.isInitialized) {
+                    player.volume = 1f
+                }
+            }
+        }
+    }
+
     private suspend fun fadeOutCurrentPlaybackIfNeeded(
         enabled: Boolean,
         fadeOutDurationMs: Long = playbackCrossfadeOutDurationMs
@@ -1230,6 +1244,7 @@ object PlayerManager {
         }
 
         val song = currentPlaylist[index]
+        cancelPendingPauseRequest()
         _currentSongFlow.value = song
         _currentMediaUrl.value = null
         currentMediaUrlResolvedAtMs = 0L
@@ -1836,6 +1851,7 @@ object PlayerManager {
     fun play() {
         ensureInitialized()
         if (!initialized) return
+        cancelPendingPauseRequest(resetVolumeToFull = true)
         suppressAutoResumeForCurrentSession = false
         resumePlaybackRequested = true
         val song = _currentSongFlow.value
@@ -1923,22 +1939,44 @@ object PlayerManager {
     fun pause(forcePersist: Boolean = false) {
         ensureInitialized()
         if (!initialized) return
+        cancelPendingPauseRequest()
+        resumePlaybackRequested = false
+        playbackRequestToken += 1
+        playJob?.cancel()
+        playJob = null
         val shouldFadeOut =
             playbackFadeInEnabled && playbackFadeOutDurationMs > 0L && ::player.isInitialized
         if (shouldFadeOut) {
-            mainScope.launch {
-                fadeOutCurrentPlaybackIfNeeded(
-                    enabled = true,
-                    fadeOutDurationMs = playbackFadeOutDurationMs
-                )
-                pauseInternal(forcePersist, resetVolumeToFull = false)
+            val scheduledPauseToken = playbackRequestToken
+            lateinit var scheduledPauseJob: Job
+            scheduledPauseJob = mainScope.launch {
+                try {
+                    fadeOutCurrentPlaybackIfNeeded(
+                        enabled = true,
+                        fadeOutDurationMs = playbackFadeOutDurationMs
+                    )
+                    if (scheduledPauseToken != playbackRequestToken) {
+                        NPLogger.d(
+                            "NERI-PlayerManager",
+                            "忽略过期的延迟暂停请求: requestToken=$scheduledPauseToken, currentToken=$playbackRequestToken"
+                        )
+                        return@launch
+                    }
+                    pauseInternal(forcePersist, resetVolumeToFull = false)
+                } finally {
+                    if (pendingPauseJob === scheduledPauseJob) {
+                        pendingPauseJob = null
+                    }
+                }
             }
+            pendingPauseJob = scheduledPauseJob
         } else {
             pauseInternal(forcePersist, resetVolumeToFull = true)
         }
     }
 
     private fun pauseInternal(forcePersist: Boolean, resetVolumeToFull: Boolean) {
+        pendingPauseJob = null
         resumePlaybackRequested = false
         val currentSong = _currentSongFlow.value
         val currentPosition = player.currentPosition.coerceAtLeast(0L)
@@ -2133,6 +2171,7 @@ object PlayerManager {
 
         stopProgressUpdates()
         cancelVolumeFade(resetToFull = true)
+        cancelPendingPauseRequest(resetVolumeToFull = true)
         bluetoothDisconnectPauseJob?.cancel()
         bluetoothDisconnectPauseJob = null
         playJob?.cancel()
@@ -2214,6 +2253,7 @@ object PlayerManager {
     }
 
     private fun stopPlaybackPreservingQueue(clearMediaUrl: Boolean = false) {
+        cancelPendingPauseRequest(resetVolumeToFull = true)
         playbackRequestToken += 1
         playJob?.cancel()
         playJob = null

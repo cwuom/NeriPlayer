@@ -75,6 +75,11 @@ data class YouTubeMusicLyrics(
     val source: String = ""
 )
 
+data class YouTubeMusicDebugProbeResult(
+    val summary: String,
+    val rawJson: String
+)
+
 /** 首页推荐栏 */
 data class YouTubeMusicHomeShelf(
     val title: String,
@@ -888,6 +893,275 @@ class YouTubeMusicClient(
     @Volatile
     private var bootstrapCache: YouTubeMusicBootstrapConfig? = null
 
+    suspend fun debugBootstrap(
+        hl: String = "",
+        gl: String = "",
+        forceRefresh: Boolean = false
+    ): YouTubeMusicDebugProbeResult = withContext(Dispatchers.IO) {
+        val locale = resolveDebugLocale(hl = hl, gl = gl)
+        val bootstrap = bootstrap(forceRefresh = forceRefresh)
+        val authHealth = authRepo.getAuthHealthOnce()
+        val raw = JSONObject()
+            .put("probe", "bootstrap")
+            .put("locale", debugLocaleJson(locale))
+            .put("auth", debugAuthJson())
+            .put("bootstrap", debugBootstrapJson(bootstrap))
+            .put(
+                "health",
+                JSONObject()
+                    .put("state", authHealth.state.name)
+                    .put("activeCookieKeys", JSONArray(authHealth.activeCookieKeys))
+                    .put("loginCookieKeys", JSONArray(authHealth.loginCookieKeys))
+            )
+        YouTubeMusicDebugProbeResult(
+            summary = "bootstrap ready, clientVersion=${bootstrap.webRemixClientVersion}, sessionIndex=${bootstrap.sessionIndex}",
+            rawJson = raw.toString(2)
+        )
+    }
+
+    suspend fun debugHomeFeedRaw(
+        hl: String = "",
+        gl: String = "",
+        forceRefresh: Boolean = false
+    ): YouTubeMusicDebugProbeResult = withContext(Dispatchers.IO) {
+        val locale = resolveDebugLocale(hl = hl, gl = gl)
+        val bootstrap = bootstrap(forceRefresh = forceRefresh)
+        val payload = JSONObject().put("browseId", "FEmusic_home")
+        val root = postMusicBrowse(
+            bootstrap = bootstrap,
+            payload = payload,
+            requestLocale = locale
+        )
+        val shelves = YouTubeMusicParser.parseHomeShelfPages(root)
+        val parsed = JSONObject()
+            .put("shelfCount", shelves.size)
+            .put(
+                "shelves",
+                JSONArray().apply {
+                    shelves.forEach { shelf ->
+                        put(
+                            JSONObject()
+                                .put("title", shelf.title)
+                                .put("itemCount", shelf.items.size)
+                                .put("continuation", shelf.continuation)
+                        )
+                    }
+                }
+            )
+        YouTubeMusicDebugProbeResult(
+            summary = "home feed ok, shelves=${shelves.size}",
+            rawJson = buildDebugEnvelope(
+                probe = "home_feed",
+                endpoint = "browse",
+                requestUrl = musicBrowseUrl(bootstrap),
+                requestPayload = payload,
+                requestLocale = locale,
+                bootstrap = bootstrap,
+                response = root,
+                parsed = parsed
+            ).toString(2)
+        )
+    }
+
+    suspend fun debugLibraryPlaylistsRaw(
+        hl: String = "",
+        gl: String = "",
+        forceRefresh: Boolean = false
+    ): YouTubeMusicDebugProbeResult = withContext(Dispatchers.IO) {
+        val locale = resolveDebugLocale(hl = hl, gl = gl)
+        val bootstrap = bootstrap(forceRefresh = forceRefresh)
+        val payload = JSONObject().put("browseId", YOUTUBE_MUSIC_BROWSE_ID_LIBRARY_PLAYLISTS)
+        val root = postMusicBrowse(
+            bootstrap = bootstrap,
+            payload = payload,
+            requestLocale = locale
+        )
+        val playlists = YouTubeMusicParser.parseLibraryPlaylists(root)
+        val parsed = JSONObject()
+            .put("playlistCount", playlists.size)
+            .put(
+                "playlists",
+                JSONArray().apply {
+                    playlists.forEach { playlist ->
+                        put(
+                            JSONObject()
+                                .put("title", playlist.title)
+                                .put("browseId", playlist.browseId)
+                                .put("playlistId", playlist.playlistId)
+                                .put("trackCount", playlist.trackCount)
+                        )
+                    }
+                }
+            )
+        YouTubeMusicDebugProbeResult(
+            summary = "library playlists ok, playlists=${playlists.size}",
+            rawJson = buildDebugEnvelope(
+                probe = "library_playlists",
+                endpoint = "browse",
+                requestUrl = musicBrowseUrl(bootstrap),
+                requestPayload = payload,
+                requestLocale = locale,
+                bootstrap = bootstrap,
+                response = root,
+                parsed = parsed
+            ).toString(2)
+        )
+    }
+
+    suspend fun debugBrowseRaw(
+        browseId: String,
+        hl: String = "",
+        gl: String = "",
+        forceRefresh: Boolean = false
+    ): YouTubeMusicDebugProbeResult = withContext(Dispatchers.IO) {
+        val locale = resolveDebugLocale(hl = hl, gl = gl)
+        val bootstrap = bootstrap(forceRefresh = forceRefresh)
+        val payload = JSONObject().put("browseId", browseId)
+        val root = postMusicBrowse(
+            bootstrap = bootstrap,
+            payload = payload,
+            requestLocale = locale
+        )
+        val parsed = JSONObject()
+            .put("hasContents", root.optJSONObject("contents") != null)
+            .put("hasContinuationContents", root.optJSONObject("continuationContents") != null)
+            .put("topLevelKeys", JSONArray(root.keys().asSequence().toList()))
+        YouTubeMusicDebugProbeResult(
+            summary = "browse ok, browseId=$browseId",
+            rawJson = buildDebugEnvelope(
+                probe = "browse",
+                endpoint = "browse",
+                requestUrl = musicBrowseUrl(bootstrap),
+                requestPayload = payload,
+                requestLocale = locale,
+                bootstrap = bootstrap,
+                response = root,
+                parsed = parsed
+            ).toString(2)
+        )
+    }
+
+    suspend fun debugPlayerRaw(
+        videoId: String,
+        hl: String = "",
+        gl: String = "",
+        forceRefresh: Boolean = false
+    ): YouTubeMusicDebugProbeResult = withContext(Dispatchers.IO) {
+        val locale = resolveDebugLocale(hl = hl, gl = gl)
+        val bootstrap = bootstrap(forceRefresh = forceRefresh)
+        val root = postMusicPlayer(
+            bootstrap = bootstrap,
+            videoId = videoId,
+            requestLocale = locale
+        )
+        val playability = root.optJSONObject("playabilityStatus")
+        val adaptiveFormats = root.optJSONObject("streamingData")
+            ?.optJSONArray("adaptiveFormats")
+        val playableAudio = runCatching { YouTubeMusicPlayerParser.parsePlayableAudio(root) }.getOrNull()
+        val parsed = JSONObject()
+            .put("playabilityStatus", playability?.optString("status").orEmpty())
+            .put("playabilityReason", playability?.optString("reason").orEmpty())
+            .put("adaptiveFormatCount", adaptiveFormats?.length() ?: 0)
+            .put(
+                "selectedPlayableAudio",
+                playableAudio?.let {
+                    JSONObject()
+                        .put("url", it.url)
+                        .put("durationMs", it.durationMs)
+                        .put("mimeType", it.mimeType)
+                        .put("contentLength", it.contentLength)
+                        .put("bitrate", it.bitrate)
+                } ?: JSONObject.NULL
+            )
+        YouTubeMusicDebugProbeResult(
+            summary = "player ok, playability=${playability?.optString("status").orEmpty()}, formats=${adaptiveFormats?.length() ?: 0}",
+            rawJson = buildDebugEnvelope(
+                probe = "player",
+                endpoint = "player",
+                requestUrl = musicPlayerUrl(bootstrap),
+                requestPayload = JSONObject()
+                    .put("videoId", videoId)
+                    .put("contentCheckOk", true)
+                    .put("racyCheckOk", true),
+                requestLocale = locale,
+                bootstrap = bootstrap,
+                response = root,
+                parsed = parsed
+            ).toString(2)
+        )
+    }
+
+    suspend fun debugLyricsRaw(
+        videoId: String,
+        hl: String = "",
+        gl: String = "",
+        forceRefresh: Boolean = false
+    ): YouTubeMusicDebugProbeResult = withContext(Dispatchers.IO) {
+        val locale = resolveDebugLocale(hl = hl, gl = gl)
+        val bootstrap = bootstrap(forceRefresh = forceRefresh)
+        val nextPayload = JSONObject()
+            .put("videoId", videoId)
+            .put("isAudioOnly", true)
+        val nextRoot = postMusicNext(
+            bootstrap = bootstrap,
+            videoId = videoId,
+            requestLocale = locale
+        )
+        val lyricsBrowseId = YouTubeMusicParser.parseLyricsBrowseId(nextRoot)
+        val browsePayload = lyricsBrowseId?.let { JSONObject().put("browseId", it) }
+        val browseRoot = browsePayload?.let {
+            postMusicBrowse(
+                bootstrap = bootstrap,
+                payload = it,
+                requestLocale = locale
+            )
+        }
+        val lyrics = browseRoot?.let(YouTubeMusicParser::parseLyrics)
+        val parsed = JSONObject()
+            .put("lyricsBrowseId", lyricsBrowseId ?: JSONObject.NULL)
+            .put("lyricsFound", lyrics != null)
+            .put("lyricsLength", lyrics?.lyrics?.length ?: 0)
+            .put("lyricsSource", lyrics?.source ?: "")
+        val raw = JSONObject()
+            .put("probe", "lyrics")
+            .put("auth", debugAuthJson())
+            .put("bootstrap", debugBootstrapJson(bootstrap))
+            .put("locale", debugLocaleJson(locale))
+            .put(
+                "requests",
+                JSONObject()
+                    .put(
+                        "next",
+                        JSONObject()
+                            .put("url", musicNextUrl(bootstrap))
+                            .put("payload", nextPayload)
+                    )
+                    .put(
+                        "browse",
+                        browsePayload?.let {
+                            JSONObject()
+                                .put("url", musicBrowseUrl(bootstrap))
+                                .put("payload", it)
+                        } ?: JSONObject.NULL
+                    )
+            )
+            .put(
+                "responses",
+                JSONObject()
+                    .put("next", nextRoot)
+                    .put("browse", browseRoot ?: JSONObject.NULL)
+            )
+            .put("parsed", parsed)
+        YouTubeMusicDebugProbeResult(
+            summary = if (lyrics != null) {
+                "lyrics ok, browseId=$lyricsBrowseId, chars=${lyrics.lyrics.length}"
+            } else {
+                "lyrics missing, browseId=${lyricsBrowseId ?: "none"}"
+            },
+            rawJson = raw.toString(2)
+        )
+    }
+
     suspend fun getLibraryPlaylists(): List<YouTubeMusicLibraryPlaylist> = withContext(Dispatchers.IO) {
         var bootstrap = bootstrap()
         var requestLocale = YouTubeMusicLocaleResolver.preferred()
@@ -1127,6 +1401,87 @@ class YouTubeMusicClient(
 
     fun clearBootstrapCache() {
         bootstrapCache = null
+    }
+
+    private fun resolveDebugLocale(
+        hl: String,
+        gl: String
+    ): YouTubeMusicRequestLocale {
+        val preferred = YouTubeMusicLocaleResolver.preferred()
+        val resolvedHl = hl.trim().ifBlank { preferred.hl }
+        val resolvedGl = gl.trim().ifBlank { preferred.gl }.uppercase(Locale.US)
+        return YouTubeMusicRequestLocale(
+            hl = resolvedHl,
+            gl = resolvedGl
+        )
+    }
+
+    private fun debugAuthJson(): JSONObject {
+        val health = authRepo.getAuthHealthOnce()
+        val auth = authRepo.getAuthOnce().normalized()
+        return JSONObject()
+            .put("state", health.state.name)
+            .put("activeCookieKeys", JSONArray(health.activeCookieKeys))
+            .put("loginCookieKeys", JSONArray(health.loginCookieKeys))
+            .put("cookieCount", auth.cookies.size)
+            .put("hasCookieHeader", auth.cookieHeader.isNotBlank())
+            .put("origin", auth.origin)
+            .put("xGoogAuthUser", auth.xGoogAuthUser)
+            .put("userAgent", auth.resolveRequestUserAgent())
+    }
+
+    private fun debugBootstrapJson(bootstrap: YouTubeMusicBootstrapConfig): JSONObject {
+        return JSONObject()
+            .put("apiKey", bootstrap.apiKey)
+            .put("webRemixClientVersion", bootstrap.webRemixClientVersion)
+            .put("visitorData", bootstrap.visitorData)
+            .put("sessionIndex", bootstrap.sessionIndex)
+            .put("webUserAgent", bootstrap.webUserAgent)
+            .put("cookieHeaderLength", bootstrap.cookieHeader.length)
+            .put("fetchedAtMs", bootstrap.fetchedAtMs)
+    }
+
+    private fun debugLocaleJson(locale: YouTubeMusicRequestLocale): JSONObject {
+        return JSONObject()
+            .put("hl", locale.hl)
+            .put("gl", locale.gl)
+            .put("acceptLanguage", locale.acceptLanguage)
+    }
+
+    private fun buildDebugEnvelope(
+        probe: String,
+        endpoint: String,
+        requestUrl: String,
+        requestPayload: JSONObject,
+        requestLocale: YouTubeMusicRequestLocale,
+        bootstrap: YouTubeMusicBootstrapConfig,
+        response: JSONObject,
+        parsed: JSONObject
+    ): JSONObject {
+        return JSONObject()
+            .put("probe", probe)
+            .put("auth", debugAuthJson())
+            .put("bootstrap", debugBootstrapJson(bootstrap))
+            .put("request", JSONObject()
+                .put("endpoint", endpoint)
+                .put("url", requestUrl)
+                .put("locale", debugLocaleJson(requestLocale))
+                .put("payload", requestPayload)
+            )
+            .put("response", response)
+            .put("parsed", parsed)
+    }
+
+    private fun musicBrowseUrl(bootstrap: YouTubeMusicBootstrapConfig): String {
+        return "$YOUTUBE_MUSIC_MUSIC_ORIGIN/youtubei/v1/browse?prettyPrint=false&key=${bootstrap.apiKey}"
+    }
+
+    private fun musicPlayerUrl(bootstrap: YouTubeMusicBootstrapConfig): String {
+        return "$YOUTUBE_MUSIC_MUSIC_ORIGIN/youtubei/v1/player?prettyPrint=false&key=${bootstrap.apiKey}"
+    }
+
+    private fun musicNextUrl(bootstrap: YouTubeMusicBootstrapConfig): String {
+        return "$YOUTUBE_MUSIC_MUSIC_ORIGIN/youtubei/v1/next?prettyPrint=false&key=${bootstrap.apiKey}"
     }
 
     private fun bootstrap(forceRefresh: Boolean = false): YouTubeMusicBootstrapConfig {

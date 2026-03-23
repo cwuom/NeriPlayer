@@ -26,6 +26,7 @@ package moe.ouom.neriplayer.ui.screen.debug
 import android.app.Application
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -37,12 +38,16 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -104,6 +109,74 @@ fun YouTubeApiProbeScreen() {
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(ui.authSummary, style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    text = stringResource(R.string.debug_youtube_probe_section_inputs),
+                    style = MaterialTheme.typography.labelLarge
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = ui.hl,
+                        onValueChange = vm::onHlChange,
+                        label = { Text(stringResource(R.string.debug_youtube_probe_input_hl)) },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = ui.gl,
+                        onValueChange = vm::onGlChange,
+                        label = { Text(stringResource(R.string.debug_youtube_probe_input_gl)) },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                OutlinedTextField(
+                    value = ui.videoId,
+                    onValueChange = vm::onVideoIdChange,
+                    label = { Text(stringResource(R.string.debug_youtube_probe_input_video_id)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = ui.browseId,
+                    onValueChange = vm::onBrowseIdChange,
+                    label = { Text(stringResource(R.string.debug_youtube_probe_input_browse_id)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = stringResource(R.string.debug_youtube_probe_force_refresh),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Switch(
+                        checked = ui.forceRefresh,
+                        onCheckedChange = vm::onForceRefreshChange,
+                        enabled = !ui.running
+                    )
+                }
+
+                Text(
+                    text = stringResource(R.string.debug_youtube_probe_section_actions),
+                    style = MaterialTheme.typography.labelLarge
+                )
+
+                Button(
+                    onClick = vm::probeBootstrap,
+                    enabled = !ui.running,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(R.string.debug_youtube_probe_action_bootstrap))
+                }
 
                 OutlinedButton(
                     onClick = vm::probeHomeFeed,
@@ -119,6 +192,30 @@ fun YouTubeApiProbeScreen() {
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(stringResource(R.string.debug_youtube_probe_action_library))
+                }
+
+                OutlinedButton(
+                    onClick = vm::probeBrowse,
+                    enabled = !ui.running && ui.browseId.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(R.string.debug_youtube_probe_action_browse))
+                }
+
+                OutlinedButton(
+                    onClick = vm::probePlayer,
+                    enabled = !ui.running && ui.videoId.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(R.string.debug_youtube_probe_action_player))
+                }
+
+                OutlinedButton(
+                    onClick = vm::probeLyrics,
+                    enabled = !ui.running && ui.videoId.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(R.string.debug_youtube_probe_action_lyrics))
                 }
 
                 OutlinedButton(
@@ -152,12 +249,34 @@ fun YouTubeApiProbeScreen() {
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Text(
-                    text = ui.preview.ifBlank {
-                        stringResource(R.string.debug_youtube_probe_preview_empty)
+                    text = stringResource(R.string.debug_youtube_probe_section_result),
+                    style = MaterialTheme.typography.labelLarge
+                )
+                Text(
+                    text = ui.summary.ifBlank {
+                        stringResource(R.string.debug_youtube_probe_summary_empty)
+                    },
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    text = ui.rawJson.ifBlank {
+                        stringResource(R.string.debug_youtube_probe_raw_empty)
                     },
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace
                 )
+                TextButton(
+                    onClick = vm::copyRawJson,
+                    enabled = !ui.running && ui.rawJson.isNotBlank()
+                ) {
+                    Text(stringResource(R.string.debug_youtube_probe_copy_raw))
+                }
+                TextButton(
+                    onClick = vm::clearPreview,
+                    enabled = !ui.running
+                ) {
+                    Text(stringResource(R.string.debug_clear_preview))
+                }
             }
         }
         Spacer(Modifier.height(24.dp))

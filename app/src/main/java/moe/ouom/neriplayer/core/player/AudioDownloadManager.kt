@@ -24,6 +24,7 @@ package moe.ouom.neriplayer.core.player
  */
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Environment
 import androidx.core.net.toUri
@@ -61,6 +62,7 @@ import okio.sink
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.IOException
 import java.net.URLConnection
 import java.text.Normalizer
 import kotlin.math.roundToInt
@@ -306,19 +308,66 @@ object AudioDownloadManager {
         }
 
         val coverFile = File(coverDir, "$baseName.jpg")
-        if (coverFile.exists() && coverFile.length() > 0L) {
+        if (isUsableCoverFile(coverFile)) {
             return
+        }
+        val tempFile = File(coverDir, "${coverFile.name}.downloading")
+        if (tempFile.exists()) {
+            tempFile.delete()
         }
 
         val req = Request.Builder().url(coverUrl).build()
-        AppContainer.sharedOkHttpClient.newCall(req).execute().use { response ->
-            if (!response.isSuccessful) {
-                return
+        try {
+            AppContainer.sharedOkHttpClient.newCall(req).execute().use { response ->
+                if (!response.isSuccessful) {
+                    return
+                }
+                val body = response.body ?: return
+                val contentType = body.contentType()?.toString().orEmpty()
+                if (contentType.isNotBlank() && !contentType.startsWith("image/", ignoreCase = true)) {
+                    throw IOException("封面响应不是图片: $contentType")
+                }
+                val expectedLength = body.contentLength()
+                val copiedBytes = body.byteStream().use { input ->
+                    tempFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                if (copiedBytes <= 0L) {
+                    throw IOException("封面写入为空")
+                }
+                if (expectedLength > 0L && copiedBytes < expectedLength) {
+                    throw IOException("封面写入不完整: $copiedBytes/$expectedLength")
+                }
+                if (!isUsableCoverFile(tempFile)) {
+                    throw IOException("封面文件校验失败")
+                }
+                replaceFileAtomically(tempFile, coverFile)
             }
-            response.body.byteStream().use { input ->
-                coverFile.outputStream().use { output -> input.copyTo(output) }
+        } finally {
+            if (tempFile.exists()) {
+                tempFile.delete()
             }
         }
+    }
+
+    private fun isUsableCoverFile(file: File): Boolean {
+        if (!file.exists() || !file.isFile || file.length() <= 0L) {
+            return false
+        }
+        return runCatching {
+            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(file.absolutePath, options)
+            options.outWidth > 0 && options.outHeight > 0
+        }.getOrDefault(false)
+    }
+
+    private fun replaceFileAtomically(tempFile: File, targetFile: File) {
+        if (tempFile.renameTo(targetFile)) {
+            return
+        }
+        tempFile.copyTo(targetFile, overwrite = true)
+        tempFile.delete()
     }
 
     /** 批量下载歌单中的所有歌曲 */

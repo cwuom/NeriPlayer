@@ -24,6 +24,9 @@ package moe.ouom.neriplayer.ui.viewmodel.debug
  */
 
 import android.app.Application
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.annotation.StringRes
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -34,7 +37,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeShelf
+import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicDebugProbeResult
+import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicLocaleResolver
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.YouTubeAuthState
 
@@ -42,100 +46,143 @@ data class YouTubeApiProbeUiState(
     val running: Boolean = false,
     val authSummary: String = "",
     val status: String = "",
-    val preview: String = ""
+    val summary: String = "",
+    val rawJson: String = "",
+    val videoId: String = "",
+    val browseId: String = "",
+    val hl: String = "",
+    val gl: String = "",
+    val forceRefresh: Boolean = false
 )
 
 class YouTubeApiProbeViewModel(app: Application) : AndroidViewModel(app) {
     private val authRepo = AppContainer.youtubeAuthRepo
     private val client = AppContainer.youtubeMusicClient
+    private val preferredLocale = YouTubeMusicLocaleResolver.preferred()
 
     private val _ui = MutableStateFlow(
         YouTubeApiProbeUiState(
             authSummary = buildAuthSummary(),
-            status = string(R.string.debug_youtube_probe_status_idle)
+            status = string(R.string.debug_youtube_probe_status_idle),
+            hl = preferredLocale.hl,
+            gl = preferredLocale.gl
         )
     )
     val ui: StateFlow<YouTubeApiProbeUiState> = _ui.asStateFlow()
 
+    fun onVideoIdChange(value: String) {
+        _ui.value = _ui.value.copy(videoId = value.trim())
+    }
+
+    fun onBrowseIdChange(value: String) {
+        _ui.value = _ui.value.copy(browseId = value.trim())
+    }
+
+    fun onHlChange(value: String) {
+        _ui.value = _ui.value.copy(hl = value.trim())
+    }
+
+    fun onGlChange(value: String) {
+        _ui.value = _ui.value.copy(gl = value.trim().uppercase())
+    }
+
+    fun onForceRefreshChange(enabled: Boolean) {
+        _ui.value = _ui.value.copy(forceRefresh = enabled)
+    }
+
+    fun probeBootstrap() {
+        runProbe(R.string.debug_youtube_probe_action_bootstrap) {
+            client.debugBootstrap(
+                hl = ui.value.hl,
+                gl = ui.value.gl,
+                forceRefresh = ui.value.forceRefresh
+            )
+        }
+    }
+
     fun probeHomeFeed() {
-        viewModelScope.launch {
-            updateRunning(string(R.string.debug_youtube_probe_status_loading_home))
-            try {
-                val shelves = withContext(Dispatchers.IO) { client.getHomeFeed() }
-                _ui.value = _ui.value.copy(
-                    running = false,
-                    authSummary = buildAuthSummary(),
-                    status = string(
-                        R.string.debug_youtube_probe_status_home_success,
-                        shelves.size
-                    ),
-                    preview = formatHomeFeedPreview(shelves)
-                )
-            } catch (error: Exception) {
-                _ui.value = _ui.value.copy(
-                    running = false,
-                    authSummary = buildAuthSummary(),
-                    status = string(
-                        R.string.debug_youtube_probe_status_home_failed,
-                        error.message ?: error.javaClass.simpleName
-                    ),
-                    preview = ""
-                )
-            }
+        runProbe(R.string.debug_youtube_probe_action_home) {
+            client.debugHomeFeedRaw(
+                hl = ui.value.hl,
+                gl = ui.value.gl,
+                forceRefresh = ui.value.forceRefresh
+            )
         }
     }
 
     fun probeLibraryPlaylists() {
-        viewModelScope.launch {
-            updateRunning(string(R.string.debug_youtube_probe_status_loading_library))
-            try {
-                val playlists = withContext(Dispatchers.IO) { client.getLibraryPlaylists() }
-                _ui.value = _ui.value.copy(
-                    running = false,
-                    authSummary = buildAuthSummary(),
-                    status = string(
-                        R.string.debug_youtube_probe_status_library_success,
-                        playlists.size
-                    ),
-                    preview = buildString {
-                        appendLine(
-                            string(
-                                R.string.debug_youtube_probe_library_preview_count,
-                                playlists.size
-                            )
-                        )
-                        playlists.take(20).forEachIndexed { index, playlist ->
-                            append(index + 1)
-                            append(". ")
-                            append(playlist.title)
-                            playlist.trackCount?.let {
-                                append(" (")
-                                append(it)
-                                append(")")
-                            }
-                            appendLine()
-                        }
-                        if (playlists.size > 20) {
-                            append(
-                                string(
-                                    R.string.debug_youtube_probe_library_preview_more,
-                                    playlists.size - 20
-                                )
-                            )
-                        }
-                    }.trimEnd()
+        runProbe(R.string.debug_youtube_probe_action_library) {
+            client.debugLibraryPlaylistsRaw(
+                hl = ui.value.hl,
+                gl = ui.value.gl,
+                forceRefresh = ui.value.forceRefresh
+            )
+        }
+    }
+
+    fun probeBrowse() {
+        val browseId = ui.value.browseId
+        if (browseId.isBlank()) {
+            _ui.value = _ui.value.copy(
+                status = string(
+                    R.string.debug_youtube_probe_status_failed_generic,
+                    string(R.string.debug_youtube_probe_action_browse),
+                    string(R.string.debug_youtube_probe_browse_required)
                 )
-            } catch (error: Exception) {
-                _ui.value = _ui.value.copy(
-                    running = false,
-                    authSummary = buildAuthSummary(),
-                    status = string(
-                        R.string.debug_youtube_probe_status_library_failed,
-                        error.message ?: error.javaClass.simpleName
-                    ),
-                    preview = ""
+            )
+            return
+        }
+        runProbe(R.string.debug_youtube_probe_action_browse) {
+            client.debugBrowseRaw(
+                browseId = browseId,
+                hl = ui.value.hl,
+                gl = ui.value.gl,
+                forceRefresh = ui.value.forceRefresh
+            )
+        }
+    }
+
+    fun probePlayer() {
+        val videoId = ui.value.videoId
+        if (videoId.isBlank()) {
+            _ui.value = _ui.value.copy(
+                status = string(
+                    R.string.debug_youtube_probe_status_failed_generic,
+                    string(R.string.debug_youtube_probe_action_player),
+                    string(R.string.debug_youtube_probe_video_required)
                 )
-            }
+            )
+            return
+        }
+        runProbe(R.string.debug_youtube_probe_action_player) {
+            client.debugPlayerRaw(
+                videoId = videoId,
+                hl = ui.value.hl,
+                gl = ui.value.gl,
+                forceRefresh = ui.value.forceRefresh
+            )
+        }
+    }
+
+    fun probeLyrics() {
+        val videoId = ui.value.videoId
+        if (videoId.isBlank()) {
+            _ui.value = _ui.value.copy(
+                status = string(
+                    R.string.debug_youtube_probe_status_failed_generic,
+                    string(R.string.debug_youtube_probe_action_lyrics),
+                    string(R.string.debug_youtube_probe_video_required)
+                )
+            )
+            return
+        }
+        runProbe(R.string.debug_youtube_probe_action_lyrics) {
+            client.debugLyricsRaw(
+                videoId = videoId,
+                hl = ui.value.hl,
+                gl = ui.value.gl,
+                forceRefresh = ui.value.forceRefresh
+            )
         }
     }
 
@@ -146,16 +193,30 @@ class YouTubeApiProbeViewModel(app: Application) : AndroidViewModel(app) {
             running = false,
             authSummary = buildAuthSummary(),
             status = string(R.string.debug_youtube_probe_status_auth_cleared),
-            preview = ""
+            summary = "",
+            rawJson = ""
         )
     }
 
-    private fun updateRunning(status: String) {
+    fun clearPreview() {
         _ui.value = _ui.value.copy(
-            running = true,
-            authSummary = buildAuthSummary(),
-            status = status,
-            preview = ""
+            summary = "",
+            rawJson = ""
+        )
+    }
+
+    fun copyRawJson() {
+        val rawJson = ui.value.rawJson
+        if (rawJson.isBlank()) {
+            return
+        }
+        val clipboard = getApplication<Application>()
+            .getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(
+            ClipData.newPlainText("youtube_api_probe_raw_json", rawJson)
+        )
+        _ui.value = _ui.value.copy(
+            status = string(R.string.debug_youtube_probe_status_copied_raw)
         )
     }
 
@@ -172,27 +233,46 @@ class YouTubeApiProbeViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-    private fun formatHomeFeedPreview(shelves: List<YouTubeMusicHomeShelf>): String {
-        if (shelves.isEmpty()) {
-            return string(R.string.debug_youtube_probe_home_preview_empty)
-        }
-        return buildString {
-            shelves.forEachIndexed { index, shelf ->
-                val songCount = shelf.items.count { it.videoId.isNotBlank() }
-                val collectionCount = shelf.items.count { it.browseId.isNotBlank() }
-                append(
-                    string(
-                        R.string.debug_youtube_probe_home_preview_item,
-                        index + 1,
-                        shelf.title,
-                        shelf.items.size,
-                        songCount,
-                        collectionCount
-                    )
+    private fun runProbe(
+        @StringRes actionRes: Int,
+        block: suspend () -> YouTubeMusicDebugProbeResult
+    ) {
+        viewModelScope.launch {
+            val actionLabel = string(actionRes)
+            _ui.value = _ui.value.copy(
+                running = true,
+                authSummary = buildAuthSummary(),
+                status = string(R.string.debug_youtube_probe_status_loading_generic, actionLabel),
+                summary = "",
+                rawJson = ""
+            )
+            try {
+                val result = withContext(Dispatchers.IO) { block() }
+                _ui.value = _ui.value.copy(
+                    running = false,
+                    authSummary = buildAuthSummary(),
+                    status = string(
+                        R.string.debug_youtube_probe_status_success_generic,
+                        actionLabel,
+                        result.summary
+                    ),
+                    summary = result.summary,
+                    rawJson = result.rawJson
                 )
-                appendLine()
+            } catch (error: Exception) {
+                _ui.value = _ui.value.copy(
+                    running = false,
+                    authSummary = buildAuthSummary(),
+                    status = string(
+                        R.string.debug_youtube_probe_status_failed_generic,
+                        actionLabel,
+                        error.message ?: error.javaClass.simpleName
+                    ),
+                    summary = "",
+                    rawJson = ""
+                )
             }
-        }.trimEnd()
+        }
     }
 
     private fun resolveAuthStateLabel(state: YouTubeAuthState): String {
