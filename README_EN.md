@@ -109,10 +109,10 @@ The current focus is not to build a public cloud service, but to integrate onlin
 - ⚠️ **QQ Music** currently acts strictly as a background metadata provider. Its Library entry remains an inactive placeholder.
 
 ### Local Data and Security
-- Settings and platform Cookies are persisted using `DataStore`.
+- **App settings** are persisted using `DataStore`.
+- **Platform Cookies, auth configurations, and GitHub Tokens** are securely stored locally via **Android Keystore + EncryptedSharedPreferences**.
 - Play histories, playlists, favorite snapshots, and specific mappings are persisted via local files.
 - Local playlists are stored via JSON files and achieve atomic writes via temporary swappable files.
-- GitHub Tokens are securely stored locally via **Android Keystore + EncryptedSharedPreferences**.
 - GitHub sync utilizes locally generated UUIDs as device identifiers instead of relying on `ANDROID_ID`.
 
 ### Downloads, Imports, and Backups

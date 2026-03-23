@@ -134,11 +134,10 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
 - ⚠️ **QQ 音乐**目前仅作为后台补全源，Library 中的入口仍处于占位开发阶段。
 
 ### 本地数据与安全
-- 设置与平台 Cookie 使用 `DataStore` 持久化。
+- **应用设置**使用 `DataStore` 持久化。
+- **平台 Cookie、授权信息与 GitHub Token** 使用 **Android Keystore + EncryptedSharedPreferences** 本地加密保存。
 - 播放历史、歌单、收藏快照与部分映射数据使用本地文件持久化。
 - 本地歌单使用 JSON 文件存储，并通过临时文件实现原子写入。
-- GitHub Token 使用 **Android Keystore + EncryptedSharedPreferences**
-  本地加密保存。
 - GitHub 同步使用本地生成的 UUID 作为设备标识，不依赖 `ANDROID_ID`。
 
 ### 下载、本地导入与备份
