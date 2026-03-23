@@ -183,6 +183,8 @@ object PlayerManager {
     private const val STATE_PERSIST_INTERVAL_MS = 15 * 1000L
     private const val DEFAULT_FADE_DURATION_MS = 500L
     private const val BLUETOOTH_DISCONNECT_CONFIRM_DELAY_MS = 1200L
+    private const val AUTO_TRANSITION_EXTERNAL_PAUSE_GUARD_MS = 2_000L
+    private const val AUTO_TRANSITION_BUFFER_POSITION_GUARD_MS = 1_500L
     private const val PENDING_SEEK_POSITION_TOLERANCE_MS = 1_500L
     private const val MIN_FADE_STEPS = 4
     private const val MAX_FADE_STEPS = 30
@@ -196,6 +198,7 @@ object PlayerManager {
     private var restoredResumePositionMs: Long = 0L
     private var restoredShouldResumePlayback = false
     private var lastStatePersistAtMs: Long = 0L
+    private var lastAutoTrackAdvanceAtMs: Long = 0L
     @Volatile
     private var resumePlaybackRequested = false
     @Volatile
@@ -209,6 +212,12 @@ object PlayerManager {
 
     private val _isPlayingFlow = MutableStateFlow(false)
     val isPlayingFlow: StateFlow<Boolean> = _isPlayingFlow
+
+    private val _playWhenReadyFlow = MutableStateFlow(false)
+    val playWhenReadyFlow: StateFlow<Boolean> = _playWhenReadyFlow
+
+    private val _playerPlaybackStateFlow = MutableStateFlow(Player.STATE_IDLE)
+    val playerPlaybackStateFlow: StateFlow<Int> = _playerPlaybackStateFlow
 
     private val _playbackPositionMs = MutableStateFlow(0L)
     val playbackPositionFlow: StateFlow<Long> = _playbackPositionMs
@@ -270,6 +279,40 @@ object PlayerManager {
                 sleepTimerManager.cancel()
             }
         )
+    }
+
+    fun isTransportActive(): Boolean {
+        ensureInitialized()
+        if (!initialized || _currentSongFlow.value == null) return false
+        return resumePlaybackRequested ||
+            playJob?.isActive == true ||
+            pendingPauseJob?.isActive == true ||
+            _playWhenReadyFlow.value ||
+            _isPlayingFlow.value
+    }
+
+    fun isTransportBuffering(): Boolean {
+        ensureInitialized()
+        if (!initialized || !isTransportActive()) return false
+        return playJob?.isActive == true || _playerPlaybackStateFlow.value == Player.STATE_BUFFERING
+    }
+
+    fun shouldIgnoreExternalPauseCommand(): Boolean {
+        ensureInitialized()
+        if (!initialized || _currentSongFlow.value == null) return false
+        if (!resumePlaybackRequested || !_playWhenReadyFlow.value) return false
+        if (_playerPlaybackStateFlow.value != Player.STATE_BUFFERING) return false
+
+        val autoAdvanceAgeMs = SystemClock.elapsedRealtime() - lastAutoTrackAdvanceAtMs
+        if (autoAdvanceAgeMs !in 0L..AUTO_TRANSITION_EXTERNAL_PAUSE_GUARD_MS) return false
+
+        val currentPositionMs = runCatching { player.currentPosition.coerceAtLeast(0L) }
+            .getOrDefault(Long.MAX_VALUE)
+        return currentPositionMs <= AUTO_TRANSITION_BUFFER_POSITION_GUARD_MS
+    }
+
+    private fun markAutoTrackAdvance() {
+        lastAutoTrackAdvanceAtMs = SystemClock.elapsedRealtime()
     }
 
     private fun fadeStepsFor(durationMs: Long): Int {
@@ -503,15 +546,29 @@ object PlayerManager {
         }
 
         when (repeatModeSetting) {
-            Player.REPEAT_MODE_ONE -> playAtIndex(currentIndex)
-            Player.REPEAT_MODE_ALL -> next(force = true)
+            Player.REPEAT_MODE_ONE -> {
+                markAutoTrackAdvance()
+                playAtIndex(currentIndex)
+            }
+            Player.REPEAT_MODE_ALL -> {
+                markAutoTrackAdvance()
+                next(force = true)
+            }
             else -> {
                 if (player.shuffleModeEnabled) {
-                    if (shuffleFuture.isNotEmpty() || shuffleBag.isNotEmpty()) next(force = false)
-                    else stopPlaybackPreservingQueue()
+                    if (shuffleFuture.isNotEmpty() || shuffleBag.isNotEmpty()) {
+                        markAutoTrackAdvance()
+                        next(force = false)
+                    } else {
+                        stopPlaybackPreservingQueue()
+                    }
                 } else {
-                    if (currentIndex < currentPlaylist.lastIndex) next(force = false)
-                    else stopPlaybackPreservingQueue()
+                    if (currentIndex < currentPlaylist.lastIndex) {
+                        markAutoTrackAdvance()
+                        next(force = false)
+                    } else {
+                        stopPlaybackPreservingQueue()
+                    }
                 }
             }
         }
@@ -578,6 +635,8 @@ object PlayerManager {
                     setWakeMode(C.WAKE_MODE_NETWORK)
                 }
             applyAudioFocusPolicy()
+            _playWhenReadyFlow.value = player.playWhenReady
+            _playerPlaybackStateFlow.value = player.playbackState
 
             val audioOffload = TrackSelectionParameters.AudioOffloadPreferences.Builder()
                 .setAudioOffloadMode(
@@ -659,6 +718,7 @@ object PlayerManager {
                 }
 
                 override fun onPlaybackStateChanged(state: Int) {
+                    _playerPlaybackStateFlow.value = state
                     if (state == Player.STATE_READY) {
                         maybeBackfillCurrentSongDurationFromPlayer()
                     }
@@ -681,6 +741,7 @@ object PlayerManager {
                 }
 
                 override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                    _playWhenReadyFlow.value = playWhenReady
                     if (!playWhenReady) {
                         val stackHint = Throwable().stackTrace.take(6).joinToString(" <- ") {
                             "${it.fileName}:${it.lineNumber}"
@@ -2147,6 +2208,7 @@ object PlayerManager {
     fun release() {
         if (!initialized) return
         resumePlaybackRequested = false
+        lastAutoTrackAdvanceAtMs = 0L
 
         try {
             val audioManager = application.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -2166,6 +2228,8 @@ object PlayerManager {
             runCatching { player.stop() }
             player.release()
         }
+        _playWhenReadyFlow.value = false
+        _playerPlaybackStateFlow.value = Player.STATE_IDLE
         if (::cache.isInitialized) {
             cache.release()
         }
@@ -2244,11 +2308,14 @@ object PlayerManager {
         playJob = null
         lastHandledTrackEndKey = null
         resumePlaybackRequested = false
+        lastAutoTrackAdvanceAtMs = 0L
         stopProgressUpdates()
         cancelVolumeFade(resetToFull = true)
         runCatching { player.stop() }
         runCatching { player.clearMediaItems() }
         _isPlayingFlow.value = false
+        _playWhenReadyFlow.value = false
+        _playerPlaybackStateFlow.value = Player.STATE_IDLE
         clearPendingSeekPosition()
         _playbackPositionMs.value = 0L
         if (currentPlaylist.isEmpty()) {

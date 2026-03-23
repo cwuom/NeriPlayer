@@ -102,7 +102,7 @@ class AudioPlayerService : Service() {
 
     private val mediaSessionCallback = object : MediaSessionCompat.Callback() {
         override fun onPlay() { PlayerManager.play(); updateAll() }
-        override fun onPause() { PlayerManager.pause(); updateAll() }
+        override fun onPause() { handleMediaSessionPause() }
         override fun onSkipToNext() { PlayerManager.next(); updateAll() }
         override fun onSkipToPrevious() { PlayerManager.previous(); updateAll() }
         override fun onStop() {
@@ -118,6 +118,20 @@ class AudioPlayerService : Service() {
                 updateAll()
             }
         }
+    }
+
+    private fun handleMediaSessionPause() {
+        if (PlayerManager.shouldIgnoreExternalPauseCommand()) {
+            NPLogger.w(
+                "NERI-APS",
+                "Ignored stale external pause during auto track transition."
+            )
+            updatePlaybackState()
+            updateNotification()
+            return
+        }
+        PlayerManager.pause()
+        updateAll()
     }
 
     override fun onCreate() {
@@ -150,12 +164,25 @@ class AudioPlayerService : Service() {
                     return@collect
                 }
                 updateMetadata()
+                updatePlaybackState()
                 updateNotification()
             }
         }
 
         serviceScope.launch {
             PlayerManager.isPlayingFlow.collect {
+                updatePlaybackState()
+                updateNotification()
+            }
+        }
+        serviceScope.launch {
+            PlayerManager.playWhenReadyFlow.collect {
+                updatePlaybackState()
+                updateNotification()
+            }
+        }
+        serviceScope.launch {
+            PlayerManager.playerPlaybackStateFlow.collect {
                 updatePlaybackState()
                 updateNotification()
             }
@@ -292,7 +319,7 @@ class AudioPlayerService : Service() {
     }
 
     private fun buildNotification(): Notification {
-        val isPlaying = PlayerManager.isPlayingFlow.value
+        val isTransportActive = PlayerManager.isTransportActive()
         val song = PlayerManager.currentSongFlow.value
 
         val contentIntent = PendingIntent.getActivity(
@@ -342,9 +369,9 @@ class AudioPlayerService : Service() {
 
         builder.addAction(R.drawable.round_skip_previous_24, getString(R.string.player_previous), prevIntent)
         builder.addAction(
-            if (isPlaying) R.drawable.round_pause_24 else R.drawable.round_play_arrow_24,
-            if (isPlaying) getString(R.string.player_pause) else getString(R.string.player_play),
-            if (isPlaying) pauseIntent else playIntent
+            if (isTransportActive) R.drawable.round_pause_24 else R.drawable.round_play_arrow_24,
+            if (isTransportActive) getString(R.string.player_pause) else getString(R.string.player_play),
+            if (isTransportActive) pauseIntent else playIntent
         )
         builder.addAction(favAction)
         builder.addAction(R.drawable.round_skip_next_24, getString(R.string.player_next), nextIntent)
@@ -476,7 +503,8 @@ class AudioPlayerService : Service() {
     }
 
     private fun updatePlaybackState() {
-        val isPlaying = PlayerManager.isPlayingFlow.value
+        val isTransportActive = PlayerManager.isTransportActive()
+        val isBuffering = PlayerManager.isTransportBuffering()
         val pos = PlayerManager.playbackPositionFlow.value
 
         val song = PlayerManager.currentSongFlow.value
@@ -499,12 +527,19 @@ class AudioPlayerService : Service() {
                     PlaybackStateCompat.ACTION_SEEK_TO or
                     PlaybackStateCompat.ACTION_STOP
 
+        val playbackState = when {
+            isBuffering -> PlaybackStateCompat.STATE_BUFFERING
+            isTransportActive -> PlaybackStateCompat.STATE_PLAYING
+            else -> PlaybackStateCompat.STATE_PAUSED
+        }
+        val playbackSpeed = if (playbackState == PlaybackStateCompat.STATE_PLAYING) 1.0f else 0.0f
+
         val stateBuilder = PlaybackStateCompat.Builder()
             .setActions(actions)
             .setState(
-                if (isPlaying) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED,
+                playbackState,
                 pos,
-                if (isPlaying) 1.0f else 0.0f
+                playbackSpeed
             )
 
         if (canToggleFavoriteFromExternalSurface(song)) {
