@@ -33,8 +33,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.local.import.LocalAudioImportManager
-import moe.ouom.neriplayer.data.local.import.LocalAudioImportResult
+import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
+import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportResult
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository

@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.data.local.import
+package moe.ouom.neriplayer.data.local.audioimport
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -19,7 +19,7 @@ package moe.ouom.neriplayer.data.local.import
  * along with this software.
  * If not, see <https://www.gnu.org/licenses/>.
  *
- * File: moe.ouom.neriplayer.data.local.import/LocalAudioImportManager
+ * File: moe.ouom.neriplayer.data.local.audioimport/LocalAudioImportManager
  * Updated: 2026/3/23
  */
 

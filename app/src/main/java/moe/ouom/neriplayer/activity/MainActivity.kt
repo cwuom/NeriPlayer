@@ -103,7 +103,7 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.player.AudioPlayerService
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.data.local.import.LocalAudioImportManager
+import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.settings.readThemePreferenceSnapshotSync
 import moe.ouom.neriplayer.ui.NeriApp
