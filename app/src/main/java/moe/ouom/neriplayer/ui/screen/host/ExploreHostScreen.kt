@@ -45,6 +45,7 @@ import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
 import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.YouTubeMusicPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.tab.ExploreScreen
@@ -102,6 +103,15 @@ fun ExploreHostScreen(
                         selected = ExploreSelectedItem.Netease(pl)
                     },
                     onYouTubeMusicPlaylistClick = { pl ->
+                        AppContainer.playlistUsageRepo.recordOpen(
+                            id = stableYouTubeMusicId(pl.playlistId.ifBlank { pl.browseId }),
+                            name = pl.title,
+                            picUrl = pl.coverUrl,
+                            trackCount = pl.trackCount,
+                            source = "youtubeMusic",
+                            browseId = pl.browseId,
+                            playlistId = pl.playlistId
+                        )
                         selected = ExploreSelectedItem.YouTubeMusic(pl)
                     },
                     onSongClick = onSongClick,

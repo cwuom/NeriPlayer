@@ -135,7 +135,8 @@ data class YouTubeMusicHomeItem(
     val subtitle: String,
     val coverUrl: String,
     val browseId: String = "",
-    val videoId: String = ""
+    val videoId: String = "",
+    val pageType: String = ""
 )
 
 internal data class ParsedYouTubeMusicHomeShelf(
@@ -586,6 +587,7 @@ internal object YouTubeMusicParser {
                     val title = extractText(twoRow.optJSONObject("title"))
                     if (title.isBlank()) continue
                     val navigationEndpoint = twoRow.optJSONObject("navigationEndpoint")
+                    val browseEndpoint = navigationEndpoint?.optJSONObject("browseEndpoint")
                     val browseId = navigationEndpoint
                         ?.optJSONObject("browseEndpoint")
                         ?.optString("browseId", "")
@@ -600,7 +602,12 @@ internal object YouTubeMusicParser {
                             subtitle = extractText(twoRow.optJSONObject("subtitle")),
                             coverUrl = extractMusicThumbnailUrl(twoRow.optJSONObject("thumbnailRenderer")),
                             browseId = browseId,
-                            videoId = videoId
+                            videoId = videoId,
+                            pageType = browseEndpoint
+                                ?.optJSONObject("browseEndpointContextSupportedConfigs")
+                                ?.optJSONObject("browseEndpointContextMusicConfig")
+                                ?.optString("pageType")
+                                .orEmpty()
                         )
                     )
                     continue

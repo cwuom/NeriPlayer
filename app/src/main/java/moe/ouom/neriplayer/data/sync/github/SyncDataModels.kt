@@ -232,7 +232,10 @@ data class SyncFavoritePlaylist(
     @ProtoNumber(7) val addedTime: Long,
     @ProtoNumber(8) val modifiedAt: Long = addedTime,
     @ProtoNumber(9) val isDeleted: Boolean = false,
-    @ProtoNumber(10) val sortOrder: Long = addedTime
+    @ProtoNumber(10) val sortOrder: Long = addedTime,
+    @ProtoNumber(11) val browseId: String? = null,
+    @ProtoNumber(12) val playlistId: String? = null,
+    @ProtoNumber(13) val subtitle: String? = null
 ) {
     companion object {
         fun fromFavoritePlaylist(playlist: FavoritePlaylist, context: Context? = null): SyncFavoritePlaylist {
@@ -247,7 +250,10 @@ data class SyncFavoritePlaylist(
                     addedTime = playlist.addedTime,
                     modifiedAt = playlist.modifiedAt,
                     isDeleted = true,
-                    sortOrder = playlist.sortOrder
+                    sortOrder = playlist.sortOrder,
+                    browseId = playlist.browseId,
+                    playlistId = playlist.playlistId,
+                    subtitle = playlist.subtitle
                 )
             }
             val syncedSongs = playlist.songs.mapNotNull { SyncSong.fromSongItemOrNull(it, context) }
@@ -269,7 +275,10 @@ data class SyncFavoritePlaylist(
                 addedTime = playlist.addedTime,
                 modifiedAt = playlist.modifiedAt,
                 isDeleted = false,
-                sortOrder = playlist.sortOrder
+                sortOrder = playlist.sortOrder,
+                browseId = playlist.browseId,
+                playlistId = playlist.playlistId,
+                subtitle = playlist.subtitle
             )
         }
     }
@@ -281,6 +290,9 @@ data class SyncFavoritePlaylist(
             coverUrl = coverUrl,
             trackCount = trackCount,
             source = source,
+            browseId = browseId,
+            playlistId = playlistId,
+            subtitle = subtitle,
             songs = songs.map { it.toSongItem() },
             addedTime = addedTime,
             sortOrder = sortOrder,

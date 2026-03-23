@@ -116,6 +116,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.LibraryViewModel
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.favoriteId
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.formatPlayCount
@@ -296,7 +297,8 @@ fun LibraryScreen(
                         LibraryTab.FAVORITE -> FavoritePlaylistList(
                             listState = favoriteListState,
                             onNeteasePlaylistClick = onNeteasePlaylistClick,
-                            onBiliPlaylistClick = onBiliPlaylistClick
+                            onBiliPlaylistClick = onBiliPlaylistClick,
+                            onYouTubeMusicPlaylistClick = onYouTubeMusicPlaylistClick
                         )
 
                         LibraryTab.NETEASE -> NeteasePlaylistList(
@@ -350,6 +352,9 @@ private fun YouTubeMusicPlaylistList(
     val clipboardManager = remember(context) {
         context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     }
+    val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
+    val favorites by favoriteRepo.favorites.collectAsState()
+    val scope = rememberCoroutineScope()
     var menuPlaylist by remember { mutableStateOf<YouTubeMusicPlaylist?>(null) }
 
     fun copyToClipboard(label: String, text: String) {
@@ -420,6 +425,12 @@ private fun YouTubeMusicPlaylistList(
             items = playlists,
             key = { it.browseId }
         ) { playlist ->
+            val playlistFavoriteId = remember(playlist.playlistId, playlist.browseId) {
+                playlist.favoriteId()
+            }
+            val isFavorite = remember(favorites, playlistFavoriteId) {
+                favoriteRepo.isFavorite(playlistFavoriteId, "youtubeMusic")
+            }
             Card(
                 shape = cardShape,
                 colors = CardDefaults.cardColors(
@@ -492,6 +503,43 @@ private fun YouTubeMusicPlaylistList(
                         onClick = {
                             menuPlaylist = null
                             onClick(playlist)
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                if (isFavorite) {
+                                    stringResource(R.string.home_unfavorite_playlist)
+                                } else {
+                                    stringResource(R.string.home_favorite_playlist)
+                                }
+                            )
+                        },
+                        onClick = {
+                            menuPlaylist = null
+                            val toastMessage = if (isFavorite) {
+                                context.getString(R.string.home_unfavorited)
+                            } else {
+                                context.getString(R.string.favorite_success)
+                            }
+                            scope.launch {
+                                if (isFavorite) {
+                                    favoriteRepo.removeFavorite(playlistFavoriteId, "youtubeMusic")
+                                } else {
+                                    favoriteRepo.addFavorite(
+                                        id = playlistFavoriteId,
+                                        name = playlist.title,
+                                        coverUrl = playlist.coverUrl,
+                                        trackCount = playlist.trackCount,
+                                        source = "youtubeMusic",
+                                        browseId = playlist.browseId,
+                                        playlistId = playlist.playlistId,
+                                        subtitle = playlist.subtitle,
+                                        songs = emptyList()
+                                    )
+                                }
+                                Toast.makeText(context, toastMessage, Toast.LENGTH_SHORT).show()
+                            }
                         }
                     )
                     DropdownMenuItem(
@@ -1327,7 +1375,8 @@ private fun NeteaseAlbumList(
 private fun FavoritePlaylistList(
     listState: LazyListState,
     onNeteasePlaylistClick: (NeteasePlaylist) -> Unit,
-    onBiliPlaylistClick: (BiliPlaylist) -> Unit
+    onBiliPlaylistClick: (BiliPlaylist) -> Unit,
+    onYouTubeMusicPlaylistClick: (YouTubeMusicPlaylist) -> Unit
 ) {
     val context = LocalContext.current
     val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
@@ -1481,6 +1530,31 @@ private fun FavoritePlaylistList(
                                                     trackCount = favorite.trackCount
                                                 )
                                             )
+                                        }
+                                        "youtubeMusic" -> {
+                                            val resolvedBrowseId = favorite.browseId
+                                                ?.takeIf { it.isNotBlank() }
+                                                ?: favorite.playlistId
+                                                    ?.takeIf { it.isNotBlank() }
+                                                    ?.let { "VL$it" }
+                                            val resolvedPlaylistId = favorite.playlistId
+                                                ?.takeIf { it.isNotBlank() }
+                                                ?: resolvedBrowseId?.removePrefix("VL")
+                                            if (
+                                                !resolvedBrowseId.isNullOrBlank() &&
+                                                !resolvedPlaylistId.isNullOrBlank()
+                                            ) {
+                                                onYouTubeMusicPlaylistClick(
+                                                    YouTubeMusicPlaylist(
+                                                        browseId = resolvedBrowseId,
+                                                        playlistId = resolvedPlaylistId,
+                                                        title = favorite.name,
+                                                        subtitle = favorite.subtitle.orEmpty(),
+                                                        coverUrl = favorite.coverUrl.orEmpty(),
+                                                        trackCount = favorite.trackCount
+                                                    )
+                                                )
+                                            }
                                         }
                                         "bili" -> {
                                             onBiliPlaylistClick(

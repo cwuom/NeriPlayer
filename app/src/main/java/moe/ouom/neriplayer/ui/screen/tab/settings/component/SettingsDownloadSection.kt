@@ -60,8 +60,6 @@ internal fun SettingsDownloadSection(
     onExpandedChange: (Boolean) -> Unit,
     onNavigateToDownloadManager: () -> Unit
 ) {
-    val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
-
     ExpandableHeader(
         icon = Icons.Outlined.Download,
         title = stringResource(R.string.settings_download_management),
@@ -77,76 +75,87 @@ internal fun SettingsDownloadSection(
         enter = fadeIn() + expandVertically(),
         exit = fadeOut() + shrinkVertically()
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color.Transparent)
-                .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
-        ) {
-            batchDownloadProgress?.let { progress ->
-                ListItem(
-                    leadingContent = {
-                        Icon(
-                            Icons.Outlined.Download,
-                            contentDescription = stringResource(R.string.settings_download_progress),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    },
-                    headlineContent = { Text(stringResource(R.string.download_progress)) },
-                    supportingContent = {
-                        Text(
-                            stringResource(
-                                R.string.settings_download_songs_count,
-                                progress.completedSongs,
-                                progress.totalSongs
-                            )
-                        )
-                    },
-                    trailingContent = {
-                        HapticTextButton(onClick = { AudioDownloadManager.cancelDownload() }) {
-                            Text(
-                                stringResource(R.string.action_cancel),
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        }
-                    },
-                    modifier = Modifier.settingsItemClickable(onClick = onNavigateToDownloadManager),
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                )
+        SettingsDownloadExpandedContent(
+            onNavigateToDownloadManager = onNavigateToDownloadManager
+        )
+    }
+}
 
-                LinearProgressIndicator(
-                    progress = { (progress.percentage / 100f).coerceIn(0f, 1f) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 16.dp, end = 16.dp)
-                )
+@Composable
+private fun SettingsDownloadExpandedContent(
+    onNavigateToDownloadManager: () -> Unit
+) {
+    val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
 
-                if (progress.currentSong.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = stringResource(R.string.settings_downloading, progress.currentSong),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 16.dp)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.Transparent)
+            .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
+    ) {
+        batchDownloadProgress?.let { progress ->
+            ListItem(
+                leadingContent = {
+                    Icon(
+                        Icons.Outlined.Download,
+                        contentDescription = stringResource(R.string.settings_download_progress),
+                        tint = MaterialTheme.colorScheme.primary
                     )
-                }
-            }
-
-            if (batchDownloadProgress == null) {
-                ListItem(
-                    leadingContent = {
-                        Icon(
-                            Icons.Outlined.Download,
-                            contentDescription = stringResource(R.string.settings_download_manager),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                headlineContent = { Text(stringResource(R.string.download_progress)) },
+                supportingContent = {
+                    Text(
+                        stringResource(
+                            R.string.settings_download_songs_count,
+                            progress.completedSongs,
+                            progress.totalSongs
                         )
-                    },
-                    headlineContent = { Text(stringResource(R.string.download_title)) },
-                    supportingContent = { Text(stringResource(R.string.download_desc)) },
-                    modifier = Modifier.settingsItemClickable(onClick = onNavigateToDownloadManager),
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                    )
+                },
+                trailingContent = {
+                    HapticTextButton(onClick = { AudioDownloadManager.cancelDownload() }) {
+                        Text(
+                            stringResource(R.string.action_cancel),
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                },
+                modifier = Modifier.settingsItemClickable(onClick = onNavigateToDownloadManager),
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+            )
+
+            LinearProgressIndicator(
+                progress = { (progress.percentage / 100f).coerceIn(0f, 1f) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp)
+            )
+
+            if (progress.currentSong.isNotBlank()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = stringResource(R.string.settings_downloading, progress.currentSong),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 16.dp)
                 )
             }
+        }
+
+        if (batchDownloadProgress == null) {
+            ListItem(
+                leadingContent = {
+                    Icon(
+                        Icons.Outlined.Download,
+                        contentDescription = stringResource(R.string.settings_download_manager),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                headlineContent = { Text(stringResource(R.string.download_title)) },
+                supportingContent = { Text(stringResource(R.string.download_desc)) },
+                modifier = Modifier.settingsItemClickable(onClick = onNavigateToDownloadManager),
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+            )
         }
     }
 }

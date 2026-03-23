@@ -55,9 +55,11 @@ import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -107,6 +109,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayName
@@ -116,6 +119,7 @@ import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.playlist.YouTubeMusicPlaylistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.favoriteId
 import moe.ouom.neriplayer.util.HapticFloatingActionButton
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
@@ -138,6 +142,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -179,6 +184,8 @@ fun YouTubeMusicPlaylistDetailScreen(
     val exportSheetState = rememberModalBottomSheetState()
     val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
     val allPlaylists by repo.playlists.collectAsState()
+    val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
+    val favorites by favoriteRepo.favorites.collectAsState()
 
     LaunchedEffect(playlist.browseId) {
         viewModel.start(playlist)
@@ -192,7 +199,7 @@ fun YouTubeMusicPlaylistDetailScreen(
         onDispose {
             latestPlaylist?.let { updated ->
                 AppContainer.playlistUsageRepo.updateInfo(
-                    id = updated.playlistId.hashCode().toLong(),
+                    id = stableYouTubeMusicId(updated.playlistId.ifBlank { updated.browseId }),
                     name = updated.title,
                     picUrl = updated.coverUrl,
                     trackCount = updated.trackCount,
@@ -205,6 +212,12 @@ fun YouTubeMusicPlaylistDetailScreen(
     }
 
     val resolvedPlaylist = ui.playlist ?: playlist
+    val playlistFavoriteId = remember(resolvedPlaylist.playlistId, resolvedPlaylist.browseId) {
+        resolvedPlaylist.favoriteId()
+    }
+    val isFavorite = remember(favorites, playlistFavoriteId) {
+        favoriteRepo.isFavorite(playlistFavoriteId, "youtubeMusic")
+    }
     val resolvedTrackCount = resolvedPlaylist.trackCount.takeIf { it > 0 } ?: ui.tracks.size
     val displayedTracks = remember(ui.tracks, searchQuery) {
         if (searchQuery.isBlank()) {
@@ -220,6 +233,21 @@ fun YouTubeMusicPlaylistDetailScreen(
         }
     }
     val currentIndex = displayedTracks.indexOfFirst { it.sameIdentityAs(currentSong) }
+
+    LaunchedEffect(isFavorite, resolvedPlaylist, ui.tracks) {
+        if (!isFavorite) return@LaunchedEffect
+        favoriteRepo.updateFavoriteMeta(
+            id = playlistFavoriteId,
+            name = resolvedPlaylist.title,
+            coverUrl = resolvedPlaylist.coverUrl,
+            trackCount = resolvedTrackCount,
+            source = "youtubeMusic",
+            browseId = resolvedPlaylist.browseId,
+            playlistId = resolvedPlaylist.playlistId,
+            subtitle = resolvedPlaylist.subtitle,
+            songs = ui.tracks
+        )
+    }
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -254,6 +282,45 @@ fun YouTubeMusicPlaylistDetailScreen(
                             Icon(
                                 imageVector = Icons.Filled.Search,
                                 contentDescription = stringResource(R.string.cd_search_songs)
+                            )
+                        }
+                        HapticIconButton(
+                            onClick = {
+                                scope.launch {
+                                    if (isFavorite) {
+                                        favoriteRepo.removeFavorite(playlistFavoriteId, "youtubeMusic")
+                                    } else {
+                                        favoriteRepo.addFavorite(
+                                            id = playlistFavoriteId,
+                                            name = resolvedPlaylist.title,
+                                            coverUrl = resolvedPlaylist.coverUrl,
+                                            trackCount = resolvedTrackCount,
+                                            source = "youtubeMusic",
+                                            browseId = resolvedPlaylist.browseId,
+                                            playlistId = resolvedPlaylist.playlistId,
+                                            subtitle = resolvedPlaylist.subtitle,
+                                            songs = ui.tracks
+                                        )
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = if (isFavorite) {
+                                    Icons.Filled.Favorite
+                                } else {
+                                    Icons.Outlined.FavoriteBorder
+                                },
+                                contentDescription = if (isFavorite) {
+                                    stringResource(R.string.action_unfavorite)
+                                } else {
+                                    stringResource(R.string.action_favorite_playlist)
+                                },
+                                tint = if (isFavorite) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                }
                             )
                         }
                         if (ui.tracks.isNotEmpty()) {

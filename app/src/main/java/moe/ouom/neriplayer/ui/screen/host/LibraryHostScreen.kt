@@ -62,6 +62,7 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.displayCoverUrl
+import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.ui.util.toSaveMap
 import moe.ouom.neriplayer.ui.util.restoreBiliPlaylist
@@ -194,7 +195,7 @@ fun LibraryHostScreen(
                         onYouTubeMusicPlaylistClick = { playlist ->
                             selected = LibrarySelectedItem.YouTubeMusic(playlist)
                             AppContainer.playlistUsageRepo.recordOpen(
-                                id = playlist.playlistId.hashCode().toLong(),
+                                id = stableYouTubeMusicId(playlist.playlistId.ifBlank { playlist.browseId }),
                                 name = playlist.title,
                                 picUrl = playlist.coverUrl,
                                 trackCount = playlist.trackCount,

@@ -45,6 +45,9 @@ data class FavoritePlaylist(
     val coverUrl: String?,
     val trackCount: Int,
     val source: String,
+    val browseId: String? = null,
+    val playlistId: String? = null,
+    val subtitle: String? = null,
     val songs: List<SongItem>,
     val addedTime: Long = System.currentTimeMillis(),
     val sortOrder: Long = addedTime,
@@ -140,6 +143,9 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
         coverUrl: String?,
         trackCount: Int,
         source: String,
+        browseId: String? = null,
+        playlistId: String? = null,
+        subtitle: String? = null,
         songs: List<SongItem>
     ) {
         withContext(Dispatchers.IO) {
@@ -159,6 +165,9 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
                 coverUrl = coverUrl ?: existing?.coverUrl,
                 trackCount = maxOf(trackCount, existing?.trackCount ?: 0, mergedSongs.size),
                 source = source,
+                browseId = browseId?.takeIf { it.isNotBlank() } ?: existing?.browseId,
+                playlistId = playlistId?.takeIf { it.isNotBlank() } ?: existing?.playlistId,
+                subtitle = subtitle?.takeIf { it.isNotBlank() } ?: existing?.subtitle,
                 songs = mergedSongs.ifEmpty { existing?.songs.orEmpty() },
                 addedTime = existing?.takeUnless { it.isDeleted }?.addedTime ?: now,
                 sortOrder = existing?.takeUnless { it.isDeleted }?.normalizeSortOrder()?.sortOrder ?: now,
@@ -193,6 +202,9 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
                 songs = emptyList(),
                 trackCount = 0,
                 coverUrl = existing.coverUrl,
+                browseId = existing.browseId,
+                playlistId = existing.playlistId,
+                subtitle = existing.subtitle,
                 sortOrder = existing.normalizeSortOrder().sortOrder,
                 modifiedAt = System.currentTimeMillis(),
                 isDeleted = true
@@ -207,6 +219,9 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
         coverUrl: String?,
         trackCount: Int,
         source: String,
+        browseId: String? = null,
+        playlistId: String? = null,
+        subtitle: String? = null,
         songs: List<SongItem>
     ) {
         withContext(Dispatchers.IO) {
@@ -226,6 +241,9 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
                 name = resolvedName,
                 coverUrl = resolvedCover,
                 trackCount = resolvedTrackCount,
+                browseId = browseId?.takeIf { it.isNotBlank() } ?: existing.browseId,
+                playlistId = playlistId?.takeIf { it.isNotBlank() } ?: existing.playlistId,
+                subtitle = subtitle?.takeIf { it.isNotBlank() } ?: existing.subtitle,
                 songs = mergedSongs,
                 sortOrder = existing.normalizeSortOrder().sortOrder,
                 modifiedAt = System.currentTimeMillis(),

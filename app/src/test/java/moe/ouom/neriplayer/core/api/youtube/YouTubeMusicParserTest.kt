@@ -493,6 +493,81 @@ class YouTubeMusicParserTest {
     }
 
     @Test
+    fun parseHomeShelfPages_readsBrowsePageTypeForHomeCards() {
+        val root = JSONObject(
+            """
+            {
+              "contents": {
+                "singleColumnBrowseResultsRenderer": {
+                  "tabs": [
+                    {
+                      "tabRenderer": {
+                        "content": {
+                          "sectionListRenderer": {
+                            "contents": [
+                              {
+                                "musicCarouselShelfRenderer": {
+                                  "header": {
+                                    "musicCarouselShelfBasicHeaderRenderer": {
+                                      "title": { "simpleText": "为你推荐" }
+                                    }
+                                  },
+                                  "contents": [
+                                    {
+                                      "musicTwoRowItemRenderer": {
+                                        "title": { "simpleText": "Playlist A" },
+                                        "subtitle": { "simpleText": "42 songs" },
+                                        "navigationEndpoint": {
+                                          "browseEndpoint": {
+                                            "browseId": "VLPL-home-playlist",
+                                            "browseEndpointContextSupportedConfigs": {
+                                              "browseEndpointContextMusicConfig": {
+                                                "pageType": "MUSIC_PAGE_TYPE_PLAYLIST"
+                                              }
+                                            }
+                                          }
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "musicTwoRowItemRenderer": {
+                                        "title": { "simpleText": "Artist A" },
+                                        "subtitle": { "simpleText": "Artist • 1M subscribers" },
+                                        "navigationEndpoint": {
+                                          "browseEndpoint": {
+                                            "browseId": "UC-artist-home",
+                                            "browseEndpointContextSupportedConfigs": {
+                                              "browseEndpointContextMusicConfig": {
+                                                "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                                              }
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  ]
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+            """.trimIndent()
+        )
+
+        val shelves = YouTubeMusicParser.parseHomeShelfPages(root)
+
+        assertEquals(1, shelves.size)
+        assertEquals("MUSIC_PAGE_TYPE_PLAYLIST", shelves.first().items[0].pageType)
+        assertEquals("MUSIC_PAGE_TYPE_ARTIST", shelves.first().items[1].pageType)
+    }
+
+    @Test
     fun extractHomeContinuationAndShelfItems_supportSectionContinuationPayload() {
         val root = JSONObject(
             """

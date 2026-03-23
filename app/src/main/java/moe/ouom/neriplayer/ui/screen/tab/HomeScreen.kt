@@ -123,6 +123,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.HomeSectionState
 import moe.ouom.neriplayer.ui.viewmodel.tab.HomeViewModel
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.favoriteId
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeShelf
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeItem
 import moe.ouom.neriplayer.util.HapticIconButton
@@ -191,7 +192,9 @@ fun HomeScreen(
     val hasVisibleYtMusicFeed = remember(ytmSections) {
         ytmSections.guessYouLike != null ||
             ytmSections.dailyDiscover != null ||
-            ytmSections.remaining.isNotEmpty()
+            ytmSections.remaining.any { shelf ->
+                shelf.shouldRenderAsSongShelf() || shelf.hasRenderablePlaylistItems()
+            }
     }
     val scope = rememberCoroutineScope()
     val showContinue = showContinueCard && usage.isNotEmpty()
@@ -321,7 +324,12 @@ fun HomeScreen(
                                     ) { playlist ->
                                         YtMusicPlaylistCard(
                                             playlist = playlist,
-                                            onClick = { onYouTubeMusicPlaylistClick(playlist) }
+                                            onClick = { onYouTubeMusicPlaylistClick(playlist) },
+                                            onShowSnackbar = { message ->
+                                                scope.launch {
+                                                    snackbarHostState.showSnackbar(message)
+                                                }
+                                            }
                                         )
                                     }
                                 }
@@ -338,7 +346,9 @@ fun HomeScreen(
                             }
 
                             when {
-                                ytmSections.remaining.isNotEmpty() -> {
+                                ytmSections.remaining.any { shelf ->
+                                    shelf.shouldRenderAsSongShelf() || shelf.hasRenderablePlaylistItems()
+                                } -> {
                                     ytmSections.remaining.forEach { shelf ->
                                         if (shelf.shouldRenderAsSongShelf()) {
                                             addYouTubeMusicSongShelfSection(
@@ -348,6 +358,10 @@ fun HomeScreen(
                                                 onSongClick = onSongClick
                                             )
                                         } else {
+                                            val playlistItems = shelf.items.filter { it.isPlaylistItem() }
+                                            if (playlistItems.isEmpty()) {
+                                                return@forEach
+                                            }
                                             item(span = { GridItemSpan(maxLineSpan) }) {
                                                 SectionHeader(
                                                     icon = Icons.Outlined.Explore,
@@ -355,23 +369,15 @@ fun HomeScreen(
                                                 )
                                             }
                                             items(
-                                                items = shelf.items,
+                                                items = playlistItems,
                                                 key = { shelf.title + it.title + it.browseId + it.videoId }
                                             ) { homeItem ->
                                                 YtMusicHomeItemCard(
                                                     item = homeItem,
                                                     onClick = {
-                                                        if (homeItem.browseId.isNotBlank()) {
-                                                            onYouTubeMusicPlaylistClick(
-                                                                YouTubeMusicPlaylist(
-                                                                    browseId = homeItem.browseId,
-                                                                    playlistId = homeItem.browseId.removePrefix("VL"),
-                                                                    title = homeItem.title,
-                                                                    subtitle = homeItem.subtitle,
-                                                                    coverUrl = homeItem.coverUrl,
-                                                                    trackCount = 0
-                                                                )
-                                                            )
+                                                        val playlist = homeItem.toPlaylist()
+                                                        if (playlist != null) {
+                                                            onYouTubeMusicPlaylistClick(playlist)
                                                         } else if (homeItem.videoId.isNotBlank()) {
                                                             val songs = listOfNotNull(
                                                                 homeItem.toPlayableSongItem(shelf.title)
@@ -379,6 +385,11 @@ fun HomeScreen(
                                                             if (songs.isNotEmpty()) {
                                                                 onSongClick(songs, 0)
                                                             }
+                                                        }
+                                                    },
+                                                    onShowSnackbar = { message ->
+                                                        scope.launch {
+                                                            snackbarHostState.showSnackbar(message)
                                                         }
                                                     }
                                                 )
@@ -745,15 +756,33 @@ fun PlaylistCard(
 @Composable
 private fun YtMusicPlaylistCard(
     playlist: YouTubeMusicPlaylist,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onShowSnackbar: (String) -> Unit
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
+    val favorites by favoriteRepo.favorites.collectAsState()
+    val playlistFavoriteId = remember(playlist.playlistId, playlist.browseId) {
+        playlist.favoriteId()
+    }
+    val isFavorite = remember(favorites, playlistFavoriteId) {
+        favoriteRepo.isFavorite(playlistFavoriteId, "youtubeMusic")
+    }
+    var showMenu by remember { mutableStateOf(false) }
+    val unfavoritedText = stringResource(R.string.home_unfavorited)
+    val favoriteSuccessText = stringResource(R.string.favorite_success)
+
     Column(
         modifier = Modifier
             .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = { showMenu = true }
+            )
     ) {
         AsyncImage(
-            model = ImageRequest.Builder(LocalContext.current)
+            model = ImageRequest.Builder(context)
                 .data(playlist.coverUrl)
                 .crossfade(true)
                 .build(),
@@ -781,21 +810,83 @@ private fun YtMusicPlaylistCard(
                 )
             }
         }
+
+        DropdownMenu(
+            expanded = showMenu,
+            onDismissRequest = { showMenu = false }
+        ) {
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        if (isFavorite) {
+                            stringResource(R.string.home_unfavorite_playlist)
+                        } else {
+                            stringResource(R.string.home_favorite_playlist)
+                        }
+                    )
+                },
+                onClick = {
+                    showMenu = false
+                    scope.launch {
+                        if (isFavorite) {
+                            favoriteRepo.removeFavorite(playlistFavoriteId, "youtubeMusic")
+                            onShowSnackbar(unfavoritedText)
+                        } else {
+                            favoriteRepo.addFavorite(
+                                id = playlistFavoriteId,
+                                name = playlist.title,
+                                coverUrl = playlist.coverUrl,
+                                trackCount = playlist.trackCount,
+                                source = "youtubeMusic",
+                                browseId = playlist.browseId,
+                                playlistId = playlist.playlistId,
+                                subtitle = playlist.subtitle,
+                                songs = emptyList()
+                            )
+                            onShowSnackbar(favoriteSuccessText)
+                        }
+                    }
+                }
+            )
+        }
     }
 }
 
 @Composable
 private fun YtMusicHomeItemCard(
     item: YouTubeMusicHomeItem,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onShowSnackbar: (String) -> Unit
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
+    val playlist = remember(item) { item.toPlaylist() }
+    val favorites by favoriteRepo.favorites.collectAsState()
+    val playlistFavoriteId = remember(playlist?.playlistId, playlist?.browseId) {
+        playlist?.favoriteId()
+    }
+    val isFavorite = remember(favorites, playlistFavoriteId) {
+        playlistFavoriteId?.let { favoriteRepo.isFavorite(it, "youtubeMusic") } == true
+    }
+    var showMenu by remember { mutableStateOf(false) }
+    val unfavoritedText = stringResource(R.string.home_unfavorited)
+    val favoriteSuccessText = stringResource(R.string.favorite_success)
+
     Column(
         modifier = Modifier
             .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = {
+                    if (playlist != null) {
+                        showMenu = true
+                    }
+                }
+            )
     ) {
         AsyncImage(
-            model = ImageRequest.Builder(LocalContext.current)
+            model = ImageRequest.Builder(context)
                 .data(item.coverUrl)
                 .crossfade(true)
                 .build(),
@@ -820,6 +911,48 @@ private fun YtMusicHomeItemCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Clip
+                )
+            }
+        }
+
+        DropdownMenu(
+            expanded = showMenu,
+            onDismissRequest = { showMenu = false }
+        ) {
+            playlist?.let { resolvedPlaylist ->
+                val favoriteId = playlistFavoriteId ?: return@let
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            if (isFavorite) {
+                                stringResource(R.string.home_unfavorite_playlist)
+                            } else {
+                                stringResource(R.string.home_favorite_playlist)
+                            }
+                        )
+                    },
+                    onClick = {
+                        showMenu = false
+                        scope.launch {
+                            if (isFavorite) {
+                                favoriteRepo.removeFavorite(favoriteId, "youtubeMusic")
+                                onShowSnackbar(unfavoritedText)
+                            } else {
+                                favoriteRepo.addFavorite(
+                                    id = favoriteId,
+                                    name = resolvedPlaylist.title,
+                                    coverUrl = resolvedPlaylist.coverUrl,
+                                    trackCount = resolvedPlaylist.trackCount,
+                                    source = "youtubeMusic",
+                                    browseId = resolvedPlaylist.browseId,
+                                    playlistId = resolvedPlaylist.playlistId,
+                                    subtitle = resolvedPlaylist.subtitle,
+                                    songs = emptyList()
+                                )
+                                onShowSnackbar(favoriteSuccessText)
+                            }
+                        }
+                    }
                 )
             }
         }
@@ -890,6 +1023,33 @@ private fun YouTubeMusicHomeShelf.shouldRenderAsSongShelf(): Boolean {
         return true
     }
     return title.matchesYouTubeMusicShelfKeywords(YouTubeMusicSongShelfKeywords)
+}
+
+private fun YouTubeMusicHomeShelf.hasRenderablePlaylistItems(): Boolean {
+    return items.any { it.isPlaylistItem() }
+}
+
+private fun YouTubeMusicHomeItem.isPlaylistItem(): Boolean {
+    val normalizedPageType = pageType.uppercase(Locale.US)
+    return when {
+        normalizedPageType.contains("PLAYLIST") -> true
+        normalizedPageType.isNotBlank() -> false
+        else -> browseId.startsWith("VL")
+    }
+}
+
+private fun YouTubeMusicHomeItem.toPlaylist(): YouTubeMusicPlaylist? {
+    if (!isPlaylistItem()) {
+        return null
+    }
+    return YouTubeMusicPlaylist(
+        browseId = browseId,
+        playlistId = browseId.removePrefix("VL"),
+        title = title,
+        subtitle = subtitle,
+        coverUrl = coverUrl,
+        trackCount = 0
+    )
 }
 
 private fun String.matchesYouTubeMusicShelfKeywords(keywords: List<String>): Boolean {

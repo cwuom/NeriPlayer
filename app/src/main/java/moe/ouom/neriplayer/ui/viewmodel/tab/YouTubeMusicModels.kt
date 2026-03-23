@@ -25,6 +25,7 @@ package moe.ouom.neriplayer.ui.viewmodel.tab
 
 import android.os.Parcelable
 import kotlinx.parcelize.Parcelize
+import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
 
 @Parcelize
 data class YouTubeMusicPlaylist(
@@ -35,3 +36,7 @@ data class YouTubeMusicPlaylist(
     val coverUrl: String,
     val trackCount: Int = 0
 ) : Parcelable
+
+fun YouTubeMusicPlaylist.favoriteId(): Long {
+    return stableYouTubeMusicId(playlistId.ifBlank { browseId })
+}

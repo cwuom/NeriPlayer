@@ -1319,6 +1319,7 @@ fun NeriApp(
                                         onShowHomeRecommendedCardChange = { enabled ->
                                             scope.launch { repo.setHomeCardRecommended(enabled) }
                                         },
+                                        homeHasRecentUsage = homeUsageEntries.isNotEmpty(),
                                         playbackFadeIn = playbackFadeIn,
                                         onPlaybackFadeInChange = { enabled ->
                                             scope.launch { repo.setPlaybackFadeIn(enabled) }

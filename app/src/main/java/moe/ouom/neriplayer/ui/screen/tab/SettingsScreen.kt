@@ -66,7 +66,6 @@ import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -75,9 +74,9 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -92,7 +91,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -100,9 +98,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
@@ -110,6 +105,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthHealth
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
+import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.settings.background.BackgroundImageStorage
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.LanguageSettingItem
@@ -213,6 +209,7 @@ fun SettingsScreen(
     onShowHomeRadarCardChange: (Boolean) -> Unit,
     showHomeRecommendedCard: Boolean,
     onShowHomeRecommendedCardChange: (Boolean) -> Unit,
+    homeHasRecentUsage: Boolean,
     playbackFadeIn: Boolean,
     onPlaybackFadeInChange: (Boolean) -> Unit,
     playbackCrossfadeNext: Boolean,
@@ -239,7 +236,6 @@ fun SettingsScreen(
     onClearCacheClick: (clearAudio: Boolean, clearImage: Boolean) -> Unit,
     onBeforeLanguageRestart: () -> Unit = {},
 ) {
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val internationalEnabled by AppContainer.settingsRepo.internationalizationEnabledFlow
@@ -327,26 +323,25 @@ fun SettingsScreen(
     // ------------------------------------
 
     val neteaseVm: NeteaseAuthViewModel = viewModel()
-    val neteaseAuthUiState by neteaseVm.uiState.collectAsStateWithLifecycleCompat()
     var inlineMsg by remember { mutableStateOf<String?>(null) }
     var confirmPhoneMasked by remember { mutableStateOf<String?>(null) }
     var cookieText by remember { mutableStateOf("") }
     var versionTapCount by remember { mutableIntStateOf(0) }
     var biliCookieText by remember { mutableStateOf("") }
     val biliVm: BiliAuthViewModel = viewModel()
-    val biliAuthUiState by biliVm.uiState.collectAsStateWithLifecycleCompat()
     var biliReauthHealth by remember { mutableStateOf<SavedCookieAuthHealth?>(null) }
     var biliSheetInitialTab by rememberSaveable { mutableIntStateOf(0) }
     var neteaseReauthHealth by remember { mutableStateOf<SavedCookieAuthHealth?>(null) }
     var neteaseSheetInitialTab by rememberSaveable { mutableIntStateOf(0) }
     var youtubeCookieText by remember { mutableStateOf("") }
     val youtubeVm: YouTubeAuthViewModel = viewModel()
-    val youtubeAuthUiState by youtubeVm.uiState.collectAsStateWithLifecycleCompat()
     var youtubeSheetInitialTab by rememberSaveable { mutableIntStateOf(0) }
     
     // 备份与恢复
     val backupRestoreVm: BackupRestoreViewModel = viewModel()
     val backupRestoreUiState by backupRestoreVm.uiState.collectAsState()
+    val localPlaylistRepo = remember(context) { LocalPlaylistRepository.getInstance(context) }
+    val localPlaylists by localPlaylistRepo.playlists.collectAsState(initial = emptyList())
 
     // 照片选择器
     val photoPickerLauncher = rememberLauncherForActivityResult(
@@ -427,12 +422,11 @@ fun SettingsScreen(
         !showHomeTrendingCard &&
         !showHomeRadarCard &&
         !showHomeRecommendedCard
-    val recentUsage by AppContainer.playlistUsageRepo.frequentPlaylistsFlow.collectAsState(initial = emptyList())
     val homeStartAvailable =
         showHomeTrendingCard ||
             showHomeRadarCard ||
             showHomeRecommendedCard ||
-            (showHomeContinueCard && recentUsage.isNotEmpty())
+            (showHomeContinueCard && homeHasRecentUsage)
     val homeTrendingLabelRes = if (internationalEnabled) {
         R.string.home_ytmusic_guess_you_like
     } else {
@@ -483,82 +477,6 @@ fun SettingsScreen(
             else -> context.getString(R.string.nav_home)
         }
     }
-    val biliStatusText = when (biliAuthUiState.health.state) {
-        SavedCookieAuthState.Valid -> {
-            val relativeTime = biliAuthUiState.health.savedAt
-                .takeIf { it > 0L }
-                ?.let { formatSyncTime(it) }
-                ?: stringResource(R.string.time_just_now)
-            stringResource(R.string.settings_bili_status_valid, relativeTime)
-        }
-        SavedCookieAuthState.Checking -> stringResource(R.string.settings_auth_checking)
-        SavedCookieAuthState.Expired -> stringResource(R.string.settings_bili_status_expired)
-        SavedCookieAuthState.Stale -> {
-            biliAuthUiState.health.savedAt
-                .takeIf { it > 0L }
-                ?.let { stringResource(R.string.settings_bili_status_stale, formatSyncTime(it)) }
-                ?: stringResource(R.string.settings_bili_status_stale_no_time)
-        }
-        SavedCookieAuthState.Missing -> stringResource(R.string.settings_bili_status_missing)
-    }
-    val neteaseStatusText = when (neteaseAuthUiState.health.state) {
-        SavedCookieAuthState.Valid -> {
-            val relativeTime = neteaseAuthUiState.health.savedAt
-                .takeIf { it > 0L }
-                ?.let { formatSyncTime(it) }
-                ?: stringResource(R.string.time_just_now)
-            stringResource(R.string.settings_netease_status_valid, relativeTime)
-        }
-        SavedCookieAuthState.Checking -> stringResource(R.string.settings_auth_checking)
-        SavedCookieAuthState.Expired -> stringResource(R.string.settings_netease_status_expired)
-        SavedCookieAuthState.Stale -> {
-            neteaseAuthUiState.health.savedAt
-                .takeIf { it > 0L }
-                ?.let { stringResource(R.string.settings_netease_status_stale, formatSyncTime(it)) }
-                ?: stringResource(R.string.settings_netease_status_stale_no_time)
-        }
-        SavedCookieAuthState.Missing -> stringResource(R.string.settings_netease_status_missing)
-    }
-    val youtubeStatusText = when (youtubeAuthUiState.health.state) {
-        YouTubeAuthState.Valid -> {
-            val relativeTime = youtubeAuthUiState.health.savedAt
-                .takeIf { it > 0L }
-                ?.let { formatSyncTime(it) }
-                ?: stringResource(R.string.time_just_now)
-            stringResource(R.string.settings_youtube_status_valid, relativeTime)
-        }
-        YouTubeAuthState.Expired -> stringResource(R.string.settings_youtube_status_expired)
-        YouTubeAuthState.Stale -> {
-            youtubeAuthUiState.health.savedAt
-                .takeIf { it > 0L }
-                ?.let { stringResource(R.string.settings_youtube_status_stale, formatSyncTime(it)) }
-                ?: stringResource(R.string.settings_youtube_status_stale_no_time)
-        }
-        YouTubeAuthState.Missing -> stringResource(R.string.settings_youtube_status_missing)
-    }
-    val lifecycleOwner = context as? LifecycleOwner
-
-    DisposableEffect(lifecycleOwner, biliVm, neteaseVm, youtubeVm) {
-        biliVm.refreshAuthHealth(promptIfNeeded = true)
-        neteaseVm.refreshAuthHealth(promptIfNeeded = true)
-        youtubeVm.refreshAuthHealth()
-        if (lifecycleOwner == null) {
-            onDispose { }
-        } else {
-            val observer = LifecycleEventObserver { _, event ->
-                if (event == Lifecycle.Event.ON_RESUME) {
-                    biliVm.refreshAuthHealth(promptIfNeeded = true)
-                    neteaseVm.refreshAuthHealth(promptIfNeeded = true)
-                    youtubeVm.refreshAuthHealth()
-                }
-            }
-            lifecycleOwner.lifecycle.addObserver(observer)
-            onDispose {
-                lifecycleOwner.lifecycle.removeObserver(observer)
-            }
-        }
-    }
-
     LaunchedEffect(neteaseVm) {
         neteaseVm.events.collect { e ->
             when (e) {
@@ -635,12 +553,11 @@ fun SettingsScreen(
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Transparent)
-            .nestedScroll(scrollBehavior.nestedScrollConnection),
+            .background(Color.Transparent),
         containerColor = Color.Transparent,
         contentColor = Color.Transparent,
         topBar = {
-            LargeTopAppBar(
+            TopAppBar(
                 title = {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -653,10 +570,8 @@ fun SettingsScreen(
                         )
                     }
                 },
-                scrollBehavior = scrollBehavior,
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent,
-                    scrolledContainerColor = Color.Transparent,
                     navigationIconContentColor = Color.Unspecified,
                     titleContentColor = MaterialTheme.colorScheme.onSurface,
                     actionIconContentColor = Color.Unspecified
@@ -802,88 +717,26 @@ fun SettingsScreen(
                     enter = fadeIn() + expandVertically(),
                     exit = fadeOut() + shrinkVertically()
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color.Transparent)
-                            .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
-                    ) {
-                        ListItem(
-                            leadingContent = {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.ic_bilibili),
-                                    contentDescription = stringResource(R.string.settings_bilibili),
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
-                            },
-                            headlineContent = { Text(stringResource(R.string.platform_bilibili)) },
-                            supportingContent = { Text(biliStatusText) },
-                            modifier = Modifier.settingsItemClickable {
-                                inlineMsg = null
-                                biliSheetInitialTab = 0
-                                showBiliSheet = true
-                            },
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                        )
-
-
-                        // YouTube
-                        ListItem(
-                            leadingContent = {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.ic_youtube),
-                                    contentDescription = stringResource(R.string.common_youtube),
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
-                            },
-                            headlineContent = { Text(stringResource(R.string.common_youtube)) },
-                            supportingContent = { Text(youtubeStatusText) },
-                            modifier = Modifier.settingsItemClickable {
-                                inlineMsg = null
-                                youtubeSheetInitialTab = 0
-                                showYouTubeSheet = true
-                            },
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                        )
-
-                        // 网易云音乐
-                        ListItem(
-                            leadingContent = {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.ic_netease_cloud_music),
-                                    contentDescription = stringResource(R.string.settings_netease),
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
-                            },
-                            headlineContent = { Text(stringResource(R.string.platform_netease)) },
-                            supportingContent = { Text(neteaseStatusText) },
-                            modifier = Modifier.settingsItemClickable {
-                                inlineMsg = null
-                                neteaseSheetInitialTab = 0
-                                showNeteaseSheet = true
-                            },
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                        )
-
-                        // QQ 音乐
-                        ListItem(
-                            leadingContent = {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.ic_qq_music),
-                                    contentDescription = stringResource(R.string.settings_qq_music),
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
-                            },
-                            headlineContent = { Text(stringResource(R.string.settings_qq_music)) },
-                            supportingContent = { Text(stringResource(R.string.common_coming_soon)) },
-                            modifier = Modifier.settingsItemClickable { },
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                        )
-                    }
+                    SettingsLoginExpandedContent(
+                        biliVm = biliVm,
+                        youtubeVm = youtubeVm,
+                        neteaseVm = neteaseVm,
+                        onOpenBiliSheet = {
+                            inlineMsg = null
+                            biliSheetInitialTab = 0
+                            showBiliSheet = true
+                        },
+                        onOpenYouTubeSheet = {
+                            inlineMsg = null
+                            youtubeSheetInitialTab = 0
+                            showYouTubeSheet = true
+                        },
+                        onOpenNeteaseSheet = {
+                            inlineMsg = null
+                            neteaseSheetInitialTab = 0
+                            showNeteaseSheet = true
+                        }
+                    )
                 }
             }
 
@@ -1423,7 +1276,7 @@ fun SettingsScreen(
                     expanded = backupRestoreExpanded,
                     arrowRotation = backupRestoreArrowRotation,
                     onExpandedChange = { backupRestoreExpanded = it },
-                    currentPlaylistCount = backupRestoreVm.getCurrentPlaylistCount(context),
+                    currentPlaylistCount = localPlaylists.size,
                     backupRestoreUiState = backupRestoreUiState,
                     onExportClick = {
                         if (!backupRestoreUiState.isExporting) {
@@ -1552,5 +1405,146 @@ fun SettingsScreen(
         onShowClearGitHubConfigDialogChange = { showClearGitHubConfigDialog = it }
     )
 
+}
+
+@Composable
+private fun SettingsLoginExpandedContent(
+    biliVm: BiliAuthViewModel,
+    youtubeVm: YouTubeAuthViewModel,
+    neteaseVm: NeteaseAuthViewModel,
+    onOpenBiliSheet: () -> Unit,
+    onOpenYouTubeSheet: () -> Unit,
+    onOpenNeteaseSheet: () -> Unit,
+) {
+    val biliAuthUiState by biliVm.uiState.collectAsStateWithLifecycleCompat()
+    val youtubeAuthUiState by youtubeVm.uiState.collectAsStateWithLifecycleCompat()
+    val neteaseAuthUiState by neteaseVm.uiState.collectAsStateWithLifecycleCompat()
+
+    LaunchedEffect(biliVm, youtubeVm, neteaseVm) {
+        biliVm.refreshAuthHealth(promptIfNeeded = true)
+        neteaseVm.refreshAuthHealth(promptIfNeeded = true)
+        youtubeVm.refreshAuthHealth()
+    }
+
+    val biliStatusText = when (biliAuthUiState.health.state) {
+        SavedCookieAuthState.Valid -> {
+            val relativeTime = biliAuthUiState.health.savedAt
+                .takeIf { it > 0L }
+                ?.let { formatSyncTime(it) }
+                ?: stringResource(R.string.time_just_now)
+            stringResource(R.string.settings_bili_status_valid, relativeTime)
+        }
+        SavedCookieAuthState.Checking -> stringResource(R.string.settings_auth_checking)
+        SavedCookieAuthState.Expired -> stringResource(R.string.settings_bili_status_expired)
+        SavedCookieAuthState.Stale -> {
+            biliAuthUiState.health.savedAt
+                .takeIf { it > 0L }
+                ?.let { stringResource(R.string.settings_bili_status_stale, formatSyncTime(it)) }
+                ?: stringResource(R.string.settings_bili_status_stale_no_time)
+        }
+        SavedCookieAuthState.Missing -> stringResource(R.string.settings_bili_status_missing)
+    }
+    val neteaseStatusText = when (neteaseAuthUiState.health.state) {
+        SavedCookieAuthState.Valid -> {
+            val relativeTime = neteaseAuthUiState.health.savedAt
+                .takeIf { it > 0L }
+                ?.let { formatSyncTime(it) }
+                ?: stringResource(R.string.time_just_now)
+            stringResource(R.string.settings_netease_status_valid, relativeTime)
+        }
+        SavedCookieAuthState.Checking -> stringResource(R.string.settings_auth_checking)
+        SavedCookieAuthState.Expired -> stringResource(R.string.settings_netease_status_expired)
+        SavedCookieAuthState.Stale -> {
+            neteaseAuthUiState.health.savedAt
+                .takeIf { it > 0L }
+                ?.let { stringResource(R.string.settings_netease_status_stale, formatSyncTime(it)) }
+                ?: stringResource(R.string.settings_netease_status_stale_no_time)
+        }
+        SavedCookieAuthState.Missing -> stringResource(R.string.settings_netease_status_missing)
+    }
+    val youtubeStatusText = when (youtubeAuthUiState.health.state) {
+        YouTubeAuthState.Valid -> {
+            val relativeTime = youtubeAuthUiState.health.savedAt
+                .takeIf { it > 0L }
+                ?.let { formatSyncTime(it) }
+                ?: stringResource(R.string.time_just_now)
+            stringResource(R.string.settings_youtube_status_valid, relativeTime)
+        }
+        YouTubeAuthState.Expired -> stringResource(R.string.settings_youtube_status_expired)
+        YouTubeAuthState.Stale -> {
+            youtubeAuthUiState.health.savedAt
+                .takeIf { it > 0L }
+                ?.let { stringResource(R.string.settings_youtube_status_stale, formatSyncTime(it)) }
+                ?: stringResource(R.string.settings_youtube_status_stale_no_time)
+        }
+        YouTubeAuthState.Missing -> stringResource(R.string.settings_youtube_status_missing)
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.Transparent)
+            .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
+    ) {
+        ListItem(
+            leadingContent = {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_bilibili),
+                    contentDescription = stringResource(R.string.settings_bilibili),
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            headlineContent = { Text(stringResource(R.string.platform_bilibili)) },
+            supportingContent = { Text(biliStatusText) },
+            modifier = Modifier.settingsItemClickable(onClick = onOpenBiliSheet),
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+        )
+
+        ListItem(
+            leadingContent = {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_youtube),
+                    contentDescription = stringResource(R.string.common_youtube),
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            headlineContent = { Text(stringResource(R.string.common_youtube)) },
+            supportingContent = { Text(youtubeStatusText) },
+            modifier = Modifier.settingsItemClickable(onClick = onOpenYouTubeSheet),
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+        )
+
+        ListItem(
+            leadingContent = {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_netease_cloud_music),
+                    contentDescription = stringResource(R.string.settings_netease),
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            headlineContent = { Text(stringResource(R.string.platform_netease)) },
+            supportingContent = { Text(neteaseStatusText) },
+            modifier = Modifier.settingsItemClickable(onClick = onOpenNeteaseSheet),
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+        )
+
+        ListItem(
+            leadingContent = {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_qq_music),
+                    contentDescription = stringResource(R.string.settings_qq_music),
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            headlineContent = { Text(stringResource(R.string.settings_qq_music)) },
+            supportingContent = { Text(stringResource(R.string.common_coming_soon)) },
+            modifier = Modifier.settingsItemClickable { },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+        )
+    }
 }
 
