@@ -1359,6 +1359,10 @@ object PlayerManager {
                     maybeUpdateSongDuration(song, result.durationMs ?: 0L)
                     val cacheKey = computeCacheKey(song)
                     NPLogger.d("NERI-PlayerManager", "Using custom cache key: $cacheKey for song: ${song.name}")
+                    invalidateMismatchedCachedResource(
+                        cacheKey = cacheKey,
+                        expectedContentLength = result.expectedContentLength
+                    )
 
                     val mediaItem = buildMediaItem(
                         _currentSongFlow.value ?: song,
@@ -1639,6 +1643,7 @@ object PlayerManager {
                             _currentSongFlow.value ?: song,
                             result.url,
                             result.mimeType,
+                            result.expectedContentLength,
                             resumePositionMs,
                             resumePlaybackAfterRefresh
                         )
@@ -1664,12 +1669,17 @@ object PlayerManager {
         song: SongItem,
         url: String,
         mimeType: String?,
+        expectedContentLength: Long?,
         resumePositionMs: Long,
         resumePlaybackAfterRefresh: Boolean
     ) {
         if (_currentSongFlow.value?.sameIdentityAs(song) != true) return
 
         val cacheKey = computeCacheKey(song)
+        invalidateMismatchedCachedResource(
+            cacheKey = cacheKey,
+            expectedContentLength = expectedContentLength
+        )
         val mediaItem = buildMediaItem(song, url, cacheKey, mimeType)
 
         _currentMediaUrl.value = url
@@ -1792,8 +1802,51 @@ object PlayerManager {
         }
         return SongUrlResult.Success(
             url = finalUrl,
-            noticeMessage = noticeMessage
+            noticeMessage = noticeMessage,
+            expectedContentLength = parsed.contentLength
         )
+    }
+
+    private fun shouldReplaceCachedPreviewResource(
+        cachedContentLength: Long,
+        expectedContentLength: Long
+    ): Boolean {
+        val contentLengthGap = expectedContentLength - cachedContentLength
+        return cachedContentLength > 0L &&
+            expectedContentLength > 0L &&
+            contentLengthGap >= 512L * 1024L &&
+            cachedContentLength * 100L < expectedContentLength * 85L
+    }
+
+    private suspend fun invalidateMismatchedCachedResource(
+        cacheKey: String,
+        expectedContentLength: Long?
+    ) = withContext(Dispatchers.IO) {
+        val expectedLength = expectedContentLength?.takeIf { it > 0L } ?: return@withContext
+        if (!::cache.isInitialized) return@withContext
+
+        try {
+            val cachedSpans = cache.getCachedSpans(cacheKey)
+            if (cachedSpans.isEmpty()) return@withContext
+
+            val cachedContentLength = ContentMetadata.getContentLength(
+                cache.getContentMetadata(cacheKey)
+            )
+            if (!shouldReplaceCachedPreviewResource(cachedContentLength, expectedLength)) {
+                return@withContext
+            }
+
+            NPLogger.w(
+                "NERI-PlayerManager",
+                "检测到试听残片缓存，清理后切换到完整音源: key=$cacheKey, cached=$cachedContentLength, expected=$expectedLength"
+            )
+            cache.removeResource(cacheKey)
+        } catch (e: Exception) {
+            NPLogger.w(
+                "NERI-PlayerManager",
+                "清理试听残片缓存失败: key=$cacheKey, error=${e.message}"
+            )
+        }
     }
 
     private suspend fun getNeteaseSongUrl(song: SongItem, suppressError: Boolean = false): SongUrlResult = withContext(Dispatchers.IO) {

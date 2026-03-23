@@ -12,7 +12,8 @@ internal object NeteasePlaybackResponseParser {
         data class Success(
             val url: String,
             val type: String?,
-            val notice: Notice? = null
+            val notice: Notice? = null,
+            val contentLength: Long? = null
         ) : PlaybackResult()
 
         object RequiresLogin : PlaybackResult()
@@ -55,7 +56,8 @@ internal object NeteasePlaybackResponseParser {
                 PlaybackResult.Success(
                     url = url,
                     type = data.optCleanString("type"),
-                    notice = notice
+                    notice = notice,
+                    contentLength = data.optLongOrNull("size")?.takeIf { it > 0L }
                 )
             }
 
@@ -120,6 +122,15 @@ internal object NeteasePlaybackResponseParser {
             null, JSONObject.NULL -> null
             is Number -> value.toInt()
             is String -> value.toIntOrNull()
+            else -> null
+        }
+    }
+
+    private fun JSONObject.optLongOrNull(key: String): Long? {
+        return when (val value = opt(key)) {
+            null, JSONObject.NULL -> null
+            is Number -> value.toLong()
+            is String -> value.toLongOrNull()
             else -> null
         }
     }
