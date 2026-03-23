@@ -76,7 +76,7 @@ The current focus is not to build a public cloud service, but to integrate onlin
 ## Platform Status
 - **NetEase Cloud Music**: Login, search, curated playlist/album access, playback, downloads, lyrics completion.
 - **Bilibili**: Login, search, favorites access, multi-part video-to-audio playback, downloads.
-- **YouTube Music**: Login, playlist browsing/details, playback, downloads; registered as a search source in Explore (search function in development).
+- **YouTube Music**: Login, playlist browsing/details, playback, downloads; registered as a search source in Explore.
 - **QQ Music**: Currently solely used for playback metadata/lyrics completion. Login, playback, and library features are not implemented.
 
 ---
