@@ -256,6 +256,10 @@ For procedures spanning systematic builds or subsequent isolated app signature l
   <td>Bilibili API Collection and Organization</td>
 </tr>
 <tr>
+  <td><a href="https://github.com/yt-dlp/ejs">ejs</a></td>
+  <td>External JavaScript for yt-dlp supporting many runtimes</td>
+</tr>
+<tr>
   <td><a href="https://github.com/ReChronoRain/HyperCeiler">HyperCeiler</a></td>
   <td>HyperOS enhancement module - Make HyperOS Great Again!</td>
 </tr>
