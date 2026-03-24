@@ -151,6 +151,12 @@
     <string name="settings_force_dark_desc">Manually specify when not following system</string>
     <string name="settings_cover_source_badge">Show song source on cover</string>
     <string name="settings_cover_source_badge_desc">Display the platform badge for the current song on the cover area</string>
+    <string name="settings_nowplaying_progress_quality_switch">Show current quality at the bottom of Now Playing</string>
+    <string name="settings_nowplaying_progress_quality_switch_desc">Shown below the bottom toolbar; quality switching is available in More Options</string>
+    <string name="settings_nowplaying_progress_audio_codec">Show codec at the bottom of Now Playing</string>
+    <string name="settings_nowplaying_progress_audio_codec_desc">Shown below the bottom toolbar, such as FLAC, AAC, or E-AC-3</string>
+    <string name="settings_nowplaying_progress_audio_spec">Show audio spec at the bottom of Now Playing</string>
+    <string name="settings_nowplaying_progress_audio_spec_desc">Shown below the bottom toolbar, including sample rate, bit depth, and bitrate</string>
     <string name="settings_haptic">Haptic Feedback</string>
     <string name="settings_haptic_desc">Vibrate on button press</string>
     <string name="settings_personalization">Personalization</string>
@@ -1339,6 +1345,7 @@
     <string name="nowplaying_wired_headset">Wired Headset</string>
     <string name="nowplaying_phone_speaker">Phone Speaker</string>
     <string name="nowplaying_no_search_result">No Search Results</string>
+    <string name="nowplaying_quality_switch_title">Switch Current Quality</string>
     <string name="nowplaying_share_song">Share song: %1$s - %2$s\\n%3$s</string>
     <string name="nowplaying_font_size_hint">Swipe left to decrease, right to increase</string>
     <string name="nowplaying_lyrics_sample">Sample lyrics: Spring breeze is not as good as you</string>

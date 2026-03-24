@@ -151,6 +151,12 @@
     <string name="settings_force_dark_desc">不跟随系统时可手动指定</string>
     <string name="settings_cover_source_badge">封面显示歌曲来源</string>
     <string name="settings_cover_source_badge_desc">在封面区域显示当前歌曲的平台来源</string>
+    <string name="settings_nowplaying_progress_quality_switch">播放页底部显示当前音质</string>
+    <string name="settings_nowplaying_progress_quality_switch_desc">显示在底部工具栏下方；音质切换入口位于更多选项</string>
+    <string name="settings_nowplaying_progress_audio_codec">播放页底部显示解码格式</string>
+    <string name="settings_nowplaying_progress_audio_codec_desc">显示在底部工具栏下方，如 FLAC、AAC、E-AC-3</string>
+    <string name="settings_nowplaying_progress_audio_spec">播放页底部显示音源规格</string>
+    <string name="settings_nowplaying_progress_audio_spec_desc">显示在底部工具栏下方，包括采样率、位深、码率</string>
     <string name="settings_haptic">触感反馈</string>
     <string name="settings_haptic_desc">开启后点击按钮时会有震动反馈</string>
     <string name="settings_personalization">个性化</string>
@@ -313,7 +319,7 @@
     <string name="quality_high">较高</string>
     <string name="quality_very_high">极高</string>
     <string name="quality_lossless">无损</string>
-    <string name="quality_hires">超清母带</string>
+    <string name="quality_hires">Hi-Res</string>
     <string name="quality_dolby">杜比全景声</string>
     <string name="quality_surround">沉浸环绕声</string>
     <string name="quality_hd_surround">高清环绕声</string>
@@ -1198,6 +1204,7 @@
     <string name="nowplaying_wired_headset">有线耳机</string>
     <string name="nowplaying_phone_speaker">手机扬声器</string>
     <string name="nowplaying_no_search_result">无搜索结果</string>
+    <string name="nowplaying_quality_switch_title">切换当前音质</string>
     <string name="nowplaying_share_song">分享歌曲：%1$s - %2$s\n%3$s</string>
     <string name="nowplaying_font_size_hint">向左减小，向右增大</string>
     <string name="nowplaying_lyrics_sample">示例歌词：春风十里不如你</string>
