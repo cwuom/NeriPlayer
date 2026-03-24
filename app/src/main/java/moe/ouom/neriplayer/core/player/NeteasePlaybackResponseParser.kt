@@ -4,7 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * 统一解析网易云播放响应，避免把 JSONObject.NULL 误当成字符串 "null"。
+ * 统一解析网易云播放响应，避免把 JSONObject.NULL 误当成字符串 "null"
  */
 internal object NeteasePlaybackResponseParser {
 
@@ -95,8 +95,8 @@ internal object NeteasePlaybackResponseParser {
             ?: false
         if (!previewInfoPresent) return false
 
-        // 用户要求：只要接口明确给出 freeTrialInfo，就直接按试听资源提示。
-        // originalDurationMs 保留给调用方的结束时长兜底逻辑使用。
+        // 只要接口明确给出 freeTrialInfo，就直接按试听资源提示
+        // originalDurationMs 保留给调用方的结束时长兜底逻辑使用
         return originalDurationMs >= 0L
     }
 

@@ -33,7 +33,7 @@ internal object ManagedDownloadStorage {
     private var snapshotCache: SnapshotCache? = null
 
     fun initialize(context: Context) {
-        // 下载目录设置由 AppContainer 统一预热并监听更新，这里保留兼容入口。
+        // 下载目录设置由 AppContainer 统一预热并监听更新，这里保留兼容入口
     }
 
     data class StoredEntry(

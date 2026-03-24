@@ -109,6 +109,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
+import moe.ouom.neriplayer.data.settings.scaledLyricFontSize
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
@@ -451,7 +452,7 @@ fun LyricsScreen(
                     modifier = Modifier.fillMaxSize(),
                     textColor = MaterialTheme.colorScheme.onBackground,
                     // 放大歌词与行距，增强可读性
-                    fontSize = (20f * lyricFontScale).coerceIn(16f, 30f).sp,
+                    fontSize = scaledLyricFontSize(20f, lyricFontScale).sp,
                     centerPadding = 24.dp,
                     visualSpec = LyricVisualSpec(
                         // 控制缩放范围，避免超界
@@ -468,7 +469,7 @@ fun LyricsScreen(
                         onSeekTo(lyricEntry.startTimeMs)
                     },
                     translatedLyrics = if (showLyricTranslation) translatedLyrics else null,
-                    translationFontSize = (16 * lyricFontScale).coerceIn(12f, 26f).sp,
+                    translationFontSize = scaledLyricFontSize(16f, lyricFontScale).sp,
                 )
             } else {
                 Box(

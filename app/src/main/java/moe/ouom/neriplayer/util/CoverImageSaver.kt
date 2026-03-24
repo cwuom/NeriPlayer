@@ -19,7 +19,7 @@ import java.text.Normalizer
 private val coverRelativePath = "${Environment.DIRECTORY_PICTURES}/NeriPlayer"
 
 /**
- * 下载远程封面并保存到系统图片目录，便于相册直接可见。
+ * 下载远程封面并保存到系统图片目录，便于相册直接可见
  */
 suspend fun saveCoverToPictures(
     context: Context,

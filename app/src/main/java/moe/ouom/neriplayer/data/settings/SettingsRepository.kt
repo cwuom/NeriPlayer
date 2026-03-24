@@ -93,7 +93,9 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.data.map { it[SettingsKeys.NOWPLAYING_COVER_BLUR_DARKEN] ?: 0.2f }
 
     val lyricFontScaleFlow: Flow<Float> =
-        context.dataStore.data.map { it[SettingsKeys.LYRIC_FONT_SCALE] ?: 1.0f }
+        context.dataStore.data.map {
+            normalizeLyricFontScale(it[SettingsKeys.LYRIC_FONT_SCALE] ?: 1.0f)
+        }
 
     val uiDensityScaleFlow: Flow<Float> =
         context.dataStore.data.map { it[SettingsKeys.UI_DENSITY_SCALE] ?: 1.0f }
@@ -323,7 +325,7 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setLyricFontScale(scale: Float) {
-        context.dataStore.edit { it[SettingsKeys.LYRIC_FONT_SCALE] = scale }
+        context.dataStore.edit { it[SettingsKeys.LYRIC_FONT_SCALE] = normalizeLyricFontScale(scale) }
     }
 
     suspend fun setUiDensityScale(scale: Float) {

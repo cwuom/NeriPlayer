@@ -443,7 +443,7 @@ object PlayerManager {
         return when (uri.scheme?.lowercase()) {
             null, "" -> File(uriString).exists()
             "file" -> uri.path?.let(::File)?.exists() == true
-            // 恢复播放状态时不阻塞探测 SAF 文件，真正播放时再做严格校验。
+            // 恢复播放状态时不阻塞探测 SAF 文件，真正播放时再做严格校验
             "content", "android.resource" -> true
             else -> false
         }

@@ -54,7 +54,7 @@ import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
 
 /**
- * 全局下载管理器，统一维护下载任务和本地下载列表。
+ * 全局下载管理器，统一维护下载任务和本地下载列表
  */
 object GlobalDownloadManager {
     private const val TAG = "GlobalDownloadManager"

@@ -106,7 +106,10 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
+import moe.ouom.neriplayer.data.settings.MAX_LYRIC_FONT_SCALE
+import moe.ouom.neriplayer.data.settings.MIN_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.data.settings.background.BackgroundImageStorage
+import moe.ouom.neriplayer.data.settings.scaledLyricFontSize
 import moe.ouom.neriplayer.ui.BlurTransformation
 import moe.ouom.neriplayer.ui.component.ThemeRevealOverlay
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsBiliAuthDialogs
@@ -951,13 +954,13 @@ private fun PersonalizeContent(
             value = pendingLyricFontScale,
             onValueChange = onLyricFontScaleChange,
             onValueChangeFinished = onLyricFontScaleCommit,
-            valueRange = 0.5f..1.6f,
+            valueRange = MIN_LYRIC_FONT_SCALE..MAX_LYRIC_FONT_SCALE,
             steps = 10
         )
         Text(
             text = stringResource(R.string.settings_lyrics_sample),
             style = MaterialTheme.typography.bodyMedium.copy(
-                fontSize = (18f * pendingLyricFontScale).coerceIn(12f, 28f).sp
+                fontSize = scaledLyricFontSize(18f, pendingLyricFontScale).sp
             ),
             color = colors.onSurface
         )
@@ -1254,7 +1257,7 @@ private fun PreviewCard(
                         Text(
                             text = stringResource(R.string.settings_lyrics_sample),
                             style = MaterialTheme.typography.headlineSmall.copy(
-                                fontSize = (24f * lyricFontScale).coerceIn(16f, 34f).sp
+                                fontSize = scaledLyricFontSize(24f, lyricFontScale).sp
                             ),
                             color = colors.onSurface
                         )

@@ -188,6 +188,8 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.data.settings.MAX_LYRIC_FONT_SCALE
+import moe.ouom.neriplayer.data.settings.MIN_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
@@ -196,6 +198,8 @@ import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.local.media.isLocalSong
+import moe.ouom.neriplayer.data.settings.normalizeLyricFontScale
+import moe.ouom.neriplayer.data.settings.scaledLyricFontSize
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
@@ -1017,8 +1021,8 @@ fun NowPlayingScreen(
                                 .fillMaxWidth()
                                 .weight(8f),
                             textColor = MaterialTheme.colorScheme.onBackground,
-                            fontSize = (18f * lyricFontScale).coerceIn(14f, 26f).sp,
-                            translationFontSize = (14f * lyricFontScale).coerceIn(12f, 22f).sp,
+                            fontSize = scaledLyricFontSize(18f, lyricFontScale).sp,
+                            translationFontSize = scaledLyricFontSize(14f, lyricFontScale).sp,
                             visualSpec = LyricVisualSpec(),
                             lyricOffsetMs = totalOffset,
                             lyricBlurEnabled = lyricBlurEnabled,
@@ -1181,8 +1185,8 @@ fun NowPlayingScreen(
                                     currentTimeMs = currentPosition,
                                     modifier = Modifier.fillMaxSize(),
                                     textColor = MaterialTheme.colorScheme.onBackground,
-                                    fontSize = (18f * lyricFontScale).coerceIn(14f, 26f).sp,
-                                    translationFontSize = (14f * lyricFontScale).coerceIn(12f, 22f).sp,
+                                    fontSize = scaledLyricFontSize(18f, lyricFontScale).sp,
+                                    translationFontSize = scaledLyricFontSize(14f, lyricFontScale).sp,
                                     visualSpec = LyricVisualSpec(),
                                     lyricOffsetMs = totalOffset,
                                     lyricBlurEnabled = lyricBlurEnabled,
@@ -1910,10 +1914,10 @@ fun LyricFontSizeSheet(
     onScaleCommit: (Float) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var sliderValue by remember { mutableFloatStateOf(currentScale) }
+    var sliderValue by remember { mutableFloatStateOf(normalizeLyricFontScale(currentScale)) }
 
     LaunchedEffect(currentScale) {
-        sliderValue = currentScale
+        sliderValue = normalizeLyricFontScale(currentScale)
     }
 
     Column(
@@ -1937,8 +1941,8 @@ fun LyricFontSizeSheet(
         Slider(
             value = sliderValue,
             onValueChange = { sliderValue = it },
-            onValueChangeFinished = { onScaleCommit(sliderValue) },
-            valueRange = 0.5f..1.6f,
+            onValueChangeFinished = { onScaleCommit(normalizeLyricFontScale(sliderValue)) },
+            valueRange = MIN_LYRIC_FONT_SCALE..MAX_LYRIC_FONT_SCALE,
             steps = 10
         )
 
@@ -1948,12 +1952,12 @@ fun LyricFontSizeSheet(
                 .fillMaxWidth()
                 .padding(top = 4.dp),
             textAlign = TextAlign.Center,
-            fontSize = (18f * sliderValue).coerceIn(12f, 28f).sp
+            fontSize = scaledLyricFontSize(18f, sliderValue).sp
         )
 
         Spacer(Modifier.height(16.dp))
         HapticTextButton(onClick = {
-            onScaleCommit(sliderValue)
+            onScaleCommit(normalizeLyricFontScale(sliderValue))
             onDismiss()
         }) {
             Text(stringResource(R.string.action_done))

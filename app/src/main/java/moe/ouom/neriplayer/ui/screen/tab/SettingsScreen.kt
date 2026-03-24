@@ -111,7 +111,10 @@ import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthHealth
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.settings.MAX_LYRIC_FONT_SCALE
+import moe.ouom.neriplayer.data.settings.MIN_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.data.settings.background.BackgroundImageStorage
+import moe.ouom.neriplayer.data.settings.scaledLyricFontSize
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.LanguageSettingItem
 import moe.ouom.neriplayer.ui.screen.tab.settings.about.settingsAboutSection
@@ -1193,7 +1196,7 @@ fun SettingsScreen(
                                         onValueChangeFinished = {
                                             onLyricFontScaleChange(pendingLyricFontScale)
                                         },
-                                        valueRange = 0.5f..1.6f,
+                                        valueRange = MIN_LYRIC_FONT_SCALE..MAX_LYRIC_FONT_SCALE,
                                         steps = 10
                                     )
                                     Text(
@@ -1202,8 +1205,7 @@ fun SettingsScreen(
                                             .fillMaxWidth()
                                             .padding(top = 4.dp),
                                         textAlign = TextAlign.Center,
-                                        fontSize = (18f * pendingLyricFontScale)
-                                            .coerceIn(12f, 28f).sp
+                                        fontSize = scaledLyricFontSize(18f, pendingLyricFontScale).sp
                                     )
                                 }
                             },
