@@ -122,7 +122,9 @@ object LanguageManager {
      * Restart Activity
      */
     fun restartActivity(activity: Activity) {
+        activity.overridePendingTransition(0, 0)
         activity.recreate()
+        activity.overridePendingTransition(0, 0)
     }
 
     /**

@@ -1091,6 +1091,10 @@
     <string name="onboarding_platforms_title">连接平台</string>
     <string name="onboarding_platforms_desc">常用平台先连上，可以帮助你快速找到需要的资源</string>
     <string name="onboarding_platforms_hint">这一步可以跳过，之后也能在设置里登录或导入 Cookie</string>
+    <string name="onboarding_github_desc">把歌单备份到你自己的 GitHub 私有仓库</string>
+    <string name="onboarding_github_repo_configured">已配置仓库：%1$s</string>
+    <string name="onboarding_github_hint">GitHub 同步也是可选项，稍后仍可在设置里继续配置</string>
+    <string name="onboarding_theme_mode_title">主题模式</string>
     <string name="onboarding_personalize_title">调整界面</string>
     <string name="onboarding_personalize_desc">先调 UI 大小和背景图，进入主界面后会直接生效</string>
     <string name="onboarding_ui_scale_hint">当前预览约 %1$d%%，拖动就能看效果</string>

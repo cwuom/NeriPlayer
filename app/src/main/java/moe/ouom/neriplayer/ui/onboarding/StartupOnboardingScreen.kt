@@ -1,7 +1,13 @@
 package moe.ouom.neriplayer.ui.onboarding
 
 import android.app.Activity
+import android.graphics.Bitmap
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import android.view.View
+import android.view.PixelCopy
+import android.view.ViewTreeObserver
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -15,13 +21,16 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -29,20 +38,24 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.outlined.CloudSync
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -68,8 +81,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -79,17 +94,29 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
 import moe.ouom.neriplayer.data.settings.background.BackgroundImageStorage
+import moe.ouom.neriplayer.ui.BlurTransformation
+import moe.ouom.neriplayer.ui.component.ThemeRevealOverlay
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsBiliAuthDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsNeteaseAuthDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsYouTubeAuthDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.InlineMessage
+import moe.ouom.neriplayer.ui.screen.tab.settings.component.ThemeModeActionButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.maskCookieValue
+import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsGitHubDialogs
+import moe.ouom.neriplayer.ui.screen.tab.settings.state.formatSyncTime
+import moe.ouom.neriplayer.ui.viewmodel.GitHubSyncUiState
+import moe.ouom.neriplayer.ui.viewmodel.GitHubSyncViewModel
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthEvent
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthViewModel
 import moe.ouom.neriplayer.ui.viewmodel.auth.YouTubeAuthEvent
@@ -101,12 +128,18 @@ import moe.ouom.neriplayer.util.HapticOutlinedButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.LanguageManager
 import moe.ouom.neriplayer.util.getDisplayName
+import androidx.compose.ui.graphics.Color as ComposeColor
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.core.view.drawToBitmap
+import kotlin.coroutines.resume
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
 
 private enum class StartupStep {
     Language,
     Platforms,
+    GitHubSync,
     Personalize
 }
 
@@ -146,9 +179,23 @@ fun StartupOnboardingScreen() {
     val backgroundImageUri by repo.backgroundImageUriFlow.collectAsState(initial = null)
     val backgroundImageBlur by repo.backgroundImageBlurFlow.collectAsState(initial = 0f)
     val backgroundImageAlpha by repo.backgroundImageAlphaFlow.collectAsState(initial = 0.3f)
+    val followSystemDark by repo.followSystemDarkFlow.collectAsState(initial = true)
+    val forceDark by repo.forceDarkFlow.collectAsState(initial = false)
+    val systemDark = isSystemInDarkTheme()
+    val isDarkTheme = when {
+        forceDark -> true
+        followSystemDark -> systemDark
+        else -> false
+    }
 
     var inlineMessage by remember { mutableStateOf<String?>(null) }
     var finishing by remember { mutableStateOf(false) }
+    val rootView = LocalView.current
+    var themeRevealSnapshot by remember { mutableStateOf<ImageBitmap?>(null) }
+    var themeRevealOriginWindow by remember { mutableStateOf<Offset?>(null) }
+    var themeRevealStartRadiusPx by remember { mutableFloatStateOf(0f) }
+    var themeRevealFallbackColor by remember { mutableStateOf<ComposeColor?>(null) }
+    var themeRevealCaptureInFlight by remember { mutableStateOf(false) }
 
     var showNeteaseSheet by remember { mutableStateOf(false) }
     var showNeteaseConfirm by remember { mutableStateOf(false) }
@@ -166,6 +213,8 @@ fun StartupOnboardingScreen() {
     var showYouTubeCookieDialog by remember { mutableStateOf(false) }
     var youTubeCookieText by remember { mutableStateOf("") }
     var youTubeSheetTab by rememberSaveable { mutableIntStateOf(0) }
+    var showGitHubConfigDialog by remember { mutableStateOf(false) }
+    var showClearGitHubConfigDialog by remember { mutableStateOf(false) }
 
     val neteaseVm: NeteaseAuthViewModel = viewModel()
     val neteaseState by neteaseVm.uiState.collectAsState()
@@ -173,6 +222,8 @@ fun StartupOnboardingScreen() {
     val biliState by biliVm.uiState.collectAsState()
     val youTubeVm: YouTubeAuthViewModel = viewModel()
     val youTubeState by youTubeVm.uiState.collectAsState()
+    val githubVm: GitHubSyncViewModel = viewModel()
+    val githubState by githubVm.uiState.collectAsState()
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -202,6 +253,9 @@ fun StartupOnboardingScreen() {
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    LaunchedEffect(githubVm, context) {
+        githubVm.initialize(context)
     }
 
     LaunchedEffect(neteaseVm) {
@@ -273,13 +327,7 @@ fun StartupOnboardingScreen() {
     }
 
     fun selectLanguage(language: LanguageManager.Language) {
-        val current = LanguageManager.getCurrentLanguage(context)
         selectedLanguageCode = language.code
-        if (current == language) return
-        // 切语言会重建页面，先把引导推进到下一步，避免重复停留在首屏。
-        stepIndex = StartupStep.Platforms.ordinal
-        LanguageManager.setLanguage(context, language)
-        activity?.let(LanguageManager::restartActivity)
     }
 
     fun finishOnboarding() {
@@ -293,6 +341,63 @@ fun StartupOnboardingScreen() {
             }.onFailure {
                 finishing = false
             }
+        }
+    }
+
+    fun goNextStep() {
+        if (stepIndex == steps.lastIndex) {
+            finishOnboarding()
+            return
+        }
+
+        val currentStep = steps[stepIndex]
+        if (currentStep == StartupStep.Language) {
+            val nextLanguage = selectedLanguage
+            val currentLanguage = LanguageManager.getCurrentLanguage(context)
+            if (currentLanguage != nextLanguage) {
+                stepIndex = StartupStep.Platforms.ordinal
+                LanguageManager.setLanguage(context, nextLanguage)
+                activity?.let(LanguageManager::restartActivity)
+                return
+            }
+        }
+
+        stepIndex = (stepIndex + 1).coerceAtMost(steps.lastIndex)
+    }
+
+    fun clearThemeRevealState() {
+        themeRevealSnapshot = null
+        themeRevealOriginWindow = null
+        themeRevealStartRadiusPx = 0f
+        themeRevealFallbackColor = null
+        themeRevealCaptureInFlight = false
+    }
+
+    fun requestThemeToggle(originInWindow: Offset, startRadiusPx: Float) {
+        if (themeRevealCaptureInFlight || themeRevealOriginWindow != null) {
+            return
+        }
+
+        val nextDark = !isDarkTheme
+        themeRevealCaptureInFlight = true
+        scope.launch {
+            val captureView = activity?.window?.decorView?.rootView ?: rootView.rootView
+            awaitStartupStableDraw(captureView)
+            val snapshot = captureStartupThemeRevealSnapshot(
+                activity = activity,
+                fallbackView = captureView
+            )
+            themeRevealSnapshot = snapshot
+            themeRevealFallbackColor = if (isDarkTheme) {
+                ComposeColor(0xFF121212)
+            } else {
+                ComposeColor.White
+            }
+            themeRevealOriginWindow = originInWindow
+            themeRevealStartRadiusPx = startRadiusPx.coerceAtLeast(1f)
+            themeRevealCaptureInFlight = false
+            repo.setFollowSystemDark(false)
+            repo.setForceDark(nextDark)
         }
     }
 
@@ -444,6 +549,24 @@ fun StartupOnboardingScreen() {
                                         inlineMessage = null
                                     }
                                 )
+                                StartupStep.GitHubSync -> GitHubSyncContent(
+                                    gitHubState = githubState,
+                                    onDismissGitHubMessage = githubVm::clearMessages,
+                                    onOpenGitHubConfig = {
+                                        githubVm.clearMessages()
+                                        showGitHubConfigDialog = true
+                                    },
+                                    onOpenClearGitHubConfig = {
+                                        githubVm.clearMessages()
+                                        showClearGitHubConfigDialog = true
+                                    },
+                                    onToggleGitHubAutoSync = { enabled ->
+                                        githubVm.toggleAutoSync(context, enabled)
+                                    },
+                                    onGitHubSyncNow = {
+                                        githubVm.performSync(context)
+                                    }
+                                )
                                 StartupStep.Personalize -> PersonalizeContent(
                                     pendingUiScale = pendingUiScale,
                                     onUiScaleChange = { pendingUiScale = it },
@@ -471,7 +594,9 @@ fun StartupOnboardingScreen() {
                                     onBackgroundAlphaChange = { alpha ->
                                         scope.launch { repo.setBackgroundImageAlpha(alpha) }
                                     },
-                                    previewLyricFontScale = pendingLyricFontScale
+                                    previewLyricFontScale = pendingLyricFontScale,
+                                    isDarkTheme = isDarkTheme,
+                                    onThemeToggleRequest = ::requestThemeToggle
                                 )
                             }
                         }
@@ -496,8 +621,7 @@ fun StartupOnboardingScreen() {
 
                         HapticButton(
                             onClick = {
-                                if (stepIndex == steps.lastIndex) finishOnboarding()
-                                else stepIndex = (stepIndex + 1).coerceAtMost(steps.lastIndex)
+                                goNextStep()
                             },
                             enabled = !finishing,
                             modifier = Modifier.weight(1.4f),
@@ -565,6 +689,26 @@ fun StartupOnboardingScreen() {
                 cookieText = youTubeCookieText,
                 onDismissCookieDialog = { showYouTubeCookieDialog = false }
             )
+            SettingsGitHubDialogs(
+                showGitHubConfigDialog = showGitHubConfigDialog,
+                onShowGitHubConfigDialogChange = { showGitHubConfigDialog = it },
+                showClearGitHubConfigDialog = showClearGitHubConfigDialog,
+                onShowClearGitHubConfigDialogChange = { showClearGitHubConfigDialog = it }
+            )
+            val revealOrigin = themeRevealOriginWindow
+            val revealFallbackColor = themeRevealFallbackColor
+            if (revealOrigin != null && revealFallbackColor != null) {
+                ThemeRevealOverlay(
+                    snapshot = themeRevealSnapshot,
+                    fallbackColor = revealFallbackColor,
+                    originInWindow = revealOrigin,
+                    modifier = Modifier.fillMaxSize(),
+                    startRadiusPx = themeRevealStartRadiusPx,
+                    legacySnapshotDim = true,
+                    durationMillis = 720,
+                    onFinished = ::clearThemeRevealState
+                )
+            }
         }
     }
 }
@@ -681,6 +825,40 @@ private fun PlatformContent(
 }
 
 @Composable
+private fun GitHubSyncContent(
+    gitHubState: GitHubSyncUiState,
+    onDismissGitHubMessage: () -> Unit,
+    onOpenGitHubConfig: () -> Unit,
+    onOpenClearGitHubConfig: () -> Unit,
+    onToggleGitHubAutoSync: (Boolean) -> Unit,
+    onGitHubSyncNow: () -> Unit
+) {
+    StepHeader(
+        icon = Icons.Outlined.CloudSync,
+        title = stringResource(R.string.common_github),
+        description = stringResource(R.string.onboarding_github_desc)
+    )
+    Spacer(Modifier.height(18.dp))
+    gitHubState.errorMessage?.let {
+        InlineMessage(text = it, onClose = onDismissGitHubMessage)
+        Spacer(Modifier.height(14.dp))
+    }
+    gitHubState.successMessage?.let {
+        InlineMessage(text = it, onClose = onDismissGitHubMessage)
+        Spacer(Modifier.height(14.dp))
+    }
+    GitHubSyncCard(
+        state = gitHubState,
+        onOpenConfig = onOpenGitHubConfig,
+        onOpenClearConfig = onOpenClearGitHubConfig,
+        onToggleAutoSync = onToggleGitHubAutoSync,
+        onSyncNow = onGitHubSyncNow
+    )
+    Spacer(Modifier.height(18.dp))
+    HintCard(body = stringResource(R.string.onboarding_github_hint))
+}
+
+@Composable
 private fun PersonalizeContent(
     pendingUiScale: Float,
     onUiScaleChange: (Float) -> Unit,
@@ -695,7 +873,9 @@ private fun PersonalizeContent(
     onClearBackground: () -> Unit,
     onBackgroundBlurChange: (Float) -> Unit,
     onBackgroundAlphaChange: (Float) -> Unit,
-    previewLyricFontScale: Float
+    previewLyricFontScale: Float,
+    isDarkTheme: Boolean,
+    onThemeToggleRequest: (Offset, Float) -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
     StepHeader(
@@ -704,7 +884,7 @@ private fun PersonalizeContent(
         description = stringResource(R.string.onboarding_personalize_desc)
     )
     Spacer(Modifier.height(18.dp))
-    PreviewCard(backgroundImageUri, backgroundImageAlpha, previewLyricFontScale)
+    PreviewCard(backgroundImageUri, backgroundImageBlur, backgroundImageAlpha, previewLyricFontScale)
     Spacer(Modifier.height(18.dp))
     HintCard(
         title = stringResource(R.string.settings_ui_scale),
@@ -717,6 +897,25 @@ private fun PersonalizeContent(
             valueRange = 0.6f..1.2f,
             steps = 11
         )
+    }
+    Spacer(Modifier.height(14.dp))
+    HintCard(
+        title = stringResource(R.string.onboarding_theme_mode_title),
+        body = if (isDarkTheme) {
+            stringResource(R.string.settings_theme_toggle_light)
+        } else {
+            stringResource(R.string.settings_theme_toggle_dark)
+        }
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
+        ) {
+            ThemeModeActionButton(
+                isDarkTheme = isDarkTheme,
+                onToggleRequest = onThemeToggleRequest
+            )
+        }
     }
     Spacer(Modifier.height(14.dp))
     HintCard(
@@ -833,22 +1032,50 @@ private fun PlatformCard(icon: Painter, title: String, status: String, connected
                 Spacer(Modifier.height(6.dp))
                 StatusPill(status, connected)
             }
-            HapticOutlinedButton(onClick = onClick, shape = RoundedCornerShape(18.dp)) {
-                Text(
-                    if (connected) {
-                        stringResource(R.string.onboarding_platform_action_logout)
-                    } else {
-                        stringResource(R.string.onboarding_platform_action_connect)
-                    }
-                )
-            }
+            OnboardingActionButton(
+                text = if (connected) {
+                    stringResource(R.string.onboarding_platform_action_logout)
+                } else {
+                    stringResource(R.string.onboarding_platform_action_connect)
+                },
+                onClick = onClick
+            )
         }
+    }
+}
+
+@Composable
+private fun OnboardingActionButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    HapticOutlinedButton(
+        onClick = onClick,
+        modifier = modifier
+            .widthIn(max = 104.dp)
+            .defaultMinSize(minWidth = 1.dp, minHeight = 36.dp),
+        shape = RoundedCornerShape(18.dp),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelLarge,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
 @Composable
 private fun StatusPill(label: String, connected: Boolean) {
     val colors = MaterialTheme.colorScheme
+    val textStyle = when {
+        label.length >= 14 -> MaterialTheme.typography.labelSmall
+        label.length >= 10 -> MaterialTheme.typography.labelMedium
+        else -> MaterialTheme.typography.labelLarge
+    }
     Surface(
         shape = RoundedCornerShape(999.dp),
         color = if (connected) colors.primary.copy(alpha = 0.14f) else colors.outlineVariant.copy(alpha = 0.6f)
@@ -856,7 +1083,10 @@ private fun StatusPill(label: String, connected: Boolean) {
         Text(
             text = label,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-            style = MaterialTheme.typography.labelLarge,
+            style = textStyle,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
             color = if (connected) colors.primary else colors.onSurfaceVariant
         )
     }
@@ -891,10 +1121,27 @@ private fun HintCard(
 @Composable
 private fun PreviewCard(
     backgroundImageUri: String?,
+    backgroundImageBlur: Float,
     backgroundImageAlpha: Float,
     lyricFontScale: Float
 ) {
     val colors = MaterialTheme.colorScheme
+    val context = LocalContext.current
+    val previewImageRequest = remember(context, backgroundImageUri, backgroundImageBlur) {
+        backgroundImageUri?.let { uri ->
+            ImageRequest.Builder(context)
+                .data(Uri.parse(uri))
+                .crossfade(false)
+                .transformations(
+                    if (backgroundImageBlur > 0f) {
+                        listOf(BlurTransformation(context, radius = backgroundImageBlur))
+                    } else {
+                        emptyList()
+                    }
+                )
+                .build()
+        }
+    }
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -903,9 +1150,9 @@ private fun PreviewCard(
         color = colors.surfaceVariant.copy(alpha = 0.42f)
     ) {
         Box(Modifier.fillMaxSize()) {
-            if (backgroundImageUri != null) {
+            if (previewImageRequest != null) {
                 AsyncImage(
-                    model = Uri.parse(backgroundImageUri),
+                    model = previewImageRequest,
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
@@ -975,6 +1222,169 @@ private fun PreviewCard(
 }
 
 @Composable
+private fun GitHubSyncCard(
+    state: GitHubSyncUiState,
+    onOpenConfig: () -> Unit,
+    onOpenClearConfig: () -> Unit,
+    onToggleAutoSync: (Boolean) -> Unit,
+    onSyncNow: () -> Unit
+) {
+    val colors = MaterialTheme.colorScheme
+    val repoFullName = listOf(state.repoOwner, state.repoName)
+        .filter { it.isNotBlank() }
+        .takeIf { it.size == 2 }
+        ?.joinToString("/")
+    val primarySupportingText = if (state.isConfigured) {
+        repoFullName?.let { stringResource(R.string.onboarding_github_repo_configured, it) }
+            ?: stringResource(R.string.settings_configured)
+    } else {
+        null
+    }
+    val secondarySupportingText = if (state.isConfigured) {
+        if (state.lastSyncTime > 0) {
+            stringResource(R.string.sync_last_time, formatSyncTime(state.lastSyncTime))
+        } else {
+            stringResource(R.string.sync_not_synced)
+        }
+    } else {
+        null
+    }
+
+    Surface(
+        shape = RoundedCornerShape(26.dp),
+        color = if (state.isConfigured) {
+            colors.secondaryContainer.copy(alpha = 0.72f)
+        } else {
+            colors.surfaceVariant.copy(alpha = 0.5f)
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    modifier = Modifier.size(52.dp),
+                    shape = RoundedCornerShape(18.dp),
+                    color = colors.surface.copy(alpha = 0.72f)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_github),
+                            contentDescription = stringResource(R.string.common_github),
+                            tint = colors.onSurface,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.github_auto_sync),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = colors.onSurface
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    StatusPill(
+                        label = if (state.isConfigured) {
+                            stringResource(R.string.settings_configured)
+                        } else {
+                            stringResource(R.string.settings_not_configured)
+                        },
+                        connected = state.isConfigured
+                    )
+                    primarySupportingText?.let {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = colors.onSurfaceVariant
+                        )
+                    }
+                    secondarySupportingText?.let {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.onSurfaceVariant
+                        )
+                    }
+                }
+                OnboardingActionButton(
+                    text = if (state.isConfigured) {
+                        stringResource(R.string.onboarding_platform_action_manage)
+                    } else {
+                        stringResource(R.string.settings_configure)
+                    },
+                    onClick = onOpenConfig
+                )
+            }
+
+            if (state.isConfigured) {
+                Surface(
+                    shape = RoundedCornerShape(22.dp),
+                    color = colors.surface.copy(alpha = 0.72f)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.sync_auto),
+                                style = MaterialTheme.typography.titleSmall,
+                                color = colors.onSurface
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = stringResource(R.string.sync_auto_desc),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = state.autoSyncEnabled,
+                            onCheckedChange = onToggleAutoSync
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (state.isSyncing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        HapticOutlinedButton(onClick = onSyncNow, shape = RoundedCornerShape(18.dp)) {
+                            Text(stringResource(R.string.settings_sync_now))
+                        }
+                    }
+                    HapticTextButton(onClick = onOpenClearConfig) {
+                        Text(
+                            text = stringResource(R.string.settings_clear_config),
+                            color = colors.error
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun Blob(modifier: Modifier = Modifier, color: Color, size: Dp) {
     Box(
         modifier = modifier
@@ -1002,5 +1412,96 @@ private fun statusTextForYouTube(state: YouTubeAuthState): String {
         YouTubeAuthState.Expired,
         YouTubeAuthState.Stale -> stringResource(R.string.onboarding_platform_status_attention)
         YouTubeAuthState.Missing -> stringResource(R.string.onboarding_platform_status_not_connected)
+    }
+}
+
+private suspend fun captureStartupThemeRevealSnapshot(
+    activity: Activity?,
+    fallbackView: View
+): ImageBitmap? {
+    val windowBitmap = activity?.let { currentActivity ->
+        suspendCancellableCoroutine { continuation ->
+            val decorView = currentActivity.window.decorView
+            if (decorView.width <= 0 || decorView.height <= 0) {
+                continuation.resume(null)
+                return@suspendCancellableCoroutine
+            }
+
+            val bitmap = Bitmap.createBitmap(
+                decorView.width,
+                decorView.height,
+                Bitmap.Config.ARGB_8888
+            )
+
+            PixelCopy.request(
+                currentActivity.window,
+                bitmap,
+                { result ->
+                    continuation.resume(if (result == PixelCopy.SUCCESS) bitmap else null)
+                },
+                Handler(Looper.getMainLooper())
+            )
+        }
+    }
+
+    return windowBitmap?.asImageBitmap() ?: captureStartupThemeRevealFallbackSnapshot(fallbackView)
+}
+
+private suspend fun captureStartupThemeRevealFallbackSnapshot(view: View): ImageBitmap? {
+    return withContext(Dispatchers.Main.immediate) {
+        runCatching {
+            if (view.width > 0 && view.height > 0) {
+                view.drawToBitmap().asImageBitmap()
+            } else {
+                null
+            }
+        }.getOrNull()
+    }
+}
+
+private suspend fun awaitStartupNextDraw(view: View) {
+    if (!view.isAttachedToWindow || view.width <= 0 || view.height <= 0) {
+        return
+    }
+
+    withTimeoutOrNull(120L) {
+        suspendCancellableCoroutine { continuation ->
+            val observer = view.viewTreeObserver
+            var handled = false
+            val drawListener = object : ViewTreeObserver.OnDrawListener {
+                override fun onDraw() {
+                    if (handled) return
+                    handled = true
+                    view.post {
+                        if (observer.isAlive) {
+                            observer.removeOnDrawListener(this)
+                        }
+                        if (continuation.isActive) {
+                            continuation.resume(Unit)
+                        }
+                    }
+                }
+            }
+
+            observer.addOnDrawListener(drawListener)
+            continuation.invokeOnCancellation {
+                if (handled) {
+                    return@invokeOnCancellation
+                }
+                handled = true
+                view.post {
+                    if (observer.isAlive) {
+                        observer.removeOnDrawListener(drawListener)
+                    }
+                }
+            }
+            view.invalidate()
+        }
+    }
+}
+
+private suspend fun awaitStartupStableDraw(view: View) {
+    repeat(2) {
+        awaitStartupNextDraw(view)
     }
 }

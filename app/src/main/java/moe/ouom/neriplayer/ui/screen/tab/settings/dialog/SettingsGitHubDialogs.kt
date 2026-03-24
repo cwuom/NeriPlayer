@@ -41,6 +41,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -67,6 +68,10 @@ internal fun SettingsGitHubDialogs(
 ) {
     val context = LocalContext.current
     val githubVm: GitHubSyncViewModel = viewModel()
+
+    LaunchedEffect(githubVm, context) {
+        githubVm.initialize(context)
+    }
 
     if (showGitHubConfigDialog) {
         val githubState by githubVm.uiState.collectAsState()

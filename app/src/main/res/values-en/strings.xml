@@ -1081,6 +1081,10 @@
     <string name="onboarding_platforms_title">Connect platforms</string>
     <string name="onboarding_platforms_desc">Connect the ones you use most so it is easier to find what you want.</string>
     <string name="onboarding_platforms_hint">You can skip this for now and sign in or import Cookies later in settings.</string>
+    <string name="onboarding_github_desc">Back up playlists to your own private GitHub repository.</string>
+    <string name="onboarding_github_repo_configured">Configured repository: %1$s</string>
+    <string name="onboarding_github_hint">GitHub sync is optional too, and you can finish it later in settings.</string>
+    <string name="onboarding_theme_mode_title">Theme Mode</string>
     <string name="onboarding_personalize_title">Adjust the interface</string>
     <string name="onboarding_personalize_desc">Set the UI scale and background now, and they will apply in the main screen.</string>
     <string name="onboarding_ui_scale_hint">Preview is about %1$d%% right now. Drag to see the change.</string>
