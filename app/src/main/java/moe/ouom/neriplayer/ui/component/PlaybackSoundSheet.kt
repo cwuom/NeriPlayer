@@ -24,16 +24,10 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.Velocity
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.player.model.MAX_PLAYBACK_LOUDNESS_GAIN_MB
 import moe.ouom.neriplayer.core.player.model.MAX_PLAYBACK_PITCH
@@ -77,27 +71,6 @@ fun PlaybackSoundSheet(
     onDismiss: () -> Unit
 ) {
     val scrollState = rememberScrollState()
-    val nestedScrollConnection = remember {
-        object : NestedScrollConnection {
-            override fun onPreScroll(
-                available: Offset,
-                source: NestedScrollSource
-            ): Offset = Offset.Zero
-
-            override fun onPostScroll(
-                consumed: Offset,
-                available: Offset,
-                source: NestedScrollSource
-            ): Offset = available
-
-            override suspend fun onPreFling(available: Velocity): Velocity = Velocity.Zero
-
-            override suspend fun onPostFling(
-                consumed: Velocity,
-                available: Velocity
-            ): Velocity = available
-        }
-    }
 
     val presets = buildList {
         if (state.presetId == PlaybackEqualizerPresetId.CUSTOM) {
@@ -110,7 +83,7 @@ fun PlaybackSoundSheet(
         modifier = Modifier
             .fillMaxWidth()
             .fillMaxHeight(0.9f)
-            .nestedScroll(nestedScrollConnection)
+            .bottomSheetScrollGuard { scrollState.value == 0 }
             .verticalScroll(scrollState)
             .padding(horizontal = 24.dp, vertical = 16.dp)
             .windowInsetsPadding(WindowInsets.navigationBars),

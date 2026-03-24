@@ -170,6 +170,8 @@ import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.component.bottomSheetDragBlocker
+import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.component.LocalSongDetailsDialog
 import moe.ouom.neriplayer.ui.component.LocalSongSyncConfirmDialog
 import moe.ouom.neriplayer.ui.viewmodel.playlist.LocalPlaylistDetailViewModel
@@ -1392,9 +1394,14 @@ fun LocalPlaylistDetailScreen(
                 if (showExportSheet) {
                     ModalBottomSheet(
                         onDismissRequest = { showExportSheet = false },
-                        sheetState = exportSheetState
+                        sheetState = exportSheetState,
+                        sheetGesturesEnabled = false
                     ) {
-                        Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+                        Column(
+                            Modifier
+                                .bottomSheetScrollGuard()
+                                .padding(horizontal = 20.dp, vertical = 12.dp)
+                        ) {
                             Text(stringResource(R.string.local_playlist_export_to), style = MaterialTheme.typography.titleMedium)
                             Spacer(Modifier.height(8.dp))
 
@@ -1487,11 +1494,13 @@ fun LocalPlaylistDetailScreen(
                 // 下载管理器
                 if (showDownloadManager) {
                     ModalBottomSheet(
-                        onDismissRequest = { showDownloadManager = false }
+                        onDismissRequest = { showDownloadManager = false },
+                        sheetGesturesEnabled = false
                     ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .bottomSheetDragBlocker()
                                 .padding(20.dp)
                         ) {
                             Row(

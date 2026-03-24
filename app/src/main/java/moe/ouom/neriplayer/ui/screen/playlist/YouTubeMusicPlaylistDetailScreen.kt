@@ -116,6 +116,8 @@ import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.component.bottomSheetDragBlocker
+import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.playlist.YouTubeMusicPlaylistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
@@ -549,9 +551,14 @@ fun YouTubeMusicPlaylistDetailScreen(
         if (showExportSheet) {
             ModalBottomSheet(
                 onDismissRequest = { showExportSheet = false },
-                sheetState = exportSheetState
+                sheetState = exportSheetState,
+                sheetGesturesEnabled = false
             ) {
-                Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+                Column(
+                    Modifier
+                        .bottomSheetScrollGuard()
+                        .padding(horizontal = 20.dp, vertical = 12.dp)
+                ) {
                     Text(stringResource(R.string.playlist_export_to_local), style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(8.dp))
 
@@ -634,11 +641,13 @@ fun YouTubeMusicPlaylistDetailScreen(
         
         if (showDownloadManager) {
             ModalBottomSheet(
-                onDismissRequest = { showDownloadManager = false }
+                onDismissRequest = { showDownloadManager = false },
+                sheetGesturesEnabled = false
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .bottomSheetDragBlocker()
                         .padding(20.dp)
                 ) {
                     Row(

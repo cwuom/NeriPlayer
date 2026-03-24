@@ -148,6 +148,8 @@ import androidx.compose.material.icons.outlined.Download
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Shadow
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.component.bottomSheetDragBlocker
+import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.formatDuration
 import moe.ouom.neriplayer.util.formatPlayCount
@@ -157,6 +159,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.ui.component.bottomSheetDragBlocker
+import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
 import moe.ouom.neriplayer.util.HapticFloatingActionButton
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
@@ -683,9 +687,14 @@ fun DetailScreen(
                 if (showExportSheet) {
                     ModalBottomSheet(
                         onDismissRequest = { showExportSheet = false },
-                        sheetState = exportSheetState
+                        sheetState = exportSheetState,
+                        sheetGesturesEnabled = false
                     ) {
-                        Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+                        Column(
+                            Modifier
+                                .bottomSheetScrollGuard()
+                                .padding(horizontal = 20.dp, vertical = 12.dp)
+                        ) {
                             Text(stringResource(R.string.playlist_export_to_local), style = MaterialTheme.typography.titleMedium)
                             Spacer(Modifier.height(8.dp))
 
@@ -784,13 +793,15 @@ fun DetailScreen(
     // 下载管理�?
     if (showDownloadManager) {
         ModalBottomSheet(
-            onDismissRequest = { showDownloadManager = false }
+            onDismissRequest = { showDownloadManager = false },
+            sheetGesturesEnabled = false
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp)
-            ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .bottomSheetDragBlocker()
+                            .padding(20.dp)
+                    ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,

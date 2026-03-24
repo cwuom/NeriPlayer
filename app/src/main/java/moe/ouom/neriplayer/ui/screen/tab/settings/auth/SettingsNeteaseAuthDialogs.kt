@@ -64,6 +64,7 @@ import moe.ouom.neriplayer.activity.NeteaseWebLoginActivity
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthHealth
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.auth.netease.NETEASE_AUTH_STALE_AFTER_MS
+import moe.ouom.neriplayer.ui.component.bottomSheetDragBlocker
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.InlineMessage
 import moe.ouom.neriplayer.ui.viewmodel.debug.NeteaseAuthViewModel
 import moe.ouom.neriplayer.util.HapticButton
@@ -138,10 +139,13 @@ internal fun SettingsNeteaseAuthDialogs(
         ModalBottomSheet(
             onDismissRequest = onDismissSheet,
             sheetState = sheetState,
+            sheetGesturesEnabled = false,
             containerColor = MaterialTheme.colorScheme.surface
         ) {
             Box(
-                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 48.dp, top = 12.dp)
+                modifier = Modifier
+                    .bottomSheetDragBlocker()
+                    .padding(start = 16.dp, end = 16.dp, bottom = 48.dp, top = 12.dp)
             ) {
                 Column {
                     Text(

@@ -84,6 +84,8 @@ import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.component.bottomSheetDragBlocker
+import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliPlaylistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
@@ -485,9 +487,14 @@ fun BiliPlaylistDetailScreen(
             if (showExportSheet) {
                 ModalBottomSheet(
                     onDismissRequest = { showExportSheet = false },
-                    sheetState = exportSheetState
+                    sheetState = exportSheetState,
+                    sheetGesturesEnabled = false
                 ) {
-                    Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+                    Column(
+                        Modifier
+                            .bottomSheetScrollGuard()
+                            .padding(horizontal = 20.dp, vertical = 12.dp)
+                    ) {
                         Text(stringResource(R.string.playlist_export_to_local), style = MaterialTheme.typography.titleMedium)
                         Spacer(Modifier.height(8.dp))
 
@@ -586,13 +593,15 @@ fun BiliPlaylistDetailScreen(
             // 下载管理器
             if (showDownloadManager) {
                 ModalBottomSheet(
-                    onDismissRequest = { showDownloadManager = false }
+                    onDismissRequest = { showDownloadManager = false },
+                    sheetGesturesEnabled = false
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(20.dp)
-                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .bottomSheetDragBlocker()
+                                .padding(20.dp)
+                        ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -724,9 +733,14 @@ fun BiliPlaylistDetailScreen(
                         showPartsSheet = false
                         exitPartsSelection()
                     },
-                    sheetState = partsSheetState
+                    sheetState = partsSheetState,
+                    sheetGesturesEnabled = false
                 ) {
-                    Column(Modifier.padding(bottom = 12.dp)) {
+                    Column(
+                        Modifier
+                            .bottomSheetScrollGuard()
+                            .padding(bottom = 12.dp)
+                    ) {
                         AnimatedVisibility(visible = partsSelectionMode) {
                             val allSelected = selectedParts.size == currentPartsInfo.pages.size
                             TopAppBar(

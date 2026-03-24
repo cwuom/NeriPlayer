@@ -63,6 +63,7 @@ import moe.ouom.neriplayer.activity.YouTubeWebLoginActivity
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthHealth
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.auth.bili.BILI_AUTH_STALE_AFTER_MS
+import moe.ouom.neriplayer.ui.component.bottomSheetDragBlocker
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.InlineMessage
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthViewModel
 import moe.ouom.neriplayer.ui.viewmodel.auth.YouTubeAuthViewModel
@@ -288,10 +289,13 @@ private fun TwoTabCookieLoginSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
+        sheetGesturesEnabled = false,
         containerColor = MaterialTheme.colorScheme.surface
     ) {
         Box(
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 48.dp, top = 12.dp)
+            modifier = Modifier
+                .bottomSheetDragBlocker()
+                .padding(start = 16.dp, end = 16.dp, bottom = 48.dp, top = 12.dp)
         ) {
             Column {
                 Text(title, style = MaterialTheme.typography.titleLarge)

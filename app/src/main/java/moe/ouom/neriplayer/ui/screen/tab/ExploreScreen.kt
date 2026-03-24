@@ -121,6 +121,7 @@ import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.ExploreUiState
 import moe.ouom.neriplayer.ui.viewmodel.tab.ExploreViewModel
@@ -433,9 +434,14 @@ fun ExploreScreen(
                 showPartsSheet = false
                 exitPartsSelection()
             },
-            sheetState = partsSheetState
+            sheetState = partsSheetState,
+            sheetGesturesEnabled = false
         ) {
-            Column(Modifier.padding(bottom = 12.dp)) {
+            Column(
+                Modifier
+                    .bottomSheetScrollGuard()
+                    .padding(bottom = 12.dp)
+            ) {
                 AnimatedVisibility(visible = partsSelectionMode) {
                     val allSelected = selectedParts.size == currentPartsInfo.pages.size
                     TopAppBar(
@@ -561,9 +567,14 @@ fun ExploreScreen(
     if (showExportSheet) {
         ModalBottomSheet(
             onDismissRequest = { showExportSheet = false },
-            sheetState = exportSheetState
+            sheetState = exportSheetState,
+            sheetGesturesEnabled = false
         ) {
-            Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+            Column(
+                Modifier
+                    .bottomSheetScrollGuard()
+                    .padding(horizontal = 20.dp, vertical = 12.dp)
+            ) {
                 Text(stringResource(R.string.playlist_export_to_local), style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(8.dp))
 

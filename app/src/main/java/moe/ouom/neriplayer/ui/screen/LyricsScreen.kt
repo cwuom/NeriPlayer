@@ -121,6 +121,7 @@ import moe.ouom.neriplayer.ui.component.LocalSongDetailsDialog
 import moe.ouom.neriplayer.ui.component.LocalSongSyncConfirmDialog
 import moe.ouom.neriplayer.ui.component.LyricVisualSpec
 import moe.ouom.neriplayer.ui.component.WaveformSlider
+import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.HapticFilledIconButton
@@ -766,7 +767,8 @@ fun LyricsScreen(
             // 音量控制弹窗
             if (showVolumeSheet) {
                 androidx.compose.material3.ModalBottomSheet(
-                    onDismissRequest = { showVolumeSheet = false }
+                    onDismissRequest = { showVolumeSheet = false },
+                    sheetGesturesEnabled = false
                 ) {
                     VolumeControlSheetContent()
                 }
@@ -790,9 +792,13 @@ fun LyricsScreen(
                 }
 
                 androidx.compose.material3.ModalBottomSheet(
-                    onDismissRequest = { showQueueSheet = false }
+                    onDismissRequest = { showQueueSheet = false },
+                    sheetGesturesEnabled = false
                 ) {
-                    androidx.compose.foundation.lazy.LazyColumn(state = listState) {
+                    androidx.compose.foundation.lazy.LazyColumn(
+                        state = listState,
+                        modifier = Modifier.bottomSheetScrollGuard()
+                    ) {
                         itemsIndexed(displayedQueue) { index, song ->
                             Row(
                                 modifier = Modifier
@@ -878,9 +884,12 @@ fun LyricsScreen(
                     playlists.filterNot { LocalFilesPlaylist.isSystemPlaylist(it, context) }
                 }
                 androidx.compose.material3.ModalBottomSheet(
-                    onDismissRequest = { showAddSheet = false }
+                    onDismissRequest = { showAddSheet = false },
+                    sheetGesturesEnabled = false
                 ) {
-                    androidx.compose.foundation.lazy.LazyColumn {
+                    androidx.compose.foundation.lazy.LazyColumn(
+                        modifier = Modifier.bottomSheetScrollGuard()
+                    ) {
                         itemsIndexed(selectablePlaylists) { _, pl ->
                             Row(
                                 modifier = Modifier

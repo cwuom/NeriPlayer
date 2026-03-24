@@ -161,9 +161,6 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ClipEntry
@@ -233,6 +230,8 @@ import moe.ouom.neriplayer.ui.component.PlaybackSourceBadge
 import moe.ouom.neriplayer.ui.component.PlaybackSourceType
 import moe.ouom.neriplayer.ui.component.SleepTimerDialog
 import moe.ouom.neriplayer.ui.component.WaveformSlider
+import moe.ouom.neriplayer.ui.component.bottomSheetDragBlocker
+import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.component.parseNeteaseLrc
 import moe.ouom.neriplayer.ui.component.parseNeteaseYrc
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
@@ -1332,7 +1331,8 @@ fun NowPlayingScreen(
             if (showVolumeSheet) {
                 ModalBottomSheet(
                     onDismissRequest = { showVolumeSheet = false },
-                    sheetState = volumeSheetState
+                    sheetState = volumeSheetState,
+                    sheetGesturesEnabled = false
                 ) {
                     VolumeControlSheetContent()
                 }
@@ -1351,9 +1351,13 @@ fun NowPlayingScreen(
 
                 ModalBottomSheet(
                     onDismissRequest = { showQueueSheet = false },
-                    sheetState = queueSheetState
+                    sheetState = queueSheetState,
+                    sheetGesturesEnabled = false
                 ) {
-                    LazyColumn(state = listState) {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.bottomSheetScrollGuard()
+                    ) {
                         itemsIndexed(displayedQueue) { index, song ->
                             Row(
                                 modifier = Modifier
@@ -1451,9 +1455,10 @@ fun NowPlayingScreen(
                 }
                 ModalBottomSheet(
                     onDismissRequest = { showAddSheet = false },
-                    sheetState = addSheetState
+                    sheetState = addSheetState,
+                    sheetGesturesEnabled = false
                 ) {
-                    LazyColumn {
+                    LazyColumn(modifier = Modifier.bottomSheetScrollGuard()) {
                         itemsIndexed(selectablePlaylists) { _, pl ->
                             Row(
                                 modifier = Modifier
@@ -1653,7 +1658,13 @@ fun MoreOptionsSheet(
         ) { targetState ->
             when (targetState) {
                 "Main" -> {
-                    Column(Modifier.padding(bottom = 32.dp)) {
+                    val mainScrollState = rememberScrollState()
+                    Column(
+                        Modifier
+                            .bottomSheetScrollGuard { mainScrollState.value == 0 }
+                            .verticalScroll(mainScrollState)
+                            .padding(bottom = 32.dp)
+                    ) {
                         ListItem(
                             headlineContent = { Text(stringResource(R.string.music_get_info)) },
                             leadingContent = { Icon(Icons.Outlined.Info, null) },
@@ -1837,6 +1848,7 @@ fun MoreOptionsSheet(
                 "Search" -> {
                     // 搜索界面
                     val searchState by viewModel.manualSearchState.collectAsState()
+                    val searchResultsListState = rememberLazyListState()
 
                     Column(
                         Modifier
@@ -1884,7 +1896,12 @@ fun MoreOptionsSheet(
                             if (searchState.isLoading) {
                                 CircularProgressIndicator(Modifier.align(Alignment.Center))
                             } else if (searchState.searchResults.isNotEmpty()) {
-                                LazyColumn {
+                                LazyColumn(
+                                    state = searchResultsListState,
+                                    modifier = Modifier.bottomSheetScrollGuard {
+                                        !searchResultsListState.canScrollBackward
+                                    }
+                                ) {
                                     items(searchState.searchResults) { songResult ->
                                         ListItem(
                                             headlineContent = { Text(songResult.songName, maxLines = 1) },
@@ -2107,6 +2124,7 @@ fun VolumeControlSheetContent() {
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .bottomSheetDragBlocker()
             .padding(horizontal = 24.dp, vertical = 16.dp)
             .windowInsetsPadding(WindowInsets.navigationBars),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -2140,6 +2158,7 @@ fun LyricOffsetSheet(song: SongItem, onDismiss: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .bottomSheetDragBlocker()
             .padding(horizontal = 24.dp, vertical = 16.dp)
             .windowInsetsPadding(WindowInsets.navigationBars),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -2192,6 +2211,7 @@ fun LyricFontSizeSheet(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .bottomSheetDragBlocker()
             .padding(horizontal = 24.dp, vertical = 16.dp)
             .windowInsetsPadding(WindowInsets.navigationBars),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -2273,57 +2293,7 @@ fun EditSongInfoSheet(
 
     val searchState by viewModel.manualSearchState.collectAsState()
 
-    // 创建嵌套滚动连接来消费滚动事件，防止传递给 ModalBottomSheet
     val scrollState = rememberScrollState()
-    val nestedScrollConnection = remember {
-        object : NestedScrollConnection {
-            override fun onPreScroll(
-                available: androidx.compose.ui.geometry.Offset,
-                source: NestedScrollSource
-            ): androidx.compose.ui.geometry.Offset {
-                // 在滚动前不消费，让 verticalScroll 正常处理
-                return when (source) {
-                    NestedScrollSource.UserInput,
-                    NestedScrollSource.SideEffect -> if (available == androidx.compose.ui.geometry.Offset.Zero) {
-                        androidx.compose.ui.geometry.Offset.Zero
-                    } else {
-                        androidx.compose.ui.geometry.Offset.Zero
-                    }
-                    else -> androidx.compose.ui.geometry.Offset.Zero
-                }
-            }
-
-            override fun onPostScroll(
-                consumed: androidx.compose.ui.geometry.Offset,
-                available: androidx.compose.ui.geometry.Offset,
-                source: NestedScrollSource
-            ): androidx.compose.ui.geometry.Offset {
-                // 消费所有剩余滚动事件，防止传递给 ModalBottomSheet
-                return when (source) {
-                    NestedScrollSource.UserInput,
-                    NestedScrollSource.SideEffect -> if (consumed == androidx.compose.ui.geometry.Offset.Zero) {
-                        available
-                    } else {
-                        available
-                    }
-                    else -> available
-                }
-            }
-
-            override suspend fun onPreFling(available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
-                // 消费所有 fling 速度，防止传递给 ModalBottomSheet
-                return available
-            }
-
-            override suspend fun onPostFling(
-                consumed: androidx.compose.ui.unit.Velocity,
-                available: androidx.compose.ui.unit.Velocity
-            ): androidx.compose.ui.unit.Velocity {
-                // 消费所有剩余 fling 速度
-                return if (consumed == androidx.compose.ui.unit.Velocity.Zero) available else available
-            }
-        }
-    }
 
     // 当歌曲信息更新时，同步更新UI（仅在用户未手动编辑时）
     LaunchedEffect(actualSong) {
@@ -2407,7 +2377,7 @@ fun EditSongInfoSheet(
         Column(
             modifier = Modifier
                 .weight(1f)
-                .nestedScroll(nestedScrollConnection)
+                .bottomSheetScrollGuard { scrollState.value == 0 }
                 .verticalScroll(scrollState),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -2748,7 +2718,8 @@ fun EditSongInfoSheet(
     if (showSearchResults) {
         ModalBottomSheet(
             onDismissRequest = { showSearchResults = false },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            sheetGesturesEnabled = false
         ) {
             Column(
                 modifier = Modifier
@@ -2800,6 +2771,7 @@ fun EditSongInfoSheet(
                         CircularProgressIndicator()
                     } else if (searchState.searchResults.isNotEmpty()) {
                         LazyColumn(
+                            modifier = Modifier.bottomSheetScrollGuard(),
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             items(searchState.searchResults) { songResult ->
@@ -2868,66 +2840,11 @@ fun LyricsEditorSheet(
     var isSaving by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableIntStateOf(0) }
 
-    // 创建嵌套滚动连接来消费滚动事件，防止传递给 ModalBottomSheet
-    val nestedScrollConnection = remember {
-        object : NestedScrollConnection {
-            override fun onPreScroll(
-                available: androidx.compose.ui.geometry.Offset,
-                source: NestedScrollSource
-            ): androidx.compose.ui.geometry.Offset {
-                // 在滚动前不消费，让内部滚动正常处理
-                return when (source) {
-                    NestedScrollSource.UserInput,
-                    NestedScrollSource.SideEffect -> if (available == androidx.compose.ui.geometry.Offset.Zero) {
-                        androidx.compose.ui.geometry.Offset.Zero
-                    } else {
-                        androidx.compose.ui.geometry.Offset.Zero
-                    }
-                    else -> androidx.compose.ui.geometry.Offset.Zero
-                }
-            }
-
-            override fun onPostScroll(
-                consumed: androidx.compose.ui.geometry.Offset,
-                available: androidx.compose.ui.geometry.Offset,
-                source: NestedScrollSource
-            ): androidx.compose.ui.geometry.Offset {
-                // 消费所有剩余滚动事件，防止传递给 ModalBottomSheet
-                return when (source) {
-                    NestedScrollSource.UserInput,
-                    NestedScrollSource.SideEffect -> if (consumed == androidx.compose.ui.geometry.Offset.Zero) {
-                        available
-                    } else {
-                        available
-                    }
-                    else -> available
-                }
-            }
-
-            override suspend fun onPreFling(available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
-                // 消费所有 fling 速度，防止传递给 ModalBottomSheet
-                return available
-            }
-
-            override suspend fun onPostFling(
-                consumed: androidx.compose.ui.unit.Velocity,
-                available: androidx.compose.ui.unit.Velocity
-            ): androidx.compose.ui.unit.Velocity {
-                // 消费所有剩余 fling 速度
-                return if (consumed == androidx.compose.ui.unit.Velocity.Zero) available else available
-            }
-        }
-    }
-
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .fillMaxHeight(0.9f)
-            .pointerInput(Unit) {
-                // 拦截所有触摸事件，防止传递给 ModalBottomSheet
-                detectVerticalDragGestures { _, _ -> }
-            }
-            .nestedScroll(nestedScrollConnection)
+            .bottomSheetScrollGuard()
             .padding(horizontal = 24.dp, vertical = 16.dp)
             .windowInsetsPadding(WindowInsets.navigationBars),
         verticalArrangement = Arrangement.spacedBy(12.dp)
