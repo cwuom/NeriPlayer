@@ -46,6 +46,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthHealth
 import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.platform.youtube.YOUTUBE_WEB_ORIGIN
 import moe.ouom.neriplayer.data.platform.youtube.appendYouTubeConsentCookie
@@ -780,6 +781,8 @@ class YouTubeMusicPlaybackRepository(
     private val okHttpClient: OkHttpClient,
     private val settings: SettingsRepository? = null,
     private val authProvider: () -> YouTubeAuthBundle = { YouTubeAuthBundle() },
+    private val authHealthProvider: () -> YouTubeAuthHealth = { YouTubeAuthHealth() },
+    private val authUpdater: (YouTubeAuthBundle) -> Unit = {},
     private val streamingCipherResolverFactory: ((String) -> YouTubeStreamingCipherResolver)? = null,
     applicationContext: Context? = null,
     poTokenProvider: YouTubePoTokenProvider? = null
@@ -792,7 +795,7 @@ class YouTubeMusicPlaybackRepository(
         YouTubeEjsChallengeSolver(it, okHttpClient)
     }
     private val poTokenProvider = poTokenProvider ?: applicationContext?.let {
-        YouTubeWebPoTokenProvider(it, authProvider)
+        YouTubeWebPoTokenProvider(it, authProvider, authHealthProvider, authUpdater)
     }
 
     @Volatile

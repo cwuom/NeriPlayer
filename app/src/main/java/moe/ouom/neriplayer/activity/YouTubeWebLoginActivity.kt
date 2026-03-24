@@ -46,11 +46,14 @@ import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.snackbar.Snackbar
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.data.auth.youtube.applyYouTubeWebCookies
+import moe.ouom.neriplayer.data.auth.youtube.collectYouTubeWebCookies
+import moe.ouom.neriplayer.data.auth.youtube.hasMeaningfulYouTubeAuthChange
+import moe.ouom.neriplayer.data.auth.youtube.mergeYouTubeAuthBundle
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRepository
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeCookieSupport
 import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
-import moe.ouom.neriplayer.data.auth.youtube.parseCookieHeader
 import moe.ouom.neriplayer.util.lockPortraitIfPhone
 import org.json.JSONObject
 
@@ -178,6 +181,7 @@ class YouTubeWebLoginActivity : ComponentActivity() {
     }
 
     override fun onPause() {
+        persistObservedAuthIfNeeded()
         CookieManager.getInstance().flush()
         if (this::webView.isInitialized) {
             webView.onPause()
@@ -193,6 +197,7 @@ class YouTubeWebLoginActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        persistObservedAuthIfNeeded()
         CookieManager.getInstance().flush()
         if (this::webView.isInitialized) {
             (webView.parent as? ViewGroup)?.removeView(webView)
@@ -218,18 +223,7 @@ class YouTubeWebLoginActivity : ComponentActivity() {
     private fun readAndReturnAuth() {
         try {
             CookieManager.getInstance().flush()
-            val cookieHeader = collectCookieHeader()
-            val snapshot = capturedHeaders
-            val bundle = YouTubeAuthBundle(
-                cookieHeader = cookieHeader,
-                cookies = parseCookieHeader(cookieHeader),
-                authorization = snapshot?.authorization.orEmpty(),
-                xGoogAuthUser = snapshot?.xGoogAuthUser.orEmpty(),
-                origin = snapshot?.origin.orEmpty().ifBlank { YOUTUBE_MUSIC_ORIGIN },
-                userAgent = snapshot?.userAgent.orEmpty()
-                    .ifBlank { webView.settings.userAgentString.orEmpty() },
-                savedAt = System.currentTimeMillis()
-            ).normalized(savedAt = System.currentTimeMillis())
+            val bundle = buildObservedAuthBundle(savedAt = System.currentTimeMillis())
 
             if (!YouTubeCookieSupport.isLoggedIn(bundle.cookies)) {
                 Snackbar.make(
@@ -240,6 +234,7 @@ class YouTubeWebLoginActivity : ComponentActivity() {
                 return
             }
 
+            persistBundleIfChanged(bundle)
             val cookieJson = JSONObject(bundle.cookies as Map<*, *>).toString()
             setResult(
                 RESULT_OK,
@@ -263,45 +258,58 @@ class YouTubeWebLoginActivity : ComponentActivity() {
     private fun restorePersistedCookies() {
         val savedBundle = authRepo.getAuthOnce()
         val savedCookies = savedBundle.cookies.ifEmpty {
-            parseCookieHeader(savedBundle.cookieHeader)
+            YouTubeCookieSupport.parseCookieString(savedBundle.cookieHeader)
         }
         if (savedCookies.isEmpty()) {
             return
         }
 
-        val cookieManager = CookieManager.getInstance()
-        YouTubeCookieSupport.webUrls.forEach { url ->
-            savedCookies.forEach { (key, value) ->
-                cookieManager.setCookie(
-                    url,
-                    "$key=$value; Path=/; Domain=.youtube.com; Secure"
-                )
-            }
-        }
-        cookieManager.flush()
+        applyYouTubeWebCookies(
+            cookieManager = CookieManager.getInstance(),
+            cookies = savedCookies,
+            skipExisting = true
+        )
     }
 
-    private fun collectCookieHeader(): String {
-        val cookieManager = CookieManager.getInstance()
-        val mergedCookies = linkedMapOf<String, String>()
-        listOf(
-            "https://music.youtube.com",
-            "https://www.youtube.com",
-            "https://youtube.com",
-            "https://m.youtube.com"
-        ).forEach { url ->
-            parseCookieHeader(cookieManager.getCookie(url).orEmpty()).forEach { (key, value) ->
-                mergedCookies[key] = value
-            }
-        }
-        return mergedCookies.entries.joinToString("; ") { (key, value) -> "$key=$value" }
+    private fun buildObservedAuthBundle(
+        savedAt: Long = System.currentTimeMillis()
+    ): YouTubeAuthBundle {
+        val snapshot = capturedHeaders
+        return mergeYouTubeAuthBundle(
+            base = authRepo.getAuthOnce(),
+            observedCookies = collectYouTubeWebCookies(CookieManager.getInstance()),
+            authorization = snapshot?.authorization.orEmpty(),
+            xGoogAuthUser = snapshot?.xGoogAuthUser.orEmpty(),
+            origin = snapshot?.origin.orEmpty().ifBlank { YOUTUBE_MUSIC_ORIGIN },
+            userAgent = snapshot?.userAgent.orEmpty()
+                .ifBlank { webView.settings.userAgentString.orEmpty() },
+            savedAt = savedAt
+        )
     }
 
-    private fun captureAuthHeaders(request: WebResourceRequest?) {
-        val currentRequest = request ?: return
-        val host = currentRequest.url.host?.lowercase() ?: return
-        if (host !in AUTH_HOSTS) {
+    private fun persistObservedAuthIfNeeded() {
+        if (!this::webView.isInitialized) {
             return
+        }
+        val bundle = buildObservedAuthBundle()
+        if (!YouTubeCookieSupport.isLoggedIn(bundle.cookies)) {
+            return
+        }
+        persistBundleIfChanged(bundle)
+    }
+
+    private fun persistBundleIfChanged(bundle: YouTubeAuthBundle) {
+        val existing = authRepo.getAuthOnce()
+        if (hasMeaningfulYouTubeAuthChange(existing, bundle)) {
+            authRepo.saveAuth(bundle)
+        }
+    }
+
+    private fun captureAuthHeaders(request: WebResourceRequest?): Boolean {
+        val currentRequest = request ?: return false
+        val host = currentRequest.url.host?.lowercase() ?: return false
+        if (host !in AUTH_HOSTS) {
+            return false
         }
 
         val headers = currentRequest.requestHeaders
@@ -321,7 +329,7 @@ class YouTubeWebLoginActivity : ComponentActivity() {
             cookieHeader.contains("LOGIN_INFO=")
         val isYouTubeiRequest = path.startsWith("/youtubei/v1/")
         if (!isYouTubeiRequest && authorization.isBlank() && !hasUsefulCookie) {
-            return
+            return false
         }
 
         capturedHeaders = CapturedRequestHeaders(
@@ -330,6 +338,7 @@ class YouTubeWebLoginActivity : ComponentActivity() {
             origin = origin,
             userAgent = userAgent
         )
+        return true
     }
 
     private fun findHeader(headers: Map<String, String>, name: String): String {
@@ -343,8 +352,16 @@ class YouTubeWebLoginActivity : ComponentActivity() {
             view: WebView?,
             request: WebResourceRequest?
         ): WebResourceResponse? {
-            captureAuthHeaders(request)
+            if (captureAuthHeaders(request)) {
+                view?.post { persistObservedAuthIfNeeded() }
+            }
             return super.shouldInterceptRequest(view, request)
+        }
+
+        override fun onPageFinished(view: WebView?, url: String?) {
+            CookieManager.getInstance().flush()
+            persistObservedAuthIfNeeded()
+            super.onPageFinished(view, url)
         }
     }
 }

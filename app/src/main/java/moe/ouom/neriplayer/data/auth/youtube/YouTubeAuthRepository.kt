@@ -277,6 +277,15 @@ class YouTubeAuthRepository(context: Context) {
         _authHealthFlow.value = evaluateYouTubeAuthHealth(normalized)
     }
 
+    fun mergeCookieUpdates(setCookieHeaders: Iterable<String>): Boolean {
+        val merged = mergeYouTubeAuthCookieUpdates(
+            base = _authFlow.value,
+            setCookieHeaders = setCookieHeaders
+        ) ?: return false
+        saveAuth(merged)
+        return true
+    }
+
     fun clear() {
         encryptedPrefs.edit {
             remove(KEY_YOUTUBE_AUTH_BUNDLE)
