@@ -47,6 +47,7 @@ import moe.ouom.neriplayer.data.auth.netease.NeteaseCookieRepository
 import moe.ouom.neriplayer.data.history.PlayHistoryRepository
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.data.settings.SettingsRepository
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthAutoRefreshManager
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRepository
 import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeInnertubeRequestHeaders
@@ -71,6 +72,14 @@ object AppContainer {
     val neteaseCookieRepo by lazy { NeteaseCookieRepository(application) }
     val biliCookieRepo by lazy { BiliCookieRepository(application) }
     val youtubeAuthRepo by lazy { YouTubeAuthRepository(application) }
+    private val youtubeAuthAutoRefreshManager by lazy {
+        YouTubeAuthAutoRefreshManager(
+            context = application,
+            authProvider = youtubeAuthRepo::getAuthOnce,
+            authHealthProvider = youtubeAuthRepo::getAuthHealthOnce,
+            authUpdater = youtubeAuthRepo::saveAuth
+        )
+    }
 
 
     @SuppressLint("StaticFieldLeak")
@@ -132,7 +141,13 @@ object AppContainer {
     }
 
     val biliClient by lazy { BiliClient(biliCookieRepo, client = sharedOkHttpClient) }
-    val youtubeMusicClient by lazy { YouTubeMusicClient(youtubeAuthRepo, sharedOkHttpClient) }
+    val youtubeMusicClient by lazy {
+        YouTubeMusicClient(
+            authRepo = youtubeAuthRepo,
+            okHttpClient = sharedOkHttpClient,
+            authAutoRefreshManager = youtubeAuthAutoRefreshManager
+        )
+    }
 
     // 功能 Repo 和 API
     val biliPlaybackRepository by lazy {
@@ -144,6 +159,7 @@ object AppContainer {
             okHttpClient = sharedOkHttpClient,
             settings = settingsRepo,
             authProvider = youtubeAuthRepo::getAuthOnce,
+            authAutoRefreshManager = youtubeAuthAutoRefreshManager,
             applicationContext = application
         )
     }

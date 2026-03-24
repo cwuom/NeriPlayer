@@ -155,6 +155,7 @@ object NeteaseCrypto {
         return String(plain, StandardCharsets.UTF_8)
     }
 
+    @SuppressLint("GetInstance")
     private fun decryptLinuxApiCipher(cipher: String): ByteArray {
         val data = cipher.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
         val secretKey = SecretKeySpec(LINUX_KEY.toByteArray(StandardCharsets.UTF_8), "AES")

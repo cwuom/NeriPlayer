@@ -92,12 +92,14 @@ internal class YouTubeWebPoTokenProvider(
         )
         private const val PAGE_PREPARE_ATTEMPTS = 16
         private const val PAGE_PREPARE_BACKOFF_MS = 1_000L
+        private const val PAGE_READY_UNAVAILABLE_THRESHOLD = 2
         private const val MINT_ATTEMPTS = 10
         private const val MINT_BACKOFF_MS = 1_000L
         private const val WEBVIEW_RELOAD_TTL_MS = 20L * 60L * 1000L
         private const val TOKEN_TTL_MS = 6L * 60L * 60L * 1000L
         private const val ASYNC_SCRIPT_TIMEOUT_MS = 20_000L
         private const val TOKEN_CACHE_MAX_SIZE = 16
+        private const val UNAVAILABLE_LOG_INTERVAL_MS = 10L * 60L * 1000L
     }
 
     private val applicationContext = context.applicationContext
@@ -116,6 +118,9 @@ internal class YouTubeWebPoTokenProvider(
 
     @Volatile
     private var preparedUrl: String = WEB_PO_BOOTSTRAP_URLS.first()
+
+    @Volatile
+    private var lastUnavailableLogAtMs: Long = 0L
 
     override suspend fun warmSession() {
         val auth = authProvider().normalized()
@@ -146,6 +151,9 @@ internal class YouTubeWebPoTokenProvider(
             authFingerprint = authFingerprint,
             forceRefresh = forceRefresh
         ) ?: return@withLock null
+        if (!pageSnapshot.hasWebPoClient) {
+            return@withLock null
+        }
 
         val contentBinding = resolveContentBinding(
             videoId = videoId,
@@ -185,6 +193,14 @@ internal class YouTubeWebPoTokenProvider(
 
                 result?.status == "backoff" -> {
                     delay(MINT_BACKOFF_MS)
+                }
+
+                result?.status == "missing" -> {
+                    logUnavailable(
+                        url = preparedUrl,
+                        snapshot = pageSnapshot
+                    )
+                    return@withLock null
                 }
 
                 attempt < MINT_ATTEMPTS - 1 -> {
@@ -246,25 +262,34 @@ internal class YouTubeWebPoTokenProvider(
         preparedCookieFingerprint = authFingerprint
 
         for (bootstrapUrl in WEB_PO_BOOTSTRAP_URLS) {
+            var readyWithoutClientCount = 0
             withContext(Dispatchers.Main) {
                 activeWebView.settings.userAgentString = auth.resolveBootstrapUserAgent()
                 activeWebView.stopLoading()
                 activeWebView.loadUrl(bootstrapUrl)
             }
 
-            repeat(PAGE_PREPARE_ATTEMPTS) { attempt ->
+            for (attempt in 0 until PAGE_PREPARE_ATTEMPTS) {
                 delay(PAGE_PREPARE_BACKOFF_MS)
-                val snapshot = readPageSnapshot() ?: return@repeat
+                val snapshot = readPageSnapshot() ?: continue
                 if (snapshot.hasYtcfg && snapshot.hasWebPoClient) {
                     preparedAtMs = System.currentTimeMillis()
                     preparedUrl = bootstrapUrl
                     return snapshot
                 }
+                val pageReady = snapshot.readyState.equals("interactive", ignoreCase = true) ||
+                    snapshot.readyState.equals("complete", ignoreCase = true)
+                if (pageReady && !snapshot.hasWebPoClient) {
+                    readyWithoutClientCount += 1
+                    if (readyWithoutClientCount >= PAGE_READY_UNAVAILABLE_THRESHOLD) {
+                        logUnavailable(bootstrapUrl, snapshot)
+                        break
+                    }
+                } else {
+                    readyWithoutClientCount = 0
+                }
                 if (attempt == PAGE_PREPARE_ATTEMPTS - 1) {
-                    NPLogger.w(
-                        TAG,
-                        "WebPoClient unavailable on $bootstrapUrl, ready=${snapshot.readyState}, ytcfg=${snapshot.hasYtcfg}"
-                    )
+                    logUnavailable(bootstrapUrl, snapshot)
                 }
             }
         }
@@ -503,6 +528,21 @@ internal class YouTubeWebPoTokenProvider(
             append('|')
             append(auth.resolveBootstrapUserAgent())
         }
+    }
+
+    private fun logUnavailable(
+        url: String,
+        snapshot: WebPoPageSnapshot
+    ) {
+        val now = System.currentTimeMillis()
+        if (now - lastUnavailableLogAtMs < UNAVAILABLE_LOG_INTERVAL_MS) {
+            return
+        }
+        lastUnavailableLogAtMs = now
+        NPLogger.d(
+            TAG,
+            "WebPoClient unavailable on $url, ready=${snapshot.readyState}, ytcfg=${snapshot.hasYtcfg}"
+        )
     }
 
     private fun buildCacheKey(

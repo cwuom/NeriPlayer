@@ -45,6 +45,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.data.auth.youtube.isYouTubeAuthRecoverableFailure
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthAutoRefreshManager
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
@@ -727,6 +729,7 @@ class YouTubeMusicPlaybackRepository(
     private val okHttpClient: OkHttpClient,
     private val settings: SettingsRepository? = null,
     private val authProvider: () -> YouTubeAuthBundle = { YouTubeAuthBundle() },
+    private val authAutoRefreshManager: YouTubeAuthAutoRefreshManager? = null,
     private val streamingCipherResolverFactory: ((String) -> YouTubeStreamingCipherResolver)? = null,
     applicationContext: Context? = null,
     poTokenProvider: YouTubePoTokenProvider? = null
@@ -801,6 +804,7 @@ class YouTubeMusicPlaybackRepository(
     }
 
     suspend fun warmBootstrap() = withContext(Dispatchers.IO) {
+        authAutoRefreshManager?.refreshIfNeeded(reason = "playback_warm_bootstrap", force = false)
         val auth = authProvider().normalized()
         if (!auth.hasLoginCookies()) {
             return@withContext
@@ -1622,11 +1626,16 @@ class YouTubeMusicPlaybackRepository(
         }
     }
 
-    private fun bootstrap(
+    private suspend fun bootstrap(
         auth: YouTubeAuthBundle,
         forceRefresh: Boolean = false
     ): YouTubePlaybackBootstrap {
-        val cookieHeader = appendYouTubeConsentCookie(auth.effectiveCookieHeader())
+        authAutoRefreshManager?.refreshIfNeeded(
+            reason = "playback_bootstrap",
+            force = forceRefresh
+        )
+        var workingAuth = authProvider().normalized().takeIf { it.hasLoginCookies() } ?: auth
+        var cookieHeader = appendYouTubeConsentCookie(workingAuth.effectiveCookieHeader())
         if (cookieHeader.isBlank()) {
             throw IOException("YouTube Music auth cookies missing")
         }
@@ -1641,12 +1650,34 @@ class YouTubeMusicPlaybackRepository(
             return cached
         }
 
-        val userAgent = auth.resolveBootstrapUserAgent()
-        val homeHtml = fetchBootstrapHtml(
-            auth = auth,
-            userAgent = userAgent,
-            cookieHeader = cookieHeader
-        )
+        var userAgent = workingAuth.resolveBootstrapUserAgent()
+        val homeHtml = try {
+            fetchBootstrapHtml(
+                auth = workingAuth,
+                userAgent = userAgent,
+                cookieHeader = cookieHeader
+            )
+        } catch (error: IOException) {
+            if (isYouTubeAuthRecoverableFailure(error)) {
+                authAutoRefreshManager?.refreshIfNeeded(
+                    reason = "playback_bootstrap_http_recoverable",
+                    force = true
+                )
+                workingAuth = authProvider().normalized()
+                cookieHeader = appendYouTubeConsentCookie(workingAuth.effectiveCookieHeader())
+                if (cookieHeader.isBlank()) {
+                    throw error
+                }
+                userAgent = workingAuth.resolveBootstrapUserAgent()
+                fetchBootstrapHtml(
+                    auth = workingAuth,
+                    userAgent = userAgent,
+                    cookieHeader = cookieHeader
+                )
+            } else {
+                throw error
+            }
+        }
         val dataSyncId = findOptional(
             homeHtml,
             "\"DATASYNC_ID\":\"([^\"]+)\"",
@@ -1660,7 +1691,7 @@ class YouTubeMusicPlaybackRepository(
             visitorData = findRequired(homeHtml, "\"VISITOR_DATA\":\"([^\"]+)\""),
             playerJsUrl = playerJsUrl,
             cookieHeader = cookieHeader,
-            sessionIndex = auth.resolveXGoogAuthUser().ifBlank {
+            sessionIndex = workingAuth.resolveXGoogAuthUser().ifBlank {
                 findOptional(homeHtml, "\"SESSION_INDEX\":\"?([0-9]+)\"?").ifBlank { "0" }
             },
             userAgent = userAgent,
