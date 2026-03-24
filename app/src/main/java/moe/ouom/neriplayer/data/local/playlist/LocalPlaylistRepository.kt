@@ -846,7 +846,7 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
         )
     }
 
-    private suspend fun validateNeteaseSyncCandidates(
+    private fun validateNeteaseSyncCandidates(
         client: NeteaseClient,
         summary: LocalNeteaseCandidateSummary
     ): NeteaseCandidateValidationResult {
@@ -1255,7 +1255,7 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
             candidate.song.toNeteaseFingerprint() in refreshed.likedFingerprints
     }
 
-    private suspend fun isNeteaseSongIdStillResolvable(
+    private fun isNeteaseSongIdStillResolvable(
         client: NeteaseClient,
         songId: Long
     ): Boolean {

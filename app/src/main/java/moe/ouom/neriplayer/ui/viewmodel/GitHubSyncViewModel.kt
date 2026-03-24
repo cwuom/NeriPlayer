@@ -173,12 +173,13 @@ class GitHubSyncViewModel : ViewModel() {
                 val error = result.exceptionOrNull()
                 _uiState.value = _uiState.value.copy(
                     isCheckingRepo = false,
-                    errorMessage = when {
-                        error is TokenExpiredException -> context.getString(R.string.github_token_expired)
-                        error is GitHubApiException && error.statusCode == 404 -> context.getString(
+                    errorMessage = when (error) {
+                        is TokenExpiredException -> context.getString(R.string.github_token_expired)
+                        is GitHubApiException if error.statusCode == 404 -> context.getString(
                             R.string.github_repo_not_found,
                             fullRepoName
                         )
+
                         else -> context.getString(
                             R.string.github_sync_failed,
                             error?.message ?: context.getString(R.string.github_sync_failed_message)

@@ -27,7 +27,6 @@ import android.os.Parcelable
 import kotlinx.parcelize.Parcelize
 import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
 
-@Suppress("unused")
 @Parcelize
 data class YouTubeMusicPlaylist(
     val browseId: String,

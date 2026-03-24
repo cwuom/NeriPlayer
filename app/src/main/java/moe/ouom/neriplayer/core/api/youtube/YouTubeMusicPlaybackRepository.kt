@@ -1585,7 +1585,7 @@ class YouTubeMusicPlaybackRepository(
             append("&key=")
             append(bootstrap.apiKey)
             if (profile.responseField != null) {
-                append("&${'$'}fields=")
+                append($$"&$fields=")
                 append(profile.responseField)
             }
         }

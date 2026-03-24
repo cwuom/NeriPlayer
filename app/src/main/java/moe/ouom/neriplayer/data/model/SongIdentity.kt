@@ -33,7 +33,6 @@ import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
 import moe.ouom.neriplayer.data.sync.github.SyncSong
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 
-@Suppress("unused")
 @Parcelize
 data class SongIdentity(
     val id: Long,

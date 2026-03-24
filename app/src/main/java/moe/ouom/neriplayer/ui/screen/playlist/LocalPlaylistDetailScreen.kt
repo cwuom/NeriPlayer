@@ -684,8 +684,7 @@ fun LocalPlaylistDetailScreen(
             }
             LaunchedEffect(playlistId, displayedSongs) {
                 if (!hasRestoredScroll.value) {
-                    val key = savedListKey.value
-                    val targetIndex = when (key) {
+                    val targetIndex = when (val key = savedListKey.value) {
                         null -> null
                         headerKey -> 0
                         else -> {

@@ -70,7 +70,6 @@ data class HomeUiState(
 )
 
 /** UI 使用的精简数据模型 */
-@Suppress("unused")
 @Parcelize
 data class NeteasePlaylist(
     val id: Long,
@@ -80,7 +79,6 @@ data class NeteasePlaylist(
     val trackCount: Int
 ) : Parcelable
 
-@Suppress("unused")
 @Parcelize
 data class NeteaseAlbum(
     val id: Long,

@@ -57,11 +57,9 @@ import java.io.IOException
 @Serializable private data class CloudMusicSongDetailResponse(val songs: List<CloudMusicSongDetail>)
 @Serializable private data class CloudMusicArtist(val name: String)
 @Serializable private data class CloudMusicAlbum(val name: String, val picUrl: String?)
-@Suppress("unused")
 @Serializable
 private data class CloudMusicLyricResponse(val lrc: CloudMusicLrc?, val tlyric: CloudMusicLrc? = null)
 
-@Suppress("unused")
 @Serializable
 private data class CloudMusicLrc(val lyric: String?)
 

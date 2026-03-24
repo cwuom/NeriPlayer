@@ -127,7 +127,6 @@ import org.burnoutcrew.reorderable.detectReorder
 import org.burnoutcrew.reorderable.rememberReorderableLazyListState
 import org.burnoutcrew.reorderable.reorderable
 
-@Suppress("unused")
 enum class LibraryTab(val labelResId: Int) {
     LOCAL(R.string.library_tab_local),
     FAVORITE(R.string.library_tab_favorite),

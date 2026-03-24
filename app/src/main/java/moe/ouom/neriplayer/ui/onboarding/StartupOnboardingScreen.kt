@@ -1,8 +1,6 @@
 package moe.ouom.neriplayer.ui.onboarding
 
 import android.app.Activity
-import android.graphics.Bitmap
-import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -140,6 +138,8 @@ import androidx.core.view.drawToBitmap
 import kotlin.coroutines.resume
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
+import androidx.core.net.toUri
+import androidx.core.graphics.createBitmap
 
 private enum class StartupStep {
     Language,
@@ -357,11 +357,10 @@ fun StartupOnboardingScreen() {
 
         val currentStep = steps[stepIndex]
         if (currentStep == StartupStep.Language) {
-            val nextLanguage = selectedLanguage
             val currentLanguage = LanguageManager.getCurrentLanguage(context)
-            if (currentLanguage != nextLanguage) {
+            if (currentLanguage != selectedLanguage) {
                 stepIndex = StartupStep.Platforms.ordinal
-                LanguageManager.setLanguage(context, nextLanguage)
+                LanguageManager.setLanguage(context, selectedLanguage)
                 activity?.let(LanguageManager::restartActivity)
                 return
             }
@@ -1169,7 +1168,7 @@ private fun PreviewCard(
     val previewImageRequest = remember(context, backgroundImageUri, legacyBlur) {
         backgroundImageUri?.let { uri ->
             ImageRequest.Builder(context)
-                .data(Uri.parse(uri))
+                .data(uri.toUri())
                 .crossfade(false)
                 .transformations(
                     if (legacyBlur > 0f) {
@@ -1474,11 +1473,7 @@ private suspend fun captureStartupThemeRevealSnapshot(
                 return@suspendCancellableCoroutine
             }
 
-            val bitmap = Bitmap.createBitmap(
-                decorView.width,
-                decorView.height,
-                Bitmap.Config.ARGB_8888
-            )
+            val bitmap = createBitmap(decorView.width, decorView.height)
 
             PixelCopy.request(
                 currentActivity.window,

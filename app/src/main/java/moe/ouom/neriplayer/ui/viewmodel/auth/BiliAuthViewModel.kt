@@ -50,7 +50,6 @@ sealed interface BiliAuthEvent {
     data class PromptReauth(val health: SavedCookieAuthHealth) : BiliAuthEvent
 }
 
-@Suppress("unused")
 class BiliAuthViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = AppContainer.biliCookieRepo
     private val client = AppContainer.biliClient

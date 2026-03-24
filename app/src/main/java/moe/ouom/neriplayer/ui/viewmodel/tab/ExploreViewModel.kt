@@ -80,7 +80,6 @@ val TAG_TO_API_CATEGORY = mapOf(
     "tag_light_music" to "轻音乐"
 )
 
-@Suppress("unused")
 /**
  * 定义搜索源
  * @param displayName 用于在UI上显示的名称

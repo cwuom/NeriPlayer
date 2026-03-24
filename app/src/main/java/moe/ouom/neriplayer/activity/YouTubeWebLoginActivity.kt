@@ -57,7 +57,6 @@ import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.util.lockPortraitIfPhone
 import org.json.JSONObject
 
-@Suppress("unused")
 class YouTubeWebLoginActivity : ComponentActivity() {
 
     companion object {
