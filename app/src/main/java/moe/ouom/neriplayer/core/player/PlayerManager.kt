@@ -700,9 +700,7 @@ object PlayerManager {
             // 启动时就禁止 Exo 列表循环，由我们自己接管（仅单曲循环放给 Exo）
             player.repeatMode = Player.REPEAT_MODE_OFF
 
-            ioScope.launch {
-                youtubeMusicPlaybackRepository.warmBootstrap()
-            }
+            youtubeMusicPlaybackRepository.warmBootstrapAsync()
 
             player.addListener(object : Player.Listener {
                 override fun onPlayerError(error: PlaybackException) {
@@ -1487,48 +1485,43 @@ object PlayerManager {
         if (currentVideoId == null && nextVideoId == null) {
             return
         }
-        ioScope.launch {
+        runCatching {
+            youtubeMusicPlaybackRepository.warmBootstrapAsync()
+        }.onFailure { error ->
+            NPLogger.w(
+                "NERI-PlayerManager",
+                "Warm YouTube Music bootstrap failed: ${error.message}"
+            )
+        }
+        currentVideoId?.let { videoId ->
             runCatching {
-                youtubeMusicPlaybackRepository.warmBootstrap()
+                // 直接占住 in-flight 槽位，后续正式播放能稳定复用这次解析结果。
+                youtubeMusicPlaybackRepository.kickoffPlayableAudioPrefetch(
+                    videoId = videoId,
+                    preferredQualityOverride = youtubePreferredQuality,
+                    requireDirect = true,
+                    preferM4a = true
+                )
             }.onFailure { error ->
                 NPLogger.w(
                     "NERI-PlayerManager",
-                    "Warm YouTube Music bootstrap failed: ${error.message}"
+                    "Warm current YouTube Music stream failed for $videoId: ${error.message}"
                 )
             }
         }
-        currentVideoId?.let { videoId ->
-            ioScope.launch {
-                runCatching {
-                    youtubeMusicPlaybackRepository.prefetchPlayableAudioUrl(
-                        videoId = videoId,
-                        preferredQualityOverride = youtubePreferredQuality,
-                        requireDirect = true,
-                        preferM4a = true
-                    )
-                }.onFailure { error ->
-                    NPLogger.w(
-                        "NERI-PlayerManager",
-                        "Warm current YouTube Music stream failed for $videoId: ${error.message}"
-                    )
-                }
-            }
-        }
         nextVideoId?.let { videoId ->
-            ioScope.launch {
-                runCatching {
-                    youtubeMusicPlaybackRepository.prefetchPlayableAudioUrl(
-                        videoId = videoId,
-                        preferredQualityOverride = youtubePreferredQuality,
-                        requireDirect = true,
-                        preferM4a = true
-                    )
-                }.onFailure { error ->
-                    NPLogger.w(
-                        "NERI-PlayerManager",
-                        "Prefetch next YouTube Music stream failed for $videoId: ${error.message}"
-                    )
-                }
+            runCatching {
+                youtubeMusicPlaybackRepository.kickoffPlayableAudioPrefetch(
+                    videoId = videoId,
+                    preferredQualityOverride = youtubePreferredQuality,
+                    requireDirect = true,
+                    preferM4a = true
+                )
+            }.onFailure { error ->
+                NPLogger.w(
+                    "NERI-PlayerManager",
+                    "Prefetch next YouTube Music stream failed for $videoId: ${error.message}"
+                )
             }
         }
     }

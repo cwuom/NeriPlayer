@@ -17,6 +17,7 @@ import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import okio.Buffer
+import java.util.concurrent.atomic.AtomicInteger
 
 class YouTubeMusicPlaybackRepositoryTest {
 
@@ -301,6 +302,106 @@ class YouTubeMusicPlaybackRepositoryTest {
                     request.url.encodedPath.contains("/watch")
             }
         )
+    }
+
+    @Test
+    fun kickoffPlayableAudioPrefetch_reusesInflightResolutionForImmediatePlayback() = runBlocking {
+        val bootstrapRequestCount = AtomicInteger(0)
+        val playerRequestCount = AtomicInteger(0)
+        val bootstrapHtml = """
+            <html>
+            <script>
+            ytcfg.set({
+              "INNERTUBE_API_KEY":"test-api-key",
+              "INNERTUBE_CLIENT_VERSION":"1.20260321.00.00",
+              "VISITOR_DATA":"visitor-data-123",
+              "jsUrl":"/s/player/test-player/base.js",
+              "SESSION_INDEX":"7",
+              "remoteHost":"13.114.209.29"
+            });
+            </script>
+            </html>
+        """.trimIndent()
+        val webRemixPlayerResponse = """
+            {
+              "playabilityStatus":{"status":"OK"},
+              "streamingData":{
+                "adaptiveFormats":[
+                  {
+                    "mimeType":"audio/mp4; codecs=\"mp4a.40.2\"",
+                    "url":"https://rr1---sn.googlevideo.com/videoplayback?id=audio-prefetch",
+                    "bitrate":128000,
+                    "audioSampleRate":"44100",
+                    "contentLength":"3586688",
+                    "approxDurationMs":"223041"
+                  }
+                ]
+              },
+              "videoDetails":{"lengthSeconds":"223"}
+            }
+        """.trimIndent()
+
+        val client = OkHttpClient.Builder()
+            .addInterceptor(
+                Interceptor { chain ->
+                    val request = chain.request()
+                    val body = when {
+                        request.url.host == "music.youtube.com" && request.url.encodedPath == "/" -> {
+                            bootstrapRequestCount.incrementAndGet()
+                            Thread.sleep(120)
+                            bootstrapHtml to "text/html; charset=utf-8"
+                        }
+
+                        request.url.encodedPath.contains("/youtubei/v1/player") -> {
+                            playerRequestCount.incrementAndGet()
+                            Thread.sleep(200)
+                            webRemixPlayerResponse to "application/json; charset=utf-8"
+                        }
+
+                        else -> "{}" to "application/json; charset=utf-8"
+                    }
+                    Response.Builder()
+                        .request(request)
+                        .protocol(Protocol.HTTP_1_1)
+                        .code(200)
+                        .message("OK")
+                        .body(body.first.toResponseBody(body.second.toMediaType()))
+                        .build()
+                }
+            )
+            .build()
+
+        val authBundle = moe.ouom.neriplayer.data.YouTubeAuthBundle(
+            cookieHeader = "SAPISID=sap-value; SID=sid-value",
+            xGoogAuthUser = "7",
+            userAgent = "RepoUserAgent/1.0"
+        )
+        val playbackRepository = YouTubeMusicPlaybackRepository(
+            okHttpClient = client,
+            authProvider = { authBundle }
+        )
+
+        playbackRepository.kickoffPlayableAudioPrefetch(
+            videoId = "prefetch-video",
+            preferredQualityOverride = "very_high",
+            requireDirect = true,
+            preferM4a = true
+        )
+
+        val playableAudio = playbackRepository.getBestPlayableAudio(
+            videoId = "prefetch-video",
+            preferredQualityOverride = "very_high",
+            requireDirect = true,
+            preferM4a = true
+        )
+
+        assertNotNull(playableAudio)
+        assertEquals(
+            "https://rr1---sn.googlevideo.com/videoplayback?id=audio-prefetch",
+            playableAudio?.url
+        )
+        assertEquals(1, bootstrapRequestCount.get())
+        assertEquals(1, playerRequestCount.get())
     }
 
     @Test

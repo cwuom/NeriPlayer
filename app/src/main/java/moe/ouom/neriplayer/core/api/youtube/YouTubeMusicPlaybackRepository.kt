@@ -39,6 +39,7 @@ import kotlin.jvm.Volatile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
@@ -747,6 +748,10 @@ class YouTubeMusicPlaybackRepository(
 
     @Volatile
     private var bootstrapCache: YouTubePlaybackBootstrap? = null
+    private val warmBootstrapLock = Any()
+
+    @Volatile
+    private var inFlightWarmBootstrap: Deferred<Unit>? = null
 
     suspend fun getBestPlayableAudio(
         videoId: String,
@@ -792,7 +797,35 @@ class YouTubeMusicPlaybackRepository(
         ) {
             return@withContext
         }
-        resolvePlayableAudioShared(
+        startPlayableAudioResolution(
+            videoId = videoId,
+            preferredQualityKey = preferredQualityKey,
+            requireDirect = requireDirect,
+            logFailure = false,
+            preferM4a = preferM4a,
+            cacheKey = cacheKey,
+            forceRefresh = false
+        ).await()
+    }
+
+    fun kickoffPlayableAudioPrefetch(
+        videoId: String,
+        preferredQualityOverride: String,
+        requireDirect: Boolean = false,
+        preferM4a: Boolean = false
+    ) {
+        val preferredQualityKey = preferredQualityOverride.ifBlank { "very_high" }
+        val cacheKey = if (preferM4a) "${preferredQualityKey}_m4a" else preferredQualityKey
+        if (
+            getCachedPlayableAudio(
+                videoId = videoId,
+                preferredQualityKey = cacheKey,
+                requireDirect = requireDirect
+            ) != null
+        ) {
+            return
+        }
+        startPlayableAudioResolution(
             videoId = videoId,
             preferredQualityKey = preferredQualityKey,
             requireDirect = requireDirect,
@@ -819,6 +852,32 @@ class YouTubeMusicPlaybackRepository(
                 "Warm bootstrap failed",
                 error
             )
+        }
+    }
+
+    fun warmBootstrapAsync() {
+        val warmTask = synchronized(warmBootstrapLock) {
+            inFlightWarmBootstrap
+                ?.takeUnless { it.isCompleted || it.isCancelled }
+                ?: run {
+                    lateinit var created: Deferred<Unit>
+                    created = inFlightPlayableAudioScope.async(start = CoroutineStart.LAZY) {
+                        try {
+                            warmBootstrap()
+                        } finally {
+                            synchronized(warmBootstrapLock) {
+                                if (inFlightWarmBootstrap === created) {
+                                    inFlightWarmBootstrap = null
+                                }
+                            }
+                        }
+                    }
+                    inFlightWarmBootstrap = created
+                    created
+                }
+        }
+        if (!warmTask.isActive && !warmTask.isCompleted && !warmTask.isCancelled) {
+            warmTask.start()
         }
     }
 
@@ -886,6 +945,26 @@ class YouTubeMusicPlaybackRepository(
         cacheKey: String,
         forceRefresh: Boolean
     ): YouTubePlayableAudio? {
+        return startPlayableAudioResolution(
+            videoId = videoId,
+            preferredQualityKey = preferredQualityKey,
+            requireDirect = requireDirect,
+            logFailure = logFailure,
+            preferM4a = preferM4a,
+            cacheKey = cacheKey,
+            forceRefresh = forceRefresh
+        ).await()
+    }
+
+    private fun startPlayableAudioResolution(
+        videoId: String,
+        preferredQualityKey: String,
+        requireDirect: Boolean,
+        logFailure: Boolean,
+        preferM4a: Boolean,
+        cacheKey: String,
+        forceRefresh: Boolean
+    ): Deferred<YouTubePlayableAudio?> {
         val request = InFlightPlayableAudioRequest(
             videoId = videoId,
             preferredQualityKey = preferredQualityKey,
@@ -894,36 +973,34 @@ class YouTubeMusicPlaybackRepository(
             forceRefresh = forceRefresh
         )
         val deferred = synchronized(inFlightPlayableAudio) {
-            inFlightPlayableAudio[request] ?: inFlightPlayableAudioScope.async(
-                start = CoroutineStart.LAZY
-            ) {
-                resolvePlayableAudio(
-                    videoId = videoId,
-                    preferredQualityKey = preferredQualityKey,
-                    requireDirect = requireDirect,
-                    logFailure = logFailure,
-                    preferM4a = preferM4a,
-                    cacheKey = cacheKey,
-                    forceRefresh = forceRefresh
-                )
-            }.also { created ->
+            inFlightPlayableAudio[request] ?: run {
+                lateinit var created: Deferred<YouTubePlayableAudio?>
+                created = inFlightPlayableAudioScope.async(start = CoroutineStart.LAZY) {
+                    resolvePlayableAudio(
+                        videoId = videoId,
+                        preferredQualityKey = preferredQualityKey,
+                        requireDirect = requireDirect,
+                        logFailure = logFailure,
+                        preferM4a = preferM4a,
+                        cacheKey = cacheKey,
+                        forceRefresh = forceRefresh
+                    )
+                }
+                created.invokeOnCompletion {
+                    synchronized(inFlightPlayableAudio) {
+                        if (inFlightPlayableAudio[request] === created) {
+                            inFlightPlayableAudio.remove(request)
+                        }
+                    }
+                }
                 inFlightPlayableAudio[request] = created
+                created
             }
         }
         if (!deferred.isActive && !deferred.isCompleted && !deferred.isCancelled) {
             deferred.start()
         }
-        return try {
-            deferred.await()
-        } finally {
-            synchronized(inFlightPlayableAudio) {
-                if (inFlightPlayableAudio[request] === deferred &&
-                    (deferred.isCompleted || deferred.isCancelled)
-                ) {
-                    inFlightPlayableAudio.keys.remove(request)
-                }
-            }
-        }
+        return deferred
     }
 
     private suspend fun resolvePlayerAudioViaPlayerApi(
