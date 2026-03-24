@@ -55,11 +55,13 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -73,6 +75,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -103,6 +106,7 @@ import androidx.compose.material.icons.outlined.FormatSize
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.LibraryMusic
+import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
@@ -113,6 +117,7 @@ import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material.icons.outlined.Timer
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -128,6 +133,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -188,6 +194,8 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
+import moe.ouom.neriplayer.core.player.model.PlaybackQualityOption
 import moe.ouom.neriplayer.data.settings.MAX_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.data.settings.MIN_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
@@ -281,6 +289,20 @@ fun NowPlayingScreen(
     val currentPosition by PlayerManager.playbackPositionFlow.collectAsState()
     val durationMs = currentSong?.durationMs ?: 0L
     val sleepTimerState by PlayerManager.sleepTimerManager.timerState.collectAsState()
+    val currentPlaybackAudioInfo by PlayerManager.currentPlaybackAudioInfoFlow.collectAsState()
+    val settingsRepo = remember { AppContainer.settingsRepo }
+    val showProgressQualitySwitch by settingsRepo
+        .nowPlayingProgressShowQualitySwitchFlow
+        .collectAsState(initial = true)
+    val nowPlayingToolbarDockEnabled by settingsRepo
+        .nowPlayingToolbarDockEnabledFlow
+        .collectAsState(initial = true)
+    val showProgressAudioCodec by settingsRepo
+        .nowPlayingProgressShowAudioCodecFlow
+        .collectAsState(initial = true)
+    val showProgressAudioSpec by settingsRepo
+        .nowPlayingProgressShowAudioSpecFlow
+        .collectAsState(initial = true)
 
     // 订阅当前播放链接
     val currentMediaUrl by PlayerManager.currentMediaUrlFlow.collectAsState()
@@ -334,8 +356,10 @@ fun NowPlayingScreen(
     var animateCoverPageSourceBadge by remember { mutableStateOf(false) }
     var previousLyricsScreenState by remember { mutableStateOf(false) }
     var showCoverMenu by remember { mutableStateOf(false) }
+    var showMoreOptions by remember { mutableStateOf(false) }
     var showSongNameMenu by remember { mutableStateOf(false) }
     var showArtistMenu by remember { mutableStateOf(false) }
+    var showQualitySwitchDialog by remember { mutableStateOf(false) }
     val addSheetState = rememberModalBottomSheetState()
     val queueSheetState = rememberModalBottomSheetState()
 
@@ -464,6 +488,7 @@ fun NowPlayingScreen(
 
     LaunchedEffect(Unit) { contentVisible = true }
     LaunchedEffect(currentPosition) { if (!isUserDraggingSlider) sliderPosition = currentPosition.toFloat() }
+    LaunchedEffect(currentSong?.id) { showQualitySwitchDialog = false }
     LaunchedEffect(showLyricsScreen, showCoverSourceBadge) {
         val returningFromLyrics = previousLyricsScreenState && !showLyricsScreen
         previousLyricsScreenState = showLyricsScreen
@@ -541,6 +566,19 @@ fun NowPlayingScreen(
     val platformOffset = if (currentSong?.matchedLyricSource == MusicPlatform.QQ_MUSIC) 500L else 1000L
     val userOffset = currentSong?.userLyricOffsetMs ?: 0L
     val totalOffset = platformOffset + userOffset
+    val progressInfoSegments = remember(
+        currentPlaybackAudioInfo,
+        showProgressQualitySwitch,
+        showProgressAudioCodec,
+        showProgressAudioSpec
+    ) {
+        buildNowPlayingProgressInfoSegments(
+            audioInfo = currentPlaybackAudioInfo,
+            showQualitySwitch = showProgressQualitySwitch,
+            showAudioCodec = showProgressAudioCodec,
+            showAudioSpec = showProgressAudioSpec
+        )
+    }
 
     CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
         SharedTransitionLayout {
@@ -669,7 +707,6 @@ fun NowPlayingScreen(
 
                             Spacer(modifier = Modifier.width(6.dp))
 
-                            var showMoreOptions by remember { mutableStateOf(false) }
                             HapticIconButton(
                                 onClick = { showMoreOptions = true },
                                 modifier = Modifier.size(48.dp)
@@ -693,7 +730,9 @@ fun NowPlayingScreen(
                                     onNavigateUp = onNavigateUp,
                                     snackbarHostState = snackbarHostState,
                                     lyricFontScale = lyricFontScale,
-                                    onLyricFontScaleChange = onLyricFontScaleChange
+                                    onLyricFontScaleChange = onLyricFontScaleChange,
+                                    currentPlaybackAudioInfo = currentPlaybackAudioInfo,
+                                    onShowQualitySwitch = { showQualitySwitchDialog = true }
                                 )
                             }
                         }
@@ -938,7 +977,17 @@ fun NowPlayingScreen(
                         )
                     }
 
-                    Spacer(Modifier.height(if (useWideLandscapeLayout) 14.dp else 8.dp))
+                    if (progressInfoSegments.isNotEmpty()) {
+                        Spacer(Modifier.height(0.dp))
+                        NowPlayingProgressInfoRow(
+                            segments = progressInfoSegments,
+                            modifier = Modifier
+                                .fillMaxWidth(if (useWideLandscapeLayout) 0.88f else 1f)
+                                .offset(y = if (useWideLandscapeLayout) (-5).dp else (-6).dp)
+                        )
+                    }
+
+                    Spacer(Modifier.height(if (useWideLandscapeLayout) 14.dp else 10.dp))
 
                     // 控制按钮
                     Row(
@@ -1040,123 +1089,161 @@ fun NowPlayingScreen(
                     }
 
                     // 底部操作栏（固定在底部）
-                    Row(
+                    Column(
                         modifier = if (useWideLandscapeLayout) {
                             Modifier
                                 .fillMaxWidth(0.9f)
-                                .clip(RoundedCornerShape(28.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.32f))
-                                .padding(horizontal = 18.dp, vertical = 12.dp)
+                                .windowInsetsPadding(WindowInsets.navigationBars)
                         } else {
                             Modifier
                                 .fillMaxWidth()
                                 .windowInsetsPadding(WindowInsets.navigationBars)
                                 .padding(horizontal = 16.dp, vertical = 8.dp)
+                                .padding(bottom = if (nowPlayingToolbarDockEnabled) 2.dp else 0.dp)
                         },
-                        horizontalArrangement = if (useWideLandscapeLayout) {
-                            Arrangement.SpaceEvenly
-                        } else {
-                            Arrangement.SpaceBetween
-                        },
-                        verticalAlignment = Alignment.CenterVertically
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        // 播放队列
-                        HapticIconButton(onClick = { showQueueSheet = true },
-                            modifier = Modifier
-                                .sharedBounds(
-                                rememberSharedContentState(key = "btn_queue"),
-                                    animatedVisibilityScope = this@AnimatedContent,
-                                    enter = EnterTransition.None,
-                                    exit = ExitTransition.None,
-                                ).zIndex(1f)) {
-                            Icon(
-                                Icons.AutoMirrored.Outlined.QueueMusic,
-                                contentDescription = stringResource(R.string.playlist_queue),
-                                modifier = Modifier.size(if (useWideLandscapeLayout) 22.dp else 20.dp)
-                            )
-                        }
+                        val toolbarContainerModifier = Modifier.fillMaxWidth()
+                        val toolbarContent: @Composable () -> Unit = {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(
+                                        horizontal = if (nowPlayingToolbarDockEnabled || useWideLandscapeLayout) {
+                                            18.dp
+                                        } else {
+                                            6.dp
+                                        },
+                                        vertical = if (nowPlayingToolbarDockEnabled || useWideLandscapeLayout) {
+                                            12.dp
+                                        } else {
+                                            8.dp
+                                        }
+                                    ),
+                                horizontalArrangement = if (useWideLandscapeLayout || nowPlayingToolbarDockEnabled) {
+                                    Arrangement.SpaceEvenly
+                                } else {
+                                    Arrangement.SpaceBetween
+                                },
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // 播放队列
+                                HapticIconButton(onClick = { showQueueSheet = true },
+                                    modifier = Modifier
+                                        .sharedBounds(
+                                        rememberSharedContentState(key = "btn_queue"),
+                                            animatedVisibilityScope = this@AnimatedContent,
+                                            enter = EnterTransition.None,
+                                            exit = ExitTransition.None,
+                                        ).zIndex(1f)) {
+                                    Icon(
+                                        Icons.AutoMirrored.Outlined.QueueMusic,
+                                        contentDescription = stringResource(R.string.playlist_queue),
+                                        modifier = Modifier.size(if (useWideLandscapeLayout) 22.dp else 20.dp)
+                                    )
+                                }
 
-                        // 定时器按钮
-                        HapticIconButton(onClick = { showSleepTimerDialog = true },
-                            modifier = Modifier
-                            .sharedBounds(
-                                rememberSharedContentState(key = "btn_timer"),
-                                animatedVisibilityScope = this@AnimatedContent,
-                                enter = EnterTransition.None,
-                                exit = ExitTransition.None,
-                            ).zIndex(1f)) {
-                            Icon(
-                                Icons.Outlined.Timer,
-                                contentDescription = stringResource(R.string.sleep_timer_short),
-                                tint = if (sleepTimerState.isActive) MaterialTheme.colorScheme.primary else LocalContentColor.current,
-                                modifier = Modifier.size(if (useWideLandscapeLayout) 22.dp else 20.dp)
-                            )
-                        }
+                                // 定时器按钮
+                                HapticIconButton(onClick = { showSleepTimerDialog = true },
+                                    modifier = Modifier
+                                    .sharedBounds(
+                                        rememberSharedContentState(key = "btn_timer"),
+                                        animatedVisibilityScope = this@AnimatedContent,
+                                        enter = EnterTransition.None,
+                                        exit = ExitTransition.None,
+                                    ).zIndex(1f)) {
+                                    Icon(
+                                        Icons.Outlined.Timer,
+                                        contentDescription = stringResource(R.string.sleep_timer_short),
+                                        tint = if (sleepTimerState.isActive) MaterialTheme.colorScheme.primary else LocalContentColor.current,
+                                        modifier = Modifier.size(if (useWideLandscapeLayout) 22.dp else 20.dp)
+                                    )
+                                }
 
-                        // 音量按钮（根据设备显示不同图标，居中）
-                        val audioDeviceInfo = rememberAudioDeviceInfo()
-                        HapticIconButton(onClick = { showVolumeSheet = true },
-                            modifier = Modifier
-                            .sharedBounds(
-                                rememberSharedContentState(key = "btn_volume"),
-                                animatedVisibilityScope = this@AnimatedContent,
-                                enter = EnterTransition.None,
-                                exit = ExitTransition.None,
-                            ).zIndex(1f)
-                        ) {
-                            Icon(
-                                audioDeviceInfo.second,
-                                contentDescription = audioDeviceInfo.first,
-                                modifier = Modifier.size(if (useWideLandscapeLayout) 22.dp else 20.dp)
-                            )
-                        }
+                                // 音量按钮（根据设备显示不同图标，居中）
+                                val audioDeviceInfo = rememberAudioDeviceInfo()
+                                HapticIconButton(onClick = { showVolumeSheet = true },
+                                    modifier = Modifier
+                                    .sharedBounds(
+                                        rememberSharedContentState(key = "btn_volume"),
+                                        animatedVisibilityScope = this@AnimatedContent,
+                                        enter = EnterTransition.None,
+                                        exit = ExitTransition.None,
+                                    ).zIndex(1f)
+                                ) {
+                                    Icon(
+                                        audioDeviceInfo.second,
+                                        contentDescription = audioDeviceInfo.first,
+                                        modifier = Modifier.size(if (useWideLandscapeLayout) 22.dp else 20.dp)
+                                    )
+                                }
 
-                        // 歌词按钮
-                        HapticIconButton(
-                            onClick = { showLyricsScreen = !showLyricsScreen },
-                            enabled = lyrics.isNotEmpty(),
-                            modifier = Modifier
-                                .sharedBounds(
-                                    rememberSharedContentState(key = "btn_lyrics"),
-                                    animatedVisibilityScope = this@AnimatedContent,
-                                    enter = EnterTransition.None,
-                                    exit = ExitTransition.None,
-                                ).zIndex(1f)
-                        ) {
-                            AnimatedContent(
-                                targetState = showLyricsScreen,
-                                label = "lyrics_icon"
-                            ) { isShowingLyrics ->
-                                Icon(
-                                    imageVector = if (isShowingLyrics) Icons.Outlined.LibraryMusic else Icons.Outlined.LibraryMusic,
-                                    contentDescription = stringResource(R.string.lyrics_title),
-                                    tint = if (lyrics.isEmpty()) {
-                                        LocalContentColor.current.copy(alpha = 0.38f)
-                                    } else if (isShowingLyrics) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        LocalContentColor.current
-                                    },
-                                    modifier = Modifier.size(if (useWideLandscapeLayout) 22.dp else 20.dp)
-                                )
+                                // 歌词按钮
+                                HapticIconButton(
+                                    onClick = { showLyricsScreen = !showLyricsScreen },
+                                    enabled = lyrics.isNotEmpty(),
+                                    modifier = Modifier
+                                        .sharedBounds(
+                                            rememberSharedContentState(key = "btn_lyrics"),
+                                            animatedVisibilityScope = this@AnimatedContent,
+                                            enter = EnterTransition.None,
+                                            exit = ExitTransition.None,
+                                        ).zIndex(1f)
+                                ) {
+                                    AnimatedContent(
+                                        targetState = showLyricsScreen,
+                                        label = "lyrics_icon"
+                                    ) { isShowingLyrics ->
+                                        Icon(
+                                            imageVector = if (isShowingLyrics) Icons.Outlined.LibraryMusic else Icons.Outlined.LibraryMusic,
+                                            contentDescription = stringResource(R.string.lyrics_title),
+                                            tint = if (lyrics.isEmpty()) {
+                                                LocalContentColor.current.copy(alpha = 0.38f)
+                                            } else if (isShowingLyrics) {
+                                                MaterialTheme.colorScheme.primary
+                                            } else {
+                                                LocalContentColor.current
+                                            },
+                                            modifier = Modifier.size(if (useWideLandscapeLayout) 22.dp else 20.dp)
+                                        )
+                                    }
+                                }
+
+                                // 添加到歌单
+                                HapticIconButton(onClick = { showAddSheet = true },
+                                    modifier = Modifier
+                                        .sharedBounds(
+                                            rememberSharedContentState(key = "btn_add"),
+                                            animatedVisibilityScope = this@AnimatedContent,
+                                            enter = EnterTransition.None,
+                                            exit = ExitTransition.None,
+                                        ).zIndex(1f)
+                                ) {
+                                    Icon(
+                                        Icons.AutoMirrored.Outlined.PlaylistAdd,
+                                        contentDescription = stringResource(R.string.playlist_add_to),
+                                        modifier = Modifier.size(if (useWideLandscapeLayout) 22.dp else 20.dp)
+                                    )
+                                }
                             }
                         }
 
-                        // 添加到歌单
-                        HapticIconButton(onClick = { showAddSheet = true },
-                            modifier = Modifier
-                                .sharedBounds(
-                                    rememberSharedContentState(key = "btn_add"),
-                                    animatedVisibilityScope = this@AnimatedContent,
-                                    enter = EnterTransition.None,
-                                    exit = ExitTransition.None,
-                                ).zIndex(1f)
-                        ) {
-                            Icon(
-                                Icons.AutoMirrored.Outlined.PlaylistAdd,
-                                contentDescription = stringResource(R.string.playlist_add_to),
-                                modifier = Modifier.size(if (useWideLandscapeLayout) 22.dp else 20.dp)
-                            )
+                        if (nowPlayingToolbarDockEnabled) {
+                            Surface(
+                                modifier = toolbarContainerModifier,
+                                shape = RoundedCornerShape(30.dp),
+                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.40f),
+                                tonalElevation = 0.dp,
+                                shadowElevation = 0.dp,
+                                border = BorderStroke(
+                                    width = 1.dp,
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.12f)
+                                )
+                            ) {
+                                toolbarContent()
+                            }
+                        } else {
+                            toolbarContent()
                         }
                     }
                 }
@@ -1332,6 +1419,19 @@ fun NowPlayingScreen(
                 }
             }
 
+            if (showQualitySwitchDialog && currentPlaybackAudioInfo != null) {
+                NowPlayingQualityOptionsDialog(
+                    title = stringResource(R.string.nowplaying_quality_switch_title),
+                    selectedKey = currentPlaybackAudioInfo?.qualityKey,
+                    options = currentPlaybackAudioInfo?.qualityOptions.orEmpty(),
+                    onDismiss = { showQualitySwitchDialog = false },
+                    onSelect = { option ->
+                        PlayerManager.changeCurrentPlaybackQuality(option.key)
+                        showQualitySwitchDialog = false
+                    }
+                )
+            }
+
             if (showAddSheet) {
                 val selectablePlaylists = remember(playlists, context) {
                     playlists.filterNot { LocalFilesPlaylist.isSystemPlaylist(it, context) }
@@ -1458,7 +1558,9 @@ fun MoreOptionsSheet(
     onNavigateUp: () -> Unit,
     snackbarHostState: SnackbarHostState,
     lyricFontScale: Float,
-    onLyricFontScaleChange: (Float) -> Unit
+    onLyricFontScaleChange: (Float) -> Unit,
+    currentPlaybackAudioInfo: PlaybackAudioInfo? = null,
+    onShowQualitySwitch: () -> Unit = {}
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var showSearchView by remember { mutableStateOf(false) }
@@ -1473,6 +1575,9 @@ fun MoreOptionsSheet(
     val coroutineScope = rememberCoroutineScope()
     val isLocalSong = originalSong.isLocalSong()
     val autoShowKeyboard by AppContainer.settingsRepo.autoShowKeyboardFlow.collectAsState(initial = false)
+    val qualityOptions = currentPlaybackAudioInfo?.qualityOptions.orEmpty()
+    val canSwitchQuality = qualityOptions.size > 1
+    val currentQualityLabel = currentPlaybackAudioInfo?.qualityLabel
 
     LaunchedEffect(showSearchView) {
         if (showSearchView) {
@@ -1542,6 +1647,19 @@ fun MoreOptionsSheet(
                             leadingContent = { Icon(Icons.Outlined.Edit, null) },
                             modifier = Modifier.clickable { showEditInfoSheet = true }
                         )
+                        if (canSwitchQuality) {
+                            ListItem(
+                                headlineContent = { Text(stringResource(R.string.nowplaying_quality_switch_title)) },
+                                leadingContent = { Icon(Icons.Outlined.MusicNote, null) },
+                                supportingContent = currentQualityLabel?.takeIf { it.isNotBlank() }?.let { label ->
+                                    { Text(label) }
+                                },
+                                modifier = Modifier.clickable {
+                                    onDismiss()
+                                    onShowQualitySwitch()
+                                }
+                            )
+                        }
                         if (isLocalSong) {
                             ListItem(
                                 headlineContent = { Text(stringResource(R.string.local_song_open_details)) },
@@ -1822,6 +1940,118 @@ fun MoreOptionsSheet(
             )
         }
     }
+}
+
+private data class NowPlayingProgressInfoSegment(
+    val label: String,
+    val highlighted: Boolean = false
+)
+
+private fun buildNowPlayingProgressInfoSegments(
+    audioInfo: PlaybackAudioInfo?,
+    showQualitySwitch: Boolean,
+    showAudioCodec: Boolean,
+    showAudioSpec: Boolean
+): List<NowPlayingProgressInfoSegment> {
+    if (audioInfo == null) return emptyList()
+    val segments = mutableListOf<NowPlayingProgressInfoSegment>()
+    val qualityLabel = audioInfo.qualityLabel
+    if (showQualitySwitch && !qualityLabel.isNullOrBlank()) {
+        segments += NowPlayingProgressInfoSegment(
+            label = qualityLabel,
+            highlighted = true
+        )
+    }
+    val codecLabel = audioInfo.codecLabel
+    if (showAudioCodec && !codecLabel.isNullOrBlank()) {
+        segments += NowPlayingProgressInfoSegment(label = codecLabel)
+    }
+    val specLabel = audioInfo.specLabel?.takeIf { it.isNotBlank() }
+    if (showAudioSpec && specLabel != null) {
+        segments += NowPlayingProgressInfoSegment(label = specLabel)
+    }
+    return segments
+}
+
+@Composable
+private fun NowPlayingProgressInfoRow(
+    segments: List<NowPlayingProgressInfoSegment>,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier,
+        contentAlignment = Alignment.Center
+    ) {
+        Row(
+            modifier = Modifier
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 2.dp, vertical = 0.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            segments.forEachIndexed { index, segment ->
+                if (index > 0) {
+                    Text(
+                        text = "  ·  ",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.46f)
+                    )
+                }
+                Text(
+                    text = segment.label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (segment.highlighted) {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.92f)
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f)
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun NowPlayingQualityOptionsDialog(
+    title: String,
+    selectedKey: String?,
+    options: List<PlaybackQualityOption>,
+    onDismiss: () -> Unit,
+    onSelect: (PlaybackQualityOption) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column {
+                options.forEach { option ->
+                    ListItem(
+                        headlineContent = { Text(option.label) },
+                        trailingContent = {
+                            if (option.key == selectedKey) {
+                                Text(
+                                    text = stringResource(R.string.common_selected),
+                                    color = MaterialTheme.colorScheme.primary,
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                            }
+                        },
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { onSelect(option) },
+                        colors = androidx.compose.material3.ListItemDefaults.colors(
+                            containerColor = Color.Transparent
+                        )
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            HapticTextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.action_close))
+            }
+        }
+    )
 }
 
 @Composable

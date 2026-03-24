@@ -37,6 +37,14 @@ object SettingsKeys {
     val FORCE_DARK = booleanPreferencesKey("force_dark")
     val FOLLOW_SYSTEM_DARK = booleanPreferencesKey("follow_system_dark")
     val SHOW_COVER_SOURCE_BADGE = booleanPreferencesKey("show_cover_source_badge")
+    val NOWPLAYING_TOOLBAR_DOCK_ENABLED =
+        booleanPreferencesKey("nowplaying_toolbar_dock_enabled")
+    val NOWPLAYING_PROGRESS_SHOW_QUALITY_SWITCH =
+        booleanPreferencesKey("nowplaying_progress_show_quality_switch")
+    val NOWPLAYING_PROGRESS_SHOW_AUDIO_CODEC =
+        booleanPreferencesKey("nowplaying_progress_show_audio_codec")
+    val NOWPLAYING_PROGRESS_SHOW_AUDIO_SPEC =
+        booleanPreferencesKey("nowplaying_progress_show_audio_spec")
     val SILENT_GITHUB_SYNC_FAILURE = booleanPreferencesKey("silent_github_sync_failure")
     val DISCLAIMER_ACCEPTED_V2 = booleanPreferencesKey("disclaimer_accepted_v2")
     val STARTUP_ONBOARDING_COMPLETED = booleanPreferencesKey("startup_onboarding_completed")

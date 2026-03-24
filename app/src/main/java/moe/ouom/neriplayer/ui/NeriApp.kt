@@ -450,6 +450,10 @@ fun NeriApp(
     val backgroundImageAlpha by repo.backgroundImageAlphaFlow.collectAsState(initial = 0.3f)
     val hapticFeedbackEnabled by repo.hapticFeedbackEnabledFlow.collectAsState(initial = true)
     val showCoverSourceBadge by repo.showCoverSourceBadgeFlow.collectAsState(initial = true)
+    val nowPlayingToolbarDockEnabled by repo.nowPlayingToolbarDockEnabledFlow.collectAsState(initial = true)
+    val showNowPlayingProgressQualitySwitch by repo.nowPlayingProgressShowQualitySwitchFlow.collectAsState(initial = true)
+    val showNowPlayingProgressAudioCodec by repo.nowPlayingProgressShowAudioCodecFlow.collectAsState(initial = true)
+    val showNowPlayingProgressAudioSpec by repo.nowPlayingProgressShowAudioSpecFlow.collectAsState(initial = true)
     val silentGitHubSyncFailure by repo.silentGitHubSyncFailureFlow.collectAsState(initial = false)
     val showLyricTranslation by repo.showLyricTranslationFlow.collectAsState(initial = true)
     val defaultStartDestination by repo.defaultStartDestinationFlow.collectAsState(initial = Destinations.Home.route)
@@ -1316,6 +1320,28 @@ fun NeriApp(
                                         showCoverSourceBadge = showCoverSourceBadge,
                                         onShowCoverSourceBadgeChange = { enabled ->
                                             scope.launch { repo.setShowCoverSourceBadge(enabled) }
+                                        },
+                                        nowPlayingToolbarDockEnabled = nowPlayingToolbarDockEnabled,
+                                        onNowPlayingToolbarDockEnabledChange = { enabled ->
+                                            scope.launch { repo.setNowPlayingToolbarDockEnabled(enabled) }
+                                        },
+                                        showNowPlayingProgressQualitySwitch = showNowPlayingProgressQualitySwitch,
+                                        onShowNowPlayingProgressQualitySwitchChange = { enabled ->
+                                            scope.launch {
+                                                repo.setNowPlayingProgressShowQualitySwitch(enabled)
+                                            }
+                                        },
+                                        showNowPlayingProgressAudioCodec = showNowPlayingProgressAudioCodec,
+                                        onShowNowPlayingProgressAudioCodecChange = { enabled ->
+                                            scope.launch {
+                                                repo.setNowPlayingProgressShowAudioCodec(enabled)
+                                            }
+                                        },
+                                        showNowPlayingProgressAudioSpec = showNowPlayingProgressAudioSpec,
+                                        onShowNowPlayingProgressAudioSpecChange = { enabled ->
+                                            scope.launch {
+                                                repo.setNowPlayingProgressShowAudioSpec(enabled)
+                                            }
                                         },
                                         silentGitHubSyncFailure = silentGitHubSyncFailure,
                                         onSilentGitHubSyncFailureChange = { enabled ->

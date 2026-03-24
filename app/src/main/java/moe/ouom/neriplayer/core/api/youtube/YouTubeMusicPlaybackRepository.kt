@@ -123,7 +123,9 @@ data class YouTubePlayableAudio(
     val durationMs: Long = 0L,
     val mimeType: String? = null,
     val contentLength: Long? = null,
-    val streamType: YouTubePlayableStreamType = YouTubePlayableStreamType.DIRECT
+    val streamType: YouTubePlayableStreamType = YouTubePlayableStreamType.DIRECT,
+    val bitrateKbps: Int? = null,
+    val sampleRateHz: Int? = null
 )
 
 internal data class YouTubeAudioMetadata(
@@ -273,7 +275,9 @@ internal object YouTubeMusicPlaybackParser {
             url = selected.url,
             durationMs = selected.durationMs.takeIf { it > 0L } ?: parseDurationMs(root),
             mimeType = selected.mimeType,
-            contentLength = selected.contentLength
+            contentLength = selected.contentLength,
+            bitrateKbps = selected.bitrate.takeIf { it > 0 }?.let { (it + 500) / 1000 },
+            sampleRateHz = selected.audioSampleRate.takeIf { it > 0 }
         )
     }
 
@@ -1365,7 +1369,10 @@ class YouTubeMusicPlaybackRepository(
             durationMs = durationMs,
             mimeType = MimeTypes.APPLICATION_M3U8,
             contentLength = selectedAudioPlaylist.contentLength,
-            streamType = YouTubePlayableStreamType.HLS
+            streamType = YouTubePlayableStreamType.HLS,
+            bitrateKbps = selectedAudioPlaylist.estimatedBitrate
+                .takeIf { it > 0 }
+                ?.let { (it + 500) / 1000 }
         )
     }
 
@@ -1937,8 +1944,12 @@ class YouTubeMusicPlaybackRepository(
         return YouTubePlayableAudio(
             url = selectedStream.content,
             durationMs = resolvedDurationMs,
-            mimeType = null,
-            contentLength = null
+            mimeType = selectedStream.format?.mimeType,
+            contentLength = null,
+            bitrateKbps = selectedStream.averageBitrate
+                .takeIf { it > 0 }
+                ?.let { (it + 500) / 1000 }
+                ?: selectedStream.bitrate.takeIf { it > 0 }?.let { (it + 500) / 1000 }
         )
     }
 

@@ -216,6 +216,14 @@ fun SettingsScreen(
     onHapticFeedbackEnabledChange: (Boolean) -> Unit,
     showCoverSourceBadge: Boolean,
     onShowCoverSourceBadgeChange: (Boolean) -> Unit,
+    nowPlayingToolbarDockEnabled: Boolean,
+    onNowPlayingToolbarDockEnabledChange: (Boolean) -> Unit,
+    showNowPlayingProgressQualitySwitch: Boolean,
+    onShowNowPlayingProgressQualitySwitchChange: (Boolean) -> Unit,
+    showNowPlayingProgressAudioCodec: Boolean,
+    onShowNowPlayingProgressAudioCodecChange: (Boolean) -> Unit,
+    showNowPlayingProgressAudioSpec: Boolean,
+    onShowNowPlayingProgressAudioSpecChange: (Boolean) -> Unit,
     silentGitHubSyncFailure: Boolean,
     onSilentGitHubSyncFailureChange: (Boolean) -> Unit,
     showLyricTranslation: Boolean,
@@ -1145,6 +1153,98 @@ fun SettingsScreen(
                                 Switch(
                                     checked = showCoverSourceBadge,
                                     onCheckedChange = onShowCoverSourceBadgeChange
+                                )
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+
+                        ListItem(
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Outlined.Home,
+                                    contentDescription = stringResource(R.string.settings_nowplaying_toolbar_dock),
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = { Text(stringResource(R.string.settings_nowplaying_toolbar_dock)) },
+                            supportingContent = { Text(stringResource(R.string.settings_nowplaying_toolbar_dock_desc)) },
+                            trailingContent = {
+                                Switch(
+                                    checked = nowPlayingToolbarDockEnabled,
+                                    onCheckedChange = onNowPlayingToolbarDockEnabledChange
+                                )
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+
+                        ListItem(
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Outlined.Tune,
+                                    contentDescription = stringResource(R.string.settings_nowplaying_progress_quality_switch),
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = {
+                                Text(stringResource(R.string.settings_nowplaying_progress_quality_switch))
+                            },
+                            supportingContent = {
+                                Text(stringResource(R.string.settings_nowplaying_progress_quality_switch_desc))
+                            },
+                            trailingContent = {
+                                Switch(
+                                    checked = showNowPlayingProgressQualitySwitch,
+                                    onCheckedChange = onShowNowPlayingProgressQualitySwitchChange
+                                )
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+
+                        ListItem(
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Outlined.Info,
+                                    contentDescription = stringResource(R.string.settings_nowplaying_progress_audio_codec),
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = {
+                                Text(stringResource(R.string.settings_nowplaying_progress_audio_codec))
+                            },
+                            supportingContent = {
+                                Text(stringResource(R.string.settings_nowplaying_progress_audio_codec_desc))
+                            },
+                            trailingContent = {
+                                Switch(
+                                    checked = showNowPlayingProgressAudioCodec,
+                                    onCheckedChange = onShowNowPlayingProgressAudioCodecChange
+                                )
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+
+                        ListItem(
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Outlined.LibraryMusic,
+                                    contentDescription = stringResource(R.string.settings_nowplaying_progress_audio_spec),
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = {
+                                Text(stringResource(R.string.settings_nowplaying_progress_audio_spec))
+                            },
+                            supportingContent = {
+                                Text(stringResource(R.string.settings_nowplaying_progress_audio_spec_desc))
+                            },
+                            trailingContent = {
+                                Switch(
+                                    checked = showNowPlayingProgressAudioSpec,
+                                    onCheckedChange = onShowNowPlayingProgressAudioSpecChange
                                 )
                             },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)

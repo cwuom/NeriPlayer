@@ -175,7 +175,7 @@ internal fun SettingsAudioQualitySection(
                 "hires" to stringResource(R.string.quality_hires),
                 "jyeffect" to stringResource(R.string.quality_hd_surround),
                 "sky" to stringResource(R.string.quality_surround),
-                "jymaster" to stringResource(R.string.quality_hires)
+                "jymaster" to stringResource(R.string.settings_audio_quality_jymaster)
             ),
             onDismiss = { onShowQualityDialogChange(false) },
             onSelect = { level ->

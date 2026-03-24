@@ -91,13 +91,20 @@ import moe.ouom.neriplayer.core.player.debug.playWhenReadyChangeReasonName
 import moe.ouom.neriplayer.core.player.debug.playbackStateName
 import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
 import moe.ouom.neriplayer.core.player.model.AudioDevice
+import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
+import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
+import moe.ouom.neriplayer.core.player.model.PlaybackQualityOption
 import moe.ouom.neriplayer.core.player.model.PersistedState
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
+import moe.ouom.neriplayer.core.player.model.deriveCodecLabel
+import moe.ouom.neriplayer.core.player.model.estimateBitrateKbps
+import moe.ouom.neriplayer.core.player.model.inferYouTubeQualityKeyFromBitrate
 import moe.ouom.neriplayer.core.player.model.toPersistedSongItem
 import moe.ouom.neriplayer.core.player.playlist.PlayerFavoritesController
 import moe.ouom.neriplayer.core.player.source.toSongItem
 import moe.ouom.neriplayer.core.player.state.blockingIo
+import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
@@ -246,6 +253,9 @@ object PlayerManager {
     /** 向 UI 暴露当前实际播放链接，用于来源展示 */
     private val _currentMediaUrl = MutableStateFlow<String?>(null)
     val currentMediaUrlFlow: StateFlow<String?> = _currentMediaUrl
+
+    private val _currentPlaybackAudioInfo = MutableStateFlow<PlaybackAudioInfo?>(null)
+    val currentPlaybackAudioInfoFlow: StateFlow<PlaybackAudioInfo?> = _currentPlaybackAudioInfo
 
     /** 给 UI 用的歌单流 */
     private val _playlistsFlow = MutableStateFlow<List<LocalPlaylist>>(emptyList())
@@ -495,6 +505,43 @@ object PlayerManager {
         val currentSong = _currentSongFlow.value ?: return
         val playerDurationMs = player.duration.takeIf { it > 0L } ?: return
         maybeUpdateSongDuration(currentSong, playerDurationMs)
+    }
+
+    fun changeCurrentPlaybackQuality(optionKey: String) {
+        val normalizedKey = optionKey.trim().lowercase()
+        if (normalizedKey.isBlank()) return
+        val currentAudioInfo = _currentPlaybackAudioInfo.value ?: return
+        if (normalizedKey == currentAudioInfo.qualityKey) return
+
+        ioScope.launch {
+            when (currentAudioInfo.source) {
+                PlaybackAudioSource.NETEASE -> settingsRepo.setAudioQuality(normalizedKey)
+                PlaybackAudioSource.BILIBILI -> settingsRepo.setBiliAudioQuality(normalizedKey)
+                PlaybackAudioSource.YOUTUBE_MUSIC -> settingsRepo.setYouTubeAudioQuality(normalizedKey)
+                PlaybackAudioSource.LOCAL -> Unit
+            }
+        }
+    }
+
+    private suspend fun refreshCurrentSongForQualityChange(
+        source: PlaybackAudioSource,
+        reason: String
+    ) {
+        val currentAudioInfo = _currentPlaybackAudioInfo.value ?: return
+        if (currentAudioInfo.source != source) return
+        val currentSong = _currentSongFlow.value ?: return
+        if (isLocalSong(currentSong)) return
+
+        val (positionMs, shouldResumePlaybackAfterRefresh) = withContext(Dispatchers.Main) {
+            player.currentPosition.coerceAtLeast(0L) to (player.playWhenReady || player.isPlaying)
+        }
+        refreshCurrentSongUrl(
+            resumePositionMs = positionMs,
+            allowFallback = true,
+            reason = reason,
+            fallbackSeekPositionMs = positionMs,
+            resumePlaybackAfterRefresh = shouldResumePlaybackAfterRefresh
+        )
     }
 
     /** 在后台线程发布事件到 UI（非阻塞） */
@@ -821,32 +868,40 @@ object PlayerManager {
 
         // 订阅音质设置
         ioScope.launch {
-            settingsRepo.audioQualityFlow.collect { q -> preferredQuality = q }
+            settingsRepo.audioQualityFlow.collect { q ->
+                val previousQuality = preferredQuality
+                preferredQuality = q
+                if (previousQuality != q) {
+                    refreshCurrentSongForQualityChange(
+                        source = PlaybackAudioSource.NETEASE,
+                        reason = "netease_quality_changed"
+                    )
+                }
+            }
         }
         ioScope.launch {
             settingsRepo.youtubeAudioQualityFlow.collect { q ->
                 val previousQuality = youtubePreferredQuality
                 youtubePreferredQuality = q
                 if (previousQuality != q) {
-                    val currentSong = _currentSongFlow.value
-                    if (currentSong != null && isYouTubeMusicSong(currentSong)) {
-                        // 必须在主线程读取 player.currentPosition
-                        val (positionMs, shouldResumePlaybackAfterRefresh) = withContext(Dispatchers.Main) {
-                            player.currentPosition.coerceAtLeast(0L) to (player.playWhenReady || player.isPlaying)
-                        }
-                        refreshCurrentSongUrl(
-                            resumePositionMs = positionMs,
-                            allowFallback = true,
-                            reason = "youtube_quality_changed",
-                            fallbackSeekPositionMs = positionMs,
-                            resumePlaybackAfterRefresh = shouldResumePlaybackAfterRefresh
-                        )
-                    }
+                    refreshCurrentSongForQualityChange(
+                        source = PlaybackAudioSource.YOUTUBE_MUSIC,
+                        reason = "youtube_quality_changed"
+                    )
                 }
             }
         }
         ioScope.launch {
-            settingsRepo.biliAudioQualityFlow.collect { q -> biliPreferredQuality = q }
+            settingsRepo.biliAudioQualityFlow.collect { q ->
+                val previousQuality = biliPreferredQuality
+                biliPreferredQuality = q
+                if (previousQuality != q) {
+                    refreshCurrentSongForQualityChange(
+                        source = PlaybackAudioSource.BILIBILI,
+                        reason = "bili_quality_changed"
+                    )
+                }
+            }
         }
         ioScope.launch {
             settingsRepo.playbackFadeInFlow.collect { enabled -> playbackFadeInEnabled = enabled }
@@ -1339,6 +1394,7 @@ object PlayerManager {
         cancelPendingPauseRequest()
         _currentSongFlow.value = song
         _currentMediaUrl.value = null
+        _currentPlaybackAudioInfo.value = null
         currentMediaUrlResolvedAtMs = 0L
         resumePlaybackRequested = true
         restoredShouldResumePlayback = false
@@ -1391,6 +1447,7 @@ object PlayerManager {
                     )
 
                     _currentMediaUrl.value = result.url
+                    _currentPlaybackAudioInfo.value = result.audioInfo
                     currentMediaUrlResolvedAtMs = SystemClock.elapsedRealtime()
                     persistState(
                         positionMs = resumePositionMs.coerceAtLeast(0L),
@@ -1533,7 +1590,10 @@ object PlayerManager {
         if (isLocalSong(song)) {
             val localMediaUri = localMediaSource(song)
             if (localMediaUri != null && isReadableLocalMediaUri(localMediaUri)) {
-                return SongUrlResult.Success(toPlayableLocalUrl(localMediaUri) ?: localMediaUri)
+                return SongUrlResult.Success(
+                    url = toPlayableLocalUrl(localMediaUri) ?: localMediaUri,
+                    audioInfo = buildLocalPlaybackAudioInfo(song)
+                )
             }
             postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(R.string.error_no_play_url)))
             return SongUrlResult.Failure
@@ -1559,7 +1619,12 @@ object PlayerManager {
         return if (result is SongUrlResult.Failure && hasCachedData && !isYouTubeMusicSong(song)) {
             NPLogger.d("NERI-PlayerManager", "网络失败但有缓存，尝试离线播放: $cacheKey")
             // 使用虚拟URL，ExoPlayer会因为customCacheKey自动使用缓存
-            SongUrlResult.Success("http://offline.cache/$cacheKey")
+            val fallbackAudioInfo = _currentPlaybackAudioInfo.value
+                ?.takeIf { _currentSongFlow.value?.sameIdentityAs(song) == true }
+            SongUrlResult.Success(
+                url = "http://offline.cache/$cacheKey",
+                audioInfo = fallbackAudioInfo
+            )
         } else {
             result
         }
@@ -1658,6 +1723,7 @@ object PlayerManager {
                             result.url,
                             result.mimeType,
                             result.expectedContentLength,
+                            result.audioInfo,
                             resumePositionMs,
                             resumePlaybackAfterRefresh
                         )
@@ -1684,6 +1750,7 @@ object PlayerManager {
         url: String,
         mimeType: String?,
         expectedContentLength: Long?,
+        audioInfo: PlaybackAudioInfo?,
         resumePositionMs: Long,
         resumePlaybackAfterRefresh: Boolean
     ) {
@@ -1697,6 +1764,7 @@ object PlayerManager {
         val mediaItem = buildMediaItem(song, url, cacheKey, mimeType)
 
         _currentMediaUrl.value = url
+        _currentPlaybackAudioInfo.value = audioInfo
         currentMediaUrlResolvedAtMs = SystemClock.elapsedRealtime()
         persistState()
 
@@ -1739,7 +1807,11 @@ object PlayerManager {
                 d
             } catch (_: Exception) { null }
         } else null
-        return SongUrlResult.Success(localReference, durationMs = durationMs)
+        return SongUrlResult.Success(
+            url = localReference,
+            durationMs = durationMs,
+            audioInfo = buildLocalPlaybackAudioInfo(localReference.toUri())
+        )
     }
 
     /** 只有完整缓存才允许离线兜底，避免半首歌缓存被误当成可播放资源 */
@@ -1790,6 +1862,177 @@ object PlayerManager {
         }
     }
 
+    private fun qualityLabelForNetease(key: String): String = when (key) {
+        "standard" -> getLocalizedString(R.string.quality_standard)
+        "higher" -> getLocalizedString(R.string.settings_audio_quality_higher)
+        "exhigh" -> getLocalizedString(R.string.quality_very_high)
+        "lossless" -> getLocalizedString(R.string.quality_lossless)
+        "hires" -> getLocalizedString(R.string.quality_hires)
+        "jyeffect" -> getLocalizedString(R.string.quality_hd_surround)
+        "sky" -> getLocalizedString(R.string.quality_surround)
+        "jymaster" -> getLocalizedString(R.string.settings_audio_quality_jymaster)
+        else -> key
+    }
+
+    private fun qualityLabelForBili(key: String): String = when (key) {
+        "dolby" -> getLocalizedString(R.string.quality_dolby)
+        "hires" -> getLocalizedString(R.string.quality_hires)
+        "lossless" -> getLocalizedString(R.string.quality_lossless)
+        "high" -> getLocalizedString(R.string.settings_audio_quality_high)
+        "medium" -> getLocalizedString(R.string.settings_audio_quality_medium)
+        "low" -> getLocalizedString(R.string.settings_audio_quality_low)
+        else -> key
+    }
+
+    private fun qualityLabelForYouTube(key: String): String = when (key) {
+        "low" -> getLocalizedString(R.string.settings_audio_quality_low)
+        "medium" -> getLocalizedString(R.string.settings_audio_quality_medium)
+        "high" -> getLocalizedString(R.string.settings_audio_quality_high)
+        "very_high" -> getLocalizedString(R.string.quality_very_high)
+        else -> key
+    }
+
+    private fun buildNeteaseQualityOptions(): List<PlaybackQualityOption> = listOf(
+        PlaybackQualityOption("standard", qualityLabelForNetease("standard")),
+        PlaybackQualityOption("higher", qualityLabelForNetease("higher")),
+        PlaybackQualityOption("exhigh", qualityLabelForNetease("exhigh")),
+        PlaybackQualityOption("lossless", qualityLabelForNetease("lossless")),
+        PlaybackQualityOption("hires", qualityLabelForNetease("hires")),
+        PlaybackQualityOption("jyeffect", qualityLabelForNetease("jyeffect")),
+        PlaybackQualityOption("sky", qualityLabelForNetease("sky")),
+        PlaybackQualityOption("jymaster", qualityLabelForNetease("jymaster"))
+    )
+
+    private fun buildYouTubeQualityOptions(): List<PlaybackQualityOption> = listOf(
+        PlaybackQualityOption("low", qualityLabelForYouTube("low")),
+        PlaybackQualityOption("medium", qualityLabelForYouTube("medium")),
+        PlaybackQualityOption("high", qualityLabelForYouTube("high")),
+        PlaybackQualityOption("very_high", qualityLabelForYouTube("very_high"))
+    )
+
+    private fun inferBiliQualityKey(biliAudioStream: moe.ouom.neriplayer.data.platform.bili.BiliAudioStreamInfo): String {
+        return when {
+            biliAudioStream.qualityTag == "dolby" -> "dolby"
+            biliAudioStream.qualityTag == "hires" -> "hires"
+            biliAudioStream.bitrateKbps >= 500 -> "lossless"
+            biliAudioStream.bitrateKbps >= 180 -> "high"
+            biliAudioStream.bitrateKbps >= 120 -> "medium"
+            else -> "low"
+        }
+    }
+
+    private fun buildBiliQualityOptions(
+        availableStreams: List<moe.ouom.neriplayer.data.platform.bili.BiliAudioStreamInfo>
+    ): List<PlaybackQualityOption> {
+        val availableKeys = availableStreams
+            .map(::inferBiliQualityKey)
+            .distinct()
+        val orderedKeys = listOf("dolby", "hires", "lossless", "high", "medium", "low")
+        return orderedKeys
+            .filter { it in availableKeys }
+            .map { PlaybackQualityOption(it, qualityLabelForBili(it)) }
+    }
+
+    private fun normalizeNeteaseMimeType(type: String?): String? {
+        val normalizedType = type
+            ?.trim()
+            ?.lowercase()
+            ?.takeIf { it.isNotBlank() }
+            ?: return null
+        return when (normalizedType) {
+            "flac" -> "audio/flac"
+            "mp3" -> "audio/mpeg"
+            "aac" -> "audio/aac"
+            "m4a", "mp4" -> "audio/mp4"
+            else -> if (normalizedType.contains('/')) normalizedType else "audio/$normalizedType"
+        }
+    }
+
+    private fun buildLocalPlaybackAudioInfo(song: SongItem): PlaybackAudioInfo? {
+        return runCatching {
+            LocalMediaSupport.inspect(application, song)
+        }.getOrNull()?.let { details ->
+            PlaybackAudioInfo(
+                source = PlaybackAudioSource.LOCAL,
+                codecLabel = deriveCodecLabel(details.audioMimeType ?: details.mimeType),
+                mimeType = details.audioMimeType ?: details.mimeType,
+                bitrateKbps = details.bitrateKbps,
+                sampleRateHz = details.sampleRateHz,
+                bitDepth = details.bitsPerSample,
+                channelCount = details.channelCount
+            )
+        }
+    }
+
+    private fun buildLocalPlaybackAudioInfo(localUri: Uri): PlaybackAudioInfo? {
+        return runCatching {
+            LocalMediaSupport.inspect(application, localUri)
+        }.getOrNull()?.let { details ->
+            PlaybackAudioInfo(
+                source = PlaybackAudioSource.LOCAL,
+                codecLabel = deriveCodecLabel(details.audioMimeType ?: details.mimeType),
+                mimeType = details.audioMimeType ?: details.mimeType,
+                bitrateKbps = details.bitrateKbps,
+                sampleRateHz = details.sampleRateHz,
+                bitDepth = details.bitsPerSample,
+                channelCount = details.channelCount
+            )
+        }
+    }
+
+    private fun buildNeteasePlaybackAudioInfo(
+        parsed: NeteasePlaybackResponseParser.PlaybackResult.Success,
+        resolvedQualityKey: String,
+        fallbackDurationMs: Long
+    ): PlaybackAudioInfo {
+        val mimeType = normalizeNeteaseMimeType(parsed.type)
+        return PlaybackAudioInfo(
+            source = PlaybackAudioSource.NETEASE,
+            qualityKey = resolvedQualityKey,
+            qualityLabel = qualityLabelForNetease(resolvedQualityKey),
+            qualityOptions = buildNeteaseQualityOptions(),
+            codecLabel = deriveCodecLabel(mimeType) ?: parsed.type?.uppercase(),
+            mimeType = mimeType,
+            bitrateKbps = if (parsed.notice == NeteasePlaybackResponseParser.Notice.PREVIEW_CLIP) {
+                null
+            } else {
+                estimateBitrateKbps(parsed.contentLength, fallbackDurationMs)
+            }
+        )
+    }
+
+    private fun buildBiliPlaybackAudioInfo(
+        selectedStream: moe.ouom.neriplayer.data.platform.bili.BiliAudioStreamInfo,
+        availableStreams: List<moe.ouom.neriplayer.data.platform.bili.BiliAudioStreamInfo>
+    ): PlaybackAudioInfo {
+        val qualityKey = inferBiliQualityKey(selectedStream)
+        return PlaybackAudioInfo(
+            source = PlaybackAudioSource.BILIBILI,
+            qualityKey = qualityKey,
+            qualityLabel = qualityLabelForBili(qualityKey),
+            qualityOptions = buildBiliQualityOptions(availableStreams),
+            codecLabel = deriveCodecLabel(selectedStream.mimeType),
+            mimeType = selectedStream.mimeType,
+            bitrateKbps = selectedStream.bitrateKbps
+        )
+    }
+
+    private fun buildYouTubePlaybackAudioInfo(
+        playableAudio: moe.ouom.neriplayer.core.api.youtube.YouTubePlayableAudio
+    ): PlaybackAudioInfo {
+        val qualityKey = inferYouTubeQualityKeyFromBitrate(playableAudio.bitrateKbps)
+        return PlaybackAudioInfo(
+            source = PlaybackAudioSource.YOUTUBE_MUSIC,
+            qualityKey = qualityKey,
+            qualityLabel = qualityLabelForYouTube(qualityKey),
+            qualityOptions = buildYouTubeQualityOptions(),
+            codecLabel = deriveCodecLabel(playableAudio.mimeType),
+            mimeType = playableAudio.mimeType,
+            bitrateKbps = playableAudio.bitrateKbps,
+            sampleRateHz = playableAudio.sampleRateHz
+        )
+    }
+
     private fun buildNeteaseQualityCandidates(preferredQuality: String): List<String> {
         val normalizedQuality = preferredQuality.trim().lowercase().ifBlank { "exhigh" }
         val preferredIndex = NETEASE_QUALITY_FALLBACK_ORDER.indexOf(normalizedQuality)
@@ -1808,7 +2051,9 @@ object PlayerManager {
     }
 
     private fun buildNeteaseSuccessResult(
-        parsed: NeteasePlaybackResponseParser.PlaybackResult.Success
+        parsed: NeteasePlaybackResponseParser.PlaybackResult.Success,
+        resolvedQualityKey: String,
+        fallbackDurationMs: Long
     ): SongUrlResult.Success {
         val finalUrl = if (parsed.url.startsWith("http://")) {
             parsed.url.replaceFirst("http://", "https://")
@@ -1823,7 +2068,12 @@ object PlayerManager {
         return SongUrlResult.Success(
             url = finalUrl,
             noticeMessage = noticeMessage,
-            expectedContentLength = parsed.contentLength
+            expectedContentLength = parsed.contentLength,
+            audioInfo = buildNeteasePlaybackAudioInfo(
+                parsed = parsed,
+                resolvedQualityKey = resolvedQualityKey,
+                fallbackDurationMs = fallbackDurationMs
+            )
         )
     }
 
@@ -1888,7 +2138,11 @@ object PlayerManager {
                     }
 
                     is NeteasePlaybackResponseParser.PlaybackResult.Success -> {
-                        val success = buildNeteaseSuccessResult(parsed)
+                        val success = buildNeteaseSuccessResult(
+                            parsed = parsed,
+                            resolvedQualityKey = quality,
+                            fallbackDurationMs = song.durationMs
+                        )
                         if (parsed.notice != NeteasePlaybackResponseParser.Notice.PREVIEW_CLIP) {
                             if (quality != preferredQuality) {
                                 NPLogger.w(
@@ -1967,11 +2221,18 @@ object PlayerManager {
                 return@withContext SongUrlResult.Failure
             }
 
-            val audioStream = biliRepo.getBestPlayableAudio(resolved.videoInfo.bvid, resolved.cid)
+            val (availableStreams, audioStream) = biliRepo.getAudioWithDecision(
+                resolved.videoInfo.bvid,
+                resolved.cid
+            )
 
             if (audioStream?.url != null) {
                 NPLogger.d("NERI-PlayerManager-BiliAudioUrl", audioStream.url)
-                SongUrlResult.Success(audioStream.url)
+                SongUrlResult.Success(
+                    url = audioStream.url,
+                    mimeType = audioStream.mimeType,
+                    audioInfo = buildBiliPlaybackAudioInfo(audioStream, availableStreams)
+                )
             } else {
                 if (!suppressError) {
                     postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(R.string.error_no_play_url)))
@@ -2036,7 +2297,8 @@ object PlayerManager {
                 SongUrlResult.Success(
                     url = resolvedPlayableAudio.url,
                     durationMs = resolvedPlayableAudio.durationMs.takeIf { it > 0L },
-                    mimeType = resolvedPlayableAudio.mimeType
+                    mimeType = resolvedPlayableAudio.mimeType,
+                    audioInfo = buildYouTubePlaybackAudioInfo(resolvedPlayableAudio)
                 )
             } else {
                 if (!suppressError) {
@@ -2418,6 +2680,7 @@ object PlayerManager {
 
         _isPlayingFlow.value = false
         _currentMediaUrl.value = null
+        _currentPlaybackAudioInfo.value = null
         currentMediaUrlResolvedAtMs = 0L
         _currentSongFlow.value = null
         _currentQueueFlow.value = emptyList()
@@ -2499,12 +2762,14 @@ object PlayerManager {
             currentIndex = -1
             _currentSongFlow.value = null
             _currentMediaUrl.value = null
+            _currentPlaybackAudioInfo.value = null
             currentMediaUrlResolvedAtMs = 0L
         } else {
             currentIndex = currentIndex.coerceIn(0, currentPlaylist.lastIndex)
             _currentSongFlow.value = currentPlaylist.getOrNull(currentIndex)
             if (clearMediaUrl) {
                 _currentMediaUrl.value = null
+                _currentPlaybackAudioInfo.value = null
                 currentMediaUrlResolvedAtMs = 0L
             }
         }
@@ -2808,6 +3073,7 @@ object PlayerManager {
                 _currentQueueFlow.value = emptyList()
                 _currentSongFlow.value = null
                 _currentMediaUrl.value = null
+                _currentPlaybackAudioInfo.value = null
                 _playbackPositionMs.value = 0L
                 currentMediaUrlResolvedAtMs = 0L
                 restoredResumePositionMs = 0L

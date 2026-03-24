@@ -45,6 +45,24 @@ class SettingsRepository(private val context: Context) {
     val showCoverSourceBadgeFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.SHOW_COVER_SOURCE_BADGE] ?: true }
 
+    val nowPlayingToolbarDockEnabledFlow: Flow<Boolean> =
+        context.dataStore.data.map { it[SettingsKeys.NOWPLAYING_TOOLBAR_DOCK_ENABLED] ?: true }
+
+    val nowPlayingProgressShowQualitySwitchFlow: Flow<Boolean> =
+        context.dataStore.data.map {
+            it[SettingsKeys.NOWPLAYING_PROGRESS_SHOW_QUALITY_SWITCH] ?: true
+        }
+
+    val nowPlayingProgressShowAudioCodecFlow: Flow<Boolean> =
+        context.dataStore.data.map {
+            it[SettingsKeys.NOWPLAYING_PROGRESS_SHOW_AUDIO_CODEC] ?: true
+        }
+
+    val nowPlayingProgressShowAudioSpecFlow: Flow<Boolean> =
+        context.dataStore.data.map {
+            it[SettingsKeys.NOWPLAYING_PROGRESS_SHOW_AUDIO_SPEC] ?: true
+        }
+
     val silentGitHubSyncFailureFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.SILENT_GITHUB_SYNC_FAILURE] ?: false }
 
@@ -216,6 +234,22 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setShowCoverSourceBadge(enabled: Boolean) {
         context.dataStore.edit { it[SettingsKeys.SHOW_COVER_SOURCE_BADGE] = enabled }
+    }
+
+    suspend fun setNowPlayingToolbarDockEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.NOWPLAYING_TOOLBAR_DOCK_ENABLED] = enabled }
+    }
+
+    suspend fun setNowPlayingProgressShowQualitySwitch(enabled: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.NOWPLAYING_PROGRESS_SHOW_QUALITY_SWITCH] = enabled }
+    }
+
+    suspend fun setNowPlayingProgressShowAudioCodec(enabled: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.NOWPLAYING_PROGRESS_SHOW_AUDIO_CODEC] = enabled }
+    }
+
+    suspend fun setNowPlayingProgressShowAudioSpec(enabled: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.NOWPLAYING_PROGRESS_SHOW_AUDIO_SPEC] = enabled }
     }
 
     suspend fun setSilentGitHubSyncFailure(enabled: Boolean) {

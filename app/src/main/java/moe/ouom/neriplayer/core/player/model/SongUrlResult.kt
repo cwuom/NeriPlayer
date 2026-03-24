@@ -29,7 +29,8 @@ internal sealed class SongUrlResult {
         val durationMs: Long? = null,
         val mimeType: String? = null,
         val noticeMessage: String? = null,
-        val expectedContentLength: Long? = null
+        val expectedContentLength: Long? = null,
+        val audioInfo: PlaybackAudioInfo? = null
     ) : SongUrlResult()
 
     object RequiresLogin : SongUrlResult()
