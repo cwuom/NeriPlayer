@@ -276,7 +276,8 @@ object GlobalDownloadManager {
         val metadata = readDownloadedMetadata(
             context = context,
             audio = storedAudio,
-            metadataEntry = effectiveSnapshot.metadataEntriesByAudioName[storedAudio.name]
+            metadataEntry = effectiveSnapshot.metadataEntriesByAudioName[storedAudio.name],
+            includeLyrics = false
         )
         val (parsedArtist, parsedTitle) = parseDownloadedFileName(storedAudio.name)
         val coverReference = metadata?.coverPath
@@ -382,7 +383,8 @@ object GlobalDownloadManager {
     private suspend fun readDownloadedMetadata(
         context: Context,
         audio: ManagedDownloadStorage.StoredEntry,
-        metadataEntry: ManagedDownloadStorage.StoredEntry? = null
+        metadataEntry: ManagedDownloadStorage.StoredEntry? = null,
+        includeLyrics: Boolean = false
     ): DownloadedSongMetadata? {
         val resolvedMetadataEntry = metadataEntry
             ?: ManagedDownloadStorage.findMetadataForAudio(context, audio)
@@ -396,8 +398,10 @@ object GlobalDownloadManager {
                 name = root.optString("name").takeIf(String::isNotBlank),
                 artist = root.optString("artist").takeIf(String::isNotBlank),
                 coverUrl = root.optString("coverUrl").takeIf(String::isNotBlank),
-                matchedLyric = root.optString("matchedLyric").takeIf(String::isNotBlank),
-                matchedTranslatedLyric = root.optString("matchedTranslatedLyric").takeIf(String::isNotBlank),
+                matchedLyric = root.optString("matchedLyric")
+                    .takeIf { includeLyrics && it.isNotBlank() },
+                matchedTranslatedLyric = root.optString("matchedTranslatedLyric")
+                    .takeIf { includeLyrics && it.isNotBlank() },
                 matchedLyricSource = root.optString("matchedLyricSource").takeIf(String::isNotBlank),
                 matchedSongId = root.optString("matchedSongId").takeIf(String::isNotBlank),
                 userLyricOffsetMs = root.optLong("userLyricOffsetMs"),
@@ -407,8 +411,10 @@ object GlobalDownloadManager {
                 originalName = root.optString("originalName").takeIf(String::isNotBlank),
                 originalArtist = root.optString("originalArtist").takeIf(String::isNotBlank),
                 originalCoverUrl = root.optString("originalCoverUrl").takeIf(String::isNotBlank),
-                originalLyric = root.optString("originalLyric").takeIf(String::isNotBlank),
-                originalTranslatedLyric = root.optString("originalTranslatedLyric").takeIf(String::isNotBlank),
+                originalLyric = root.optString("originalLyric")
+                    .takeIf { includeLyrics && it.isNotBlank() },
+                originalTranslatedLyric = root.optString("originalTranslatedLyric")
+                    .takeIf { includeLyrics && it.isNotBlank() },
                 coverPath = root.optString("coverPath").takeIf(String::isNotBlank),
                 mediaUri = root.optString("mediaUri").takeIf(String::isNotBlank),
                 durationMs = root.optLong("durationMs")
@@ -513,21 +519,6 @@ object GlobalDownloadManager {
                     ?: song.filePath
                 val durationMs = song.durationMs.takeIf { it > 0L }
                     ?: resolveAudioDuration(appContext, playbackUri)
-                val songId = song.id.takeIf { it > 0L }
-                val matchedLyric = song.matchedLyric ?: storedAudio?.let {
-                    ManagedDownloadStorage.findLyricText(
-                        context = appContext,
-                        audio = it,
-                        songId = songId
-                    )
-                }
-                val matchedTranslatedLyric = song.matchedTranslatedLyric ?: storedAudio?.let {
-                    ManagedDownloadStorage.findTranslatedLyricText(
-                        context = appContext,
-                        audio = it,
-                        songId = songId
-                    )
-                }
 
                 val songItem = SongItem(
                     id = song.id,
@@ -538,8 +529,6 @@ object GlobalDownloadManager {
                     durationMs = durationMs,
                     coverUrl = song.coverPath ?: song.coverUrl,
                     mediaUri = playbackUri,
-                    matchedLyric = matchedLyric,
-                    matchedTranslatedLyric = matchedTranslatedLyric,
                     matchedLyricSource = song.matchedLyricSource?.let {
                         runCatching { MusicPlatform.valueOf(it) }.getOrNull()
                     },
@@ -551,8 +540,6 @@ object GlobalDownloadManager {
                     originalName = song.originalName,
                     originalArtist = song.originalArtist,
                     originalCoverUrl = song.originalCoverUrl,
-                    originalLyric = song.originalLyric,
-                    originalTranslatedLyric = song.originalTranslatedLyric,
                     localFileName = storedAudio?.name,
                     localFilePath = storedAudio?.localFilePath
                 )

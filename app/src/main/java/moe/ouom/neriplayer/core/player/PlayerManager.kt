@@ -107,6 +107,7 @@ import moe.ouom.neriplayer.core.player.model.AudioDevice
 import moe.ouom.neriplayer.core.player.model.PersistedState
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
+import moe.ouom.neriplayer.core.player.model.toPersistedSongItem
 import moe.ouom.neriplayer.core.player.debug.playWhenReadyChangeReasonName
 import moe.ouom.neriplayer.core.player.debug.playbackStateName
 import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
@@ -386,6 +387,8 @@ object PlayerManager {
     private val gson = Gson()
 
     private fun isLocalSong(song: SongItem): Boolean = LocalSongSupport.isLocalSong(song, application)
+
+    private fun shouldPersistEmbeddedLyrics(song: SongItem): Boolean = !isLocalSong(song)
 
     private fun queueIndexOf(song: SongItem, playlist: List<SongItem> = currentPlaylist): Int {
         return playlist.indexOfFirst { it.sameIdentityAs(song) }
@@ -2603,7 +2606,11 @@ object PlayerManager {
                     if (stateFile.exists()) stateFile.delete()
                 } else {
                     val data = PersistedState(
-                        playlist = playlistSnapshot,
+                        playlist = playlistSnapshot.map { song ->
+                            song.toPersistedSongItem(
+                                includeLyrics = shouldPersistEmbeddedLyrics(song)
+                            )
+                        },
                         index = currentIndexSnapshot,
                         mediaUrl = mediaUrlSnapshot,
                         positionMs = persistedPositionMs,
@@ -2802,7 +2809,9 @@ object PlayerManager {
             if (!stateFile.exists()) return
             val type = object : TypeToken<PersistedState>() {}.type
             val data: PersistedState = gson.fromJson(stateFile.readText(), type)
-            currentPlaylist = sanitizeRestoredPlaylist(data.playlist)
+            currentPlaylist = sanitizeRestoredPlaylist(
+                data.playlist.map { persistedSong -> persistedSong.toSongItem() }
+            )
             if (currentPlaylist.isEmpty()) {
                 currentIndex = -1
                 _currentQueueFlow.value = emptyList()
@@ -2815,7 +2824,7 @@ object PlayerManager {
                 resumePlaybackRequested = false
                 return
             }
-            val preferredSong = data.playlist.getOrNull(data.index)
+            val preferredSong = data.playlist.getOrNull(data.index)?.toSongItem()
             currentIndex = when {
                 currentPlaylist.isEmpty() -> -1
                 preferredSong != null -> queueIndexOf(preferredSong, currentPlaylist).takeIf { it >= 0 }
