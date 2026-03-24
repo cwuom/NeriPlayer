@@ -176,7 +176,7 @@ object AppContainer {
         primeProxySetting()
         startCookieObserver()
         startSettingsObserver()
-        // 把 YouTube Music 的 bootstrap / Web PO 冷启动成本前移，减少首次播放等待。
+        // 把 YouTube Music 的 bootstrap / Web PO 冷启动成本前移，减少首次播放等待
         youtubeMusicPlaybackRepository.warmBootstrapAsync()
         playHistoryRepo = PlayHistoryRepository.getInstance(app)
         playlistUsageRepo = PlaylistUsageRepository(app)

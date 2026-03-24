@@ -91,15 +91,24 @@ import moe.ouom.neriplayer.core.player.debug.playWhenReadyChangeReasonName
 import moe.ouom.neriplayer.core.player.debug.playbackStateName
 import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
 import moe.ouom.neriplayer.core.player.model.AudioDevice
+import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_PITCH
+import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB
+import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_SPEED
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
+import moe.ouom.neriplayer.core.player.model.PlaybackEqualizerPresetId
 import moe.ouom.neriplayer.core.player.model.PlaybackQualityOption
+import moe.ouom.neriplayer.core.player.model.PlaybackSoundConfig
+import moe.ouom.neriplayer.core.player.model.PlaybackSoundState
+import moe.ouom.neriplayer.core.player.model.normalizePlaybackLoudnessGainMb
 import moe.ouom.neriplayer.core.player.model.PersistedState
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
 import moe.ouom.neriplayer.core.player.model.deriveCodecLabel
 import moe.ouom.neriplayer.core.player.model.estimateBitrateKbps
 import moe.ouom.neriplayer.core.player.model.inferYouTubeQualityKeyFromBitrate
+import moe.ouom.neriplayer.core.player.model.normalizePlaybackPitch
+import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
 import moe.ouom.neriplayer.core.player.model.toPersistedSongItem
 import moe.ouom.neriplayer.core.player.playlist.PlayerFavoritesController
 import moe.ouom.neriplayer.core.player.source.toSongItem
@@ -163,6 +172,7 @@ object PlayerManager {
     private var volumeFadeJob: Job? = null
     private var pendingPauseJob: Job? = null
     private var bluetoothDisconnectPauseJob: Job? = null
+    private var playbackSoundPersistJob: Job? = null
 
     private val localRepo: LocalPlaylistRepository
         get() = LocalPlaylistRepository.getInstance(application)
@@ -178,6 +188,7 @@ object PlayerManager {
     private var playbackFadeOutDurationMs = DEFAULT_FADE_DURATION_MS
     private var playbackCrossfadeInDurationMs = DEFAULT_FADE_DURATION_MS
     private var playbackCrossfadeOutDurationMs = DEFAULT_FADE_DURATION_MS
+    private var playbackSoundConfig = PlaybackSoundConfig()
     private var keepLastPlaybackProgressEnabled = true
     private var keepPlaybackModeStateEnabled = true
     private var stopOnBluetoothDisconnectEnabled = true
@@ -256,6 +267,10 @@ object PlayerManager {
 
     private val _currentPlaybackAudioInfo = MutableStateFlow<PlaybackAudioInfo?>(null)
     val currentPlaybackAudioInfoFlow: StateFlow<PlaybackAudioInfo?> = _currentPlaybackAudioInfo
+
+    private val playbackEffectsController = PlaybackEffectsController()
+    private val _playbackSoundState = MutableStateFlow(PlaybackSoundState())
+    val playbackSoundStateFlow: StateFlow<PlaybackSoundState> = _playbackSoundState
 
     /** 给 UI 用的歌单流 */
     private val _playlistsFlow = MutableStateFlow<List<LocalPlaylist>>(emptyList())
@@ -523,6 +538,124 @@ object PlayerManager {
         }
     }
 
+    fun setPlaybackSpeed(speed: Float, persist: Boolean = true) {
+        ensureInitialized()
+        applyPlaybackSoundConfig(
+            playbackSoundConfig.copy(speed = normalizePlaybackSpeed(speed)),
+            persist = persist
+        )
+    }
+
+    fun setPlaybackPitch(pitch: Float, persist: Boolean = true) {
+        ensureInitialized()
+        applyPlaybackSoundConfig(
+            playbackSoundConfig.copy(pitch = normalizePlaybackPitch(pitch)),
+            persist = persist
+        )
+    }
+
+    fun setPlaybackLoudnessGain(levelMb: Int, persist: Boolean = true) {
+        ensureInitialized()
+        applyPlaybackSoundConfig(
+            playbackSoundConfig.copy(
+                loudnessGainMb = normalizePlaybackLoudnessGainMb(levelMb)
+            ),
+            persist = persist
+        )
+    }
+
+    fun setPlaybackEqualizerEnabled(enabled: Boolean, persist: Boolean = true) {
+        ensureInitialized()
+        applyPlaybackSoundConfig(
+            playbackSoundConfig.copy(equalizerEnabled = enabled),
+            persist = persist
+        )
+    }
+
+    fun selectPlaybackEqualizerPreset(presetId: String, persist: Boolean = true) {
+        ensureInitialized()
+        applyPlaybackSoundConfig(
+            playbackSoundConfig.copy(
+                equalizerEnabled = true,
+                presetId = presetId
+            ),
+            persist = persist
+        )
+    }
+
+    fun updatePlaybackEqualizerBandLevel(
+        index: Int,
+        levelMb: Int,
+        persist: Boolean = true
+    ) {
+        ensureInitialized()
+        val currentBands = _playbackSoundState.value.bands
+        if (index !in currentBands.indices) return
+        val updatedLevels = currentBands.map { it.levelMb }.toMutableList()
+        updatedLevels[index] = levelMb
+        applyPlaybackSoundConfig(
+            playbackSoundConfig.copy(
+                equalizerEnabled = true,
+                presetId = PlaybackEqualizerPresetId.CUSTOM,
+                customBandLevelsMb = updatedLevels
+            ),
+            persist = persist
+        )
+    }
+
+    fun resetPlaybackSoundSettings(persist: Boolean = true) {
+        ensureInitialized()
+        applyPlaybackSoundConfig(
+            PlaybackSoundConfig(
+                speed = DEFAULT_PLAYBACK_SPEED,
+                pitch = DEFAULT_PLAYBACK_PITCH,
+                loudnessGainMb = DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB,
+                equalizerEnabled = false,
+                presetId = PlaybackEqualizerPresetId.FLAT,
+                customBandLevelsMb = emptyList()
+            ),
+            persist = persist
+        )
+    }
+
+    private fun applyPlaybackSoundConfig(
+        newConfig: PlaybackSoundConfig,
+        persist: Boolean
+    ) {
+        playbackSoundConfig = newConfig.copy(
+            speed = normalizePlaybackSpeed(newConfig.speed),
+            pitch = normalizePlaybackPitch(newConfig.pitch),
+            loudnessGainMb = normalizePlaybackLoudnessGainMb(newConfig.loudnessGainMb)
+        )
+        _playbackSoundState.value = playbackEffectsController.updateConfig(playbackSoundConfig)
+        if (persist) {
+            persistPlaybackSoundConfig(playbackSoundConfig)
+        }
+    }
+
+    private fun applyPlaybackSoundConfigIfChanged(newConfig: PlaybackSoundConfig) {
+        val normalizedConfig = newConfig.copy(
+            speed = normalizePlaybackSpeed(newConfig.speed),
+            pitch = normalizePlaybackPitch(newConfig.pitch),
+            loudnessGainMb = normalizePlaybackLoudnessGainMb(newConfig.loudnessGainMb)
+        )
+        if (normalizedConfig == playbackSoundConfig) return
+        applyPlaybackSoundConfig(normalizedConfig, persist = false)
+    }
+
+    private fun persistPlaybackSoundConfig(config: PlaybackSoundConfig) {
+        playbackSoundPersistJob?.cancel()
+        playbackSoundPersistJob = ioScope.launch {
+            delay(150)
+            settingsRepo.setPlaybackSpeed(config.speed)
+            settingsRepo.setPlaybackPitch(config.pitch)
+            settingsRepo.setPlaybackLoudnessGainMb(config.loudnessGainMb)
+            settingsRepo.setPlaybackEqualizerEnabled(config.equalizerEnabled)
+            settingsRepo.setPlaybackEqualizerPreset(config.presetId)
+            settingsRepo.setPlaybackEqualizerCustomBandLevels(config.customBandLevelsMb)
+        }
+    }
+
     private suspend fun refreshCurrentSongForQualityChange(
         source: PlaybackAudioSource,
         reason: String
@@ -682,6 +815,13 @@ object PlayerManager {
             blockingIo {
                 keepLastPlaybackProgressEnabled = settingsRepo.keepLastPlaybackProgressFlow.first()
                 keepPlaybackModeStateEnabled = settingsRepo.keepPlaybackModeStateFlow.first()
+                playbackSoundConfig = PlaybackSoundConfig(
+                    speed = settingsRepo.playbackSpeedFlow.first(),
+                    pitch = settingsRepo.playbackPitchFlow.first(),
+                    equalizerEnabled = settingsRepo.playbackEqualizerEnabledFlow.first(),
+                    presetId = settingsRepo.playbackEqualizerPresetFlow.first(),
+                    customBandLevelsMb = settingsRepo.playbackEqualizerCustomBandLevelsFlow.first()
+                )
             }
 
             // 基础网络请求工厂，支持 B 站 / YouTube 的请求头与 Cookie 注入
@@ -729,6 +869,8 @@ object PlayerManager {
                 .apply {
                     setWakeMode(C.WAKE_MODE_NETWORK)
                 }
+            _playbackSoundState.value = playbackEffectsController.attachPlayer(player)
+            applyPlaybackSoundConfig(playbackSoundConfig, persist = false)
             applyAudioFocusPolicy()
             _playWhenReadyFlow.value = player.playWhenReady
             _playerPlaybackStateFlow.value = player.playbackState
@@ -862,6 +1004,11 @@ object PlayerManager {
                     syncExoRepeatMode()
                     _repeatModeFlow.value = repeatModeSetting
                 }
+
+                override fun onAudioSessionIdChanged(audioSessionId: Int) {
+                    _playbackSoundState.value =
+                        playbackEffectsController.onAudioSessionIdChanged(audioSessionId)
+                }
             })
 
         player.playWhenReady = false
@@ -932,6 +1079,44 @@ object PlayerManager {
             }
         }
         ioScope.launch {
+            settingsRepo.playbackSpeedFlow.collect { speed ->
+                applyPlaybackSoundConfigIfChanged(playbackSoundConfig.copy(speed = speed))
+            }
+        }
+        ioScope.launch {
+            settingsRepo.playbackPitchFlow.collect { pitch ->
+                applyPlaybackSoundConfigIfChanged(playbackSoundConfig.copy(pitch = pitch))
+            }
+        }
+        ioScope.launch {
+            settingsRepo.playbackLoudnessGainMbFlow.collect { levelMb ->
+                applyPlaybackSoundConfigIfChanged(
+                    playbackSoundConfig.copy(loudnessGainMb = levelMb)
+                )
+            }
+        }
+        ioScope.launch {
+            settingsRepo.playbackEqualizerEnabledFlow.collect { enabled ->
+                applyPlaybackSoundConfigIfChanged(
+                    playbackSoundConfig.copy(equalizerEnabled = enabled)
+                )
+            }
+        }
+        ioScope.launch {
+            settingsRepo.playbackEqualizerPresetFlow.collect { presetId ->
+                applyPlaybackSoundConfigIfChanged(
+                    playbackSoundConfig.copy(presetId = presetId)
+                )
+            }
+        }
+        ioScope.launch {
+            settingsRepo.playbackEqualizerCustomBandLevelsFlow.collect { levels ->
+                applyPlaybackSoundConfigIfChanged(
+                    playbackSoundConfig.copy(customBandLevelsMb = levels)
+                )
+            }
+        }
+        ioScope.launch {
             settingsRepo.keepLastPlaybackProgressFlow.collect { enabled ->
                 val changed = keepLastPlaybackProgressEnabled != enabled
                 keepLastPlaybackProgressEnabled = enabled
@@ -982,6 +1167,7 @@ object PlayerManager {
             runCatching { conditionalHttpFactory?.close() }
             conditionalHttpFactory = null
             runCatching { if (::player.isInitialized) player.release() }
+            runCatching { _playbackSoundState.value = playbackEffectsController.release() }
             runCatching { if (::cache.isInitialized) cache.release() }
             runCatching { mainScope.cancel() }
             runCatching { ioScope.cancel() }
@@ -1552,7 +1738,7 @@ object PlayerManager {
         }
         currentVideoId?.let { videoId ->
             runCatching {
-                // 直接占住 in-flight 槽位，后续正式播放能稳定复用这次解析结果。
+                // 直接占住 in-flight 槽位，后续正式播放能稳定复用这次解析结果
                 youtubeMusicPlaybackRepository.kickoffPlayableAudioPrefetch(
                     videoId = videoId,
                     preferredQualityOverride = youtubePreferredQuality,
@@ -2660,6 +2846,8 @@ object PlayerManager {
         cancelPendingPauseRequest(resetVolumeToFull = true)
         bluetoothDisconnectPauseJob?.cancel()
         bluetoothDisconnectPauseJob = null
+        playbackSoundPersistJob?.cancel()
+        playbackSoundPersistJob = null
         playJob?.cancel()
         playJob = null
 
@@ -2667,6 +2855,7 @@ object PlayerManager {
             runCatching { player.stop() }
             player.release()
         }
+        _playbackSoundState.value = playbackEffectsController.release()
         _playWhenReadyFlow.value = false
         _playerPlaybackStateFlow.value = Player.STATE_IDLE
         if (::cache.isInitialized) {

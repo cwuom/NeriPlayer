@@ -1114,12 +1114,12 @@ class BiliClient(
     // 将 PlayInfo 映射为统一的音频流结构 //
 
     /**
-     * 合并 dash.audio、dash.dolby.audio 和 dash.flac.audio。
+     * 合并 dash.audio、dash.dolby.audio 和 dash.flac.audio
      * - 普通音轨：qualityTag = null
      * - 杜比音轨：qualityTag = "dolby"
      * - Hi-Res（flac）：qualityTag = "hires"
      *
-     * bitrateKbps = bandwidth(Byte/s)*8/1000，并做非负保护。
+     * bitrateKbps = bandwidth(Byte/s)*8/1000，并做非负保护
      */
     fun PlayInfo.toAudioStreamInfos(): List<BiliAudioStreamInfo> {
         val list = mutableListOf<BiliAudioStreamInfo>()

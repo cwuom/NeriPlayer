@@ -213,6 +213,11 @@ class AudioPlayerService : Service() {
                 updatePlaybackState()
             }
         }
+        serviceScope.launch {
+            PlayerManager.playbackSoundStateFlow.collect {
+                updatePlaybackState(force = true)
+            }
+        }
 
         serviceScope.launch {
             PlayerManager.sleepTimerManager.timerState.collect {
@@ -578,7 +583,11 @@ class AudioPlayerService : Service() {
             isTransportActive -> PlaybackStateCompat.STATE_PLAYING
             else -> PlaybackStateCompat.STATE_PAUSED
         }
-        val playbackSpeed = if (playbackState == PlaybackStateCompat.STATE_PLAYING) 1.0f else 0.0f
+        val playbackSpeed = if (playbackState == PlaybackStateCompat.STATE_PLAYING) {
+            PlayerManager.playbackSoundStateFlow.value.speed
+        } else {
+            0.0f
+        }
         val controlFingerprint = when {
             !canToggleFavoriteFromExternalSurface(song) -> 0
             isFav -> 2

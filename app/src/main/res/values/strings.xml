@@ -316,6 +316,46 @@
     <string name="sleep_timer_stop_after_current">播放完当前歌曲后停止</string>
     <string name="sleep_timer_stop_after_playlist">播放完播放列表后停止</string>
 
+    <!-- Playback Sound -->
+    <string name="playback_sound_title">音效与倍速</string>
+    <string name="playback_sound_speed">播放速度</string>
+    <string name="playback_sound_pitch">音调</string>
+    <string name="playback_sound_pitch_semitone">%1$.1f 半音</string>
+    <string name="playback_sound_loudness">响度增强</string>
+    <string name="playback_sound_equalizer">均衡器</string>
+    <string name="playback_sound_enable_equalizer">启用均衡器</string>
+    <string name="playback_sound_scene_presets">场景预设</string>
+    <string name="playback_sound_fine_tune">频段微调</string>
+    <string name="playback_sound_quick_presets">快捷预设</string>
+    <string name="playback_sound_reset">恢复默认</string>
+    <string name="playback_sound_wait_for_playback">开始播放后即可启用设备音效</string>
+    <string name="playback_sound_equalizer_unavailable">当前设备或音频会话不支持均衡器</string>
+    <string name="playback_sound_loudness_unavailable">当前设备或音频会话不支持响度增强</string>
+    <string name="playback_sound_custom">自定义</string>
+    <string name="playback_sound_preset_flat">平坦</string>
+    <string name="playback_sound_preset_acoustic">原声</string>
+    <string name="playback_sound_preset_bass_boost">低音增强</string>
+    <string name="playback_sound_preset_bass_reducer">低音削减</string>
+    <string name="playback_sound_preset_classical">古典</string>
+    <string name="playback_sound_preset_club">俱乐部</string>
+    <string name="playback_sound_preset_dance">舞曲</string>
+    <string name="playback_sound_preset_deep">深沉低频</string>
+    <string name="playback_sound_preset_electronic">电子</string>
+    <string name="playback_sound_preset_folk">民谣</string>
+    <string name="playback_sound_preset_hip_hop">说唱</string>
+    <string name="playback_sound_preset_jazz">爵士</string>
+    <string name="playback_sound_preset_latin">拉丁</string>
+    <string name="playback_sound_preset_lounge">休闲</string>
+    <string name="playback_sound_preset_piano">钢琴</string>
+    <string name="playback_sound_preset_pop">流行</string>
+    <string name="playback_sound_preset_rnb">R&amp;B</string>
+    <string name="playback_sound_preset_rock">摇滚</string>
+    <string name="playback_sound_preset_small_speakers">小音箱</string>
+    <string name="playback_sound_preset_spoken_word">人声旁白</string>
+    <string name="playback_sound_preset_treble_boost">高频增强</string>
+    <string name="playback_sound_preset_treble_reducer">高频削减</string>
+    <string name="playback_sound_preset_vocal_boost">人声增强</string>
+
     <!-- Audio Quality -->
     <string name="quality_standard">标准</string>
     <string name="quality_high">较高</string>

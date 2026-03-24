@@ -26,6 +26,7 @@ package moe.ouom.neriplayer.data.settings
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -86,6 +87,13 @@ object SettingsKeys {
     val PLAYBACK_FADE_OUT_DURATION_MS = longPreferencesKey("playback_fade_out_duration_ms")
     val PLAYBACK_CROSSFADE_IN_DURATION_MS = longPreferencesKey("playback_crossfade_in_duration_ms")
     val PLAYBACK_CROSSFADE_OUT_DURATION_MS = longPreferencesKey("playback_crossfade_out_duration_ms")
+    val PLAYBACK_SPEED = floatPreferencesKey("playback_speed")
+    val PLAYBACK_PITCH = floatPreferencesKey("playback_pitch")
+    val PLAYBACK_EQUALIZER_ENABLED = booleanPreferencesKey("playback_equalizer_enabled")
+    val PLAYBACK_EQUALIZER_PRESET = stringPreferencesKey("playback_equalizer_preset")
+    val PLAYBACK_EQUALIZER_CUSTOM_BAND_LEVELS =
+        stringPreferencesKey("playback_equalizer_custom_band_levels")
+    val PLAYBACK_LOUDNESS_GAIN_MB = intPreferencesKey("playback_loudness_gain_mb")
     val KEEP_LAST_PLAYBACK_PROGRESS = booleanPreferencesKey("keep_last_playback_progress")
     val KEEP_PLAYBACK_MODE_STATE = booleanPreferencesKey("keep_playback_mode_state")
     val STOP_ON_BLUETOOTH_DISCONNECT = booleanPreferencesKey("stop_on_bluetooth_disconnect")

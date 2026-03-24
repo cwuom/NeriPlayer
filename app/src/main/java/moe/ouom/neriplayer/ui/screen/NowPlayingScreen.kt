@@ -117,11 +117,13 @@ import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material.icons.outlined.Timer
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -134,6 +136,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -194,8 +197,16 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.model.MAX_PLAYBACK_PITCH
+import moe.ouom.neriplayer.core.player.model.MAX_PLAYBACK_SPEED
+import moe.ouom.neriplayer.core.player.model.MIN_PLAYBACK_PITCH
+import moe.ouom.neriplayer.core.player.model.MIN_PLAYBACK_SPEED
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
+import moe.ouom.neriplayer.core.player.model.PlaybackEqualizerPresetId
 import moe.ouom.neriplayer.core.player.model.PlaybackQualityOption
+import moe.ouom.neriplayer.core.player.model.PlaybackEqualizerPresets
+import moe.ouom.neriplayer.core.player.model.findPlaybackEqualizerPreset
+import moe.ouom.neriplayer.core.player.model.formatEqualizerFrequencyLabel
 import moe.ouom.neriplayer.data.settings.MAX_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.data.settings.MIN_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
@@ -217,6 +228,7 @@ import moe.ouom.neriplayer.ui.component.LocalSongDetailsDialog
 import moe.ouom.neriplayer.ui.component.LocalSongSyncConfirmDialog
 import moe.ouom.neriplayer.ui.component.LyricEntry
 import moe.ouom.neriplayer.ui.component.LyricVisualSpec
+import moe.ouom.neriplayer.ui.component.PlaybackSoundSheet
 import moe.ouom.neriplayer.ui.component.PlaybackSourceBadge
 import moe.ouom.neriplayer.ui.component.PlaybackSourceType
 import moe.ouom.neriplayer.ui.component.SleepTimerDialog
@@ -233,6 +245,7 @@ import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.formatDuration
 import moe.ouom.neriplayer.util.offlineCachedImageRequest
 import moe.ouom.neriplayer.util.saveCoverToPictures
+import java.util.Locale
 import kotlin.math.roundToInt
 
 private const val LyricsPageTransitionDurationMs = 300
@@ -1567,6 +1580,7 @@ fun MoreOptionsSheet(
     var showOffsetSheet by remember { mutableStateOf(false) }
     var showFontSizeSheet by remember { mutableStateOf(false) }
     var showEditInfoSheet by remember { mutableStateOf(false) }
+    var showPlaybackSoundSheet by remember { mutableStateOf(false) }
 
     val focusManager = LocalFocusManager.current
     val searchFocusRequester = remember { FocusRequester() }
@@ -1578,6 +1592,7 @@ fun MoreOptionsSheet(
     val qualityOptions = currentPlaybackAudioInfo?.qualityOptions.orEmpty()
     val canSwitchQuality = qualityOptions.size > 1
     val currentQualityLabel = currentPlaybackAudioInfo?.qualityLabel
+    val playbackSoundState by PlayerManager.playbackSoundStateFlow.collectAsState()
 
     LaunchedEffect(showSearchView) {
         if (showSearchView) {
@@ -1602,17 +1617,18 @@ fun MoreOptionsSheet(
         containerColor = MaterialTheme.colorScheme.surface
     ) {
         // 处理子页面的返回键导航
-        BackHandler(enabled = showOffsetSheet || showFontSizeSheet || showSearchView || showEditInfoSheet) {
+        BackHandler(enabled = showOffsetSheet || showFontSizeSheet || showSearchView || showEditInfoSheet || showPlaybackSoundSheet) {
             when {
                 showOffsetSheet -> showOffsetSheet = false
                 showFontSizeSheet -> showFontSizeSheet = false
                 showSearchView -> showSearchView = false
                 showEditInfoSheet -> showEditInfoSheet = false
+                showPlaybackSoundSheet -> showPlaybackSoundSheet = false
             }
         }
 
         // 处理主页面的返回键
-        BackHandler(enabled = !showOffsetSheet && !showFontSizeSheet && !showSearchView && !showEditInfoSheet) {
+        BackHandler(enabled = !showOffsetSheet && !showFontSizeSheet && !showSearchView && !showEditInfoSheet && !showPlaybackSoundSheet) {
             coroutineScope.launch {
                 sheetState.hide()
                 onDismiss()
@@ -1625,6 +1641,7 @@ fun MoreOptionsSheet(
                 showFontSizeSheet -> "FontSize"
                 showSearchView -> "Search"
                 showEditInfoSheet -> "EditInfo"
+                showPlaybackSoundSheet -> "PlaybackSound"
                 else -> "Main"
             },
             transitionSpec = {
@@ -1660,6 +1677,14 @@ fun MoreOptionsSheet(
                                 }
                             )
                         }
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.nowplaying_audio_effects_title)) },
+                            leadingContent = { Icon(Icons.Outlined.Tune, null) },
+                            supportingContent = {
+                                Text(stringResource(R.string.nowplaying_audio_effects_desc))
+                            },
+                            modifier = Modifier.clickable { showPlaybackSoundSheet = true }
+                        )
                         if (isLocalSong) {
                             ListItem(
                                 headlineContent = { Text(stringResource(R.string.local_song_open_details)) },
@@ -1929,6 +1954,20 @@ fun MoreOptionsSheet(
                         originalSong = originalSong,
                         onDismiss = { showEditInfoSheet = false },
                         snackbarHostState = snackbarHostState
+                    )
+                }
+
+                "PlaybackSound" -> {
+                    PlaybackSoundSheet(
+                        state = playbackSoundState,
+                        onSpeedChange = viewModel::setPlaybackSpeed,
+                        onPitchChange = viewModel::setPlaybackPitch,
+                        onLoudnessGainChange = viewModel::setPlaybackLoudnessGain,
+                        onEqualizerEnabledChange = viewModel::setPlaybackEqualizerEnabled,
+                        onPresetSelected = viewModel::selectPlaybackEqualizerPreset,
+                        onBandLevelChange = viewModel::updatePlaybackEqualizerBandLevel,
+                        onReset = viewModel::resetPlaybackSoundSettings,
+                        onDismiss = { showPlaybackSoundSheet = false }
                     )
                 }
             }

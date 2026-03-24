@@ -316,6 +316,46 @@
     <string name="sleep_timer_stop_after_current">After current song</string>
     <string name="sleep_timer_stop_after_playlist">After playlist</string>
 
+    <!-- Playback Sound -->
+    <string name="playback_sound_title">Sound &amp; Speed</string>
+    <string name="playback_sound_speed">Speed</string>
+    <string name="playback_sound_pitch">Pitch</string>
+    <string name="playback_sound_pitch_semitone">%1$.1f semitones</string>
+    <string name="playback_sound_loudness">Loudness Enhancer</string>
+    <string name="playback_sound_equalizer">Equalizer</string>
+    <string name="playback_sound_enable_equalizer">Enable equalizer</string>
+    <string name="playback_sound_scene_presets">Scene presets</string>
+    <string name="playback_sound_fine_tune">Fine tune</string>
+    <string name="playback_sound_quick_presets">Quick presets</string>
+    <string name="playback_sound_reset">Reset</string>
+    <string name="playback_sound_wait_for_playback">Start playback to enable device audio effects</string>
+    <string name="playback_sound_equalizer_unavailable">This device or audio session does not support the equalizer</string>
+    <string name="playback_sound_loudness_unavailable">This device or audio session does not support loudness enhancement</string>
+    <string name="playback_sound_custom">Custom</string>
+    <string name="playback_sound_preset_flat">Flat</string>
+    <string name="playback_sound_preset_acoustic">Acoustic</string>
+    <string name="playback_sound_preset_bass_boost">Bass Boost</string>
+    <string name="playback_sound_preset_bass_reducer">Bass Reducer</string>
+    <string name="playback_sound_preset_classical">Classical</string>
+    <string name="playback_sound_preset_club">Club</string>
+    <string name="playback_sound_preset_dance">Dance</string>
+    <string name="playback_sound_preset_deep">Deep</string>
+    <string name="playback_sound_preset_electronic">Electronic</string>
+    <string name="playback_sound_preset_folk">Folk</string>
+    <string name="playback_sound_preset_hip_hop">Hip Hop</string>
+    <string name="playback_sound_preset_jazz">Jazz</string>
+    <string name="playback_sound_preset_latin">Latin</string>
+    <string name="playback_sound_preset_lounge">Lounge</string>
+    <string name="playback_sound_preset_piano">Piano</string>
+    <string name="playback_sound_preset_pop">Pop</string>
+    <string name="playback_sound_preset_rnb">R&amp;B</string>
+    <string name="playback_sound_preset_rock">Rock</string>
+    <string name="playback_sound_preset_small_speakers">Small Speakers</string>
+    <string name="playback_sound_preset_spoken_word">Spoken Word</string>
+    <string name="playback_sound_preset_treble_boost">Treble Boost</string>
+    <string name="playback_sound_preset_treble_reducer">Treble Reducer</string>
+    <string name="playback_sound_preset_vocal_boost">Vocal Boost</string>
+
     <!-- Audio Quality -->
     <string name="quality_standard">Standard</string>
     <string name="quality_high">High</string>

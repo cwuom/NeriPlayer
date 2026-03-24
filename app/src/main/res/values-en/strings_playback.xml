@@ -9,4 +9,18 @@
     <string name="player_playback_video_info_unavailable">Video audio information is currently unavailable.</string>
     <string name="player_playback_restore_failed">Failed to restore playback state: %1$s</string>
     <string name="player_playback_url_error_detail">Failed to resolve playback URL: %1$s</string>
+    <string name="nowplaying_audio_effects_title">Audio Effects &amp; Speed</string>
+    <string name="nowplaying_audio_effects_desc">Speed, pitch, and equalizer presets</string>
+    <string name="nowplaying_playback_speed">Playback Speed</string>
+    <string name="nowplaying_playback_pitch">Pitch</string>
+    <string name="nowplaying_loudness_enhancer">Loudness Enhancer</string>
+    <string name="nowplaying_loudness_desc">Adds body and energy without shifting the pitch.</string>
+    <string name="nowplaying_equalizer">Equalizer</string>
+    <string name="nowplaying_equalizer_presets">Presets</string>
+    <string name="nowplaying_equalizer_manual_bands">Manual Bands</string>
+    <string name="nowplaying_audio_effects_reset">Reset Effects &amp; Speed</string>
+    <string name="nowplaying_audio_effects_hint">Speed and pitch are independent, and the equalizer follows the current playback session.</string>
+    <string name="nowplaying_equalizer_wait_for_session">Start playback to apply the equalizer to the active audio session.</string>
+    <string name="nowplaying_equalizer_unsupported">This device may not support the system equalizer.</string>
+    <string name="nowplaying_loudness_unsupported">This device may not support loudness enhancement.</string>
 </resources>

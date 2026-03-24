@@ -30,6 +30,15 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_PITCH
+import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB
+import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_SPEED
+import moe.ouom.neriplayer.core.player.model.PlaybackEqualizerPresetId
+import moe.ouom.neriplayer.core.player.model.decodePlaybackEqualizerBandLevels
+import moe.ouom.neriplayer.core.player.model.encodePlaybackEqualizerBandLevels
+import moe.ouom.neriplayer.core.player.model.normalizePlaybackLoudnessGainMb
+import moe.ouom.neriplayer.core.player.model.normalizePlaybackPitch
+import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
 import java.util.Locale
 
 class SettingsRepository(private val context: Context) {
@@ -200,6 +209,36 @@ class SettingsRepository(private val context: Context) {
 
     val playbackCrossfadeOutDurationMsFlow: Flow<Long> =
         context.dataStore.data.map { it[SettingsKeys.PLAYBACK_CROSSFADE_OUT_DURATION_MS] ?: 500L }
+
+    val playbackSpeedFlow: Flow<Float> =
+        context.dataStore.data.map {
+            normalizePlaybackSpeed(it[SettingsKeys.PLAYBACK_SPEED] ?: DEFAULT_PLAYBACK_SPEED)
+        }
+
+    val playbackPitchFlow: Flow<Float> =
+        context.dataStore.data.map {
+            normalizePlaybackPitch(it[SettingsKeys.PLAYBACK_PITCH] ?: DEFAULT_PLAYBACK_PITCH)
+        }
+
+    val playbackEqualizerEnabledFlow: Flow<Boolean> =
+        context.dataStore.data.map { it[SettingsKeys.PLAYBACK_EQUALIZER_ENABLED] ?: false }
+
+    val playbackEqualizerPresetFlow: Flow<String> =
+        context.dataStore.data.map {
+            it[SettingsKeys.PLAYBACK_EQUALIZER_PRESET] ?: PlaybackEqualizerPresetId.FLAT
+        }
+
+    val playbackEqualizerCustomBandLevelsFlow: Flow<List<Int>> =
+        context.dataStore.data.map {
+            decodePlaybackEqualizerBandLevels(it[SettingsKeys.PLAYBACK_EQUALIZER_CUSTOM_BAND_LEVELS])
+        }
+
+    val playbackLoudnessGainMbFlow: Flow<Int> =
+        context.dataStore.data.map {
+            normalizePlaybackLoudnessGainMb(
+                it[SettingsKeys.PLAYBACK_LOUDNESS_GAIN_MB] ?: DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB
+            )
+        }
 
     val keepLastPlaybackProgressFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.KEEP_LAST_PLAYBACK_PROGRESS] ?: true }
@@ -472,6 +511,48 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setPlaybackCrossfadeOutDurationMs(durationMs: Long) {
         context.dataStore.edit { it[SettingsKeys.PLAYBACK_CROSSFADE_OUT_DURATION_MS] = durationMs }
+    }
+
+    suspend fun setPlaybackSpeed(speed: Float) {
+        context.dataStore.edit {
+            it[SettingsKeys.PLAYBACK_SPEED] = normalizePlaybackSpeed(speed)
+        }
+    }
+
+    suspend fun setPlaybackPitch(pitch: Float) {
+        context.dataStore.edit {
+            it[SettingsKeys.PLAYBACK_PITCH] = normalizePlaybackPitch(pitch)
+        }
+    }
+
+    suspend fun setPlaybackEqualizerEnabled(enabled: Boolean) {
+        context.dataStore.edit {
+            it[SettingsKeys.PLAYBACK_EQUALIZER_ENABLED] = enabled
+        }
+    }
+
+    suspend fun setPlaybackEqualizerPreset(presetId: String) {
+        context.dataStore.edit {
+            it[SettingsKeys.PLAYBACK_EQUALIZER_PRESET] = presetId
+        }
+    }
+
+    suspend fun setPlaybackEqualizerCustomBandLevels(levelsMb: List<Int>) {
+        context.dataStore.edit { prefs ->
+            val encoded = encodePlaybackEqualizerBandLevels(levelsMb)
+            if (encoded.isNullOrBlank()) {
+                prefs.remove(SettingsKeys.PLAYBACK_EQUALIZER_CUSTOM_BAND_LEVELS)
+            } else {
+                prefs[SettingsKeys.PLAYBACK_EQUALIZER_CUSTOM_BAND_LEVELS] = encoded
+            }
+        }
+    }
+
+    suspend fun setPlaybackLoudnessGainMb(levelMb: Int) {
+        context.dataStore.edit {
+            it[SettingsKeys.PLAYBACK_LOUDNESS_GAIN_MB] =
+                normalizePlaybackLoudnessGainMb(levelMb)
+        }
     }
 
     suspend fun setKeepLastPlaybackProgress(enabled: Boolean) {
