@@ -183,6 +183,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlin.coroutines.resume
+import kotlin.math.abs
 
 private fun adjustAccent(base: Color, isDark: Boolean): Color {
     val r = (base.red * 255).toInt().coerceIn(0, 255)
@@ -478,10 +479,12 @@ fun NeriApp(
     var themeRevealCaptureInFlight by remember { mutableStateOf(false) }
     var themeRevealCaptureJob by remember { mutableStateOf<Job?>(null) }
     var themeRevealCaptureToken by remember { mutableIntStateOf(0) }
+    var pendingBackgroundImageAlpha by remember { mutableStateOf<Float?>(null) }
     val lifecycleOwner = LocalLifecycleOwner.current
 
     val followSystemDark = pendingFollowSystemDark ?: storedFollowSystemDark
     val forceDark = pendingForceDark ?: storedForceDark
+    val effectiveBackgroundImageAlpha = pendingBackgroundImageAlpha ?: backgroundImageAlpha
 
     val clearThemeRevealVisualState = {
         pendingFollowSystemDark = null
@@ -527,6 +530,14 @@ fun NeriApp(
     LaunchedEffect(storedFollowSystemDark, pendingFollowSystemDark) {
         if (pendingFollowSystemDark != null && pendingFollowSystemDark == storedFollowSystemDark) {
             pendingFollowSystemDark = null
+        }
+    }
+    LaunchedEffect(backgroundImageAlpha, pendingBackgroundImageAlpha) {
+        if (
+            pendingBackgroundImageAlpha != null &&
+            abs((pendingBackgroundImageAlpha ?: backgroundImageAlpha) - backgroundImageAlpha) < 0.001f
+        ) {
+            pendingBackgroundImageAlpha = null
         }
     }
 
@@ -805,7 +816,7 @@ fun NeriApp(
                 CustomBackground(
                     imageUri = backgroundImageUri,
                     blur = backgroundImageBlur,
-                    alpha = backgroundImageAlpha,
+                    alpha = effectiveBackgroundImageAlpha,
                     modifier = modifier
                 )
 
@@ -1283,11 +1294,16 @@ fun NeriApp(
                                             }
                                         },
                                         backgroundImageBlur = backgroundImageBlur,
-                                        onBackgroundImageBlurChange = { blur ->
+                                        onBackgroundImageBlurChange = {},
+                                        onBackgroundImageBlurChangeFinished = { blur ->
                                             scope.launch { repo.setBackgroundImageBlur(blur) }
                                         },
-                                        backgroundImageAlpha = backgroundImageAlpha,
+                                        backgroundImageAlpha = effectiveBackgroundImageAlpha,
                                         onBackgroundImageAlphaChange = { alpha ->
+                                            pendingBackgroundImageAlpha = alpha
+                                        },
+                                        onBackgroundImageAlphaChangeFinished = { alpha ->
+                                            pendingBackgroundImageAlpha = alpha
                                             scope.launch { repo.setBackgroundImageAlpha(alpha) }
                                         },
                                         hapticFeedbackEnabled = hapticFeedbackEnabled,

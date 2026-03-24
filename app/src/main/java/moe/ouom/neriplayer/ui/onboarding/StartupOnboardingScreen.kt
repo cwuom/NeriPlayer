@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.ui.onboarding
 import android.app.Activity
 import android.graphics.Bitmap
 import android.net.Uri
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.View
@@ -72,6 +73,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -588,10 +590,10 @@ fun StartupOnboardingScreen() {
                                             repo.setBackgroundImageUri(null)
                                         }
                                     },
-                                    onBackgroundBlurChange = { blur ->
+                                    onBackgroundBlurCommit = { blur ->
                                         scope.launch { repo.setBackgroundImageBlur(blur) }
                                     },
-                                    onBackgroundAlphaChange = { alpha ->
+                                    onBackgroundAlphaCommit = { alpha ->
                                         scope.launch { repo.setBackgroundImageAlpha(alpha) }
                                     },
                                     previewLyricFontScale = pendingLyricFontScale,
@@ -871,20 +873,43 @@ private fun PersonalizeContent(
     backgroundImageAlpha: Float,
     onSelectBackground: () -> Unit,
     onClearBackground: () -> Unit,
-    onBackgroundBlurChange: (Float) -> Unit,
-    onBackgroundAlphaChange: (Float) -> Unit,
+    onBackgroundBlurCommit: (Float) -> Unit,
+    onBackgroundAlphaCommit: (Float) -> Unit,
     previewLyricFontScale: Float,
     isDarkTheme: Boolean,
     onThemeToggleRequest: (Offset, Float) -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
+    var pendingBackgroundImageBlur by rememberSaveable(backgroundImageUri) {
+        mutableFloatStateOf(backgroundImageBlur)
+    }
+    var pendingBackgroundImageAlpha by rememberSaveable(backgroundImageUri) {
+        mutableFloatStateOf(backgroundImageAlpha)
+    }
+
+    LaunchedEffect(backgroundImageBlur, backgroundImageUri) {
+        if ((pendingBackgroundImageBlur - backgroundImageBlur).absoluteValue > 0.001f) {
+            pendingBackgroundImageBlur = backgroundImageBlur
+        }
+    }
+    LaunchedEffect(backgroundImageAlpha, backgroundImageUri) {
+        if ((pendingBackgroundImageAlpha - backgroundImageAlpha).absoluteValue > 0.001f) {
+            pendingBackgroundImageAlpha = backgroundImageAlpha
+        }
+    }
+
     StepHeader(
         icon = Icons.Outlined.Palette,
         title = stringResource(R.string.onboarding_personalize_title),
         description = stringResource(R.string.onboarding_personalize_desc)
     )
     Spacer(Modifier.height(18.dp))
-    PreviewCard(backgroundImageUri, backgroundImageBlur, backgroundImageAlpha, previewLyricFontScale)
+    PreviewCard(
+        backgroundImageUri = backgroundImageUri,
+        backgroundImageBlur = pendingBackgroundImageBlur,
+        backgroundImageAlpha = pendingBackgroundImageAlpha,
+        lyricFontScale = previewLyricFontScale
+    )
     Spacer(Modifier.height(18.dp))
     HintCard(
         title = stringResource(R.string.settings_ui_scale),
@@ -960,9 +985,19 @@ private fun PersonalizeContent(
         }
         if (backgroundImageUri != null) {
             Text(stringResource(R.string.background_blur), color = colors.onSurface, style = MaterialTheme.typography.bodyMedium)
-            Slider(value = backgroundImageBlur, onValueChange = onBackgroundBlurChange, valueRange = 0f..25f)
+            Slider(
+                value = pendingBackgroundImageBlur,
+                onValueChange = { pendingBackgroundImageBlur = it },
+                onValueChangeFinished = { onBackgroundBlurCommit(pendingBackgroundImageBlur) },
+                valueRange = 0f..25f
+            )
             Text(stringResource(R.string.background_opacity), color = colors.onSurface, style = MaterialTheme.typography.bodyMedium)
-            Slider(value = backgroundImageAlpha, onValueChange = onBackgroundAlphaChange, valueRange = 0.1f..1.0f)
+            Slider(
+                value = pendingBackgroundImageAlpha,
+                onValueChange = { pendingBackgroundImageAlpha = it },
+                onValueChangeFinished = { onBackgroundAlphaCommit(pendingBackgroundImageAlpha) },
+                valueRange = 0.1f..1.0f
+            )
         }
     }
     Spacer(Modifier.height(14.dp))
@@ -1127,14 +1162,15 @@ private fun PreviewCard(
 ) {
     val colors = MaterialTheme.colorScheme
     val context = LocalContext.current
-    val previewImageRequest = remember(context, backgroundImageUri, backgroundImageBlur) {
+    val legacyBlur = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) 0f else backgroundImageBlur
+    val previewImageRequest = remember(context, backgroundImageUri, legacyBlur) {
         backgroundImageUri?.let { uri ->
             ImageRequest.Builder(context)
                 .data(Uri.parse(uri))
                 .crossfade(false)
                 .transformations(
-                    if (backgroundImageBlur > 0f) {
-                        listOf(BlurTransformation(context, radius = backgroundImageBlur))
+                    if (legacyBlur > 0f) {
+                        listOf(BlurTransformation(context, radius = legacyBlur))
                     } else {
                         emptyList()
                     }
@@ -1154,7 +1190,15 @@ private fun PreviewCard(
                 AsyncImage(
                     model = previewImageRequest,
                     contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .let { base ->
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && backgroundImageBlur > 0f) {
+                                base.blur(backgroundImageBlur.dp)
+                            } else {
+                                base
+                            }
+                        },
                     contentScale = ContentScale.Crop
                 )
                 Box(

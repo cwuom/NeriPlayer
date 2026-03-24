@@ -204,8 +204,10 @@ fun SettingsScreen(
     onDownloadDirectoryUriChange: (String?) -> Unit,
     backgroundImageBlur: Float,
     onBackgroundImageBlurChange: (Float) -> Unit,
+    onBackgroundImageBlurChangeFinished: (Float) -> Unit,
     backgroundImageAlpha: Float,
     onBackgroundImageAlphaChange: (Float) -> Unit,
+    onBackgroundImageAlphaChangeFinished: (Float) -> Unit,
     hapticFeedbackEnabled: Boolean,
     onHapticFeedbackEnabledChange: (Boolean) -> Unit,
     showCoverSourceBadge: Boolean,
@@ -255,6 +257,24 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    var pendingBackgroundImageBlur by rememberSaveable(backgroundImageUri) {
+        mutableFloatStateOf(backgroundImageBlur)
+    }
+    var pendingBackgroundImageAlpha by rememberSaveable(backgroundImageUri) {
+        mutableFloatStateOf(backgroundImageAlpha)
+    }
+
+    LaunchedEffect(backgroundImageBlur, backgroundImageUri) {
+        if ((pendingBackgroundImageBlur - backgroundImageBlur).absoluteValue > 0.001f) {
+            pendingBackgroundImageBlur = backgroundImageBlur
+        }
+    }
+    LaunchedEffect(backgroundImageAlpha, backgroundImageUri) {
+        if ((pendingBackgroundImageAlpha - backgroundImageAlpha).absoluteValue > 0.001f) {
+            pendingBackgroundImageAlpha = backgroundImageAlpha
+        }
+    }
+
     val internationalEnabled by AppContainer.settingsRepo.internationalizationEnabledFlow
         .collectAsState(initial = false)
 
@@ -1236,8 +1256,12 @@ fun SettingsScreen(
                                     ),
                                     supportingContent = {
                                         Slider(
-                                            value = backgroundImageBlur,
-                                            onValueChange = onBackgroundImageBlurChange,
+                                            value = pendingBackgroundImageBlur,
+                                            onValueChange = { pendingBackgroundImageBlur = it },
+                                            onValueChangeFinished = {
+                                                onBackgroundImageBlurChange(pendingBackgroundImageBlur)
+                                                onBackgroundImageBlurChangeFinished(pendingBackgroundImageBlur)
+                                            },
                                             valueRange = 0f..25f // Coil 的模糊范围
                                         )
                                     }
@@ -1251,8 +1275,14 @@ fun SettingsScreen(
                                     ),
                                     supportingContent = {
                                         Slider(
-                                            value = backgroundImageAlpha,
-                                            onValueChange = onBackgroundImageAlphaChange,
+                                            value = pendingBackgroundImageAlpha,
+                                            onValueChange = {
+                                                pendingBackgroundImageAlpha = it
+                                                onBackgroundImageAlphaChange(it)
+                                            },
+                                            onValueChangeFinished = {
+                                                onBackgroundImageAlphaChangeFinished(pendingBackgroundImageAlpha)
+                                            },
                                             valueRange = 0.1f..1.0f
                                         )
                                     }

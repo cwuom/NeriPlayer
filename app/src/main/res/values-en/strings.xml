@@ -242,7 +242,7 @@
 
     <!-- Login -->
     <string name="login_title">Login</string>
-    <string name="login_third_party">Third-party Login</string>
+    <string name="login_third_party">Third-Party Platform Sign-In</string>
     <string name="login_browser">Browser Login</string>
     <string name="login_start_browser">Login via Browser</string>
     <string name="login_success">Login Successful</string>
@@ -611,7 +611,7 @@
     <string name="common_album_detail">Album Details</string>
 
     <!-- Settings / General -->
-    <string name="login_methods">Browser/SMS/Cookie Login</string>
+    <string name="login_methods">Browser/SMS/Cookie Import</string>
     <string name="settings_clear_config">Clear Configuration</string>
     <string name="backup_restore_title">Backup &amp; Restore</string>
     <string name="settings_ui_scale">UI Scale</string>
@@ -640,9 +640,9 @@
     <!-- Auth / Generic -->
     <string name="login_confirm_send_code">Confirm send verification code?</string>
     <string name="login_send_code_to">Will send code to &gt;%s&lt;</string>
-    <string name="login_paste_cookie">Paste Cookie</string>
+    <string name="login_paste_cookie">Cookie Import</string>
     <string name="login_paste_cookie_hint">Paste Cookie (e.g.: MUSIC_U=…; __csrf=…)</string>
-    <string name="login_save_cookie">Save Cookie and Login</string>
+    <string name="login_save_cookie">Import Cookie and Sign In</string>
     <string name="login_sending">Sending…</string>
     <string name="login_logging_in">Logging in…</string>
 
@@ -791,7 +791,7 @@
     <string name="settings_netease_reauth_unknown_time">Unknown</string>
     <string name="settings_netease_reauth_action_login">Sign in again</string>
     <string name="settings_netease_reauth_action_import">Import Cookie</string>
-    <string name="settings_youtube_login_methods">Browser/Cookie Login</string>
+    <string name="settings_youtube_login_methods">Browser/Cookie Import</string>
     <string name="settings_youtube_auth_missing">No usable YouTube / YouTube Music auth information was captured</string>
     <string name="settings_youtube_status_valid">Saved and last refreshed %1$s</string>
     <string name="settings_youtube_status_expired">Critical Cookie is no longer usable. Sign in again or import a new one</string>
@@ -807,7 +807,7 @@
     <string name="settings_youtube_reauth_action_login">Sign in again</string>
     <string name="settings_youtube_reauth_action_import">Import Cookie</string>
     <string name="settings_haptic_feedback">Haptic Feedback</string>
-    <string name="settings_login_platforms">Login Platforms</string>
+    <string name="settings_login_platforms">Third-party Sign-in</string>
     <string name="settings_login_platforms_expand">Select platform</string>
     <string name="settings_login_platforms_collapse">Collapse</string>
     <string name="settings_motion">Motion Settings</string>
@@ -1147,9 +1147,9 @@
     <string name="settings_resend_code_countdown">Resend (%ds)</string>
     <string name="settings_empty_placeholder">(Empty)</string>
     <string name="settings_netease_login_browser_hint">Will open built-in browser (desktop UA) to visit music.163.com. After successful login, tap \"Done\" in the upper right corner.</string>
-    <string name="settings_bili_login_browser_hint">Will open the built-in browser to visit passport.bilibili.com and automatically read cookies after sign-in.</string>
-    <string name="settings_youtube_login_browser_hint">Attempts to use an embedded page for music.youtube.com and automatically read cookies after sign-in.</string>
-    <string name="settings_youtube_login_browser_warning">Google may show \"This browser may not be secure\" or block sign-in entirely. If that happens, use Cookie import below.</string>
+    <string name="settings_bili_login_browser_hint">Opens the built-in web view for passport.bilibili.com and automatically reads cookies after sign-in.</string>
+    <string name="settings_youtube_login_browser_hint">Tries to open music.youtube.com in the built-in web view and automatically reads cookies after sign-in.</string>
+    <string name="settings_youtube_login_browser_warning">Google may show \"This browser may not be secure\" or block sign-in entirely. If that happens, switch to the \"Cookie Import\" tab above.</string>
     <string name="login_paste_bili_cookie_hint">Paste Cookie (e.g.: SESSDATA=…; bili_jct=…)</string>
     <string name="login_paste_youtube_cookie_hint">Paste Cookie (e.g.: SAPISID=…; __Secure-1PSID=…)</string>
     <string name="settings_cookie_input_hint">Please enter Cookie</string>

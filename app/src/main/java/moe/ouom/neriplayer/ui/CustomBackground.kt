@@ -27,6 +27,7 @@ package moe.ouom.neriplayer.ui
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.os.Build
 import android.renderscript.Allocation
 import android.renderscript.Element
 import android.renderscript.RenderScript
@@ -35,10 +36,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import coil.compose.AsyncImage
 import coil.request.CachePolicy
@@ -61,21 +65,24 @@ fun CustomBackground(
     if (imageUri != null) {
         val context = LocalContext.current
         val backgroundBaseColor = MaterialTheme.colorScheme.background
+        val legacyBlur = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) 0f else blur
 
-        val imageRequest = ImageRequest.Builder(context)
-            .data(imageUri.toUri())
-            .crossfade(false)
-            .diskCachePolicy(CachePolicy.ENABLED)
-            .memoryCachePolicy(CachePolicy.ENABLED)
-            .networkCachePolicy(CachePolicy.ENABLED)
-            .transformations(
-                if (blur > 0f) {
-                    listOf(BlurTransformation(context, radius = blur))
-                } else {
-                    emptyList()
-                }
-            )
-            .build()
+        val imageRequest = remember(context, imageUri, legacyBlur) {
+            ImageRequest.Builder(context)
+                .data(imageUri.toUri())
+                .crossfade(false)
+                .diskCachePolicy(CachePolicy.ENABLED)
+                .memoryCachePolicy(CachePolicy.ENABLED)
+                .networkCachePolicy(CachePolicy.ENABLED)
+                .transformations(
+                    if (legacyBlur > 0f) {
+                        listOf(BlurTransformation(context, radius = legacyBlur))
+                    } else {
+                        emptyList()
+                    }
+                )
+                .build()
+        }
 
         Box(modifier = modifier.fillMaxSize()) {
             Box(
@@ -89,6 +96,13 @@ fun CustomBackground(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .fillMaxSize()
+                    .let { base ->
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && blur > 0f) {
+                            base.blur(blur.dp)
+                        } else {
+                            base
+                        }
+                    }
                     .alpha(alpha)
             )
         }
@@ -115,6 +129,9 @@ class BlurTransformation(
 
     override suspend fun transform(input: Bitmap, size: Size): Bitmap {
         var rs: RenderScript? = null
+        var inputAllocation: Allocation? = null
+        var outputAllocation: Allocation? = null
+        var script: ScriptIntrinsicBlur? = null
         try {
             rs = RenderScript.create(context)
             val strength = radius.coerceAtLeast(0f)
@@ -130,10 +147,10 @@ class BlurTransformation(
                 input
             }
 
-            val inputAllocation = Allocation.createFromBitmap(rs, targetBitmap)
-            val outputAllocation = Allocation.createTyped(rs, inputAllocation.type)
+            inputAllocation = Allocation.createFromBitmap(rs, targetBitmap)
+            outputAllocation = Allocation.createTyped(rs, inputAllocation.type)
 
-            val script = ScriptIntrinsicBlur.create(rs, Element.U8_4(rs))
+            script = ScriptIntrinsicBlur.create(rs, Element.U8_4(rs))
 
             script.setRadius(strength.coerceIn(0.1f, maxRadius))
             script.setInput(inputAllocation)
@@ -149,6 +166,9 @@ class BlurTransformation(
                 intermediate
             }
         } finally {
+            script?.destroy()
+            outputAllocation?.destroy()
+            inputAllocation?.destroy()
             rs?.destroy()
         }
     }

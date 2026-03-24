@@ -242,7 +242,7 @@
 
     <!-- Login -->
     <string name="login_title">登录</string>
-    <string name="login_third_party">登录三方平台</string>
+    <string name="login_third_party">第三方平台登录</string>
     <string name="login_browser">浏览器登录</string>
     <string name="login_start_browser">开始浏览器登录</string>
     <string name="login_success">登录成功</string>
@@ -611,7 +611,7 @@
     <string name="common_album_detail">专辑详情</string>
 
     <!-- Settings / General -->
-    <string name="login_methods">浏览器/验证码/Cookie 登录</string>
+    <string name="login_methods">浏览器/验证码/Cookie 导入</string>
     <string name="settings_clear_config">清除配置</string>
     <string name="backup_restore_title">备份与恢复</string>
     <string name="settings_ui_scale">UI 缩放</string>
@@ -640,9 +640,9 @@
     <!-- Auth / Generic -->
     <string name="login_confirm_send_code">确认发送验证码？</string>
     <string name="login_send_code_to">将发送验证码到 &gt;%s&lt;</string>
-    <string name="login_paste_cookie">粘贴 Cookie</string>
+    <string name="login_paste_cookie">Cookie 导入</string>
     <string name="login_paste_cookie_hint">粘贴 Cookie（例如：MUSIC_U=…; __csrf=…）</string>
-    <string name="login_save_cookie">保存 Cookie 并登录</string>
+    <string name="login_save_cookie">导入 Cookie 并登录</string>
     <string name="login_sending">发送中…</string>
     <string name="login_logging_in">登录中…</string>
 
@@ -791,7 +791,7 @@
     <string name="settings_netease_reauth_unknown_time">未知</string>
     <string name="settings_netease_reauth_action_login">重新登录</string>
     <string name="settings_netease_reauth_action_import">导入 Cookie</string>
-    <string name="settings_youtube_login_methods">浏览器/Cookie 登录</string>
+    <string name="settings_youtube_login_methods">浏览器/Cookie 导入</string>
     <string name="settings_youtube_auth_missing">未读取到可用的 YouTube / YouTube Music 鉴权信息</string>
     <string name="settings_youtube_status_valid">已保存，最近更新于 %1$s</string>
     <string name="settings_youtube_status_expired">关键 Cookie 已失效，请重新登录或导入</string>
@@ -807,7 +807,7 @@
     <string name="settings_youtube_reauth_action_login">重新登录</string>
     <string name="settings_youtube_reauth_action_import">导入 Cookie</string>
     <string name="settings_haptic_feedback">触感反馈</string>
-    <string name="settings_login_platforms">登录三方平台</string>
+    <string name="settings_login_platforms">第三方平台登录</string>
     <string name="settings_login_platforms_expand">展开以选择登录平台</string>
     <string name="settings_login_platforms_collapse">收起</string>
     <string name="settings_motion">动效设置</string>
@@ -1164,9 +1164,9 @@
     <string name="settings_resend_code_countdown">重新获取(%ds)</string>
     <string name="settings_empty_placeholder">(空)</string>
     <string name="settings_netease_login_browser_hint">将打开内置浏览器(桌面UA)访问 music.163.com，登录成功后点击右上角 \"完成\"。</string>
-    <string name="settings_bili_login_browser_hint">将打开内置浏览器访问 passport.bilibili.com，登录成功后会自动读取 Cookie。</string>
-    <string name="settings_youtube_login_browser_hint">将尝试用内置网页访问 music.youtube.com，并在登录后自动读取 Cookie。</string>
-    <string name="settings_youtube_login_browser_warning">Google 可能提示“此浏览器可能不安全”或直接拦截登录；若失败，请改用下方 Cookie 导入。</string>
+    <string name="settings_bili_login_browser_hint">将打开内置网页访问 passport.bilibili.com，登录成功后自动读取 Cookie。</string>
+    <string name="settings_youtube_login_browser_hint">将尝试通过内置网页打开 music.youtube.com，并在登录后自动读取 Cookie。</string>
+    <string name="settings_youtube_login_browser_warning">Google 可能提示“此浏览器可能不安全”或直接拦截登录；若失败，请切换到上方的“Cookie 导入”标签。</string>
     <string name="login_paste_bili_cookie_hint">粘贴 Cookie（例如：SESSDATA=…; bili_jct=…）</string>
     <string name="login_paste_youtube_cookie_hint">粘贴 Cookie（例如：SAPISID=…; __Secure-1PSID=…）</string>
     <string name="settings_cookie_input_hint">请输入 Cookie</string>
