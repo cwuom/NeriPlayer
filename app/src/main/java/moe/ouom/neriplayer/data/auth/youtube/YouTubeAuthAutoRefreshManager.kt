@@ -15,6 +15,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.util.NPLogger
+import org.json.JSONObject
+import org.json.JSONTokener
 
 internal data class YouTubeAuthAutoRefreshResult(
     val attempted: Boolean = false,
@@ -68,6 +70,20 @@ class YouTubeAuthAutoRefreshManager(
         val origin: String = YOUTUBE_MUSIC_ORIGIN,
         val userAgent: String = ""
     )
+
+    private data class RefreshPageSnapshot(
+        val readyState: String = "",
+        val hasYtcfg: Boolean = false,
+        val loggedIn: Boolean = false,
+        val delegatedSessionId: String = "",
+        val userSessionId: String = ""
+    ) {
+        fun hasLiveSessionSignal(): Boolean {
+            return loggedIn ||
+                delegatedSessionId.isNotBlank() ||
+                userSessionId.isNotBlank()
+        }
+    }
 
     private val applicationContext = context.applicationContext
     private val accessMutex = Mutex()
@@ -130,6 +146,7 @@ class YouTubeAuthAutoRefreshManager(
                     base = currentAuth,
                     activeWebView = activeWebView
                 )
+                val pageSnapshot = readPageSnapshot(activeWebView)
                 val refreshedHealth = evaluateYouTubeAuthHealth(
                     bundle = refreshedAuth,
                     now = System.currentTimeMillis()
@@ -141,7 +158,19 @@ class YouTubeAuthAutoRefreshManager(
                     return@forEach
                 }
 
-                val shouldPersist = hasMeaningfulYouTubeAuthChange(currentAuth, refreshedAuth) ||
+                val authChanged = hasMeaningfulYouTubeAuthChange(currentAuth, refreshedAuth)
+                val recoveredActiveSession = currentHealth.activeCookieKeys.isEmpty() &&
+                    refreshedHealth.activeCookieKeys.isNotEmpty()
+                val pageConfirmedSession = pageSnapshot?.hasLiveSessionSignal() == true
+                if (!authChanged && !recoveredActiveSession && !pageConfirmedSession) {
+                    NPLogger.w(
+                        TAG,
+                        "refresh skipped reason=$reason url=$url pageReady=${pageSnapshot?.readyState.orEmpty()} hasYtcfg=${pageSnapshot?.hasYtcfg == true}"
+                    )
+                    return@forEach
+                }
+
+                val shouldPersist = authChanged ||
                     currentHealth.state != refreshedHealth.state ||
                     currentHealth.state != YouTubeAuthState.Valid
                 if (shouldPersist) {
@@ -151,7 +180,7 @@ class YouTubeAuthAutoRefreshManager(
                 circuitOpenUntilMs = 0L
                 NPLogger.i(
                     TAG,
-                    "refresh success reason=$reason url=$url authChanged=$shouldPersist state=${refreshedHealth.state}"
+                    "refresh success reason=$reason url=$url authChanged=$shouldPersist state=${refreshedHealth.state} liveSession=$pageConfirmedSession"
                 )
                 return@withLock YouTubeAuthAutoRefreshResult(
                     attempted = true,
@@ -256,6 +285,48 @@ class YouTubeAuthAutoRefreshManager(
         } ?: false
     }
 
+    private suspend fun readPageSnapshot(
+        activeWebView: WebView
+    ): RefreshPageSnapshot? {
+        val raw = evaluateJavascript(
+            activeWebView = activeWebView,
+            script = """
+                (() => {
+                  const topWindow = window.top;
+                  const ytcfg = topWindow?.ytcfg;
+                  const getConfig = (key) => {
+                    try {
+                      if (ytcfg?.get) {
+                        return ytcfg.get(key);
+                      }
+                      return ytcfg?.data_?.[key];
+                    } catch (error) {
+                      return null;
+                    }
+                  };
+                  return JSON.stringify({
+                    readyState: document.readyState || '',
+                    hasYtcfg: !!ytcfg,
+                    loggedIn: !!getConfig('LOGGED_IN'),
+                    delegatedSessionId: String(getConfig('DELEGATED_SESSION_ID') || ''),
+                    userSessionId: String(getConfig('USER_SESSION_ID') || '')
+                  });
+                })()
+            """.trimIndent()
+        ) ?: return null
+
+        return runCatching {
+            val root = JSONObject(raw)
+            RefreshPageSnapshot(
+                readyState = root.optString("readyState"),
+                hasYtcfg = root.optBoolean("hasYtcfg"),
+                loggedIn = root.optBoolean("loggedIn"),
+                delegatedSessionId = root.optString("delegatedSessionId"),
+                userSessionId = root.optString("userSessionId")
+            )
+        }.getOrNull()
+    }
+
     private fun buildObservedAuthBundle(
         base: YouTubeAuthBundle,
         activeWebView: WebView
@@ -317,6 +388,30 @@ class YouTubeAuthAutoRefreshManager(
         return headers.entries.firstOrNull { (key, _) -> key.equals(name, ignoreCase = true) }
             ?.value
             .orEmpty()
+    }
+
+    private suspend fun evaluateJavascript(
+        activeWebView: WebView,
+        script: String
+    ): String? = withContext(Dispatchers.Main) {
+        val result = CompletableDeferred<String?>()
+        activeWebView.evaluateJavascript(script) { raw ->
+            result.complete(decodeEvaluateJavascriptValue(raw))
+        }
+        result.await()
+    }
+
+    private fun decodeEvaluateJavascriptValue(raw: String?): String? {
+        val value = raw?.trim().orEmpty()
+        if (value.isBlank() || value == "null") {
+            return null
+        }
+        return runCatching {
+            when (val parsed = JSONTokener(value).nextValue()) {
+                is String -> parsed
+                else -> parsed.toString()
+            }
+        }.getOrNull()
     }
 
     private inner class RefreshWebViewClient : WebViewClient() {
