@@ -53,7 +53,6 @@ import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeInnertubeRequestHea
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubePageRequestHeaders
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeStreamRequestHeaders
 import moe.ouom.neriplayer.util.DynamicProxySelector
-import moe.ouom.neriplayer.util.NPLogger
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
@@ -61,7 +60,6 @@ import okhttp3.Request
  * 全局依赖容器，使用 Service Locator 模式管理 App 的单例
  */
 object AppContainer {
-
     private lateinit var application: Application
     val applicationContext: Application
         get() = application
@@ -121,20 +119,6 @@ object AppContainer {
                 }
                 chain.proceed(builder.build())
             }
-            .addInterceptor { chain ->
-                val request = chain.request()
-                val response = chain.proceed(request)
-                if (shouldPersistYouTubeCookies(request.url.host.lowercase())) {
-                    val updated = youtubeAuthRepo.mergeCookieUpdates(response.headers("Set-Cookie"))
-                    if (updated) {
-                        NPLogger.i(
-                            "YouTubeAuthSync",
-                            "persisted response cookies host=${request.url.host.lowercase()} path=${request.url.encodedPath}"
-                        )
-                    }
-                }
-                response
-            }
             .build()
     }
 
@@ -160,8 +144,6 @@ object AppContainer {
             okHttpClient = sharedOkHttpClient,
             settings = settingsRepo,
             authProvider = youtubeAuthRepo::getAuthOnce,
-            authHealthProvider = youtubeAuthRepo::getAuthHealthOnce,
-            authUpdater = youtubeAuthRepo::saveAuth,
             applicationContext = application
         )
     }
@@ -236,10 +218,6 @@ object AppContainer {
         return host.contains("youtube") ||
             host == "youtu.be" ||
             host.contains("googlevideo.com")
-    }
-
-    private fun shouldPersistYouTubeCookies(host: String): Boolean {
-        return host == "youtube.com" || host.endsWith(".youtube.com")
     }
 
     private fun isYouTubeInnertubeRequest(request: Request): Boolean {

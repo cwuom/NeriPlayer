@@ -23,7 +23,6 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.component
  * Updated: 2026/3/23
  */
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut

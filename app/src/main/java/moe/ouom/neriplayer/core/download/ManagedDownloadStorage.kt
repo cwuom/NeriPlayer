@@ -2,13 +2,13 @@ package moe.ouom.neriplayer.core.download
 
 import android.content.Context
 import android.net.Uri
+import androidx.core.net.toUri
 import android.os.Environment
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.model.displayArtist
@@ -19,6 +19,7 @@ import moe.ouom.neriplayer.util.NPLogger
 internal object ManagedDownloadStorage {
     private const val TAG = "ManagedDownloadStorage"
     private const val ROOT_DIR_NAME = "NeriPlayer"
+    @Suppress("SpellCheckingInspection")
     private const val METADATA_SUFFIX = ".npmeta.json"
     private val audioExtensions = setOf("mp3", "m4a", "aac", "flac", "wav", "ogg", "webm", "eac3")
     private val imageExtensions = setOf("jpg", "jpeg", "png", "webp")
@@ -33,7 +34,8 @@ internal object ManagedDownloadStorage {
     private var snapshotCache: SnapshotCache? = null
 
     fun initialize(context: Context) {
-        // 下载目录设置由 AppContainer 统一预热并监听更新，这里保留兼容入口
+        createDefaultRoot(context.applicationContext)
+        invalidateSnapshotCache()
     }
 
     data class StoredEntry(
@@ -51,14 +53,8 @@ internal object ManagedDownloadStorage {
         val nameWithoutExtension: String
             get() = name.substringBeforeLast('.', name)
 
-        val location: String
-            get() = reference
-
         val playbackUri: String
             get() = mediaUri
-
-        val localFile: File?
-            get() = localFilePath?.let(::File)
 
         val displayName: String
             get() = name
@@ -72,11 +68,6 @@ internal object ManagedDownloadStorage {
         val canSwitchDirectory: Boolean
             get() = skippedFiles == 0
     }
-
-    data class ManagedDownloadContents(
-        val audioEntries: List<StoredEntry>,
-        val coverEntriesByBaseName: Map<String, StoredEntry>
-    )
 
     private data class ManagedMigrationEntry(
         val subdirectory: String?,
@@ -129,14 +120,10 @@ internal object ManagedDownloadStorage {
         if (resolvedUri == customDirectoryUri && !customDirectoryLabel.isNullOrBlank()) {
             return customDirectoryLabel.orEmpty()
         }
-        val treeUri = runCatching { Uri.parse(resolvedUri) }.getOrNull()
+        val treeUri = runCatching { resolvedUri.toUri() }.getOrNull()
         val tree = treeUri?.let { DocumentFile.fromTreeUri(context, it) }
         return tree?.name?.takeIf { it.isNotBlank() }
             ?: resolvedUri
-    }
-
-    suspend fun isCustomDirectorySelected(context: Context): Boolean = withContext(Dispatchers.IO) {
-        resolveRoot(context) is RootHandle.TreeRoot
     }
 
     suspend fun hasMigratableDownloads(context: Context, directoryUri: String?): Boolean = withContext(Dispatchers.IO) {
@@ -177,7 +164,6 @@ internal object ManagedDownloadStorage {
                             root = targetRoot,
                             displayName = migrationEntry.entry.name,
                             mimeType = migrationMimeTypeFor(migrationEntry),
-                            replace = true,
                             input = input
                         )
                     } else {
@@ -187,7 +173,6 @@ internal object ManagedDownloadStorage {
                             subdirectory = migrationEntry.subdirectory,
                             displayName = migrationEntry.entry.name,
                             mimeType = migrationMimeTypeFor(migrationEntry),
-                            replace = true,
                             input = input
                         )
                     }
@@ -244,7 +229,7 @@ internal object ManagedDownloadStorage {
     }
 
     fun hasDownloadedAudio(context: Context, song: SongItem): Boolean {
-        return runBlocking(Dispatchers.IO) { findDownloadedAudio(context, song) != null }
+        return findDownloadedAudioBlocking(context, song) != null
     }
 
     fun buildDisplayBaseName(song: SongItem): String {
@@ -256,24 +241,8 @@ internal object ManagedDownloadStorage {
         return File(stagingDir, fileName)
     }
 
-    fun commitDownloadedAudio(
-        context: Context,
-        fileName: String,
-        tempFile: File,
-        mimeType: String?
-    ): StoredEntry {
-        return runBlocking(Dispatchers.IO) {
-            saveAudioFromTemp(
-                context = context,
-                tempFile = tempFile,
-                fileName = fileName,
-                mimeType = mimeType
-            )
-        }
-    }
-
     fun findAudio(context: Context, song: SongItem): StoredEntry? {
-        return runBlocking(Dispatchers.IO) { findDownloadedAudio(context, song) }
+        return findDownloadedAudioBlocking(context, song)
     }
 
     fun peekDownloadedAudio(song: SongItem): StoredEntry? {
@@ -282,18 +251,10 @@ internal object ManagedDownloadStorage {
         }
     }
 
-    fun peekStoredEntry(reference: String?): StoredEntry? {
-        val target = reference?.takeIf { it.isNotBlank() } ?: return null
-        return snapshotCache?.snapshot?.audioEntriesByLookupKey?.get(target)
-    }
-
     fun peekCoverReference(audio: StoredEntry): String? {
         val snapshot = snapshotCache?.snapshot ?: return null
         return findIndexedEntryByNames(
-            names = buildSidecarCandidateNames(
-                candidateBaseNames = candidateManagedDownloadBaseNames(audio.nameWithoutExtension),
-                extensions = imageExtensions
-            ),
+            names = buildSidecarCandidateNames(candidateManagedDownloadBaseNames(audio.nameWithoutExtension)),
             entriesByName = snapshot.coverEntriesByName
         )?.reference
     }
@@ -303,60 +264,49 @@ internal object ManagedDownloadStorage {
     }
 
     suspend fun findDownloadedAudio(context: Context, song: SongItem): StoredEntry? = withContext(Dispatchers.IO) {
-        val snapshot = buildDownloadLibrarySnapshot(context)
-        findAudioEntry(snapshot.audioEntries, song)
+        findDownloadedAudioBlocking(context, song)
     }
 
     suspend fun queryStoredEntry(context: Context, reference: String?): StoredEntry? = withContext(Dispatchers.IO) {
         val target = reference?.takeIf { it.isNotBlank() } ?: return@withContext null
-        buildDownloadLibrarySnapshot(context).audioEntriesByLookupKey[target]
+        buildDownloadLibrarySnapshotBlocking(context).audioEntriesByLookupKey[target]
     }
 
     suspend fun listDownloadedAudio(context: Context): List<StoredEntry> = withContext(Dispatchers.IO) {
-        buildDownloadLibrarySnapshot(context).audioEntries
-    }
-
-    suspend fun listManagedDownloadContents(context: Context): ManagedDownloadContents = withContext(Dispatchers.IO) {
-        val root = resolveRoot(context)
-        val rootEntries = listChildren(root).filterNot(StoredEntry::isDirectory)
-        val coverEntriesByBaseName = buildMap {
-            val coverDirectory = findSubdirectory(root, "Covers")
-            if (coverDirectory != null) {
-                listChildren(coverDirectory)
-                    .filterNot(StoredEntry::isDirectory)
-                    .forEach { coverEntry ->
-                        candidateManagedDownloadBaseNames(coverEntry.nameWithoutExtension).forEach { baseName ->
-                            putIfAbsent(baseName, coverEntry)
-                        }
-                    }
-            }
-        }
-
-        ManagedDownloadContents(
-            audioEntries = rootEntries.filter { it.extension in audioExtensions },
-            coverEntriesByBaseName = coverEntriesByBaseName
-        )
+        buildDownloadLibrarySnapshotBlocking(context).audioEntries
     }
 
     suspend fun buildDownloadLibrarySnapshot(
         context: Context,
         forceRefresh: Boolean = false
     ): DownloadLibrarySnapshot = withContext(Dispatchers.IO) {
+        buildDownloadLibrarySnapshotBlocking(context, forceRefresh)
+    }
+
+    private fun findDownloadedAudioBlocking(context: Context, song: SongItem): StoredEntry? {
+        val snapshot = buildDownloadLibrarySnapshotBlocking(context)
+        return findAudioEntry(snapshot.audioEntries, song)
+    }
+
+    private fun buildDownloadLibrarySnapshotBlocking(
+        context: Context,
+        forceRefresh: Boolean = false
+    ): DownloadLibrarySnapshot {
         val cacheKey = buildSnapshotCacheKey(context)
         if (!forceRefresh) {
             snapshotCache
                 ?.takeIf { it.key == cacheKey }
-                ?.let { return@withContext it.snapshot }
+                ?.let { return it.snapshot }
         }
 
-        val root = resolveRoot(context)
+        val root = resolveRootBlocking(context)
         val rootEntries = listChildren(root).filterNot(StoredEntry::isDirectory)
         val audioEntries = rootEntries.filter { it.extension in audioExtensions }
         val metadataEntries = rootEntries.filter { it.name.endsWith(METADATA_SUFFIX) }
         val coverEntries = listSubdirectoryEntries(root, "Covers")
         val lyricEntries = listSubdirectoryEntries(root, "Lyrics")
 
-        val snapshot = DownloadLibrarySnapshot(
+        return DownloadLibrarySnapshot(
             audioEntries = audioEntries,
             audioEntriesByLookupKey = buildMap {
                 audioEntries.forEach { entry ->
@@ -375,17 +325,17 @@ internal object ManagedDownloadStorage {
                 coverEntries.forEach { add(it.reference) }
                 lyricEntries.forEach { add(it.reference) }
             }
-        )
-        snapshotCache = SnapshotCache(key = cacheKey, snapshot = snapshot)
-        snapshot
+        ).also { snapshot ->
+            snapshotCache = SnapshotCache(key = cacheKey, snapshot = snapshot)
+        }
     }
 
     suspend fun findMetadataForAudio(context: Context, audio: StoredEntry): StoredEntry? = withContext(Dispatchers.IO) {
-        buildDownloadLibrarySnapshot(context).metadataEntriesByAudioName[audio.name]
+        buildDownloadLibrarySnapshotBlocking(context).metadataEntriesByAudioName[audio.name]
     }
 
     suspend fun saveMetadata(context: Context, audio: StoredEntry, json: String) = withContext(Dispatchers.IO) {
-        val root = resolveRoot(context)
+        val root = resolveRootBlocking(context)
         writeRootText(context, root, "${audio.name}$METADATA_SUFFIX", json)
     }
 
@@ -407,8 +357,21 @@ internal object ManagedDownloadStorage {
         fileName: String,
         mimeType: String?
     ): StoredEntry = withContext(Dispatchers.IO) {
-        val root = resolveRoot(context)
-        val storedEntry = when (root) {
+        saveAudioFromTempBlocking(
+            context = context,
+            tempFile = tempFile,
+            fileName = fileName,
+            mimeType = mimeType
+        )
+    }
+
+    private fun saveAudioFromTempBlocking(
+        context: Context,
+        tempFile: File,
+        fileName: String,
+        mimeType: String?
+    ): StoredEntry {
+        val storedEntry = when (val root = resolveRootBlocking(context)) {
             is RootHandle.FileRoot -> {
                 val target = File(root.dir, createUniqueName(existingNames(root.dir), fileName))
                 tempFile.copyTo(target, overwrite = false)
@@ -432,23 +395,7 @@ internal object ManagedDownloadStorage {
             }
         }
         invalidateSnapshotCache()
-        storedEntry
-    }
-
-    suspend fun saveCoverBytes(
-        context: Context,
-        displayName: String,
-        bytes: ByteArray,
-        mimeType: String
-    ): String? = withContext(Dispatchers.IO) {
-        writeSubdirectoryBytes(
-            context = context,
-            subdirectory = "Covers",
-            displayName = displayName,
-            bytes = bytes,
-            mimeType = mimeType,
-            replace = true
-        )?.reference
+        return storedEntry
     }
 
     fun commitCoverFile(
@@ -456,15 +403,14 @@ internal object ManagedDownloadStorage {
         tempFile: File,
         fileName: String,
         mimeType: String?
-    ): StoredEntry? = runBlocking(Dispatchers.IO) {
-        val bytes = tempFile.takeIf(File::exists)?.readBytes() ?: return@runBlocking null
-        writeSubdirectoryBytes(
+    ): StoredEntry? {
+        val bytes = tempFile.takeIf(File::exists)?.readBytes() ?: return null
+        return writeSubdirectoryBytesBlocking(
             context = context,
             subdirectory = "Covers",
             displayName = fileName,
             bytes = bytes,
-            mimeType = mimeTypeFromName(fileName, mimeType),
-            replace = true
+            mimeType = mimeTypeFromName(fileName, mimeType)
         )
     }
 
@@ -473,33 +419,21 @@ internal object ManagedDownloadStorage {
         displayName: String,
         content: String
     ): String? = withContext(Dispatchers.IO) {
-        writeSubdirectoryText(
+        saveLyricTextBlocking(context, displayName, content)
+    }
+
+    private fun saveLyricTextBlocking(context: Context, displayName: String, content: String): String? {
+        return writeSubdirectoryBytesBlocking(
             context = context,
             subdirectory = "Lyrics",
             displayName = displayName,
-            content = content,
-            replace = true
+            bytes = content.toByteArray(Charsets.UTF_8),
+            mimeType = "text/plain"
         )?.reference
     }
 
     fun overwriteLyric(context: Context, fileName: String, content: String): String? {
-        return runBlocking(Dispatchers.IO) { saveLyricText(context, fileName, content) }
-    }
-
-    fun findAudioLocation(context: Context, candidateBaseNames: List<String>): String? = runBlocking(Dispatchers.IO) {
-        findAudioEntry(buildDownloadLibrarySnapshot(context).audioEntries, candidateBaseNames)?.reference
-    }
-
-    fun findCoverLocation(context: Context, candidateBaseNames: List<String>): String? = runBlocking(Dispatchers.IO) {
-        val snapshot = buildDownloadLibrarySnapshot(context)
-        findIndexedEntryByNames(
-            names = buildSidecarCandidateNames(candidateBaseNames, imageExtensions),
-            entriesByName = snapshot.coverEntriesByName
-        )?.let(::entryToPublicLocation)
-    }
-
-    fun locationExists(context: Context, reference: String?): Boolean {
-        return runBlocking(Dispatchers.IO) { exists(context, reference) }
+        return saveLyricTextBlocking(context, fileName, content)
     }
 
     fun findLyricLocation(
@@ -507,9 +441,9 @@ internal object ManagedDownloadStorage {
         songId: Long,
         candidateBaseNames: List<String>,
         translated: Boolean
-    ): String? = runBlocking(Dispatchers.IO) {
-        val snapshot = buildDownloadLibrarySnapshot(context)
-        findIndexedEntryByNames(
+    ): String? {
+        val snapshot = buildDownloadLibrarySnapshotBlocking(context)
+        return findIndexedEntryByNames(
             names = buildLyricCandidateNames(
                 songId = songId.takeIf { it > 0L },
                 candidateBaseNames = candidateBaseNames,
@@ -543,7 +477,7 @@ internal object ManagedDownloadStorage {
             candidateBaseNames = candidateManagedDownloadBaseNames(song),
             translated = translated
         ) ?: return null
-        return runBlocking(Dispatchers.IO) { readText(reference = reference, context = context) }
+        return readTextInternal(context, reference)
     }
 
     fun toPlayableUri(reference: String?): String? {
@@ -556,74 +490,32 @@ internal object ManagedDownloadStorage {
     }
 
     suspend fun findCoverReference(context: Context, audio: StoredEntry): String? = withContext(Dispatchers.IO) {
-        val snapshot = buildDownloadLibrarySnapshot(context)
+        val snapshot = buildDownloadLibrarySnapshotBlocking(context)
         findIndexedEntryByNames(
-            names = buildSidecarCandidateNames(
-                candidateBaseNames = candidateManagedDownloadBaseNames(audio.nameWithoutExtension),
-                extensions = imageExtensions
-            ),
+            names = buildSidecarCandidateNames(candidateManagedDownloadBaseNames(audio.nameWithoutExtension)),
             entriesByName = snapshot.coverEntriesByName
         )?.reference
     }
 
-    suspend fun findLyricText(
-        context: Context,
-        audio: StoredEntry,
-        songId: Long? = null
-    ): String? = withContext(Dispatchers.IO) {
-        val snapshot = buildDownloadLibrarySnapshot(context)
-        findIndexedEntryByNames(
-            names = buildLyricCandidateNames(
-                songId = songId,
-                candidateBaseNames = candidateManagedDownloadBaseNames(audio.nameWithoutExtension),
-                translated = false
-            ),
-            entriesByName = snapshot.lyricEntriesByName
-        )?.let { readTextInternal(context, it.reference) }
+    private suspend fun resolveRoot(context: Context, directoryUriString: String?): RootHandle? = withContext(Dispatchers.IO) {
+        resolveRootBlocking(context, directoryUriString)
     }
 
-    suspend fun findTranslatedLyricText(
-        context: Context,
-        audio: StoredEntry,
-        songId: Long? = null
-    ): String? = withContext(Dispatchers.IO) {
-        val snapshot = buildDownloadLibrarySnapshot(context)
-        findIndexedEntryByNames(
-            names = buildLyricCandidateNames(
-                songId = songId,
-                candidateBaseNames = candidateManagedDownloadBaseNames(audio.nameWithoutExtension),
-                translated = true
-            ),
-            entriesByName = snapshot.lyricEntriesByName
-        )?.let { readTextInternal(context, it.reference) }
-    }
-
-    suspend fun findManagedLyricReferences(context: Context, song: SongItem): List<String> = withContext(Dispatchers.IO) {
-        val baseNames = candidateManagedDownloadBaseNames(song)
-        val snapshot = buildDownloadLibrarySnapshot(context)
-        (
-            buildLyricCandidateNames(song.id.takeIf { it > 0L }, baseNames, translated = false) +
-                buildLyricCandidateNames(song.id.takeIf { it > 0L }, baseNames, translated = true)
-            )
-            .mapNotNull { candidate -> snapshot.lyricEntriesByName[candidate]?.reference }
-            .distinct()
-    }
-
-    private suspend fun resolveRoot(context: Context): RootHandle = withContext(Dispatchers.IO) {
+    private fun resolveRootBlocking(context: Context): RootHandle {
         val configuredUri = normalizeDirectoryUri(customDirectoryUri)
-        resolveTreeRoot(context, configuredUri)?.let { return@withContext it }
+        resolveTreeRootBlocking(context, configuredUri)?.let { return it }
         if (configuredUri != null) {
             NPLogger.w(TAG, "自定义下载目录不可用，回退默认目录: $configuredUri")
         }
-        createDefaultRoot(context)
+        return createDefaultRoot(context)
     }
 
-    private suspend fun resolveRoot(context: Context, directoryUriString: String?): RootHandle? = withContext(Dispatchers.IO) {
+    private fun resolveRootBlocking(context: Context, directoryUriString: String?): RootHandle? {
         val normalizedUri = normalizeDirectoryUri(directoryUriString)
-        if (normalizedUri == null) {
+        return if (normalizedUri == null) {
             createDefaultRoot(context)
         } else {
-            resolveTreeRoot(context, normalizedUri)
+            resolveTreeRootBlocking(context, normalizedUri)
         }
     }
 
@@ -702,13 +594,10 @@ internal object ManagedDownloadStorage {
         return names.firstNotNullOfOrNull(entriesByName::get)
     }
 
-    private fun buildSidecarCandidateNames(
-        candidateBaseNames: List<String>,
-        extensions: Set<String>
-    ): List<String> {
+    private fun buildSidecarCandidateNames(candidateBaseNames: List<String>): List<String> {
         return buildList {
             candidateBaseNames.forEach { baseName ->
-                extensions.forEach { extension ->
+                imageExtensions.forEach { extension ->
                     add("$baseName.$extension")
                 }
             }
@@ -773,21 +662,17 @@ internal object ManagedDownloadStorage {
         root: RootHandle,
         displayName: String,
         mimeType: String,
-        replace: Boolean,
         input: InputStream
     ): StoredEntry {
         val storedEntry = when (root) {
             is RootHandle.FileRoot -> {
-                val target = File(
-                    root.dir,
-                    if (replace) displayName else createUniqueName(existingNames(root.dir), displayName)
-                )
+                val target = File(root.dir, displayName)
                 target.outputStream().use { output -> input.copyTo(output) }
                 target.toStoredEntry()
             }
 
             is RootHandle.TreeRoot -> {
-                val target = createRootFile(root.tree, displayName, mimeType, replace)
+                val target = createRootFile(root.tree, displayName, mimeType, replace = true)
                 context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
                     input.copyTo(output)
                 } ?: throw IOException("无法写入根目录文件: $displayName")
@@ -799,43 +684,24 @@ internal object ManagedDownloadStorage {
         return storedEntry
     }
 
-    private suspend fun writeSubdirectoryText(
-        context: Context,
-        subdirectory: String,
-        displayName: String,
-        content: String,
-        replace: Boolean
-    ): StoredEntry? = withContext(Dispatchers.IO) {
-        writeSubdirectoryBytes(
-            context = context,
-            subdirectory = subdirectory,
-            displayName = displayName,
-            bytes = content.toByteArray(Charsets.UTF_8),
-            mimeType = "text/plain",
-            replace = replace
-        )
-    }
-
-    private suspend fun writeSubdirectoryBytes(
+    private fun writeSubdirectoryBytesBlocking(
         context: Context,
         subdirectory: String,
         displayName: String,
         bytes: ByteArray,
-        mimeType: String,
-        replace: Boolean
-    ): StoredEntry? = withContext(Dispatchers.IO) {
-        val root = resolveRoot(context)
-        val storedEntry = when (root) {
+        mimeType: String
+    ): StoredEntry? {
+        val storedEntry = when (val root = resolveRootBlocking(context)) {
             is RootHandle.FileRoot -> {
                 val dir = File(root.dir, subdirectory).apply { mkdirs() }
-                val target = File(dir, if (replace) displayName else createUniqueName(existingNames(dir), displayName))
+                val target = File(dir, displayName)
                 target.outputStream().use { it.write(bytes) }
                 target.toStoredEntry()
             }
 
             is RootHandle.TreeRoot -> {
-                val directory = findOrCreateDirectory(root.tree, subdirectory) ?: return@withContext null
-                val target = createRootFile(directory, displayName, mimeType, replace)
+                val directory = findOrCreateDirectory(root.tree, subdirectory) ?: return null
+                val target = createRootFile(directory, displayName, mimeType, replace = true)
                 context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
                     output.write(bytes)
                 } ?: throw IOException("无法写入目录文件: $displayName")
@@ -843,7 +709,7 @@ internal object ManagedDownloadStorage {
             }
         }
         storedEntry?.let { invalidateSnapshotCache() }
-        storedEntry
+        return storedEntry
     }
 
     private fun writeSubdirectoryStream(
@@ -852,16 +718,12 @@ internal object ManagedDownloadStorage {
         subdirectory: String,
         displayName: String,
         mimeType: String,
-        replace: Boolean,
         input: InputStream
     ): StoredEntry {
         val storedEntry = when (root) {
             is RootHandle.FileRoot -> {
                 val dir = File(root.dir, subdirectory).apply { mkdirs() }
-                val target = File(
-                    dir,
-                    if (replace) displayName else createUniqueName(existingNames(dir), displayName)
-                )
+                val target = File(dir, displayName)
                 target.outputStream().use { output -> input.copyTo(output) }
                 target.toStoredEntry()
             }
@@ -869,7 +731,7 @@ internal object ManagedDownloadStorage {
             is RootHandle.TreeRoot -> {
                 val directory = findOrCreateDirectory(root.tree, subdirectory)
                     ?: throw IOException("无法创建目录: $subdirectory")
-                val target = createRootFile(directory, displayName, mimeType, replace)
+                val target = createRootFile(directory, displayName, mimeType, replace = true)
                 context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
                     input.copyTo(output)
                 } ?: throw IOException("无法写入目录文件: $displayName")
@@ -897,13 +759,6 @@ internal object ManagedDownloadStorage {
         invalidateSnapshotCache()
     }
 
-    private fun findRootChild(root: RootHandle, name: String): StoredEntry? {
-        return when (root) {
-            is RootHandle.FileRoot -> File(root.dir, name).takeIf(File::exists)?.toStoredEntry()
-            is RootHandle.TreeRoot -> root.tree.findFile(name)?.toStoredEntry()
-        }
-    }
-
     private fun findSubdirectory(root: RootHandle, name: String): RootHandle? {
         return when (root) {
             is RootHandle.FileRoot -> {
@@ -915,32 +770,6 @@ internal object ManagedDownloadStorage {
                 ?.takeIf(DocumentFile::isDirectory)
                 ?.let { RootHandle.TreeRoot(it) }
         }
-    }
-
-    private fun findSidecarByBaseNames(
-        root: RootHandle,
-        subdirectory: String,
-        baseNames: List<String>,
-        extensions: Set<String>
-    ): StoredEntry? {
-        val names = baseNames.flatMap { baseName -> extensions.map { ext -> "$baseName.$ext" } }
-        return findSidecarByNames(root, subdirectory, names)
-    }
-
-    private fun findSidecarByNames(
-        root: RootHandle,
-        subdirectory: String,
-        names: List<String>
-    ): StoredEntry? {
-        val directory = findSubdirectory(root, subdirectory) ?: return null
-        val children = listChildren(directory).filterNot(StoredEntry::isDirectory)
-        return names.firstNotNullOfOrNull { name ->
-            children.firstOrNull { it.name == name }
-        }
-    }
-
-    private fun entryToPublicLocation(entry: StoredEntry): String {
-        return entry.reference
     }
 
     private fun findOrCreateDirectory(parent: DocumentFile, displayName: String): DocumentFile? {
@@ -961,7 +790,7 @@ internal object ManagedDownloadStorage {
                 return file.inputStream()
             }
         }
-        val uri = runCatching { Uri.parse(entry.reference) }.getOrNull() ?: return null
+        val uri = runCatching { entry.reference.toUri() }.getOrNull() ?: return null
         return context.contentResolver.openInputStream(uri)
     }
 
@@ -977,9 +806,9 @@ internal object ManagedDownloadStorage {
         return uriString?.takeIf { it.isNotBlank() }
     }
 
-    private fun resolveTreeRoot(context: Context, directoryUriString: String?): RootHandle.TreeRoot? {
+    private fun resolveTreeRootBlocking(context: Context, directoryUriString: String?): RootHandle.TreeRoot? {
         val uriString = normalizeDirectoryUri(directoryUriString) ?: return null
-        val treeUri = runCatching { Uri.parse(uriString) }.getOrNull() ?: return null
+        val treeUri = runCatching { uriString.toUri() }.getOrNull() ?: return null
         val tree = DocumentFile.fromTreeUri(context, treeUri) ?: return null
         return tree.takeIf { it.exists() && it.isDirectory }?.let(RootHandle::TreeRoot)
     }
@@ -1008,7 +837,7 @@ internal object ManagedDownloadStorage {
     private fun readTextInternal(context: Context, reference: String): String? {
         return when {
             reference.startsWith("/") -> File(reference).takeIf(File::exists)?.readText(Charsets.UTF_8)
-            else -> context.contentResolver.openInputStream(Uri.parse(reference))
+            else -> context.contentResolver.openInputStream(reference.toUri())
                 ?.bufferedReader(Charsets.UTF_8)
                 ?.use { it.readText() }
         }
@@ -1019,7 +848,7 @@ internal object ManagedDownloadStorage {
         return when {
             reference.startsWith("/") -> File(reference).exists()
             else -> {
-                val uri = runCatching { Uri.parse(reference) }.getOrNull() ?: return false
+                val uri = runCatching { reference.toUri() }.getOrNull() ?: return false
                 DocumentFile.fromSingleUri(context, uri)?.exists()
                     ?: runCatching {
                         context.contentResolver.openFileDescriptor(uri, "r")?.use { true } ?: false
@@ -1037,7 +866,7 @@ internal object ManagedDownloadStorage {
             }
 
             else -> {
-                val uri = runCatching { Uri.parse(reference) }.getOrNull() ?: return false
+                val uri = runCatching { reference.toUri() }.getOrNull() ?: return false
                 DocumentFile.fromSingleUri(context, uri)?.delete()
                     ?: false
             }

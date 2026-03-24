@@ -59,6 +59,7 @@ import moe.ouom.neriplayer.util.performHapticFeedback
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+@Suppress("AssignedValueIsNeverRead")
 fun DownloadProgressScreen(
     onBack: () -> Unit
 ) {

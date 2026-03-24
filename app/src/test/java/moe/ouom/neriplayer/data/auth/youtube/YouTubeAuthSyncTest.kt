@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.data.auth.youtube
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -77,5 +78,27 @@ class YouTubeAuthSyncTest {
         assertEquals("papisid", merged?.cookies?.get("__Secure-1PAPISID"))
         assertTrue(merged?.cookies?.containsKey("LOGIN_INFO") == false)
         assertEquals(300L, merged?.savedAt)
+    }
+
+    @Test
+    fun normalized_filtersTransientCookiesIntroducedByBackgroundSync() {
+        val normalized = YouTubeAuthBundle(
+            cookies = linkedMapOf(
+                "SAPISID" to "sapisid",
+                "SID" to "sid",
+                "VISITOR_INFO1_LIVE" to "visitor",
+                "YSC" to "ysc",
+                "__Secure-ROLLOUT_TOKEN" to "rollout"
+            )
+        ).normalized()
+
+        assertEquals("sapisid", normalized.cookies["SAPISID"])
+        assertEquals("sid", normalized.cookies["SID"])
+        assertNull(normalized.cookies["VISITOR_INFO1_LIVE"])
+        assertNull(normalized.cookies["YSC"])
+        assertNull(normalized.cookies["__Secure-ROLLOUT_TOKEN"])
+        assertFalse(normalized.cookieHeader.contains("VISITOR_INFO1_LIVE"))
+        assertFalse(normalized.cookieHeader.contains("YSC"))
+        assertFalse(normalized.cookieHeader.contains("__Secure-ROLLOUT_TOKEN"))
     }
 }

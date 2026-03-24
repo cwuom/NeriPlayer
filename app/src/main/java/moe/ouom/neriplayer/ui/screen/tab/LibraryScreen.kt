@@ -127,6 +127,7 @@ import org.burnoutcrew.reorderable.detectReorder
 import org.burnoutcrew.reorderable.rememberReorderableLazyListState
 import org.burnoutcrew.reorderable.reorderable
 
+@Suppress("unused")
 enum class LibraryTab(val labelResId: Int) {
     LOCAL(R.string.library_tab_local),
     FAVORITE(R.string.library_tab_favorite),
@@ -328,9 +329,7 @@ fun LibraryScreen(
                         )
 
                         LibraryTab.QQMUSIC -> QqMusicPlaylistList(
-                            _playlists = emptyList(), // TODO: Add qqMusicPlaylists to LibraryUiState when QQ Music is implemented
-                            listState = qqMusicListState,
-                            _onClick = { /* TODO: Implement QQ Music playlist click */ }
+                            listState = qqMusicListState
                         )
                     }
                 }
@@ -1636,9 +1635,7 @@ private fun FavoritePlaylistList(
 
 @Composable
 private fun QqMusicPlaylistList(
-    _playlists: List<Any>, // TODO: Replace with proper QQ Music playlist type
-    listState: LazyListState,
-    _onClick: (Any) -> Unit
+    listState: LazyListState
 ) {
     val miniPlayerHeight = LocalMiniPlayerHeight.current
 

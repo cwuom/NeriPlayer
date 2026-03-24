@@ -139,40 +139,6 @@ class BackupRestoreViewModel : ViewModel() {
     }
     
     /**
-     * 分析备份文件差异
-     */
-    fun analyzeDifferences(uri: Uri) {
-        val manager = backupManager ?: return
-        val resources = strings ?: return
-
-        _uiState.value = _uiState.value.copy(
-            isAnalyzing = true,
-            analysisProgress = resources.analysisProgress
-        )
-
-        viewModelScope.launch {
-            val result = manager.analyzeDifferences(uri)
-
-            result.fold(
-                onSuccess = { analysis ->
-                    _uiState.value = _uiState.value.copy(
-                        isAnalyzing = false,
-                        analysisProgress = null,
-                        differenceAnalysis = analysis
-                    )
-                },
-                onFailure = { exception ->
-                    _uiState.value = _uiState.value.copy(
-                        isAnalyzing = false,
-                        analysisProgress = null,
-                        lastAnalysisError = resources.analysisFailed(exception.message ?: "")
-                    )
-                }
-            )
-        }
-    }
-    
-    /**
      * 清除导出状态
      */
     fun clearExportStatus() {
@@ -192,24 +158,6 @@ class BackupRestoreViewModel : ViewModel() {
             lastImportSuccess = null,
             lastImportMessage = null
         )
-    }
-    
-    /**
-     * 清除分析状态
-     */
-    fun clearAnalysisStatus() {
-        NPLogger.d("BackupRestoreViewModel", "clearAnalysisStatus called")
-        _uiState.value = _uiState.value.copy(
-            differenceAnalysis = null,
-            lastAnalysisError = null
-        )
-    }
-    
-    /**
-     * 获取当前歌单数量
-     */
-    fun getCurrentPlaylistCount(context: Context): Int {
-        return LocalPlaylistRepository.getInstance(context).playlists.value.size
     }
     
     /**

@@ -68,7 +68,6 @@ class BiliClient(
 
         // 基础信息（WBI 可用）
         private const val VIEW_URL = "https://api.bilibili.com/x/web-interface/wbi/view"
-        private const val VIEW_DETAIL_URL = "https://api.bilibili.com/x/web-interface/wbi/view/detail"
 
         // 搜索（WBI）
         private const val SEARCH_TYPE_URL = "https://api.bilibili.com/x/web-interface/wbi/search/type"
@@ -80,7 +79,6 @@ class BiliClient(
         private const val FAV_FOLDER_CREATED_LIST_ALL = "https://api.bilibili.com/x/v3/fav/folder/created/list-all"
         private const val FAV_FOLDER_INFO = "https://api.bilibili.com/x/v3/fav/folder/info"
         private const val FAV_RESOURCE_LIST = "https://api.bilibili.com/x/v3/fav/resource/list"
-        private const val FAV_RESOURCE_IDS = "https://api.bilibili.com/x/v3/fav/resource/ids"
         private const val PAGELIST_URL = "https://api.bilibili.com/x/player/pagelist"
 
         /** 默认 UA（Web） */
@@ -913,7 +911,7 @@ class BiliClient(
 
     private suspend fun fetchMixinKeyFromTicket(): String = withContext(Dispatchers.IO) {
         val ts = System.currentTimeMillis() / 1000L
-        val hexSign = hmacSha256Hex(WEB_TICKET_KEY, "ts$ts")
+        val hexSign = webTicketHmacSha256Hex("ts$ts")
         val urlBuilder = WEB_TICKET_URL.toHttpUrl().newBuilder()
             .addQueryParameter("key_id", "ec02")
             .addQueryParameter("hexsign", hexSign)
@@ -956,9 +954,9 @@ class BiliClient(
         return result
     }
 
-    private fun hmacSha256Hex(key: String, message: String): String {
+    private fun webTicketHmacSha256Hex(message: String): String {
         val mac = javax.crypto.Mac.getInstance("HmacSHA256")
-        val secretKey = javax.crypto.spec.SecretKeySpec(key.toByteArray(), "HmacSHA256")
+        val secretKey = javax.crypto.spec.SecretKeySpec(WEB_TICKET_KEY.toByteArray(), "HmacSHA256")
         mac.init(secretKey)
         return mac.doFinal(message.toByteArray()).joinToString("") { "%02x".format(it) }
     }
@@ -1113,18 +1111,15 @@ class BiliClient(
     private fun JSONObject.optLongOrNull(name: String): Long? =
         if (has(name)) optLong(name) else null
 
-    private fun JSONObject.optIntOrNull(name: String): Int? =
-        if (has(name)) optInt(name) else null
-
     // 将 PlayInfo 映射为统一的音频流结构 //
 
     /**
-     * 合并 dash.audio + dash.dolby.audio + dash.flac.audio
+     * 合并 dash.audio、dash.dolby.audio 和 dash.flac.audio。
      * - 普通音轨：qualityTag = null
      * - 杜比音轨：qualityTag = "dolby"
      * - Hi-Res（flac）：qualityTag = "hires"
      *
-     * bitrateKbps = bandwidth(Byte/s)*8/1000，做非负保护
+     * bitrateKbps = bandwidth(Byte/s)*8/1000，并做非负保护。
      */
     fun PlayInfo.toAudioStreamInfos(): List<BiliAudioStreamInfo> {
         val list = mutableListOf<BiliAudioStreamInfo>()

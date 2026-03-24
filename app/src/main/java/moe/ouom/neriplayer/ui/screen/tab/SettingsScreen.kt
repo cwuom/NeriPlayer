@@ -160,6 +160,7 @@ private data class PendingDownloadDirectoryChange(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+@Suppress("AssignedValueIsNeverRead")
 fun SettingsScreen(
     listState: androidx.compose.foundation.lazy.LazyListState,
     dynamicColor: Boolean,
@@ -386,7 +387,7 @@ fun SettingsScreen(
     val localPlaylists by localPlaylistRepo.playlists.collectAsState(initial = emptyList())
     val defaultDownloadDirectorySummary = context.getString(R.string.settings_download_directory_default_label)
 
-    suspend fun applyDownloadDirectoryChange(
+    fun applyDownloadDirectoryChange(
         targetUri: String?,
         targetSummary: String,
         previousUri: String?,

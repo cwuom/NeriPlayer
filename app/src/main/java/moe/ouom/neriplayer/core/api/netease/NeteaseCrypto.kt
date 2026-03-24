@@ -89,43 +89,6 @@ object NeteaseCrypto {
         }
     }
 
-    @SuppressLint("GetInstance")
-    private fun aesDecrypt(cipherText: String, key: String, ivStr: String, mode: String, format: String): ByteArray {
-        val data = when (format.lowercase(Locale.getDefault())) {
-            "base64" -> Base64.getDecoder().decode(cipherText)
-            "hex" -> {
-                val len = cipherText.length
-                val arr = ByteArray(len / 2)
-                var i = 0
-                while (i < len) {
-                    arr[i / 2] = (((Character.digit(cipherText[i], 16) shl 4) +
-                            Character.digit(cipherText[i + 1], 16))).toByte()
-                    i += 2
-                }
-                arr
-            }
-            "" -> cipherText.toByteArray(StandardCharsets.UTF_8)
-            else -> throw IllegalArgumentException("未知解码格式: $format")
-        }
-        val secretKey = SecretKeySpec(key.toByteArray(StandardCharsets.UTF_8), "AES")
-        val plain = when (mode.lowercase(Locale.getDefault())) {
-            "cbc" -> {
-                val ci = Cipher.getInstance("AES/CBC/PKCS5Padding")
-                ci.init(Cipher.DECRYPT_MODE, secretKey, IvParameterSpec(ivStr.toByteArray(StandardCharsets.UTF_8)))
-                ci.doFinal(data)
-            }
-            "ecb" -> {
-                val ci = Cipher.getInstance("AES/ECB/PKCS5Padding")
-                ci.init(Cipher.DECRYPT_MODE, secretKey)
-                ci.doFinal(data)
-            }
-            else -> throw IllegalArgumentException("未知 AES 模式: $mode")
-        }
-        // PKCS#7 去填充
-        val pad = plain.last().toInt()
-        return plain.copyOfRange(0, plain.size - pad)
-    }
-
     /** RSA 加密随机密钥，使用与官方客户端一致的无填充算法  */
     private fun rsaEncrypt(text: String): String {
         return try {
@@ -193,7 +156,14 @@ object NeteaseCrypto {
     }
 
     private fun decryptLinuxApiCipher(cipher: String): ByteArray {
-        return aesDecrypt(cipher, LINUX_KEY, "", "ecb", "hex")
+        val data = cipher.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+        val secretKey = SecretKeySpec(LINUX_KEY.toByteArray(StandardCharsets.UTF_8), "AES")
+        val plain = Cipher.getInstance("AES/ECB/PKCS5Padding").run {
+            init(Cipher.DECRYPT_MODE, secretKey)
+            doFinal(data)
+        }
+        val pad = plain.last().toInt()
+        return plain.copyOfRange(0, plain.size - pad)
     }
 
     fun anonymous(deviceId: String): String {

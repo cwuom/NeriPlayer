@@ -146,6 +146,7 @@ import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
+@Suppress("AssignedValueIsNeverRead")
 fun YouTubeMusicPlaylistDetailScreen(
     playlist: YouTubeMusicPlaylist,
     onBack: () -> Unit = {},

@@ -1,3 +1,5 @@
+@file:Suppress("SpellCheckingInspection")
+
 package moe.ouom.neriplayer.core.player
 
 /*
@@ -48,7 +50,6 @@ import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeStreamRequestHeaders
-import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
@@ -60,12 +61,10 @@ import okhttp3.Request
 import okio.Buffer
 import okio.buffer
 import okio.sink
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
 import java.net.URLConnection
-import java.text.Normalizer
 import kotlin.math.roundToInt
 
 /**
@@ -146,7 +145,7 @@ object AudioDownloadManager {
                     return@withContext
                 }
 
-                if (ManagedDownloadStorage.hasDownloadedAudio(context, song)) {
+                if (ManagedDownloadStorage.findDownloadedAudio(context, song) != null) {
                     NPLogger.d(TAG, context.getString(R.string.download_file_exists, song.name))
                     // 文件已存在，设置进度为null触发任务完成
                     _progressFlow.value = null
@@ -240,7 +239,7 @@ object AudioDownloadManager {
                     singleThreadDownload(client, request, tempFile, workingSong.id, workingSong.stableKey())
                 }
 
-                val storedAudio = ManagedDownloadStorage.commitDownloadedAudio(
+                val storedAudio = ManagedDownloadStorage.saveAudioFromTemp(
                     context = context,
                     fileName = fileName,
                     tempFile = tempFile,
@@ -634,13 +633,6 @@ object AudioDownloadManager {
         return ManagedDownloadStorage.hasDownloadedAudio(context, song)
     }
 
-    /** 获取本地音频文件路径 */
-    fun getLocalFilePath(context: Context, song: SongItem): String? {
-        ManagedDownloadStorage.peekDownloadedAudio(song)?.let { return it.reference }
-        if (!canBlockStorageLookup()) return null
-        return ManagedDownloadStorage.findAudio(context, song)?.reference
-    }
-
     /** 解析下载歌曲对应的本地封面，供离线 UI 兜底使用 */
     fun getLocalCoverUri(context: Context, song: SongItem): String? {
         val allowBlockingLookup = canBlockStorageLookup()
@@ -679,30 +671,6 @@ object AudioDownloadManager {
 
     private fun candidateBaseNames(song: SongItem): List<String> {
         return ManagedDownloadStorage.buildCandidateBaseNames(song)
-    }
-
-    /** 获取本地歌词文件路径 */
-    fun getLyricFilePath(context: Context, song: SongItem): String? {
-        return runBlocking(Dispatchers.IO) {
-            ManagedDownloadStorage.findLyricLocation(
-                context = context,
-                songId = song.id,
-                candidateBaseNames = candidateBaseNames(song),
-                translated = false
-            )
-        }
-    }
-
-    /** 获取本地翻译歌词文件路径 */
-    fun getTranslatedLyricFilePath(context: Context, song: SongItem): String? {
-        return runBlocking(Dispatchers.IO) {
-            ManagedDownloadStorage.findLyricLocation(
-                context = context,
-                songId = song.id,
-                candidateBaseNames = candidateBaseNames(song),
-                translated = true
-            )
-        }
     }
 
     fun getLyricContent(context: Context, song: SongItem): String? {
@@ -802,11 +770,6 @@ object AudioDownloadManager {
         val mime = chosen.mimeType
         val ext = mimeToExt(mime)
         return ResolvedDownloadSource(url = url, mimeType = mime, fileExtensionHint = ext)
-    }
-
-    private fun sanitizeFileName(name: String): String {
-        val n = Normalizer.normalize(name, Normalizer.Form.NFKD)
-        return n.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().ifBlank { "audio" }
     }
 
     private data class DownloadedLyrics(

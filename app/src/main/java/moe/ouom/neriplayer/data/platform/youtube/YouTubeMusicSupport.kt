@@ -29,6 +29,7 @@ import java.net.URLDecoder
 import java.net.URLEncoder
 import java.security.MessageDigest
 import java.util.Locale
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeCookieSupport
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.auth.youtube.parseCookieHeader
@@ -64,7 +65,11 @@ fun YouTubeAuthBundle.effectiveCookieHeader(): String {
     if (cookieMap.isEmpty()) {
         return normalized.cookieHeader.trim()
     }
-    val merged = LinkedHashMap(cookieMap)
+    val sanitizedCookies = YouTubeCookieSupport.sanitizePersistedCookies(cookieMap)
+    if (sanitizedCookies.isEmpty()) {
+        return ""
+    }
+    val merged = LinkedHashMap(sanitizedCookies)
     if (merged["SOCS"].isNullOrBlank()) {
         merged["SOCS"] = "CAI"
     }
@@ -152,37 +157,6 @@ fun YouTubeAuthBundle.resolveAuthorizationHeader(
             )
         }
     }.joinToString(" ")
-}
-
-fun YouTubeAuthBundle.buildYouTubePlaybackRequestHeaders(
-    original: Map<String, String> = emptyMap(),
-    origin: String = YOUTUBE_WEB_ORIGIN,
-    includeAuthorization: Boolean = false,
-    includeXOrigin: Boolean = false
-): Map<String, String> {
-    val headers = LinkedHashMap(original)
-    val cookieHeader = appendYouTubeConsentCookie(effectiveCookieHeader())
-    if (cookieHeader.isNotBlank()) {
-        headers["Cookie"] = cookieHeader
-    }
-
-    headers.putIfAbsent("Referer", "$origin/")
-    headers.putIfAbsent("Origin", origin)
-    headers.putIfAbsent("User-Agent", resolveRequestUserAgent())
-    headers.putIfAbsent("X-Goog-AuthUser", resolveXGoogAuthUser())
-
-    if (includeXOrigin) {
-        headers.putIfAbsent("X-Origin", origin)
-    }
-
-    if (includeAuthorization) {
-        val authorization = resolveAuthorizationHeader(origin = origin)
-        if (authorization.isNotBlank()) {
-            headers.putIfAbsent("Authorization", authorization)
-        }
-    }
-
-    return headers
 }
 
 fun YouTubeAuthBundle.buildYouTubePageRequestHeaders(

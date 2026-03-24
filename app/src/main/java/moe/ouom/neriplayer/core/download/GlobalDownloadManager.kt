@@ -27,7 +27,6 @@ import android.content.Context
 import android.net.Uri
 import androidx.core.net.toUri
 import java.io.File
-import java.text.Normalizer
 import java.util.Collections
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -46,7 +45,6 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
-import moe.ouom.neriplayer.data.local.media.LocalMediaDetails
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
@@ -276,8 +274,7 @@ object GlobalDownloadManager {
         val metadata = readDownloadedMetadata(
             context = context,
             audio = storedAudio,
-            metadataEntry = effectiveSnapshot.metadataEntriesByAudioName[storedAudio.name],
-            includeLyrics = false
+            metadataEntry = effectiveSnapshot.metadataEntriesByAudioName[storedAudio.name]
         )
         val (parsedArtist, parsedTitle) = parseDownloadedFileName(storedAudio.name)
         val coverReference = metadata?.coverPath
@@ -383,8 +380,7 @@ object GlobalDownloadManager {
     private suspend fun readDownloadedMetadata(
         context: Context,
         audio: ManagedDownloadStorage.StoredEntry,
-        metadataEntry: ManagedDownloadStorage.StoredEntry? = null,
-        includeLyrics: Boolean = false
+        metadataEntry: ManagedDownloadStorage.StoredEntry? = null
     ): DownloadedSongMetadata? {
         val resolvedMetadataEntry = metadataEntry
             ?: ManagedDownloadStorage.findMetadataForAudio(context, audio)
@@ -398,10 +394,8 @@ object GlobalDownloadManager {
                 name = root.optString("name").takeIf(String::isNotBlank),
                 artist = root.optString("artist").takeIf(String::isNotBlank),
                 coverUrl = root.optString("coverUrl").takeIf(String::isNotBlank),
-                matchedLyric = root.optString("matchedLyric")
-                    .takeIf { includeLyrics && it.isNotBlank() },
-                matchedTranslatedLyric = root.optString("matchedTranslatedLyric")
-                    .takeIf { includeLyrics && it.isNotBlank() },
+                matchedLyric = null,
+                matchedTranslatedLyric = null,
                 matchedLyricSource = root.optString("matchedLyricSource").takeIf(String::isNotBlank),
                 matchedSongId = root.optString("matchedSongId").takeIf(String::isNotBlank),
                 userLyricOffsetMs = root.optLong("userLyricOffsetMs"),
@@ -411,10 +405,8 @@ object GlobalDownloadManager {
                 originalName = root.optString("originalName").takeIf(String::isNotBlank),
                 originalArtist = root.optString("originalArtist").takeIf(String::isNotBlank),
                 originalCoverUrl = root.optString("originalCoverUrl").takeIf(String::isNotBlank),
-                originalLyric = root.optString("originalLyric")
-                    .takeIf { includeLyrics && it.isNotBlank() },
-                originalTranslatedLyric = root.optString("originalTranslatedLyric")
-                    .takeIf { includeLyrics && it.isNotBlank() },
+                originalLyric = null,
+                originalTranslatedLyric = null,
                 coverPath = root.optString("coverPath").takeIf(String::isNotBlank),
                 mediaUri = root.optString("mediaUri").takeIf(String::isNotBlank),
                 durationMs = root.optLong("durationMs")
@@ -452,11 +444,9 @@ object GlobalDownloadManager {
     ): String? {
         return candidateManagedDownloadBaseNames(audio.nameWithoutExtension)
             .firstNotNullOfOrNull { baseName ->
-                sequenceOf("jpg", "jpeg", "png", "webp")
-                    .mapNotNull { extension ->
-                        snapshot.coverEntriesByName["$baseName.$extension"]?.reference
-                    }
-                    .firstOrNull()
+                sequenceOf("jpg", "jpeg", "png", "webp").firstNotNullOfOrNull { extension ->
+                    snapshot.coverEntriesByName["$baseName.$extension"]?.reference
+                }
             }
     }
 
@@ -574,7 +564,7 @@ object GlobalDownloadManager {
                     return@launch
                 }
 
-                if (ManagedDownloadStorage.hasDownloadedAudio(appContext, song)) {
+                if (ManagedDownloadStorage.findDownloadedAudio(appContext, song) != null) {
                     updateTaskStatus(songKey, DownloadStatus.COMPLETED)
                     reloadDownloadedSongs(appContext)
                     return@launch
@@ -764,7 +754,7 @@ object GlobalDownloadManager {
         song: SongItem
     ): ManagedDownloadStorage.StoredEntry? {
         resolveStoredAudio(context, resolveSongLocation(song))?.let { return it }
-        return ManagedDownloadStorage.findAudio(context, song)
+        return ManagedDownloadStorage.findDownloadedAudio(context, song)
     }
 
     private suspend fun resolveStoredAudio(

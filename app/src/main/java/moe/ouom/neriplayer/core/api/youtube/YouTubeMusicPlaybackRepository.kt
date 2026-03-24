@@ -33,6 +33,7 @@ import java.net.URLEncoder
 import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.random.Random
 import kotlin.jvm.Volatile
 import kotlinx.coroutines.CoroutineScope
@@ -46,7 +47,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
-import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthHealth
 import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.platform.youtube.YOUTUBE_WEB_ORIGIN
 import moe.ouom.neriplayer.data.platform.youtube.appendYouTubeConsentCookie
@@ -70,14 +70,6 @@ import org.schabi.newpipe.extractor.services.youtube.YoutubeJavaScriptPlayerMana
 import org.schabi.newpipe.extractor.stream.AudioStream
 import org.schabi.newpipe.extractor.stream.DeliveryMethod
 import org.schabi.newpipe.extractor.stream.StreamInfo
-
-private const val YOUTUBE_PLAYER_ANDROID_CLIENT_ID = "3"
-private const val YOUTUBE_PLAYER_ANDROID_CLIENT_NAME = "ANDROID"
-private const val YOUTUBE_PLAYER_ANDROID_CLIENT_VERSION = "21.03.36"
-private const val YOUTUBE_PLAYER_ANDROID_USER_AGENT =
-    "com.google.android.youtube/21.03.36 (Linux; U; Android 15; US) gzip"
-private const val YOUTUBE_PLAYER_ANDROID_OS_VERSION = "16"
-private const val YOUTUBE_PLAYER_ANDROID_SDK_VERSION = 36
 
 private const val YOUTUBE_PLAYER_IOS_CLIENT_ID = "5"
 private const val YOUTUBE_PLAYER_IOS_CLIENT_NAME = "IOS"
@@ -505,52 +497,6 @@ internal object YouTubeMusicPlaybackParser {
         }
     }
 
-    private fun extractQueryParameterFromUrl(url: String, key: String): String? {
-        val rawQuery = runCatching { URI(url).rawQuery }.getOrNull().orEmpty()
-        return rawQuery.split('&')
-            .asSequence()
-            .mapNotNull { segment ->
-                val resolvedKey = URLDecoder.decode(
-                    segment.substringBefore('='),
-                    Charsets.UTF_8.name()
-                )
-                if (resolvedKey.isBlank()) {
-                    null
-                } else {
-                    resolvedKey to URLDecoder.decode(
-                        segment.substringAfter('=', ""),
-                        Charsets.UTF_8.name()
-                    )
-                }
-            }
-            .firstOrNull { (resolvedKey, _) -> resolvedKey == key }
-            ?.second
-    }
-
-    private fun replaceQueryParameterInUrl(url: String, key: String, value: String): String {
-        val pattern = Regex("([?&])${Regex.escape(key)}=[^&]*")
-        return if (pattern.containsMatchIn(url)) {
-            val match = pattern.find(url) ?: return url
-            buildString(url.length + value.length) {
-                append(url, 0, match.range.first)
-                append(match.groupValues[1])
-                append(key)
-                append('=')
-                append(URLEncoder.encode(value, Charsets.UTF_8.name()))
-                append(url, match.range.last + 1, url.length)
-            }
-        } else {
-            val separator = if (url.contains('?')) '&' else '?'
-            buildString(url.length + key.length + value.length + 2) {
-                append(url)
-                append(separator)
-                append(key)
-                append('=')
-                append(URLEncoder.encode(value, Charsets.UTF_8.name()))
-            }
-        }
-    }
-
     private fun parseLongLike(vararg values: Any?): Long {
         values.forEach { value ->
             when (value) {
@@ -781,8 +727,6 @@ class YouTubeMusicPlaybackRepository(
     private val okHttpClient: OkHttpClient,
     private val settings: SettingsRepository? = null,
     private val authProvider: () -> YouTubeAuthBundle = { YouTubeAuthBundle() },
-    private val authHealthProvider: () -> YouTubeAuthHealth = { YouTubeAuthHealth() },
-    private val authUpdater: (YouTubeAuthBundle) -> Unit = {},
     private val streamingCipherResolverFactory: ((String) -> YouTubeStreamingCipherResolver)? = null,
     applicationContext: Context? = null,
     poTokenProvider: YouTubePoTokenProvider? = null
@@ -795,7 +739,7 @@ class YouTubeMusicPlaybackRepository(
         YouTubeEjsChallengeSolver(it, okHttpClient)
     }
     private val poTokenProvider = poTokenProvider ?: applicationContext?.let {
-        YouTubeWebPoTokenProvider(it, authProvider, authHealthProvider, authUpdater)
+        YouTubeWebPoTokenProvider(it, authProvider)
     }
 
     @Volatile
@@ -972,7 +916,7 @@ class YouTubeMusicPlaybackRepository(
                 if (inFlightPlayableAudio[request] === deferred &&
                     (deferred.isCompleted || deferred.isCancelled)
                 ) {
-                    inFlightPlayableAudio.remove(request)
+                    inFlightPlayableAudio.keys.remove(request)
                 }
             }
         }
@@ -1217,8 +1161,8 @@ class YouTubeMusicPlaybackRepository(
         }
         ensureInitialized()
 
-        var signatureErrorLogged = false
-        var throttlingErrorLogged = false
+        val signatureErrorLogged = AtomicBoolean(false)
+        val throttlingErrorLogged = AtomicBoolean(false)
 
         return object : YouTubeStreamingCipherResolver {
             override fun resolveSignature(encryptedSignature: String): String? {
@@ -1239,8 +1183,7 @@ class YouTubeMusicPlaybackRepository(
                 return runCatching {
                     YoutubeJavaScriptPlayerManager.deobfuscateSignature(videoId, encryptedSignature)
                 }.onFailure { error ->
-                    if (!signatureErrorLogged) {
-                        signatureErrorLogged = true
+                    if (signatureErrorLogged.compareAndSet(false, true)) {
                         NPLogger.w(
                             "YouTubeMusicPlayback",
                             "Failed to deobfuscate streaming signature for $videoId",
@@ -1276,8 +1219,7 @@ class YouTubeMusicPlaybackRepository(
                         url
                     )
                 }.onFailure { error ->
-                    if (!throttlingErrorLogged) {
-                        throttlingErrorLogged = true
+                    if (throttlingErrorLogged.compareAndSet(false, true)) {
                         NPLogger.w(
                             "YouTubeMusicPlayback",
                             "Failed to deobfuscate throttling parameter for $videoId",
@@ -1643,7 +1585,7 @@ class YouTubeMusicPlaybackRepository(
             append("&key=")
             append(bootstrap.apiKey)
             if (profile.responseField != null) {
-                append("&\$fields=")
+                append("&${'$'}fields=")
                 append(profile.responseField)
             }
         }
@@ -1947,52 +1889,6 @@ class YouTubeMusicPlaybackRepository(
         )
     }
 
-    internal fun extractQueryParameterFromUrl(url: String, key: String): String? {
-        val rawQuery = runCatching { URI(url).rawQuery }.getOrNull().orEmpty()
-        return rawQuery.split('&')
-            .asSequence()
-            .mapNotNull { segment ->
-                val resolvedKey = URLDecoder.decode(
-                    segment.substringBefore('='),
-                    Charsets.UTF_8.name()
-                )
-                if (resolvedKey.isBlank()) {
-                    null
-                } else {
-                    resolvedKey to URLDecoder.decode(
-                        segment.substringAfter('=', ""),
-                        Charsets.UTF_8.name()
-                    )
-                }
-            }
-            .firstOrNull { (resolvedKey, _) -> resolvedKey == key }
-            ?.second
-    }
-
-    internal fun replaceQueryParameterInUrl(url: String, key: String, value: String): String {
-        val pattern = Regex("([?&])${Regex.escape(key)}=[^&]*")
-        return if (pattern.containsMatchIn(url)) {
-            val match = pattern.find(url) ?: return url
-            buildString(url.length + value.length) {
-                append(url, 0, match.range.first)
-                append(match.groupValues[1])
-                append(key)
-                append('=')
-                append(URLEncoder.encode(value, Charsets.UTF_8.name()))
-                append(url, match.range.last + 1, url.length)
-            }
-        } else {
-            val separator = if (url.contains('?')) '&' else '?'
-            buildString(url.length + key.length + value.length + 2) {
-                append(url)
-                append(separator)
-                append(key)
-                append('=')
-                append(URLEncoder.encode(value, Charsets.UTF_8.name()))
-            }
-        }
-    }
-
     private fun playerClientProfiles(): List<YouTubePlayerClientProfile> {
         return listOf(
             YouTubePlayerClientProfile(
@@ -2183,8 +2079,8 @@ class YouTubeMusicPlaybackRepository(
         return YouTubeWebRemixRequestMetadata(
             originalUrl = originalUrl,
             playlistId = playlistId,
-            cpn = generateRequestNonce(16),
-            clientScreenNonce = generateRequestNonce(16)
+            cpn = generateRequestNonce(),
+            clientScreenNonce = generateRequestNonce()
         )
     }
 
@@ -2236,10 +2132,10 @@ class YouTubeMusicPlaybackRepository(
         }
     }
 
-    private fun generateRequestNonce(length: Int): String {
+    private fun generateRequestNonce(): String {
         val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
-        return buildString(length) {
-            repeat(length) {
+        return buildString(16) {
+            repeat(16) {
                 append(alphabet[Random.nextInt(alphabet.length)])
             }
         }

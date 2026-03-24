@@ -118,6 +118,7 @@ import kotlin.random.Random
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+@Suppress("AssignedValueIsNeverRead")
 fun RecentScreen(
     onBack: () -> Unit = {},
     onSongClick: (List<SongItem>, Int) -> Unit

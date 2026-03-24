@@ -269,6 +269,7 @@ fun NeteaseAlbumDetailScreen(
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
+@Suppress("AssignedValueIsNeverRead")
 fun DetailScreen(
     ui: PlaylistDetailUiState,
     playlistId: Long,

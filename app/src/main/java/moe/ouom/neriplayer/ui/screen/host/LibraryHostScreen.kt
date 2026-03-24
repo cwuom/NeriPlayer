@@ -70,6 +70,7 @@ import moe.ouom.neriplayer.ui.util.restoreNeteaseAlbum
 import moe.ouom.neriplayer.ui.util.restoreNeteasePlaylist
 import moe.ouom.neriplayer.ui.util.restoreYouTubeMusicPlaylist
 
+@Suppress("unused")
 @Parcelize
 sealed class LibrarySelectedItem : Parcelable {
     @Parcelize

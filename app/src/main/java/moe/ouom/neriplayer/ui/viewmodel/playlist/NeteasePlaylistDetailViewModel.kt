@@ -56,6 +56,7 @@ data class PlaylistHeader(
     val trackCount: Int
 )
 
+@Suppress("unused")
 @Parcelize
 data class SongItem(
     val id: Long,

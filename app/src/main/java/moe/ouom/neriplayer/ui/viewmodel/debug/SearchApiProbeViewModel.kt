@@ -50,8 +50,6 @@ class SearchApiProbeViewModel(app: Application) : AndroidViewModel(app) {
 
     private val cookieRepo = AppContainer.neteaseCookieRepo
 
-    private val neteaseClient = AppContainer.neteaseClient
-
     private val cloudMusicApi = AppContainer.cloudMusicSearchApi
     private val qqMusicApi = AppContainer.qqMusicSearchApi
     private val json = Json { prettyPrint = true }

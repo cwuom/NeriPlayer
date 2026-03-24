@@ -21,6 +21,7 @@ internal fun applyYouTubeWebCookies(
     skipExisting: Boolean = true,
     includeConsentCookie: Boolean = false
 ): Boolean {
+    val sanitizedCookies = YouTubeCookieSupport.sanitizePersistedCookies(cookies)
     val existingCookies = if (skipExisting) {
         collectYouTubeWebCookies(cookieManager, urls)
     } else {
@@ -29,7 +30,7 @@ internal fun applyYouTubeWebCookies(
     var changed = false
 
     urls.forEach { url ->
-        cookies.forEach { (key, value) ->
+        sanitizedCookies.forEach { (key, value) ->
             if (key.isBlank() || value.isBlank()) {
                 return@forEach
             }
@@ -46,7 +47,7 @@ internal fun applyYouTubeWebCookies(
         if (
             includeConsentCookie &&
             existingCookies["SOCS"].isNullOrBlank() &&
-            cookies["SOCS"].isNullOrBlank()
+            sanitizedCookies["SOCS"].isNullOrBlank()
         ) {
             cookieManager.setCookie(url, YOUTUBE_SOCS_COOKIE)
             changed = true

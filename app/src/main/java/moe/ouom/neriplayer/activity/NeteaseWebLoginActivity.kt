@@ -49,6 +49,7 @@ import com.google.android.material.snackbar.Snackbar
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.util.lockPortraitIfPhone
 
+@Suppress("unused")
 class NeteaseWebLoginActivity : ComponentActivity() {
 
     companion object {

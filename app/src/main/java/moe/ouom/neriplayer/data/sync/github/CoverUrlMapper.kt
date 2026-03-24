@@ -115,6 +115,7 @@ class CoverUrlMapper private constructor(private val storageDir: File) {
     /**
      * 清理无效的映射（本地文件已不存在）
      */
+    @Suppress("unused")
     fun cleanupInvalidMappings() {
         val toRemove = mutableListOf<String>()
         for ((localUrl, _) in mapping) {

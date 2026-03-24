@@ -174,6 +174,7 @@ object SyncDataSerializer {
     /**
      * 计算压缩率
      */
+    @Suppress("unused")
     fun getCompressionRatio(data: SyncData): Float {
         val jsonSize = serializeToBytes(data, false).size
         val compressedSize = serializeToBytes(data, true).size

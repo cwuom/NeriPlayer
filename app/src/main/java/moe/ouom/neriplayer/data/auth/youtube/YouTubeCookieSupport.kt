@@ -54,6 +54,27 @@ object YouTubeCookieSupport {
         "SID"
     )
 
+    private val persistedCookieKeys: Set<String> = setOf(
+        "SID",
+        "HSID",
+        "SSID",
+        "APISID",
+        "SAPISID",
+        "LSID",
+        "LOGIN_INFO",
+        "SIDCC",
+        "PREF",
+        "SOCS",
+        "CONSENT"
+    )
+
+    private val persistedCookiePrefixes: List<String> = listOf(
+        "__Secure-1PSID",
+        "__Secure-3PSID",
+        "__Secure-1PAPISID",
+        "__Secure-3PAPISID"
+    )
+
     fun parseCookieString(raw: String): LinkedHashMap<String, String> {
         val map = linkedMapOf<String, String>()
         raw.split(';')
@@ -79,11 +100,22 @@ object YouTubeCookieSupport {
         return merged
     }
 
+    // 仅保留稳定的登录/会话 Cookie，避免把页面级临时 Cookie 写回持久鉴权后污染 YouTube 请求
+    fun sanitizePersistedCookies(cookies: Map<String, String>): LinkedHashMap<String, String> {
+        val sanitized = linkedMapOf<String, String>()
+        cookies.forEach { (key, value) ->
+            if (key.isBlank() || value.isBlank()) {
+                return@forEach
+            }
+            if (key in persistedCookieKeys || persistedCookiePrefixes.any { key.startsWith(it) }) {
+                sanitized[key] = value
+            }
+        }
+        return sanitized
+    }
+
     fun isLoggedIn(cookies: Map<String, String>): Boolean {
         return importantLoginCookieKeys.any { key -> !cookies[key].isNullOrBlank() }
     }
 
-    fun hasActiveSessionCookies(cookies: Map<String, String>): Boolean {
-        return activeSessionCookieKeys.any { key -> !cookies[key].isNullOrBlank() }
-    }
 }

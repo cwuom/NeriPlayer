@@ -46,6 +46,7 @@ import org.json.JSONObject
 import java.io.IOException
 
 /** Bilibili 收藏夹数据模型 */
+@Suppress("unused")
 @Parcelize
 data class BiliPlaylist(
     val mediaId: Long,

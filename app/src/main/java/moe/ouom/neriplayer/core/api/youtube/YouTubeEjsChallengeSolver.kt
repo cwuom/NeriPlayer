@@ -127,9 +127,6 @@ internal class YouTubeEjsChallengeSolver(
                 }
 
                 val isolate = sandbox.createIsolate()
-                val supportsProvideNamedData = sandbox.isFeatureSupported(
-                    JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER
-                )
                 try {
                     val playerScript = getPlayerScript(resolvedPlayerJsUrl)
                     isolate.evaluateJavaScriptAsync(

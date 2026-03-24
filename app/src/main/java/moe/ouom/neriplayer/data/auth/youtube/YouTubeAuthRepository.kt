@@ -69,16 +69,15 @@ data class YouTubeAuthBundle(
             cookieHeader.isNotBlank() -> parseCookieHeader(cookieHeader)
             else -> linkedMapOf()
         }
-        val normalizedHeader = when {
-            cookieHeader.isNotBlank() -> cookieHeader.trim()
-            normalizedCookies.isNotEmpty() -> normalizedCookies.entries.joinToString("; ") { (key, value) ->
-                "$key=$value"
-            }
-            else -> ""
+        val sanitizedCookies = YouTubeCookieSupport.sanitizePersistedCookies(normalizedCookies)
+        val normalizedHeader = if (sanitizedCookies.isEmpty()) {
+            ""
+        } else {
+            sanitizedCookies.entries.joinToString("; ") { (key, value) -> "$key=$value" }
         }
         return copy(
             cookieHeader = normalizedHeader,
-            cookies = normalizedCookies,
+            cookies = sanitizedCookies,
             origin = origin.ifBlank { YOUTUBE_MUSIC_ORIGIN },
             savedAt = savedAt
         )
@@ -142,6 +141,7 @@ data class YouTubeAuthHealth(
     val loginCookieKeys: List<String> = emptyList(),
     val activeCookieKeys: List<String> = emptyList()
 ) {
+    @Suppress("unused")
     val shouldPromptRelogin: Boolean
         get() = state == YouTubeAuthState.Expired || state == YouTubeAuthState.Stale
 }

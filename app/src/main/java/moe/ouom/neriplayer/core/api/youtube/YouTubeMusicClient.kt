@@ -301,16 +301,6 @@ internal object YouTubeMusicParser {
         return extractContinuationToken(findLibraryGridRenderer(root))
     }
 
-    /** 解析首页推荐 carousel shelves */
-    fun parseHomeShelves(root: JSONObject): List<YouTubeMusicHomeShelf> {
-        return parseHomeShelfPages(root).map { shelf ->
-            YouTubeMusicHomeShelf(
-                title = shelf.title,
-                items = shelf.items
-            )
-        }
-    }
-
     fun parseHomeShelfPages(root: JSONObject): List<ParsedYouTubeMusicHomeShelf> {
         val sections = findHomeSections(root) ?: return emptyList()
 
@@ -357,11 +347,13 @@ internal object YouTubeMusicParser {
     ): YouTubeMusicHomeSongMetadata {
         val metadataParts = subtitle
             .split('•', '·', '|')
+            .asSequence()
             .map(String::trim)
             .filter(String::isNotBlank)
             .filterNot(::looksLikeHomeSongTypeLabel)
             .filterNot(::looksLikeDurationText)
             .filterNot(::looksLikeSearchStatText)
+            .toList()
 
         val artist = metadataParts.firstOrNull().orEmpty().ifBlank { fallbackArtist }
         val album = metadataParts.drop(1).firstOrNull().orEmpty().ifBlank { fallbackAlbum }
@@ -674,24 +666,6 @@ internal object YouTubeMusicParser {
             section.optJSONObject("musicShelfRenderer")?.let { return it }
         }
         return null
-    }
-
-    fun hasSearchSectionList(root: JSONObject): Boolean {
-        return findSearchSectionListRenderer(root) != null
-    }
-
-    fun parseSearchResults(
-        root: JSONObject,
-        limit: Int = YOUTUBE_MUSIC_SEARCH_ITEM_LIMIT
-    ): List<YouTubeMusicSearchResult> {
-        val items = buildList {
-            for (shelf in findSearchShelfRenderers(root)) {
-                addAll(parseSearchRendererItems(shelf.optJSONArray("contents")))
-            }
-        }
-        return items
-            .distinctBy { it.videoId }
-            .take(limit.coerceAtLeast(1))
     }
 
     fun hasSongSearchShelf(root: JSONObject): Boolean {
@@ -2062,7 +2036,7 @@ class YouTubeMusicClient(
                 .header("X-Goog-AuthUser", bootstrap.sessionIndex)
                 .header("X-YouTube-Client-Name", YOUTUBE_MUSIC_CLIENT_NAME_NUM_WEB_REMIX)
                 .header("X-YouTube-Client-Version", bootstrap.webRemixClientVersion)
-                .applySidAuthorization(bootstrap.cookieHeader, YOUTUBE_MUSIC_MUSIC_ORIGIN)
+                .applySidAuthorization(bootstrap.cookieHeader)
                 .post(body.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
                 .build()
         )
@@ -2095,7 +2069,7 @@ class YouTubeMusicClient(
                 .header("X-Goog-Visitor-Id", bootstrap.visitorData)
                 .header("X-YouTube-Client-Name", YOUTUBE_MUSIC_CLIENT_NAME_NUM_WEB_REMIX)
                 .header("X-YouTube-Client-Version", bootstrap.webRemixClientVersion)
-                .applySidAuthorization(bootstrap.cookieHeader, YOUTUBE_MUSIC_MUSIC_ORIGIN)
+                .applySidAuthorization(bootstrap.cookieHeader)
                 .post(body.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
                 .build()
         )
@@ -2126,7 +2100,7 @@ class YouTubeMusicClient(
                 .header("X-Goog-Visitor-Id", bootstrap.visitorData)
                 .header("X-YouTube-Client-Name", YOUTUBE_MUSIC_CLIENT_NAME_NUM_WEB_REMIX)
                 .header("X-YouTube-Client-Version", bootstrap.webRemixClientVersion)
-                .applySidAuthorization(bootstrap.cookieHeader, YOUTUBE_MUSIC_MUSIC_ORIGIN)
+                .applySidAuthorization(bootstrap.cookieHeader)
                 .post(body.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
                 .build()
         )
@@ -2155,7 +2129,7 @@ class YouTubeMusicClient(
                 .header("X-Goog-AuthUser", bootstrap.sessionIndex)
                 .header("X-YouTube-Client-Name", YOUTUBE_MUSIC_CLIENT_NAME_NUM_WEB_REMIX)
                 .header("X-YouTube-Client-Version", bootstrap.webRemixClientVersion)
-                .applySidAuthorization(bootstrap.cookieHeader, YOUTUBE_MUSIC_MUSIC_ORIGIN)
+                .applySidAuthorization(bootstrap.cookieHeader)
                 .post(body.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
                 .build()
         )
@@ -2301,10 +2275,7 @@ class YouTubeMusicClient(
         return header("Cookie", cookieHeader)
     }
 
-    private fun Request.Builder.applySidAuthorization(
-        cookieHeader: String,
-        origin: String
-    ): Request.Builder {
+    private fun Request.Builder.applySidAuthorization(cookieHeader: String): Request.Builder {
         val cookies = cookieHeader
             .split(';')
             .map(String::trim)
@@ -2319,7 +2290,7 @@ class YouTubeMusicClient(
             ?: cookies["APISID"]
             ?: return this
         val timestamp = (System.currentTimeMillis() / 1000L).toString()
-        val digest = sha1Hex("$timestamp $sid $origin")
+        val digest = sha1Hex("$timestamp $sid $YOUTUBE_MUSIC_MUSIC_ORIGIN")
         return header("Authorization", "SAPISIDHASH ${timestamp}_$digest")
     }
 

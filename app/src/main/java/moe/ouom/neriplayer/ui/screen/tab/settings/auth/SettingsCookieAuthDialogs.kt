@@ -101,7 +101,6 @@ internal fun SettingsBiliAuthDialogs(
         }
 
         TwoTabCookieLoginSheet(
-            visible = true,
             title = stringResource(R.string.platform_bilibili),
             initialTab = initialTab,
             inlineMsg = inlineMsg,
@@ -227,7 +226,6 @@ internal fun SettingsYouTubeAuthDialogs(
         }
 
         TwoTabCookieLoginSheet(
-            visible = true,
             title = stringResource(R.string.common_youtube),
             initialTab = initialTab,
             inlineMsg = inlineMsg,
@@ -273,7 +271,6 @@ internal fun SettingsYouTubeAuthDialogs(
 
 @Composable
 private fun TwoTabCookieLoginSheet(
-    visible: Boolean,
     title: String,
     initialTab: Int,
     inlineMsg: String?,
@@ -284,8 +281,6 @@ private fun TwoTabCookieLoginSheet(
     onBrowserLogin: () -> Unit,
     onSaveCookie: (String) -> Unit
 ) {
-    if (!visible) return
-
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var selectedTab by remember(initialTab) { mutableIntStateOf(initialTab) }
     var rawCookie by remember { mutableStateOf("") }

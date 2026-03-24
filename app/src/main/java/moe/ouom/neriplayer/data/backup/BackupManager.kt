@@ -333,7 +333,6 @@ class BackupManager(private val context: Context) {
         val totalCount: Int,
         val backupDate: String
     ) {
-        val successCount: Int get() = importedCount + mergedCount
         val hasSkipped: Boolean get() = skippedCount > 0
         val hasMerged: Boolean get() = mergedCount > 0
     }
@@ -373,9 +372,5 @@ class BackupManager(private val context: Context) {
         val backupDate: String,
         val differences: List<PlaylistDifference>,
         val totalMissingSongs: Int
-    ) {
-        val hasDifferences: Boolean get() = differences.isNotEmpty()
-        val newPlaylistsCount: Int get() = differences.count { it.type == DifferenceType.NEW_PLAYLIST }
-        val playlistsWithMissingSongs: Int get() = differences.count { it.type == DifferenceType.MISSING_SONGS }
-    }
+    )
 }

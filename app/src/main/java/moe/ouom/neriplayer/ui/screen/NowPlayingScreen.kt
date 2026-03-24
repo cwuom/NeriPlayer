@@ -263,6 +263,7 @@ private fun buildRemoteSongShareUrl(originalSong: SongItem, queue: List<SongItem
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalSharedTransitionApi::class)
 @Composable
+@Suppress("AssignedValueIsNeverRead")
 fun NowPlayingScreen(
     onNavigateUp: () -> Unit,
     onEnterAlbum: (NeteaseAlbum) -> Unit,
@@ -349,8 +350,7 @@ fun NowPlayingScreen(
 
     val downloadCurrentCover: () -> Unit = {
         val song = currentSong
-        val coverUrl = currentCoverUrl
-        if (song == null || coverUrl.isNullOrBlank()) {
+        if (song == null || currentCoverUrl.isNullOrBlank()) {
             screenScope.launch {
                 snackbarHostState.showSnackbar(
                     context.getString(R.string.cover_download_unavailable)
@@ -360,7 +360,7 @@ fun NowPlayingScreen(
             screenScope.launch {
                 saveCoverToPictures(
                     context = context,
-                    imageUrl = coverUrl,
+                    imageUrl = currentCoverUrl,
                     suggestedName = "${song.displayArtist()} - ${song.displayName()} 封面"
                 ).onSuccess { fileName ->
                     snackbarHostState.showSnackbar(
@@ -1967,6 +1967,7 @@ fun LyricFontSizeSheet(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+@Suppress("AssignedValueIsNeverRead")
 fun EditSongInfoSheet(
     viewModel: NowPlayingViewModel,
     originalSong: SongItem,
@@ -2287,7 +2288,7 @@ fun EditSongInfoSheet(
                             showLyricsEditor = true
                         } catch (e: Exception) {
                             e.printStackTrace()
-                            lyricsToEdit = actualSong.matchedLyric ?: ""
+                            lyricsToEdit = ""
                             translatedLyricsToEdit = ""
                             showLyricsEditor = true
                         }

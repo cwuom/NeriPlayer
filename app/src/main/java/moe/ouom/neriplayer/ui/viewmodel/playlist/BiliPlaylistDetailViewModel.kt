@@ -40,6 +40,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import java.io.IOException
 
 /** Bilibili 视频条目数据模型 */
+@Suppress("unused")
 @Parcelize
 data class BiliVideoItem(
     val id: Long, // avid

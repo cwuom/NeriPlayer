@@ -24,6 +24,7 @@ package moe.ouom.neriplayer.ui.screen.playlist
  */
 
 
+import android.annotation.SuppressLint
 import android.Manifest
 import android.content.ClipData
 import android.content.Context
@@ -191,6 +192,7 @@ import java.io.File
     DelicateCoroutinesApi::class
 )
 @Composable
+@SuppressLint("LocalContextResourcesRead")
 fun LocalPlaylistDetailScreen(
     playlistId: Long,
     onBack: () -> Unit,
@@ -683,9 +685,9 @@ fun LocalPlaylistDetailScreen(
             LaunchedEffect(playlistId, displayedSongs) {
                 if (!hasRestoredScroll.value) {
                     val key = savedListKey.value
-                    val targetIndex = when {
-                        key == null -> null
-                        key == headerKey -> 0
+                    val targetIndex = when (key) {
+                        null -> null
+                        headerKey -> 0
                         else -> {
                             val idx = displayedSongs.indexOfFirst { it.stableKey() == key }
                             if (idx >= 0) idx + 1 else null

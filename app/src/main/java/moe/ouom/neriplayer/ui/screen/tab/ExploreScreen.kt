@@ -136,6 +136,7 @@ import moe.ouom.neriplayer.util.performHapticFeedback
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
+@Suppress("AssignedValueIsNeverRead")
 fun ExploreScreen(
     gridState: LazyGridState,
     onPlay: (NeteasePlaylist) -> Unit,

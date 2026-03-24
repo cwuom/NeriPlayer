@@ -135,23 +135,6 @@ object LanguageManager {
         applyLanguage(context)
     }
 
-    /**
-     * 获取当前显示的语言（考虑系统语言）
-     * Get current display language (considering system language)
-     */
-    fun getCurrentDisplayLanguage(context: Context): String {
-        val currentLanguage = getCurrentLanguage(context)
-        return if (currentLanguage == Language.SYSTEM) {
-            val systemLocale =
-                context.resources.configuration.locales[0]
-            when {
-                systemLocale.language.startsWith("zh") -> context.getString(R.string.language_simplified_chinese)
-                else -> context.getString(R.string.language_english)
-            }
-        } else {
-            currentLanguage.getDisplayName(context)
-        }
-    }
 }
 
 /**

@@ -40,6 +40,7 @@ import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicUiDependencies
 import moe.ouom.neriplayer.util.ExceptionHandler
 import moe.ouom.neriplayer.util.LanguageManager
 
+@Suppress("unused")
 class NeriPlayerApplication : Application() {
     override fun onCreate() {
         super.onCreate()

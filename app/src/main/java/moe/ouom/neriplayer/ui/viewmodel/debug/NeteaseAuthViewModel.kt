@@ -57,6 +57,7 @@ sealed interface NeteaseAuthEvent {
     data class PromptReauth(val health: SavedCookieAuthHealth) : NeteaseAuthEvent
 }
 
+@Suppress("unused")
 class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
 
     private val cookieRepo = AppContainer.neteaseCookieRepo
@@ -159,7 +160,7 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
                 val ok = JSONObject(resp).optInt("code", -1) == 200
                 if (ok) {
                     emitSnack("Verification code sent")
-                    startCountdown(60)
+                    startCountdown()
                 } else {
                     val msg = JSONObject(resp).optString("msg", "Send failed")
                     emitSnack("Send failed: $msg")
@@ -302,9 +303,9 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun startCountdown(seconds: Int) {
+    private fun startCountdown() {
         viewModelScope.launch {
-            var left = seconds
+            var left = 60
             while (left >= 0) {
                 _uiState.value = _uiState.value.copy(countdownSec = left)
                 delay(1000)

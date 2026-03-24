@@ -319,6 +319,7 @@ data class SyncLogEntry(
 /**
  * 同步操作类型
  */
+@Suppress("unused")
 @Serializable
 enum class SyncAction {
     CREATE_PLAYLIST,
@@ -358,6 +359,7 @@ data class SyncConflict(
 /**
  * 冲突类型
  */
+@Suppress("unused")
 enum class ConflictType {
     PLAYLIST_RENAMED_BOTH_SIDES,
     SONG_ADDED_REMOVED_CONFLICT,
@@ -367,6 +369,7 @@ enum class ConflictType {
 /**
  * 冲突解决方式
  */
+@Suppress("unused")
 enum class ConflictResolution {
     AUTO_MERGED,
     LOCAL_WINS,

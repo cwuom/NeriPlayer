@@ -131,7 +131,6 @@ class GitHubSyncManager private constructor(context: Context) {
                         owner = owner,
                         repo = repo,
                         localData = localData,
-                        sha = null,
                         fileName = preferredFileName,
                         localizedContext = localizedContext,
                         startMutationVersion = startMutationVersion,
@@ -268,13 +267,12 @@ class GitHubSyncManager private constructor(context: Context) {
         owner: String,
         repo: String,
         localData: SyncData,
-        sha: String?,
         fileName: String,
         localizedContext: Context,
         startMutationVersion: Long,
         uploadedDeletedPlaylistIds: Set<Long>
     ): Result<SyncResult> {
-        val uploadResult = uploadLocalData(apiClient, owner, repo, localData, sha, fileName)
+        val uploadResult = uploadLocalData(apiClient, owner, repo, localData, null, fileName)
         if (uploadResult.isSuccess) {
             uploadResult.getOrNull()?.let { storage.saveLastRemoteSha(it) }
             storage.saveLastSyncTime(System.currentTimeMillis())

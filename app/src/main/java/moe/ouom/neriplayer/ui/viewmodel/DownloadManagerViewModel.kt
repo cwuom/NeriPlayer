@@ -25,11 +25,9 @@ package moe.ouom.neriplayer.ui.viewmodel
 
 
 import android.app.Application
-import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import moe.ouom.neriplayer.core.download.DownloadedSong
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 
 class DownloadManagerViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -49,9 +47,5 @@ class DownloadManagerViewModel(application: Application) : AndroidViewModel(appl
     fun playDownloadedSong(song: DownloadedSong) {
         val appContext = getApplication<Application>()
         GlobalDownloadManager.playDownloadedSong(appContext, song)
-    }
-
-    fun startBatchDownload(context: Context, songs: List<SongItem>) {
-        GlobalDownloadManager.startBatchDownload(context, songs)
     }
 }

@@ -51,6 +51,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
@@ -68,6 +69,7 @@ import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+@Suppress("AssignedValueIsNeverRead")
 fun DownloadManagerScreen(
     onBack: () -> Unit,
     onOpenDownloadProgress: () -> Unit
@@ -519,7 +521,7 @@ private fun DownloadedSongItem(
                 val localUri = if (song.filePath.startsWith("/")) {
                     Uri.fromFile(File(song.filePath))
                 } else {
-                    Uri.parse(song.filePath)
+                    song.filePath.toUri()
                 }
                 LocalMediaSupport.inspect(context, localUri).coverUri
             }.getOrNull()

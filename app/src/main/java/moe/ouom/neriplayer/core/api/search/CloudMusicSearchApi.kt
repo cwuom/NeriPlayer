@@ -57,8 +57,13 @@ import java.io.IOException
 @Serializable private data class CloudMusicSongDetailResponse(val songs: List<CloudMusicSongDetail>)
 @Serializable private data class CloudMusicArtist(val name: String)
 @Serializable private data class CloudMusicAlbum(val name: String, val picUrl: String?)
-@Serializable private data class CloudMusicLyricResponse(val lrc: CloudMusicLrc?, val tlyric: CloudMusicLrc? = null)
-@Serializable private data class CloudMusicLrc(val lyric: String?)
+@Suppress("unused")
+@Serializable
+private data class CloudMusicLyricResponse(val lrc: CloudMusicLrc?, val tlyric: CloudMusicLrc? = null)
+
+@Suppress("unused")
+@Serializable
+private data class CloudMusicLrc(val lyric: String?)
 
 class CloudMusicSearchApi(private val neteaseClient: NeteaseClient) : SearchApi {
 
@@ -78,7 +83,7 @@ class CloudMusicSearchApi(private val neteaseClient: NeteaseClient) : SearchApi 
                 offset = offset,
                 usePersistedCookies = false
             )
-            logLongJson(TAG, responseJson)
+            logLongJson(responseJson)
 
             val searchResponse = json.decodeFromString<CloudMusicSearchResponse>(responseJson)
 
@@ -146,23 +151,23 @@ class CloudMusicSearchApi(private val neteaseClient: NeteaseClient) : SearchApi 
             } else {
                 val jsonString = body.string()
                 NPLogger.d(TAG, "Request URL: $url")
-                logLongJson(TAG, jsonString)
+                logLongJson(jsonString)
                 return jsonString
             }
         }
     }
 
-    private fun logLongJson(tag: String, json: String) {
+    private fun logLongJson(json: String) {
         if (json.length > 3000) {
-            NPLogger.d(tag, "Response JSON (chunk 1): ${json.substring(0, 3000)}")
+            NPLogger.d(TAG, "Response JSON (chunk 1): ${json.substring(0, 3000)}")
             var i = 3000
             while (i < json.length) {
                 val chunk = json.substring(i, (i + 3000).coerceAtMost(json.length))
-                NPLogger.d(tag, "Response JSON (chunk ${i / 3000 + 1}): $chunk")
+                NPLogger.d(TAG, "Response JSON (chunk ${i / 3000 + 1}): $chunk")
                 i += 3000
             }
         } else {
-            NPLogger.d(tag, "Response JSON: $json")
+            NPLogger.d(TAG, "Response JSON: $json")
         }
     }
 

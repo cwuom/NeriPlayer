@@ -40,13 +40,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.data.auth.youtube.applyYouTubeWebCookies
-import moe.ouom.neriplayer.data.auth.youtube.collectYouTubeWebCookies
-import moe.ouom.neriplayer.data.auth.youtube.hasMeaningfulYouTubeAuthChange
-import moe.ouom.neriplayer.data.auth.youtube.mergeYouTubeAuthBundle
-import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthHealth
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
-import moe.ouom.neriplayer.data.auth.youtube.YouTubeCookieSupport
-import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
 import moe.ouom.neriplayer.data.platform.youtube.effectiveCookieHeader
 import moe.ouom.neriplayer.data.platform.youtube.resolveBootstrapUserAgent
 import moe.ouom.neriplayer.util.NPLogger
@@ -71,9 +65,7 @@ private data class WebPoPageSnapshot(
     val hasWebPoClient: Boolean = false,
     val visitorData: String = "",
     val dataSyncId: String = "",
-    val bindsGvsTokenToVideoId: Boolean = false,
-    val signInUrl: String = "",
-    val signInButtonDetected: Boolean = false
+    val bindsGvsTokenToVideoId: Boolean = false
 )
 
 private data class CachedWebPoToken(
@@ -87,23 +79,9 @@ private data class WebPoMintResult(
     val error: String = ""
 )
 
-private data class AutoSignInGateDecision(
-    val allowed: Boolean,
-    val reason: String
-)
-
-private data class AutoSignInRefreshResult(
-    val triggered: Boolean = false,
-    val mechanism: String = "",
-    val authChanged: Boolean = false,
-    val reason: String = ""
-)
-
 internal class YouTubeWebPoTokenProvider(
     context: Context,
-    private val authProvider: () -> YouTubeAuthBundle = { YouTubeAuthBundle() },
-    private val authHealthProvider: () -> YouTubeAuthHealth = { YouTubeAuthHealth() },
-    private val authUpdater: (YouTubeAuthBundle) -> Unit = {}
+    private val authProvider: () -> YouTubeAuthBundle = { YouTubeAuthBundle() }
 ) : YouTubePoTokenProvider {
     companion object {
         private const val TAG = "YouTubeWebPoToken"
@@ -120,11 +98,6 @@ internal class YouTubeWebPoTokenProvider(
         private const val TOKEN_TTL_MS = 6L * 60L * 60L * 1000L
         private const val ASYNC_SCRIPT_TIMEOUT_MS = 20_000L
         private const val TOKEN_CACHE_MAX_SIZE = 16
-        private const val SIGN_IN_REFRESH_BACKOFF_MS = 1_500L
-        private const val AUTO_SIGN_IN_COOLDOWN_MS = 20L * 60L * 1000L
-        private const val AUTO_SIGN_IN_TIMEOUT_MS = 12_000L
-        private const val AUTO_SIGN_IN_MAX_CONSECUTIVE_FAILURES = 2
-        private const val AUTO_SIGN_IN_CIRCUIT_BREAK_MS = 60L * 60L * 1000L
     }
 
     private val applicationContext = context.applicationContext
@@ -143,18 +116,6 @@ internal class YouTubeWebPoTokenProvider(
 
     @Volatile
     private var preparedUrl: String = WEB_PO_BOOTSTRAP_URLS.first()
-
-    @Volatile
-    private var lastAutoSignInAttemptAtMs: Long = 0L
-
-    @Volatile
-    private var lastAutoSignInSuccessAtMs: Long = 0L
-
-    @Volatile
-    private var consecutiveAutoSignInFailures: Int = 0
-
-    @Volatile
-    private var autoSignInCircuitOpenUntilMs: Long = 0L
 
     override suspend fun warmSession() {
         val auth = authProvider().normalized()
@@ -282,10 +243,7 @@ internal class YouTubeWebPoTokenProvider(
 
         val activeWebView = ensureWebView()
         syncCookies(activeWebView, auth)
-        persistObservedAuthIfNeeded(currentAuth = auth, activeWebView = activeWebView)
         preparedCookieFingerprint = authFingerprint
-        var autoSignInHandled = false
-        var autoSignInPendingRecovery = false
 
         for (bootstrapUrl in WEB_PO_BOOTSTRAP_URLS) {
             withContext(Dispatchers.Main) {
@@ -298,73 +256,17 @@ internal class YouTubeWebPoTokenProvider(
                 delay(PAGE_PREPARE_BACKOFF_MS)
                 val snapshot = readPageSnapshot() ?: return@repeat
                 if (snapshot.hasYtcfg && snapshot.hasWebPoClient) {
-                    persistObservedAuthIfNeeded(currentAuth = auth, activeWebView = activeWebView)
-                    if (autoSignInPendingRecovery) {
-                        recordAutoSignInSuccess(
-                            detail = "page_ready url=$bootstrapUrl preparedUrl=$preparedUrl"
-                        )
-                        autoSignInPendingRecovery = false
-                    }
                     preparedAtMs = System.currentTimeMillis()
                     preparedUrl = bootstrapUrl
                     return snapshot
                 }
-                if (!autoSignInHandled && snapshot.signInButtonDetected) {
-                    autoSignInHandled = true
-                    val authHealth = authHealthProvider()
-                    val gateDecision = shouldAttemptAutoSignInRefresh(
-                        auth = auth,
-                        health = authHealth,
-                        now = System.currentTimeMillis()
-                    )
-                    if (!gateDecision.allowed) {
-                        NPLogger.i(
-                            TAG,
-                            "auto_sign_in skipped reason=${gateDecision.reason} state=${authHealth.state} url=$bootstrapUrl signInUrl=${snapshot.signInUrl.isNotBlank()}"
-                        )
-                        return@repeat
-                    }
-
-                    recordAutoSignInAttempt(
-                        detail = "state=${authHealth.state} url=$bootstrapUrl signInUrl=${snapshot.signInUrl.isNotBlank()}"
-                    )
-                    val refreshResult = triggerSignInRefresh(
-                        activeWebView = activeWebView,
-                        bootstrapUrl = bootstrapUrl,
-                        currentAuth = auth,
-                        snapshot = snapshot
-                    )
-                    if (!refreshResult.triggered) {
-                        recordAutoSignInFailure(
-                            reason = refreshResult.reason.ifBlank { "trigger_failed" }
-                        )
-                        return@repeat
-                    }
-
-                    NPLogger.i(
-                        TAG,
-                        "auto_sign_in triggered mechanism=${refreshResult.mechanism} authChanged=${refreshResult.authChanged} state=${authHealth.state}"
-                    )
-                    if (refreshResult.authChanged) {
-                        recordAutoSignInSuccess(
-                            detail = "auth_changed mechanism=${refreshResult.mechanism}"
-                        )
-                    } else {
-                        autoSignInPendingRecovery = true
-                    }
-                    return@repeat
-                }
                 if (attempt == PAGE_PREPARE_ATTEMPTS - 1) {
                     NPLogger.w(
                         TAG,
-                        "WebPoClient unavailable on $bootstrapUrl, ready=${snapshot.readyState}, ytcfg=${snapshot.hasYtcfg}, signInDetected=${snapshot.signInButtonDetected}"
+                        "WebPoClient unavailable on $bootstrapUrl, ready=${snapshot.readyState}, ytcfg=${snapshot.hasYtcfg}"
                     )
                 }
             }
-        }
-
-        if (autoSignInPendingRecovery) {
-            recordAutoSignInFailure(reason = "post_refresh_page_unavailable")
         }
 
         return readPageSnapshot()
@@ -407,107 +309,6 @@ internal class YouTubeWebPoTokenProvider(
         cookieManager.flush()
     }
 
-    private suspend fun persistObservedAuthIfNeeded(
-        currentAuth: YouTubeAuthBundle,
-        activeWebView: WebView
-    ): Boolean = withContext(Dispatchers.Main) {
-        val observedCookies = collectYouTubeWebCookies(CookieManager.getInstance())
-        if (!YouTubeCookieSupport.isLoggedIn(observedCookies)) {
-            return@withContext false
-        }
-
-        val mergedAuth = mergeYouTubeAuthBundle(
-            base = currentAuth,
-            observedCookies = observedCookies,
-            userAgent = activeWebView.settings.userAgentString.orEmpty(),
-            savedAt = System.currentTimeMillis()
-        )
-        if (hasMeaningfulYouTubeAuthChange(currentAuth, mergedAuth)) {
-            authUpdater(mergedAuth)
-            return@withContext true
-        }
-        false
-    }
-
-    private suspend fun triggerSignInRefresh(
-        activeWebView: WebView,
-        bootstrapUrl: String,
-        currentAuth: YouTubeAuthBundle,
-        snapshot: WebPoPageSnapshot
-    ): AutoSignInRefreshResult {
-        return withTimeoutOrNull(AUTO_SIGN_IN_TIMEOUT_MS) {
-            val mechanism = if (snapshot.signInUrl.isNotBlank()) {
-                withContext(Dispatchers.Main) {
-                    activeWebView.stopLoading()
-                    activeWebView.loadUrl(snapshot.signInUrl)
-                }
-                "href"
-            } else if (triggerSignInButtonClick()) {
-                "click"
-            } else {
-                return@withTimeoutOrNull AutoSignInRefreshResult(
-                    triggered = false,
-                    reason = "sign_in_trigger_unavailable"
-                )
-            }
-
-            delay(SIGN_IN_REFRESH_BACKOFF_MS)
-            val authChanged = persistObservedAuthIfNeeded(
-                currentAuth = currentAuth,
-                activeWebView = activeWebView
-            )
-            withContext(Dispatchers.Main) {
-                activeWebView.stopLoading()
-                activeWebView.loadUrl(bootstrapUrl)
-            }
-            AutoSignInRefreshResult(
-                triggered = true,
-                mechanism = mechanism,
-                authChanged = authChanged
-            )
-        } ?: AutoSignInRefreshResult(
-            triggered = false,
-            reason = "timeout"
-        )
-    }
-
-    private suspend fun triggerSignInButtonClick(): Boolean {
-        val raw = evaluateJavascript(
-            """
-                (() => {
-                  const normalize = (value) => String(value || '').trim().toLowerCase();
-                  const matchesSignIn = (value) => ['sign in', '登录', '登入']
-                    .some((token) => normalize(value).includes(token));
-                  const candidates = Array.from(
-                    document.querySelectorAll(
-                      'a[href], button, div[role="button"], yt-button-renderer, yt-button-shape, tp-yt-paper-button'
-                    )
-                  );
-                  for (const candidate of candidates) {
-                    const nestedAnchor = candidate.matches?.('a[href]')
-                      ? candidate
-                      : candidate.querySelector?.('a[href]');
-                    const label = [
-                      candidate.innerText,
-                      candidate.textContent,
-                      candidate.getAttribute?.('aria-label'),
-                      candidate.getAttribute?.('title'),
-                      nestedAnchor?.innerText,
-                      nestedAnchor?.textContent
-                    ].join(' ');
-                    if (matchesSignIn(label)) {
-                      candidate.click?.();
-                      nestedAnchor?.click?.();
-                      return 'true';
-                    }
-                  }
-                  return 'false';
-                })()
-            """.trimIndent()
-        )
-        return raw == "true"
-    }
-
     private suspend fun readPageSnapshot(): WebPoPageSnapshot? {
         val raw = evaluateJavascript(
             """
@@ -544,59 +345,6 @@ internal class YouTubeWebPoTokenProvider(
                     const flags = String(context?.serializedExperimentFlags || '');
                     return flags.includes('html5_generate_content_po_token=true');
                   });
-                  const normalize = (value) => String(value || '').trim().toLowerCase();
-                  const matchesSignIn = (value) => ['sign in', '登录', '登入']
-                    .some((token) => normalize(value).includes(token));
-                  const toAbsoluteUrl = (value) => {
-                    try {
-                      return value ? new URL(value, location.href).toString() : '';
-                    } catch (error) {
-                      return '';
-                    }
-                  };
-                  const findSignInEntry = () => {
-                    try {
-                      const candidates = Array.from(
-                        document.querySelectorAll(
-                          'a[href], button, div[role="button"], yt-button-renderer, yt-button-shape, tp-yt-paper-button'
-                        )
-                      );
-                      for (const candidate of candidates) {
-                        const nestedAnchor = candidate.matches?.('a[href]')
-                          ? candidate
-                          : candidate.querySelector?.('a[href]');
-                        const href = toAbsoluteUrl(
-                          nestedAnchor?.href
-                            || candidate.href
-                            || candidate.getAttribute?.('href')
-                            || nestedAnchor?.getAttribute?.('href')
-                        );
-                        const label = [
-                          candidate.innerText,
-                          candidate.textContent,
-                          candidate.getAttribute?.('aria-label'),
-                          candidate.getAttribute?.('title'),
-                          nestedAnchor?.innerText,
-                          nestedAnchor?.textContent
-                        ].join(' ');
-                        if (
-                          href.includes('accounts.google.com')
-                          || href.includes('ServiceLogin')
-                          || matchesSignIn(label)
-                        ) {
-                          return {
-                            detected: true,
-                            url: href
-                          };
-                        }
-                      }
-                    } catch (error) {}
-                    return {
-                      detected: false,
-                      url: ''
-                    };
-                  };
-                  const signInEntry = findSignInEntry();
                   return JSON.stringify({
                     readyState: document.readyState || '',
                     hasYtcfg: !!ytcfg,
@@ -611,9 +359,7 @@ internal class YouTubeWebPoTokenProvider(
                         || getConfig('datasyncId')
                         || ''
                     ),
-                    bindsGvsTokenToVideoId: !!bindsToVideoId,
-                    signInUrl: String(signInEntry.url || ''),
-                    signInButtonDetected: !!signInEntry.detected
+                    bindsGvsTokenToVideoId: !!bindsToVideoId
                   });
                 })()
             """.trimIndent()
@@ -627,9 +373,7 @@ internal class YouTubeWebPoTokenProvider(
                 hasWebPoClient = root.optBoolean("hasWebPoClient"),
                 visitorData = root.optString("visitorData"),
                 dataSyncId = root.optString("dataSyncId"),
-                bindsGvsTokenToVideoId = root.optBoolean("bindsGvsTokenToVideoId"),
-                signInUrl = root.optString("signInUrl"),
-                signInButtonDetected = root.optBoolean("signInButtonDetected")
+                bindsGvsTokenToVideoId = root.optBoolean("bindsGvsTokenToVideoId")
             )
         }.getOrNull()
     }
@@ -761,55 +505,6 @@ internal class YouTubeWebPoTokenProvider(
         }
     }
 
-    private fun shouldAttemptAutoSignInRefresh(
-        auth: YouTubeAuthBundle,
-        health: YouTubeAuthHealth,
-        now: Long
-    ): AutoSignInGateDecision {
-        if (!auth.hasLoginCookies()) {
-            return AutoSignInGateDecision(allowed = false, reason = "no_login_cookies")
-        }
-        if (health.state == YouTubeAuthState.Missing) {
-            return AutoSignInGateDecision(allowed = false, reason = "auth_missing")
-        }
-        if (autoSignInCircuitOpenUntilMs > now) {
-            return AutoSignInGateDecision(allowed = false, reason = "circuit_open")
-        }
-        if (lastAutoSignInAttemptAtMs > 0L && now - lastAutoSignInAttemptAtMs < AUTO_SIGN_IN_COOLDOWN_MS) {
-            return AutoSignInGateDecision(allowed = false, reason = "cooldown")
-        }
-        return AutoSignInGateDecision(allowed = true, reason = "allowed")
-    }
-
-    private fun recordAutoSignInAttempt(detail: String) {
-        lastAutoSignInAttemptAtMs = System.currentTimeMillis()
-        NPLogger.i(
-            TAG,
-            "auto_sign_in attempt detail=$detail cooldownMs=$AUTO_SIGN_IN_COOLDOWN_MS failures=$consecutiveAutoSignInFailures"
-        )
-    }
-
-    private fun recordAutoSignInSuccess(detail: String) {
-        lastAutoSignInSuccessAtMs = System.currentTimeMillis()
-        consecutiveAutoSignInFailures = 0
-        autoSignInCircuitOpenUntilMs = 0L
-        NPLogger.i(
-            TAG,
-            "auto_sign_in success detail=$detail lastSuccessAt=$lastAutoSignInSuccessAtMs"
-        )
-    }
-
-    private fun recordAutoSignInFailure(reason: String) {
-        consecutiveAutoSignInFailures += 1
-        if (consecutiveAutoSignInFailures >= AUTO_SIGN_IN_MAX_CONSECUTIVE_FAILURES) {
-            autoSignInCircuitOpenUntilMs = System.currentTimeMillis() + AUTO_SIGN_IN_CIRCUIT_BREAK_MS
-        }
-        NPLogger.w(
-            TAG,
-            "auto_sign_in failure reason=$reason failures=$consecutiveAutoSignInFailures circuitUntil=$autoSignInCircuitOpenUntilMs"
-        )
-    }
-
     private fun buildCacheKey(
         contentBinding: String,
         remoteHost: String
@@ -835,6 +530,7 @@ internal class YouTubeWebPoTokenProvider(
     }
 
     private inner class WebPoResultBridge {
+        @Suppress("unused")
         @JavascriptInterface
         fun postResult(requestId: String, encodedPayload: String) {
             val payload = runCatching {

@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.screen.debug
  * Created: 2025/8/17
  */
 
+import android.annotation.SuppressLint
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.imePadding
@@ -53,6 +54,7 @@ import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+@SuppressLint("LocalContextResourcesRead")
 fun LogListScreen(
     onBack: () -> Unit,
     onLogFileClick: (String) -> Unit
