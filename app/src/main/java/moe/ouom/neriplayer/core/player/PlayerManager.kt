@@ -2193,7 +2193,6 @@ object PlayerManager {
         return when {
             biliAudioStream.qualityTag == "dolby" -> "dolby"
             biliAudioStream.qualityTag == "hires" -> "hires"
-            biliAudioStream.bitrateKbps >= 500 -> "lossless"
             biliAudioStream.bitrateKbps >= 180 -> "high"
             biliAudioStream.bitrateKbps >= 120 -> "medium"
             else -> "low"
