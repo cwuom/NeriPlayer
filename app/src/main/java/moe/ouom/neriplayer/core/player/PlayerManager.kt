@@ -3443,25 +3443,16 @@ object PlayerManager {
                         matchedSongId = selectedSong.id
                     )
                 } else {
-                    originalSong.copy(
-                        name = newDetails.songName,
-                        artist = newDetails.singer,
+                    applyManualSearchMetadata(
+                        originalSong = originalSong,
+                        songName = newDetails.songName,
+                        singer = newDetails.singer,
                         coverUrl = newDetails.coverUrl,
-                        // 直接使用获取的歌词，如果为null则清除现有歌词（B站音源默认无歌词）
-                        matchedLyric = newDetails.lyric,
-                        matchedTranslatedLyric = newDetails.translatedLyric,
-                        matchedLyricSource = selectedSong.source,
+                        lyric = newDetails.lyric,
+                        translatedLyric = newDetails.translatedLyric,
+                        matchedSource = selectedSong.source,
                         matchedSongId = selectedSong.id,
-                        // 清除所有自定义字段，强制使用获取的信息
-                        customCoverUrl = null,
-                        customName = null,
-                        customArtist = null,
-                        // 保存原始值以便还原
-                        originalName = originalSong.originalName ?: originalSong.name,
-                        originalArtist = originalSong.originalArtist ?: originalSong.artist,
-                        originalCoverUrl = originalSong.originalCoverUrl ?: originalSong.coverUrl,
-                        originalLyric = originalSong.originalLyric ?: originalSong.matchedLyric,
-                        originalTranslatedLyric = originalSong.originalTranslatedLyric ?: originalSong.matchedTranslatedLyric
+                        useCustomOverride = shouldApplySearchMetadataAsCustomOverride(originalSong)
                     )
                 }
 
@@ -3480,6 +3471,10 @@ object PlayerManager {
         }
     }
 
+    private fun shouldApplySearchMetadataAsCustomOverride(song: SongItem): Boolean {
+        return isLocalSong(song) || AudioDownloadManager.getLocalPlaybackUri(application, song) != null
+    }
+
     fun updateSongCustomInfo(
         originalSong: SongItem,
         customCoverUrl: String?,
@@ -3494,16 +3489,25 @@ object PlayerManager {
                 ?: _currentSongFlow.value?.takeIf { it.sameIdentityAs(originalSong) }
                 ?: originalSong
 
-            val originalName = currentSong.originalName ?: currentSong.name
-            val originalArtist = currentSong.originalArtist ?: currentSong.artist
-            val originalCoverUrl = currentSong.originalCoverUrl ?: currentSong.coverUrl
+            val baseName = currentSong.name
+            val baseArtist = currentSong.artist
+            val baseCoverUrl = currentSong.coverUrl
+            val originalName = currentSong.originalName ?: baseName
+            val originalArtist = currentSong.originalArtist ?: baseArtist
+            val originalCoverUrl = currentSong.originalCoverUrl ?: baseCoverUrl
 
-            val normalizedCustomName = customName?.trim()
-                ?.takeIf { it.isNotBlank() && it != originalName }
-            val normalizedCustomArtist = customArtist?.trim()
-                ?.takeIf { it.isNotBlank() && it != originalArtist }
-            val normalizedCustomCoverUrl = customCoverUrl
-                ?.takeIf { it.isNotBlank() && it != originalCoverUrl }
+            val normalizedCustomName = normalizeCustomMetadataValue(
+                desiredValue = customName,
+                baseValue = baseName
+            )
+            val normalizedCustomArtist = normalizeCustomMetadataValue(
+                desiredValue = customArtist,
+                baseValue = baseArtist
+            )
+            val normalizedCustomCoverUrl = normalizeCustomMetadataValue(
+                desiredValue = customCoverUrl,
+                baseValue = baseCoverUrl
+            )
 
             val updatedSong = currentSong.copy(
                 customName = normalizedCustomName,
@@ -3674,4 +3678,65 @@ object PlayerManager {
         persistState()
     }
 
+}
+
+internal fun normalizeCustomMetadataValue(
+    desiredValue: String?,
+    baseValue: String?
+): String? {
+    val normalizedDesired = desiredValue?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?: return null
+    return normalizedDesired.takeIf { it != baseValue }
+}
+
+internal fun applyManualSearchMetadata(
+    originalSong: SongItem,
+    songName: String,
+    singer: String,
+    coverUrl: String?,
+    lyric: String?,
+    translatedLyric: String?,
+    matchedSource: MusicPlatform,
+    matchedSongId: String,
+    useCustomOverride: Boolean
+): SongItem {
+    val originalName = originalSong.originalName ?: originalSong.name
+    val originalArtist = originalSong.originalArtist ?: originalSong.artist
+    val originalCoverUrl = originalSong.originalCoverUrl ?: originalSong.coverUrl
+
+    return if (useCustomOverride) {
+        originalSong.copy(
+            matchedLyric = lyric,
+            matchedTranslatedLyric = translatedLyric,
+            matchedLyricSource = matchedSource,
+            matchedSongId = matchedSongId,
+            customCoverUrl = normalizeCustomMetadataValue(coverUrl, originalSong.coverUrl),
+            customName = normalizeCustomMetadataValue(songName, originalSong.name),
+            customArtist = normalizeCustomMetadataValue(singer, originalSong.artist),
+            originalName = originalName,
+            originalArtist = originalArtist,
+            originalCoverUrl = originalCoverUrl,
+            originalLyric = originalSong.originalLyric ?: originalSong.matchedLyric,
+            originalTranslatedLyric = originalSong.originalTranslatedLyric ?: originalSong.matchedTranslatedLyric
+        )
+    } else {
+        originalSong.copy(
+            name = songName,
+            artist = singer,
+            coverUrl = coverUrl,
+            matchedLyric = lyric,
+            matchedTranslatedLyric = translatedLyric,
+            matchedLyricSource = matchedSource,
+            matchedSongId = matchedSongId,
+            customCoverUrl = null,
+            customName = null,
+            customArtist = null,
+            originalName = originalName,
+            originalArtist = originalArtist,
+            originalCoverUrl = originalCoverUrl,
+            originalLyric = originalSong.originalLyric ?: originalSong.matchedLyric,
+            originalTranslatedLyric = originalSong.originalTranslatedLyric ?: originalSong.matchedTranslatedLyric
+        )
+    }
 }

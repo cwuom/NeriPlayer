@@ -208,12 +208,7 @@ class NowPlayingViewModel : ViewModel() {
                 val isBili = originalSong.album.startsWith(PlayerManager.BILI_SOURCE_TAG)
 
                 if (!originalSong.mediaUri.isNullOrBlank()) {
-                    val info = OriginalSongInfo(
-                        name = originalSong.originalName ?: originalSong.name,
-                        artist = originalSong.originalArtist ?: originalSong.artist,
-                        coverUrl = originalSong.originalCoverUrl ?: originalSong.coverUrl,
-                        shouldClearLyrics = true
-                    )
+                    val info = buildLocalOriginalSongInfo(originalSong)
                     onResult(true, info, context.getString(R.string.music_restore_success))
                 } else if (isBili) {
                     val resolved = resolveBiliSong(originalSong, AppContainer.biliClient)
@@ -260,4 +255,18 @@ class NowPlayingViewModel : ViewModel() {
         }
     }
 
+}
+
+internal fun buildLocalOriginalSongInfo(song: SongItem): NowPlayingViewModel.OriginalSongInfo {
+    val lyric = song.originalLyric
+    val translatedLyric = song.originalTranslatedLyric
+    val shouldClearLyrics = lyric.isNullOrBlank() && translatedLyric.isNullOrBlank()
+    return NowPlayingViewModel.OriginalSongInfo(
+        name = song.originalName ?: song.name,
+        artist = song.originalArtist ?: song.artist,
+        coverUrl = song.originalCoverUrl ?: song.coverUrl,
+        shouldClearLyrics = shouldClearLyrics,
+        lyric = lyric,
+        translatedLyric = translatedLyric
+    )
 }

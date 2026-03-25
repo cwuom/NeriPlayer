@@ -495,7 +495,7 @@ class YouTubeAuthAutoRefreshManager(
             base = base,
             observedCookies = observedCookies,
             authorization = headers?.authorization.orEmpty(),
-            // 隐藏刷新页不一定会主动发 youtubei 请求，这里回退到页面公开的 SESSION_INDEX。
+            // 隐藏刷新页不一定会主动发 youtubei 请求，这里回退到页面公开的 SESSION_INDEX
             xGoogAuthUser = resolveObservedYouTubeAuthUser(
                 capturedAuthUser = headers?.xGoogAuthUser.orEmpty(),
                 pageSessionIndex = pageSnapshot?.sessionIndex.orEmpty()
