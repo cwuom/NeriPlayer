@@ -70,4 +70,37 @@ class PlayerManagerPlaybackStartPlanTest {
         assertEquals(1600L, plan.fadeDurationMs)
         assertEquals(0f, plan.initialVolume, 0.0001f)
     }
+
+    @Test
+    fun `manual cold resume forces startup protection fade`() {
+        val shouldProtect = shouldForceStartupProtectionFadeOnManualResume(
+            isPlayerPrepared = false,
+            resumePositionMs = 48_000L,
+            currentMediaUrlResolvedAtMs = 0L
+        )
+
+        assertTrue(shouldProtect)
+    }
+
+    @Test
+    fun `prepared player does not need manual startup protection fade`() {
+        val shouldProtect = shouldForceStartupProtectionFadeOnManualResume(
+            isPlayerPrepared = true,
+            resumePositionMs = 48_000L,
+            currentMediaUrlResolvedAtMs = 0L
+        )
+
+        assertFalse(shouldProtect)
+    }
+
+    @Test
+    fun `freshly resolved media skips manual startup protection fade`() {
+        val shouldProtect = shouldForceStartupProtectionFadeOnManualResume(
+            isPlayerPrepared = false,
+            resumePositionMs = 48_000L,
+            currentMediaUrlResolvedAtMs = 1L
+        )
+
+        assertFalse(shouldProtect)
+    }
 }

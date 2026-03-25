@@ -184,6 +184,16 @@ internal fun resolveManagedPlaybackStartPlan(
     )
 }
 
+internal fun shouldForceStartupProtectionFadeOnManualResume(
+    isPlayerPrepared: Boolean,
+    resumePositionMs: Long,
+    currentMediaUrlResolvedAtMs: Long
+): Boolean {
+    return !isPlayerPrepared &&
+        resumePositionMs > 0L &&
+        currentMediaUrlResolvedAtMs <= 0L
+}
+
 object PlayerManager {
     const val BILI_SOURCE_TAG = "Bilibili"
     const val NETEASE_SOURCE_TAG = "Netease"
@@ -2618,7 +2628,8 @@ object PlayerManager {
         suppressAutoResumeForCurrentSession = false
         resumePlaybackRequested = true
         val song = _currentSongFlow.value
-        if (isPreparedInPlayer() && song != null && !isLocalSong(song)) {
+        val preparedInPlayer = isPreparedInPlayer()
+        if (preparedInPlayer && song != null && !isLocalSong(song)) {
             val url = _currentMediaUrl.value
             if (!url.isNullOrBlank()) {
                 val ageMs = if (currentMediaUrlResolvedAtMs > 0L) {
@@ -2641,7 +2652,7 @@ object PlayerManager {
             }
         }
         when {
-            isPreparedInPlayer() -> {
+            preparedInPlayer -> {
                 syncExoRepeatMode()
                 startPlayerPlaybackWithFade(resolveCurrentPlaybackStartPlan())
                 val resumePositionMs = player.currentPosition.coerceAtLeast(0L)
@@ -2659,7 +2670,17 @@ object PlayerManager {
                 } else {
                     0L
                 }
-                playAtIndex(currentIndex, resumePositionMs = resumePositionMs)
+                // 冷启动后手动点击播放也属于“恢复旧进度”，需要和自动续播走同样的保护淡入。
+                val forceStartupProtectionFade = shouldForceStartupProtectionFadeOnManualResume(
+                    isPlayerPrepared = preparedInPlayer,
+                    resumePositionMs = resumePositionMs,
+                    currentMediaUrlResolvedAtMs = currentMediaUrlResolvedAtMs
+                )
+                playAtIndex(
+                    currentIndex,
+                    resumePositionMs = resumePositionMs,
+                    forceStartupProtectionFade = forceStartupProtectionFade
+                )
             }
             currentPlaylist.isNotEmpty() -> playAtIndex(0)
             else -> {}

@@ -120,16 +120,25 @@ class PlaybackEffectsController {
                 .getOrDefault(lastKnownBandCentersHz.getOrElse(index) { 1000 })
         }
 
-        val resolvedLevels = if (config.equalizerEnabled) {
-            resolvePlaybackEqualizerBandLevelsMb(
-                presetId = config.presetId,
-                customBandLevelsMb = config.customBandLevelsMb,
-                bandCentersHz = centersHz,
-                bandLevelRangeMb = bandRange
-            )
-        } else {
-            List(centersHz.size) { 0 }
+        lastKnownBandCentersHz = centersHz
+        lastKnownBandLevelRangeMb = bandRange
+        lastEqualizerAvailable = true
+
+        if (!config.equalizerEnabled) {
+            runCatching {
+                if (eq.enabled) {
+                    eq.enabled = false
+                }
+            }
+            return
         }
+
+        val resolvedLevels = resolvePlaybackEqualizerBandLevelsMb(
+            presetId = config.presetId,
+            customBandLevelsMb = config.customBandLevelsMb,
+            bandCentersHz = centersHz,
+            bandLevelRangeMb = bandRange
+        )
 
         centersHz.forEachIndexed { index, _ ->
             runCatching {
@@ -142,10 +151,6 @@ class PlaybackEffectsController {
                 eq.enabled = true
             }
         }
-
-        lastKnownBandCentersHz = centersHz
-        lastKnownBandLevelRangeMb = bandRange
-        lastEqualizerAvailable = true
     }
 
     private fun applyLoudnessEnhancer() {
