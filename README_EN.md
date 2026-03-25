@@ -33,6 +33,8 @@ It continuously iterates around "multi-source exploration, online playback, and 
 
 🚧 <strong>Work in progress</strong>
 
+<a href="https://trendshift.io/repositories/23906" target="_blank"><img src="https://trendshift.io/api/badge/repositories/23906" alt="cwuom%2FNeriPlayer | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+
 </div>
 
 > [!WARNING]
@@ -49,7 +51,7 @@ It continuously iterates around "multi-source exploration, online playback, and 
 
 ## About
 NeriPlayer is a native Android audio player based on **Jetpack Compose + Media3**.
-The current focus is not to build a public cloud service, but to integrate online content from **NetEase Cloud Music** and **Bilibili** under the premise that the user already has third-party platform accounts. It also provides features like **streaming cache, in-app downloads, local imports, local playlist management, and optional GitHub private repository sync**.
+The current focus is not to build a public cloud service, but to integrate online content from **NetEase Cloud Music**, **Bilibili**, and **YouTube Music** under the premise that the user already has third-party platform accounts. It also provides features like **streaming cache, in-app downloads, local imports, local playlist management, and optional GitHub private repository sync**.
 
 - **Account as Capability**: By legally authorizing your third-party platform accounts, you enable online playback, searching, and playlist access.
 - **Local Storage by Default**: Playback cache, downloaded files, playlists, history, settings, and authorization info are saved locally on the device by default.
@@ -239,7 +241,7 @@ For procedures spanning systematic builds or subsequent isolated app signature l
 - General operational configurations, encompassing internal downloaded variables, user preferences, explicit platform credentials, historical playthroughs, alongside audio caches invariably constrain straight inside native storage environments defaults.
 - For instances enabling explicit GitHub integrations, standard operations exclusively port standalone playlist variants alongside superficial metadata attributes straight into privatized native external hosting servers.
 - Streaming credential variants, extensive cookie caches, complete file outputs, alongside audio logs consistently omit all potential avenues returning to core development branches.
-- NeriPlayer operates within internalized standard Android Backup parameters; definitive exportation scopes inherently defer straight over to individualized overarching OS methodologies.
+- System cloud/device backup is disabled by default. Use the built-in JSON export/import flow when you need a manual backup or migration path.
 - Standalone localized tracking measures established via independent exterior servers fundamentally fall squarely upon respective platform regulations governing access interactions.
 
 ---
