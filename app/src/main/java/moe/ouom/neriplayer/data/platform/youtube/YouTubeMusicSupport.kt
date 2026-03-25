@@ -150,8 +150,29 @@ fun YouTubeAuthBundle.resolveBootstrapUserAgent(): String {
     }
 }
 
-fun YouTubeAuthBundle.resolveXGoogAuthUser(): String {
-    return xGoogAuthUser.takeIf { it.isNotBlank() } ?: "0"
+fun YouTubeAuthBundle.buildAuthCacheFingerprint(
+    userAgent: String,
+    origin: String = this.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN }
+): String {
+    return buildString {
+        append(effectiveCookieHeader())
+        append('|')
+        append(resolveXGoogAuthUser())
+        append('|')
+        append(origin.trim().ifBlank { YOUTUBE_MUSIC_ORIGIN })
+        append('|')
+        append(userAgent.trim())
+    }
+}
+
+fun YouTubeAuthBundle.storedXGoogAuthUser(): String {
+    return xGoogAuthUser.trim()
+}
+
+fun YouTubeAuthBundle.resolveXGoogAuthUser(fallback: String = "0"): String {
+    return storedXGoogAuthUser().ifBlank {
+        fallback.trim().ifBlank { "0" }
+    }
 }
 
 fun YouTubeAuthBundle.resolveAuthorizationHeader(
@@ -229,7 +250,8 @@ fun YouTubeAuthBundle.buildYouTubePageRequestHeaders(
 fun YouTubeAuthBundle.buildYouTubeInnertubeRequestHeaders(
     original: Map<String, String> = emptyMap(),
     authorizationOrigin: String = origin.ifBlank { YOUTUBE_MUSIC_ORIGIN },
-    includeAuthorization: Boolean = true
+    includeAuthorization: Boolean = true,
+    userSessionId: String = ""
 ): Map<String, String> {
     val headers = LinkedHashMap(original)
     val cookieHeader = appendYouTubeConsentCookie(effectiveCookieHeader())
@@ -240,7 +262,10 @@ fun YouTubeAuthBundle.buildYouTubeInnertubeRequestHeaders(
     headers.putIfAbsent("X-Goog-AuthUser", resolveXGoogAuthUser())
 
     if (includeAuthorization) {
-        val authorization = resolveAuthorizationHeader(origin = authorizationOrigin)
+        val authorization = resolveAuthorizationHeader(
+            origin = authorizationOrigin,
+            userSessionId = userSessionId
+        )
         if (authorization.isNotBlank()) {
             headers.putIfAbsent("Authorization", authorization)
         }

@@ -28,6 +28,7 @@ import android.app.Application
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
@@ -84,6 +85,22 @@ internal fun resolveInitialManagedDownloadSettings(
             directoryUri = resolved.directoryUri?.takeIf(String::isNotBlank),
             directoryLabel = resolved.directoryLabel?.takeIf(String::isNotBlank)
         )
+    }
+}
+
+internal fun handleYouTubeAuthStateChanged(
+    bundle: moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle,
+    clearBootstrapCache: () -> Unit,
+    clearPlaybackAuthBoundCaches: (Boolean) -> Unit,
+    evictConnections: () -> Unit,
+    warmBootstrapAsync: () -> Unit
+) {
+    clearBootstrapCache()
+    // 只移除旧请求引用，避免 auth 恢复成功时把当前播放请求自己取消掉
+    clearPlaybackAuthBoundCaches(false)
+    evictConnections()
+    if (bundle.hasLoginCookies()) {
+        warmBootstrapAsync()
     }
 }
 
@@ -216,6 +233,7 @@ object AppContainer {
         this.application = app
         primeProxySetting()
         startCookieObserver()
+        startYouTubeAuthObserver()
         startSettingsObserver()
         // 把 YouTube Music 的 bootstrap / Web PO 冷启动成本前移，减少首次播放等待
         youtubeMusicPlaybackRepository.warmBootstrapAsync()
@@ -257,6 +275,21 @@ object AppContainer {
                 mutableCookies.putIfAbsent("os", "pc")
 
                 neteaseClient.setPersistedCookies(mutableCookies)
+            }
+            .launchIn(scope)
+    }
+
+    private fun startYouTubeAuthObserver() {
+        youtubeAuthRepo.authFlow
+            .drop(1)
+            .onEach { bundle ->
+                handleYouTubeAuthStateChanged(
+                    bundle = bundle,
+                    clearBootstrapCache = youtubeMusicClient::clearBootstrapCache,
+                    clearPlaybackAuthBoundCaches = youtubeMusicPlaybackRepository::clearAuthBoundCaches,
+                    evictConnections = sharedOkHttpClient.connectionPool::evictAll,
+                    warmBootstrapAsync = youtubeMusicPlaybackRepository::warmBootstrapAsync
+                )
             }
             .launchIn(scope)
     }

@@ -11,6 +11,7 @@ import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeStreamRequestHeader
 import moe.ouom.neriplayer.data.platform.youtube.effectiveCookieHeader
 import moe.ouom.neriplayer.data.platform.youtube.resolveAuthorizationHeader
 import moe.ouom.neriplayer.data.platform.youtube.resolveBootstrapUserAgent
+import moe.ouom.neriplayer.data.platform.youtube.resolveXGoogAuthUser
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -28,7 +29,7 @@ class YouTubeMusicSupportTest {
         assertTrue(cookieHeader.contains("SAPISID=sap-value"))
         assertTrue(cookieHeader.contains("SID=sid-value"))
         assertTrue(cookieHeader.contains("SOCS=CAI"))
-        assertFalse(cookieHeader.contains("VISITOR_INFO1_LIVE"))
+        assertTrue(cookieHeader.contains("VISITOR_INFO1_LIVE=visitor"))
     }
 
     @Test
@@ -60,6 +61,13 @@ class YouTubeMusicSupportTest {
     }
 
     @Test
+    fun resolveXGoogAuthUser_usesFallbackWhenStoredAuthUserMissing() {
+        val authUser = YouTubeAuthBundle().resolveXGoogAuthUser(fallback = "7")
+
+        assertEquals("7", authUser)
+    }
+
+    @Test
     fun resolveBootstrapUserAgent_replacesMobileUserAgentWithStableDesktopAgent() {
         val userAgent = YouTubeAuthBundle(
             userAgent = "Mozilla/5.0 (Linux; Android 15; Pixel 9 Pro) AppleWebKit/537.36 " +
@@ -86,6 +94,21 @@ class YouTubeMusicSupportTest {
         assertNull(headers["Origin"])
         assertNull(headers["Referer"])
         assertNull(headers["X-Origin"])
+    }
+
+    @Test
+    fun buildYouTubeInnertubeRequestHeaders_includesUserSessionScopedAuthorizationWhenProvided() {
+        val headers = YouTubeAuthBundle(
+            cookieHeader = "SAPISID=sap-value; SID=sid-value",
+            xGoogAuthUser = "7",
+            userAgent = "UnitTestAgent/4.0"
+        ).buildYouTubeInnertubeRequestHeaders(
+            authorizationOrigin = YOUTUBE_MUSIC_ORIGIN,
+            userSessionId = "user-session-123"
+        )
+
+        assertEquals("7", headers["X-Goog-AuthUser"])
+        assertTrue(headers["Authorization"].orEmpty().contains("_u"))
     }
 
     @Test

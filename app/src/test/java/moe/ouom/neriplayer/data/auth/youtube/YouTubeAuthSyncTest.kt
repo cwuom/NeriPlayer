@@ -3,7 +3,6 @@ package moe.ouom.neriplayer.data.auth.youtube
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -81,11 +80,13 @@ class YouTubeAuthSyncTest {
     }
 
     @Test
-    fun normalized_filtersTransientCookiesIntroducedByBackgroundSync() {
+    fun normalized_keepsStableWebContextCookiesIntroducedByBackgroundSync() {
         val normalized = YouTubeAuthBundle(
             cookies = linkedMapOf(
                 "SAPISID" to "sapisid",
                 "SID" to "sid",
+                "__Secure-1PSIDTS" to "psidts",
+                "VISITOR_PRIVACY_METADATA" to "privacy",
                 "VISITOR_INFO1_LIVE" to "visitor",
                 "YSC" to "ysc",
                 "__Secure-ROLLOUT_TOKEN" to "rollout"
@@ -94,11 +95,13 @@ class YouTubeAuthSyncTest {
 
         assertEquals("sapisid", normalized.cookies["SAPISID"])
         assertEquals("sid", normalized.cookies["SID"])
-        assertNull(normalized.cookies["VISITOR_INFO1_LIVE"])
-        assertNull(normalized.cookies["YSC"])
-        assertNull(normalized.cookies["__Secure-ROLLOUT_TOKEN"])
-        assertFalse(normalized.cookieHeader.contains("VISITOR_INFO1_LIVE"))
-        assertFalse(normalized.cookieHeader.contains("YSC"))
-        assertFalse(normalized.cookieHeader.contains("__Secure-ROLLOUT_TOKEN"))
+        assertEquals("psidts", normalized.cookies["__Secure-1PSIDTS"])
+        assertEquals("privacy", normalized.cookies["VISITOR_PRIVACY_METADATA"])
+        assertEquals("visitor", normalized.cookies["VISITOR_INFO1_LIVE"])
+        assertEquals("ysc", normalized.cookies["YSC"])
+        assertEquals("rollout", normalized.cookies["__Secure-ROLLOUT_TOKEN"])
+        assertTrue(normalized.cookieHeader.contains("VISITOR_INFO1_LIVE=visitor"))
+        assertTrue(normalized.cookieHeader.contains("YSC=ysc"))
+        assertTrue(normalized.cookieHeader.contains("__Secure-ROLLOUT_TOKEN=rollout"))
     }
 }

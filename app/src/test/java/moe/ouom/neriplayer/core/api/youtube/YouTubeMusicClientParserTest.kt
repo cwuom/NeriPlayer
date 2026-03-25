@@ -95,6 +95,26 @@ class YouTubeMusicClientParserTest {
     }
 
     @Test
+    fun parseBootstrapConfig_extractsLoggedInUserSessionFromDataSyncId() {
+        val bootstrap = YouTubeMusicParser.parseBootstrapConfig(
+            html = """
+                "INNERTUBE_API_KEY":"api-key"
+                "INNERTUBE_CLIENT_VERSION":"1.20260325.01.00"
+                "VISITOR_DATA":"visitor-data"
+                "SESSION_INDEX":"3"
+                "DATASYNC_ID":"delegated-session||user-session"
+                "LOGGED_IN":true
+            """.trimIndent(),
+            cookieHeader = "SAPISID=sap-value",
+            userAgent = "UnitTestAgent/9.0"
+        )
+
+        assertEquals("3", bootstrap.sessionIndex)
+        assertTrue(bootstrap.loggedIn)
+        assertEquals("user-session", bootstrap.userSessionId)
+    }
+
+    @Test
     fun requestCandidates_appendsUsFallbackForNonUsLocale() {
         val candidates = YouTubeMusicLocaleResolver.requestCandidates(
             preferredLocale = YouTubeMusicLocaleResolver.preferred(Locale.forLanguageTag("zh-CN"))

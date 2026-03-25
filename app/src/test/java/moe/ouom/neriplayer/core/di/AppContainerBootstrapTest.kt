@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.di
 
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -70,5 +71,40 @@ class AppContainerBootstrapTest {
 
         assertEquals("content://downloads/tree/current", resolved.directoryUri)
         assertEquals("USB Music", resolved.directoryLabel)
+    }
+
+    @Test
+    fun `handleYouTubeAuthStateChanged clears caches without canceling in-flight playback`() {
+        val steps = mutableListOf<String>()
+        var cancelInFlightPlayableAudio: Boolean? = null
+
+        handleYouTubeAuthStateChanged(
+            bundle = YouTubeAuthBundle(cookies = mapOf("SAPISID" to "cookie")),
+            clearBootstrapCache = { steps += "client" },
+            clearPlaybackAuthBoundCaches = { cancelInFlight ->
+                cancelInFlightPlayableAudio = cancelInFlight
+                steps += "playback"
+            },
+            evictConnections = { steps += "connections" },
+            warmBootstrapAsync = { steps += "warm" }
+        )
+
+        assertEquals(listOf("client", "playback", "connections", "warm"), steps)
+        assertFalse(cancelInFlightPlayableAudio ?: true)
+    }
+
+    @Test
+    fun `handleYouTubeAuthStateChanged skips warm bootstrap without login cookies`() {
+        var warmCalls = 0
+
+        handleYouTubeAuthStateChanged(
+            bundle = YouTubeAuthBundle(),
+            clearBootstrapCache = {},
+            clearPlaybackAuthBoundCaches = {},
+            evictConnections = {},
+            warmBootstrapAsync = { warmCalls += 1 }
+        )
+
+        assertEquals(0, warmCalls)
     }
 }

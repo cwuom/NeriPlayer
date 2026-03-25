@@ -27,7 +27,6 @@ package moe.ouom.neriplayer.core.api.youtube
 import java.io.IOException
 import java.net.URLDecoder
 import java.net.URLEncoder
-import java.security.MessageDigest
 import java.util.Locale
 import java.util.TimeZone
 import kotlinx.coroutines.Dispatchers
@@ -35,6 +34,8 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.auth.youtube.isYouTubeAuthRecoverableFailure
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthAutoRefreshManager
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRepository
+import moe.ouom.neriplayer.data.platform.youtube.buildAuthCacheFingerprint
+import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeInnertubeRequestHeaders
 import moe.ouom.neriplayer.data.platform.youtube.effectiveCookieHeader
 import moe.ouom.neriplayer.data.platform.youtube.resolveRequestUserAgent
 import moe.ouom.neriplayer.data.platform.youtube.resolveXGoogAuthUser
@@ -158,7 +159,10 @@ internal data class YouTubeMusicBootstrapConfig(
     val webRemixClientVersion: String,
     val visitorData: String,
     val sessionIndex: String,
+    val loggedIn: Boolean,
+    val userSessionId: String,
     val cookieHeader: String,
+    val authFingerprint: String,
     val webUserAgent: String,
     val fetchedAtMs: Long
 )
@@ -255,12 +259,24 @@ internal object YouTubeMusicParser {
         userAgent: String
     ): YouTubeMusicBootstrapConfig {
         val now = System.currentTimeMillis()
+        val dataSyncId = findOptional(
+            html,
+            "\"DATASYNC_ID\":\"([^\"]+)\"",
+            "\"datasyncId\":\"([^\"]+)\""
+        )
+        val (_, derivedUserSessionId) = parseDataSyncId(dataSyncId)
+        val loggedIn = findOptional(html, "\"LOGGED_IN\":(true|false)")
+            .equals("true", ignoreCase = true)
         return YouTubeMusicBootstrapConfig(
             apiKey = findRequired(html, "\"INNERTUBE_API_KEY\":\"([^\"]+)\""),
             webRemixClientVersion = findRequired(html, "\"INNERTUBE_CLIENT_VERSION\":\"([^\"]+)\""),
             visitorData = findRequired(html, "\"VISITOR_DATA\":\"([^\"]+)\""),
             sessionIndex = findOptional(html, "\"SESSION_INDEX\":\"?([0-9]+)\"?").ifBlank { "0" },
+            loggedIn = loggedIn,
+            userSessionId = findOptional(html, "\"USER_SESSION_ID\":\"([^\"]+)\"")
+                .ifBlank { derivedUserSessionId },
             cookieHeader = cookieHeader,
+            authFingerprint = "",
             webUserAgent = userAgent,
             fetchedAtMs = now
         )
@@ -1059,14 +1075,35 @@ internal object YouTubeMusicParser {
         return null
     }
 
-    private fun findRequired(source: String, pattern: String): String {
-        return findOptional(source, pattern).ifBlank {
-            throw IOException("YouTube Music bootstrap parse failed: $pattern")
+    private fun findRequired(source: String, vararg patterns: String): String {
+        return findOptional(source, *patterns).ifBlank {
+            throw IOException(
+                "YouTube Music bootstrap parse failed: ${patterns.firstOrNull().orEmpty()}"
+            )
         }
     }
 
-    private fun findOptional(source: String, pattern: String): String {
-        return Regex(pattern).find(source)?.groupValues?.getOrNull(1).orEmpty()
+    private fun findOptional(source: String, vararg patterns: String): String {
+        return patterns.asSequence()
+            .map { pattern ->
+                Regex(pattern).find(source)?.groupValues?.getOrNull(1).orEmpty()
+            }
+            .firstOrNull { it.isNotBlank() }
+            .orEmpty()
+    }
+
+    private fun parseDataSyncId(dataSyncId: String): Pair<String, String> {
+        if (dataSyncId.isBlank()) {
+            return "" to ""
+        }
+        val (first, second) = dataSyncId.split("||", limit = 2).let { parts ->
+            parts.getOrElse(0) { "" } to parts.getOrElse(1) { "" }
+        }
+        return if (second.isNotBlank()) {
+            first to second
+        } else {
+            "" to first
+        }
     }
 
     private fun extractColumnText(columns: JSONArray?, index: Int, rendererKey: String): String {
@@ -1939,6 +1976,8 @@ class YouTubeMusicClient(
             .put("webRemixClientVersion", bootstrap.webRemixClientVersion)
             .put("visitorData", bootstrap.visitorData)
             .put("sessionIndex", bootstrap.sessionIndex)
+            .put("loggedIn", bootstrap.loggedIn)
+            .put("userSessionId", bootstrap.userSessionId)
             .put("webUserAgent", bootstrap.webUserAgent)
             .put("cookieHeaderLength", bootstrap.cookieHeader.length)
             .put("fetchedAtMs", bootstrap.fetchedAtMs)
@@ -2015,12 +2054,17 @@ class YouTubeMusicClient(
         } else {
             auth.effectiveCookieHeader().trim()
         }
+        val cacheUserAgent = auth.resolveRequestUserAgent().ifBlank { YOUTUBE_MUSIC_DEFAULT_WEB_UA }
+        val authFingerprint = auth.buildAuthCacheFingerprint(
+            userAgent = cacheUserAgent,
+            origin = YOUTUBE_MUSIC_MUSIC_ORIGIN
+        )
 
         val cached = bootstrapCache
         val now = System.currentTimeMillis()
         if (!forceRefresh &&
             cached != null &&
-            cached.cookieHeader == cookieHeader &&
+            cached.authFingerprint == authFingerprint &&
             now - cached.fetchedAtMs < YOUTUBE_MUSIC_BOOTSTRAP_TTL_MS
         ) {
             return cached
@@ -2028,7 +2072,7 @@ class YouTubeMusicClient(
 
         var workingAuth = auth
         var workingCookieHeader = cookieHeader
-        var userAgent = workingAuth.resolveRequestUserAgent().ifBlank { YOUTUBE_MUSIC_DEFAULT_WEB_UA }
+        var userAgent = cacheUserAgent
         val requestLocale = YouTubeMusicLocaleResolver.preferred()
         val homeHtml = try {
             executeText(
@@ -2070,8 +2114,15 @@ class YouTubeMusicClient(
             cookieHeader = workingCookieHeader,
             userAgent = userAgent
         )
+        val resolvedFingerprint = workingAuth.buildAuthCacheFingerprint(
+            userAgent = userAgent,
+            origin = YOUTUBE_MUSIC_MUSIC_ORIGIN
+        )
         return parsedConfig.copy(
-            sessionIndex = workingAuth.resolveXGoogAuthUser().ifBlank { parsedConfig.sessionIndex }
+            sessionIndex = workingAuth.resolveXGoogAuthUser(
+                fallback = parsedConfig.sessionIndex
+            ),
+            authFingerprint = resolvedFingerprint
         ).also { bootstrapCache = it }
     }
 
@@ -2087,20 +2138,19 @@ class YouTubeMusicClient(
             body.put(key, payload.get(key))
         }
 
+        val requestHeaders = buildMusicInnertubeRequestHeaders(
+            bootstrap = bootstrap,
+            requestLocale = requestLocale,
+            includeVisitorId = false
+        )
         return executeJson(
             Request.Builder()
                 .url("$YOUTUBE_MUSIC_MUSIC_ORIGIN/youtubei/v1/browse?prettyPrint=false&key=${bootstrap.apiKey}")
-                .applyCookieHeader(bootstrap.cookieHeader)
-                .header("User-Agent", bootstrap.webUserAgent)
-                .header("Accept-Language", requestLocale.acceptLanguage)
-                .header("Content-Type", "application/json")
-                .header("Origin", YOUTUBE_MUSIC_MUSIC_ORIGIN)
-                .header("X-Origin", YOUTUBE_MUSIC_MUSIC_ORIGIN)
-                .header("Referer", "$YOUTUBE_MUSIC_MUSIC_ORIGIN/")
-                .header("X-Goog-AuthUser", bootstrap.sessionIndex)
-                .header("X-YouTube-Client-Name", YOUTUBE_MUSIC_CLIENT_NAME_NUM_WEB_REMIX)
-                .header("X-YouTube-Client-Version", bootstrap.webRemixClientVersion)
-                .applySidAuthorization(bootstrap.cookieHeader)
+                .apply {
+                    requestHeaders.forEach { (name, value) ->
+                        header(name, value)
+                    }
+                }
                 .post(body.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
                 .build()
         )
@@ -2114,6 +2164,11 @@ class YouTubeMusicClient(
         val body = JSONObject().put("context", buildMusicContext(bootstrap, requestLocale))
         copyJsonFields(from = payload, to = body)
 
+        val requestHeaders = buildMusicInnertubeRequestHeaders(
+            bootstrap = bootstrap,
+            requestLocale = requestLocale,
+            includeVisitorId = true
+        )
         return executeJson(
             Request.Builder()
                 .url(
@@ -2122,18 +2177,11 @@ class YouTubeMusicClient(
                         continuation = payload.optString("continuation").ifBlank { null }
                     )
                 )
-                .applyCookieHeader(bootstrap.cookieHeader)
-                .header("User-Agent", bootstrap.webUserAgent)
-                .header("Accept-Language", requestLocale.acceptLanguage)
-                .header("Content-Type", "application/json")
-                .header("Origin", YOUTUBE_MUSIC_MUSIC_ORIGIN)
-                .header("X-Origin", YOUTUBE_MUSIC_MUSIC_ORIGIN)
-                .header("Referer", "$YOUTUBE_MUSIC_MUSIC_ORIGIN/")
-                .header("X-Goog-AuthUser", bootstrap.sessionIndex)
-                .header("X-Goog-Visitor-Id", bootstrap.visitorData)
-                .header("X-YouTube-Client-Name", YOUTUBE_MUSIC_CLIENT_NAME_NUM_WEB_REMIX)
-                .header("X-YouTube-Client-Version", bootstrap.webRemixClientVersion)
-                .applySidAuthorization(bootstrap.cookieHeader)
+                .apply {
+                    requestHeaders.forEach { (name, value) ->
+                        header(name, value)
+                    }
+                }
                 .post(body.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
                 .build()
         )
@@ -2150,21 +2198,19 @@ class YouTubeMusicClient(
             .put("contentCheckOk", true)
             .put("racyCheckOk", true)
 
+        val requestHeaders = buildMusicInnertubeRequestHeaders(
+            bootstrap = bootstrap,
+            requestLocale = requestLocale,
+            includeVisitorId = true
+        )
         return executeJson(
             Request.Builder()
                 .url("$YOUTUBE_MUSIC_MUSIC_ORIGIN/youtubei/v1/player?prettyPrint=false&key=${bootstrap.apiKey}")
-                .applyCookieHeader(bootstrap.cookieHeader)
-                .header("User-Agent", bootstrap.webUserAgent)
-                .header("Accept-Language", requestLocale.acceptLanguage)
-                .header("Content-Type", "application/json")
-                .header("Origin", YOUTUBE_MUSIC_MUSIC_ORIGIN)
-                .header("X-Origin", YOUTUBE_MUSIC_MUSIC_ORIGIN)
-                .header("Referer", "$YOUTUBE_MUSIC_MUSIC_ORIGIN/")
-                .header("X-Goog-AuthUser", bootstrap.sessionIndex)
-                .header("X-Goog-Visitor-Id", bootstrap.visitorData)
-                .header("X-YouTube-Client-Name", YOUTUBE_MUSIC_CLIENT_NAME_NUM_WEB_REMIX)
-                .header("X-YouTube-Client-Version", bootstrap.webRemixClientVersion)
-                .applySidAuthorization(bootstrap.cookieHeader)
+                .apply {
+                    requestHeaders.forEach { (name, value) ->
+                        header(name, value)
+                    }
+                }
                 .post(body.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
                 .build()
         )
@@ -2180,23 +2226,52 @@ class YouTubeMusicClient(
             .put("videoId", videoId)
             .put("isAudioOnly", true)
 
+        val requestHeaders = buildMusicInnertubeRequestHeaders(
+            bootstrap = bootstrap,
+            requestLocale = requestLocale,
+            includeVisitorId = false
+        )
         return executeJson(
             Request.Builder()
                 .url("$YOUTUBE_MUSIC_MUSIC_ORIGIN/youtubei/v1/next?prettyPrint=false&key=${bootstrap.apiKey}")
-                .applyCookieHeader(bootstrap.cookieHeader)
-                .header("User-Agent", bootstrap.webUserAgent)
-                .header("Accept-Language", requestLocale.acceptLanguage)
-                .header("Content-Type", "application/json")
-                .header("Origin", YOUTUBE_MUSIC_MUSIC_ORIGIN)
-                .header("X-Origin", YOUTUBE_MUSIC_MUSIC_ORIGIN)
-                .header("Referer", "$YOUTUBE_MUSIC_MUSIC_ORIGIN/")
-                .header("X-Goog-AuthUser", bootstrap.sessionIndex)
-                .header("X-YouTube-Client-Name", YOUTUBE_MUSIC_CLIENT_NAME_NUM_WEB_REMIX)
-                .header("X-YouTube-Client-Version", bootstrap.webRemixClientVersion)
-                .applySidAuthorization(bootstrap.cookieHeader)
+                .apply {
+                    requestHeaders.forEach { (name, value) ->
+                        header(name, value)
+                    }
+                }
                 .post(body.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
                 .build()
         )
+    }
+
+    private fun buildMusicInnertubeRequestHeaders(
+        bootstrap: YouTubeMusicBootstrapConfig,
+        requestLocale: YouTubeMusicRequestLocale,
+        includeVisitorId: Boolean
+    ): Map<String, String> {
+        val auth = authRepo.getAuthOnce().normalized()
+        val headers = auth.buildYouTubeInnertubeRequestHeaders(
+            original = linkedMapOf(
+                "Cookie" to bootstrap.cookieHeader,
+                "User-Agent" to bootstrap.webUserAgent,
+                "Accept-Language" to requestLocale.acceptLanguage,
+                "Content-Type" to "application/json",
+                "X-Goog-AuthUser" to bootstrap.sessionIndex,
+                "X-YouTube-Client-Name" to YOUTUBE_MUSIC_CLIENT_NAME_NUM_WEB_REMIX,
+                "X-YouTube-Client-Version" to bootstrap.webRemixClientVersion
+            ),
+            authorizationOrigin = YOUTUBE_MUSIC_MUSIC_ORIGIN,
+            includeAuthorization = true,
+            userSessionId = bootstrap.userSessionId.takeIf { bootstrap.loggedIn }.orEmpty()
+        )
+        return LinkedHashMap(headers).apply {
+            put("Origin", YOUTUBE_MUSIC_MUSIC_ORIGIN)
+            put("X-Origin", YOUTUBE_MUSIC_MUSIC_ORIGIN)
+            put("Referer", "$YOUTUBE_MUSIC_MUSIC_ORIGIN/")
+            if (includeVisitorId) {
+                put("X-Goog-Visitor-Id", bootstrap.visitorData)
+            }
+        }
     }
 
     private suspend fun resolvePlaylistTrackCount(
@@ -2351,25 +2426,6 @@ class YouTubeMusicClient(
         return header("Cookie", cookieHeader)
     }
 
-    private fun Request.Builder.applySidAuthorization(cookieHeader: String): Request.Builder {
-        val cookies = cookieHeader
-            .split(';')
-            .map(String::trim)
-            .filter { it.isNotBlank() && it.contains('=') }
-            .associate {
-                val delimiterIndex = it.indexOf('=')
-                it.substring(0, delimiterIndex) to it.substring(delimiterIndex + 1)
-            }
-        val sid = cookies["__Secure-3PAPISID"]
-            ?: cookies["SAPISID"]
-            ?: cookies["__Secure-1PAPISID"]
-            ?: cookies["APISID"]
-            ?: return this
-        val timestamp = (System.currentTimeMillis() / 1000L).toString()
-        val digest = sha1Hex("$timestamp $sid $YOUTUBE_MUSIC_MUSIC_ORIGIN")
-        return header("Authorization", "SAPISIDHASH ${timestamp}_$digest")
-    }
-
     private fun executeJson(request: Request): JSONObject {
         return JSONObject(executeText(request))
     }
@@ -2386,12 +2442,5 @@ class YouTubeMusicClient(
 
     private fun utcOffsetMinutes(): Int {
         return TimeZone.getDefault().getOffset(System.currentTimeMillis()) / (60 * 1000)
-    }
-
-    private fun sha1Hex(value: String): String {
-        val digest = MessageDigest.getInstance("SHA-1").digest(value.toByteArray(Charsets.UTF_8))
-        return buildString(digest.size * 2) {
-            digest.forEach { byte -> append("%02x".format(Locale.US, byte.toInt() and 0xff)) }
-        }
     }
 }

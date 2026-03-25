@@ -61,6 +61,8 @@ interface YouTubePoTokenProvider {
         remoteHost: String,
         forceRefresh: Boolean = false
     ): String?
+
+    fun clearSession() {}
 }
 
 private data class WebPoPageSnapshot(
@@ -138,6 +140,15 @@ internal class YouTubeWebPoTokenProvider(
                 forceRefresh = false
             )
         }
+    }
+
+    override fun clearSession() {
+        synchronized(tokenCache) {
+            tokenCache.clear()
+        }
+        preparedCookieFingerprint = null
+        preparedAtMs = 0L
+        preparedUrl = WEB_PO_BOOTSTRAP_URLS.first()
     }
 
     override suspend fun getWebRemixGvsPoToken(

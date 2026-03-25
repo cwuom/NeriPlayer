@@ -5,8 +5,10 @@ import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
 import moe.ouom.neriplayer.data.auth.youtube.evaluateYouTubeAuthHealth
 import moe.ouom.neriplayer.data.auth.youtube.parseCookieHeader
+import moe.ouom.neriplayer.data.platform.youtube.buildAuthCacheFingerprint
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -74,6 +76,24 @@ class YouTubeAuthBundleTest {
     }
 
     @Test
+    fun evaluateYouTubeAuthHealth_shouldTreatPsidTsAsActiveSessionCookie() {
+        val health = evaluateYouTubeAuthHealth(
+            YouTubeAuthBundle(
+                cookies = mapOf(
+                    "LOGIN_INFO" to "token",
+                    "__Secure-1PSIDTS" to "session"
+                ),
+                savedAt = 1_000L
+            ),
+            now = 2_000L
+        )
+
+        assertEquals(YouTubeAuthState.Valid, health.state)
+        assertFalse(health.shouldPromptRelogin)
+        assertTrue(health.activeCookieKeys.contains("__Secure-1PSIDTS"))
+    }
+
+    @Test
     fun evaluateYouTubeAuthHealth_shouldReturnStaleForOldCookies() {
         val now = 40L * 24L * 60L * 60L * 1000L
         val bundle = YouTubeAuthBundle(
@@ -99,5 +119,26 @@ class YouTubeAuthBundleTest {
 
         assertEquals(YouTubeAuthState.Valid, health.state)
         assertFalse(health.shouldPromptRelogin)
+    }
+
+    @Test
+    fun buildAuthCacheFingerprint_shouldChangeWhenSessionContextChanges() {
+        val base = YouTubeAuthBundle(
+            cookies = mapOf("SAPISID" to "cookie-value"),
+            xGoogAuthUser = "0",
+            userAgent = "desktop-a"
+        )
+
+        val changedAuthUser = base.copy(xGoogAuthUser = "3")
+        val changedUserAgent = base.copy(userAgent = "desktop-b")
+
+        assertNotEquals(
+            base.buildAuthCacheFingerprint(userAgent = base.userAgent),
+            changedAuthUser.buildAuthCacheFingerprint(userAgent = changedAuthUser.userAgent)
+        )
+        assertNotEquals(
+            base.buildAuthCacheFingerprint(userAgent = base.userAgent),
+            changedUserAgent.buildAuthCacheFingerprint(userAgent = changedUserAgent.userAgent)
+        )
     }
 }

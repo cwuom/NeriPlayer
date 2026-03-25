@@ -24,12 +24,21 @@ package moe.ouom.neriplayer.data.auth.youtube
  */
 
 object YouTubeCookieSupport {
-    val webUrls: List<String> = listOf(
+    val webCookieWriteUrls: List<String> = listOf(
         "https://music.youtube.com",
         "https://www.youtube.com",
         "https://m.youtube.com",
         "https://youtube.com"
     )
+
+    val webCookieReadUrls: List<String> = listOf(
+        "https://accounts.google.com",
+        "https://www.google.com",
+        "https://google.com"
+    ) + webCookieWriteUrls
+
+    // 兼容现有调用方，默认写入目标仍然只投射到 YouTube 域
+    val webUrls: List<String> = webCookieWriteUrls
 
     val importantLoginCookieKeys: List<String> = listOf(
         "SAPISID",
@@ -43,6 +52,13 @@ object YouTubeCookieSupport {
         "SID"
     )
 
+    private val importantLoginCookiePrefixes: List<String> = listOf(
+        "__Secure-1PSID",
+        "__Secure-3PSID",
+        "__Secure-1PAPISID",
+        "__Secure-3PAPISID"
+    )
+
     val activeSessionCookieKeys: List<String> = listOf(
         "SAPISID",
         "APISID",
@@ -50,8 +66,20 @@ object YouTubeCookieSupport {
         "__Secure-3PAPISID",
         "__Secure-1PSID",
         "__Secure-3PSID",
+        "__Secure-1PSIDTS",
+        "__Secure-3PSIDTS",
+        "__Secure-1PSIDCC",
+        "__Secure-3PSIDCC",
         "SSID",
-        "SID"
+        "SID",
+        "SIDCC"
+    )
+
+    private val activeSessionCookiePrefixes: List<String> = listOf(
+        "__Secure-1PSID",
+        "__Secure-3PSID",
+        "__Secure-1PAPISID",
+        "__Secure-3PAPISID"
     )
 
     private val persistedCookieKeys: Set<String> = setOf(
@@ -65,14 +93,19 @@ object YouTubeCookieSupport {
         "SIDCC",
         "PREF",
         "SOCS",
-        "CONSENT"
+        "CONSENT",
+        "GPS",
+        "YSC",
+        "VISITOR_INFO1_LIVE",
+        "VISITOR_PRIVACY_METADATA"
     )
 
     private val persistedCookiePrefixes: List<String> = listOf(
         "__Secure-1PSID",
         "__Secure-3PSID",
         "__Secure-1PAPISID",
-        "__Secure-3PAPISID"
+        "__Secure-3PAPISID",
+        "__Secure-ROLLOUT_"
     )
 
     fun parseCookieString(raw: String): LinkedHashMap<String, String> {
@@ -107,7 +140,7 @@ object YouTubeCookieSupport {
             if (key.isBlank() || value.isBlank()) {
                 return@forEach
             }
-            if (key in persistedCookieKeys || persistedCookiePrefixes.any { key.startsWith(it) }) {
+            if (matchesCookieKey(key, persistedCookieKeys, persistedCookiePrefixes)) {
                 sanitized[key] = value
             }
         }
@@ -115,7 +148,46 @@ object YouTubeCookieSupport {
     }
 
     fun isLoggedIn(cookies: Map<String, String>): Boolean {
-        return importantLoginCookieKeys.any { key -> !cookies[key].isNullOrBlank() }
+        return collectImportantLoginCookieKeys(cookies).isNotEmpty()
     }
 
+    fun collectImportantLoginCookieKeys(cookies: Map<String, String>): List<String> {
+        return collectMatchingCookieKeys(
+            cookies = cookies,
+            exactKeys = importantLoginCookieKeys,
+            prefixes = importantLoginCookiePrefixes
+        )
+    }
+
+    fun collectActiveSessionCookieKeys(cookies: Map<String, String>): List<String> {
+        return collectMatchingCookieKeys(
+            cookies = cookies,
+            exactKeys = activeSessionCookieKeys,
+            prefixes = activeSessionCookiePrefixes
+        )
+    }
+
+    private fun collectMatchingCookieKeys(
+        cookies: Map<String, String>,
+        exactKeys: Iterable<String>,
+        prefixes: Iterable<String>
+    ): List<String> {
+        return cookies.entries
+            .asSequence()
+            .filter { (key, value) ->
+                key.isNotBlank() &&
+                    value.isNotBlank() &&
+                    matchesCookieKey(key, exactKeys, prefixes)
+            }
+            .map { (key, _) -> key }
+            .toList()
+    }
+
+    private fun matchesCookieKey(
+        key: String,
+        exactKeys: Iterable<String>,
+        prefixes: Iterable<String>
+    ): Boolean {
+        return key in exactKeys || prefixes.any { prefix -> key.startsWith(prefix) }
+    }
 }

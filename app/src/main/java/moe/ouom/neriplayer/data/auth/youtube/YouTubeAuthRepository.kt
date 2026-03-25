@@ -153,12 +153,8 @@ fun evaluateYouTubeAuthHealth(
 ): YouTubeAuthHealth {
     val normalized = bundle.normalized(savedAt = bundle.savedAt)
     val cookies = normalized.cookies.ifEmpty { parseCookieHeader(normalized.cookieHeader) }
-    val loginCookieKeys = YouTubeCookieSupport.importantLoginCookieKeys.filter { key ->
-        !cookies[key].isNullOrBlank()
-    }
-    val activeCookieKeys = YouTubeCookieSupport.activeSessionCookieKeys.filter { key ->
-        !cookies[key].isNullOrBlank()
-    }
+    val loginCookieKeys = YouTubeCookieSupport.collectImportantLoginCookieKeys(cookies)
+    val activeCookieKeys = YouTubeCookieSupport.collectActiveSessionCookieKeys(cookies)
     if (loginCookieKeys.isEmpty()) {
         return YouTubeAuthHealth(
             state = YouTubeAuthState.Missing,

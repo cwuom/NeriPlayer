@@ -14,9 +14,12 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import moe.ouom.neriplayer.data.platform.youtube.isTrustedYouTubeLoginHost
 import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
 import org.json.JSONTokener
+import java.net.URI
+import java.net.URLEncoder
 
 internal data class YouTubeAuthAutoRefreshResult(
     val attempted: Boolean = false,
@@ -38,6 +41,75 @@ internal fun isYouTubeAuthRecoverableFailure(error: Throwable): Boolean {
     return extractYouTubeRequestFailureCode(error) in setOf(401, 403, 429)
 }
 
+internal fun isYouTubeRefreshPageSettled(readyState: String): Boolean {
+    return readyState.equals("interactive", ignoreCase = true) ||
+        readyState.equals("complete", ignoreCase = true)
+}
+
+internal fun isTrustedYouTubeRefreshLoginUrl(candidate: String): Boolean {
+    val uri = runCatching { URI(candidate) }.getOrNull() ?: return false
+    val scheme = uri.scheme ?: return false
+    if (!scheme.equals("https", ignoreCase = true)) {
+        return false
+    }
+    return isTrustedYouTubeLoginHost(uri.host)
+}
+
+internal fun resolveYouTubeRefreshLoginUrl(
+    currentUrl: String,
+    signInUrl: String,
+    hasYtcfg: Boolean
+): String {
+    val normalizedSignInUrl = signInUrl.trim()
+    if (normalizedSignInUrl.isNotBlank() && isTrustedYouTubeRefreshLoginUrl(normalizedSignInUrl)) {
+        return normalizedSignInUrl
+    }
+    if (!hasYtcfg) {
+        return ""
+    }
+    val continueUrl = currentUrl.trim().ifBlank { YOUTUBE_MUSIC_ORIGIN }
+    return buildString {
+        append("https://accounts.google.com/ServiceLogin?service=youtube&continue=")
+        append(URLEncoder.encode(continueUrl, Charsets.UTF_8.name()))
+    }
+}
+
+internal fun shouldTriggerYouTubeRefreshLogin(
+    pageReady: Boolean,
+    hasYtcfg: Boolean,
+    hasLiveSessionSignal: Boolean,
+    loginUrl: String
+): Boolean {
+    return pageReady &&
+        hasYtcfg &&
+        !hasLiveSessionSignal &&
+        loginUrl.isNotBlank() &&
+        isTrustedYouTubeRefreshLoginUrl(loginUrl)
+}
+
+internal fun shouldAcceptYouTubeRefreshResult(
+    pageReady: Boolean,
+    hasYtcfg: Boolean,
+    hasLiveSessionSignal: Boolean,
+    authChanged: Boolean,
+    recoveredActiveSession: Boolean
+): Boolean {
+    if (hasLiveSessionSignal) {
+        return true
+    }
+    if (pageReady && hasYtcfg) {
+        return false
+    }
+    return authChanged || recoveredActiveSession
+}
+
+internal fun resolveObservedYouTubeAuthUser(
+    capturedAuthUser: String,
+    pageSessionIndex: String
+): String {
+    return capturedAuthUser.trim().ifBlank { pageSessionIndex.trim() }
+}
+
 class YouTubeAuthAutoRefreshManager(
     context: Context,
     private val authProvider: () -> YouTubeAuthBundle = { YouTubeAuthBundle() },
@@ -47,8 +119,8 @@ class YouTubeAuthAutoRefreshManager(
     companion object {
         private const val TAG = "YouTubeAuthRefresh"
         private val REFRESH_URLS = listOf(
-            YOUTUBE_MUSIC_ORIGIN,
-            "https://www.youtube.com/?themeRefresh=1"
+            "https://www.youtube.com/?themeRefresh=1",
+            YOUTUBE_MUSIC_ORIGIN
         )
         private val AUTH_HOSTS = setOf(
             "music.youtube.com",
@@ -75,8 +147,11 @@ class YouTubeAuthAutoRefreshManager(
         val readyState: String = "",
         val hasYtcfg: Boolean = false,
         val loggedIn: Boolean = false,
+        val sessionIndex: String = "",
         val delegatedSessionId: String = "",
-        val userSessionId: String = ""
+        val userSessionId: String = "",
+        val currentUrl: String = "",
+        val signInUrl: String = ""
     ) {
         fun hasLiveSessionSignal(): Boolean {
             return loggedIn ||
@@ -142,15 +217,57 @@ class YouTubeAuthAutoRefreshManager(
                     return@forEach
                 }
                 delay(PAGE_SETTLE_DELAY_MS)
-                val refreshedAuth = buildObservedAuthBundle(
+                var pageSnapshot = readPageSnapshot(activeWebView)
+                var refreshedAuth = buildObservedAuthBundle(
                     base = currentAuth,
-                    activeWebView = activeWebView
+                    activeWebView = activeWebView,
+                    pageSnapshot = pageSnapshot
                 )
-                val pageSnapshot = readPageSnapshot(activeWebView)
-                val refreshedHealth = evaluateYouTubeAuthHealth(
+                var refreshedHealth = evaluateYouTubeAuthHealth(
                     bundle = refreshedAuth,
                     now = System.currentTimeMillis()
                 )
+                NPLogger.d(
+                    TAG,
+                    "refresh observed reason=$reason url=$url cookies=${refreshedAuth.cookies.keys.joinToString()} activeKeys=${refreshedHealth.activeCookieKeys.joinToString()} pageReady=${pageSnapshot?.readyState.orEmpty()} liveSession=${pageSnapshot?.hasLiveSessionSignal() == true}"
+                )
+                val loginUrl = resolveYouTubeRefreshLoginUrl(
+                    currentUrl = pageSnapshot?.currentUrl.orEmpty().ifBlank { url },
+                    signInUrl = pageSnapshot?.signInUrl.orEmpty(),
+                    hasYtcfg = pageSnapshot?.hasYtcfg == true
+                )
+                if (shouldTriggerYouTubeRefreshLogin(
+                        pageReady = isYouTubeRefreshPageSettled(pageSnapshot?.readyState.orEmpty()),
+                        hasYtcfg = pageSnapshot?.hasYtcfg == true,
+                        hasLiveSessionSignal = pageSnapshot?.hasLiveSessionSignal() == true,
+                        loginUrl = loginUrl
+                    )
+                ) {
+                    NPLogger.i(
+                        TAG,
+                        "refresh auto-login reason=$reason url=$url loginUrl=$loginUrl"
+                    )
+                    if (loadUrlAndAwait(activeWebView, loginUrl)) {
+                        delay(PAGE_SETTLE_DELAY_MS)
+                        if (loadUrlAndAwait(activeWebView, url)) {
+                            delay(PAGE_SETTLE_DELAY_MS)
+                        }
+                        pageSnapshot = readPageSnapshot(activeWebView)
+                        refreshedAuth = buildObservedAuthBundle(
+                            base = currentAuth,
+                            activeWebView = activeWebView,
+                            pageSnapshot = pageSnapshot
+                        )
+                        refreshedHealth = evaluateYouTubeAuthHealth(
+                            bundle = refreshedAuth,
+                            now = System.currentTimeMillis()
+                        )
+                        NPLogger.d(
+                            TAG,
+                            "refresh post-login reason=$reason url=$url cookies=${refreshedAuth.cookies.keys.joinToString()} activeKeys=${refreshedHealth.activeCookieKeys.joinToString()} pageReady=${pageSnapshot?.readyState.orEmpty()} liveSession=${pageSnapshot?.hasLiveSessionSignal() == true}"
+                        )
+                    }
+                }
                 if (
                     !YouTubeCookieSupport.isLoggedIn(refreshedAuth.cookies) ||
                     refreshedHealth.activeCookieKeys.isEmpty()
@@ -162,10 +279,18 @@ class YouTubeAuthAutoRefreshManager(
                 val recoveredActiveSession = currentHealth.activeCookieKeys.isEmpty() &&
                     refreshedHealth.activeCookieKeys.isNotEmpty()
                 val pageConfirmedSession = pageSnapshot?.hasLiveSessionSignal() == true
-                if (!authChanged && !recoveredActiveSession && !pageConfirmedSession) {
+                val pageReady = isYouTubeRefreshPageSettled(pageSnapshot?.readyState.orEmpty())
+                if (!shouldAcceptYouTubeRefreshResult(
+                        pageReady = pageReady,
+                        hasYtcfg = pageSnapshot?.hasYtcfg == true,
+                        hasLiveSessionSignal = pageConfirmedSession,
+                        authChanged = authChanged,
+                        recoveredActiveSession = recoveredActiveSession
+                    )
+                ) {
                     NPLogger.w(
                         TAG,
-                        "refresh skipped reason=$reason url=$url pageReady=${pageSnapshot?.readyState.orEmpty()} hasYtcfg=${pageSnapshot?.hasYtcfg == true}"
+                        "refresh skipped reason=$reason url=$url pageReady=${pageSnapshot?.readyState.orEmpty()} hasYtcfg=${pageSnapshot?.hasYtcfg == true} liveSession=$pageConfirmedSession"
                     )
                     return@forEach
                 }
@@ -258,10 +383,16 @@ class YouTubeAuthAutoRefreshManager(
         auth: YouTubeAuthBundle
     ) = withContext(Dispatchers.Main) {
         val cookieManager = CookieManager.getInstance()
+        val normalizedAuth = auth.normalized(savedAt = auth.savedAt)
+        NPLogger.d(
+            TAG,
+            "refresh seed cookies keys=${normalizedAuth.cookies.keys.joinToString()}"
+        )
         applyYouTubeWebCookies(
             cookieManager = cookieManager,
-            cookies = auth.normalized(savedAt = auth.savedAt).cookies,
+            cookies = normalizedAuth.cookies,
             skipExisting = false,
+            replaceExisting = true,
             includeConsentCookie = true
         )
         cookieManager.setAcceptCookie(true)
@@ -308,8 +439,26 @@ class YouTubeAuthAutoRefreshManager(
                     readyState: document.readyState || '',
                     hasYtcfg: !!ytcfg,
                     loggedIn: !!getConfig('LOGGED_IN'),
+                    sessionIndex: String(getConfig('SESSION_INDEX') || ''),
                     delegatedSessionId: String(getConfig('DELEGATED_SESSION_ID') || ''),
-                    userSessionId: String(getConfig('USER_SESSION_ID') || '')
+                    userSessionId: String(getConfig('USER_SESSION_ID') || ''),
+                    currentUrl: String(topWindow?.location?.href || location.href || ''),
+                    signInUrl: (() => {
+                      const raw = String(
+                        getConfig('SIGNIN_URL')
+                          || topWindow?.document?.querySelector('a[href*="accounts.google.com"]')?.href
+                          || topWindow?.document?.querySelector('a[href*="ServiceLogin"]')?.href
+                          || ''
+                      );
+                      if (!raw) {
+                        return '';
+                      }
+                      try {
+                        return String(new URL(raw, topWindow?.location?.href || location.href).toString());
+                      } catch (error) {
+                        return raw;
+                      }
+                    })()
                   });
                 })()
             """.trimIndent()
@@ -321,23 +470,36 @@ class YouTubeAuthAutoRefreshManager(
                 readyState = root.optString("readyState"),
                 hasYtcfg = root.optBoolean("hasYtcfg"),
                 loggedIn = root.optBoolean("loggedIn"),
+                sessionIndex = root.optString("sessionIndex"),
                 delegatedSessionId = root.optString("delegatedSessionId"),
-                userSessionId = root.optString("userSessionId")
+                userSessionId = root.optString("userSessionId"),
+                currentUrl = root.optString("currentUrl"),
+                signInUrl = root.optString("signInUrl")
             )
         }.getOrNull()
     }
 
     private fun buildObservedAuthBundle(
         base: YouTubeAuthBundle,
-        activeWebView: WebView
+        activeWebView: WebView,
+        pageSnapshot: RefreshPageSnapshot?
     ): YouTubeAuthBundle {
         CookieManager.getInstance().flush()
         val headers = capturedHeaders
+        val observedCookies = collectYouTubeWebCookies(CookieManager.getInstance())
+        NPLogger.d(
+            TAG,
+            "refresh observed cookies keys=${observedCookies.keys.joinToString()}"
+        )
         return mergeYouTubeAuthBundle(
             base = base,
-            observedCookies = collectYouTubeWebCookies(CookieManager.getInstance()),
+            observedCookies = observedCookies,
             authorization = headers?.authorization.orEmpty(),
-            xGoogAuthUser = headers?.xGoogAuthUser.orEmpty(),
+            // 隐藏刷新页不一定会主动发 youtubei 请求，这里回退到页面公开的 SESSION_INDEX。
+            xGoogAuthUser = resolveObservedYouTubeAuthUser(
+                capturedAuthUser = headers?.xGoogAuthUser.orEmpty(),
+                pageSessionIndex = pageSnapshot?.sessionIndex.orEmpty()
+            ),
             origin = headers?.origin.orEmpty().ifBlank { YOUTUBE_MUSIC_ORIGIN },
             userAgent = headers?.userAgent.orEmpty()
                 .ifBlank { activeWebView.settings.userAgentString.orEmpty() },
