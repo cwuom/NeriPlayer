@@ -137,6 +137,25 @@ import kotlin.random.Random
  * - 实现顺序/随机播放，包括“历史/未来/抽签袋”三栈模型，保证可回退与分叉前进
  * - 序列化/反序列化播放状态文件，实现应用重启后的恢复
  */
+internal data class PlaybackStartPlan(
+    val useFadeIn: Boolean,
+    val fadeDurationMs: Long,
+    val initialVolume: Float
+)
+
+internal fun resolvePlaybackStartPlan(
+    shouldFadeIn: Boolean,
+    fadeDurationMs: Long
+): PlaybackStartPlan {
+    val normalizedDurationMs = fadeDurationMs.coerceAtLeast(0L)
+    val useFadeIn = shouldFadeIn && normalizedDurationMs > 0L
+    return PlaybackStartPlan(
+        useFadeIn = useFadeIn,
+        fadeDurationMs = normalizedDurationMs,
+        initialVolume = if (useFadeIn) 0f else 1f
+    )
+}
+
 object PlayerManager {
     const val BILI_SOURCE_TAG = "Bilibili"
     const val NETEASE_SOURCE_TAG = "Netease"
@@ -364,6 +383,18 @@ object PlayerManager {
     private fun fadeStepsFor(durationMs: Long): Int {
         if (durationMs <= 0L) return 0
         return (durationMs / 40L).toInt().coerceIn(MIN_FADE_STEPS, MAX_FADE_STEPS)
+    }
+
+    private fun runPlayerActionOnMainThread(action: () -> Unit) {
+        if (!::player.isInitialized) return
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            action()
+            return
+        }
+        mainScope.launch {
+            if (!::player.isInitialized) return@launch
+            action()
+        }
     }
 
     private fun applyAudioFocusPolicy() {
@@ -1416,7 +1447,9 @@ object PlayerManager {
         volumeFadeJob?.cancel()
         volumeFadeJob = null
         if (resetToFull && ::player.isInitialized) {
-            mainScope.launch { runCatching { player.volume = 1f } }
+            runPlayerActionOnMainThread {
+                runCatching { player.volume = 1f }
+            }
         }
     }
 
@@ -1425,12 +1458,27 @@ object PlayerManager {
         pendingPauseJob?.cancel()
         pendingPauseJob = null
         if (resetVolumeToFull && hadPendingPause && ::player.isInitialized) {
-            mainScope.launch {
+            runPlayerActionOnMainThread {
                 if (::player.isInitialized) {
                     player.volume = 1f
                 }
             }
         }
+    }
+
+    private fun preparePlayerForManagedStart(
+        shouldFadeIn: Boolean,
+        fadeDurationMs: Long = playbackFadeInDurationMs
+    ) {
+        if (!::player.isInitialized) return
+        val plan = resolvePlaybackStartPlan(
+            shouldFadeIn = shouldFadeIn,
+            fadeDurationMs = fadeDurationMs
+        )
+        cancelVolumeFade()
+        // 在 prepare 前先切断旧的自动播放状态，避免本地文件因准备过快先以旧音量出声。
+        player.playWhenReady = false
+        player.volume = plan.initialVolume
     }
 
     private suspend fun fadeOutCurrentPlaybackIfNeeded(
@@ -1482,28 +1530,24 @@ object PlayerManager {
         shouldFadeIn: Boolean,
         fadeDurationMs: Long = playbackFadeInDurationMs
     ) {
-        cancelVolumeFade(resetToFull = !shouldFadeIn)
-        val durationMs = fadeDurationMs.coerceAtLeast(0L)
-        if (!shouldFadeIn || durationMs <= 0L) {
-            mainScope.launch {
-                if (!::player.isInitialized) return@launch
-                player.volume = 1f
-                player.playWhenReady = true
-                player.play()
-            }
-            return
-        }
-
-        mainScope.launch {
-            if (!::player.isInitialized) return@launch
-            player.volume = 0f
+        val plan = resolvePlaybackStartPlan(
+            shouldFadeIn = shouldFadeIn,
+            fadeDurationMs = fadeDurationMs
+        )
+        cancelVolumeFade()
+        runPlayerActionOnMainThread {
+            if (!::player.isInitialized) return@runPlayerActionOnMainThread
+            player.volume = plan.initialVolume
             player.playWhenReady = true
             player.play()
         }
+        if (!plan.useFadeIn) {
+            return
+        }
 
-        val steps = fadeStepsFor(durationMs)
+        val steps = fadeStepsFor(plan.fadeDurationMs)
         if (steps <= 0) return
-        val stepDelay = (durationMs / steps).coerceAtLeast(1L)
+        val stepDelay = (plan.fadeDurationMs / steps).coerceAtLeast(1L)
         volumeFadeJob = mainScope.launch {
             repeat(steps) { step ->
                 delay(stepDelay)
@@ -1659,6 +1703,16 @@ object PlayerManager {
                         if (requestToken != playbackRequestToken) {
                             return@withContext
                         }
+                        val shouldFadeIn = useTrackTransitionFade || playbackFadeInEnabled
+                        val fadeDurationMs = if (useTrackTransitionFade) {
+                            playbackCrossfadeInDurationMs
+                        } else {
+                            playbackFadeInDurationMs
+                        }
+                        preparePlayerForManagedStart(
+                            shouldFadeIn = shouldFadeIn,
+                            fadeDurationMs = fadeDurationMs
+                        )
                         resetTrackEndDeduplicationState()
                         player.setMediaItem(mediaItem)
                         // 每次切歌后都钳制 Exo 的循环状态，避免单媒体项“列表循环”
@@ -1670,12 +1724,8 @@ object PlayerManager {
                             _playbackPositionMs.value = resumePositionMs
                         }
                         startPlayerPlaybackWithFade(
-                            shouldFadeIn = useTrackTransitionFade || playbackFadeInEnabled,
-                            fadeDurationMs = if (useTrackTransitionFade) {
-                                playbackCrossfadeInDurationMs
-                            } else {
-                                playbackFadeInDurationMs
-                            }
+                            shouldFadeIn = shouldFadeIn,
+                            fadeDurationMs = fadeDurationMs
                         )
                     }
                     maybeAutoMatchBiliMetadata(song, requestToken)
@@ -1955,6 +2005,10 @@ object PlayerManager {
         persistState()
 
         withContext(Dispatchers.Main) {
+            preparePlayerForManagedStart(
+                shouldFadeIn = false,
+                fadeDurationMs = 0L
+            )
             resetTrackEndDeduplicationState()
             player.setMediaItem(mediaItem)
             syncExoRepeatMode()
@@ -2675,7 +2729,7 @@ object PlayerManager {
             _playbackPositionMs.value = currentPosition
         }
         if (!resetVolumeToFull) {
-            mainScope.launch {
+            runPlayerActionOnMainThread {
                 if (::player.isInitialized) {
                     player.volume = 1f
                 }

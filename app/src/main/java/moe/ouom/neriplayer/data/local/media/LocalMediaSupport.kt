@@ -580,7 +580,7 @@ object LocalMediaSupport {
         return File(baseDir, "NeriPlayer")
     }
 
-    // 优先直接分享受控目录中的文件，无法直出时再复制到缓存 staging 后分享。
+    // 优先直接分享受控目录中的文件，无法直出时再复制到缓存 staging 后分享
     fun prepareShareableFile(context: Context, sourceFile: File): File {
         return prepareShareableFileInDirectory(
             sourceFile = sourceFile,
