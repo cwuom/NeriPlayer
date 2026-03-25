@@ -144,6 +144,8 @@ internal data class PlaybackStartPlan(
     val initialVolume: Float
 )
 
+internal const val RESTORED_PLAYBACK_PROTECTION_FADE_DURATION_MS = 1000L
+
 internal fun resolvePlaybackStartPlan(
     shouldFadeIn: Boolean,
     fadeDurationMs: Long
@@ -154,6 +156,31 @@ internal fun resolvePlaybackStartPlan(
         useFadeIn = useFadeIn,
         fadeDurationMs = normalizedDurationMs,
         initialVolume = if (useFadeIn) 0f else 1f
+    )
+}
+
+internal fun resolveManagedPlaybackStartPlan(
+    playbackFadeInEnabled: Boolean,
+    playbackFadeInDurationMs: Long,
+    playbackCrossfadeInDurationMs: Long,
+    useTrackTransitionFade: Boolean = false,
+    forceStartupProtectionFade: Boolean = false
+): PlaybackStartPlan {
+    val targetDurationMs = when {
+        useTrackTransitionFade -> playbackCrossfadeInDurationMs
+        forceStartupProtectionFade && playbackFadeInEnabled ->
+            maxOf(
+                playbackFadeInDurationMs,
+                RESTORED_PLAYBACK_PROTECTION_FADE_DURATION_MS
+            )
+        forceStartupProtectionFade -> RESTORED_PLAYBACK_PROTECTION_FADE_DURATION_MS
+        else -> playbackFadeInDurationMs
+    }
+    return resolvePlaybackStartPlan(
+        shouldFadeIn = useTrackTransitionFade ||
+            playbackFadeInEnabled ||
+            forceStartupProtectionFade,
+        fadeDurationMs = targetDurationMs
     )
 }
 
@@ -845,11 +872,27 @@ object PlayerManager {
         runCatching {
             stateFile = File(app.filesDir, "last_playlist.json")
             blockingIo {
+                // 冷启动恢复会在这些 Flow collect 到首个值之前触发，先同步拿到首播配置，
+                // 避免恢复进度续播时短暂套用默认音量/默认音效
                 keepLastPlaybackProgressEnabled = settingsRepo.keepLastPlaybackProgressFlow.first()
                 keepPlaybackModeStateEnabled = settingsRepo.keepPlaybackModeStateFlow.first()
+                playbackFadeInEnabled = settingsRepo.playbackFadeInFlow.first()
+                playbackCrossfadeNextEnabled = settingsRepo.playbackCrossfadeNextFlow.first()
+                playbackFadeInDurationMs =
+                    settingsRepo.playbackFadeInDurationMsFlow.first().coerceAtLeast(0L)
+                playbackFadeOutDurationMs =
+                    settingsRepo.playbackFadeOutDurationMsFlow.first().coerceAtLeast(0L)
+                playbackCrossfadeInDurationMs =
+                    settingsRepo.playbackCrossfadeInDurationMsFlow.first().coerceAtLeast(0L)
+                playbackCrossfadeOutDurationMs =
+                    settingsRepo.playbackCrossfadeOutDurationMsFlow.first().coerceAtLeast(0L)
+                stopOnBluetoothDisconnectEnabled =
+                    settingsRepo.stopOnBluetoothDisconnectFlow.first()
+                allowMixedPlaybackEnabled = settingsRepo.allowMixedPlaybackFlow.first()
                 playbackSoundConfig = PlaybackSoundConfig(
                     speed = settingsRepo.playbackSpeedFlow.first(),
                     pitch = settingsRepo.playbackPitchFlow.first(),
+                    loudnessGainMb = settingsRepo.playbackLoudnessGainMbFlow.first(),
                     equalizerEnabled = settingsRepo.playbackEqualizerEnabledFlow.first(),
                     presetId = settingsRepo.playbackEqualizerPresetFlow.first(),
                     customBandLevelsMb = settingsRepo.playbackEqualizerCustomBandLevelsFlow.first()
@@ -1467,15 +1510,8 @@ object PlayerManager {
         }
     }
 
-    private fun preparePlayerForManagedStart(
-        shouldFadeIn: Boolean,
-        fadeDurationMs: Long = playbackFadeInDurationMs
-    ) {
+    private fun preparePlayerForManagedStart(plan: PlaybackStartPlan) {
         if (!::player.isInitialized) return
-        val plan = resolvePlaybackStartPlan(
-            shouldFadeIn = shouldFadeIn,
-            fadeDurationMs = fadeDurationMs
-        )
         cancelVolumeFade()
         // 在 prepare 前先切断旧的自动播放状态，避免本地文件因准备过快先以旧音量出声
         player.playWhenReady = false
@@ -1527,14 +1563,7 @@ object PlayerManager {
         }
     }
 
-    private fun startPlayerPlaybackWithFade(
-        shouldFadeIn: Boolean,
-        fadeDurationMs: Long = playbackFadeInDurationMs
-    ) {
-        val plan = resolvePlaybackStartPlan(
-            shouldFadeIn = shouldFadeIn,
-            fadeDurationMs = fadeDurationMs
-        )
+    private fun startPlayerPlaybackWithFade(plan: PlaybackStartPlan) {
         cancelVolumeFade()
         runPlayerActionOnMainThread {
             if (!::player.isInitialized) return@runPlayerActionOnMainThread
@@ -1560,6 +1589,19 @@ object PlayerManager {
             }
             volumeFadeJob = null
         }
+    }
+
+    private fun resolveCurrentPlaybackStartPlan(
+        useTrackTransitionFade: Boolean = false,
+        forceStartupProtectionFade: Boolean = false
+    ): PlaybackStartPlan {
+        return resolveManagedPlaybackStartPlan(
+            playbackFadeInEnabled = playbackFadeInEnabled,
+            playbackFadeInDurationMs = playbackFadeInDurationMs,
+            playbackCrossfadeInDurationMs = playbackCrossfadeInDurationMs,
+            useTrackTransitionFade = useTrackTransitionFade,
+            forceStartupProtectionFade = forceStartupProtectionFade
+        )
     }
 
     fun playPlaylist(songs: List<SongItem>, startIndex: Int) {
@@ -1601,7 +1643,8 @@ object PlayerManager {
     private fun playAtIndex(
         index: Int,
         resumePositionMs: Long = 0L,
-        useTrackTransitionFade: Boolean = false
+        useTrackTransitionFade: Boolean = false,
+        forceStartupProtectionFade: Boolean = false
     ) {
         if (currentPlaylist.isEmpty() || index !in currentPlaylist.indices) {
             NPLogger.w("NERI-Player", "playAtIndex called with invalid index: $index")
@@ -1704,30 +1747,23 @@ object PlayerManager {
                         if (requestToken != playbackRequestToken) {
                             return@withContext
                         }
-                        val shouldFadeIn = useTrackTransitionFade || playbackFadeInEnabled
-                        val fadeDurationMs = if (useTrackTransitionFade) {
-                            playbackCrossfadeInDurationMs
-                        } else {
-                            playbackFadeInDurationMs
-                        }
-                        preparePlayerForManagedStart(
-                            shouldFadeIn = shouldFadeIn,
-                            fadeDurationMs = fadeDurationMs
+                        val startPlan = resolveCurrentPlaybackStartPlan(
+                            useTrackTransitionFade = useTrackTransitionFade,
+                            forceStartupProtectionFade = forceStartupProtectionFade &&
+                                resumePositionMs > 0L
                         )
+                        preparePlayerForManagedStart(startPlan)
                         resetTrackEndDeduplicationState()
                         player.setMediaItem(mediaItem)
                         // 每次切歌后都钳制 Exo 的循环状态，避免单媒体项“列表循环”
                         syncExoRepeatMode()
                         syncExoRepeatMode()
-                        player.prepare()
                         if (resumePositionMs > 0L) {
                             player.seekTo(resumePositionMs)
                             _playbackPositionMs.value = resumePositionMs
                         }
-                        startPlayerPlaybackWithFade(
-                            shouldFadeIn = shouldFadeIn,
-                            fadeDurationMs = fadeDurationMs
-                        )
+                        player.prepare()
+                        startPlayerPlaybackWithFade(startPlan)
                     }
                     maybeAutoMatchBiliMetadata(song, requestToken)
                     maybeWarmCurrentAndUpcomingYouTubeMusic(index)
@@ -2006,18 +2042,15 @@ object PlayerManager {
         persistState()
 
         withContext(Dispatchers.Main) {
-            preparePlayerForManagedStart(
-                shouldFadeIn = false,
-                fadeDurationMs = 0L
-            )
+            preparePlayerForManagedStart(resolvePlaybackStartPlan(shouldFadeIn = false, fadeDurationMs = 0L))
             resetTrackEndDeduplicationState()
             player.setMediaItem(mediaItem)
             syncExoRepeatMode()
-            player.prepare()
             if (resumePositionMs > 0) {
                 player.seekTo(resumePositionMs)
                 _playbackPositionMs.value = resumePositionMs
             }
+            player.prepare()
             player.playWhenReady = resumePlaybackAfterRefresh
             if (resumePlaybackAfterRefresh) {
                 player.play()
@@ -2611,10 +2644,7 @@ object PlayerManager {
         when {
             isPreparedInPlayer() -> {
                 syncExoRepeatMode()
-                startPlayerPlaybackWithFade(
-                    shouldFadeIn = playbackFadeInEnabled,
-                    fadeDurationMs = playbackFadeInDurationMs
-                )
+                startPlayerPlaybackWithFade(resolveCurrentPlaybackStartPlan())
                 val resumePositionMs = player.currentPosition.coerceAtLeast(0L)
                 _playbackPositionMs.value = resumePositionMs
                 ioScope.launch {
@@ -3392,7 +3422,11 @@ object PlayerManager {
         restoredShouldResumePlayback = false
         restoredResumePositionMs = 0L
         lastStatePersistAtMs = SystemClock.elapsedRealtime()
-        playAtIndex(resumeIndex, resumePositionMs = resumePositionMs)
+        playAtIndex(
+            resumeIndex,
+            resumePositionMs = resumePositionMs,
+            forceStartupProtectionFade = true
+        )
         return resumePositionMs
     }
 

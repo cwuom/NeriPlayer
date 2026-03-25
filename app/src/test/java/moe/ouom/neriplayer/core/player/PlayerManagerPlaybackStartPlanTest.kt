@@ -42,4 +42,32 @@ class PlayerManagerPlaybackStartPlanTest {
         assertEquals(0L, plan.fadeDurationMs)
         assertEquals(1f, plan.initialVolume, 0.0001f)
     }
+
+    @Test
+    fun `restored playback protection forces fade when user fade is disabled`() {
+        val plan = resolveManagedPlaybackStartPlan(
+            playbackFadeInEnabled = false,
+            playbackFadeInDurationMs = 0L,
+            playbackCrossfadeInDurationMs = 300L,
+            forceStartupProtectionFade = true
+        )
+
+        assertTrue(plan.useFadeIn)
+        assertEquals(RESTORED_PLAYBACK_PROTECTION_FADE_DURATION_MS, plan.fadeDurationMs)
+        assertEquals(0f, plan.initialVolume, 0.0001f)
+    }
+
+    @Test
+    fun `restored playback protection keeps longer user fade duration`() {
+        val plan = resolveManagedPlaybackStartPlan(
+            playbackFadeInEnabled = true,
+            playbackFadeInDurationMs = 1600L,
+            playbackCrossfadeInDurationMs = 300L,
+            forceStartupProtectionFade = true
+        )
+
+        assertTrue(plan.useFadeIn)
+        assertEquals(1600L, plan.fadeDurationMs)
+        assertEquals(0f, plan.initialVolume, 0.0001f)
+    }
 }
