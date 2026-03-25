@@ -50,6 +50,58 @@ class PlaybackAudioInfoTest {
     }
 
     @Test
+    fun mergeLocalPlaybackAudioInfoWithRemoteQuality_preservesDisplayedRemoteQuality() {
+        val localAudioInfo = PlaybackAudioInfo(
+            source = PlaybackAudioSource.LOCAL,
+            codecLabel = "FLAC",
+            bitrateKbps = 1411,
+            sampleRateHz = 48_000,
+            bitDepth = 24
+        )
+        val previousRemoteAudioInfo = PlaybackAudioInfo(
+            source = PlaybackAudioSource.BILIBILI,
+            qualityKey = "lossless",
+            qualityLabel = "无损",
+            qualityOptions = listOf(PlaybackQualityOption("lossless", "无损"))
+        )
+
+        val merged = mergeLocalPlaybackAudioInfoWithRemoteQuality(
+            localAudioInfo = localAudioInfo,
+            previousAudioInfo = previousRemoteAudioInfo
+        )
+
+        assertEquals(PlaybackAudioSource.LOCAL, merged?.source)
+        assertEquals("lossless", merged?.qualityKey)
+        assertEquals("无损", merged?.qualityLabel)
+        assertEquals(emptyList<PlaybackQualityOption>(), merged?.qualityOptions)
+        assertEquals("FLAC", merged?.codecLabel)
+        assertEquals(1411, merged?.bitrateKbps)
+        assertEquals(48_000, merged?.sampleRateHz)
+        assertEquals(24, merged?.bitDepth)
+    }
+
+    @Test
+    fun mergeLocalPlaybackAudioInfoWithRemoteQuality_ignoresLocalPreviousInfo() {
+        val localAudioInfo = PlaybackAudioInfo(
+            source = PlaybackAudioSource.LOCAL,
+            codecLabel = "AAC",
+            bitrateKbps = 256
+        )
+        val previousLocalAudioInfo = PlaybackAudioInfo(
+            source = PlaybackAudioSource.LOCAL,
+            qualityKey = "lossless",
+            qualityLabel = "无损"
+        )
+
+        val merged = mergeLocalPlaybackAudioInfoWithRemoteQuality(
+            localAudioInfo = localAudioInfo,
+            previousAudioInfo = previousLocalAudioInfo
+        )
+
+        assertEquals(localAudioInfo, merged)
+    }
+
+    @Test
     fun inferYouTubeQualityKeyFromBitrate_mapsThresholds() {
         assertEquals("very_high", inferYouTubeQualityKeyFromBitrate(192))
         assertEquals("high", inferYouTubeQualityKeyFromBitrate(128))

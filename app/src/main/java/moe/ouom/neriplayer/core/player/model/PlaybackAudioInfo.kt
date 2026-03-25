@@ -95,6 +95,28 @@ fun estimateBitrateKbps(
         .takeIf { it > 0 }
 }
 
+fun mergeLocalPlaybackAudioInfoWithRemoteQuality(
+    localAudioInfo: PlaybackAudioInfo?,
+    previousAudioInfo: PlaybackAudioInfo?
+): PlaybackAudioInfo? {
+    val resolvedLocalAudioInfo = localAudioInfo ?: return null
+    if (resolvedLocalAudioInfo.source != PlaybackAudioSource.LOCAL) {
+        return resolvedLocalAudioInfo
+    }
+
+    val remoteQualityInfo = previousAudioInfo
+        ?.takeIf { it.source != PlaybackAudioSource.LOCAL }
+        ?.takeIf { !it.qualityLabel.isNullOrBlank() || !it.qualityKey.isNullOrBlank() }
+        ?: return resolvedLocalAudioInfo
+
+    // 本地缓存命中时，保留远端原先展示的音质标签，避免 UI 在 metadata 回填后跳变
+    return resolvedLocalAudioInfo.copy(
+        qualityKey = remoteQualityInfo.qualityKey,
+        qualityLabel = remoteQualityInfo.qualityLabel,
+        qualityOptions = emptyList()
+    )
+}
+
 fun inferYouTubeQualityKeyFromBitrate(bitrateKbps: Int?): String {
     val safeBitrate = bitrateKbps ?: return "low"
     return when {

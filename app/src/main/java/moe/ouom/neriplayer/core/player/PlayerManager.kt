@@ -107,6 +107,7 @@ import moe.ouom.neriplayer.core.player.model.SongUrlResult
 import moe.ouom.neriplayer.core.player.model.deriveCodecLabel
 import moe.ouom.neriplayer.core.player.model.estimateBitrateKbps
 import moe.ouom.neriplayer.core.player.model.inferYouTubeQualityKeyFromBitrate
+import moe.ouom.neriplayer.core.player.model.mergeLocalPlaybackAudioInfoWithRemoteQuality
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackPitch
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
 import moe.ouom.neriplayer.core.player.model.toPersistedSongItem
@@ -1476,7 +1477,7 @@ object PlayerManager {
             fadeDurationMs = fadeDurationMs
         )
         cancelVolumeFade()
-        // 在 prepare 前先切断旧的自动播放状态，避免本地文件因准备过快先以旧音量出声。
+        // 在 prepare 前先切断旧的自动播放状态，避免本地文件因准备过快先以旧音量出声
         player.playWhenReady = false
         player.volume = plan.initialVolume
     }
@@ -2047,10 +2048,15 @@ object PlayerManager {
                 d
             } catch (_: Exception) { null }
         } else null
+        val localAudioInfo = buildLocalPlaybackAudioInfo(localReference.toUri())
         return SongUrlResult.Success(
             url = localReference,
             durationMs = durationMs,
-            audioInfo = buildLocalPlaybackAudioInfo(localReference.toUri())
+            audioInfo = mergeLocalPlaybackAudioInfoWithRemoteQuality(
+                localAudioInfo = localAudioInfo,
+                previousAudioInfo = _currentPlaybackAudioInfo.value
+                    ?.takeIf { _currentSongFlow.value?.sameIdentityAs(song) == true }
+            )
         )
     }
 
