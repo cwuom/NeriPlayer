@@ -34,9 +34,12 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.auth.youtube.isYouTubeAuthRecoverableFailure
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthAutoRefreshManager
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRepository
-import moe.ouom.neriplayer.data.platform.youtube.buildAuthCacheFingerprint
+import moe.ouom.neriplayer.data.platform.youtube.buildBootstrapAuthFingerprint
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeInnertubeRequestHeaders
+import moe.ouom.neriplayer.data.platform.youtube.buildYouTubePageRequestHeaders
 import moe.ouom.neriplayer.data.platform.youtube.effectiveCookieHeader
+import moe.ouom.neriplayer.data.platform.youtube.YOUTUBE_WEB_ORIGIN
+import moe.ouom.neriplayer.data.platform.youtube.resolveBootstrapUserAgent
 import moe.ouom.neriplayer.data.platform.youtube.resolveRequestUserAgent
 import moe.ouom.neriplayer.data.platform.youtube.resolveXGoogAuthUser
 import okhttp3.MediaType.Companion.toMediaType
@@ -48,10 +51,6 @@ import org.json.JSONObject
 
 private const val YOUTUBE_MUSIC_BROWSE_ID_LIBRARY_PLAYLISTS = "FEmusic_liked_playlists"
 private const val YOUTUBE_MUSIC_MUSIC_ORIGIN = "https://music.youtube.com"
-private const val YOUTUBE_MUSIC_DEFAULT_WEB_UA =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-        "AppleWebKit/537.36 (KHTML, like Gecko) " +
-        "Chrome/134.0.0.0 Safari/537.36"
 private const val YOUTUBE_MUSIC_BOOTSTRAP_TTL_MS = 10L * 60L * 1000L
 private const val YOUTUBE_MUSIC_CLIENT_NAME_NUM_WEB_REMIX = "67"
 private const val YOUTUBE_MUSIC_CLIENT_NAME_WEB_REMIX = "WEB_REMIX"
@@ -61,6 +60,10 @@ private const val YOUTUBE_MUSIC_SAFE_FALLBACK_HL = "zh-CN"
 private const val YOUTUBE_MUSIC_SAFE_FALLBACK_GL = "JP"
 private const val YOUTUBE_MUSIC_HOME_PLAYLIST_ITEM_LIMIT = 24
 private const val YOUTUBE_MUSIC_SEARCH_ITEM_LIMIT = 30
+private val YOUTUBE_MUSIC_BOOTSTRAP_PAGE_ORIGINS = listOf(
+    YOUTUBE_MUSIC_MUSIC_ORIGIN,
+    YOUTUBE_WEB_ORIGIN
+)
 
 data class YouTubeMusicLibraryPlaylist(
     val browseId: String,
@@ -2064,9 +2067,8 @@ class YouTubeMusicClient(
         } else {
             auth.effectiveCookieHeader().trim()
         }
-        val cacheUserAgent = auth.resolveRequestUserAgent().ifBlank { YOUTUBE_MUSIC_DEFAULT_WEB_UA }
-        val authFingerprint = auth.buildAuthCacheFingerprint(
-            userAgent = cacheUserAgent,
+        val cacheUserAgent = auth.resolveBootstrapUserAgent()
+        val authFingerprint = auth.buildBootstrapAuthFingerprint(
             origin = YOUTUBE_MUSIC_MUSIC_ORIGIN
         )
 
@@ -2084,15 +2086,46 @@ class YouTubeMusicClient(
         var workingCookieHeader = cookieHeader
         var userAgent = cacheUserAgent
         val requestLocale = YouTubeMusicLocaleResolver.preferred()
-        fun fetchHomeHtml(): String {
-            return executeText(
-                Request.Builder()
-                    .url("$YOUTUBE_MUSIC_MUSIC_ORIGIN/")
-                    .applyCookieHeader(workingCookieHeader)
-                    .header("User-Agent", userAgent)
-                    .header("Accept-Language", requestLocale.acceptLanguage)
-                    .build()
+        fun fetchBootstrapConfig(): YouTubeMusicBootstrapConfig {
+            val pageAuth = workingAuth.copy(
+                cookieHeader = workingCookieHeader,
+                cookies = emptyMap()
             )
+            val requestHeaders = pageAuth.buildYouTubePageRequestHeaders(
+                original = linkedMapOf(
+                    "Accept-Language" to requestLocale.acceptLanguage
+                ),
+                userAgent = userAgent
+            )
+            val requestCookieHeader = requestHeaders["Cookie"].orEmpty()
+            var lastError: IOException? = null
+            for (origin in YOUTUBE_MUSIC_BOOTSTRAP_PAGE_ORIGINS) {
+                val html = try {
+                    executeText(
+                        Request.Builder()
+                            .url("$origin/")
+                            .apply {
+                                requestHeaders.forEach { (name, value) ->
+                                    header(name, value)
+                                }
+                            }
+                            .build()
+                    )
+                } catch (error: IOException) {
+                    lastError = error
+                    continue
+                }
+                try {
+                    return YouTubeMusicParser.parseBootstrapConfig(
+                        html = html,
+                        cookieHeader = requestCookieHeader,
+                        userAgent = userAgent
+                    )
+                } catch (error: IOException) {
+                    lastError = error
+                }
+            }
+            throw lastError ?: IOException("YouTube Music bootstrap request failed")
         }
         suspend fun refreshWorkingAuth(reason: String) {
             authAutoRefreshManager?.refreshIfNeeded(
@@ -2106,37 +2139,24 @@ class YouTubeMusicClient(
             } else {
                 workingAuth.effectiveCookieHeader().trim()
             }
-            userAgent = workingAuth.resolveRequestUserAgent().ifBlank { YOUTUBE_MUSIC_DEFAULT_WEB_UA }
-        }
-        val homeHtml = try {
-            fetchHomeHtml()
-        } catch (error: IOException) {
-            if (isYouTubeAuthRecoverableFailure(error)) {
-                refreshWorkingAuth("music_bootstrap_http_recoverable")
-                fetchHomeHtml()
-            } else {
-                throw error
-            }
+            userAgent = workingAuth.resolveBootstrapUserAgent()
         }
         val parsedConfig = try {
-            YouTubeMusicParser.parseBootstrapConfig(
-                html = homeHtml,
-                cookieHeader = workingCookieHeader,
-                userAgent = userAgent
-            )
+            fetchBootstrapConfig()
         } catch (error: IOException) {
-            if (workingCookieHeader.isBlank()) {
+            val recoverableFailure = isYouTubeAuthRecoverableFailure(error)
+            if (workingCookieHeader.isBlank() && !recoverableFailure) {
                 throw error
             }
-            refreshWorkingAuth("music_bootstrap_parse_recoverable")
-            YouTubeMusicParser.parseBootstrapConfig(
-                html = fetchHomeHtml(),
-                cookieHeader = workingCookieHeader,
-                userAgent = userAgent
-            )
+            val refreshReason = if (recoverableFailure) {
+                "music_bootstrap_http_recoverable"
+            } else {
+                "music_bootstrap_parse_recoverable"
+            }
+            refreshWorkingAuth(refreshReason)
+            fetchBootstrapConfig()
         }
-        val resolvedFingerprint = workingAuth.buildAuthCacheFingerprint(
-            userAgent = userAgent,
+        val resolvedFingerprint = workingAuth.buildBootstrapAuthFingerprint(
             origin = YOUTUBE_MUSIC_MUSIC_ORIGIN
         )
         return parsedConfig.copy(
@@ -2438,13 +2458,6 @@ class YouTubeMusicClient(
                     .put("platform", "DESKTOP")
             )
             .put("user", JSONObject().put("lockedSafetyMode", false))
-    }
-
-    private fun Request.Builder.applyCookieHeader(cookieHeader: String): Request.Builder {
-        if (cookieHeader.isBlank()) {
-            return this
-        }
-        return header("Cookie", cookieHeader)
     }
 
     private fun executeJson(request: Request): JSONObject {

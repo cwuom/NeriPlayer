@@ -53,7 +53,7 @@ import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.platform.youtube.YOUTUBE_WEB_ORIGIN
 import moe.ouom.neriplayer.data.platform.youtube.appendYouTubeConsentCookie
-import moe.ouom.neriplayer.data.platform.youtube.buildAuthCacheFingerprint
+import moe.ouom.neriplayer.data.platform.youtube.buildBootstrapAuthFingerprint
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubePageRequestHeaders
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeStreamRequestHeaders
 import moe.ouom.neriplayer.data.platform.youtube.effectiveCookieHeader
@@ -928,8 +928,7 @@ class YouTubeMusicPlaybackRepository(
     }
 
     private fun syncAuthBoundCachesIfNeeded(auth: YouTubeAuthBundle) {
-        val fingerprint = auth.buildAuthCacheFingerprint(
-            userAgent = auth.resolveBootstrapUserAgent(),
+        val fingerprint = auth.buildBootstrapAuthFingerprint(
             origin = auth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN }
         )
         val previousFingerprint = lastAuthFingerprint
@@ -1784,8 +1783,7 @@ class YouTubeMusicPlaybackRepository(
         )
         var workingAuth = authProvider().normalized().takeIf { it.hasLoginCookies() } ?: auth
         var userAgent = workingAuth.resolveBootstrapUserAgent()
-        var authFingerprint = workingAuth.buildAuthCacheFingerprint(
-            userAgent = userAgent,
+        var authFingerprint = workingAuth.buildBootstrapAuthFingerprint(
             origin = workingAuth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN }
         )
         var cookieHeader = appendYouTubeConsentCookie(workingAuth.effectiveCookieHeader())
@@ -1822,8 +1820,7 @@ class YouTubeMusicPlaybackRepository(
                     throw error
                 }
                 userAgent = workingAuth.resolveBootstrapUserAgent()
-                authFingerprint = workingAuth.buildAuthCacheFingerprint(
-                    userAgent = userAgent,
+                authFingerprint = workingAuth.buildBootstrapAuthFingerprint(
                     origin = workingAuth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN }
                 )
                 fetchBootstrapHtml(

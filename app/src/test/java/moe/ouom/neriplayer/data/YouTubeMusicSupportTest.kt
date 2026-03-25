@@ -5,6 +5,7 @@ import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.platform.youtube.YOUTUBE_DEFAULT_WEB_USER_AGENT
 import moe.ouom.neriplayer.data.platform.youtube.YOUTUBE_STREAM_IOS_USER_AGENT
 import moe.ouom.neriplayer.data.platform.youtube.YOUTUBE_WEB_ORIGIN
+import moe.ouom.neriplayer.data.platform.youtube.buildBootstrapAuthFingerprint
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeInnertubeRequestHeaders
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubePageRequestHeaders
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeStreamRequestHeaders
@@ -75,6 +76,22 @@ class YouTubeMusicSupportTest {
         ).resolveBootstrapUserAgent()
 
         assertEquals(YOUTUBE_DEFAULT_WEB_USER_AGENT, userAgent)
+    }
+
+    @Test
+    fun buildBootstrapAuthFingerprint_normalizesMobileUserAgentBeforeHashing() {
+        val mobileAuth = YouTubeAuthBundle(
+            cookieHeader = "SAPISID=sap-value; SID=sid-value",
+            xGoogAuthUser = "2",
+            userAgent = "Mozilla/5.0 (Linux; Android 15; Pixel 9 Pro) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
+        )
+        val desktopAuth = mobileAuth.copy(userAgent = YOUTUBE_DEFAULT_WEB_USER_AGENT)
+
+        assertEquals(
+            desktopAuth.buildBootstrapAuthFingerprint(),
+            mobileAuth.buildBootstrapAuthFingerprint()
+        )
     }
 
     @Test

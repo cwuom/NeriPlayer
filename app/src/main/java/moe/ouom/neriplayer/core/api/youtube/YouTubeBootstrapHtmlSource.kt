@@ -9,11 +9,7 @@ import org.json.JSONObject
  * 优先从 ytcfg.set({...}) 提取配置，再回退到正则匹配，避免被页面格式细节卡死
  */
 internal class YouTubeBootstrapHtmlSource(html: String) {
-    private val normalizedHtml = html
-        .replace("\\x22", "\"")
-        .replace("\\u0022", "\"")
-        .replace("\\x27", "'")
-        .replace("\\u0027", "'")
+    private val normalizedHtml = decodeInlineJavascriptEscapes(html)
 
     private val ytcfg = extractYtcfgJson(normalizedHtml)
 
@@ -121,6 +117,28 @@ internal class YouTubeBootstrapHtmlSource(html: String) {
     }
 }
 
+private fun decodeInlineJavascriptEscapes(source: String): String {
+    var normalized = source
+    repeat(2) {
+        val decoded = sourceEscapePattern.replace(normalized) { match ->
+            match.groupValues[1]
+                .ifBlank { match.groupValues[2] }
+                .toInt(radix = 16)
+                .toChar()
+                .toString()
+        }
+        if (decoded == normalized) {
+            return decoded
+        }
+        normalized = decoded
+    }
+    return normalized
+}
+
+private val sourceEscapePattern = Regex(
+    """\\+(?:[xX]([0-9A-Fa-f]{2})|[uU]([0-9A-Fa-f]{4}))"""
+)
+
 private fun JSONObject?.findScalarDeep(fieldName: String): String {
     if (this == null) {
         return ""
@@ -156,15 +174,15 @@ private fun scalarToString(value: Any?): String {
 
 private fun stringFieldPattern(fieldName: String): String {
     val escapedField = Regex.escape(fieldName)
-    return """["']$escapedField["']\s*:\s*["']([^"'\\]*(?:\\.[^"'\\]*)*)["']"""
+    return """(?:["']$escapedField["']|\b$escapedField\b)\s*:\s*["']([^"'\\]*(?:\\.[^"'\\]*)*)["']"""
 }
 
 private fun numberFieldPattern(fieldName: String): String {
     val escapedField = Regex.escape(fieldName)
-    return """["']$escapedField["']\s*:\s*["']?([0-9]+)["']?"""
+    return """(?:["']$escapedField["']|\b$escapedField\b)\s*:\s*["']?([0-9]+)["']?"""
 }
 
 private fun booleanFieldPattern(fieldName: String): String {
     val escapedField = Regex.escape(fieldName)
-    return """["']$escapedField["']\s*:\s*(true|false)"""
+    return """(?:["']$escapedField["']|\b$escapedField\b)\s*:\s*(true|false)"""
 }

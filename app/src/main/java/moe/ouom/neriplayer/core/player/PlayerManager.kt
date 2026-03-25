@@ -2670,7 +2670,7 @@ object PlayerManager {
                 } else {
                     0L
                 }
-                // 冷启动后手动点击播放也属于“恢复旧进度”，需要和自动续播走同样的保护淡入。
+                // 冷启动后手动点击播放也属于“恢复旧进度”，需要和自动续播走同样的保护淡入
                 val forceStartupProtectionFade = shouldForceStartupProtectionFadeOnManualResume(
                     isPlayerPrepared = preparedInPlayer,
                     resumePositionMs = resumePositionMs,

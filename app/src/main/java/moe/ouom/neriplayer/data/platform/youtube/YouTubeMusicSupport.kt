@@ -150,6 +150,15 @@ fun YouTubeAuthBundle.resolveBootstrapUserAgent(): String {
     }
 }
 
+fun YouTubeAuthBundle.buildBootstrapAuthFingerprint(
+    origin: String = this.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN }
+): String {
+    return buildAuthCacheFingerprint(
+        userAgent = resolveBootstrapUserAgent(),
+        origin = origin
+    )
+}
+
 fun YouTubeAuthBundle.buildAuthCacheFingerprint(
     userAgent: String,
     origin: String = this.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN }
