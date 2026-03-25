@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.data.platform.bili
 
 import kotlin.collections.firstOrNull
+import java.net.URI
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -29,7 +30,7 @@ import kotlin.collections.firstOrNull
  * 统一的音质偏好 key：
  * - "dolby"    : 杜比全景声（如有）
  * - "hires"    : Hi-Res（如有）
- * - "lossless" : 无损（如有）
+ * - "lossless" : 无损（如有，B 站会优先命中 flac/hires）
  * - "high"     : 约 192kbps
  * - "medium"   : 约 128kbps
  * - "low"      : 约 64kbps
@@ -42,8 +43,70 @@ data class BiliAudioStreamInfo(
     val mimeType: String,   // audio/eac3, audio/flac, audio/mp4 等
     val bitrateKbps: Int,   // 估算 kbps
     val qualityTag: String?,// "dolby" / "hires" / null
-    val url: String
+    val url: String,
+    val candidateUrls: List<String> = listOf(url)
 )
+
+internal fun isBiliStreamHost(host: String): Boolean {
+    val normalized = host.trim().lowercase()
+    if (normalized.isBlank()) return false
+    return normalized.contains("bilivideo.") || normalized.endsWith(".mountaintoys.cn")
+}
+
+internal fun isBiliStreamUrl(url: String): Boolean =
+    runCatching { URI(url).host.orEmpty() }
+        .getOrNull()
+        ?.let(::isBiliStreamHost) == true
+
+private fun scoreBiliStreamUrl(url: String): Int {
+    val host = runCatching { URI(url).host.orEmpty().lowercase() }.getOrDefault("")
+    return when {
+        host.startsWith("upos-") && host.contains("bilivideo.") -> 3
+        host.contains("bilivideo.") -> 2
+        host.endsWith(".mountaintoys.cn") -> 1
+        else -> 0
+    }
+}
+
+fun prioritizeBiliStreamUrls(primaryUrl: String, backupUrls: List<String>): List<String> {
+    val deduped = buildList {
+        add(primaryUrl)
+        addAll(backupUrls)
+    }.map { it.trim() }
+        .filter { it.isNotBlank() }
+        .distinct()
+
+    return deduped.withIndex()
+        .sortedWith(
+            compareByDescending<IndexedValue<String>> { scoreBiliStreamUrl(it.value) }
+                .thenBy { it.index }
+        )
+        .map { it.value }
+}
+
+private fun regularQualityUpperBoundExclusive(quality: BiliQuality): Int = when (quality) {
+    BiliQuality.LOSSLESS -> BiliQuality.HIRES.minBitrateKbps
+    BiliQuality.HIGH -> BiliQuality.LOSSLESS.minBitrateKbps
+    BiliQuality.MEDIUM -> BiliQuality.HIGH.minBitrateKbps
+    BiliQuality.LOW -> BiliQuality.MEDIUM.minBitrateKbps
+    else -> Int.MAX_VALUE
+}
+
+private fun matchesRegularQuality(
+    stream: BiliAudioStreamInfo,
+    quality: BiliQuality
+): Boolean {
+    if (stream.qualityTag != null) return false
+    val upperBoundExclusive = regularQualityUpperBoundExclusive(quality)
+    return stream.bitrateKbps >= quality.minBitrateKbps &&
+        stream.bitrateKbps < upperBoundExclusive
+}
+
+private fun isLosslessLikeStream(stream: BiliAudioStreamInfo): Boolean {
+    if (stream.qualityTag == "lossless" || stream.qualityTag == "hires") return true
+    val mimeType = stream.mimeType.trim().lowercase()
+    return mimeType == "audio/flac" || mimeType == "audio/x-flac"
+}
 
 enum class BiliQuality(val key: String, val minBitrateKbps: Int) {
     DOLBY("dolby",      0),     // 标签优先
@@ -75,13 +138,21 @@ fun selectStreamByPreference(
     if (available.isEmpty()) return null
     val pref = BiliQuality.fromKey(preferredKey)
 
-    val sorted = available.sortedByDescending { it.bitrateKbps }
+    val regularSorted = available
+        .filter { it.qualityTag == null }
+        .sortedByDescending { it.bitrateKbps }
+    val taggedSorted = available
+        .filter { it.qualityTag != null }
+        .sortedByDescending { it.bitrateKbps }
+    val sorted = (regularSorted + taggedSorted).distinctBy { it.url }
 
     when (pref) {
         BiliQuality.DOLBY ->
             sorted.firstOrNull { it.qualityTag == "dolby" }?.let { return it }
         BiliQuality.HIRES ->
             sorted.firstOrNull { it.qualityTag == "hires" }?.let { return it }
+        BiliQuality.LOSSLESS ->
+            sorted.firstOrNull(::isLosslessLikeStream)?.let { return it }
         else -> Unit
     }
 
@@ -89,10 +160,10 @@ fun selectStreamByPreference(
         val hit = when (q) {
             BiliQuality.DOLBY   -> sorted.firstOrNull { it.qualityTag == "dolby" }
             BiliQuality.HIRES   -> sorted.firstOrNull { it.qualityTag == "hires" }
-            else -> {
-                val candidates = sorted.filter { it.bitrateKbps >= q.minBitrateKbps }
-                candidates.lastOrNull()
-            }
+            BiliQuality.LOSSLESS ->
+                sorted.firstOrNull(::isLosslessLikeStream)
+                    ?: regularSorted.firstOrNull { matchesRegularQuality(it, q) }
+            else -> regularSorted.firstOrNull { matchesRegularQuality(it, q) }
         }
         if (hit != null) return hit
     }

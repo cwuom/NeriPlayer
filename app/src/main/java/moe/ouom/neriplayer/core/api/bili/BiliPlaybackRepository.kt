@@ -36,10 +36,7 @@ interface BiliAudioDataSource {
     /**
      * 获取当前视频的所有可用音频流
      */
-    suspend fun fetchAudioStreams(
-        bvid: String,
-        cid: Long
-    ): List<BiliAudioStreamInfo>
+    suspend fun fetchAudioStreams(bvid: String, cid: Long): List<BiliAudioStreamInfo>
 }
 
 /**
@@ -54,8 +51,8 @@ class BiliPlaybackRepository(
         cid: Long,
         preferredKeyOverride: String? = null
     ): BiliAudioStreamInfo? {
-        val streams = source.fetchAudioStreams(bvid, cid)
         val prefKey = preferredKeyOverride ?: settings.biliAudioQualityFlow.first()
+        val streams = source.fetchAudioStreams(bvid, cid)
         return selectStreamByPreference(streams, prefKey)
     }
 
@@ -64,8 +61,8 @@ class BiliPlaybackRepository(
         cid: Long,
         preferredKeyOverride: String? = null
     ): Pair<List<BiliAudioStreamInfo>, BiliAudioStreamInfo?> {
-        val streams = source.fetchAudioStreams(bvid, cid)
         val prefKey = preferredKeyOverride ?: settings.biliAudioQualityFlow.first()
+        val streams = source.fetchAudioStreams(bvid, cid)
         val chosen = selectStreamByPreference(streams, prefKey)
         return streams to chosen
     }

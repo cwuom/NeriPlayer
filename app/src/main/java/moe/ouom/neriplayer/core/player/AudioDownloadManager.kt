@@ -784,6 +784,7 @@ object AudioDownloadManager {
         "audio/x-flac" -> "flac"
         "audio/eac3", "audio/e-ac-3" -> "eac3"
         "audio/mp4", "audio/m4a", "audio/aac" -> "m4a"
+        "video/mp4" -> "mp4"
         "audio/webm" -> "webm"
         "audio/ogg" -> "ogg"
         "audio/mpeg" -> "mp3"
