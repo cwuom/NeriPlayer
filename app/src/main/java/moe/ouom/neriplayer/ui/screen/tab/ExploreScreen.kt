@@ -897,7 +897,7 @@ private fun YouTubeMusicExploreContent(
                     )
                     Spacer(Modifier.height(8.dp))
                     HapticTextButton(onClick = { vm.loadYtMusicPlaylists() }) {
-                        Text(stringResource(R.string.home_retry_hint))
+                        Text(stringResource(R.string.action_retry))
                     }
                 }
             }

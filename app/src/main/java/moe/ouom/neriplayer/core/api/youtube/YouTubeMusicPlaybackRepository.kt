@@ -1835,53 +1835,61 @@ class YouTubeMusicPlaybackRepository(
                 throw error
             }
         }
-        val dataSyncId = findOptional(
-            homeHtml,
-            "\"DATASYNC_ID\":\"([^\"]+)\"",
-            "\"datasyncId\":\"([^\"]+)\""
-        )
+        val bootstrapSource = YouTubeBootstrapHtmlSource(homeHtml)
+        val dataSyncId = bootstrapSource.optionalString("DATASYNC_ID", "datasyncId")
         val (derivedDelegatedSessionId, derivedUserSessionId) = parseDataSyncId(dataSyncId)
-        val playerJsUrl = resolvePlayerJavaScriptUrl(findRequired(homeHtml, "\"jsUrl\":\"([^\"]+)\""))
+        val playerJsUrl = resolvePlayerJavaScriptUrl(
+            bootstrapSource.requireString(
+                "YouTube bootstrap parse failed",
+                "jsUrl"
+            )
+        )
         val parsedBootstrap = YouTubePlaybackBootstrap(
-            apiKey = findRequired(homeHtml, "\"INNERTUBE_API_KEY\":\"([^\"]+)\""),
-            webRemixClientVersion = findRequired(homeHtml, "\"INNERTUBE_CLIENT_VERSION\":\"([^\"]+)\""),
-            visitorData = findRequired(homeHtml, "\"VISITOR_DATA\":\"([^\"]+)\""),
+            apiKey = bootstrapSource.requireString(
+                "YouTube bootstrap parse failed",
+                "INNERTUBE_API_KEY",
+                "innertubeApiKey"
+            ),
+            webRemixClientVersion = bootstrapSource.requireString(
+                "YouTube bootstrap parse failed",
+                "INNERTUBE_CLIENT_VERSION",
+                "INNERTUBE_CONTEXT_CLIENT_VERSION",
+                "innertubeContextClientVersion"
+            ),
+            visitorData = bootstrapSource.requireString(
+                "YouTube bootstrap parse failed",
+                "VISITOR_DATA",
+                "visitorData"
+            ),
             playerJsUrl = playerJsUrl,
             cookieHeader = cookieHeader,
             authFingerprint = authFingerprint,
             sessionIndex = workingAuth.resolveXGoogAuthUser(
-                fallback = findOptional(homeHtml, "\"SESSION_INDEX\":\"?([0-9]+)\"?").ifBlank { "0" }
+                fallback = bootstrapSource.optionalNumber("SESSION_INDEX").ifBlank { "0" }
             ),
             userAgent = userAgent,
-            remoteHost = findOptional(homeHtml, "\"remoteHost\":\"([^\"]+)\""),
-            signatureTimestamp = findOptional(homeHtml, "\"STS\":(\\d+)")
-                .ifBlank { findOptional(homeHtml, "\"signatureTimestamp\":(\\d+)") }
+            remoteHost = bootstrapSource.optionalString("remoteHost"),
+            signatureTimestamp = bootstrapSource.optionalNumber("STS", "signatureTimestamp")
                 .ifBlank { fetchPlayerSignatureTimestamp(playerJsUrl, userAgent)?.toString().orEmpty() }
                 .toIntOrNull(),
-            appInstallData = findOptional(homeHtml, "\"appInstallData\":\"([^\"]+)\""),
-            coldConfigData = findOptional(homeHtml, "\"coldConfigData\":\"([^\"]+)\""),
-            coldHashData = findOptional(
-                homeHtml,
-                "\"coldHashData\":\"([^\"]+)\"",
-                "\"SERIALIZED_COLD_HASH_DATA\":\"([^\"]+)\""
+            appInstallData = bootstrapSource.optionalString("appInstallData"),
+            coldConfigData = bootstrapSource.optionalString("coldConfigData"),
+            coldHashData = bootstrapSource.optionalString(
+                "coldHashData",
+                "SERIALIZED_COLD_HASH_DATA"
             ),
-            hotHashData = findOptional(
-                homeHtml,
-                "\"hotHashData\":\"([^\"]+)\"",
-                "\"SERIALIZED_HOT_HASH_DATA\":\"([^\"]+)\""
+            hotHashData = bootstrapSource.optionalString(
+                "hotHashData",
+                "SERIALIZED_HOT_HASH_DATA"
             ),
-            deviceExperimentId = findOptional(homeHtml, "\"deviceExperimentId\":\"([^\"]+)\""),
-            rolloutToken = findOptional(homeHtml, "\"rolloutToken\":\"([^\"]+)\""),
+            deviceExperimentId = bootstrapSource.optionalString("deviceExperimentId"),
+            rolloutToken = bootstrapSource.optionalString("rolloutToken"),
             dataSyncId = dataSyncId,
-            delegatedSessionId = findOptional(
-                homeHtml,
-                "\"DELEGATED_SESSION_ID\":\"([^\"]+)\""
-            ).ifBlank { derivedDelegatedSessionId },
-            userSessionId = findOptional(
-                homeHtml,
-                "\"USER_SESSION_ID\":\"([^\"]+)\""
-            ).ifBlank { derivedUserSessionId },
-            loggedIn = findOptional(homeHtml, "\"LOGGED_IN\":(true|false)")
+            delegatedSessionId = bootstrapSource.optionalString("DELEGATED_SESSION_ID")
+                .ifBlank { derivedDelegatedSessionId },
+            userSessionId = bootstrapSource.optionalString("USER_SESSION_ID")
+                .ifBlank { derivedUserSessionId },
+            loggedIn = bootstrapSource.optionalBoolean("LOGGED_IN")
                 .equals("true", ignoreCase = true),
             fetchedAtMs = now
         )

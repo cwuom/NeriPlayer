@@ -259,21 +259,31 @@ internal object YouTubeMusicParser {
         userAgent: String
     ): YouTubeMusicBootstrapConfig {
         val now = System.currentTimeMillis()
-        val dataSyncId = findOptional(
-            html,
-            "\"DATASYNC_ID\":\"([^\"]+)\"",
-            "\"datasyncId\":\"([^\"]+)\""
-        )
+        val bootstrapSource = YouTubeBootstrapHtmlSource(html)
+        val dataSyncId = bootstrapSource.optionalString("DATASYNC_ID", "datasyncId")
         val (_, derivedUserSessionId) = parseDataSyncId(dataSyncId)
-        val loggedIn = findOptional(html, "\"LOGGED_IN\":(true|false)")
+        val loggedIn = bootstrapSource.optionalBoolean("LOGGED_IN")
             .equals("true", ignoreCase = true)
         return YouTubeMusicBootstrapConfig(
-            apiKey = findRequired(html, "\"INNERTUBE_API_KEY\":\"([^\"]+)\""),
-            webRemixClientVersion = findRequired(html, "\"INNERTUBE_CLIENT_VERSION\":\"([^\"]+)\""),
-            visitorData = findRequired(html, "\"VISITOR_DATA\":\"([^\"]+)\""),
-            sessionIndex = findOptional(html, "\"SESSION_INDEX\":\"?([0-9]+)\"?").ifBlank { "0" },
+            apiKey = bootstrapSource.requireString(
+                "YouTube Music bootstrap parse failed",
+                "INNERTUBE_API_KEY",
+                "innertubeApiKey"
+            ),
+            webRemixClientVersion = bootstrapSource.requireString(
+                "YouTube Music bootstrap parse failed",
+                "INNERTUBE_CLIENT_VERSION",
+                "INNERTUBE_CONTEXT_CLIENT_VERSION",
+                "innertubeContextClientVersion"
+            ),
+            visitorData = bootstrapSource.requireString(
+                "YouTube Music bootstrap parse failed",
+                "VISITOR_DATA",
+                "visitorData"
+            ),
+            sessionIndex = bootstrapSource.optionalNumber("SESSION_INDEX").ifBlank { "0" },
             loggedIn = loggedIn,
-            userSessionId = findOptional(html, "\"USER_SESSION_ID\":\"([^\"]+)\"")
+            userSessionId = bootstrapSource.optionalString("USER_SESSION_ID")
                 .ifBlank { derivedUserSessionId },
             cookieHeader = cookieHeader,
             authFingerprint = "",
@@ -2074,8 +2084,8 @@ class YouTubeMusicClient(
         var workingCookieHeader = cookieHeader
         var userAgent = cacheUserAgent
         val requestLocale = YouTubeMusicLocaleResolver.preferred()
-        val homeHtml = try {
-            executeText(
+        fun fetchHomeHtml(): String {
+            return executeText(
                 Request.Builder()
                     .url("$YOUTUBE_MUSIC_MUSIC_ORIGIN/")
                     .applyCookieHeader(workingCookieHeader)
@@ -2083,37 +2093,48 @@ class YouTubeMusicClient(
                     .header("Accept-Language", requestLocale.acceptLanguage)
                     .build()
             )
+        }
+        suspend fun refreshWorkingAuth(reason: String) {
+            authAutoRefreshManager?.refreshIfNeeded(
+                reason = reason,
+                force = true
+            )
+            workingAuth = authRepo.getAuthOnce().normalized()
+            val refreshedHealth = authRepo.getAuthHealthOnce()
+            workingCookieHeader = if (refreshedHealth.activeCookieKeys.isEmpty()) {
+                ""
+            } else {
+                workingAuth.effectiveCookieHeader().trim()
+            }
+            userAgent = workingAuth.resolveRequestUserAgent().ifBlank { YOUTUBE_MUSIC_DEFAULT_WEB_UA }
+        }
+        val homeHtml = try {
+            fetchHomeHtml()
         } catch (error: IOException) {
             if (isYouTubeAuthRecoverableFailure(error)) {
-                authAutoRefreshManager?.refreshIfNeeded(
-                    reason = "music_bootstrap_http_recoverable",
-                    force = true
-                )
-                workingAuth = authRepo.getAuthOnce().normalized()
-                val refreshedHealth = authRepo.getAuthHealthOnce()
-                workingCookieHeader = if (refreshedHealth.activeCookieKeys.isEmpty()) {
-                    ""
-                } else {
-                    workingAuth.effectiveCookieHeader().trim()
-                }
-                userAgent = workingAuth.resolveRequestUserAgent().ifBlank { YOUTUBE_MUSIC_DEFAULT_WEB_UA }
-                executeText(
-                    Request.Builder()
-                        .url("$YOUTUBE_MUSIC_MUSIC_ORIGIN/")
-                        .applyCookieHeader(workingCookieHeader)
-                        .header("User-Agent", userAgent)
-                        .header("Accept-Language", requestLocale.acceptLanguage)
-                        .build()
-                )
+                refreshWorkingAuth("music_bootstrap_http_recoverable")
+                fetchHomeHtml()
             } else {
                 throw error
             }
         }
-        val parsedConfig = YouTubeMusicParser.parseBootstrapConfig(
-            html = homeHtml,
-            cookieHeader = workingCookieHeader,
-            userAgent = userAgent
-        )
+        val parsedConfig = try {
+            YouTubeMusicParser.parseBootstrapConfig(
+                html = homeHtml,
+                cookieHeader = workingCookieHeader,
+                userAgent = userAgent
+            )
+        } catch (error: IOException) {
+            if (workingCookieHeader.isBlank()) {
+                throw error
+            }
+            refreshWorkingAuth("music_bootstrap_parse_recoverable")
+            YouTubeMusicParser.parseBootstrapConfig(
+                html = fetchHomeHtml(),
+                cookieHeader = workingCookieHeader,
+                userAgent = userAgent
+            )
+        }
         val resolvedFingerprint = workingAuth.buildAuthCacheFingerprint(
             userAgent = userAgent,
             origin = YOUTUBE_MUSIC_MUSIC_ORIGIN
