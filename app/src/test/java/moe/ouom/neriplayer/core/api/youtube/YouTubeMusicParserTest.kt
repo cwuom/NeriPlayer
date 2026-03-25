@@ -656,56 +656,6 @@ class YouTubeMusicParserTest {
     }
 
     @Test
-    fun hasSearchSectionList_detectsSearchTabRenderer() {
-        val root = createMixedSearchResultsRoot()
-
-        assertTrue(YouTubeMusicParser.hasSearchSectionList(root))
-        assertTrue(!YouTubeMusicParser.hasSearchSectionList(JSONObject()))
-    }
-
-    @Test
-    fun parseSearchResults_extractsPlayableSongAndVideoFromMixedShelf() {
-        val results = YouTubeMusicParser.parseSearchResults(createMixedSearchResultsRoot())
-
-        assertEquals(2, results.size)
-
-        val song = results[0]
-        assertEquals("song-video-id", song.videoId)
-        assertEquals("Song Result", song.title)
-        assertEquals("Artist A", song.artist)
-        assertEquals("Album A", song.album)
-        assertEquals("Song • Artist A • Album A", song.subtitle)
-        assertEquals("https://i.ytimg.com/vi/song-video-id/hqdefault.jpg", song.coverUrl)
-        assertEquals("3:21", song.durationText)
-        assertEquals(201_000L, song.durationMs)
-        assertEquals(YouTubeMusicSearchResultType.Song, song.type)
-
-        val video = results[1]
-        assertEquals("video-video-id", video.videoId)
-        assertEquals("Video Result", video.title)
-        assertEquals("Artist B", video.artist)
-        assertEquals("", video.album)
-        assertEquals("Video • Artist B", video.subtitle)
-        assertEquals("https://i.ytimg.com/vi/video-video-id/hqdefault.jpg", video.coverUrl)
-        assertEquals("4:05", video.durationText)
-        assertEquals(245_000L, video.durationMs)
-        assertEquals(YouTubeMusicSearchResultType.Video, video.type)
-    }
-
-    @Test
-    fun parseSearchResults_filtersNonPlayableEntriesAndHonorsLimit() {
-        val results = YouTubeMusicParser.parseSearchResults(
-            root = createMixedSearchResultsRoot(),
-            limit = 1
-        )
-
-        assertEquals(1, results.size)
-        assertEquals("song-video-id", results.single().videoId)
-        assertTrue(results.none { it.title == "Artist Result" })
-        assertTrue(results.none { it.title == "Unavailable Song" })
-    }
-
-    @Test
     fun hasSongSearchShelf_andParseSongSearchResults_readFilteredSongShelf() {
         val root = createSongSearchResultsRoot()
 

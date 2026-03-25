@@ -26,6 +26,7 @@ package moe.ouom.neriplayer.activity
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.graphics.Bitmap
+import android.net.Uri
 import android.os.Bundle
 import android.view.ViewGroup
 import android.webkit.CookieManager
@@ -37,6 +38,8 @@ import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.util.hostMatchesAnyDomain
+import moe.ouom.neriplayer.util.isAllowedMainFrameRequest
 import moe.ouom.neriplayer.util.lockPortraitIfPhone
 import androidx.core.net.toUri
 
@@ -51,12 +54,18 @@ class BiliWebLoginActivity : ComponentActivity() {
 
     companion object {
         const val RESULT_COOKIE = "result_cookie_json"
+        private const val LOGIN_URL = "https://passport.bilibili.com/login"
 
         private val LOGIN_DONE_HOSTS = setOf(
             "www.bilibili.com",
             "m.bilibili.com",
             "t.bilibili.com",
             "space.bilibili.com"
+        )
+        private val ALLOWED_LOGIN_DOMAINS = setOf(
+            "bilibili.com",
+            "hdslb.com",
+            "biliimg.com"
         )
 
         private val IMPORTANT_COOKIE_KEYS = listOf(
@@ -86,7 +95,9 @@ class BiliWebLoginActivity : ComponentActivity() {
             )
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
-            settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+            settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            settings.allowFileAccess = false
+            settings.allowContentAccess = false
 
             settings.cacheMode = WebSettings.LOAD_NO_CACHE
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
@@ -95,7 +106,7 @@ class BiliWebLoginActivity : ComponentActivity() {
         }
         setContentView(webView)
 
-        webView.loadUrl("https://passport.bilibili.com/login")
+        webView.loadUrl(LOGIN_URL)
     }
 
     override fun onDestroy() {
@@ -135,10 +146,16 @@ class BiliWebLoginActivity : ComponentActivity() {
     private inner class InnerClient : WebViewClient() {
 
         override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-            val url = request?.url?.toString().orEmpty()
-            view?.loadUrl(url)
-            maybeReturnIfLoggedIn(request?.url?.host)
-            return true
+            val currentRequest = request ?: return false
+            val uri = currentRequest.url
+            if (!isAllowedMainFrameRequest(currentRequest) { isAllowedLoginUri(it) }) {
+                NPLogger.w("NERI-BiliLogin", "Blocked unexpected navigation: $uri")
+                return true
+            }
+            if (currentRequest.isForMainFrame) {
+                maybeReturnIfLoggedIn(uri.host)
+            }
+            return false
         }
 
         override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
@@ -173,6 +190,17 @@ class BiliWebLoginActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    private fun isAllowedLoginUri(uri: Uri?): Boolean {
+        val resolvedUri = uri ?: return false
+        if (resolvedUri.toString() == "about:blank") {
+            return true
+        }
+        if (!resolvedUri.scheme.equals("https", ignoreCase = true)) {
+            return false
+        }
+        return hostMatchesAnyDomain(resolvedUri.host, ALLOWED_LOGIN_DOMAINS)
     }
 
     private fun readCookieForDomains(domains: List<String>): Map<String, String> {

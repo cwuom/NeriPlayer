@@ -30,6 +30,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.BaseDataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.HttpDataSource
+import moe.ouom.neriplayer.data.platform.youtube.isYouTubeGoogleVideoHost
 import moe.ouom.neriplayer.util.NPLogger
 import okhttp3.Request
 import java.io.IOException
@@ -52,7 +53,7 @@ internal object YouTubeGoogleVideoRangeSupport {
     fun supportsSeekingWithoutUrlRefresh(url: String): Boolean {
         val uri = runCatching { java.net.URI(url) }.getOrNull() ?: return false
         val host = uri.host?.lowercase(Locale.US) ?: return false
-        if (!host.contains("googlevideo.com")) {
+        if (!isYouTubeGoogleVideoHost(host)) {
             return false
         }
         val path = uri.path?.lowercase(Locale.US).orEmpty()
@@ -78,7 +79,7 @@ internal object YouTubeGoogleVideoRangeSupport {
         val uri = runCatching { java.net.URI(url) }.getOrNull() ?: return false
         val host = uri.host?.lowercase(Locale.US)
             ?: return false
-        if (!host.contains("googlevideo.com")) {
+        if (!isYouTubeGoogleVideoHost(host)) {
             return false
         }
         if (supportsSeekingWithoutUrlRefresh(url)) {
@@ -104,7 +105,7 @@ internal object YouTubeGoogleVideoRangeSupport {
     fun shouldForceExplicitFullRange(url: String): Boolean {
         val uri = runCatching { java.net.URI(url) }.getOrNull() ?: return false
         val host = uri.host?.lowercase(Locale.US) ?: return false
-        if (!host.contains("googlevideo.com")) {
+        if (!isYouTubeGoogleVideoHost(host)) {
             return false
         }
         val path = uri.path?.lowercase(Locale.US).orEmpty()

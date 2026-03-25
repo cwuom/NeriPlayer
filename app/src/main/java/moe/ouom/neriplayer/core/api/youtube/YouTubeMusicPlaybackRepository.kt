@@ -56,6 +56,7 @@ import moe.ouom.neriplayer.data.platform.youtube.appendYouTubeConsentCookie
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubePageRequestHeaders
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeStreamRequestHeaders
 import moe.ouom.neriplayer.data.platform.youtube.effectiveCookieHeader
+import moe.ouom.neriplayer.data.platform.youtube.isYouTubeGoogleVideoHost
 import moe.ouom.neriplayer.data.platform.youtube.resolveAuthorizationHeader
 import moe.ouom.neriplayer.data.platform.youtube.resolveBootstrapUserAgent
 import moe.ouom.neriplayer.data.platform.youtube.resolveXGoogAuthUser
@@ -723,7 +724,7 @@ private fun isYouTubeGoogleVideoStream(url: String): Boolean {
         .getOrNull()
         ?.lowercase(Locale.US)
         .orEmpty()
-    if (!host.contains("googlevideo.com")) {
+    if (!isYouTubeGoogleVideoHost(host)) {
         return false
     }
     return extractStreamQueryParameter(url, "source")

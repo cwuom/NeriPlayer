@@ -31,6 +31,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import moe.ouom.neriplayer.BuildConfig
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -67,6 +68,7 @@ class CloudMusicSearchApi(private val neteaseClient: NeteaseClient) : SearchApi 
 
     companion object {
         private const val TAG = "CloudMusicSearchApi"
+        private const val DEBUG_JSON_PREVIEW_MAX_CHARS = 512
     }
 
     private val client: OkHttpClient = AppContainer.sharedOkHttpClient
@@ -81,7 +83,7 @@ class CloudMusicSearchApi(private val neteaseClient: NeteaseClient) : SearchApi 
                 offset = offset,
                 usePersistedCookies = false
             )
-            logLongJson(responseJson)
+            logResponseSummary(label = "netease-search", json = responseJson)
 
             val searchResponse = json.decodeFromString<CloudMusicSearchResponse>(responseJson)
 
@@ -148,25 +150,21 @@ class CloudMusicSearchApi(private val neteaseClient: NeteaseClient) : SearchApi 
                 return body.bytes()
             } else {
                 val jsonString = body.string()
-                NPLogger.d(TAG, "Request URL: $url")
-                logLongJson(jsonString)
+                logResponseSummary(label = request.url.encodedPath, json = jsonString)
                 return jsonString
             }
         }
     }
 
-    private fun logLongJson(json: String) {
-        if (json.length > 3000) {
-            NPLogger.d(TAG, "Response JSON (chunk 1): ${json.substring(0, 3000)}")
-            var i = 3000
-            while (i < json.length) {
-                val chunk = json.substring(i, (i + 3000).coerceAtMost(json.length))
-                NPLogger.d(TAG, "Response JSON (chunk ${i / 3000 + 1}): $chunk")
-                i += 3000
-            }
-        } else {
-            NPLogger.d(TAG, "Response JSON: $json")
+    private fun logResponseSummary(label: String, json: String) {
+        val preview = json
+            .replace(Regex("\\s+"), " ")
+            .take(DEBUG_JSON_PREVIEW_MAX_CHARS)
+        if (BuildConfig.DEBUG) {
+            NPLogger.d(TAG, "Response label=$label, length=${json.length}, preview=$preview")
+            return
         }
+        NPLogger.d(TAG, "Response received: labelHash=${label.hashCode()}, length=${json.length}")
     }
 
     @SuppressLint("DefaultLocale")

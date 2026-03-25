@@ -194,6 +194,7 @@
     <!-- Storage Details -->
     <string name="storage_details_title">Storage Details</string>
     <string name="storage_details_subtitle">Actual space used by directories:</string>
+    <string name="storage_details_loading">Calculating directory usage, please wait…</string>
     <string name="storage_details_total">Total</string>
     <string name="storage_details_warning_title">⚠️ System Settings Inaccurate?</string>
     <string name="storage_details_warning_message">If system shows much more than here, it\'s an Android cache issue.\n\nSolutions:\n1. Restart device\n2. Wait for system update\n3. Open system settings</string>

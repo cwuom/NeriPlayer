@@ -53,9 +53,39 @@ import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeInnertubeRequestHeaders
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubePageRequestHeaders
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeStreamRequestHeaders
+import moe.ouom.neriplayer.data.platform.youtube.isTrustedYouTubeHost
+import moe.ouom.neriplayer.data.platform.youtube.isYouTubeGoogleVideoHost
+import moe.ouom.neriplayer.data.platform.youtube.isYouTubeInnertubeHost
 import moe.ouom.neriplayer.util.DynamicProxySelector
 import okhttp3.OkHttpClient
 import okhttp3.Request
+
+internal fun resolveInitialBypassProxy(
+    currentValue: Boolean,
+    loadPersistedValue: () -> Boolean
+): Boolean = runCatching(loadPersistedValue).getOrDefault(currentValue)
+
+internal data class InitialManagedDownloadSettings(
+    val directoryUri: String? = null,
+    val directoryLabel: String? = null
+)
+
+internal fun resolveInitialManagedDownloadSettings(
+    currentDirectoryUri: String? = null,
+    currentDirectoryLabel: String? = null,
+    loadDirectoryUri: () -> String?,
+    loadDirectoryLabel: () -> String?
+): InitialManagedDownloadSettings {
+    return InitialManagedDownloadSettings(
+        directoryUri = runCatching(loadDirectoryUri).getOrDefault(currentDirectoryUri),
+        directoryLabel = runCatching(loadDirectoryLabel).getOrDefault(currentDirectoryLabel)
+    ).let { resolved ->
+        InitialManagedDownloadSettings(
+            directoryUri = resolved.directoryUri?.takeIf(String::isNotBlank),
+            directoryLabel = resolved.directoryLabel?.takeIf(String::isNotBlank)
+        )
+    }
+}
 
 /**
  * 全局依赖容器，使用 Service Locator 模式管理 App 的单例
@@ -108,21 +138,32 @@ object AppContainer {
                     }
                 }
                 val resolvedHeaders = when {
+                    isYouTubeGoogleVideoHost(host) -> auth.buildYouTubeStreamRequestHeaders(
+                        original = originalHeaders,
+                        refererOrigin = request.header("Referer")
+                            .orEmpty()
+                            .removeSuffix("/")
+                            .ifBlank {
+                                request.header("Origin")
+                                    .orEmpty()
+                                    .removeSuffix("/")
+                            }
+                            .ifBlank { auth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN } },
+                        streamUrl = request.url.toString()
+                    )
                     isYouTubeInnertubeRequest(request) -> auth.buildYouTubeInnertubeRequestHeaders(
                         original = originalHeaders,
                         authorizationOrigin = auth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN },
                         includeAuthorization = true
-                    )
-                    isYouTubeStreamRequest(request) -> auth.buildYouTubeStreamRequestHeaders(
-                        original = originalHeaders,
-                        refererOrigin = auth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN },
-                        streamUrl = request.url.toString()
                     )
                     else -> auth.buildYouTubePageRequestHeaders(
                         original = originalHeaders
                     )
                 }
                 val builder = request.newBuilder()
+                request.headers.names().forEach { name ->
+                    builder.removeHeader(name)
+                }
                 resolvedHeaders.forEach { (name, value) ->
                     builder.header(name, value)
                 }
@@ -183,19 +224,29 @@ object AppContainer {
     }
 
     private fun primeProxySetting() {
-        DynamicProxySelector.bypassProxy = runCatching {
-            runBlocking(Dispatchers.IO) {
+        DynamicProxySelector.bypassProxy = resolveInitialBypassProxy(
+            currentValue = DynamicProxySelector.bypassProxy
+        ) {
+            runBlocking {
                 settingsRepo.bypassProxyFlow.first()
             }
-        }.getOrDefault(DynamicProxySelector.bypassProxy)
+        }
 
+        val initialManagedDownloadSettings = resolveInitialManagedDownloadSettings(
+            loadDirectoryUri = {
+                runBlocking {
+                    settingsRepo.downloadDirectoryUriFlow.first()
+                }
+            },
+            loadDirectoryLabel = {
+                runBlocking {
+                    settingsRepo.downloadDirectoryLabelFlow.first()
+                }
+            }
+        )
         ManagedDownloadStorage.primeSettings(
-            directoryUri = runCatching {
-                runBlocking(Dispatchers.IO) { settingsRepo.downloadDirectoryUriFlow.first() }
-            }.getOrNull(),
-            directoryLabel = runCatching {
-                runBlocking(Dispatchers.IO) { settingsRepo.downloadDirectoryLabelFlow.first() }
-            }.getOrNull()
+            directoryUri = initialManagedDownloadSettings.directoryUri,
+            directoryLabel = initialManagedDownloadSettings.directoryLabel
         )
     }
 
@@ -233,28 +284,12 @@ object AppContainer {
     }
 
     private fun isYouTubeHost(host: String): Boolean {
-        return host.contains("youtube") ||
-            host == "youtu.be" ||
-            host.contains("googlevideo.com")
+        return isTrustedYouTubeHost(host)
     }
 
     private fun isYouTubeInnertubeRequest(request: Request): Boolean {
         val host = request.url.host.lowercase()
         val path = request.url.encodedPath.lowercase()
-        return host == "youtubei.googleapis.com" || path.startsWith("/youtubei/")
-    }
-
-    private fun isYouTubeStreamRequest(request: Request): Boolean {
-        val host = request.url.host.lowercase()
-        if (!host.contains("googlevideo.com")) {
-            return false
-        }
-        val path = request.url.encodedPath.lowercase()
-        val rawUrl = request.url.toString().lowercase()
-        return rawUrl.contains("source=youtube") ||
-            rawUrl.contains("/api/manifest/") ||
-            path.contains("/playlist/index.m3u8") ||
-            path.contains("/file/seg.ts") ||
-            rawUrl.contains("/videoplayback")
+        return isYouTubeInnertubeHost(host) || path.startsWith("/youtubei/")
     }
 }

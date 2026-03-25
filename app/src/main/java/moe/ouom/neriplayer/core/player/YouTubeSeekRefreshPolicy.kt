@@ -25,6 +25,7 @@ package moe.ouom.neriplayer.core.player
 
 import java.net.URI
 import java.net.URLDecoder
+import moe.ouom.neriplayer.data.platform.youtube.isYouTubeGoogleVideoHost
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 
@@ -62,7 +63,7 @@ internal object YouTubeSeekRefreshPolicy {
             .getOrNull()
             ?.lowercase()
             .orEmpty()
-        if (!host.contains("googlevideo.com")) {
+        if (!isYouTubeGoogleVideoHost(host)) {
             return false
         }
         val source = extractQueryParameter(url, "source")

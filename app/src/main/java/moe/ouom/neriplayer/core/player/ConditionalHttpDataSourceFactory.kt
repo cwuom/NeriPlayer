@@ -39,6 +39,7 @@ import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRepository
 import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeStreamRequestHeaders
+import moe.ouom.neriplayer.data.platform.youtube.isYouTubeGoogleVideoHost
 import moe.ouom.neriplayer.util.NPLogger
 
 /**
@@ -119,7 +120,7 @@ class ConditionalHttpDataSourceFactory(
 
     private fun shouldInjectYouTubeHeaders(uri: Uri): Boolean {
         val host = uri.host?.lowercase() ?: return false
-        if (!host.contains("googlevideo.com")) return false
+        if (!isYouTubeGoogleVideoHost(host)) return false
         val path = uri.path?.lowercase().orEmpty()
         val rawUrl = uri.toString().lowercase()
         return rawUrl.contains("source=youtube") ||

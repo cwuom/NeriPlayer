@@ -38,9 +38,12 @@ import android.provider.OpenableColumns
 import android.system.Os
 import androidx.core.content.FileProvider
 import com.kyant.taglib.TagLib
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.util.isFileInsideDirectory
 import java.io.File
 import java.io.RandomAccessFile
 import java.nio.charset.Charset
@@ -54,6 +57,7 @@ private const val MAX_CONTAINER_METADATA_BYTES = 4L * 1024L * 1024L
 private const val NUL_CHAR = '\u0000'
 private const val BOM_CHAR = '\uFEFF'
 private const val REPLACEMENT_CHAR = '\uFFFD'
+private const val SHARED_LOCAL_MEDIA_DIR = "shared_media_exports"
 
 data class LocalMediaDetails(
     val sourceUri: Uri,
@@ -113,21 +117,40 @@ fun SongItem.localMediaUri(): Uri? {
     return localUri.takeIf { it.isSupportedLocalMediaUri() }
 }
 
-fun SongItem.toShareableLocalUri(context: Context): Uri? {
+internal fun resolveContentShareFallbackUri(localUri: Uri?, mediaUri: String?): Uri? {
+    return resolveContentShareFallbackReference(localUri?.toString(), mediaUri)
+        ?.toUri()
+        ?.takeIf { it.isSupportedLocalMediaUri() }
+}
+
+internal fun resolveContentShareFallbackReference(
+    localUri: String?,
+    mediaUri: String?
+): String? {
+    if (mediaUri.isContentLocalMediaReference()) {
+        return mediaUri
+    }
+    if (localUri.isContentLocalMediaReference()) {
+        return localUri
+    }
+    return null
+}
+
+private fun String?.isContentLocalMediaReference(): Boolean {
+    if (this.isNullOrBlank()) {
+        return false
+    }
+    return startsWith("content://", ignoreCase = true)
+}
+
+private fun SongItem.resolveShareableLocalUri(context: Context): Uri? {
     val localUri = localMediaUri() ?: return null
+    val contentFallbackUri = resolveContentShareFallbackUri(localUri, mediaUri)
     val resolvedFile = runCatching {
         LocalMediaSupport.resolveLocalFile(context, localUri)
     }.getOrNull()
     if (resolvedFile != null) {
-        return runCatching {
-            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", resolvedFile)
-        }.getOrElse {
-            NPLogger.w(
-                LOCAL_MEDIA_SHARE_TAG,
-                "FileProvider fallback to content uri for ${resolvedFile.absolutePath}: ${it.message}"
-            )
-            if (localUri.scheme.equals("content", ignoreCase = true)) localUri else null
-        }
+        return buildShareableFileUri(context, resolvedFile) ?: contentFallbackUri
     }
 
     if (localUri.scheme.equals("content", ignoreCase = true)) {
@@ -141,8 +164,38 @@ fun SongItem.toShareableLocalUri(context: Context): Uri? {
     } ?: return null
 
     val file = File(path)
-    if (!file.exists()) return null
-    return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+    if (!file.exists()) return contentFallbackUri
+    return buildShareableFileUri(context, file) ?: contentFallbackUri
+}
+
+suspend fun SongItem.toShareableLocalUri(context: Context): Uri? = withContext(Dispatchers.IO) {
+    resolveShareableLocalUri(context)
+}
+
+private fun buildShareableFileUri(context: Context, sourceFile: File): Uri? {
+    val authority = "${context.packageName}.fileprovider"
+    runCatching {
+        FileProvider.getUriForFile(context, authority, sourceFile)
+    }.getOrNull()?.let { return it }
+
+    val stagedFile = runCatching {
+        LocalMediaSupport.prepareShareableFile(context, sourceFile)
+    }.getOrElse {
+        NPLogger.w(
+            LOCAL_MEDIA_SHARE_TAG,
+            "Failed to stage share file for ${sourceFile.absolutePath}: ${it.message}"
+        )
+        return null
+    }
+    return runCatching {
+        FileProvider.getUriForFile(context, authority, stagedFile)
+    }.getOrElse {
+        NPLogger.w(
+            LOCAL_MEDIA_SHARE_TAG,
+            "FileProvider failed for staged share file ${stagedFile.absolutePath}: ${it.message}"
+        )
+        null
+    }
 }
 
 object LocalMediaSupport {
@@ -496,7 +549,7 @@ object LocalMediaSupport {
         )
     }
 
-    fun shareSongFile(context: Context, song: SongItem): Boolean {
+    suspend fun shareSongFile(context: Context, song: SongItem): Boolean {
         val uri = song.toShareableLocalUri(context) ?: return false
         val shareLabel = song.localFileName
             ?.takeIf { it.isNotBlank() }
@@ -514,13 +567,58 @@ object LocalMediaSupport {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             clipData = android.content.ClipData.newUri(context.contentResolver, shareLabel, uri)
         }
-        context.startActivity(Intent.createChooser(sendIntent, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        return true
+        return withContext(Dispatchers.Main.immediate) {
+            context.startActivity(
+                Intent.createChooser(sendIntent, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+            true
+        }
     }
 
     fun downloadDirectory(context: Context): File {
         val baseDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir
         return File(baseDir, "NeriPlayer")
+    }
+
+    // 优先直接分享受控目录中的文件，无法直出时再复制到缓存 staging 后分享。
+    fun prepareShareableFile(context: Context, sourceFile: File): File {
+        return prepareShareableFileInDirectory(
+            sourceFile = sourceFile,
+            shareDir = File(context.cacheDir, SHARED_LOCAL_MEDIA_DIR)
+        )
+    }
+
+    internal fun prepareShareableFileInDirectory(sourceFile: File, shareDir: File): File {
+        require(sourceFile.exists()) { "Source file does not exist: ${sourceFile.absolutePath}" }
+        require(sourceFile.isFile) { "Source file is not a regular file: ${sourceFile.absolutePath}" }
+        shareDir.mkdirs()
+        if (isFileInsideDirectory(sourceFile, shareDir)) {
+            return sourceFile
+        }
+        val stagedFile = File(shareDir, shareableStageFileName(sourceFile))
+        if (shouldRestageShareCopy(stagedFile, sourceFile)) {
+            sourceFile.inputStream().use { input ->
+                stagedFile.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+            stagedFile.setLastModified(sourceFile.lastModified())
+        }
+        return stagedFile
+    }
+
+    internal fun shareableStageFileName(sourceFile: File): String {
+        val extension = sourceFile.extension
+            .takeIf { it.isNotBlank() }
+            ?.let { ".$it" }
+            .orEmpty()
+        return "${stableKey("${sourceFile.absolutePath}|${sourceFile.length()}|${sourceFile.lastModified()}")}$extension"
+    }
+
+    internal fun shouldRestageShareCopy(stagedFile: File, sourceFile: File): Boolean {
+        return !stagedFile.exists() ||
+            stagedFile.length() != sourceFile.length() ||
+            stagedFile.lastModified() < sourceFile.lastModified()
     }
 
     fun readTextContent(context: Context, reference: String): String? {
@@ -1041,7 +1139,7 @@ object LocalMediaSupport {
         return null
     }
 
-    private fun findNearbyCover(file: File?): File? {
+    internal fun findNearbyCover(file: File?): File? {
         val actualFile = file ?: return null
         val parent = actualFile.parentFile ?: return null
         val baseName = actualFile.nameWithoutExtension

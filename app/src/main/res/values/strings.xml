@@ -194,6 +194,7 @@
     <!-- Storage Details -->
     <string name="storage_details_title">存储占用详情</string>
     <string name="storage_details_subtitle">各目录实际占用空间：</string>
+    <string name="storage_details_loading">正在统计目录占用，请稍候…</string>
     <string name="storage_details_total">总计</string>
     <string name="storage_details_warning_title">⚠️ 系统设置显示不准确？</string>
     <string name="storage_details_warning_message">如果系统显示的占用远大于此处统计，这是 Android 系统缓存问题。\n\n解决方法：\n1. 重启手机\n2. 等待系统自动更新\n3. 打开系统设置查看</string>

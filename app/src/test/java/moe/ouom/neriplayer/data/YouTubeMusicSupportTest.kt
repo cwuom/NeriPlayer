@@ -1,5 +1,16 @@
 package moe.ouom.neriplayer.data
 
+import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.platform.youtube.YOUTUBE_DEFAULT_WEB_USER_AGENT
+import moe.ouom.neriplayer.data.platform.youtube.YOUTUBE_STREAM_IOS_USER_AGENT
+import moe.ouom.neriplayer.data.platform.youtube.YOUTUBE_WEB_ORIGIN
+import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeInnertubeRequestHeaders
+import moe.ouom.neriplayer.data.platform.youtube.buildYouTubePageRequestHeaders
+import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeStreamRequestHeaders
+import moe.ouom.neriplayer.data.platform.youtube.effectiveCookieHeader
+import moe.ouom.neriplayer.data.platform.youtube.resolveAuthorizationHeader
+import moe.ouom.neriplayer.data.platform.youtube.resolveBootstrapUserAgent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -9,40 +20,43 @@ import org.junit.Test
 class YouTubeMusicSupportTest {
 
     @Test
-    fun buildYouTubePlaybackRequestHeaders_attachesCookieAndPlaybackHeaders() {
+    fun effectiveCookieHeader_sanitizesCookiesAndAppendsConsentCookie() {
+        val cookieHeader = YouTubeAuthBundle(
+            cookieHeader = "VISITOR_INFO1_LIVE=visitor; SAPISID=sap-value; SID=sid-value"
+        ).effectiveCookieHeader()
+
+        assertTrue(cookieHeader.contains("SAPISID=sap-value"))
+        assertTrue(cookieHeader.contains("SID=sid-value"))
+        assertTrue(cookieHeader.contains("SOCS=CAI"))
+        assertFalse(cookieHeader.contains("VISITOR_INFO1_LIVE"))
+    }
+
+    @Test
+    fun buildYouTubePageRequestHeaders_attachesConsentCookieAndOptionalAuthUser() {
         val headers = YouTubeAuthBundle(
             cookieHeader = "SAPISID=sap-value; SID=sid-value",
             xGoogAuthUser = "2",
             userAgent = "UnitTestAgent/3.0"
-        ).buildYouTubePlaybackRequestHeaders(
-            origin = YOUTUBE_WEB_ORIGIN,
-            includeAuthorization = true,
-            includeXOrigin = true
-        )
+        ).buildYouTubePageRequestHeaders(includeAuthUser = true)
 
         assertTrue(headers["Cookie"].orEmpty().contains("SAPISID=sap-value"))
         assertTrue(headers["Cookie"].orEmpty().contains("SOCS=CAI"))
         assertEquals("UnitTestAgent/3.0", headers["User-Agent"])
         assertEquals("2", headers["X-Goog-AuthUser"])
-        assertEquals(YOUTUBE_WEB_ORIGIN, headers["Origin"])
-        assertEquals("$YOUTUBE_WEB_ORIGIN/", headers["Referer"])
-        assertEquals(YOUTUBE_WEB_ORIGIN, headers["X-Origin"])
-        assertTrue(headers["Authorization"].orEmpty().startsWith("SAPISIDHASH "))
+        assertFalse(headers.containsKey("Authorization"))
+        assertFalse(headers.containsKey("Origin"))
+        assertFalse(headers.containsKey("Referer"))
+        assertFalse(headers.containsKey("X-Origin"))
     }
 
     @Test
-    fun buildYouTubePlaybackRequestHeaders_onlyAppendsConsentCookieWhenAuthMissing() {
-        val headers = YouTubeAuthBundle().buildYouTubePlaybackRequestHeaders(
-            origin = YOUTUBE_WEB_ORIGIN,
-            includeAuthorization = true,
-            includeXOrigin = false
-        )
+    fun buildYouTubePageRequestHeaders_onlyAppendsConsentCookieWhenAuthMissing() {
+        val headers = YouTubeAuthBundle().buildYouTubePageRequestHeaders(includeAuthUser = true)
 
         assertEquals("SOCS=CAI", headers["Cookie"])
-        assertEquals(YOUTUBE_WEB_ORIGIN, headers["Origin"])
-        assertEquals("$YOUTUBE_WEB_ORIGIN/", headers["Referer"])
-        assertFalse(headers.containsKey("Authorization"))
+        assertEquals(YOUTUBE_DEFAULT_WEB_USER_AGENT, headers["User-Agent"])
         assertEquals("0", headers["X-Goog-AuthUser"])
+        assertFalse(headers.containsKey("Authorization"))
     }
 
     @Test

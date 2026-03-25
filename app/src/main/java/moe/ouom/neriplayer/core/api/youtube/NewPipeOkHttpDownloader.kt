@@ -33,7 +33,13 @@ import moe.ouom.neriplayer.data.platform.youtube.resolveRequestUserAgent
 import moe.ouom.neriplayer.data.platform.youtube.resolveXGoogAuthUser
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
+import moe.ouom.neriplayer.data.platform.youtube.isTrustedYouTubeHost
+import moe.ouom.neriplayer.data.platform.youtube.isYouTubeGoogleVideoHost
+import moe.ouom.neriplayer.data.platform.youtube.isYouTubeInnertubeHost
+import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicHost
+import moe.ouom.neriplayer.data.platform.youtube.isYouTubePageHost
 import moe.ouom.neriplayer.data.platform.youtube.YOUTUBE_WEB_ORIGIN
+import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeStreamRequestHeaders
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -94,6 +100,34 @@ class NewPipeOkHttpDownloader(
     private fun applyYouTubeHeaders(builder: okhttp3.Request.Builder) {
         val request = builder.build()
         val auth = authProvider().normalized()
+        val originalHeaders = linkedMapOf<String, String>().apply {
+            request.headers.names().forEach { name ->
+                request.header(name)?.let { value -> put(name, value) }
+            }
+        }
+        if (isYouTubeGoogleVideoHost(request.url.host)) {
+            val streamHeaders = auth.buildYouTubeStreamRequestHeaders(
+                original = originalHeaders,
+                refererOrigin = request.header("Referer")
+                    .orEmpty()
+                    .removeSuffix("/")
+                    .ifBlank {
+                        request.header("Origin")
+                            .orEmpty()
+                            .removeSuffix("/")
+                    }
+                    .ifBlank { auth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN } },
+                streamUrl = request.url.toString()
+            )
+            request.headers.names().forEach { name ->
+                builder.removeHeader(name)
+            }
+            streamHeaders.forEach { (name, value) ->
+                builder.header(name, value)
+            }
+            return
+        }
+
         val mergedCookie = mergeCookieHeader(request.header("Cookie").orEmpty(), auth)
         if (mergedCookie.isNotBlank() && mergedCookie != request.header("Cookie").orEmpty()) {
             builder.header("Cookie", mergedCookie)
@@ -162,9 +196,9 @@ class NewPipeOkHttpDownloader(
 
         val host = request.url.host.lowercase(Locale.US)
         return when {
-            host == "youtubei.googleapis.com" -> auth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN }
-            host == "music.youtube.com" -> YOUTUBE_MUSIC_ORIGIN
-            host.endsWith("youtube.com") || host == "youtu.be" -> YOUTUBE_WEB_ORIGIN
+            isYouTubeInnertubeHost(host) -> auth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN }
+            isYouTubeMusicHost(host) -> YOUTUBE_MUSIC_ORIGIN
+            isYouTubePageHost(host) -> YOUTUBE_WEB_ORIGIN
             else -> auth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN }
         }
     }
@@ -179,29 +213,27 @@ class NewPipeOkHttpDownloader(
 
         val host = request.url.host.lowercase(Locale.US)
         return when {
-            host == "music.youtube.com" -> YOUTUBE_MUSIC_ORIGIN
-            host.endsWith("youtube.com") || host == "youtu.be" -> YOUTUBE_WEB_ORIGIN
+            isYouTubeMusicHost(host) -> YOUTUBE_MUSIC_ORIGIN
+            isYouTubePageHost(host) -> YOUTUBE_WEB_ORIGIN
             else -> auth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN }
         }
     }
 
     private fun isYouTubeRequest(request: okhttp3.Request): Boolean {
         val host = request.url.host.lowercase(Locale.US)
-        return host.contains("youtube") || host == "youtu.be"
+        return isTrustedYouTubeHost(host)
     }
 
     private fun shouldAttachAuthorization(request: okhttp3.Request): Boolean {
         val host = request.url.host.lowercase(Locale.US)
-        return host == "youtubei.googleapis.com" ||
-            host.endsWith("youtube.com") ||
-            host == "youtu.be"
+        return isYouTubeInnertubeHost(host) || isYouTubePageHost(host)
     }
 
     private fun shouldAttachWebOriginHeaders(request: okhttp3.Request): Boolean {
         val host = request.url.host.lowercase(Locale.US)
         val path = request.url.encodedPath.lowercase(Locale.US)
-        return host != "youtubei.googleapis.com" &&
+        return !isYouTubeInnertubeHost(host) &&
             !path.startsWith("/youtubei/") &&
-            (host.endsWith("youtube.com") || host == "youtu.be")
+            isYouTubePageHost(host)
     }
 }

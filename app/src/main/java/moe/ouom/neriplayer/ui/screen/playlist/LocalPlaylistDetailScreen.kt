@@ -1231,17 +1231,17 @@ fun LocalPlaylistDetailScreen(
                                                                 DropdownMenuItem(
                                                                     text = { Text(stringResource(R.string.action_share)) },
                                                                     onClick = {
-                                                                        val shared = runCatching {
-                                                                            LocalMediaSupport.shareSongFile(context, song)
-                                                                        }.getOrElse { false }
-                                                                        if (!shared) {
-                                                                            scope.launch {
+                                                                        showMoreMenu = false
+                                                                        scope.launch {
+                                                                            val shared = runCatching {
+                                                                                LocalMediaSupport.shareSongFile(context, song)
+                                                                            }.getOrElse { false }
+                                                                            if (!shared) {
                                                                                 snackbarHostState.showSnackbar(
                                                                                     context.getString(R.string.local_song_share_failed)
                                                                                 )
                                                                             }
                                                                         }
-                                                                        showMoreMenu = false
                                                                     }
                                                                 )
                                                             }

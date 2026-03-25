@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.activity
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.graphics.Color
+import android.net.Uri
 import android.os.Bundle
 import android.view.MenuItem
 import android.view.ViewGroup
@@ -54,6 +55,9 @@ import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRepository
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeCookieSupport
 import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
+import moe.ouom.neriplayer.data.platform.youtube.isTrustedYouTubeLoginHost
+import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.util.isAllowedMainFrameRequest
 import moe.ouom.neriplayer.util.lockPortraitIfPhone
 import org.json.JSONObject
 
@@ -136,7 +140,9 @@ class YouTubeWebLoginActivity : ComponentActivity() {
             settings.apply {
                 javaScriptEnabled = true
                 domStorageEnabled = true
-                mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                allowFileAccess = false
+                allowContentAccess = false
                 useWideViewPort = true
                 loadWithOverviewMode = true
                 setSupportZoom(true)
@@ -348,6 +354,16 @@ class YouTubeWebLoginActivity : ComponentActivity() {
     }
 
     private inner class InnerClient : WebViewClient() {
+        override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+            val currentRequest = request ?: return false
+            val uri = currentRequest.url
+            if (!isAllowedMainFrameRequest(currentRequest) { isAllowedLoginUri(it) }) {
+                NPLogger.w("NERI-YouTubeLogin", "Blocked unexpected navigation: $uri")
+                return true
+            }
+            return false
+        }
+
         override fun shouldInterceptRequest(
             view: WebView?,
             request: WebResourceRequest?
@@ -363,5 +379,16 @@ class YouTubeWebLoginActivity : ComponentActivity() {
             persistObservedAuthIfNeeded()
             super.onPageFinished(view, url)
         }
+    }
+
+    private fun isAllowedLoginUri(uri: Uri?): Boolean {
+        val resolvedUri = uri ?: return false
+        if (resolvedUri.toString() == "about:blank") {
+            return true
+        }
+        if (!resolvedUri.scheme.equals("https", ignoreCase = true)) {
+            return false
+        }
+        return isTrustedYouTubeLoginHost(resolvedUri.host)
     }
 }

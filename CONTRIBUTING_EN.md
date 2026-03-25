@@ -116,12 +116,12 @@ Security Reminder:
   - `GlobalDownloadManager.kt`: Maintains global download tasks and the list of locally downloaded files.
 
 - `app/src/main/java/moe/ouom/neriplayer/data/`
-  - `SettingsDataStore.kt`: Manages user settings and standard states.
+  - `settings/SettingsStore.kt`: Manages user settings and standard states.
   - `LocalPlaylistRepository.kt`: Atomic writes for local playlist JSONs.
   - `BackupManager.kt`: Implements JSON import/export and diff calculation over local configurations.
   - `LocalAudioImportManager.kt`: Supports external audio imports, scanning internal/external local audio, and copying sidecar files like lyrics/covers.
 
-- `app/src/main/java/moe/ouom/neriplayer/data/github/`
+- `app/src/main/java/moe/ouom/neriplayer/data/sync/github/`
   - `GitHubSyncManager.kt`: Orchestration and three-way logic merging for syncs.
   - `GitHubSyncWorker.kt`: Delayed and periodic sync execution based on `WorkManager`.
   - `SecureTokenStorage.kt`: Safely stores GitHub tokens utilizing local encryption.
@@ -136,7 +136,9 @@ Security Reminder:
 - Downloads utilize a single shared `OkHttpClient` downloading straight into a dedicated directory. This is **not** handled by the system's `DownloadManager` or a persistent foreground downloading service. Moreover, **resume-support is unimplemented**.
 - Streaming cache and permanent downloads are separated: caching leverages `SimpleCache`, while downloads are written to physical local files handled by `AudioDownloadManager`.
 - GitHub Sync only persists metadata; audio caches, files, explicit user cookies, and streaming tokens are systematically skipped.
-- Platform Cookies are currently persisted within `DataStore`. Only GitHub Tokens are fully encrypted utilizing `Android Keystore + EncryptedSharedPreferences`.
+- Platform cookies, auth bundles, and GitHub tokens are stored via
+  `Android Keystore + EncryptedSharedPreferences`.
+- `DataStore` only keeps regular settings and non-sensitive state.
 
 ---
 
@@ -173,7 +175,7 @@ Suggested steps:
 
 #### 4. Supplementing Preference Toggle Settings
 
-1. Draft corresponding keys, specific Flows, and setter architectures over by `SettingsDataStore.kt`.
+1. Draft corresponding keys, specific Flows, and setter architectures in `data/settings/SettingsStore.kt`.
 2. Amalgamate and propagate them inside `NeriApp.kt`.
 3. Bind UI interactions across `SettingsScreen.kt`.
 4. Extensively recalibrate overarching top-level architectures around `NeriApp.kt` should your new layout disrupt global motifs.

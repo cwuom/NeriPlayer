@@ -34,10 +34,16 @@ import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.auth.youtube.parseCookieHeader
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.util.matchesRootDomain
 
 const val YOUTUBE_MUSIC_MEDIA_URI_SCHEME: String = "ytmusic"
 private const val YOUTUBE_MUSIC_MEDIA_URI_HOST: String = "video"
 private const val YOUTUBE_MUSIC_SOCIALLY_CONSENTED_COOKIE: String = "SOCS=CAI"
+private const val YOUTUBE_ROOT_DOMAIN: String = "youtube.com"
+private const val YOUTUBE_SHORT_DOMAIN: String = "youtu.be"
+private const val YOUTUBE_GOOGLEVIDEO_ROOT_DOMAIN: String = "googlevideo.com"
+private const val YOUTUBE_INNERTUBE_HOST: String = "youtubei.googleapis.com"
+private const val GOOGLE_ROOT_DOMAIN: String = "google.com"
 const val YOUTUBE_WEB_ORIGIN: String = "https://www.youtube.com"
 const val YOUTUBE_DEFAULT_WEB_USER_AGENT: String =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
@@ -51,6 +57,8 @@ internal const val YOUTUBE_STREAM_IOS_USER_AGENT: String =
 private val YOUTUBE_GOOGLE_VIDEO_STRIPPED_HEADERS = setOf(
     "authorization",
     "cookie",
+    "origin",
+    "referer",
     "x-goog-api-format-version",
     "x-goog-authuser",
     "x-goog-visitor-id",
@@ -58,6 +66,48 @@ private val YOUTUBE_GOOGLE_VIDEO_STRIPPED_HEADERS = setOf(
     "x-youtube-client-name",
     "x-youtube-client-version"
 )
+
+fun normalizeYouTubeHost(host: String?): String {
+    return host
+        ?.trim()
+        ?.trimEnd('.')
+        ?.lowercase(Locale.US)
+        .orEmpty()
+}
+
+fun isYouTubeMusicHost(host: String?): Boolean {
+    return normalizeYouTubeHost(host) == "music.youtube.com"
+}
+
+fun isYouTubePageHost(host: String?): Boolean {
+    val normalizedHost = normalizeYouTubeHost(host)
+    return normalizedHost == YOUTUBE_SHORT_DOMAIN ||
+        normalizedHost.isExactOrSubdomainOf(YOUTUBE_ROOT_DOMAIN)
+}
+
+fun isYouTubeGoogleVideoHost(host: String?): Boolean {
+    return normalizeYouTubeHost(host).isExactOrSubdomainOf(YOUTUBE_GOOGLEVIDEO_ROOT_DOMAIN)
+}
+
+fun isYouTubeInnertubeHost(host: String?): Boolean {
+    return normalizeYouTubeHost(host) == YOUTUBE_INNERTUBE_HOST
+}
+
+fun isTrustedYouTubeHost(host: String?): Boolean {
+    return isYouTubePageHost(host) ||
+        isYouTubeGoogleVideoHost(host) ||
+        isYouTubeInnertubeHost(host)
+}
+
+fun isTrustedYouTubeLoginHost(host: String?): Boolean {
+    val normalizedHost = normalizeYouTubeHost(host)
+    return isYouTubePageHost(normalizedHost) ||
+        normalizedHost.isExactOrSubdomainOf(GOOGLE_ROOT_DOMAIN)
+}
+
+fun isTrustedYouTubeBootstrapHost(host: String?): Boolean {
+    return isYouTubePageHost(host)
+}
 
 fun YouTubeAuthBundle.effectiveCookieHeader(): String {
     val normalized = normalized(savedAt = savedAt)
@@ -206,6 +256,10 @@ fun YouTubeAuthBundle.buildYouTubeStreamRequestHeaders(
     streamUrl: String? = null
 ): Map<String, String> {
     // googlevideo/manifest 是跨域媒体请求，不应继续附带 YouTube 登录态头
+    val normalizedOrigin = normalizeYouTubeOriginValue(
+        candidate = refererOrigin,
+        fallbackOrigin = origin.ifBlank { YOUTUBE_MUSIC_ORIGIN }
+    )
     val headers = LinkedHashMap<String, String>()
     original.forEach { (name, value) ->
         if (name.lowercase(Locale.US) !in YOUTUBE_GOOGLE_VIDEO_STRIPPED_HEADERS) {
@@ -213,11 +267,35 @@ fun YouTubeAuthBundle.buildYouTubeStreamRequestHeaders(
         }
     }
     headers.putIfAbsent("User-Agent", resolveYouTubeStreamUserAgent(streamUrl))
-    headers.putIfAbsent("Origin", refererOrigin)
+    headers.putIfAbsent("Origin", normalizedOrigin)
     if (includeReferer) {
-        headers.putIfAbsent("Referer", "$refererOrigin/")
+        headers.putIfAbsent("Referer", "$normalizedOrigin/")
     }
     return headers
+}
+
+internal fun normalizeYouTubeOriginValue(
+    candidate: String?,
+    fallbackOrigin: String = YOUTUBE_MUSIC_ORIGIN
+): String {
+    val normalizedFallback = normalizeYouTubeOriginCandidate(fallbackOrigin)
+    return normalizeYouTubeOriginCandidate(candidate) ?: normalizedFallback ?: YOUTUBE_MUSIC_ORIGIN
+}
+
+private fun normalizeYouTubeOriginCandidate(candidate: String?): String? {
+    val rawValue = candidate
+        ?.trim()
+        ?.removeSuffix("/")
+        ?.takeIf { it.isNotBlank() }
+        ?: return null
+    val uri = runCatching { URI(rawValue) }.getOrNull() ?: return null
+    val scheme = uri.scheme
+        ?.lowercase(Locale.US)
+        ?.takeIf { it == "https" || it == "http" }
+        ?: return null
+    val host = normalizeYouTubeHost(uri.host).takeIf { it.isNotBlank() } ?: return null
+    val portSuffix = uri.port.takeIf { it != -1 }?.let { ":$it" }.orEmpty()
+    return "$scheme://$host$portSuffix"
 }
 
 fun YouTubeAuthBundle.resolveYouTubeStreamUserAgent(streamUrl: String?): String {
@@ -259,10 +337,16 @@ fun extractYouTubeMusicVideoId(mediaUri: String?): String? {
             else -> {
                 val uri = URI(mediaUri)
                 val host = uri.host?.lowercase(Locale.US)
-                if (host == "music.youtube.com" || host == "www.youtube.com" || host == "youtube.com") {
-                    parseQueryParameters(uri.rawQuery)["v"]?.takeIf { it.isNotBlank() }
-                } else {
-                    null
+                when {
+                    host == YOUTUBE_SHORT_DOMAIN -> {
+                        uri.path
+                            ?.trim('/')
+                            ?.takeIf { it.isNotBlank() }
+                    }
+                    isYouTubePageHost(host) -> {
+                        parseQueryParameters(uri.rawQuery)["v"]?.takeIf { it.isNotBlank() }
+                    }
+                    else -> null
                 }
             }
         }
@@ -314,6 +398,10 @@ private fun parseQueryParameters(rawQuery: String?): Map<String, String> {
 
 private fun firstNonBlank(vararg values: String?): String? {
     return values.firstOrNull { !it.isNullOrBlank() }
+}
+
+private fun String.isExactOrSubdomainOf(rootDomain: String): Boolean {
+    return matchesRootDomain(rootDomain)
 }
 
 private fun buildSidAuthorization(

@@ -26,11 +26,13 @@ package moe.ouom.neriplayer.activity
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.graphics.Color
+import android.net.Uri
 import android.os.Bundle
 import android.view.MenuItem
 import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -47,6 +49,9 @@ import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.snackbar.Snackbar
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.util.hostMatchesAnyDomain
+import moe.ouom.neriplayer.util.isAllowedMainFrameRequest
 import moe.ouom.neriplayer.util.lockPortraitIfPhone
 
 class NeteaseWebLoginActivity : ComponentActivity() {
@@ -54,6 +59,11 @@ class NeteaseWebLoginActivity : ComponentActivity() {
     companion object {
         const val RESULT_COOKIE = "result_cookie_map_json"
         private const val TARGET_URL = "https://music.163.com/"
+        private val ALLOWED_LOGIN_DOMAINS = setOf(
+            "163.com",
+            "126.net",
+            "163yun.com"
+        )
         private const val DESKTOP_UA =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
                     "AppleWebKit/537.36 (KHTML, like Gecko) " +
@@ -113,7 +123,9 @@ class NeteaseWebLoginActivity : ComponentActivity() {
             settings.apply {
                 javaScriptEnabled = true
                 domStorageEnabled = true
-                mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                allowFileAccess = false
+                allowContentAccess = false
                 userAgentString = DESKTOP_UA
                 useWideViewPort = true
                 loadWithOverviewMode = true
@@ -122,7 +134,7 @@ class NeteaseWebLoginActivity : ComponentActivity() {
                 displayZoomControls = false
             }
             webChromeClient = WebChromeClient()
-            webViewClient = object : WebViewClient() {}
+            webViewClient = InnerClient()
         }
 
         root.addView(webView)
@@ -207,5 +219,28 @@ class NeteaseWebLoginActivity : ComponentActivity() {
                 if (key.isNotEmpty()) map[key] = value
             }
         return map
+    }
+
+    private inner class InnerClient : WebViewClient() {
+        override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+            val currentRequest = request ?: return false
+            val uri = currentRequest.url
+            if (!isAllowedMainFrameRequest(currentRequest) { isAllowedLoginUri(it) }) {
+                NPLogger.w("NERI-NeteaseLogin", "Blocked unexpected navigation: $uri")
+                return true
+            }
+            return false
+        }
+    }
+
+    private fun isAllowedLoginUri(uri: Uri?): Boolean {
+        val resolvedUri = uri ?: return false
+        if (resolvedUri.toString() == "about:blank") {
+            return true
+        }
+        if (!resolvedUri.scheme.equals("https", ignoreCase = true)) {
+            return false
+        }
+        return hostMatchesAnyDomain(resolvedUri.host, ALLOWED_LOGIN_DOMAINS)
     }
 }

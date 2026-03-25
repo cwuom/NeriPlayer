@@ -261,14 +261,17 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setDynamicColor(value: Boolean) {
         context.dataStore.edit { it[SettingsKeys.DYNAMIC_COLOR] = value }
+        persistThemeDynamicColor(context, value)
     }
 
     suspend fun setForceDark(value: Boolean) {
         context.dataStore.edit { it[SettingsKeys.FORCE_DARK] = value }
+        persistThemeForceDark(context, value)
     }
 
     suspend fun setFollowSystemDark(value: Boolean) {
         context.dataStore.edit { it[SettingsKeys.FOLLOW_SYSTEM_DARK] = value }
+        persistThemeFollowSystemDark(context, value)
     }
 
     suspend fun setShowCoverSourceBadge(enabled: Boolean) {

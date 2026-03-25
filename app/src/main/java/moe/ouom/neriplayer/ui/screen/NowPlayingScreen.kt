@@ -252,6 +252,8 @@ private const val CoverSourceBadgeRevealBufferMs = 120
 private const val CoverSourceBadgeRevealDelayMs =
     LyricsPageTransitionDurationMs + CoverSourceBadgeRevealBufferMs
 
+internal fun shouldHideDownloadActionForSong(hasLocalDownload: Boolean): Boolean = hasLocalDownload
+
 private fun buildRemoteSongShareUrl(originalSong: SongItem, queue: List<SongItem>): String {
     extractYouTubeMusicVideoId(originalSong.mediaUri)?.let { videoId ->
         return "https://music.youtube.com/watch?v=$videoId"
@@ -1598,6 +1600,16 @@ fun MoreOptionsSheet(
     val canSwitchQuality = qualityOptions.size > 1
     val currentQualityLabel = currentPlaybackAudioInfo?.qualityLabel
     val playbackSoundState by PlayerManager.playbackSoundStateFlow.collectAsState()
+    val downloadedSongs by GlobalDownloadManager.downloadedSongs.collectAsState()
+    val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsState()
+    val hasLocalDownload = remember(downloadedSongs, originalSong, context) {
+        AudioDownloadManager.hasLocalDownload(context, originalSong)
+    }
+    val downloadSongKey = remember(originalSong) { originalSong.stableKey() }
+    val currentDownloadTask = remember(downloadTasks, downloadSongKey) {
+        downloadTasks.firstOrNull { it.song.stableKey() == downloadSongKey }
+    }
+    val shouldHideDownloadAction = shouldHideDownloadActionForSong(hasLocalDownload)
 
     LaunchedEffect(showSearchView) {
         if (showSearchView) {
@@ -1705,12 +1717,7 @@ fun MoreOptionsSheet(
                                     onDismiss()
                                 }
                             )
-                        } else if (!AudioDownloadManager.hasLocalDownload(context, originalSong)) {
-                            val songKey = remember(originalSong) { originalSong.stableKey() }
-                            val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsState()
-                            val currentDownloadTask = remember(downloadTasks, songKey) {
-                                downloadTasks.firstOrNull { it.song.stableKey() == songKey }
-                            }
+                        } else if (!shouldHideDownloadAction) {
                             val downloadHeadlineRes = when (currentDownloadTask?.status) {
                                 DownloadStatus.DOWNLOADING -> R.string.download_cancel_download
                                 DownloadStatus.CANCELLED -> R.string.download_to_local
@@ -1753,11 +1760,11 @@ fun MoreOptionsSheet(
                                 modifier = Modifier.clickable {
                                     when (currentDownloadTask?.status) {
                                         DownloadStatus.DOWNLOADING -> {
-                                            viewModel.cancelDownload(songKey)
+                                            viewModel.cancelDownload(downloadSongKey)
                                         }
 
                                         DownloadStatus.CANCELLED -> {
-                                            viewModel.resumeDownload(context, songKey)
+                                            viewModel.resumeDownload(context, downloadSongKey)
                                         }
 
                                         DownloadStatus.FAILED -> {
@@ -1813,17 +1820,17 @@ fun MoreOptionsSheet(
                             leadingContent = { Icon(Icons.Outlined.Share, null) },
                             modifier = Modifier.clickable {
                                 if (originalSong.isLocalSong()) {
-                                    val shared = runCatching {
-                                        LocalMediaSupport.shareSongFile(context, originalSong)
-                                    }.getOrElse { false }
-                                    if (!shared) {
-                                        coroutineScope.launch {
+                                    coroutineScope.launch {
+                                        val shared = runCatching {
+                                            LocalMediaSupport.shareSongFile(context, originalSong)
+                                        }.getOrElse { false }
+                                        if (!shared) {
                                             snackbarHostState.showSnackbar(
                                                 context.getString(R.string.local_song_share_failed)
                                             )
+                                        } else {
+                                            onDismiss()
                                         }
-                                    } else {
-                                        onDismiss()
                                     }
                                 } else {
                                     val url = buildRemoteSongShareUrl(originalSong, queue)

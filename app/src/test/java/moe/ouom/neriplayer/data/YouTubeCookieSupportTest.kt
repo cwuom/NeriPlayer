@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.data
 
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeCookieSupport
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -49,20 +50,23 @@ class YouTubeCookieSupportTest {
     }
 
     @Test
-    fun hasActiveSessionCookies_ignoresLoginInfoOnly() {
-        assertFalse(
-            YouTubeCookieSupport.hasActiveSessionCookies(
-                mapOf("LOGIN_INFO" to "value")
-            )
-        )
+    fun activeSessionCookieKeys_excludesLoginInfoOnly() {
+        assertTrue(YouTubeCookieSupport.importantLoginCookieKeys.contains("LOGIN_INFO"))
+        assertFalse(YouTubeCookieSupport.activeSessionCookieKeys.contains("LOGIN_INFO"))
     }
 
     @Test
-    fun hasActiveSessionCookies_returnsTrueForSessionCookie() {
-        assertTrue(
-            YouTubeCookieSupport.hasActiveSessionCookies(
-                mapOf("SAPISID" to "value")
+    fun sanitizePersistedCookies_keepsSessionCookiesAndDropsNoise() {
+        val sanitized = YouTubeCookieSupport.sanitizePersistedCookies(
+            mapOf(
+                "SAPISID" to "value",
+                "__Secure-1PAPISID" to "secure-value",
+                "VISITOR_INFO1_LIVE" to "visitor"
             )
         )
+
+        assertEquals("value", sanitized["SAPISID"])
+        assertEquals("secure-value", sanitized["__Secure-1PAPISID"])
+        assertFalse(sanitized.containsKey("VISITOR_INFO1_LIVE"))
     }
 }

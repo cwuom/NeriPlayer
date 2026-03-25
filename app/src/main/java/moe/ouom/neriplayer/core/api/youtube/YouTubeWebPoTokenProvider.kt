@@ -25,10 +25,12 @@ package moe.ouom.neriplayer.core.api.youtube
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.net.Uri
 import android.util.Base64
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -42,7 +44,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.data.auth.youtube.applyYouTubeWebCookies
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.platform.youtube.effectiveCookieHeader
+import moe.ouom.neriplayer.data.platform.youtube.isTrustedYouTubeBootstrapHost
 import moe.ouom.neriplayer.data.platform.youtube.resolveBootstrapUserAgent
+import moe.ouom.neriplayer.util.isAllowedMainFrameRequest
 import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
 import org.json.JSONTokener
@@ -307,10 +311,13 @@ internal class YouTubeWebPoTokenProvider(
             settings.cacheMode = WebSettings.LOAD_DEFAULT
             settings.loadsImagesAutomatically = false
             settings.mediaPlaybackRequiresUserGesture = false
+            settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            settings.allowFileAccess = false
+            settings.allowContentAccess = false
             CookieManager.getInstance().setAcceptCookie(true)
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
             webChromeClient = WebChromeClient()
-            webViewClient = WebViewClient()
+            webViewClient = BootstrapWebViewClient()
             addJavascriptInterface(WebPoResultBridge(), JS_BRIDGE_NAME)
         }.also { created ->
             webView = created
@@ -566,6 +573,29 @@ internal class YouTubeWebPoTokenProvider(
         while (tokenCache.size > TOKEN_CACHE_MAX_SIZE) {
             val eldestKey = tokenCache.entries.firstOrNull()?.key ?: break
             tokenCache.remove(eldestKey)
+        }
+    }
+
+    private fun isAllowedBootstrapUri(uri: Uri?): Boolean {
+        val resolvedUri = uri ?: return false
+        if (resolvedUri.toString() == "about:blank") {
+            return true
+        }
+        if (!resolvedUri.scheme.equals("https", ignoreCase = true)) {
+            return false
+        }
+        return isTrustedYouTubeBootstrapHost(resolvedUri.host)
+    }
+
+    private inner class BootstrapWebViewClient : WebViewClient() {
+        override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+            val currentRequest = request ?: return false
+            val uri = currentRequest.url
+            if (!isAllowedMainFrameRequest(currentRequest) { isAllowedBootstrapUri(it) }) {
+                NPLogger.w(TAG, "Blocked unexpected WebPo navigation: $uri")
+                return true
+            }
+            return false
         }
     }
 

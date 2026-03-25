@@ -48,6 +48,59 @@ data class LocalAudioImportResult(
     val completed: Boolean = true
 )
 
+internal data class SidecarCopyPlan(
+    val source: File,
+    val target: File
+)
+
+internal fun buildNearbySidecarCopyPlans(
+    sourceFile: File,
+    targetFile: File,
+    lyricExtensions: List<String>,
+    imageExtensions: List<String>,
+    coverNames: List<String>
+): List<SidecarCopyPlan> {
+    val sourceDir = sourceFile.parentFile ?: return emptyList()
+    val targetDir = targetFile.parentFile ?: return emptyList()
+    val sourceBase = sourceFile.nameWithoutExtension
+    val targetBase = targetFile.nameWithoutExtension
+    val targetCoverDir = File(targetDir, "Covers")
+
+    return buildList {
+        fun addIfExists(source: File, target: File) {
+            if (source.exists()) {
+                add(SidecarCopyPlan(source = source, target = target))
+            }
+        }
+
+        lyricExtensions.forEach { extension ->
+            addIfExists(File(sourceDir, "$sourceBase.$extension"), File(targetDir, "$targetBase.$extension"))
+            addIfExists(
+                File(File(sourceDir, "Lyrics"), "$sourceBase.$extension"),
+                File(targetDir, "$targetBase.$extension")
+            )
+        }
+
+        imageExtensions.forEach { extension ->
+            addIfExists(File(sourceDir, "$sourceBase.$extension"), File(targetDir, "$targetBase.$extension"))
+        }
+
+        coverNames.forEach { name ->
+            imageExtensions.forEach { extension ->
+                addIfExists(
+                    File(sourceDir, "$name.$extension"),
+                    File(targetCoverDir, "$targetBase.$extension")
+                )
+            }
+        }
+
+        val sourceCoverDir = File(sourceDir, "Covers")
+        imageExtensions.forEach { extension ->
+            addIfExists(File(sourceCoverDir, "$sourceBase.$extension"), File(targetDir, "$targetBase.$extension"))
+        }
+    }
+}
+
 object LocalAudioImportManager {
     private const val TAG = "LocalAudioImport"
     private val lyricExtensions = listOf("lrc", "txt")
@@ -365,33 +418,15 @@ object LocalAudioImportManager {
         return reconstructed.absolutePath.takeIf { reconstructed.exists() }
     }
 
-    private fun copyNearbySidecars(sourceFile: File, targetFile: File) {
-        val sourceDir = sourceFile.parentFile ?: return
-        val targetDir = targetFile.parentFile ?: return
-        val sourceBase = sourceFile.nameWithoutExtension
-        val targetBase = targetFile.nameWithoutExtension
-
-        lyricExtensions.forEach { extension ->
-            copyIfExists(File(sourceDir, "$sourceBase.$extension"), File(targetDir, "$targetBase.$extension"))
-            copyIfExists(
-                File(File(sourceDir, "Lyrics"), "$sourceBase.$extension"),
-                File(targetDir, "$targetBase.$extension")
-            )
-        }
-
-        imageExtensions.forEach { extension ->
-            copyIfExists(File(sourceDir, "$sourceBase.$extension"), File(targetDir, "$targetBase.$extension"))
-        }
-
-        coverNames.forEach { name ->
-            imageExtensions.forEach { extension ->
-                copyIfExists(File(sourceDir, "$name.$extension"), File(targetDir, "$name.$extension"))
-            }
-        }
-
-        val sourceCoverDir = File(sourceDir, "Covers")
-        imageExtensions.forEach { extension ->
-            copyIfExists(File(sourceCoverDir, "$sourceBase.$extension"), File(targetDir, "$targetBase.$extension"))
+    internal fun copyNearbySidecars(sourceFile: File, targetFile: File) {
+        buildNearbySidecarCopyPlans(
+            sourceFile = sourceFile,
+            targetFile = targetFile,
+            lyricExtensions = lyricExtensions,
+            imageExtensions = imageExtensions,
+            coverNames = coverNames
+        ).forEach { plan ->
+            copyIfExists(plan.source, plan.target)
         }
     }
 
@@ -400,6 +435,7 @@ object LocalAudioImportManager {
             return
         }
         runCatching {
+            target.parentFile?.mkdirs()
             source.copyTo(target, overwrite = false)
         }.onFailure {
             NPLogger.w(TAG, "Failed to copy sidecar ${source.absolutePath}: ${it.message}")

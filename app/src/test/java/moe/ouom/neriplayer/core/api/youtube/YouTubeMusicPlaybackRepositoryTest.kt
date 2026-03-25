@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.api.youtube
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import org.json.JSONObject
@@ -259,7 +260,7 @@ class YouTubeMusicPlaybackRepositoryTest {
             )
             .build()
 
-        val authBundle = moe.ouom.neriplayer.data.YouTubeAuthBundle(
+        val authBundle = YouTubeAuthBundle(
             cookieHeader = "SAPISID=sap-value; SID=sid-value",
             xGoogAuthUser = "7",
             userAgent = "RepoUserAgent/1.0"
@@ -371,7 +372,7 @@ class YouTubeMusicPlaybackRepositoryTest {
             )
             .build()
 
-        val authBundle = moe.ouom.neriplayer.data.YouTubeAuthBundle(
+        val authBundle = YouTubeAuthBundle(
             cookieHeader = "SAPISID=sap-value; SID=sid-value",
             xGoogAuthUser = "7",
             userAgent = "RepoUserAgent/1.0"
@@ -482,7 +483,7 @@ class YouTubeMusicPlaybackRepositoryTest {
             )
             .build()
 
-        val authBundle = moe.ouom.neriplayer.data.YouTubeAuthBundle(
+        val authBundle = YouTubeAuthBundle(
             cookieHeader = "SAPISID=sap-value; SID=sid-value",
             xGoogAuthUser = "7",
             userAgent = "RepoUserAgent/1.0"
@@ -605,7 +606,7 @@ class YouTubeMusicPlaybackRepositoryTest {
             )
             .build()
 
-        val authBundle = moe.ouom.neriplayer.data.YouTubeAuthBundle(
+        val authBundle = YouTubeAuthBundle(
             cookieHeader = "SAPISID=sap-value; SID=sid-value",
             xGoogAuthUser = "7",
             userAgent = "RepoUserAgent/1.0"
@@ -704,7 +705,7 @@ class YouTubeMusicPlaybackRepositoryTest {
             )
             .build()
 
-        val authBundle = moe.ouom.neriplayer.data.YouTubeAuthBundle(
+        val authBundle = YouTubeAuthBundle(
             cookieHeader = "SAPISID=sap-value; SID=sid-value",
             xGoogAuthUser = "7",
             userAgent = "RepoUserAgent/1.0"
@@ -838,7 +839,7 @@ class YouTubeMusicPlaybackRepositoryTest {
             )
             .build()
 
-        val authBundle = moe.ouom.neriplayer.data.YouTubeAuthBundle(
+        val authBundle = YouTubeAuthBundle(
             cookieHeader = "SAPISID=sap-value; SID=sid-value",
             xGoogAuthUser = "7",
             userAgent = "RepoUserAgent/1.0"
@@ -1238,7 +1239,7 @@ class YouTubeMusicPlaybackRepositoryTest {
             )
             .build()
 
-        val authBundle = moe.ouom.neriplayer.data.YouTubeAuthBundle(
+        val authBundle = YouTubeAuthBundle(
             cookieHeader = "SAPISID=sap-value; SID=sid-value",
             xGoogAuthUser = "7",
             userAgent = "RepoUserAgent/1.0"
@@ -1361,7 +1362,7 @@ class YouTubeMusicPlaybackRepositoryTest {
             )
             .build()
 
-        val authBundle = moe.ouom.neriplayer.data.YouTubeAuthBundle(
+        val authBundle = YouTubeAuthBundle(
             cookieHeader = "SAPISID=sap-value; SID=sid-value",
             xGoogAuthUser = "7",
             userAgent = "RepoUserAgent/1.0"
@@ -1472,7 +1473,7 @@ class YouTubeMusicPlaybackRepositoryTest {
             )
             .build()
 
-        val authBundle = moe.ouom.neriplayer.data.YouTubeAuthBundle(
+        val authBundle = YouTubeAuthBundle(
             cookieHeader = "SAPISID=sap-value; SID=sid-value",
             xGoogAuthUser = "7",
             userAgent = "RepoUserAgent/1.0"
@@ -1637,7 +1638,7 @@ class YouTubeMusicPlaybackRepositoryTest {
             )
             .build()
 
-        val authBundle = moe.ouom.neriplayer.data.YouTubeAuthBundle(
+        val authBundle = YouTubeAuthBundle(
             cookieHeader = "SAPISID=sap-value; SID=sid-value",
             xGoogAuthUser = "7",
             userAgent = "RepoUserAgent/1.0"
@@ -1738,7 +1739,7 @@ class YouTubeMusicPlaybackRepositoryTest {
             )
             .build()
 
-        val authBundle = moe.ouom.neriplayer.data.YouTubeAuthBundle(
+        val authBundle = YouTubeAuthBundle(
             cookieHeader = "SAPISID=sap-value; SID=sid-value",
             xGoogAuthUser = "7",
             userAgent = "RepoUserAgent/1.0"

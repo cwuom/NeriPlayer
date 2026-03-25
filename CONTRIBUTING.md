@@ -127,13 +127,13 @@
   - `GlobalDownloadManager.kt` 维护全局下载任务与本地已下载列表。
 
 - `app/src/main/java/moe/ouom/neriplayer/data/`
-  - `SettingsDataStore.kt`：设置与常规状态。
+  - `settings/SettingsStore.kt`：设置与常规状态。
   - `LocalPlaylistRepository.kt`：本地歌单 JSON 原子写入。
   - `BackupManager.kt`：本地 JSON 导入/导出与差异分析。
   - `LocalAudioImportManager.kt`：导入外部音频、扫描本地音频，
     并复制附近歌词/封面 sidecar 文件。
 
-- `app/src/main/java/moe/ouom/neriplayer/data/github/`
+- `app/src/main/java/moe/ouom/neriplayer/data/sync/github/`
   - `GitHubSyncManager.kt`：同步编排与三路合并。
   - `GitHubSyncWorker.kt`：基于 `WorkManager` 的延迟/周期同步。
   - `SecureTokenStorage.kt`：GitHub Token 本地加密存储。
@@ -154,8 +154,9 @@
 - 流媒体缓存与下载是两套能力：
   缓存使用 `SimpleCache`，下载则由 `AudioDownloadManager` 写入本地文件。
 - GitHub 同步只同步元数据，不同步音频缓存、下载文件、Cookie 或播放 Token。
-- 平台 Cookie 当前是本地 `DataStore` 持久化；
-  只有 GitHub Token 使用 `Android Keystore + EncryptedSharedPreferences` 加密保存。
+- 平台 Cookie / 鉴权信息与 GitHub Token 当前都使用
+  `Android Keystore + EncryptedSharedPreferences` 加密保存。
+- `DataStore` 只承担常规设置与非敏感状态，不承载平台登录凭据。
 
 ---
 
@@ -193,7 +194,7 @@
 
 #### 4. 新增设置项
 
-1. 在 `SettingsDataStore.kt` 中增加 key、Flow 与 setter。
+1. 在 `data/settings/SettingsStore.kt` 中增加 key、Flow 与 setter。
 2. 在 `NeriApp.kt` 中收集并下发到对应页面。
 3. 在 `SettingsScreen.kt` 中补充交互控件。
 4. 如果设置影响全局主题、导航或播放层，

@@ -24,6 +24,17 @@ class YouTubeGoogleVideoRangeSupportTest {
     }
 
     @Test
+    fun shouldUseChunkedRange_rejectsLookalikeGoogleVideoHost() {
+        val url =
+            "https://rr2---sn.fakegooglevideo.com/videoplayback" +
+                "?source=youtube&mime=audio%2Fwebm&clen=3965665"
+
+        assertFalse(YouTubeGoogleVideoRangeSupport.shouldUseChunkedRange(url))
+        assertFalse(YouTubeGoogleVideoRangeSupport.supportsSeekingWithoutUrlRefresh(url))
+        assertFalse(YouTubeGoogleVideoRangeSupport.shouldForceExplicitFullRange(url))
+    }
+
+    @Test
     fun shouldUseChunkedRange_rejectsHlsManifestUrl() {
         val url =
             "https://manifest.googlevideo.com/api/manifest/hls_playlist/expire/1773862162/id/demo/itag/234/source/youtube/playlist/index.m3u8"

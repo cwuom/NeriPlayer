@@ -58,7 +58,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -69,7 +71,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import java.io.File
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.util.HapticTextButton
@@ -99,6 +103,8 @@ internal fun SettingsStorageCacheSection(
     onClearCacheClick: (clearAudio: Boolean, clearImage: Boolean) -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var isStorageDetailsLoading by remember { mutableStateOf(false) }
 
     ExpandableHeader(
         icon = Icons.Outlined.SdStorage,
@@ -225,9 +231,14 @@ internal fun SettingsStorageCacheSection(
                 trailingContent = {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(
+                            enabled = !isStorageDetailsLoading,
                             onClick = {
-                                onStorageDetailsChange(calculateStorageDetails(context))
                                 onShowStorageDetailsChange(true)
+                                isStorageDetailsLoading = true
+                                scope.launch {
+                                    onStorageDetailsChange(calculateStorageDetails(context))
+                                    isStorageDetailsLoading = false
+                                }
                             }
                         ) {
                             Icon(
@@ -261,46 +272,53 @@ internal fun SettingsStorageCacheSection(
             title = { Text(stringResource(R.string.storage_details_title)) },
             text = {
                 Column {
-                    Text(
-                        stringResource(R.string.storage_details_subtitle),
-                        style = MaterialTheme.typography.titleSmall
-                    )
-                    Spacer(Modifier.height(12.dp))
-
-                    storageDetails.forEach { (name, size) ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(name, style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                formatFileSize(size),
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-
-                    Spacer(Modifier.height(12.dp))
-                    HorizontalDivider()
-                    Spacer(Modifier.height(8.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
+                    if (isStorageDetailsLoading) {
                         Text(
-                            stringResource(R.string.storage_details_total),
+                            stringResource(R.string.storage_details_loading),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    } else {
+                        Text(
+                            stringResource(R.string.storage_details_subtitle),
                             style = MaterialTheme.typography.titleSmall
                         )
-                        Text(
-                            formatFileSize(storageDetails.values.sum()),
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                        Spacer(Modifier.height(12.dp))
+
+                        storageDetails.forEach { (name, size) ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(name, style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    formatFileSize(size),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        Spacer(Modifier.height(12.dp))
+                        HorizontalDivider()
+                        Spacer(Modifier.height(8.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                stringResource(R.string.storage_details_total),
+                                style = MaterialTheme.typography.titleSmall
+                            )
+                            Text(
+                                formatFileSize(storageDetails.values.sum()),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
                 }
             },
@@ -412,9 +430,9 @@ private fun CacheTypeRow(
     }
 }
 
-private fun calculateStorageDetails(context: android.content.Context): Map<String, Long> {
+private suspend fun calculateStorageDetails(context: android.content.Context): Map<String, Long> = withContext(Dispatchers.IO) {
     val details = linkedMapOf<String, Long>()
-    return runCatching {
+    runCatching {
         val mediaCacheDir = File(context.cacheDir, "media_cache")
         details[context.getString(R.string.storage_type_audio_cache)] =
             mediaCacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
@@ -424,9 +442,7 @@ private fun calculateStorageDetails(context: android.content.Context): Map<Strin
             imageCacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
 
         details[context.getString(R.string.storage_type_downloaded_music)] =
-            runBlocking {
-                ManagedDownloadStorage.listDownloadedAudio(context).sumOf { it.sizeBytes }
-            }
+            ManagedDownloadStorage.listDownloadedAudio(context).sumOf { it.sizeBytes }
 
         val logDir = context.getExternalFilesDir(null)?.let { File(it, "logs") }
         details[context.getString(R.string.storage_type_log_files)] =
