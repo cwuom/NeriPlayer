@@ -83,6 +83,25 @@ private data class PlaybackNotificationSnapshot(
     val coverSource: String?,
 )
 
+internal const val MEDIA_SESSION_STOP_SOURCE = "media_session_stop"
+
+internal fun shouldStopServiceForExternalPauseCommand(
+    source: String,
+    stopServiceRequested: Boolean,
+): Boolean {
+    // 系统外部控制面板的 stop 经常只是“结束本次会话”，不能把当前队列一并释放掉
+    return stopServiceRequested && source != MEDIA_SESSION_STOP_SOURCE
+}
+
+internal fun mediaSessionPlaybackActions(): Long {
+    return PlaybackStateCompat.ACTION_PLAY or
+        PlaybackStateCompat.ACTION_PAUSE or
+        PlaybackStateCompat.ACTION_PLAY_PAUSE or
+        PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
+        PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
+        PlaybackStateCompat.ACTION_SEEK_TO
+}
+
 @Suppress("unused")
 class AudioPlayerService : Service() {
 
@@ -118,7 +137,7 @@ class AudioPlayerService : Service() {
         override fun onSkipToNext() { PlayerManager.next(); updateAll() }
         override fun onSkipToPrevious() { PlayerManager.previous(); updateAll() }
         override fun onStop() {
-            handleExternalPauseCommand("media_session_stop", stopService = true)
+            handleExternalPauseCommand(MEDIA_SESSION_STOP_SOURCE, stopService = true)
         }
         override fun onSeekTo(pos: Long) {
             PlayerManager.seekTo(pos)
@@ -148,7 +167,11 @@ class AudioPlayerService : Service() {
         }
         PlayerManager.pause()
         updateAll()
-        if (stopService) {
+        val shouldStopService = shouldStopServiceForExternalPauseCommand(source, stopService)
+        if (stopService && !shouldStopService) {
+            NPLogger.w("NERI-APS", "Treating external stop as pause-only: source=$source")
+        }
+        if (shouldStopService) {
             allowServiceRestart = false
             stopForegroundIfStarted()
             stopSelf()
@@ -569,14 +592,7 @@ class AudioPlayerService : Service() {
             ACTION_TOGGLE_FAV, favText, favIconRes
         ).build()
 
-        val actions =
-            PlaybackStateCompat.ACTION_PLAY or
-                    PlaybackStateCompat.ACTION_PAUSE or
-                    PlaybackStateCompat.ACTION_PLAY_PAUSE or
-                    PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
-                    PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
-                    PlaybackStateCompat.ACTION_SEEK_TO or
-                    PlaybackStateCompat.ACTION_STOP
+        val actions = mediaSessionPlaybackActions()
 
         val playbackState = when {
             isBuffering -> PlaybackStateCompat.STATE_BUFFERING
