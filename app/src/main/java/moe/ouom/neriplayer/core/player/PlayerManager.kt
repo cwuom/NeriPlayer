@@ -101,6 +101,12 @@ import moe.ouom.neriplayer.ui.component.LyricEntry
 import moe.ouom.neriplayer.ui.component.parseNeteaseLrc
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.listentogether.ListenTogetherChannels
+import moe.ouom.neriplayer.listentogether.buildStableTrackKey
+import moe.ouom.neriplayer.listentogether.resolvedAudioId
+import moe.ouom.neriplayer.listentogether.resolvedChannelId
+import moe.ouom.neriplayer.listentogether.resolvedPlaylistContextId
+import moe.ouom.neriplayer.listentogether.resolvedSubAudioId
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.SearchManager
 import org.json.JSONArray
@@ -127,9 +133,25 @@ private sealed class SongUrlResult {
         val durationMs: Long? = null,
         val mimeType: String? = null
     ) : SongUrlResult()
+    object WaitingForAuthoritativeStream : SongUrlResult()
     object RequiresLogin : SongUrlResult()
     object Failure : SongUrlResult()
 }
+
+enum class PlaybackCommandSource {
+    LOCAL,
+    REMOTE_SYNC
+}
+
+data class PlaybackCommand(
+    val type: String,
+    val source: PlaybackCommandSource,
+    val timestampMs: Long = System.currentTimeMillis(),
+    val queue: List<SongItem>? = null,
+    val currentIndex: Int? = null,
+    val positionMs: Long? = null,
+    val force: Boolean = false
+)
 
 /**
  * PlayerManager 负责：
@@ -217,6 +239,8 @@ object PlayerManager {
     private var resumePlaybackRequested = false
     @Volatile
     private var suppressAutoResumeForCurrentSession = false
+    @Volatile
+    private var listenTogetherSyncPlaybackRate = 1f
 
     private val _currentSongFlow = MutableStateFlow<SongItem?>(null)
     val currentSongFlow: StateFlow<SongItem?> = _currentSongFlow
@@ -242,6 +266,11 @@ object PlayerManager {
 
     private val _playerEventFlow = MutableSharedFlow<PlayerEvent>()
     val playerEventFlow: SharedFlow<PlayerEvent> = _playerEventFlow.asSharedFlow()
+
+    private val _playbackCommandFlow = MutableSharedFlow<PlaybackCommand>(
+        extraBufferCapacity = 32
+    )
+    val playbackCommandFlow: SharedFlow<PlaybackCommand> = _playbackCommandFlow.asSharedFlow()
 
     /** 向 UI 暴露当前实际播放链接，用于来源展示 */
     private val _currentMediaUrl = MutableStateFlow<String?>(null)
@@ -312,6 +341,52 @@ object PlayerManager {
                 player.playbackState == Player.STATE_BUFFERING
             )
 
+    fun setListenTogetherSyncPlaybackRate(rate: Float) {
+        ensureInitialized()
+        if (!initialized || !::player.isInitialized) return
+        val resolvedRate = rate.coerceIn(0.95f, 1.05f)
+        if (kotlin.math.abs(listenTogetherSyncPlaybackRate - resolvedRate) < 0.001f) return
+        listenTogetherSyncPlaybackRate = resolvedRate
+        mainScope.launch {
+            if (::player.isInitialized) {
+                player.setPlaybackSpeed(resolvedRate)
+            }
+        }
+    }
+
+    fun resetListenTogetherSyncPlaybackRate() {
+        setListenTogetherSyncPlaybackRate(1f)
+    }
+
+    fun resetForListenTogetherJoin() {
+        ensureInitialized()
+        if (!initialized) return
+        cancelPendingPauseRequest(resetVolumeToFull = true)
+        playbackRequestToken += 1
+        playJob?.cancel()
+        playJob = null
+        resumePlaybackRequested = false
+        restoredShouldResumePlayback = false
+        restoredResumePositionMs = 0L
+        stopProgressUpdates()
+        cancelVolumeFade(resetToFull = true)
+        runCatching { player.stop() }
+        runCatching { player.clearMediaItems() }
+        _isPlayingFlow.value = false
+        clearPendingSeekPosition()
+        _playbackPositionMs.value = 0L
+        _currentMediaUrl.value = null
+        currentMediaUrlResolvedAtMs = 0L
+        _currentSongFlow.value = null
+        _currentQueueFlow.value = emptyList()
+        currentPlaylist = emptyList()
+        currentIndex = -1
+        consecutivePlayFailures = 0
+        ioScope.launch {
+            persistState(positionMs = 0L, shouldResumePlayback = false)
+        }
+    }
+
     private fun pendingSeekPositionOrNull(): Long? {
         return pendingSeekPositionMs.takeIf { it != C.TIME_UNSET }
     }
@@ -338,6 +413,108 @@ object PlayerManager {
     private val gson = Gson()
 
     private fun isLocalSong(song: SongItem): Boolean = LocalSongSupport.isLocalSong(song, application)
+
+    private fun isDirectStreamUrl(url: String?): Boolean {
+        val normalized = url?.trim().orEmpty()
+        return normalized.startsWith("https://", ignoreCase = true) ||
+            normalized.startsWith("http://", ignoreCase = true)
+    }
+
+    private fun activeListenTogetherRoomState() = AppContainer.listenTogetherSessionManager.roomState.value
+
+    private fun activeListenTogetherSessionState() = AppContainer.listenTogetherSessionManager.sessionState.value
+
+    private fun isListenTogetherActive(): Boolean {
+        return !activeListenTogetherSessionState().roomId.isNullOrBlank()
+    }
+
+    private fun isCurrentUserControllerInListenTogether(): Boolean {
+        val session = activeListenTogetherSessionState()
+        val room = activeListenTogetherRoomState()
+        val sessionUserId = session.userUuid?.trim()?.takeIf { it.isNotBlank() }
+        val controllerUserId = room?.controllerUserUuid?.trim()?.takeIf { it.isNotBlank() }
+            ?: room?.controllerUserId?.trim()?.takeIf { it.isNotBlank() }
+        return sessionUserId != null && controllerUserId != null && sessionUserId == controllerUserId
+    }
+
+    private fun currentListenTogetherTargetStableKey(): String? {
+        val room = activeListenTogetherRoomState() ?: return null
+        return room.track?.stableKey ?: room.queue.getOrNull(room.currentIndex)?.stableKey
+    }
+
+    private fun currentListenTogetherTargetStreamUrl(): String? {
+        val room = activeListenTogetherRoomState() ?: return null
+        return room.track?.streamUrl ?: room.queue.getOrNull(room.currentIndex)?.streamUrl
+    }
+
+    private fun SongItem.listenTogetherStableKeyOrNull(): String? {
+        val channel = resolvedChannelId() ?: return null
+        val audioId = resolvedAudioId() ?: return null
+        return buildStableTrackKey(
+            channelId = channel,
+            audioId = audioId,
+            subAudioId = resolvedSubAudioId(),
+            playlistContextId = resolvedPlaylistContextId()
+        )
+    }
+
+    private fun shouldWaitForListenTogetherAuthoritativeStream(song: SongItem): Boolean {
+        if (!isListenTogetherActive()) return false
+        if (isCurrentUserControllerInListenTogether()) return false
+        val room = activeListenTogetherRoomState() ?: return false
+        if (!room.settings.shareAudioLinks || room.roomStatus != "active") return false
+        if (isDirectStreamUrl(currentListenTogetherTargetStreamUrl())) return false
+        val targetStableKey = currentListenTogetherTargetStableKey() ?: return false
+        val songStableKey = song.listenTogetherStableKeyOrNull() ?: return false
+        return songStableKey == targetStableKey
+    }
+
+    private fun stopCurrentPlaybackForListenTogetherAwaitingStream() {
+        cancelPendingPauseRequest(resetVolumeToFull = true)
+        stopProgressUpdates()
+        cancelVolumeFade(resetToFull = true)
+        runCatching { player.stop() }
+        runCatching { player.clearMediaItems() }
+        _isPlayingFlow.value = false
+        _currentMediaUrl.value = null
+        currentMediaUrlResolvedAtMs = 0L
+        clearPendingSeekPosition()
+        _playbackPositionMs.value = 0L
+    }
+
+    private fun rejectListenTogetherControl(messageResId: Int): Boolean {
+        postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(messageResId)))
+        return true
+    }
+
+    private fun shouldBlockLocalRoomControl(commandSource: PlaybackCommandSource): Boolean {
+        if (commandSource != PlaybackCommandSource.LOCAL) return false
+        if (!isListenTogetherActive()) return false
+        val room = activeListenTogetherRoomState()
+        if (room?.roomStatus == "controller_offline" && !isCurrentUserControllerInListenTogether()) {
+            return rejectListenTogetherControl(R.string.listen_together_error_controller_offline)
+        }
+        if (room?.settings?.allowMemberControl == false && !isCurrentUserControllerInListenTogether()) {
+            return rejectListenTogetherControl(R.string.listen_together_error_member_control_disabled)
+        }
+        return false
+    }
+
+    private fun shouldBlockLocalSongSwitch(song: SongItem, commandSource: PlaybackCommandSource): Boolean {
+        if (commandSource != PlaybackCommandSource.LOCAL) return false
+        if (!isListenTogetherActive()) return false
+        if (!isLocalSong(song)) return false
+        return rejectListenTogetherControl(R.string.listen_together_error_local_playback_blocked)
+    }
+
+    private fun isYouTubeMusicTrack(song: SongItem): Boolean {
+        return song.channelId == ListenTogetherChannels.YOUTUBE_MUSIC || isYouTubeMusicSong(song)
+    }
+
+    private fun isBiliTrack(song: SongItem): Boolean {
+        return song.channelId == ListenTogetherChannels.BILIBILI ||
+            song.album.startsWith(BILI_SOURCE_TAG)
+    }
 
     private fun queueIndexOf(song: SongItem, playlist: List<SongItem> = currentPlaylist): Int {
         return playlist.indexOfFirst { it.sameIdentityAs(song) }
@@ -433,6 +610,27 @@ object PlayerManager {
         ioScope.launch { _playerEventFlow.emit(event) }
     }
 
+    private fun emitPlaybackCommand(
+        type: String,
+        source: PlaybackCommandSource,
+        queue: List<SongItem>? = null,
+        currentIndex: Int? = null,
+        positionMs: Long? = null,
+        force: Boolean = false
+    ) {
+        if (source != PlaybackCommandSource.LOCAL) return
+        _playbackCommandFlow.tryEmit(
+            PlaybackCommand(
+                type = type,
+                source = source,
+                queue = queue,
+                currentIndex = currentIndex,
+                positionMs = positionMs,
+                force = force
+            )
+        )
+    }
+
     /**
      * 仅允许 ExoPlayer 在“单曲循环”时循环；其余一律 OFF，由队列逻辑接管
      */
@@ -461,17 +659,17 @@ object PlayerManager {
     private fun computeCacheKey(song: SongItem): String {
         return when {
             isLocalSong(song) -> "local-${song.stableKey().hashCode()}"
-            isYouTubeMusicSong(song) -> {
-                val videoId = extractYouTubeMusicVideoId(song.mediaUri).orEmpty()
+            isYouTubeMusicTrack(song) -> {
+                val videoId = song.audioId ?: extractYouTubeMusicVideoId(song.mediaUri).orEmpty()
                 "ytmusic-$videoId-$youtubePreferredQuality-m4a"
             }
-            song.album.startsWith(BILI_SOURCE_TAG) -> {
-            val parts = song.album.split('|')
-            val cidPart = if (parts.size > 1) parts[1] else null
+            isBiliTrack(song) -> {
+            val cidPart = song.subAudioId ?: song.album.split('|').getOrNull(1)
+            val biliSongId = song.audioId ?: song.id.toString()
             if (cidPart != null) {
-                "bili-${song.id}-$cidPart-$biliPreferredQuality"
+                "bili-$biliSongId-$cidPart-$biliPreferredQuality"
             } else {
-                "bili-${song.id}-$biliPreferredQuality"
+                "bili-$biliSongId-$biliPreferredQuality"
             }
             }
             else -> "netease-${song.id}-$preferredQuality"
@@ -1184,11 +1382,19 @@ object PlayerManager {
         }
     }
 
-    fun playPlaylist(songs: List<SongItem>, startIndex: Int) {
+    fun playPlaylist(
+        songs: List<SongItem>,
+        startIndex: Int,
+        commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
+    ) {
         ensureInitialized()
         check(initialized) { "Call PlayerManager.initialize(application) first." }
         if (songs.isEmpty()) {
             NPLogger.w("NERI-Player", "playPlaylist called with EMPTY list")
+            return
+        }
+        val targetSong = songs.getOrNull(startIndex.coerceIn(0, songs.lastIndex)) ?: songs.first()
+        if (shouldBlockLocalRoomControl(commandSource) || shouldBlockLocalSongSwitch(targetSong, commandSource)) {
             return
         }
         suppressAutoResumeForCurrentSession = false
@@ -1207,7 +1413,13 @@ object PlayerManager {
         }
 
         maybeWarmCurrentAndUpcomingYouTubeMusic(currentIndex)
-        playAtIndex(currentIndex)
+        playAtIndex(currentIndex, commandSource = commandSource)
+        emitPlaybackCommand(
+            type = "PLAY_PLAYLIST",
+            source = commandSource,
+            queue = currentPlaylist,
+            currentIndex = currentIndex
+        )
         ioScope.launch {
             persistState()
         }
@@ -1223,7 +1435,8 @@ object PlayerManager {
     private fun playAtIndex(
         index: Int,
         resumePositionMs: Long = 0L,
-        useTrackTransitionFade: Boolean = false
+        useTrackTransitionFade: Boolean = false,
+        commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
     ) {
         if (currentPlaylist.isEmpty() || index !in currentPlaylist.indices) {
             NPLogger.w("NERI-Player", "playAtIndex called with invalid index: $index")
@@ -1248,6 +1461,12 @@ object PlayerManager {
         _currentSongFlow.value = song
         _currentMediaUrl.value = null
         currentMediaUrlResolvedAtMs = 0L
+        val shouldAwaitAuthoritativeStream =
+            commandSource == PlaybackCommandSource.REMOTE_SYNC &&
+                shouldWaitForListenTogetherAuthoritativeStream(song)
+        if (shouldAwaitAuthoritativeStream) {
+            stopCurrentPlaybackForListenTogetherAwaitingStream()
+        }
         resumePlaybackRequested = true
         restoredShouldResumePlayback = false
         restoredResumePositionMs = 0L
@@ -1338,6 +1557,19 @@ object PlayerManager {
                     maybeAutoMatchBiliMetadata(song, requestToken)
                     maybeWarmCurrentAndUpcomingYouTubeMusic(index)
                 }
+                SongUrlResult.WaitingForAuthoritativeStream -> {
+                    NPLogger.d(
+                        "NERI-PlayerManager",
+                        "Waiting for authoritative listen-together stream: song=${song.name}, stableKey=${song.listenTogetherStableKeyOrNull()}"
+                    )
+                    resumePlaybackRequested = false
+                    ioScope.launch {
+                        persistState(
+                            positionMs = resumePositionMs.coerceAtLeast(0L),
+                            shouldResumePlayback = false
+                        )
+                    }
+                }
                 is SongUrlResult.RequiresLogin -> {
                     NPLogger.w("NERI-PlayerManager", "Requires login to play: id=${song.id}, source=${song.album}")
                     postPlayerEvent(
@@ -1357,7 +1589,7 @@ object PlayerManager {
     }
 
     private fun maybeAutoMatchBiliMetadata(song: SongItem, requestToken: Long) {
-        if (!song.album.startsWith(BILI_SOURCE_TAG)) return
+        if (!isBiliTrack(song)) return
         if (song.matchedSongId != null || !song.matchedLyric.isNullOrEmpty()) return
         if (song.customName != null || song.customArtist != null || song.customCoverUrl != null) return
 
@@ -1435,6 +1667,12 @@ object PlayerManager {
         song: SongItem,
         forceRefresh: Boolean = false
     ): SongUrlResult {
+        if (shouldWaitForListenTogetherAuthoritativeStream(song)) {
+            return SongUrlResult.WaitingForAuthoritativeStream
+        }
+        if (isDirectStreamUrl(song.streamUrl)) {
+            return SongUrlResult.Success(song.streamUrl.orEmpty())
+        }
         if (isLocalSong(song)) {
             val localMediaUri = localMediaSource(song)
             if (localMediaUri != null && isReadableLocalMediaUri(localMediaUri)) {
@@ -1451,17 +1689,17 @@ object PlayerManager {
         val cacheKey = computeCacheKey(song)
         val hasCachedData = checkExoPlayerCache(cacheKey)
         val result = when {
-            isYouTubeMusicSong(song) -> getYouTubeMusicAudioUrl(
+            isYouTubeMusicTrack(song) -> getYouTubeMusicAudioUrl(
                 song = song,
                 suppressError = hasCachedData,
                 forceRefresh = forceRefresh
             )
-            song.album.startsWith(BILI_SOURCE_TAG) -> getBiliAudioUrl(song, suppressError = hasCachedData)
+            isBiliTrack(song) -> getBiliAudioUrl(song, suppressError = hasCachedData)
             else -> getNeteaseSongUrl(song.id, suppressError = hasCachedData)
         }
 
         // 如果网络失败但有缓存，使用虚拟URL让ExoPlayer使用缓存
-        return if (result is SongUrlResult.Failure && hasCachedData && !isYouTubeMusicSong(song)) {
+        return if (result is SongUrlResult.Failure && hasCachedData && !isYouTubeMusicTrack(song)) {
             NPLogger.d("NERI-PlayerManager", "网络失败但有缓存，尝试离线播放: $cacheKey")
             // 使用虚拟URL，ExoPlayer会因为customCacheKey自动使用缓存
             SongUrlResult.Success("http://offline.cache/$cacheKey")
@@ -1551,7 +1789,7 @@ object PlayerManager {
                 NPLogger.d("NERI-PlayerManager", "Refreshing stream url ($reason): $cacheKey")
                 val result = resolveSongUrl(
                     song = song,
-                    forceRefresh = isYouTubeMusicSong(song)
+                    forceRefresh = isYouTubeMusicTrack(song)
                 )
                 if (result is SongUrlResult.Success &&
                     _currentSongFlow.value?.sameIdentityAs(song) == true
@@ -1848,9 +2086,10 @@ object PlayerManager {
         playPlaylist(songs, startIndex)
     }
 
-    fun play() {
+    fun play(commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL) {
         ensureInitialized()
         if (!initialized) return
+        if (shouldBlockLocalRoomControl(commandSource)) return
         cancelPendingPauseRequest(resetVolumeToFull = true)
         suppressAutoResumeForCurrentSession = false
         resumePlaybackRequested = true
@@ -1892,6 +2131,12 @@ object PlayerManager {
                         shouldResumePlayback = true
                     )
                 }
+                emitPlaybackCommand(
+                    type = "PLAY",
+                    source = commandSource,
+                    positionMs = resumePositionMs,
+                    currentIndex = currentIndex
+                )
             }
             currentPlaylist.isNotEmpty() && currentIndex != -1 -> {
                 val resumePositionMs = if (keepLastPlaybackProgressEnabled) {
@@ -1900,8 +2145,22 @@ object PlayerManager {
                     0L
                 }
                 playAtIndex(currentIndex, resumePositionMs = resumePositionMs)
+                emitPlaybackCommand(
+                    type = "PLAY",
+                    source = commandSource,
+                    positionMs = resumePositionMs,
+                    currentIndex = currentIndex
+                )
             }
-            currentPlaylist.isNotEmpty() -> playAtIndex(0)
+            currentPlaylist.isNotEmpty() -> {
+                playAtIndex(0)
+                emitPlaybackCommand(
+                    type = "PLAY",
+                    source = commandSource,
+                    positionMs = 0L,
+                    currentIndex = 0
+                )
+            }
             else -> {}
         }
     }
@@ -1936,9 +2195,13 @@ object PlayerManager {
         handleTrackEnded()
     }
 
-    fun pause(forcePersist: Boolean = false) {
+    fun pause(
+        forcePersist: Boolean = false,
+        commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
+    ) {
         ensureInitialized()
         if (!initialized) return
+        if (shouldBlockLocalRoomControl(commandSource)) return
         cancelPendingPauseRequest()
         resumePlaybackRequested = false
         playbackRequestToken += 1
@@ -1973,6 +2236,12 @@ object PlayerManager {
         } else {
             pauseInternal(forcePersist, resetVolumeToFull = true)
         }
+        emitPlaybackCommand(
+            type = "PAUSE",
+            source = commandSource,
+            positionMs = _playbackPositionMs.value,
+            currentIndex = currentIndex
+        )
     }
 
     private fun pauseInternal(forcePersist: Boolean, resetVolumeToFull: Boolean) {
@@ -2031,9 +2300,13 @@ object PlayerManager {
         }
     }
 
-    fun seekTo(positionMs: Long) {
+    fun seekTo(
+        positionMs: Long,
+        commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
+    ) {
         ensureInitialized()
         if (!initialized) return
+        if (shouldBlockLocalRoomControl(commandSource)) return
         val resolvedPositionMs = positionMs.coerceAtLeast(0L)
         if (YouTubeSeekRefreshPolicy.shouldRefreshUrlBeforeSeek(_currentSongFlow.value, _currentMediaUrl.value)) {
             rememberPendingSeekPosition(resolvedPositionMs)
@@ -2048,11 +2321,21 @@ object PlayerManager {
                 shouldResumePlayback = shouldResumePlaybackSnapshot()
             )
         }
+        emitPlaybackCommand(
+            type = "SEEK",
+            source = commandSource,
+            positionMs = resolvedPositionMs,
+            currentIndex = currentIndex
+        )
     }
 
-    fun next(force: Boolean = false) {
+    fun next(
+        force: Boolean = false,
+        commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
+    ) {
         ensureInitialized()
         if (!initialized) return
+        if (shouldBlockLocalRoomControl(commandSource)) return
         if (currentPlaylist.isEmpty()) return
         val isShuffle = player.shuffleModeEnabled
         val useTransitionFade =
@@ -2065,6 +2348,12 @@ object PlayerManager {
                 if (currentIndex != -1) shuffleHistory.add(currentIndex)
                 currentIndex = nextIdx
                 playAtIndex(currentIndex, useTrackTransitionFade = useTransitionFade)
+                emitPlaybackCommand(
+                    type = "NEXT",
+                    source = commandSource,
+                    currentIndex = currentIndex,
+                    force = force
+                )
                 return
             }
 
@@ -2092,6 +2381,12 @@ object PlayerManager {
             val pick = if (shuffleBag.size == 1) 0 else Random.nextInt(shuffleBag.size)
             currentIndex = shuffleBag.removeAt(pick)
             playAtIndex(currentIndex, useTrackTransitionFade = useTransitionFade)
+            emitPlaybackCommand(
+                type = "NEXT",
+                source = commandSource,
+                currentIndex = currentIndex,
+                force = force
+            )
         } else {
             // 顺序播放
             if (currentIndex < currentPlaylist.lastIndex) {
@@ -2105,12 +2400,19 @@ object PlayerManager {
                 }
             }
             playAtIndex(currentIndex, useTrackTransitionFade = useTransitionFade)
+            emitPlaybackCommand(
+                type = "NEXT",
+                source = commandSource,
+                currentIndex = currentIndex,
+                force = force
+            )
         }
     }
 
-    fun previous() {
+    fun previous(commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL) {
         ensureInitialized()
         if (!initialized) return
+        if (shouldBlockLocalRoomControl(commandSource)) return
         if (currentPlaylist.isEmpty()) return
         val isShuffle = player.shuffleModeEnabled
         val useTransitionFade =
@@ -2123,6 +2425,11 @@ object PlayerManager {
                 val prev = shuffleHistory.removeAt(shuffleHistory.lastIndex)
                 currentIndex = prev
                 playAtIndex(currentIndex, useTrackTransitionFade = useTransitionFade)
+                emitPlaybackCommand(
+                    type = "PREVIOUS",
+                    source = commandSource,
+                    currentIndex = currentIndex
+                )
             } else {
                 NPLogger.d("NERI-Player", "No previous track in shuffle history.")
             }
@@ -2130,10 +2437,20 @@ object PlayerManager {
             if (currentIndex > 0) {
                 currentIndex--
                 playAtIndex(currentIndex, useTrackTransitionFade = useTransitionFade)
+                emitPlaybackCommand(
+                    type = "PREVIOUS",
+                    source = commandSource,
+                    currentIndex = currentIndex
+                )
             } else {
                 if (repeatModeSetting == Player.REPEAT_MODE_ALL && currentPlaylist.isNotEmpty()) {
                     currentIndex = currentPlaylist.lastIndex
                     playAtIndex(currentIndex, useTrackTransitionFade = useTransitionFade)
+                    emitPlaybackCommand(
+                        type = "PREVIOUS",
+                        source = commandSource,
+                        currentIndex = currentIndex
+                    )
                 } else {
                     NPLogger.d("NERI-Player", "Already at the start of the playlist.")
                 }
@@ -2584,12 +2901,12 @@ object PlayerManager {
 
         // 本地没有，从网络获取
         // B站歌曲在匹配网易云信息后应使用匹配到的歌曲 ID 获取翻译
-        if (isYouTubeMusicSong(song)) {
+        if (isYouTubeMusicTrack(song)) {
             // YouTube Music 歌词暂无翻译来源
             return emptyList()
         }
 
-        if (song.album.startsWith(BILI_SOURCE_TAG)) {
+        if (isBiliTrack(song)) {
             return when (song.matchedLyricSource) {
                 MusicPlatform.CLOUD_MUSIC -> {
                     val matchedId = song.matchedSongId?.toLongOrNull()
@@ -2607,7 +2924,7 @@ object PlayerManager {
 
     /** 获取歌词，优先使用本地缓存 */
     suspend fun getLyrics(song: SongItem): List<LyricEntry> {
-        if (isYouTubeMusicSong(song)) {
+        if (isYouTubeMusicTrack(song)) {
             return getYouTubeMusicLyrics(song)
         }
         // 最优先使用song.matchedLyric中的歌词
@@ -2632,20 +2949,25 @@ object PlayerManager {
         }
 
         // 最后回退到在线获取
-        return if (isYouTubeMusicSong(song)) {
+        return if (isYouTubeMusicTrack(song)) {
             getYouTubeMusicLyrics(song)
-        } else if (song.album.startsWith(BILI_SOURCE_TAG)) {
+        } else if (isBiliTrack(song)) {
             emptyList() // B站暂时没有歌词API
         } else {
             getNeteaseLyrics(song.id)
         }
     }
 
-    fun playFromQueue(index: Int) {
+    fun playFromQueue(
+        index: Int,
+        commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
+    ) {
         ensureInitialized()
         if (!initialized) return
         if (currentPlaylist.isEmpty()) return
         if (index !in currentPlaylist.indices) return
+        val targetSong = currentPlaylist[index]
+        if (shouldBlockLocalRoomControl(commandSource) || shouldBlockLocalSongSwitch(targetSong, commandSource)) return
 
         // 用户点选队列，视作新路径分叉
         if (player.shuffleModeEnabled) {
@@ -2655,7 +2977,12 @@ object PlayerManager {
         }
 
         currentIndex = index
-        playAtIndex(index)
+        playAtIndex(index, commandSource = commandSource)
+        emitPlaybackCommand(
+            type = "PLAY_FROM_QUEUE",
+            source = commandSource,
+            currentIndex = currentIndex
+        )
     }
 
     /**
@@ -3151,6 +3478,8 @@ private fun BiliVideoItem.toSongItem(): SongItem {
         album = PlayerManager.BILI_SOURCE_TAG,
         albumId = 0,
         durationMs = this.durationSec * 1000L,
-        coverUrl = this.coverUrl
+        coverUrl = this.coverUrl,
+        channelId = "bilibili",
+        audioId = this.id.toString()
     )
 }

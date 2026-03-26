@@ -42,6 +42,7 @@ import moe.ouom.neriplayer.core.api.search.QQMusicSearchApi
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicClient
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicPlaybackRepository
 import moe.ouom.neriplayer.data.BiliCookieRepository
+import moe.ouom.neriplayer.data.ListenTogetherPreferences
 import moe.ouom.neriplayer.data.NeteaseCookieRepository
 import moe.ouom.neriplayer.data.PlayHistoryRepository
 import moe.ouom.neriplayer.data.PlaylistUsageRepository
@@ -51,6 +52,9 @@ import moe.ouom.neriplayer.data.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.buildYouTubeInnertubeRequestHeaders
 import moe.ouom.neriplayer.data.buildYouTubePageRequestHeaders
 import moe.ouom.neriplayer.data.buildYouTubeStreamRequestHeaders
+import moe.ouom.neriplayer.listentogether.ListenTogetherApi
+import moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager
+import moe.ouom.neriplayer.listentogether.ListenTogetherWebSocketClient
 import moe.ouom.neriplayer.util.DynamicProxySelector
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -66,6 +70,7 @@ object AppContainer {
 
     // 基础 Repo
     val settingsRepo by lazy { SettingsRepository(application) }
+    val listenTogetherPreferences by lazy { ListenTogetherPreferences(application) }
     val neteaseCookieRepo by lazy { NeteaseCookieRepository(application) }
     val biliCookieRepo by lazy { BiliCookieRepository(application) }
     val youtubeAuthRepo by lazy { YouTubeAuthRepository(application) }
@@ -149,6 +154,14 @@ object AppContainer {
     val cloudMusicSearchApi by lazy { CloudMusicSearchApi(neteaseClient) }
     val qqMusicSearchApi by lazy { QQMusicSearchApi() }
     val lrcLibClient by lazy { moe.ouom.neriplayer.core.api.lyrics.LrcLibClient(sharedOkHttpClient) }
+    val listenTogetherApi by lazy { ListenTogetherApi(sharedOkHttpClient) }
+    val listenTogetherWebSocketClient by lazy { ListenTogetherWebSocketClient(sharedOkHttpClient) }
+    val listenTogetherSessionManager by lazy {
+        ListenTogetherSessionManager(
+            api = listenTogetherApi,
+            webSocketClient = listenTogetherWebSocketClient
+        )
+    }
 
     fun launchBackgroundIo(block: suspend CoroutineScope.() -> Unit) = scope.launch(block = block)
 

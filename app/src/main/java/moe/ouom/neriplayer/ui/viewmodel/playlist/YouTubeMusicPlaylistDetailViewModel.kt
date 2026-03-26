@@ -100,7 +100,10 @@ class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidVie
             ),
             originalName = name,
             originalArtist = artist,
-            originalCoverUrl = coverUrl.ifBlank { playlist.coverUrl }
+            originalCoverUrl = coverUrl.ifBlank { playlist.coverUrl },
+            channelId = "youtubeMusic",
+            audioId = videoId,
+            playlistContextId = playlist.playlistId.ifBlank { null }
         )
     }
 

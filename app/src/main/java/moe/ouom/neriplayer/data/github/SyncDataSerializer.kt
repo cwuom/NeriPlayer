@@ -289,7 +289,11 @@ object SyncDataSerializer {
             originalArtist = originalArtist,
             originalCoverUrl = originalCoverUrl,
             originalLyric = originalLyric,
-            originalTranslatedLyric = originalTranslatedLyric
+            originalTranslatedLyric = originalTranslatedLyric,
+            channelId = null,
+            audioId = null,
+            subAudioId = null,
+            playlistContextId = null
         )
     }
 

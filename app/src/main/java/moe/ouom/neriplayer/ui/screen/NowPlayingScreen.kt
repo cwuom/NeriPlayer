@@ -71,6 +71,7 @@ import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.FormatSize
+import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.LibraryMusic
@@ -180,6 +181,7 @@ import moe.ouom.neriplayer.ui.component.SleepTimerDialog
 import moe.ouom.neriplayer.ui.component.WaveformSlider
 import moe.ouom.neriplayer.ui.component.parseNeteaseLrc
 import moe.ouom.neriplayer.ui.component.parseNeteaseYrc
+import moe.ouom.neriplayer.ui.screen.debug.ListenTogetherRoomPanel
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
@@ -1330,6 +1332,7 @@ fun MoreOptionsSheet(
     var showOffsetSheet by remember { mutableStateOf(false) }
     var showFontSizeSheet by remember { mutableStateOf(false) }
     var showEditInfoSheet by remember { mutableStateOf(false) }
+    var showListenTogetherSheet by remember { mutableStateOf(false) }
 
     val focusManager = LocalFocusManager.current
     val searchFocusRequester = remember { FocusRequester() }
@@ -1362,17 +1365,18 @@ fun MoreOptionsSheet(
         containerColor = MaterialTheme.colorScheme.surface
     ) {
         // 处理子页面的返回键导航
-        BackHandler(enabled = showOffsetSheet || showFontSizeSheet || showSearchView || showEditInfoSheet) {
+        BackHandler(enabled = showOffsetSheet || showFontSizeSheet || showSearchView || showEditInfoSheet || showListenTogetherSheet) {
             when {
                 showOffsetSheet -> showOffsetSheet = false
                 showFontSizeSheet -> showFontSizeSheet = false
                 showSearchView -> showSearchView = false
                 showEditInfoSheet -> showEditInfoSheet = false
+                showListenTogetherSheet -> showListenTogetherSheet = false
             }
         }
 
         // 处理主页面的返回键
-        BackHandler(enabled = !showOffsetSheet && !showFontSizeSheet && !showSearchView && !showEditInfoSheet) {
+        BackHandler(enabled = !showOffsetSheet && !showFontSizeSheet && !showSearchView && !showEditInfoSheet && !showListenTogetherSheet) {
             coroutineScope.launch {
                 sheetState.hide()
                 onDismiss()
@@ -1385,6 +1389,7 @@ fun MoreOptionsSheet(
                 showFontSizeSheet -> "FontSize"
                 showSearchView -> "Search"
                 showEditInfoSheet -> "EditInfo"
+                showListenTogetherSheet -> "ListenTogether"
                 else -> "Main"
             },
             transitionSpec = {
@@ -1552,6 +1557,27 @@ fun MoreOptionsSheet(
                                     onDismiss()
                                 }
                             }
+                        )
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.listen_together_title)) },
+                            leadingContent = { Icon(Icons.Outlined.Headphones, null) },
+                            modifier = Modifier.clickable { showListenTogetherSheet = true }
+                        )
+                    }
+                }
+
+                "ListenTogether" -> {
+                    val listenTogetherScrollState = rememberScrollState()
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(listenTogetherScrollState)
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .windowInsetsPadding(WindowInsets.navigationBars)
+                    ) {
+                        ListenTogetherRoomPanel(
+                            modifier = Modifier.fillMaxWidth(),
+                            showBaseUrlEditor = false
                         )
                     }
                 }
@@ -1872,12 +1898,12 @@ fun EditSongInfoSheet(
     val scrollState = rememberScrollState()
     val nestedScrollConnection = remember {
         object : NestedScrollConnection {
-            override fun onPreScroll(_available: androidx.compose.ui.geometry.Offset, _source: NestedScrollSource): androidx.compose.ui.geometry.Offset {
+            override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: NestedScrollSource): androidx.compose.ui.geometry.Offset {
                 // 在滚动前不消费，让 verticalScroll 正常处理
                 return androidx.compose.ui.geometry.Offset.Zero
             }
 
-            override fun onPostScroll(_consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset, _source: NestedScrollSource): androidx.compose.ui.geometry.Offset {
+            override fun onPostScroll(consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset, source: NestedScrollSource): androidx.compose.ui.geometry.Offset {
                 // 消费所有剩余滚动事件，防止传递给 ModalBottomSheet
                 return available
             }
@@ -1887,7 +1913,7 @@ fun EditSongInfoSheet(
                 return available
             }
 
-            override suspend fun onPostFling(_consumed: androidx.compose.ui.unit.Velocity, available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
+            override suspend fun onPostFling(consumed: androidx.compose.ui.unit.Velocity, available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
                 // 消费所有剩余 fling 速度
                 return available
             }
@@ -2437,12 +2463,12 @@ fun LyricsEditorSheet(
     // 创建嵌套滚动连接来消费滚动事件，防止传递给 ModalBottomSheet
     val nestedScrollConnection = remember {
         object : NestedScrollConnection {
-            override fun onPreScroll(_available: androidx.compose.ui.geometry.Offset, _source: NestedScrollSource): androidx.compose.ui.geometry.Offset {
+            override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: NestedScrollSource): androidx.compose.ui.geometry.Offset {
                 // 在滚动前不消费，让内部滚动正常处理
                 return androidx.compose.ui.geometry.Offset.Zero
             }
 
-            override fun onPostScroll(_consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset, _source: NestedScrollSource): androidx.compose.ui.geometry.Offset {
+            override fun onPostScroll(consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset, source: NestedScrollSource): androidx.compose.ui.geometry.Offset {
                 // 消费所有剩余滚动事件，防止传递给 ModalBottomSheet
                 return available
             }
@@ -2452,7 +2478,7 @@ fun LyricsEditorSheet(
                 return available
             }
 
-            override suspend fun onPostFling(_consumed: androidx.compose.ui.unit.Velocity, available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
+            override suspend fun onPostFling(consumed: androidx.compose.ui.unit.Velocity, available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
                 // 消费所有剩余 fling 速度
                 return available
             }

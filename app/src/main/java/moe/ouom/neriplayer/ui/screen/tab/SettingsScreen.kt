@@ -27,6 +27,7 @@ import android.annotation.SuppressLint
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -106,8 +107,11 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.BluetoothAudio
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.Cloud
+import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -193,6 +197,8 @@ import moe.ouom.neriplayer.data.BackgroundImageStorage
 import moe.ouom.neriplayer.data.YOUTUBE_AUTH_STALE_AFTER_MS
 import moe.ouom.neriplayer.data.YouTubeAuthHealth
 import moe.ouom.neriplayer.data.YouTubeAuthState
+import moe.ouom.neriplayer.listentogether.isDefaultListenTogetherBaseUrl
+import moe.ouom.neriplayer.listentogether.resolveListenTogetherBaseUrl
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.debug.NeteaseAuthEvent
 import moe.ouom.neriplayer.ui.viewmodel.debug.NeteaseAuthViewModel
@@ -510,6 +516,11 @@ fun SettingsScreen(
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val listenTogetherPreferences = remember { AppContainer.listenTogetherPreferences }
+    val listenTogetherApi = remember { AppContainer.listenTogetherApi }
+    val listenTogetherSessionManager = remember { AppContainer.listenTogetherSessionManager }
+    val listenTogetherSessionState by listenTogetherSessionManager.sessionState.collectAsState()
+    val listenTogetherWorkerBaseUrl by listenTogetherPreferences.workerBaseUrlFlow.collectAsState(initial = "")
     val internationalEnabled by AppContainer.settingsRepo.internationalizationEnabledFlow
         .collectAsState(initial = false)
 
@@ -542,6 +553,12 @@ fun SettingsScreen(
     // 网络配置菜单的状态
     var networkExpanded by rememberSaveable { mutableStateOf(false) }
     val networkArrowRotation by animateFloatAsState(targetValue = if (networkExpanded) 180f else 0f, label = "network_arrow")
+
+    var listenTogetherExpanded by rememberSaveable { mutableStateOf(false) }
+    val listenTogetherArrowRotation by animateFloatAsState(
+        targetValue = if (listenTogetherExpanded) 180f else 0f,
+        label = "listen_together_arrow"
+    )
 
     // 音质设置菜单的状态
     var audioQualityExpanded by rememberSaveable { mutableStateOf(false) }
@@ -592,6 +609,11 @@ fun SettingsScreen(
     var showDpiDialog by remember { mutableStateOf(false) }
     var showGitHubConfigDialog by remember { mutableStateOf(false) }
     var showClearGitHubConfigDialog by remember { mutableStateOf(false) }
+    var showListenTogetherResetUuidDialog by remember { mutableStateOf(false) }
+    var showListenTogetherServerDialog by remember { mutableStateOf(false) }
+    var listenTogetherServerInput by rememberSaveable { mutableStateOf("") }
+    var listenTogetherServerTesting by remember { mutableStateOf(false) }
+    var listenTogetherServerTestMessage by remember { mutableStateOf<String?>(null) }
     // ------------------------------------
 
     val neteaseVm: NeteaseAuthViewModel = viewModel()
@@ -635,6 +657,12 @@ fun SettingsScreen(
             }
         }
     )
+
+    LaunchedEffect(listenTogetherWorkerBaseUrl) {
+        if (listenTogetherServerInput != listenTogetherWorkerBaseUrl) {
+            listenTogetherServerInput = listenTogetherWorkerBaseUrl
+        }
+    }
 
     val biliWebLoginLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -1961,6 +1989,47 @@ fun SettingsScreen(
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
                     }
+                }
+            }
+
+            item {
+                ExpandableHeader(
+                    icon = Icons.Outlined.Cloud,
+                    title = stringResource(R.string.listen_together_title),
+                    subtitleCollapsed = stringResource(R.string.settings_listen_together_expand),
+                    subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
+                    expanded = listenTogetherExpanded,
+                    onToggle = { listenTogetherExpanded = !listenTogetherExpanded },
+                    arrowRotation = listenTogetherArrowRotation
+                )
+            }
+
+            item {
+                AnimatedVisibility(
+                    visible = listenTogetherExpanded,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    ListenTogetherSettingsSection(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.Transparent)
+                            .padding(start = 16.dp, end = 8.dp, bottom = 8.dp),
+                        isUsingDefaultServer = listenTogetherServerInput.isBlank() ||
+                            isDefaultListenTogetherBaseUrl(resolveListenTogetherBaseUrl(listenTogetherServerInput)),
+                        isInRoom = !listenTogetherSessionState.roomId.isNullOrBlank(),
+                        testing = listenTogetherServerTesting,
+                        testMessage = listenTogetherServerTestMessage,
+                        onOpenServerDialog = {
+                            listenTogetherServerTestMessage = null
+                            showListenTogetherServerDialog = true
+                        },
+                        onResetIdentity = {
+                            if (listenTogetherSessionState.roomId.isNullOrBlank()) {
+                                showListenTogetherResetUuidDialog = true
+                            }
+                        }
+                    )
                 }
             }
 
@@ -4302,6 +4371,249 @@ fun SettingsScreen(
             dismissButton = {
                 HapticTextButton(onClick = { showClearCacheDialog = false }) { Text(stringResource(R.string.action_cancel)) }
             }
+        )
+    }
+
+    if (showListenTogetherResetUuidDialog) {
+        AlertDialog(
+            onDismissRequest = { showListenTogetherResetUuidDialog = false },
+            title = { Text(stringResource(R.string.listen_together_reset_uuid)) },
+            text = { Text(stringResource(R.string.listen_together_reset_uuid_confirm)) },
+            confirmButton = {
+                HapticTextButton(
+                    onClick = {
+                        scope.launch {
+                            listenTogetherPreferences.resetUserUuid()
+                            showListenTogetherResetUuidDialog = false
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.listen_together_reset_uuid_done),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.action_confirm))
+                }
+            },
+            dismissButton = {
+                HapticTextButton(onClick = { showListenTogetherResetUuidDialog = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
+
+    if (showListenTogetherServerDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!listenTogetherServerTesting) {
+                    showListenTogetherServerDialog = false
+                    listenTogetherServerInput = listenTogetherWorkerBaseUrl
+                    listenTogetherServerTestMessage = null
+                }
+            },
+            title = { Text(stringResource(R.string.settings_listen_together_server_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        if (listenTogetherServerInput.isBlank() ||
+                            isDefaultListenTogetherBaseUrl(resolveListenTogetherBaseUrl(listenTogetherServerInput))
+                        ) {
+                            stringResource(R.string.settings_listen_together_server_default_desc)
+                        } else {
+                            stringResource(R.string.settings_listen_together_server_custom_desc)
+                        }
+                    )
+                    OutlinedTextField(
+                        value = listenTogetherServerInput,
+                        onValueChange = {
+                            listenTogetherServerInput = it
+                            listenTogetherServerTestMessage = null
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text(stringResource(R.string.settings_listen_together_server_input_label)) },
+                        placeholder = { Text(stringResource(R.string.settings_listen_together_server_input_placeholder)) }
+                    )
+                    if (listenTogetherServerTesting) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Text(
+                                text = stringResource(R.string.settings_listen_together_server_testing),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    } else {
+                        listenTogetherServerTestMessage?.let {
+                            Text(
+                                text = it,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = {
+                                scope.launch {
+                                    listenTogetherServerTesting = true
+                                    val usingDefaultServer = listenTogetherServerInput.isBlank() ||
+                                        isDefaultListenTogetherBaseUrl(resolveListenTogetherBaseUrl(listenTogetherServerInput))
+                                    val result = listenTogetherApi.testServerAvailability(
+                                        resolveListenTogetherBaseUrl(listenTogetherServerInput)
+                                    )
+                                    listenTogetherServerTesting = false
+                                    listenTogetherServerTestMessage = when {
+                                        result.ok && usingDefaultServer ->
+                                            context.getString(R.string.settings_listen_together_server_test_success_default)
+                                        result.ok ->
+                                            context.getString(R.string.settings_listen_together_server_test_success_custom)
+                                        result.message == "invalid_response" ->
+                                            context.getString(R.string.settings_listen_together_server_test_invalid)
+                                        else ->
+                                            context.getString(
+                                                R.string.settings_listen_together_server_test_failed,
+                                                result.message
+                                            )
+                                    }
+                                }
+                            },
+                            enabled = !listenTogetherServerTesting
+                        ) {
+                            Text(stringResource(R.string.settings_listen_together_server_test))
+                        }
+                        TextButton(
+                            onClick = {
+                                listenTogetherServerInput = ""
+                                listenTogetherServerTestMessage = context.getString(
+                                    R.string.settings_listen_together_server_reset_done
+                                )
+                            },
+                            enabled = !listenTogetherServerTesting
+                        ) {
+                            Text(stringResource(R.string.action_reset))
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                HapticTextButton(
+                    onClick = {
+                        scope.launch {
+                            val normalizedInput = listenTogetherServerInput.trim()
+                            listenTogetherPreferences.setWorkerBaseUrl(normalizedInput)
+                            listenTogetherServerInput = normalizedInput
+                            showListenTogetherServerDialog = false
+                            listenTogetherServerTestMessage = null
+                            Toast.makeText(
+                                context,
+                                context.getString(R.string.settings_listen_together_server_saved),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    },
+                    enabled = !listenTogetherServerTesting
+                ) {
+                    Text(stringResource(R.string.action_apply))
+                }
+            },
+            dismissButton = {
+                HapticTextButton(
+                    onClick = {
+                        showListenTogetherServerDialog = false
+                        listenTogetherServerInput = listenTogetherWorkerBaseUrl
+                        listenTogetherServerTestMessage = null
+                    },
+                    enabled = !listenTogetherServerTesting
+                ) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun ListenTogetherSettingsSection(
+    modifier: Modifier = Modifier,
+    isUsingDefaultServer: Boolean,
+    isInRoom: Boolean,
+    testing: Boolean,
+    testMessage: String?,
+    onOpenServerDialog: () -> Unit,
+    onResetIdentity: () -> Unit
+) {
+    val identityItemModifier = if (isInRoom) {
+        Modifier.alpha(0.5f)
+    } else {
+        Modifier.settingsItemClickable(onClick = onResetIdentity)
+    }
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        ListItem(
+            modifier = Modifier.settingsItemClickable(onClick = onOpenServerDialog),
+            leadingContent = {
+                Icon(
+                    imageVector = Icons.Outlined.Link,
+                    contentDescription = stringResource(R.string.settings_listen_together_server_title),
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            headlineContent = { Text(stringResource(R.string.settings_listen_together_server_title)) },
+            supportingContent = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        if (isUsingDefaultServer) {
+                            stringResource(R.string.settings_listen_together_server_default_desc)
+                        } else {
+                            stringResource(R.string.settings_listen_together_server_custom_desc)
+                        }
+                    )
+                    testMessage?.let {
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            },
+            trailingContent = {
+                if (testing) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                }
+            },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+        )
+
+        ListItem(
+            modifier = identityItemModifier,
+            leadingContent = {
+                Icon(
+                    imageVector = Icons.Outlined.RestartAlt,
+                    contentDescription = stringResource(R.string.listen_together_reset_uuid),
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            headlineContent = { Text(stringResource(R.string.listen_together_reset_uuid)) },
+            supportingContent = {
+                Text(
+                    if (isInRoom) {
+                        stringResource(R.string.listen_together_reset_uuid_disabled)
+                    } else {
+                        stringResource(R.string.settings_listen_together_reset_identity_desc)
+                    }
+                )
+            },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
         )
     }
 }

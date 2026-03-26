@@ -939,7 +939,11 @@ class GitHubSyncManager private constructor(context: Context) {
             a.originalArtist == b.originalArtist &&
             a.originalCoverUrl == b.originalCoverUrl &&
             a.originalLyric == b.originalLyric &&
-            a.originalTranslatedLyric == b.originalTranslatedLyric
+            a.originalTranslatedLyric == b.originalTranslatedLyric &&
+            a.channelId == b.channelId &&
+            a.audioId == b.audioId &&
+            a.subAudioId == b.subAudioId &&
+            a.playlistContextId == b.playlistContextId
     }
 
     private suspend fun uploadLocalData(

@@ -1,8 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.debug
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -15,11 +13,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Error
+import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SettingsBackupRestore
 import androidx.compose.material.icons.outlined.Warning
@@ -70,9 +71,7 @@ fun DebugHomeScreen(
                 )
             },
             headlineContent = { Text(stringResource(R.string.debug_tools)) },
-            colors = ListItemDefaults.colors(
-                containerColor = Color.Transparent
-            ),
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             supportingContent = { Text(stringResource(R.string.debug_select_platform)) },
         )
 
@@ -85,6 +84,25 @@ fun DebugHomeScreen(
                 ListItem(
                     leadingContent = {
                         Icon(
+                            imageVector = Icons.Outlined.Headphones,
+                            contentDescription = stringResource(R.string.listen_together_title),
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    },
+                    headlineContent = { Text(stringResource(R.string.listen_together_title)) },
+                    colors = ListItemDefaults.colors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                    )
+                )
+
+                ListenTogetherDebugPanel(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+
+                ListItem(
+                    leadingContent = {
+                        Icon(
                             imageVector = Icons.Outlined.Search,
                             contentDescription = stringResource(R.string.debug_youtube_probe_title),
                             tint = MaterialTheme.colorScheme.onSurface,
@@ -94,7 +112,9 @@ fun DebugHomeScreen(
                     headlineContent = { Text(stringResource(R.string.debug_youtube_probe_title)) },
                     supportingContent = { Text(stringResource(R.string.debug_youtube_probe_desc_short)) },
                     modifier = Modifier.clickable(onClick = onOpenYouTubeDebug),
-                    colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                    colors = ListItemDefaults.colors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                    )
                 )
 
                 ListItem(
@@ -109,7 +129,9 @@ fun DebugHomeScreen(
                     headlineContent = { Text(stringResource(R.string.debug_bili_api)) },
                     supportingContent = { Text(stringResource(R.string.debug_bili_api_desc)) },
                     modifier = Modifier.clickable(onClick = onOpenBiliDebug),
-                    colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                    colors = ListItemDefaults.colors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                    )
                 )
 
                 ListItem(
@@ -124,7 +146,9 @@ fun DebugHomeScreen(
                     headlineContent = { Text(stringResource(R.string.debug_netease_api)) },
                     supportingContent = { Text(stringResource(R.string.debug_netease_api_desc)) },
                     modifier = Modifier.clickable(onClick = onOpenNeteaseDebug),
-                    colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                    colors = ListItemDefaults.colors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                    )
                 )
 
                 ListItem(
@@ -139,7 +163,9 @@ fun DebugHomeScreen(
                     headlineContent = { Text(stringResource(R.string.debug_search_api)) },
                     supportingContent = { Text(stringResource(R.string.debug_search_api_desc)) },
                     modifier = Modifier.clickable(onClick = onOpenSearchDebug),
-                    colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                    colors = ListItemDefaults.colors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                    )
                 )
 
                 ListItem(
@@ -154,7 +180,9 @@ fun DebugHomeScreen(
                     headlineContent = { Text(stringResource(R.string.debug_view_logs)) },
                     supportingContent = { Text(stringResource(R.string.debug_view_logs_desc)) },
                     modifier = Modifier.clickable(onClick = onOpenLogs),
-                    colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                    colors = ListItemDefaults.colors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                    )
                 )
 
                 ListItem(
@@ -169,7 +197,9 @@ fun DebugHomeScreen(
                     headlineContent = { Text(stringResource(R.string.crash_log_title)) },
                     supportingContent = { Text(stringResource(R.string.crash_log_desc)) },
                     modifier = Modifier.clickable(onClick = onOpenCrashLogs),
-                    colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                    colors = ListItemDefaults.colors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                    )
                 )
 
                 ListItem(
@@ -184,7 +214,9 @@ fun DebugHomeScreen(
                     headlineContent = { Text(stringResource(R.string.debug_test_exception)) },
                     supportingContent = { Text(stringResource(R.string.debug_test_exception_desc)) },
                     modifier = Modifier.clickable(onClick = onTestExceptionHandler),
-                    colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                    colors = ListItemDefaults.colors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                    )
                 )
             }
         }
@@ -211,9 +243,7 @@ fun DebugHomeScreen(
             supportingContent = {
                 Text(stringResource(R.string.debug_hide_hint))
             },
-            colors = ListItemDefaults.colors(
-                containerColor = Color.Transparent
-            )
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
         )
     }
 }

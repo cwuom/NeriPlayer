@@ -25,6 +25,7 @@ package moe.ouom.neriplayer.activity
 
 
 import android.Manifest
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
@@ -32,6 +33,8 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.view.Gravity
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -99,13 +102,22 @@ import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.AudioPlayerService
 import moe.ouom.neriplayer.core.player.PlayerEvent
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.LocalAudioImportManager
 import moe.ouom.neriplayer.data.SettingsRepository
 import moe.ouom.neriplayer.data.readThemePreferenceSnapshotSync
+import moe.ouom.neriplayer.listentogether.DEFAULT_LISTEN_TOGETHER_BASE_URL
+import moe.ouom.neriplayer.listentogether.ListenTogetherInvite
+import moe.ouom.neriplayer.listentogether.normalizeListenTogetherRoomId
+import moe.ouom.neriplayer.listentogether.parseListenTogetherInvite
+import moe.ouom.neriplayer.listentogether.resolveListenTogetherBaseUrl
 import moe.ouom.neriplayer.ui.NeriApp
 import moe.ouom.neriplayer.util.ExceptionHandler
 import moe.ouom.neriplayer.util.HapticButton
@@ -122,6 +134,13 @@ class MainActivity : ComponentActivity() {
     private val settingsRepository by lazy { SettingsRepository(applicationContext) }
     private var externalAudioImportJob: Job? = null
     private var externalAudioRequestToken = 0L
+    private val pendingListenTogetherInvite = MutableStateFlow<ListenTogetherInvite?>(null)
+    private val listenTogetherInviteFlow = pendingListenTogetherInvite.asStateFlow()
+    private var lastObservedClipboardInviteSignature: String? = null
+    private var clipboardInviteInspectJob: Job? = null
+    private var hasWindowFocusForClipboardInspection = false
+    private val listenTogetherStatusMessage = MutableStateFlow<String?>(null)
+    private val listenTogetherStatusFlow = listenTogetherStatusMessage.asStateFlow()
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LanguageManager.applyLanguage(newBase))
@@ -192,7 +211,8 @@ class MainActivity : ComponentActivity() {
 
             NeriTheme(useDark = useDark, useDynamic = dynamicColor) {
                         LaunchedEffect(Unit) {
-                            handleExternalAudioIntent(intent)
+                            handleIncomingIntent(intent)
+                            inspectClipboardForListenTogetherInvite()
                         }
                         SideEffect {
                             val controller = WindowInsetsControllerCompat(window, window.decorView)
@@ -252,6 +272,29 @@ class MainActivity : ComponentActivity() {
                             var errorTitle by remember { mutableStateOf("") }
                             var errorMessage by remember { mutableStateOf("") }
                             val lifecycleOwner = LocalLifecycleOwner.current
+                            val scope = rememberCoroutineScope()
+                            var joiningInvite by remember { mutableStateOf(false) }
+                            val pendingInvite by listenTogetherInviteFlow.collectAsState()
+                            val listenTogetherStatus by listenTogetherStatusFlow.collectAsState()
+                            val listenTogetherSessionState by AppContainer.listenTogetherSessionManager.sessionState.collectAsState()
+                            val listenTogetherRoomState by AppContainer.listenTogetherSessionManager.roomState.collectAsState()
+                            val isListenTogetherRoomActive = !listenTogetherSessionState.roomId.isNullOrBlank()
+                            var hadActiveListenTogetherRoom by rememberSaveable { mutableStateOf(false) }
+                            var lastShownListenTogetherMemberNotice by rememberSaveable { mutableStateOf<String?>(null) }
+                            val effectiveListenTogetherStatus = when {
+                                joiningInvite -> getString(R.string.listen_together_status_joining)
+                                !listenTogetherStatus.isNullOrBlank() -> listenTogetherStatus
+                                isListenTogetherRoomActive &&
+                                    listenTogetherSessionState.connectionState == moe.ouom.neriplayer.listentogether.ListenTogetherConnectionState.CONNECTING ->
+                                    getString(R.string.listen_together_status_syncing)
+                                isListenTogetherRoomActive -> getString(R.string.listen_together_status_active)
+                                else -> null
+                            }
+                            val showLeaveListenTogetherAction = isListenTogetherRoomActive && (
+                                dialogMessage == getString(R.string.listen_together_error_controller_offline) ||
+                                    dialogMessage.contains("一起听", ignoreCase = false) ||
+                                    dialogMessage.contains("controller offline", ignoreCase = true)
+                                )
 
                             // 初始化异常处理器事件监听
                             LaunchedEffect(Unit) {
@@ -310,6 +353,53 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
 
+                            LaunchedEffect(
+                                listenTogetherSessionState.roomId,
+                                listenTogetherSessionState.connectionState
+                            ) {
+                                updateListenTogetherStatus(
+                                    when {
+                                        listenTogetherSessionState.roomId.isNullOrBlank() -> null
+                                        listenTogetherSessionState.connectionState == moe.ouom.neriplayer.listentogether.ListenTogetherConnectionState.CONNECTING ->
+                                            getString(R.string.listen_together_status_syncing)
+                                        else -> getString(R.string.listen_together_status_active)
+                                    }
+                                )
+                            }
+
+                            LaunchedEffect(isListenTogetherRoomActive) {
+                                when {
+                                    isListenTogetherRoomActive -> hadActiveListenTogetherRoom = true
+                                    hadActiveListenTogetherRoom -> {
+                                        clearListenTogetherInviteCache()
+                                        hadActiveListenTogetherRoom = false
+                                    }
+                                }
+                            }
+
+                            LaunchedEffect(effectiveListenTogetherStatus) {
+                                effectiveListenTogetherStatus?.let(::showListenTogetherStatusToast)
+                            }
+
+                            LaunchedEffect(
+                                listenTogetherSessionState.roomNotice,
+                                listenTogetherRoomState?.version
+                            ) {
+                                val notice = listenTogetherSessionState.roomNotice ?: return@LaunchedEffect
+                                if (!notice.startsWith("member_joined:") && !notice.startsWith("member_left:")) {
+                                    return@LaunchedEffect
+                                }
+                                val noticeKey = "${listenTogetherRoomState?.version ?: -1L}:$notice"
+                                if (lastShownListenTogetherMemberNotice == noticeKey) {
+                                    return@LaunchedEffect
+                                }
+                                lastShownListenTogetherMemberNotice = noticeKey
+                                showListenTogetherStatusToast(
+                                    message = notice.toListenTogetherNoticeDisplay(),
+                                    atBottom = true
+                                )
+                            }
+
                             if (showDialog) {
                                 AlertDialog(
                                     onDismissRequest = { showDialog = false },
@@ -319,11 +409,110 @@ class MainActivity : ComponentActivity() {
                                         HapticTextButton(onClick = { showDialog = false }) {
                                             Text(stringResource(R.string.action_confirm))
                                         }
+                                    },
+                                    dismissButton = if (showLeaveListenTogetherAction) {
+                                        {
+                                            HapticTextButton(
+                                                onClick = {
+                                                    AppContainer.listenTogetherSessionManager.leaveRoom()
+                                                    showDialog = false
+                                                }
+                                            ) {
+                                                Text(stringResource(R.string.listen_together_leave_room))
+                                            }
+                                        }
+                                    } else {
+                                        null
                                     }
                                 )
                             }
 
                             // 异常错误弹窗
+                            pendingInvite?.let { invite ->
+                                val inviterNickname = invite.inviterNickname
+                                AlertDialog(
+                                    onDismissRequest = {
+                                        if (!joiningInvite) {
+                                            clearPendingListenTogetherInvite()
+                                        }
+                                    },
+                                    title = { Text(stringResource(R.string.listen_together_join_invite_title)) },
+                                    text = {
+                                        Text(
+                                            if (!inviterNickname.isNullOrBlank()) {
+                                                stringResource(
+                                                    R.string.listen_together_join_invite_message_with_inviter,
+                                                    inviterNickname,
+                                                    invite.roomId
+                                                )
+                                            } else {
+                                                stringResource(
+                                                    R.string.listen_together_join_invite_message,
+                                                    invite.roomId
+                                                )
+                                            }
+                                        )
+                                    },
+                                    confirmButton = {
+                                        HapticTextButton(
+                                            onClick = {
+                                                scope.launch {
+                                                    joiningInvite = true
+                                                    try {
+                                                        val preferences = AppContainer.listenTogetherPreferences
+                                                        val sessionManager = AppContainer.listenTogetherSessionManager
+                                                        updateListenTogetherStatus(getString(R.string.listen_together_status_joining))
+                                                        val baseUrl = resolveListenTogetherBaseUrl(
+                                                            preferences.workerBaseUrlFlow.first()
+                                                                .ifBlank {
+                                                                    invite.baseUrl ?: DEFAULT_LISTEN_TOGETHER_BASE_URL
+                                                                }
+                                                        )
+                                                        val userUuid = preferences.getOrCreateUserUuid()
+                                                        val nickname = preferences.getOrCreateNickname()
+                                                        preferences.setWorkerBaseUrl(baseUrl)
+                                                        PlayerManager.resetForListenTogetherJoin()
+                                                        sessionManager.leaveRoom()
+                                                        updateListenTogetherStatus(getString(R.string.listen_together_status_syncing))
+                                                        sessionManager.joinRoom(
+                                                            baseUrl = baseUrl,
+                                                            roomId = invite.roomId,
+                                                            userUuid = userUuid,
+                                                            nickname = nickname
+                                                        )
+                                                        sessionManager.connectWebSocket()
+                                                        clearPendingListenTogetherInvite()
+                                                    } catch (error: Throwable) {
+                                                        updateListenTogetherStatus(null)
+                                                        dialogMessage = error.message ?: error.javaClass.simpleName
+                                                        showDialog = true
+                                                    } finally {
+                                                        joiningInvite = false
+                                                    }
+                                                }
+                                            },
+                                            enabled = !joiningInvite
+                                        ) {
+                                            Text(
+                                                if (joiningInvite) {
+                                                    stringResource(R.string.listen_together_joining_room)
+                                                } else {
+                                                    stringResource(R.string.listen_together_join_room)
+                                                }
+                                            )
+                                        }
+                                    },
+                                    dismissButton = {
+                                        HapticTextButton(
+                                            onClick = { clearPendingListenTogetherInvite() },
+                                            enabled = !joiningInvite
+                                        ) {
+                                            Text(stringResource(R.string.action_cancel))
+                                        }
+                                    }
+                                )
+                            }
+
                             if (showErrorDialog) {
                                 AlertDialog(
                                     onDismissRequest = { showErrorDialog = false },
@@ -399,7 +588,120 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        handleIncomingIntent(intent)
+        scheduleClipboardInviteInspection(immediate = true)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (hasWindowFocusForClipboardInspection) {
+            scheduleClipboardInviteInspection()
+        }
+    }
+
+    override fun onPause() {
+        clipboardInviteInspectJob?.cancel()
+        super.onPause()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        hasWindowFocusForClipboardInspection = hasFocus
+        if (hasFocus) {
+            scheduleClipboardInviteInspection()
+        }
+    }
+
+    private fun handleIncomingIntent(intent: Intent?) {
+        if (handleListenTogetherInviteIntent(intent)) return
         handleExternalAudioIntent(intent)
+    }
+
+    private fun handleListenTogetherInviteIntent(intent: Intent?): Boolean {
+        val invite = parseListenTogetherInvite(intent?.data) ?: return false
+        presentListenTogetherInvite(invite)
+        setIntent(Intent(this, MainActivity::class.java))
+        return true
+    }
+
+    private fun inspectClipboardForListenTogetherInvite() {
+        val clipboard = getSystemService(ClipboardManager::class.java) ?: return
+        val clipText = clipboard.primaryClip
+            ?.takeIf { it.itemCount > 0 }
+            ?.getItemAt(0)
+            ?.coerceToText(this)
+            ?.toString()
+        val invite = parseListenTogetherInvite(clipText)
+        if (invite == null) {
+            lastObservedClipboardInviteSignature = null
+            return
+        }
+        if (lastObservedClipboardInviteSignature == invite.signature) return
+        lastObservedClipboardInviteSignature = invite.signature
+        presentListenTogetherInvite(invite)
+    }
+
+    private fun scheduleClipboardInviteInspection(immediate: Boolean = false) {
+        clipboardInviteInspectJob?.cancel()
+        clipboardInviteInspectJob = lifecycleScope.launch {
+            if (!immediate) {
+                delay(180)
+            }
+            inspectClipboardForListenTogetherInvite()
+        }
+    }
+
+    private fun clearPendingListenTogetherInvite() {
+        pendingListenTogetherInvite.value = null
+    }
+
+    private fun clearListenTogetherInviteCache() {
+        lastObservedClipboardInviteSignature = null
+        clearPendingListenTogetherInvite()
+    }
+
+    private fun updateListenTogetherStatus(message: String?) {
+        listenTogetherStatusMessage.value = message
+    }
+
+    private fun showListenTogetherStatusToast(
+        message: String,
+        atBottom: Boolean = false
+    ) {
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).apply {
+            if (atBottom) {
+                setGravity(Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL, 0, 220)
+            } else {
+                setGravity(Gravity.TOP or Gravity.CENTER_HORIZONTAL, 0, 180)
+            }
+        }.show()
+    }
+
+    private fun String.toListenTogetherNoticeDisplay(): String = when {
+        startsWith("controller_offline:") ->
+            getString(
+                R.string.listen_together_notice_controller_offline,
+                substringAfter(':').toLongOrNull() ?: 10L
+            )
+        startsWith("member_joined:") ->
+            getString(R.string.listen_together_notice_member_joined, substringAfter(':'))
+        startsWith("member_left:") ->
+            getString(R.string.listen_together_notice_member_left, substringAfter(':'))
+        this == "controller_reconnected" ->
+            getString(R.string.listen_together_notice_controller_reconnected)
+        this == "controller_timeout" || this == "room_closed" ->
+            getString(R.string.listen_together_notice_room_closed)
+        else -> this
+    }
+
+    private fun presentListenTogetherInvite(invite: ListenTogetherInvite) {
+        val currentRoomId = AppContainer.listenTogetherSessionManager.sessionState.value.roomId
+            ?.let(::normalizeListenTogetherRoomId)
+        if (currentRoomId != null && currentRoomId == invite.roomId) {
+            return
+        }
+        if (pendingListenTogetherInvite.value?.signature == invite.signature) return
+        pendingListenTogetherInvite.value = invite
     }
 
     private fun handleExternalAudioIntent(intent: Intent?) {
@@ -439,6 +741,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        clipboardInviteInspectJob?.cancel()
         externalAudioImportJob?.cancel()
         super.onDestroy()
         ExceptionHandler.cleanup()
