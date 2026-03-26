@@ -568,6 +568,76 @@ class YouTubeMusicParserTest {
     }
 
     @Test
+    fun parseHomeShelfPages_readsDurationForHomeSongItems() {
+        val root = JSONObject(
+            """
+            {
+              "contents": {
+                "singleColumnBrowseResultsRenderer": {
+                  "tabs": [
+                    {
+                      "tabRenderer": {
+                        "content": {
+                          "sectionListRenderer": {
+                            "contents": [
+                              {
+                                "musicCarouselShelfRenderer": {
+                                  "header": {
+                                    "musicCarouselShelfBasicHeaderRenderer": {
+                                      "title": { "simpleText": "猜你喜欢" }
+                                    }
+                                  },
+                                  "contents": [
+                                    {
+                                      "musicTwoRowItemRenderer": {
+                                        "title": { "simpleText": "Song A" },
+                                        "subtitle": { "simpleText": "Artist A • Album A • 3:21" },
+                                        "navigationEndpoint": {
+                                          "watchEndpoint": { "videoId": "video-a" }
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "musicResponsiveListItemRenderer": {
+                                        "playlistItemData": { "videoId": "video-b" },
+                                        "flexColumns": [
+                                          {
+                                            "musicResponsiveListItemFlexColumnRenderer": {
+                                              "text": { "simpleText": "Song B" }
+                                            }
+                                          },
+                                          {
+                                            "musicResponsiveListItemFlexColumnRenderer": {
+                                              "text": { "simpleText": "Artist B • Album B • 4:05" }
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  ]
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+            """.trimIndent()
+        )
+
+        val items = YouTubeMusicParser.parseHomeShelfPages(root).single().items
+
+        assertEquals("3:21", items[0].durationText)
+        assertEquals(201_000L, items[0].durationMs)
+        assertEquals("4:05", items[1].durationText)
+        assertEquals(245_000L, items[1].durationMs)
+    }
+
+    @Test
     fun parseHomeSongMetadata_skipsSongTypeLabelAndDuration() {
         val metadata = YouTubeMusicParser.parseHomeSongMetadata(
             subtitle = "歌曲 • 陈芳语 • 爱你 • 3:27",

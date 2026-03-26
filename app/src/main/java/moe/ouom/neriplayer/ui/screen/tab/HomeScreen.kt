@@ -130,7 +130,6 @@ import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeShelf
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeItem
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicParser
 import moe.ouom.neriplayer.util.HapticIconButton
-import moe.ouom.neriplayer.util.formatDuration
 import moe.ouom.neriplayer.util.formatPlayCount
 import moe.ouom.neriplayer.util.offlineCachedImageRequest
 import kotlin.math.ceil
@@ -656,11 +655,6 @@ private fun SongRowMini(
             )
         }
 
-        Text(
-            text = formatDuration(song.durationMs),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
     }
 }
 
@@ -1067,7 +1061,7 @@ private fun String.matchesYouTubeMusicShelfKeywords(keywords: List<String>): Boo
     }
 }
 
-private fun YouTubeMusicHomeItem.toPlayableSongItem(sectionTitle: String): SongItem? {
+internal fun YouTubeMusicHomeItem.toPlayableSongItem(sectionTitle: String): SongItem? {
     if (videoId.isBlank()) {
         return null
     }
@@ -1082,7 +1076,7 @@ private fun YouTubeMusicHomeItem.toPlayableSongItem(sectionTitle: String): SongI
         artist = metadata.artist,
         album = metadata.album,
         albumId = stableYouTubeMusicId((playlistId ?: sectionTitle).ifBlank { videoId }),
-        durationMs = 0L,
+        durationMs = durationMs,
         coverUrl = coverUrl.ifBlank { null },
         mediaUri = buildYouTubeMusicMediaUri(
             videoId = videoId,

@@ -142,7 +142,9 @@ data class YouTubeMusicHomeItem(
     val coverUrl: String,
     val browseId: String = "",
     val videoId: String = "",
-    val pageType: String = ""
+    val pageType: String = "",
+    val durationText: String = "",
+    val durationMs: Long = 0L
 )
 
 internal data class ParsedYouTubeMusicHomeShelf(
@@ -635,6 +637,8 @@ internal object YouTubeMusicParser {
                 if (twoRow != null) {
                     val title = extractText(twoRow.optJSONObject("title"))
                     if (title.isBlank()) continue
+                    val subtitleNode = twoRow.optJSONObject("subtitle")
+                    val durationText = extractDurationText(subtitleNode)
                     val navigationEndpoint = twoRow.optJSONObject("navigationEndpoint")
                     val browseEndpoint = navigationEndpoint?.optJSONObject("browseEndpoint")
                     val browseId = navigationEndpoint
@@ -648,7 +652,7 @@ internal object YouTubeMusicParser {
                     add(
                         YouTubeMusicHomeItem(
                             title = title,
-                            subtitle = extractText(twoRow.optJSONObject("subtitle")),
+                            subtitle = extractText(subtitleNode),
                             coverUrl = extractMusicThumbnailUrl(twoRow.optJSONObject("thumbnailRenderer")),
                             browseId = browseId,
                             videoId = videoId,
@@ -656,7 +660,9 @@ internal object YouTubeMusicParser {
                                 ?.optJSONObject("browseEndpointContextSupportedConfigs")
                                 ?.optJSONObject("browseEndpointContextMusicConfig")
                                 ?.optString("pageType")
-                                .orEmpty()
+                                .orEmpty(),
+                            durationText = durationText,
+                            durationMs = parseDurationTextToMs(durationText)
                         )
                     )
                     continue
@@ -670,6 +676,15 @@ internal object YouTubeMusicParser {
                         rendererKey = "musicResponsiveListItemFlexColumnRenderer"
                     )
                     if (title.isBlank()) continue
+                    val durationText = findDurationText(
+                        columns = listItem.optJSONArray("fixedColumns"),
+                        rendererKey = "musicResponsiveListItemFixedColumnRenderer"
+                    ).ifBlank {
+                        findDurationText(
+                            columns = listItem.optJSONArray("flexColumns"),
+                            rendererKey = "musicResponsiveListItemFlexColumnRenderer"
+                        )
+                    }
                     add(
                         YouTubeMusicHomeItem(
                             title = title,
@@ -679,7 +694,9 @@ internal object YouTubeMusicParser {
                                 rendererKey = "musicResponsiveListItemFlexColumnRenderer"
                             ),
                             coverUrl = extractMusicThumbnailUrl(listItem.optJSONObject("thumbnail")),
-                            videoId = extractTrackVideoId(listItem)
+                            videoId = extractTrackVideoId(listItem),
+                            durationText = durationText,
+                            durationMs = parseDurationTextToMs(durationText)
                         )
                     )
                 }
@@ -1007,12 +1024,28 @@ internal object YouTubeMusicParser {
             return ""
         }
         for (index in 0 until columns.length()) {
-            val text = extractColumnText(columns, index, rendererKey)
-            if (looksLikeDurationText(text)) {
-                return text
+            val textNode = columns.optJSONObject(index)
+                ?.optJSONObject(rendererKey)
+                ?.optJSONObject("text")
+            val durationText = extractDurationText(textNode)
+            if (durationText.isNotBlank()) {
+                return durationText
             }
         }
         return ""
+    }
+
+    private fun extractDurationText(node: JSONObject?): String {
+        if (node == null) {
+            return ""
+        }
+        val directText = extractText(node)
+        if (looksLikeDurationText(directText)) {
+            return directText
+        }
+        return extractTextParts(node)
+            .firstOrNull(::looksLikeDurationText)
+            .orEmpty()
     }
 
     private fun looksLikeDurationText(text: String): Boolean {
