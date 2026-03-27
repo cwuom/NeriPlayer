@@ -13,8 +13,11 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.model.identity
+import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
+import org.json.JSONObject
 
 internal object ManagedDownloadStorage {
     private const val TAG = "ManagedDownloadStorage"
@@ -29,6 +32,9 @@ internal object ManagedDownloadStorage {
 
     @Volatile
     private var customDirectoryLabel: String? = null
+
+    @Volatile
+    private var downloadFileNameTemplate: String? = null
 
     @Volatile
     private var snapshotCache: SnapshotCache? = null
@@ -78,6 +84,12 @@ internal object ManagedDownloadStorage {
         val audioEntries: List<StoredEntry>,
         val audioEntriesByLookupKey: Map<String, StoredEntry>,
         val metadataEntriesByAudioName: Map<String, StoredEntry>,
+        val metadataByAudioName: Map<String, DownloadedAudioMetadata>,
+        val audioEntriesWithoutMetadata: List<StoredEntry>,
+        val audioEntriesByStableKey: Map<String, List<StoredEntry>>,
+        val audioEntriesBySongId: Map<Long, List<StoredEntry>>,
+        val audioEntriesByMediaUri: Map<String, List<StoredEntry>>,
+        val audioEntriesByRemoteTrackKey: Map<String, List<StoredEntry>>,
         val coverEntriesByName: Map<String, StoredEntry>,
         val lyricEntriesByName: Map<String, StoredEntry>,
         val knownReferences: Set<String>
@@ -88,14 +100,27 @@ internal object ManagedDownloadStorage {
         val snapshot: DownloadLibrarySnapshot
     )
 
+    data class DownloadedAudioMetadata(
+        val stableKey: String? = null,
+        val songId: Long? = null,
+        val mediaUri: String? = null,
+        val channelId: String? = null,
+        val audioId: String? = null,
+        val subAudioId: String? = null,
+        val coverPath: String? = null,
+        val lyricPath: String? = null,
+        val translatedLyricPath: String? = null
+    )
+
     private sealed interface RootHandle {
         data class FileRoot(val dir: File) : RootHandle
         data class TreeRoot(val tree: DocumentFile) : RootHandle
     }
 
-    fun primeSettings(directoryUri: String?, directoryLabel: String?) {
+    fun primeSettings(directoryUri: String?, directoryLabel: String?, fileNameTemplate: String? = null) {
         customDirectoryUri = directoryUri?.takeIf { it.isNotBlank() }
         customDirectoryLabel = directoryLabel?.takeIf { it.isNotBlank() }
+        downloadFileNameTemplate = normalizeDownloadFileNameTemplate(fileNameTemplate)
         invalidateSnapshotCache()
     }
 
@@ -110,6 +135,10 @@ internal object ManagedDownloadStorage {
 
     fun updateCustomDirectoryLabel(label: String?) {
         customDirectoryLabel = label?.takeIf { it.isNotBlank() }
+    }
+
+    fun updateDownloadFileNameTemplate(template: String?) {
+        downloadFileNameTemplate = normalizeDownloadFileNameTemplate(template)
     }
 
     fun describeConfiguredDirectory(context: Context, uriString: String? = customDirectoryUri): String {
@@ -233,7 +262,7 @@ internal object ManagedDownloadStorage {
     }
 
     fun buildDisplayBaseName(song: SongItem): String {
-        return sanitizeManagedDownloadFileName("${song.displayArtist()} - ${song.displayName()}")
+        return renderManagedDownloadBaseName(song, downloadFileNameTemplate)
     }
 
     fun createWorkingFile(context: Context, fileName: String): File {
@@ -247,7 +276,7 @@ internal object ManagedDownloadStorage {
 
     fun peekDownloadedAudio(song: SongItem): StoredEntry? {
         return snapshotCache?.snapshot?.let { snapshot ->
-            findAudioEntry(snapshot.audioEntries, song)
+            findAudioEntry(snapshot, song)
         }
     }
 
@@ -260,7 +289,7 @@ internal object ManagedDownloadStorage {
     }
 
     fun buildCandidateBaseNames(song: SongItem): List<String> {
-        return candidateManagedDownloadBaseNames(song)
+        return candidateManagedDownloadBaseNames(song, downloadFileNameTemplate)
     }
 
     suspend fun findDownloadedAudio(context: Context, song: SongItem): StoredEntry? = withContext(Dispatchers.IO) {
@@ -285,7 +314,7 @@ internal object ManagedDownloadStorage {
 
     private fun findDownloadedAudioBlocking(context: Context, song: SongItem): StoredEntry? {
         val snapshot = buildDownloadLibrarySnapshotBlocking(context)
-        return findAudioEntry(snapshot.audioEntries, song)
+        return findAudioEntry(snapshot, song)
     }
 
     private fun buildDownloadLibrarySnapshotBlocking(
@@ -303,8 +332,43 @@ internal object ManagedDownloadStorage {
         val rootEntries = listChildren(root).filterNot(StoredEntry::isDirectory)
         val audioEntries = rootEntries.filter { it.extension in audioExtensions }
         val metadataEntries = rootEntries.filter { it.name.endsWith(METADATA_SUFFIX) }
+        val metadataByAudioName = metadataEntries.mapNotNull { entry ->
+            parseDownloadedAudioMetadata(context, entry)?.let { metadata ->
+                entry.name.removeSuffix(METADATA_SUFFIX) to metadata
+            }
+        }.toMap()
         val coverEntries = listSubdirectoryEntries(root, "Covers")
         val lyricEntries = listSubdirectoryEntries(root, "Lyrics")
+        val audioEntriesByStableKey = mutableMapOf<String, MutableList<StoredEntry>>()
+        val audioEntriesBySongId = mutableMapOf<Long, MutableList<StoredEntry>>()
+        val audioEntriesByMediaUri = mutableMapOf<String, MutableList<StoredEntry>>()
+        val audioEntriesByRemoteTrackKey = mutableMapOf<String, MutableList<StoredEntry>>()
+        val audioEntriesWithoutMetadata = mutableListOf<StoredEntry>()
+
+        audioEntries.forEach { entry ->
+            val metadata = metadataByAudioName[entry.name]
+            if (metadata == null) {
+                audioEntriesWithoutMetadata += entry
+                return@forEach
+            }
+
+            metadata.stableKey?.let { key ->
+                audioEntriesByStableKey.getOrPut(key) { mutableListOf() } += entry
+            }
+            metadata.songId?.takeIf { it > 0L }?.let { songId ->
+                audioEntriesBySongId.getOrPut(songId) { mutableListOf() } += entry
+            }
+            metadata.mediaUri?.let { mediaUri ->
+                audioEntriesByMediaUri.getOrPut(mediaUri) { mutableListOf() } += entry
+            }
+            buildRemoteTrackKey(
+                channelId = metadata.channelId,
+                audioId = metadata.audioId,
+                subAudioId = metadata.subAudioId
+            )?.let { remoteTrackKey ->
+                audioEntriesByRemoteTrackKey.getOrPut(remoteTrackKey) { mutableListOf() } += entry
+            }
+        }
 
         return DownloadLibrarySnapshot(
             audioEntries = audioEntries,
@@ -318,6 +382,12 @@ internal object ManagedDownloadStorage {
             metadataEntriesByAudioName = metadataEntries.associateBy { entry ->
                 entry.name.removeSuffix(METADATA_SUFFIX)
             },
+            metadataByAudioName = metadataByAudioName,
+            audioEntriesWithoutMetadata = audioEntriesWithoutMetadata,
+            audioEntriesByStableKey = audioEntriesByStableKey,
+            audioEntriesBySongId = audioEntriesBySongId,
+            audioEntriesByMediaUri = audioEntriesByMediaUri,
+            audioEntriesByRemoteTrackKey = audioEntriesByRemoteTrackKey,
             coverEntriesByName = coverEntries.associateBy(StoredEntry::name),
             lyricEntriesByName = lyricEntries.associateBy(StoredEntry::name),
             knownReferences = buildSet {
@@ -460,13 +530,8 @@ internal object ManagedDownloadStorage {
         content: String,
         translated: Boolean
     ) {
-        val fileNameById = if (songId > 0L) {
-            if (translated) "${songId}_trans.lrc" else "${songId}.lrc"
-        } else {
-            null
-        }
         val fileNameByName = if (translated) "${baseName}_trans.lrc" else "$baseName.lrc"
-        fileNameById?.let { overwriteLyric(context, it, content) }
+        NPLogger.d(TAG, "写入歌词文件: fileName=$fileNameByName, translated=$translated, songId=$songId")
         overwriteLyric(context, fileNameByName, content)
     }
 
@@ -474,7 +539,7 @@ internal object ManagedDownloadStorage {
         val reference = findLyricLocation(
             context = context,
             songId = song.id,
-            candidateBaseNames = candidateManagedDownloadBaseNames(song),
+            candidateBaseNames = candidateManagedDownloadBaseNames(song, downloadFileNameTemplate),
             translated = translated
         ) ?: return null
         return readTextInternal(context, reference)
@@ -519,8 +584,54 @@ internal object ManagedDownloadStorage {
         }
     }
 
-    private fun findAudioEntry(audioEntries: List<StoredEntry>, song: SongItem): StoredEntry? {
-        return findAudioEntry(audioEntries, candidateManagedDownloadBaseNames(song))
+    private fun findAudioEntry(
+        snapshot: DownloadLibrarySnapshot,
+        song: SongItem
+    ): StoredEntry? {
+        val identity = song.identity()
+        val stableKey = identity.stableKey()
+        val remoteTrackKey = buildRemoteTrackKey(song.channelId, song.audioId, song.subAudioId)
+
+        snapshot.audioEntriesByStableKey[stableKey]
+            ?.let { matches ->
+                return pickBestAudioEntry(matches, song)?.also { entry ->
+                    NPLogger.d(TAG, "命中已下载音频(stableKey): song=${song.displayName()}, file=${entry.name}")
+                }
+            }
+
+        remoteTrackKey?.let { key ->
+            snapshot.audioEntriesByRemoteTrackKey[key]
+                ?.let { matches ->
+                    return pickBestAudioEntry(matches, song)?.also { entry ->
+                        NPLogger.d(TAG, "命中已下载音频(remoteTrackKey): song=${song.displayName()}, file=${entry.name}")
+                    }
+                }
+        }
+
+        identity.mediaUri?.let { mediaUri ->
+            snapshot.audioEntriesByMediaUri[mediaUri]
+                ?.let { matches ->
+                    return pickBestAudioEntry(matches, song)?.also { entry ->
+                        NPLogger.d(TAG, "命中已下载音频(mediaUri): song=${song.displayName()}, file=${entry.name}")
+                    }
+                }
+        }
+
+        identity.id.takeIf { it > 0L }?.let { songId ->
+            snapshot.audioEntriesBySongId[songId]
+                ?.let { matches ->
+                    return pickBestAudioEntry(matches, song)?.also { entry ->
+                        NPLogger.d(TAG, "命中已下载音频(songId): song=${song.displayName()}, file=${entry.name}")
+                    }
+                }
+        }
+
+        return findAudioEntry(
+            audioEntries = snapshot.audioEntriesWithoutMetadata,
+            baseNames = candidateManagedDownloadBaseNames(song, downloadFileNameTemplate)
+        )?.also { entry ->
+            NPLogger.d(TAG, "命中已下载音频(legacyNameFallback): song=${song.displayName()}, file=${entry.name}")
+        }
     }
 
     private fun findAudioEntry(audioEntries: List<StoredEntry>, baseNames: List<String>): StoredEntry? {
@@ -541,6 +652,16 @@ internal object ManagedDownloadStorage {
                         patternCandidates.any { it.matches(entry.name) }
                     )
             }
+    }
+
+    private fun pickBestAudioEntry(
+        audioEntries: List<StoredEntry>,
+        song: SongItem
+    ): StoredEntry? {
+        if (audioEntries.isEmpty()) return null
+        val baseNames = candidateManagedDownloadBaseNames(song, downloadFileNameTemplate)
+        return findAudioEntry(audioEntries, baseNames)
+            ?: audioEntries.maxByOrNull(StoredEntry::lastModifiedMs)
     }
 
     private fun listChildren(root: RootHandle): List<StoredEntry> {
@@ -617,6 +738,43 @@ internal object ManagedDownloadStorage {
                 add(if (translated) "${baseName}_trans.lrc" else "$baseName.lrc")
             }
         }
+    }
+
+    private fun parseDownloadedAudioMetadata(
+        context: Context,
+        entry: StoredEntry
+    ): DownloadedAudioMetadata? {
+        val raw = readTextInternal(context, entry.reference) ?: return null
+        return runCatching {
+            val root = JSONObject(raw)
+            DownloadedAudioMetadata(
+                stableKey = root.optString("stableKey").takeIf(String::isNotBlank),
+                songId = root.optLong("songId").takeIf { it > 0L },
+                mediaUri = root.optString("mediaUri").takeIf(String::isNotBlank),
+                channelId = root.optString("channelId").takeIf(String::isNotBlank),
+                audioId = root.optString("audioId").takeIf(String::isNotBlank),
+                subAudioId = root.optString("subAudioId").takeIf(String::isNotBlank),
+                coverPath = root.optString("coverPath").takeIf(String::isNotBlank),
+                lyricPath = root.optString("lyricPath").takeIf(String::isNotBlank),
+                translatedLyricPath = root.optString("translatedLyricPath").takeIf(String::isNotBlank)
+            )
+        }.onFailure { error ->
+            NPLogger.w(TAG, "解析下载 metadata 失败: ${entry.name} - ${error.message}")
+        }.getOrNull()
+    }
+
+    private fun buildRemoteTrackKey(
+        channelId: String?,
+        audioId: String?,
+        subAudioId: String?
+    ): String? {
+        val resolvedChannelId = channelId?.takeIf { it.isNotBlank() } ?: return null
+        val resolvedAudioId = audioId?.takeIf { it.isNotBlank() }.orEmpty()
+        val resolvedSubAudioId = subAudioId?.takeIf { it.isNotBlank() }.orEmpty()
+        if (resolvedAudioId.isBlank() && resolvedSubAudioId.isBlank()) {
+            return null
+        }
+        return "$resolvedChannelId|$resolvedAudioId|$resolvedSubAudioId"
     }
 
     private fun buildSnapshotCacheKey(context: Context): String {

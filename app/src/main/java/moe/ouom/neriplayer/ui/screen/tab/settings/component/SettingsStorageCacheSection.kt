@@ -52,6 +52,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
@@ -61,6 +62,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -75,7 +77,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.download.DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.normalizeDownloadFileNameTemplate
+import moe.ouom.neriplayer.core.download.renderManagedDownloadBaseName
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.formatFileSize
 
@@ -88,6 +93,8 @@ internal fun SettingsStorageCacheSection(
     isCustomDownloadDirectory: Boolean,
     onPickDownloadDirectory: () -> Unit,
     onResetDownloadDirectory: () -> Unit,
+    downloadFileNameTemplate: String?,
+    onDownloadFileNameTemplateChange: (String?) -> Unit,
     maxCacheSizeBytes: Long,
     onMaxCacheSizeBytesChange: (Long) -> Unit,
     showStorageDetails: Boolean,
@@ -105,6 +112,29 @@ internal fun SettingsStorageCacheSection(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var isStorageDetailsLoading by remember { mutableStateOf(false) }
+    var showDownloadFileNameDialog by remember { mutableStateOf(false) }
+    var pendingDownloadFileNameTemplate by rememberSaveable {
+        mutableStateOf(downloadFileNameTemplate ?: DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE)
+    }
+
+    androidx.compose.runtime.LaunchedEffect(downloadFileNameTemplate) {
+        val savedValue = downloadFileNameTemplate ?: DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
+        if (pendingDownloadFileNameTemplate != savedValue) {
+            pendingDownloadFileNameTemplate = savedValue
+        }
+    }
+
+    val effectiveTemplate = normalizeDownloadFileNameTemplate(
+        pendingDownloadFileNameTemplate
+    ) ?: DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
+    val currentSavedTemplate = downloadFileNameTemplate ?: DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
+    val samplePreview = renderManagedDownloadBaseName(
+        title = "晴天",
+        artist = "周杰伦",
+        album = "叶惠美",
+        template = effectiveTemplate
+    )
+    val canApplyDownloadFileNameTemplate = effectiveTemplate != currentSavedTemplate
 
     ExpandableHeader(
         icon = Icons.Outlined.SdStorage,
@@ -179,6 +209,55 @@ internal fun SettingsStorageCacheSection(
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
             }
+
+            val effectiveTemplate = normalizeDownloadFileNameTemplate(
+                pendingDownloadFileNameTemplate
+            ) ?: DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
+            val currentSavedTemplate = downloadFileNameTemplate ?: DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
+            val samplePreview = renderManagedDownloadBaseName(
+                title = "晴天",
+                artist = "周杰伦",
+                album = "叶惠美",
+                template = effectiveTemplate
+            )
+
+            ListItem(
+                leadingContent = {
+                    Icon(
+                        Icons.Outlined.Download,
+                        contentDescription = stringResource(R.string.settings_download_file_name_format),
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                },
+                headlineContent = { Text(stringResource(R.string.settings_download_file_name_format)) },
+                supportingContent = {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(stringResource(R.string.settings_download_file_name_format_desc))
+                        Text(
+                            text = effectiveTemplate,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = stringResource(
+                                R.string.settings_download_file_name_format_preview,
+                                samplePreview
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                    }
+                },
+                trailingContent = {
+                    Text(
+                        text = stringResource(R.string.action_details),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                },
+                modifier = Modifier.settingsItemClickable { showDownloadFileNameDialog = true },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+            )
 
             ListItem(
                 headlineContent = { Text(stringResource(R.string.settings_cache_limit)) },
@@ -392,6 +471,84 @@ internal fun SettingsStorageCacheSection(
             dismissButton = {
                 HapticTextButton(onClick = { onShowClearCacheDialogChange(false) }) {
                     Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
+
+    if (showDownloadFileNameDialog) {
+        AlertDialog(
+            onDismissRequest = { showDownloadFileNameDialog = false },
+            title = { Text(stringResource(R.string.settings_download_file_name_format)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(stringResource(R.string.settings_download_file_name_format_desc))
+                    OutlinedTextField(
+                        value = pendingDownloadFileNameTemplate,
+                        onValueChange = { pendingDownloadFileNameTemplate = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        placeholder = {
+                            Text(DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE)
+                        }
+                    )
+                    Text(
+                        text = stringResource(R.string.settings_download_file_name_format_supported),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                    Text(
+                        text = stringResource(
+                            R.string.settings_download_file_name_format_preview,
+                            normalizeDownloadFileNameTemplate(pendingDownloadFileNameTemplate)?.let { template ->
+                                renderManagedDownloadBaseName(
+                                    title = "晴天",
+                                    artist = "周杰伦",
+                                    album = "叶惠美",
+                                    template = template
+                                )
+                            } ?: DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE.let { template ->
+                                renderManagedDownloadBaseName(
+                                    title = "晴天",
+                                    artist = "周杰伦",
+                                    album = "叶惠美",
+                                    template = template
+                                )
+                            }
+                        ),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                HapticTextButton(
+                    onClick = {
+                        onDownloadFileNameTemplateChange(
+                            normalizeDownloadFileNameTemplate(pendingDownloadFileNameTemplate)
+                        )
+                        showDownloadFileNameDialog = false
+                    },
+                    enabled = canApplyDownloadFileNameTemplate
+                ) {
+                    Text(stringResource(R.string.action_apply))
+                }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    HapticTextButton(
+                        onClick = {
+                            pendingDownloadFileNameTemplate = DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
+                            onDownloadFileNameTemplateChange(null)
+                            showDownloadFileNameDialog = false
+                        },
+                        enabled = currentSavedTemplate != DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
+                    ) {
+                        Text(stringResource(R.string.action_reset))
+                    }
+                    HapticTextButton(onClick = { showDownloadFileNameDialog = false }) {
+                        Text(stringResource(R.string.action_cancel))
+                    }
                 }
             }
         )

@@ -72,22 +72,27 @@ internal fun resolveInitialBypassProxy(
 
 internal data class InitialManagedDownloadSettings(
     val directoryUri: String? = null,
-    val directoryLabel: String? = null
+    val directoryLabel: String? = null,
+    val fileNameTemplate: String? = null
 )
 
 internal fun resolveInitialManagedDownloadSettings(
     currentDirectoryUri: String? = null,
     currentDirectoryLabel: String? = null,
+    currentFileNameTemplate: String? = null,
     loadDirectoryUri: () -> String?,
-    loadDirectoryLabel: () -> String?
+    loadDirectoryLabel: () -> String?,
+    loadFileNameTemplate: () -> String?
 ): InitialManagedDownloadSettings {
     return InitialManagedDownloadSettings(
         directoryUri = runCatching(loadDirectoryUri).getOrDefault(currentDirectoryUri),
-        directoryLabel = runCatching(loadDirectoryLabel).getOrDefault(currentDirectoryLabel)
+        directoryLabel = runCatching(loadDirectoryLabel).getOrDefault(currentDirectoryLabel),
+        fileNameTemplate = runCatching(loadFileNameTemplate).getOrDefault(currentFileNameTemplate)
     ).let { resolved ->
         InitialManagedDownloadSettings(
             directoryUri = resolved.directoryUri?.takeIf(String::isNotBlank),
-            directoryLabel = resolved.directoryLabel?.takeIf(String::isNotBlank)
+            directoryLabel = resolved.directoryLabel?.takeIf(String::isNotBlank),
+            fileNameTemplate = resolved.fileNameTemplate?.takeIf(String::isNotBlank)
         )
     }
 }
@@ -273,11 +278,17 @@ object AppContainer {
                 runBlocking {
                     settingsRepo.downloadDirectoryLabelFlow.first()
                 }
+            },
+            loadFileNameTemplate = {
+                runBlocking {
+                    settingsRepo.downloadFileNameTemplateFlow.first()
+                }
             }
         )
         ManagedDownloadStorage.primeSettings(
             directoryUri = initialManagedDownloadSettings.directoryUri,
-            directoryLabel = initialManagedDownloadSettings.directoryLabel
+            directoryLabel = initialManagedDownloadSettings.directoryLabel,
+            fileNameTemplate = initialManagedDownloadSettings.fileNameTemplate
         )
     }
 
@@ -325,6 +336,12 @@ object AppContainer {
         settingsRepo.downloadDirectoryLabelFlow
             .onEach { label ->
                 ManagedDownloadStorage.updateCustomDirectoryLabel(label)
+            }
+            .launchIn(scope)
+
+        settingsRepo.downloadFileNameTemplateFlow
+            .onEach { template ->
+                ManagedDownloadStorage.updateDownloadFileNameTemplate(template)
             }
             .launchIn(scope)
     }

@@ -34,7 +34,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -136,7 +135,6 @@ object AudioDownloadManager {
     suspend fun downloadSong(context: Context, song: SongItem) {
         withContext(Dispatchers.IO) {
             val songKey = song.stableKey()
-            var sidecarJob: Job? = null
             try {
                 // 检查文件是否已存在
                 if (LocalSongSupport.isLocalSong(song, context)) {
@@ -188,8 +186,6 @@ object AudioDownloadManager {
 
                 val tempFile = ManagedDownloadStorage.createWorkingFile(context, fileName)
                 if (tempFile.exists()) tempFile.delete()
-
-                sidecarJob = launchSidecarDownload(context, song, baseName)
 
                 val reqBuilder = Request.Builder().url(url)
                 if (isBili) {
@@ -245,6 +241,16 @@ object AudioDownloadManager {
                     tempFile = tempFile,
                     mimeType = mime
                 )
+                NPLogger.d(
+                    TAG,
+                    "音频落盘完成，开始写入 sidecar: song=${song.name}, audioFile=${storedAudio.name}, baseName=${storedAudio.nameWithoutExtension}"
+                )
+                downloadSidecars(
+                    context = context,
+                    song = song,
+                    baseName = storedAudio.nameWithoutExtension,
+                    storedAudio = storedAudio
+                )
 
                 _progressFlow.value = null
                 try {
@@ -252,7 +258,6 @@ object AudioDownloadManager {
                 } catch (_: Exception) { }
 
             } catch (e: Exception) {
-                sidecarJob?.cancel()
                 if (
                     e is java.util.concurrent.CancellationException ||
                         _isCancelled.value ||
@@ -266,44 +271,41 @@ object AudioDownloadManager {
                 NPLogger.e(TAG, "下载失败: ${song.name}, 错误: ${e.javaClass.simpleName} - ${e.message}", e)
                 _progressFlow.value = null
                 throw e  // 重新抛出异常，让调用方知道下载失败
-            }
+        }
         }
     }
 
-    private fun launchSidecarDownload(
+    private fun downloadSidecars(
         context: Context,
         song: SongItem,
-        baseName: String
-    ): Job {
-        return AppContainer.launchBackgroundIo {
-            runCatching {
-                downloadLyrics(context, song)
-            }.onFailure { error ->
+        baseName: String,
+        storedAudio: ManagedDownloadStorage.StoredEntry
+    ) {
+        runCatching {
+            downloadLyrics(context, song, baseName)
+        }.onFailure { error ->
                 NPLogger.w(TAG, "歌词后台下载失败: ${song.name} - ${error.message}")
-            }
-            runCatching {
-                cacheCover(context, song, baseName)
-            }.onFailure { error ->
+        }
+        runCatching {
+                cacheCover(context, song, baseName, storedAudio)
+        }.onFailure { error ->
                 NPLogger.w(TAG, "封面后台下载失败: ${song.name} - ${error.message}")
             }
-        }
     }
 
     private fun cacheCover(
         context: Context,
         song: SongItem,
-        baseName: String
+        baseName: String,
+        storedAudio: ManagedDownloadStorage.StoredEntry
     ) {
         val coverUrl = song.displayCoverUrl()
         if (coverUrl.isNullOrBlank()) {
             return
         }
 
-        val existingAudio = ManagedDownloadStorage.findAudio(context, song)
-        val existingCover = existingAudio?.let {
-            runBlocking(Dispatchers.IO) {
-                ManagedDownloadStorage.findCoverReference(context, it)
-            }
+        val existingCover = runBlocking(Dispatchers.IO) {
+            ManagedDownloadStorage.findCoverReference(context, storedAudio)
         }
         if (!existingCover.isNullOrBlank()) {
             return
@@ -476,7 +478,7 @@ object AudioDownloadManager {
     }
 
     /** 下载歌词文件 */
-    private fun downloadLyrics(context: Context, song: SongItem) {
+    private fun downloadLyrics(context: Context, song: SongItem, baseName: String) {
         try {
             var lyricText = song.matchedLyric?.takeIf { it.isNotBlank() }
             var translatedText: String? = null
@@ -503,10 +505,10 @@ object AudioDownloadManager {
             }
 
             lyricText?.takeIf { it.isNotBlank() }?.let { lyric ->
-                writeManagedLyrics(context, song, lyric, translated = false)
+                writeManagedLyrics(context, song, baseName, lyric, translated = false)
             }
             translatedText?.takeIf { it.isNotBlank() }?.let { lyric ->
-                writeManagedLyrics(context, song, lyric, translated = true)
+                writeManagedLyrics(context, song, baseName, lyric, translated = true)
             }
         } catch (e: Exception) {
             NPLogger.w(TAG, "歌词下载失败: ${song.name} - ${e.message}")
@@ -605,13 +607,14 @@ object AudioDownloadManager {
     private fun writeManagedLyrics(
         context: Context,
         song: SongItem,
+        baseName: String,
         content: String,
         translated: Boolean
     ) {
         ManagedDownloadStorage.writeLyrics(
             context = context,
             songId = song.id,
-            baseName = ManagedDownloadStorage.buildDisplayBaseName(song),
+            baseName = baseName,
             content = content,
             translated = translated
         )

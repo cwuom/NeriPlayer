@@ -447,6 +447,7 @@ fun NeriApp(
     val bypassProxy by repo.bypassProxyFlow.collectAsState(initial = true)
     val backgroundImageUri by repo.backgroundImageUriFlow.collectAsState(initial = null)
     val downloadDirectoryUri by repo.downloadDirectoryUriFlow.collectAsState(initial = null)
+    val downloadFileNameTemplate by repo.downloadFileNameTemplateFlow.collectAsState(initial = null)
     val backgroundImageBlur by repo.backgroundImageBlurFlow.collectAsState(initial = 0f)
     val backgroundImageAlpha by repo.backgroundImageAlphaFlow.collectAsState(initial = 0.3f)
     val hapticFeedbackEnabled by repo.hapticFeedbackEnabledFlow.collectAsState(initial = true)
@@ -1292,6 +1293,7 @@ fun NeriApp(
                                             scope.launch { repo.setBackgroundImageUri(uri?.toString()) }
                                         },
                                         downloadDirectoryUri = downloadDirectoryUri,
+                                        downloadFileNameTemplate = downloadFileNameTemplate,
                                         onDownloadDirectoryUriChange = { uri ->
                                             val label = ManagedDownloadStorage.describeConfiguredDirectory(
                                                 context,
@@ -1302,6 +1304,9 @@ fun NeriApp(
                                                 ManagedDownloadStorage.updateConfiguredTreeUri(uri)
                                                 ManagedDownloadStorage.updateCustomDirectoryLabel(label)
                                             }
+                                        },
+                                        onDownloadFileNameTemplateChange = { template ->
+                                            scope.launch { repo.setDownloadFileNameTemplate(template) }
                                         },
                                         backgroundImageBlur = backgroundImageBlur,
                                         onBackgroundImageBlurChange = {},

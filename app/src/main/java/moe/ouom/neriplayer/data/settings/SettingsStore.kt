@@ -70,6 +70,7 @@ object SettingsKeys {
     val BACKGROUND_IMAGE_URI = stringPreferencesKey("background_image_uri")
     val DOWNLOAD_DIRECTORY_URI = stringPreferencesKey("download_directory_uri")
     val DOWNLOAD_DIRECTORY_LABEL = stringPreferencesKey("download_directory_label")
+    val DOWNLOAD_FILE_NAME_TEMPLATE = stringPreferencesKey("download_file_name_template")
     val BACKGROUND_IMAGE_BLUR = floatPreferencesKey("background_image_blur")
     val BACKGROUND_IMAGE_ALPHA = floatPreferencesKey("background_image_alpha")
     val HAPTIC_FEEDBACK_ENABLED = booleanPreferencesKey("haptic_feedback_enabled")
