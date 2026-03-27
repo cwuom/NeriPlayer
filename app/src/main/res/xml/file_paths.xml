@@ -1,22 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
-    <external-path
-        name="shared_external"
-        path="." />
-
+    <files-path
+        name="managed_local_media_internal"
+        path="NeriPlayer/" />
     <external-files-path
-        name="external_files"
-        path="." />
-
-    <external-files-path
-        name="music_files"
+        name="managed_local_media_external"
         path="Music/NeriPlayer/" />
-
-    <external-files-path
-        name="lyrics_files"
-        path="Music/NeriPlayer/Lyrics/" />
-
-    <external-cache-path
-        name="external_cache"
-        path="." />
+    <cache-path
+        name="shared_local_media"
+        path="shared_media_exports/" />
 </paths>

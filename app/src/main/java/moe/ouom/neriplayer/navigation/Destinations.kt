@@ -32,7 +32,11 @@ sealed class Destinations(val route: String, val labelResId: Int) {
     data object Explore : Destinations("explore", moe.ouom.neriplayer.R.string.nav_explore)
     data object Library : Destinations("library", moe.ouom.neriplayer.R.string.nav_library)
     data object Settings : Destinations("settings", moe.ouom.neriplayer.R.string.nav_settings)
-    object Recent { const val route = "recent" }
+    object Recent {
+        const val ROUTE = "recent"
+        val route: String
+            get() = ROUTE
+    }
 
     // DEBUG
     data object Debug : Destinations("debug", moe.ouom.neriplayer.R.string.debug_title)
@@ -44,24 +48,16 @@ sealed class Destinations(val route: String, val labelResId: Int) {
     data object DebugCrashLogsList : Destinations("debug_crash_logs_list", moe.ouom.neriplayer.R.string.log_list)
 
     // 网易云歌单详情路由
-    data object PlaylistDetail : Destinations("playlist_detail/{playlistJson}", moe.ouom.neriplayer.R.string.playlist_detail) {
-        fun createRoute(playlistJson: String) = "playlist_detail/$playlistJson"
-    }
+    data object PlaylistDetail : Destinations("playlist_detail/{playlistJson}", moe.ouom.neriplayer.R.string.playlist_detail)
 
     // 网易云专辑详情路由
-    data object NeteaseAlbumDetail : Destinations("netease_album_detail/{playlistJson}", moe.ouom.neriplayer.R.string.common_album_detail) {
-        fun createRoute(playlistJson: String) = "netease_album_detail/$playlistJson"
-    }
+    data object NeteaseAlbumDetail : Destinations("netease_album_detail/{playlistJson}", moe.ouom.neriplayer.R.string.common_album_detail)
 
     // B 站收藏夹详情路由
-    data object BiliPlaylistDetail : Destinations("bili_playlist_detail/{playlistJson}", moe.ouom.neriplayer.R.string.playlist_detail) {
-        fun createRoute(playlistJson: String) = "bili_playlist_detail/$playlistJson"
-    }
+    data object BiliPlaylistDetail : Destinations("bili_playlist_detail/{playlistJson}", moe.ouom.neriplayer.R.string.playlist_detail)
 
     // 本地歌单详情路由
-    data object LocalPlaylistDetail : Destinations("local_playlist_detail/{playlistId}", moe.ouom.neriplayer.R.string.playlist_local_detail) {
-        fun createRoute(playlistId: Long) = "local_playlist_detail/$playlistId"
-    }
+    data object LocalPlaylistDetail : Destinations("local_playlist_detail/{playlistId}", moe.ouom.neriplayer.R.string.playlist_local_detail)
 
     // 下载管理器路由
     data object DownloadManager : Destinations("download_manager", moe.ouom.neriplayer.R.string.download_manager)

@@ -34,11 +34,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.data.BiliCookieRepository
-import moe.ouom.neriplayer.data.YouTubeAuthBundle
-import moe.ouom.neriplayer.data.YouTubeAuthRepository
-import moe.ouom.neriplayer.data.YOUTUBE_MUSIC_ORIGIN
-import moe.ouom.neriplayer.data.buildYouTubeStreamRequestHeaders
+import moe.ouom.neriplayer.data.auth.bili.BiliCookieRepository
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRepository
+import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
+import moe.ouom.neriplayer.data.platform.bili.isBiliStreamHost
+import moe.ouom.neriplayer.data.platform.bili.isBiliStreamUrl
+import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeStreamRequestHeaders
+import moe.ouom.neriplayer.data.platform.youtube.isYouTubeGoogleVideoHost
 import moe.ouom.neriplayer.util.NPLogger
 
 /**
@@ -113,13 +116,13 @@ class ConditionalHttpDataSourceFactory(
      * 是否需要为该 URI 注入 B 站拉流所需的请求头
      */
     private fun shouldInjectBiliHeaders(uri: Uri): Boolean {
-        val host = uri.host ?: return false
-        return host.contains("bilivideo.") || uri.toString().contains("https://upos-hz-")
+        val host = uri.host.orEmpty()
+        return isBiliStreamHost(host) || isBiliStreamUrl(uri.toString())
     }
 
     private fun shouldInjectYouTubeHeaders(uri: Uri): Boolean {
         val host = uri.host?.lowercase() ?: return false
-        if (!host.contains("googlevideo.com")) return false
+        if (!isYouTubeGoogleVideoHost(host)) return false
         val path = uri.path?.lowercase().orEmpty()
         val rawUrl = uri.toString().lowercase()
         return rawUrl.contains("source=youtube") ||

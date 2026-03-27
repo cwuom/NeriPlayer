@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="local_song_details_title">Local Song Details</string>
-    <string name="local_song_details_loading">Reading local song info...</string>
+    <string name="local_song_details_loading">Reading local song info…</string>
     <string name="local_song_details_failed">Failed to read local song info: %1$s</string>
     <string name="local_song_detail_display_name">File Name</string>
     <string name="local_song_detail_title">Title</string>

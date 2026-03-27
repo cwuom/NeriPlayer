@@ -1,5 +1,30 @@
 package moe.ouom.neriplayer.ui.screen.playlist
 
+/*
+ * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
+ * Copyright (C) 2025-2025 NeriPlayer developers
+ * https://github.com/cwuom/NeriPlayer
+ *
+ * This software is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This software is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this software.
+ * If not, see <https://www.gnu.org/licenses/>.
+ *
+ * File: moe.ouom.neriplayer.ui.screen.playlist/LocalPlaylistDetailScreen
+ * Updated: 2026/3/23
+ */
+
+
+import android.annotation.SuppressLint
 import android.Manifest
 import android.content.ClipData
 import android.content.Context
@@ -111,6 +136,7 @@ import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.TextFieldValue
@@ -130,20 +156,22 @@ import kotlinx.coroutines.DelicateCoroutinesApi
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.data.FavoritesPlaylist
-import moe.ouom.neriplayer.data.LocalFilesPlaylist
-import moe.ouom.neriplayer.data.LocalMediaSupport
-import moe.ouom.neriplayer.data.LocalPlaylistRepository
-import moe.ouom.neriplayer.data.SystemLocalPlaylists
-import moe.ouom.neriplayer.data.displayAlbum
-import moe.ouom.neriplayer.data.displayArtist
-import moe.ouom.neriplayer.data.displayCoverUrl
-import moe.ouom.neriplayer.data.displayName
-import moe.ouom.neriplayer.data.identity
-import moe.ouom.neriplayer.data.isLocalSong
-import moe.ouom.neriplayer.data.sameIdentityAs
-import moe.ouom.neriplayer.data.stableKey
+import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
+import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
+import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
+import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
+import moe.ouom.neriplayer.data.local.media.displayAlbum
+import moe.ouom.neriplayer.data.model.displayArtist
+import moe.ouom.neriplayer.data.model.displayCoverUrl
+import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.model.identity
+import moe.ouom.neriplayer.data.local.media.isLocalSong
+import moe.ouom.neriplayer.data.model.sameIdentityAs
+import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.component.bottomSheetDragBlocker
+import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.component.LocalSongDetailsDialog
 import moe.ouom.neriplayer.ui.component.LocalSongSyncConfirmDialog
 import moe.ouom.neriplayer.ui.viewmodel.playlist.LocalPlaylistDetailViewModel
@@ -166,6 +194,7 @@ import java.io.File
     DelicateCoroutinesApi::class
 )
 @Composable
+@SuppressLint("LocalContextResourcesRead")
 fun LocalPlaylistDetailScreen(
     playlistId: Long,
     onBack: () -> Unit,
@@ -179,7 +208,7 @@ fun LocalPlaylistDetailScreen(
     LaunchedEffect(playlistId) { vm.start(playlistId) }
 
     // 保存最新的歌单数据，用于在Screen销毁时更新使用记录
-    var latestPlaylist by remember { mutableStateOf<moe.ouom.neriplayer.data.LocalPlaylist?>(null) }
+    var latestPlaylist by remember { mutableStateOf<moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist?>(null) }
     LaunchedEffect(ui.value.playlist) {
         ui.value.playlist?.let { latestPlaylist = it }
     }
@@ -306,23 +335,32 @@ fun LocalPlaylistDetailScreen(
 
             fun showAudioImportResult(result: moe.ouom.neriplayer.ui.viewmodel.playlist.LocalAudioImportUiResult) {
                 scope.launch {
+                    val resources = context.resources
                     val message = when {
                         result.importedCount > 0 && result.failedCount > 0 -> {
-                            context.getString(
-                                R.string.local_playlist_import_audio_partial,
-                                result.importedCount,
+                            val failedSummary = resources.getQuantityString(
+                                R.plurals.local_playlist_import_audio_failed_summary,
+                                result.failedCount,
                                 result.failedCount
+                            )
+                            resources.getQuantityString(
+                                R.plurals.local_playlist_import_audio_partial,
+                                result.importedCount,
+                                result.importedCount,
+                                failedSummary
                             )
                         }
                         result.importedCount > 0 -> {
-                            context.getString(
-                                R.string.local_playlist_import_audio_success,
+                            resources.getQuantityString(
+                                R.plurals.local_playlist_import_audio_success,
+                                result.importedCount,
                                 result.importedCount
                             )
                         }
                         else -> {
-                            context.getString(
-                                R.string.local_playlist_import_audio_failed,
+                            resources.getQuantityString(
+                                R.plurals.local_playlist_import_audio_failed,
+                                result.failedCount,
                                 result.failedCount
                             )
                         }
@@ -344,7 +382,11 @@ fun LocalPlaylistDetailScreen(
 
                         if (result.failedCount > 0) {
                             snackbarHostState.showSnackbar(
-                                context.getString(R.string.download_scan_failed, result.failedCount)
+                                context.resources.getQuantityString(
+                                    R.plurals.download_scan_failed,
+                                    result.failedCount,
+                                    result.failedCount
+                                )
                             )
                         }
                     }
@@ -423,7 +465,7 @@ fun LocalPlaylistDetailScreen(
                 }
             }
 
-            fun handleNeteaseSyncResult(result: moe.ouom.neriplayer.data.NeteaseLikeSyncResult) {
+            fun handleNeteaseSyncResult(result: moe.ouom.neriplayer.data.local.playlist.sync.NeteaseLikeSyncResult) {
                 syncInProgress = false
                 val message = result.message ?: if (result.totalSongs == 0) {
                     context.getString(R.string.local_playlist_sync_netease_empty)
@@ -644,10 +686,9 @@ fun LocalPlaylistDetailScreen(
             }
             LaunchedEffect(playlistId, displayedSongs) {
                 if (!hasRestoredScroll.value) {
-                    val key = savedListKey.value
-                    val targetIndex = when {
-                        key == null -> null
-                        key == headerKey -> 0
+                    val targetIndex = when (val key = savedListKey.value) {
+                        null -> null
+                        headerKey -> 0
                         else -> {
                             val idx = displayedSongs.indexOfFirst { it.stableKey() == key }
                             if (idx >= 0) idx + 1 else null
@@ -838,7 +879,15 @@ fun LocalPlaylistDetailScreen(
                         val allSelected =
                             selectedKeysState.value.size == localSongs.size && localSongs.isNotEmpty()
                         TopAppBar(
-                            title = { Text(stringResource(R.string.common_selected_count, selectedKeysState.value.size)) },
+                            title = {
+                                Text(
+                                    pluralStringResource(
+                                        R.plurals.common_selected_count,
+                                        selectedKeysState.value.size,
+                                        selectedKeysState.value.size
+                                    )
+                                )
+                            },
                             navigationIcon = {
                                 HapticIconButton(onClick = { exitSelectionMode() }) {
                                     Icon(
@@ -1104,10 +1153,10 @@ fun LocalPlaylistDetailScreen(
                                                     )
                                                     // 下载完成标志
                                                     if (remember(downloadedSongs, song, itemContext) {
-                                                            AudioDownloadManager.getLocalFilePath(
+                                                            AudioDownloadManager.hasLocalDownload(
                                                                 itemContext,
                                                                 song
-                                                            ) != null
+                                                            )
                                                         }) {
                                                         Icon(
                                                             imageVector = Icons.Outlined.DownloadDone,
@@ -1182,17 +1231,17 @@ fun LocalPlaylistDetailScreen(
                                                                 DropdownMenuItem(
                                                                     text = { Text(stringResource(R.string.action_share)) },
                                                                     onClick = {
-                                                                        val shared = runCatching {
-                                                                            LocalMediaSupport.shareSongFile(context, song)
-                                                                        }.getOrElse { false }
-                                                                        if (!shared) {
-                                                                            scope.launch {
+                                                                        showMoreMenu = false
+                                                                        scope.launch {
+                                                                            val shared = runCatching {
+                                                                                LocalMediaSupport.shareSongFile(context, song)
+                                                                            }.getOrElse { false }
+                                                                            if (!shared) {
                                                                                 snackbarHostState.showSnackbar(
                                                                                     context.getString(R.string.local_song_share_failed)
                                                                                 )
                                                                             }
                                                                         }
-                                                                        showMoreMenu = false
                                                                     }
                                                                 )
                                                             }
@@ -1306,7 +1355,15 @@ fun LocalPlaylistDetailScreen(
                     AlertDialog(
                         onDismissRequest = { showDeleteMultiConfirm = false },
                         title = { Text(stringResource(R.string.local_playlist_delete_songs)) },
-                        text = { Text(stringResource(R.string.local_playlist_delete_songs_confirm, count)) },
+                        text = {
+                            Text(
+                                pluralStringResource(
+                                    R.plurals.local_playlist_delete_songs_confirm,
+                                    count,
+                                    count
+                                )
+                            )
+                        },
                         confirmButton = {
                             HapticTextButton(onClick = {
                                 val songsToRemove = localSongs.filter {
@@ -1337,9 +1394,14 @@ fun LocalPlaylistDetailScreen(
                 if (showExportSheet) {
                     ModalBottomSheet(
                         onDismissRequest = { showExportSheet = false },
-                        sheetState = exportSheetState
+                        sheetState = exportSheetState,
+                        sheetGesturesEnabled = false
                     ) {
-                        Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+                        Column(
+                            Modifier
+                                .bottomSheetScrollGuard()
+                                .padding(horizontal = 20.dp, vertical = 12.dp)
+                        ) {
                             Text(stringResource(R.string.local_playlist_export_to), style = MaterialTheme.typography.titleMedium)
                             Spacer(Modifier.height(8.dp))
 
@@ -1373,7 +1435,11 @@ fun LocalPlaylistDetailScreen(
                                         Text(pl.name, style = MaterialTheme.typography.bodyLarge)
                                         Spacer(Modifier.weight(1f))
                                         Text(
-                                            stringResource(R.string.explore_song_count, pl.songs.size),
+                                            pluralStringResource(
+                                                R.plurals.explore_song_count,
+                                                pl.songs.size,
+                                                pl.songs.size
+                                            ),
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
@@ -1428,11 +1494,13 @@ fun LocalPlaylistDetailScreen(
                 // 下载管理器
                 if (showDownloadManager) {
                     ModalBottomSheet(
-                        onDismissRequest = { showDownloadManager = false }
+                        onDismissRequest = { showDownloadManager = false },
+                        sheetGesturesEnabled = false
                     ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .bottomSheetDragBlocker()
                                 .padding(20.dp)
                         ) {
                             Row(
@@ -1765,7 +1833,11 @@ private fun LocalScanPreviewScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Text(
-                            text = stringResource(R.string.common_selected_count, selectedKeys.size),
+                            text = pluralStringResource(
+                                R.plurals.common_selected_count,
+                                selectedKeys.size,
+                                selectedKeys.size
+                            ),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.weight(1f)

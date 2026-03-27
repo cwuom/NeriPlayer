@@ -26,7 +26,6 @@ package moe.ouom.neriplayer.ui.view;
  */
 
 import android.content.Context;
-import android.content.res.Resources;
 import android.graphics.RenderEffect;
 import android.graphics.RuntimeShader;
 import android.os.Build;
@@ -39,6 +38,8 @@ import androidx.annotation.RequiresApi;
 
 import com.google.android.material.appbar.MaterialToolbar;
 
+import org.intellij.lang.annotations.Language;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -49,8 +50,8 @@ import moe.ouom.neriplayer.R;
 public class BgEffectPainter {
     private static final String TAG = "BgEffectPainter";
     private float[] bound;
-    RuntimeShader mBgRuntimeShader;
-    Context mContext;
+    final RuntimeShader mBgRuntimeShader;
+    final Context mContext;
     private float[] uResolution;
     private float uAnimTime = ((float) System.nanoTime()) / 1.0E9f;
     private float[] uBgBound = {0.0f, 0.4489f, 1.0f, 0.5511f};
@@ -64,7 +65,7 @@ public class BgEffectPainter {
 
     public BgEffectPainter(Context context) {
         mContext = context;
-        String loadShader = loadShader();
+        @Language("AGSL") String loadShader = loadShader();
         mBgRuntimeShader = new RuntimeShader(loadShader);
         mBgRuntimeShader.setFloatUniform("uTranslateY", 0.0f);
         mBgRuntimeShader.setFloatUniform("uPoints", uPoints);

@@ -28,6 +28,7 @@ import android.app.Application
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
@@ -41,30 +42,79 @@ import moe.ouom.neriplayer.core.api.search.CloudMusicSearchApi
 import moe.ouom.neriplayer.core.api.search.QQMusicSearchApi
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicClient
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicPlaybackRepository
-import moe.ouom.neriplayer.data.BiliCookieRepository
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.ListenTogetherPreferences
-import moe.ouom.neriplayer.data.NeteaseCookieRepository
-import moe.ouom.neriplayer.data.PlayHistoryRepository
-import moe.ouom.neriplayer.data.PlaylistUsageRepository
-import moe.ouom.neriplayer.data.SettingsRepository
-import moe.ouom.neriplayer.data.YouTubeAuthRepository
-import moe.ouom.neriplayer.data.YOUTUBE_MUSIC_ORIGIN
-import moe.ouom.neriplayer.data.buildYouTubeInnertubeRequestHeaders
-import moe.ouom.neriplayer.data.buildYouTubePageRequestHeaders
-import moe.ouom.neriplayer.data.buildYouTubeStreamRequestHeaders
+import moe.ouom.neriplayer.data.auth.bili.BiliCookieRepository
+import moe.ouom.neriplayer.data.auth.netease.NeteaseCookieRepository
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthAutoRefreshManager
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRepository
+import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
+import moe.ouom.neriplayer.data.history.PlayHistoryRepository
 import moe.ouom.neriplayer.listentogether.ListenTogetherApi
 import moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager
 import moe.ouom.neriplayer.listentogether.ListenTogetherWebSocketClient
+import moe.ouom.neriplayer.data.settings.SettingsRepository
+import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
+import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeInnertubeRequestHeaders
+import moe.ouom.neriplayer.data.platform.youtube.buildYouTubePageRequestHeaders
+import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeStreamRequestHeaders
+import moe.ouom.neriplayer.data.platform.youtube.isTrustedYouTubeHost
+import moe.ouom.neriplayer.data.platform.youtube.isYouTubeGoogleVideoHost
+import moe.ouom.neriplayer.data.platform.youtube.isYouTubeInnertubeHost
 import moe.ouom.neriplayer.util.DynamicProxySelector
 import okhttp3.OkHttpClient
 import okhttp3.Request
+
+internal fun resolveInitialBypassProxy(
+    currentValue: Boolean,
+    loadPersistedValue: () -> Boolean
+): Boolean = runCatching(loadPersistedValue).getOrDefault(currentValue)
+
+internal data class InitialManagedDownloadSettings(
+    val directoryUri: String? = null,
+    val directoryLabel: String? = null
+)
+
+internal fun resolveInitialManagedDownloadSettings(
+    currentDirectoryUri: String? = null,
+    currentDirectoryLabel: String? = null,
+    loadDirectoryUri: () -> String?,
+    loadDirectoryLabel: () -> String?
+): InitialManagedDownloadSettings {
+    return InitialManagedDownloadSettings(
+        directoryUri = runCatching(loadDirectoryUri).getOrDefault(currentDirectoryUri),
+        directoryLabel = runCatching(loadDirectoryLabel).getOrDefault(currentDirectoryLabel)
+    ).let { resolved ->
+        InitialManagedDownloadSettings(
+            directoryUri = resolved.directoryUri?.takeIf(String::isNotBlank),
+            directoryLabel = resolved.directoryLabel?.takeIf(String::isNotBlank)
+        )
+    }
+}
+
+internal fun handleYouTubeAuthStateChanged(
+    bundle: moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle,
+    clearBootstrapCache: () -> Unit,
+    clearPlaybackAuthBoundCaches: (Boolean) -> Unit,
+    evictConnections: () -> Unit,
+    warmBootstrapAsync: () -> Unit
+) {
+    clearBootstrapCache()
+    // 只移除旧请求引用，避免 auth 恢复成功时把当前播放请求自己取消掉
+    clearPlaybackAuthBoundCaches(false)
+    evictConnections()
+    if (bundle.hasLoginCookies()) {
+        warmBootstrapAsync()
+    }
+}
 
 /**
  * 全局依赖容器，使用 Service Locator 模式管理 App 的单例
  */
 object AppContainer {
-
     private lateinit var application: Application
+    val applicationContext: Application
+        get() = application
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -74,6 +124,14 @@ object AppContainer {
     val neteaseCookieRepo by lazy { NeteaseCookieRepository(application) }
     val biliCookieRepo by lazy { BiliCookieRepository(application) }
     val youtubeAuthRepo by lazy { YouTubeAuthRepository(application) }
+    private val youtubeAuthAutoRefreshManager by lazy {
+        YouTubeAuthAutoRefreshManager(
+            context = application,
+            authProvider = youtubeAuthRepo::getAuthOnce,
+            authHealthProvider = youtubeAuthRepo::getAuthHealthOnce,
+            authUpdater = youtubeAuthRepo::saveAuth
+        )
+    }
 
 
     @SuppressLint("StaticFieldLeak")
@@ -102,21 +160,32 @@ object AppContainer {
                     }
                 }
                 val resolvedHeaders = when {
+                    isYouTubeGoogleVideoHost(host) -> auth.buildYouTubeStreamRequestHeaders(
+                        original = originalHeaders,
+                        refererOrigin = request.header("Referer")
+                            .orEmpty()
+                            .removeSuffix("/")
+                            .ifBlank {
+                                request.header("Origin")
+                                    .orEmpty()
+                                    .removeSuffix("/")
+                            }
+                            .ifBlank { auth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN } },
+                        streamUrl = request.url.toString()
+                    )
                     isYouTubeInnertubeRequest(request) -> auth.buildYouTubeInnertubeRequestHeaders(
                         original = originalHeaders,
                         authorizationOrigin = auth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN },
                         includeAuthorization = true
-                    )
-                    isYouTubeStreamRequest(request) -> auth.buildYouTubeStreamRequestHeaders(
-                        original = originalHeaders,
-                        refererOrigin = auth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN },
-                        streamUrl = request.url.toString()
                     )
                     else -> auth.buildYouTubePageRequestHeaders(
                         original = originalHeaders
                     )
                 }
                 val builder = request.newBuilder()
+                request.headers.names().forEach { name ->
+                    builder.removeHeader(name)
+                }
                 resolvedHeaders.forEach { (name, value) ->
                     builder.header(name, value)
                 }
@@ -135,7 +204,13 @@ object AppContainer {
     }
 
     val biliClient by lazy { BiliClient(biliCookieRepo, client = sharedOkHttpClient) }
-    val youtubeMusicClient by lazy { YouTubeMusicClient(youtubeAuthRepo, sharedOkHttpClient) }
+    val youtubeMusicClient by lazy {
+        YouTubeMusicClient(
+            authRepo = youtubeAuthRepo,
+            okHttpClient = sharedOkHttpClient,
+            authAutoRefreshManager = youtubeAuthAutoRefreshManager
+        )
+    }
 
     // 功能 Repo 和 API
     val biliPlaybackRepository by lazy {
@@ -147,6 +222,7 @@ object AppContainer {
             okHttpClient = sharedOkHttpClient,
             settings = settingsRepo,
             authProvider = youtubeAuthRepo::getAuthOnce,
+            authAutoRefreshManager = youtubeAuthAutoRefreshManager,
             applicationContext = application
         )
     }
@@ -170,17 +246,39 @@ object AppContainer {
         this.application = app
         primeProxySetting()
         startCookieObserver()
+        startYouTubeAuthObserver()
         startSettingsObserver()
+        // 把 YouTube Music 的 bootstrap / Web PO 冷启动成本前移，减少首次播放等待
+        youtubeMusicPlaybackRepository.warmBootstrapAsync()
         playHistoryRepo = PlayHistoryRepository.getInstance(app)
         playlistUsageRepo = PlaylistUsageRepository(app)
     }
 
     private fun primeProxySetting() {
-        DynamicProxySelector.bypassProxy = runCatching {
-            runBlocking(Dispatchers.IO) {
+        DynamicProxySelector.bypassProxy = resolveInitialBypassProxy(
+            currentValue = DynamicProxySelector.bypassProxy
+        ) {
+            runBlocking {
                 settingsRepo.bypassProxyFlow.first()
             }
-        }.getOrDefault(DynamicProxySelector.bypassProxy)
+        }
+
+        val initialManagedDownloadSettings = resolveInitialManagedDownloadSettings(
+            loadDirectoryUri = {
+                runBlocking {
+                    settingsRepo.downloadDirectoryUriFlow.first()
+                }
+            },
+            loadDirectoryLabel = {
+                runBlocking {
+                    settingsRepo.downloadDirectoryLabelFlow.first()
+                }
+            }
+        )
+        ManagedDownloadStorage.primeSettings(
+            directoryUri = initialManagedDownloadSettings.directoryUri,
+            directoryLabel = initialManagedDownloadSettings.directoryLabel
+        )
     }
 
     private fun startCookieObserver() {
@@ -194,6 +292,21 @@ object AppContainer {
             .launchIn(scope)
     }
 
+    private fun startYouTubeAuthObserver() {
+        youtubeAuthRepo.authFlow
+            .drop(1)
+            .onEach { bundle ->
+                handleYouTubeAuthStateChanged(
+                    bundle = bundle,
+                    clearBootstrapCache = youtubeMusicClient::clearBootstrapCache,
+                    clearPlaybackAuthBoundCaches = youtubeMusicPlaybackRepository::clearAuthBoundCaches,
+                    evictConnections = sharedOkHttpClient.connectionPool::evictAll,
+                    warmBootstrapAsync = youtubeMusicPlaybackRepository::warmBootstrapAsync
+                )
+            }
+            .launchIn(scope)
+    }
+
     private fun startSettingsObserver() {
         settingsRepo.bypassProxyFlow
             .onEach { enabled ->
@@ -202,31 +315,27 @@ object AppContainer {
                 neteaseClient.evictConnections()
             }
             .launchIn(scope)
+
+        settingsRepo.downloadDirectoryUriFlow
+            .onEach { uri ->
+                ManagedDownloadStorage.updateCustomDirectoryUri(uri)
+            }
+            .launchIn(scope)
+
+        settingsRepo.downloadDirectoryLabelFlow
+            .onEach { label ->
+                ManagedDownloadStorage.updateCustomDirectoryLabel(label)
+            }
+            .launchIn(scope)
     }
 
     private fun isYouTubeHost(host: String): Boolean {
-        return host.contains("youtube") ||
-            host == "youtu.be" ||
-            host.contains("googlevideo.com")
+        return isTrustedYouTubeHost(host)
     }
 
     private fun isYouTubeInnertubeRequest(request: Request): Boolean {
         val host = request.url.host.lowercase()
         val path = request.url.encodedPath.lowercase()
-        return host == "youtubei.googleapis.com" || path.startsWith("/youtubei/")
-    }
-
-    private fun isYouTubeStreamRequest(request: Request): Boolean {
-        val host = request.url.host.lowercase()
-        if (!host.contains("googlevideo.com")) {
-            return false
-        }
-        val path = request.url.encodedPath.lowercase()
-        val rawUrl = request.url.toString().lowercase()
-        return rawUrl.contains("source=youtube") ||
-            rawUrl.contains("/api/manifest/") ||
-            path.contains("/playlist/index.m3u8") ||
-            path.contains("/file/seg.ts") ||
-            rawUrl.contains("/videoplayback")
+        return isYouTubeInnertubeHost(host) || path.startsWith("/youtubei/")
     }
 }

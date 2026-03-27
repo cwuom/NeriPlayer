@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.api.youtube
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import org.json.JSONObject
@@ -17,6 +18,7 @@ import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import okio.Buffer
+import java.util.concurrent.atomic.AtomicInteger
 
 class YouTubeMusicPlaybackRepositoryTest {
 
@@ -258,7 +260,7 @@ class YouTubeMusicPlaybackRepositoryTest {
             )
             .build()
 
-        val authBundle = moe.ouom.neriplayer.data.YouTubeAuthBundle(
+        val authBundle = YouTubeAuthBundle(
             cookieHeader = "SAPISID=sap-value; SID=sid-value",
             xGoogAuthUser = "7",
             userAgent = "RepoUserAgent/1.0"
@@ -301,6 +303,106 @@ class YouTubeMusicPlaybackRepositoryTest {
                     request.url.encodedPath.contains("/watch")
             }
         )
+    }
+
+    @Test
+    fun kickoffPlayableAudioPrefetch_reusesInflightResolutionForImmediatePlayback() = runBlocking {
+        val bootstrapRequestCount = AtomicInteger(0)
+        val playerRequestCount = AtomicInteger(0)
+        val bootstrapHtml = """
+            <html>
+            <script>
+            ytcfg.set({
+              "INNERTUBE_API_KEY":"test-api-key",
+              "INNERTUBE_CLIENT_VERSION":"1.20260321.00.00",
+              "VISITOR_DATA":"visitor-data-123",
+              "jsUrl":"/s/player/test-player/base.js",
+              "SESSION_INDEX":"7",
+              "remoteHost":"13.114.209.29"
+            });
+            </script>
+            </html>
+        """.trimIndent()
+        val webRemixPlayerResponse = """
+            {
+              "playabilityStatus":{"status":"OK"},
+              "streamingData":{
+                "adaptiveFormats":[
+                  {
+                    "mimeType":"audio/mp4; codecs=\"mp4a.40.2\"",
+                    "url":"https://rr1---sn.googlevideo.com/videoplayback?id=audio-prefetch",
+                    "bitrate":128000,
+                    "audioSampleRate":"44100",
+                    "contentLength":"3586688",
+                    "approxDurationMs":"223041"
+                  }
+                ]
+              },
+              "videoDetails":{"lengthSeconds":"223"}
+            }
+        """.trimIndent()
+
+        val client = OkHttpClient.Builder()
+            .addInterceptor(
+                Interceptor { chain ->
+                    val request = chain.request()
+                    val body = when {
+                        request.url.host == "music.youtube.com" && request.url.encodedPath == "/" -> {
+                            bootstrapRequestCount.incrementAndGet()
+                            Thread.sleep(120)
+                            bootstrapHtml to "text/html; charset=utf-8"
+                        }
+
+                        request.url.encodedPath.contains("/youtubei/v1/player") -> {
+                            playerRequestCount.incrementAndGet()
+                            Thread.sleep(200)
+                            webRemixPlayerResponse to "application/json; charset=utf-8"
+                        }
+
+                        else -> "{}" to "application/json; charset=utf-8"
+                    }
+                    Response.Builder()
+                        .request(request)
+                        .protocol(Protocol.HTTP_1_1)
+                        .code(200)
+                        .message("OK")
+                        .body(body.first.toResponseBody(body.second.toMediaType()))
+                        .build()
+                }
+            )
+            .build()
+
+        val authBundle = YouTubeAuthBundle(
+            cookieHeader = "SAPISID=sap-value; SID=sid-value",
+            xGoogAuthUser = "7",
+            userAgent = "RepoUserAgent/1.0"
+        )
+        val playbackRepository = YouTubeMusicPlaybackRepository(
+            okHttpClient = client,
+            authProvider = { authBundle }
+        )
+
+        playbackRepository.kickoffPlayableAudioPrefetch(
+            videoId = "prefetch-video",
+            preferredQualityOverride = "very_high",
+            requireDirect = true,
+            preferM4a = true
+        )
+
+        val playableAudio = playbackRepository.getBestPlayableAudio(
+            videoId = "prefetch-video",
+            preferredQualityOverride = "very_high",
+            requireDirect = true,
+            preferM4a = true
+        )
+
+        assertNotNull(playableAudio)
+        assertEquals(
+            "https://rr1---sn.googlevideo.com/videoplayback?id=audio-prefetch",
+            playableAudio?.url
+        )
+        assertEquals(1, bootstrapRequestCount.get())
+        assertEquals(1, playerRequestCount.get())
     }
 
     @Test
@@ -381,7 +483,7 @@ class YouTubeMusicPlaybackRepositoryTest {
             )
             .build()
 
-        val authBundle = moe.ouom.neriplayer.data.YouTubeAuthBundle(
+        val authBundle = YouTubeAuthBundle(
             cookieHeader = "SAPISID=sap-value; SID=sid-value",
             xGoogAuthUser = "7",
             userAgent = "RepoUserAgent/1.0"
@@ -504,7 +606,7 @@ class YouTubeMusicPlaybackRepositoryTest {
             )
             .build()
 
-        val authBundle = moe.ouom.neriplayer.data.YouTubeAuthBundle(
+        val authBundle = YouTubeAuthBundle(
             cookieHeader = "SAPISID=sap-value; SID=sid-value",
             xGoogAuthUser = "7",
             userAgent = "RepoUserAgent/1.0"
@@ -603,7 +705,7 @@ class YouTubeMusicPlaybackRepositoryTest {
             )
             .build()
 
-        val authBundle = moe.ouom.neriplayer.data.YouTubeAuthBundle(
+        val authBundle = YouTubeAuthBundle(
             cookieHeader = "SAPISID=sap-value; SID=sid-value",
             xGoogAuthUser = "7",
             userAgent = "RepoUserAgent/1.0"
@@ -737,7 +839,7 @@ class YouTubeMusicPlaybackRepositoryTest {
             )
             .build()
 
-        val authBundle = moe.ouom.neriplayer.data.YouTubeAuthBundle(
+        val authBundle = YouTubeAuthBundle(
             cookieHeader = "SAPISID=sap-value; SID=sid-value",
             xGoogAuthUser = "7",
             userAgent = "RepoUserAgent/1.0"
@@ -1137,7 +1239,7 @@ class YouTubeMusicPlaybackRepositoryTest {
             )
             .build()
 
-        val authBundle = moe.ouom.neriplayer.data.YouTubeAuthBundle(
+        val authBundle = YouTubeAuthBundle(
             cookieHeader = "SAPISID=sap-value; SID=sid-value",
             xGoogAuthUser = "7",
             userAgent = "RepoUserAgent/1.0"
@@ -1260,7 +1362,7 @@ class YouTubeMusicPlaybackRepositoryTest {
             )
             .build()
 
-        val authBundle = moe.ouom.neriplayer.data.YouTubeAuthBundle(
+        val authBundle = YouTubeAuthBundle(
             cookieHeader = "SAPISID=sap-value; SID=sid-value",
             xGoogAuthUser = "7",
             userAgent = "RepoUserAgent/1.0"
@@ -1371,7 +1473,7 @@ class YouTubeMusicPlaybackRepositoryTest {
             )
             .build()
 
-        val authBundle = moe.ouom.neriplayer.data.YouTubeAuthBundle(
+        val authBundle = YouTubeAuthBundle(
             cookieHeader = "SAPISID=sap-value; SID=sid-value",
             xGoogAuthUser = "7",
             userAgent = "RepoUserAgent/1.0"
@@ -1442,6 +1544,459 @@ class YouTubeMusicPlaybackRepositoryTest {
         assertTrue(manifestRequest.header("X-Goog-AuthUser").isNullOrBlank())
         assertTrue(manifestRequest.header("Authorization").isNullOrBlank())
         assertTrue(manifestRequest.header("Cookie").isNullOrBlank())
+    }
+
+    @Test
+    fun clearAuthBoundCaches_rebuildsPlaybackBootstrapEvenWhenCookieHeaderIsStable() = runBlocking {
+        val requests = mutableListOf<okhttp3.Request>()
+        var bootstrapRequestCount = 0
+        var webRemixPlayerRequestCount = 0
+        val guestBootstrapHtml = """
+            <html>
+            <script>
+            ytcfg.set({
+              "INNERTUBE_API_KEY":"test-api-key",
+              "INNERTUBE_CLIENT_VERSION":"1.20260321.00.00",
+              "VISITOR_DATA":"visitor-guest",
+              "jsUrl":"/s/player/test-player/base.js",
+              "SESSION_INDEX":"7",
+              "remoteHost":"13.114.209.29",
+              "STS":20529,
+              "LOGGED_IN":false
+            });
+            </script>
+            </html>
+        """.trimIndent()
+        val memberBootstrapHtml = """
+            <html>
+            <script>
+            ytcfg.set({
+              "INNERTUBE_API_KEY":"test-api-key",
+              "INNERTUBE_CLIENT_VERSION":"1.20260321.00.00",
+              "VISITOR_DATA":"visitor-member",
+              "jsUrl":"/s/player/test-player/base.js",
+              "SESSION_INDEX":"7",
+              "remoteHost":"13.114.209.29",
+              "STS":20529,
+              "USER_SESSION_ID":"user-session-123",
+              "LOGGED_IN":true
+            });
+            </script>
+            </html>
+        """.trimIndent()
+        val blockedPlayerResponse = """
+            {"playabilityStatus":{"status":"LOGIN_REQUIRED","reason":"blocked"}}
+        """.trimIndent()
+        val firstWebRemixPlayerResponse = """
+            {
+              "playabilityStatus":{"status":"OK"},
+              "streamingData":{
+                "adaptiveFormats":[
+                  {
+                    "mimeType":"audio/mp4; codecs=\"mp4a.40.2\"",
+                    "url":"https://rr1---sn.googlevideo.com/videoplayback?id=audio-guest",
+                    "bitrate":128000,
+                    "audioSampleRate":"44100",
+                    "contentLength":"3586688",
+                    "approxDurationMs":"223041"
+                  }
+                ]
+              },
+              "videoDetails":{"lengthSeconds":"223"}
+            }
+        """.trimIndent()
+        val secondWebRemixPlayerResponse = """
+            {
+              "playabilityStatus":{"status":"OK"},
+              "streamingData":{
+                "adaptiveFormats":[
+                  {
+                    "mimeType":"audio/mp4; codecs=\"mp4a.40.2\"",
+                    "url":"https://rr1---sn.googlevideo.com/videoplayback?id=audio-member",
+                    "bitrate":128000,
+                    "audioSampleRate":"44100",
+                    "contentLength":"3586688",
+                    "approxDurationMs":"223041"
+                  }
+                ]
+              },
+              "videoDetails":{"lengthSeconds":"223"}
+            }
+        """.trimIndent()
+
+        val client = OkHttpClient.Builder()
+            .addInterceptor(
+                Interceptor { chain ->
+                    val request = chain.request()
+                    requests += request
+                    val body = when {
+                        request.url.host == "music.youtube.com" && request.url.encodedPath == "/" -> {
+                            bootstrapRequestCount += 1
+                            if (bootstrapRequestCount == 1) {
+                                guestBootstrapHtml to "text/html; charset=utf-8"
+                            } else {
+                                memberBootstrapHtml to "text/html; charset=utf-8"
+                            }
+                        }
+                        request.url.encodedPath.contains("/youtubei/v1/player") -> {
+                            if (request.header("X-YouTube-Client-Name") == "67") {
+                                webRemixPlayerRequestCount += 1
+                                if (webRemixPlayerRequestCount == 1) {
+                                    firstWebRemixPlayerResponse to "application/json; charset=utf-8"
+                                } else {
+                                    secondWebRemixPlayerResponse to "application/json; charset=utf-8"
+                                }
+                            } else {
+                                blockedPlayerResponse to "application/json; charset=utf-8"
+                            }
+                        }
+                        else -> "{}" to "application/json; charset=utf-8"
+                    }
+                    Response.Builder()
+                        .request(request)
+                        .protocol(Protocol.HTTP_1_1)
+                        .code(200)
+                        .message("OK")
+                        .body(body.first.toResponseBody(body.second.toMediaType()))
+                        .build()
+                }
+            )
+            .build()
+
+        val authBundle = YouTubeAuthBundle(
+            cookieHeader = "SAPISID=sap-value; SID=sid-value",
+            xGoogAuthUser = "7",
+            userAgent = "RepoUserAgent/1.0"
+        )
+        val playbackRepository = YouTubeMusicPlaybackRepository(
+            okHttpClient = client,
+            authProvider = { authBundle }
+        )
+
+        val firstPlayableAudio = playbackRepository.getBestPlayableAudio(
+            videoId = "demo-video",
+            forceRefresh = true
+        )
+        playbackRepository.clearAuthBoundCaches()
+        val secondPlayableAudio = playbackRepository.getBestPlayableAudio(
+            videoId = "demo-video",
+            forceRefresh = false
+        )
+
+        assertNotNull(firstPlayableAudio)
+        assertNotNull(secondPlayableAudio)
+        assertEquals(
+            "https://rr1---sn.googlevideo.com/videoplayback?id=audio-guest",
+            firstPlayableAudio?.url
+        )
+        assertEquals(
+            "https://rr1---sn.googlevideo.com/videoplayback?id=audio-member",
+            secondPlayableAudio?.url
+        )
+        assertEquals(2, bootstrapRequestCount)
+        assertEquals(2, webRemixPlayerRequestCount)
+
+        val webRemixRequests = requests.filter { request ->
+            request.url.encodedPath.contains("/youtubei/v1/player") &&
+                request.header("X-YouTube-Client-Name") == "67"
+        }
+        assertEquals(2, webRemixRequests.size)
+        assertEquals("visitor-guest", webRemixRequests[0].header("X-Goog-Visitor-Id"))
+        assertEquals("visitor-member", webRemixRequests[1].header("X-Goog-Visitor-Id"))
+        assertFalse(webRemixRequests[0].header("Authorization").orEmpty().contains("_u"))
+        assertTrue(webRemixRequests[1].header("Authorization").orEmpty().contains("_u"))
+
+        val secondRequestBody = Buffer().apply {
+            webRemixRequests[1].body?.writeTo(this)
+        }.readUtf8()
+        assertTrue(secondRequestBody.contains("\"visitorData\":\"visitor-member\""))
+        assertTrue(secondRequestBody.contains("\"userInterfaceTheme\":\"USER_INTERFACE_THEME_DARK\""))
+    }
+
+    @Test
+    fun warmBootstrapAsync_warmsSessionOnInitialFingerprintSync() {
+        val bootstrapRequests = AtomicInteger(0)
+        val bootstrapHtml = """
+            <html>
+            <script>
+            ytcfg.set({
+              "INNERTUBE_API_KEY":"test-api-key",
+              "INNERTUBE_CLIENT_VERSION":"1.20260321.00.00",
+              "VISITOR_DATA":"visitor-data-123",
+              "jsUrl":"/s/player/test-player/base.js",
+              "SESSION_INDEX":"0",
+              "remoteHost":"13.114.209.29",
+              "STS":20529,
+              "LOGGED_IN":true,
+              "USER_SESSION_ID":"user-session-123"
+            });
+            </script>
+            </html>
+        """.trimIndent()
+
+        val client = OkHttpClient.Builder()
+            .addInterceptor(
+                Interceptor { chain ->
+                    val request = chain.request()
+                    val body = when {
+                        request.url.host == "music.youtube.com" && request.url.encodedPath == "/" -> {
+                            bootstrapRequests.incrementAndGet()
+                            bootstrapHtml to "text/html; charset=utf-8"
+                        }
+                        else -> "{}" to "application/json; charset=utf-8"
+                    }
+                    Response.Builder()
+                        .request(request)
+                        .protocol(Protocol.HTTP_1_1)
+                        .code(200)
+                        .message("OK")
+                        .body(body.first.toResponseBody(body.second.toMediaType()))
+                        .build()
+                }
+            )
+            .build()
+
+        val poTokenProvider = FakePoTokenProvider()
+        val playbackRepository = YouTubeMusicPlaybackRepository(
+            okHttpClient = client,
+            authProvider = {
+                YouTubeAuthBundle(
+                    cookieHeader = "SAPISID=sap-value; SID=sid-value",
+                    xGoogAuthUser = "0",
+                    userAgent = "RepoUserAgent/1.0"
+                )
+            },
+            poTokenProvider = poTokenProvider
+        )
+
+        playbackRepository.warmBootstrapAsync()
+
+        var warmed = false
+        repeat(100) {
+            if (poTokenProvider.warmSessionCount > 0) {
+                warmed = true
+                return@repeat
+            }
+            Thread.sleep(20)
+        }
+
+        assertTrue(warmed)
+        assertEquals(1, bootstrapRequests.get())
+        assertEquals(1, poTokenProvider.warmSessionCount)
+    }
+
+    @Test
+    fun shouldClearAuthBoundCachesForFingerprintChange_skipsInitialFingerprintSync() {
+        assertFalse(
+            repository.shouldClearAuthBoundCachesForFingerprintChange(
+                previousFingerprint = null,
+                nextFingerprint = "fingerprint-a"
+            )
+        )
+        assertFalse(
+            repository.shouldClearAuthBoundCachesForFingerprintChange(
+                previousFingerprint = "fingerprint-a",
+                nextFingerprint = "fingerprint-a"
+            )
+        )
+        assertTrue(
+            repository.shouldClearAuthBoundCachesForFingerprintChange(
+                previousFingerprint = "fingerprint-a",
+                nextFingerprint = "fingerprint-b"
+            )
+        )
+    }
+
+    @Test
+    fun getBestPlayableAudio_rebuildsBootstrapWhenAuthUserChangesWithSameCookies() = runBlocking {
+        val requests = mutableListOf<okhttp3.Request>()
+        var bootstrapRequestCount = 0
+        val bootstrapHtml = """
+            <html>
+            <script>
+            ytcfg.set({
+              "INNERTUBE_API_KEY":"test-api-key",
+              "INNERTUBE_CLIENT_VERSION":"1.20260321.00.00",
+              "VISITOR_DATA":"visitor-shared",
+              "jsUrl":"/s/player/test-player/base.js",
+              "SESSION_INDEX":"0",
+              "remoteHost":"13.114.209.29",
+              "STS":20529,
+              "LOGGED_IN":true,
+              "USER_SESSION_ID":"user-session-123"
+            });
+            </script>
+            </html>
+        """.trimIndent()
+        val blockedPlayerResponse = """
+            {"playabilityStatus":{"status":"LOGIN_REQUIRED","reason":"blocked"}}
+        """.trimIndent()
+        val webRemixPlayerResponse = """
+            {
+              "playabilityStatus":{"status":"OK"},
+              "streamingData":{
+                "adaptiveFormats":[
+                  {
+                    "mimeType":"audio/mp4; codecs=\"mp4a.40.2\"",
+                    "url":"https://rr1---sn.googlevideo.com/videoplayback?id=audio-shared",
+                    "bitrate":128000,
+                    "audioSampleRate":"44100",
+                    "contentLength":"3586688",
+                    "approxDurationMs":"223041"
+                  }
+                ]
+              },
+              "videoDetails":{"lengthSeconds":"223"}
+            }
+        """.trimIndent()
+
+        val client = OkHttpClient.Builder()
+            .addInterceptor(
+                Interceptor { chain ->
+                    val request = chain.request()
+                    requests += request
+                    val body = when {
+                        request.url.host == "music.youtube.com" && request.url.encodedPath == "/" -> {
+                            bootstrapRequestCount += 1
+                            bootstrapHtml to "text/html; charset=utf-8"
+                        }
+                        request.url.encodedPath.contains("/youtubei/v1/player") -> {
+                            if (request.header("X-YouTube-Client-Name") == "67") {
+                                webRemixPlayerResponse to "application/json; charset=utf-8"
+                            } else {
+                                blockedPlayerResponse to "application/json; charset=utf-8"
+                            }
+                        }
+                        else -> "{}" to "application/json; charset=utf-8"
+                    }
+                    Response.Builder()
+                        .request(request)
+                        .protocol(Protocol.HTTP_1_1)
+                        .code(200)
+                        .message("OK")
+                        .body(body.first.toResponseBody(body.second.toMediaType()))
+                        .build()
+                }
+            )
+            .build()
+
+        var authBundle = YouTubeAuthBundle(
+            cookieHeader = "SAPISID=sap-value; SID=sid-value",
+            userAgent = "RepoUserAgent/1.0"
+        )
+        val playbackRepository = YouTubeMusicPlaybackRepository(
+            okHttpClient = client,
+            authProvider = { authBundle }
+        )
+
+        playbackRepository.getBestPlayableAudio(videoId = "demo-video-1", forceRefresh = false)
+        authBundle = authBundle.copy(xGoogAuthUser = "3")
+        playbackRepository.getBestPlayableAudio(videoId = "demo-video-2", forceRefresh = false)
+
+        val webRemixRequests = requests.filter { request ->
+            request.url.encodedPath.contains("/youtubei/v1/player") &&
+                request.header("X-YouTube-Client-Name") == "67"
+        }
+
+        assertEquals(2, bootstrapRequestCount)
+        assertEquals(2, webRemixRequests.size)
+        assertEquals("0", webRemixRequests[0].header("X-Goog-AuthUser"))
+        assertEquals("3", webRemixRequests[1].header("X-Goog-AuthUser"))
+    }
+
+    @Test
+    fun getBestPlayableAudio_usesBootstrapSessionIndexWhenStoredAuthUserMissing() = runBlocking {
+        val requests = mutableListOf<okhttp3.Request>()
+        var bootstrapRequestCount = 0
+        val bootstrapHtml = """
+            <html>
+            <script>
+            ytcfg.set({
+              "INNERTUBE_API_KEY":"test-api-key",
+              "INNERTUBE_CLIENT_VERSION":"1.20260321.00.00",
+              "VISITOR_DATA":"visitor-shared",
+              "jsUrl":"/s/player/test-player/base.js",
+              "SESSION_INDEX":"7",
+              "remoteHost":"13.114.209.29",
+              "STS":20529,
+              "LOGGED_IN":true,
+              "USER_SESSION_ID":"user-session-123"
+            });
+            </script>
+            </html>
+        """.trimIndent()
+        val blockedPlayerResponse = """
+            {"playabilityStatus":{"status":"LOGIN_REQUIRED","reason":"blocked"}}
+        """.trimIndent()
+        val webRemixPlayerResponse = """
+            {
+              "playabilityStatus":{"status":"OK"},
+              "streamingData":{
+                "adaptiveFormats":[
+                  {
+                    "mimeType":"audio/mp4; codecs=\"mp4a.40.2\"",
+                    "url":"https://rr1---sn.googlevideo.com/videoplayback?id=audio-shared",
+                    "bitrate":128000,
+                    "audioSampleRate":"44100",
+                    "contentLength":"3586688",
+                    "approxDurationMs":"223041"
+                  }
+                ]
+              },
+              "videoDetails":{"lengthSeconds":"223"}
+            }
+        """.trimIndent()
+
+        val client = OkHttpClient.Builder()
+            .addInterceptor(
+                Interceptor { chain ->
+                    val request = chain.request()
+                    requests += request
+                    val body = when {
+                        request.url.host == "music.youtube.com" && request.url.encodedPath == "/" -> {
+                            bootstrapRequestCount += 1
+                            bootstrapHtml to "text/html; charset=utf-8"
+                        }
+                        request.url.encodedPath.contains("/youtubei/v1/player") -> {
+                            if (request.header("X-YouTube-Client-Name") == "67") {
+                                webRemixPlayerResponse to "application/json; charset=utf-8"
+                            } else {
+                                blockedPlayerResponse to "application/json; charset=utf-8"
+                            }
+                        }
+                        else -> "{}" to "application/json; charset=utf-8"
+                    }
+                    Response.Builder()
+                        .request(request)
+                        .protocol(Protocol.HTTP_1_1)
+                        .code(200)
+                        .message("OK")
+                        .body(body.first.toResponseBody(body.second.toMediaType()))
+                        .build()
+                }
+            )
+            .build()
+
+        val playbackRepository = YouTubeMusicPlaybackRepository(
+            okHttpClient = client,
+            authProvider = {
+                YouTubeAuthBundle(
+                    cookieHeader = "SAPISID=sap-value; SID=sid-value",
+                    userAgent = "RepoUserAgent/1.0"
+                )
+            }
+        )
+
+        playbackRepository.getBestPlayableAudio(videoId = "demo-video-1", forceRefresh = false)
+
+        val webRemixRequests = requests.filter { request ->
+            request.url.encodedPath.contains("/youtubei/v1/player") &&
+                request.header("X-YouTube-Client-Name") == "67"
+        }
+
+        assertEquals(1, bootstrapRequestCount)
+        assertEquals(1, webRemixRequests.size)
+        assertEquals("7", webRemixRequests[0].header("X-Goog-AuthUser"))
     }
 
     @Test
@@ -1536,7 +2091,7 @@ class YouTubeMusicPlaybackRepositoryTest {
             )
             .build()
 
-        val authBundle = moe.ouom.neriplayer.data.YouTubeAuthBundle(
+        val authBundle = YouTubeAuthBundle(
             cookieHeader = "SAPISID=sap-value; SID=sid-value",
             xGoogAuthUser = "7",
             userAgent = "RepoUserAgent/1.0"
@@ -1637,7 +2192,7 @@ class YouTubeMusicPlaybackRepositoryTest {
             )
             .build()
 
-        val authBundle = moe.ouom.neriplayer.data.YouTubeAuthBundle(
+        val authBundle = YouTubeAuthBundle(
             cookieHeader = "SAPISID=sap-value; SID=sid-value",
             xGoogAuthUser = "7",
             userAgent = "RepoUserAgent/1.0"

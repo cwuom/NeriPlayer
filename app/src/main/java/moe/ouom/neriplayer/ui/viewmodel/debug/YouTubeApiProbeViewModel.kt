@@ -40,7 +40,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicDebugProbeResult
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicLocaleResolver
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.YouTubeAuthState
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
 
 data class YouTubeApiProbeUiState(
     val running: Boolean = false,

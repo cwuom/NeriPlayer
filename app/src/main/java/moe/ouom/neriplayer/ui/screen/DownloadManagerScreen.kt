@@ -1,4 +1,28 @@
-﻿package moe.ouom.neriplayer.ui.screen
+package moe.ouom.neriplayer.ui.screen
+
+/*
+ * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
+ * Copyright (C) 2025-2025 NeriPlayer developers
+ * https://github.com/cwuom/NeriPlayer
+ *
+ * This software is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This software is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this software.
+ * If not, see <https://www.gnu.org/licenses/>.
+ *
+ * File: moe.ouom.neriplayer.ui.screen/DownloadManagerScreen
+ * Updated: 2026/3/23
+ */
+
 
 import android.app.Application
 import android.net.Uri
@@ -21,18 +45,20 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.DownloadedSong
-import moe.ouom.neriplayer.data.LocalMediaSupport
+import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.DownloadManagerViewModel
 import moe.ouom.neriplayer.util.formatDate
@@ -43,6 +69,7 @@ import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+@Suppress("AssignedValueIsNeverRead")
 fun DownloadManagerScreen(
     onBack: () -> Unit,
     onOpenDownloadProgress: () -> Unit
@@ -59,7 +86,9 @@ fun DownloadManagerScreen(
     val miniPlayerHeight = LocalMiniPlayerHeight.current
 
     LaunchedEffect(Unit) {
-        viewModel.refreshDownloadedSongs()
+        if (viewModel.downloadedSongs.value.isEmpty() && !viewModel.isRefreshing.value) {
+            viewModel.refreshDownloadedSongs()
+        }
     }
 
     var searchQuery by remember { mutableStateOf("") }
@@ -105,7 +134,11 @@ fun DownloadManagerScreen(
                 if (selectionMode) {
                     // 多选模式下的操作按钮
                     Text(
-                        text = stringResource(R.string.download_selected_count, selectedSongs.size),
+                        text = pluralStringResource(
+                            R.plurals.download_selected_count,
+                            selectedSongs.size,
+                            selectedSongs.size
+                        ),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(end = 8.dp)
@@ -319,7 +352,15 @@ fun DownloadManagerScreen(
         AlertDialog(
             onDismissRequest = { showMultiDeleteDialog = false },
             title = { Text(stringResource(R.string.dialog_confirm_delete)) },
-            text = { Text(stringResource(R.string.download_delete_selected_confirm, selectedSongs.size)) },
+            text = {
+                Text(
+                    pluralStringResource(
+                        R.plurals.download_delete_selected_confirm,
+                        selectedSongs.size,
+                        selectedSongs.size
+                    )
+                )
+            },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -355,7 +396,6 @@ private fun DownloadedSongsList(
     onSelectionModeChanged: (Boolean) -> Unit,
     onDeleteRequest: (DownloadedSong) -> Unit
 ) {
-    val context = LocalContext.current
     val downloadedSongs by viewModel.downloadedSongs.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val miniPlayerHeight = LocalMiniPlayerHeight.current
@@ -440,13 +480,14 @@ private fun DownloadedSongsList(
         }
 
         if (isRefreshing) {
-            CircularProgressIndicator(
+            LinearProgressIndicator(
                 modifier = Modifier
-                    .size(48.dp)
-                    .background(
-                        MaterialTheme.colorScheme.surface,
-                        RoundedCornerShape(24.dp)
-                    )
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .height(3.dp),
+                trackColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.18f)
             )
         }
     }
@@ -467,11 +508,22 @@ private fun DownloadedSongItem(
         song.customCoverUrl
             ?.takeIf { it.isNotBlank() }
             ?: song.coverPath
-            ?.takeIf { File(it).exists() }
-            ?.let { File(it).toURI().toString() }
+            ?.takeIf { it.isNotBlank() }
+            ?.let { coverPath ->
+                if (coverPath.startsWith("/")) {
+                    File(coverPath).takeIf(File::exists)?.toURI()?.toString()
+                } else {
+                    coverPath
+                }
+            }
             ?: song.coverUrl?.takeIf { it.isNotBlank() }
             ?: runCatching {
-                LocalMediaSupport.inspect(context, Uri.fromFile(File(song.filePath))).coverUri
+                val localUri = if (song.filePath.startsWith("/")) {
+                    Uri.fromFile(File(song.filePath))
+                } else {
+                    song.filePath.toUri()
+                }
+                LocalMediaSupport.inspect(context, localUri).coverUri
             }.getOrNull()
     }
 

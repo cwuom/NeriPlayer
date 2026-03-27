@@ -106,6 +106,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -122,12 +123,12 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.data.LocalPlaylistRepository
-import moe.ouom.neriplayer.data.FavoritePlaylistRepository
-import moe.ouom.neriplayer.data.LocalFilesPlaylist
-import moe.ouom.neriplayer.data.displayArtist
-import moe.ouom.neriplayer.data.displayCoverUrl
-import moe.ouom.neriplayer.data.displayName
+import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
+import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
+import moe.ouom.neriplayer.data.model.displayArtist
+import moe.ouom.neriplayer.data.model.displayCoverUrl
+import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.PlaylistDetailViewModel
@@ -147,6 +148,8 @@ import androidx.compose.material.icons.outlined.Download
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Shadow
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.component.bottomSheetDragBlocker
+import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.formatDuration
 import moe.ouom.neriplayer.util.formatPlayCount
@@ -154,8 +157,10 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
-import moe.ouom.neriplayer.data.sameIdentityAs
+import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.ui.component.bottomSheetDragBlocker
+import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
 import moe.ouom.neriplayer.util.HapticFloatingActionButton
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
@@ -268,6 +273,7 @@ fun NeteaseAlbumDetailScreen(
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
+@Suppress("AssignedValueIsNeverRead")
 fun DetailScreen(
     ui: PlaylistDetailUiState,
     playlistId: Long,
@@ -414,7 +420,15 @@ fun DetailScreen(
                         val allSelected =
                             selectedIds.size == ui.tracks.size && ui.tracks.isNotEmpty()
                         TopAppBar(
-                            title = { Text(stringResource(R.string.common_selected_count, selectedIds.size)) },
+                    title = {
+                        Text(
+                            pluralStringResource(
+                                R.plurals.common_selected_count,
+                                selectedIds.size,
+                                selectedIds.size
+                            )
+                        )
+                    },
                             navigationIcon = {
                                 HapticIconButton(onClick = { exitSelection() }) {
                                     Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.cd_exit_select))
@@ -673,9 +687,14 @@ fun DetailScreen(
                 if (showExportSheet) {
                     ModalBottomSheet(
                         onDismissRequest = { showExportSheet = false },
-                        sheetState = exportSheetState
+                        sheetState = exportSheetState,
+                        sheetGesturesEnabled = false
                     ) {
-                        Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+                        Column(
+                            Modifier
+                                .bottomSheetScrollGuard()
+                                .padding(horizontal = 20.dp, vertical = 12.dp)
+                        ) {
                             Text(stringResource(R.string.playlist_export_to_local), style = MaterialTheme.typography.titleMedium)
                             Spacer(Modifier.height(8.dp))
 
@@ -702,7 +721,11 @@ fun DetailScreen(
                                         Text(pl.name, style = MaterialTheme.typography.bodyLarge)
                                         Spacer(Modifier.weight(1f))
                                         Text(
-                                            stringResource(R.string.count_songs_format, pl.songs.size),
+                                        pluralStringResource(
+                                            R.plurals.count_songs_format,
+                                            pl.songs.size,
+                                            pl.songs.size
+                                        ),
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
@@ -770,13 +793,15 @@ fun DetailScreen(
     // 下载管理�?
     if (showDownloadManager) {
         ModalBottomSheet(
-            onDismissRequest = { showDownloadManager = false }
+            onDismissRequest = { showDownloadManager = false },
+            sheetGesturesEnabled = false
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp)
-            ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .bottomSheetDragBlocker()
+                            .padding(20.dp)
+                    ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,

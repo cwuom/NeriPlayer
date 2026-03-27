@@ -33,6 +33,8 @@ It continuously iterates around "multi-source exploration, online playback, and 
 
 🚧 <strong>Work in progress</strong>
 
+<a href="https://trendshift.io/repositories/23906" target="_blank"><img src="https://trendshift.io/api/badge/repositories/23906" alt="cwuom%2FNeriPlayer | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+
 </div>
 
 > [!WARNING]
@@ -49,7 +51,7 @@ It continuously iterates around "multi-source exploration, online playback, and 
 
 ## About
 NeriPlayer is a native Android audio player based on **Jetpack Compose + Media3**.
-The current focus is not to build a public cloud service, but to integrate online content from **NetEase Cloud Music** and **Bilibili** under the premise that the user already has third-party platform accounts. It also provides features like **streaming cache, in-app downloads, local imports, local playlist management, and optional GitHub private repository sync**.
+The current focus is not to build a public cloud service, but to integrate online content from **NetEase Cloud Music**, **Bilibili**, and **YouTube Music** under the premise that the user already has third-party platform accounts. It also provides features like **streaming cache, in-app downloads, local imports, local playlist management, and optional GitHub private repository sync**.
 
 - **Account as Capability**: By legally authorizing your third-party platform accounts, you enable online playback, searching, and playlist access.
 - **Local Storage by Default**: Playback cache, downloaded files, playlists, history, settings, and authorization info are saved locally on the device by default.
@@ -76,7 +78,7 @@ The current focus is not to build a public cloud service, but to integrate onlin
 ## Platform Status
 - **NetEase Cloud Music**: Login, search, curated playlist/album access, playback, downloads, lyrics completion.
 - **Bilibili**: Login, search, favorites access, multi-part video-to-audio playback, downloads.
-- **YouTube Music**: Login, playlist browsing/details, playback, downloads; registered as a search source in Explore (search function in development).
+- **YouTube Music**: Login, playlist browsing/details, playback, downloads; registered as a search source in Explore.
 - **QQ Music**: Currently solely used for playback metadata/lyrics completion. Login, playback, and library features are not implemented.
 
 ---
@@ -104,16 +106,15 @@ The current focus is not to build a public cloud service, but to integrate onlin
 - Playback states are periodically persisted for queue and state recovery upon app restarts.
 
 ### Search and Data Sources
-- **UI Search**: `ExploreViewModel` currently connects to `Netease` and `Bilibili`.
-- **Metadata Completion Search**: `SearchManager` currently uses `CloudMusicSearchApi` and `QQMusicSearchApi`.
-- The current UI layer search acts by **switching platforms** rather than blending aggregated results.
-- QQ Music is primarily used for cross-checking lyrics and metadata for playback right now, with its Library entry still functioning as a WIP stub.
+- **UI Search**: Currently integrates **NetEase, Bilibili, and YouTube Music**. Searches are platform-specific and do not aggregate results.
+- **Metadata Completion**: Underlying processes rely on **NetEase and QQ Music** exclusively for completing cover art, lyrics, and track metadata across different sources during playback.
+- ⚠️ **QQ Music** currently acts strictly as a background metadata provider. Its Library entry remains an inactive placeholder.
 
 ### Local Data and Security
-- Settings and platform Cookies are persisted using `DataStore`.
+- **App settings** are persisted using `DataStore`.
+- **Platform Cookies, auth configurations, and GitHub Tokens** are securely stored locally via **Android Keystore + EncryptedSharedPreferences**.
 - Play histories, playlists, favorite snapshots, and specific mappings are persisted via local files.
 - Local playlists are stored via JSON files and achieve atomic writes via temporary swappable files.
-- GitHub Tokens are securely stored locally via **Android Keystore + EncryptedSharedPreferences**.
 - GitHub sync utilizes locally generated UUIDs as device identifiers instead of relying on `ANDROID_ID`.
 
 ### Downloads, Imports, and Backups
@@ -240,7 +241,7 @@ For procedures spanning systematic builds or subsequent isolated app signature l
 - General operational configurations, encompassing internal downloaded variables, user preferences, explicit platform credentials, historical playthroughs, alongside audio caches invariably constrain straight inside native storage environments defaults.
 - For instances enabling explicit GitHub integrations, standard operations exclusively port standalone playlist variants alongside superficial metadata attributes straight into privatized native external hosting servers.
 - Streaming credential variants, extensive cookie caches, complete file outputs, alongside audio logs consistently omit all potential avenues returning to core development branches.
-- NeriPlayer operates within internalized standard Android Backup parameters; definitive exportation scopes inherently defer straight over to individualized overarching OS methodologies.
+- System cloud/device backup is disabled by default. Use the built-in JSON export/import flow when you need a manual backup or migration path.
 - Standalone localized tracking measures established via independent exterior servers fundamentally fall squarely upon respective platform regulations governing access interactions.
 
 ---
@@ -254,6 +255,10 @@ For procedures spanning systematic builds or subsequent isolated app signature l
 <tr>
   <td><a href="https://github.com/SocialSisterYi/bilibili-API-collect">bilibili-API-collect</a></td>
   <td>Bilibili API Collection and Organization</td>
+</tr>
+<tr>
+  <td><a href="https://github.com/yt-dlp/ejs">ejs</a></td>
+  <td>External JavaScript for yt-dlp supporting many runtimes</td>
 </tr>
 <tr>
   <td><a href="https://github.com/ReChronoRain/HyperCeiler">HyperCeiler</a></td>

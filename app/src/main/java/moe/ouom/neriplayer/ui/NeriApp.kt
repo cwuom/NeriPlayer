@@ -75,6 +75,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -100,6 +101,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.createBitmap
 import androidx.core.graphics.ColorUtils
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -124,16 +126,17 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.AudioPlayerService
 import moe.ouom.neriplayer.core.player.AudioReactive
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.data.ThemeDefaults
-import moe.ouom.neriplayer.data.ThemePreferenceSnapshot
-import moe.ouom.neriplayer.data.displayArtist
-import moe.ouom.neriplayer.data.displayCoverUrl
-import moe.ouom.neriplayer.data.displayName
-import moe.ouom.neriplayer.data.sameIdentityAs
-import moe.ouom.neriplayer.data.stableKey
+import moe.ouom.neriplayer.data.settings.ThemeDefaults
+import moe.ouom.neriplayer.data.settings.ThemePreferenceSnapshot
+import moe.ouom.neriplayer.data.model.displayArtist
+import moe.ouom.neriplayer.data.model.displayCoverUrl
+import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.model.sameIdentityAs
+import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.ui.component.NeriBottomBar
 import moe.ouom.neriplayer.ui.component.NeriMiniPlayer
@@ -180,6 +183,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlin.coroutines.resume
+import kotlin.math.abs
 
 private fun adjustAccent(base: Color, isDark: Boolean): Color {
     val r = (base.red * 255).toInt().coerceIn(0, 255)
@@ -243,7 +247,7 @@ private suspend fun captureThemeRevealSnapshot(
                 return@suspendCancellableCoroutine
             }
 
-            val bitmap = Bitmap.createBitmap(
+            val bitmap = createBitmap(
                 decorView.width,
                 decorView.height,
                 Bitmap.Config.ARGB_8888
@@ -441,10 +445,15 @@ fun NeriApp(
     val uiDensityScale by repo.uiDensityScaleFlow.collectAsState(initial = 1.0f)
     val bypassProxy by repo.bypassProxyFlow.collectAsState(initial = true)
     val backgroundImageUri by repo.backgroundImageUriFlow.collectAsState(initial = null)
+    val downloadDirectoryUri by repo.downloadDirectoryUriFlow.collectAsState(initial = null)
     val backgroundImageBlur by repo.backgroundImageBlurFlow.collectAsState(initial = 0f)
     val backgroundImageAlpha by repo.backgroundImageAlphaFlow.collectAsState(initial = 0.3f)
     val hapticFeedbackEnabled by repo.hapticFeedbackEnabledFlow.collectAsState(initial = true)
     val showCoverSourceBadge by repo.showCoverSourceBadgeFlow.collectAsState(initial = true)
+    val nowPlayingToolbarDockEnabled by repo.nowPlayingToolbarDockEnabledFlow.collectAsState(initial = true)
+    val showNowPlayingProgressQualitySwitch by repo.nowPlayingProgressShowQualitySwitchFlow.collectAsState(initial = true)
+    val showNowPlayingProgressAudioCodec by repo.nowPlayingProgressShowAudioCodecFlow.collectAsState(initial = true)
+    val showNowPlayingProgressAudioSpec by repo.nowPlayingProgressShowAudioSpecFlow.collectAsState(initial = true)
     val silentGitHubSyncFailure by repo.silentGitHubSyncFailureFlow.collectAsState(initial = false)
     val showLyricTranslation by repo.showLyricTranslationFlow.collectAsState(initial = true)
     val defaultStartDestination by repo.defaultStartDestinationFlow.collectAsState(initial = Destinations.Home.route)
@@ -469,15 +478,17 @@ fun NeriApp(
     var pendingForceDark by remember { mutableStateOf<Boolean?>(null) }
     var themeRevealSnapshot by remember { mutableStateOf<ImageBitmap?>(null) }
     var themeRevealOriginWindow by remember { mutableStateOf<Offset?>(null) }
-    var themeRevealStartRadiusPx by remember { mutableStateOf(0f) }
+    var themeRevealStartRadiusPx by remember { mutableFloatStateOf(0f) }
     var themeRevealFallbackColorArgb by remember { mutableStateOf<Int?>(null) }
     var themeRevealCaptureInFlight by remember { mutableStateOf(false) }
     var themeRevealCaptureJob by remember { mutableStateOf<Job?>(null) }
-    var themeRevealCaptureToken by remember { mutableStateOf(0) }
+    var themeRevealCaptureToken by remember { mutableIntStateOf(0) }
+    var pendingBackgroundImageAlpha by remember { mutableStateOf<Float?>(null) }
     val lifecycleOwner = LocalLifecycleOwner.current
 
     val followSystemDark = pendingFollowSystemDark ?: storedFollowSystemDark
     val forceDark = pendingForceDark ?: storedForceDark
+    val effectiveBackgroundImageAlpha = pendingBackgroundImageAlpha ?: backgroundImageAlpha
 
     val clearThemeRevealVisualState = {
         pendingFollowSystemDark = null
@@ -523,6 +534,14 @@ fun NeriApp(
     LaunchedEffect(storedFollowSystemDark, pendingFollowSystemDark) {
         if (pendingFollowSystemDark != null && pendingFollowSystemDark == storedFollowSystemDark) {
             pendingFollowSystemDark = null
+        }
+    }
+    LaunchedEffect(backgroundImageAlpha, pendingBackgroundImageAlpha) {
+        if (
+            pendingBackgroundImageAlpha != null &&
+            abs((pendingBackgroundImageAlpha ?: backgroundImageAlpha) - backgroundImageAlpha) < 0.001f
+        ) {
+            pendingBackgroundImageAlpha = null
         }
     }
 
@@ -801,7 +820,7 @@ fun NeriApp(
                 CustomBackground(
                     imageUri = backgroundImageUri,
                     blur = backgroundImageBlur,
-                    alpha = backgroundImageAlpha,
+                    alpha = effectiveBackgroundImageAlpha,
                     modifier = modifier
                 )
 
@@ -1266,12 +1285,29 @@ fun NeriApp(
                                         onBackgroundImageChange = { uri ->
                                             scope.launch { repo.setBackgroundImageUri(uri?.toString()) }
                                         },
+                                        downloadDirectoryUri = downloadDirectoryUri,
+                                        onDownloadDirectoryUriChange = { uri ->
+                                            val label = ManagedDownloadStorage.describeConfiguredDirectory(
+                                                context,
+                                                uri
+                                            ).takeIf { !uri.isNullOrBlank() }
+                                            scope.launch {
+                                                repo.setDownloadDirectory(uri, label)
+                                                ManagedDownloadStorage.updateConfiguredTreeUri(uri)
+                                                ManagedDownloadStorage.updateCustomDirectoryLabel(label)
+                                            }
+                                        },
                                         backgroundImageBlur = backgroundImageBlur,
-                                        onBackgroundImageBlurChange = { blur ->
+                                        onBackgroundImageBlurChange = {},
+                                        onBackgroundImageBlurChangeFinished = { blur ->
                                             scope.launch { repo.setBackgroundImageBlur(blur) }
                                         },
-                                        backgroundImageAlpha = backgroundImageAlpha,
+                                        backgroundImageAlpha = effectiveBackgroundImageAlpha,
                                         onBackgroundImageAlphaChange = { alpha ->
+                                            pendingBackgroundImageAlpha = alpha
+                                        },
+                                        onBackgroundImageAlphaChangeFinished = { alpha ->
+                                            pendingBackgroundImageAlpha = alpha
                                             scope.launch { repo.setBackgroundImageAlpha(alpha) }
                                         },
                                         hapticFeedbackEnabled = hapticFeedbackEnabled,
@@ -1284,6 +1320,28 @@ fun NeriApp(
                                         showCoverSourceBadge = showCoverSourceBadge,
                                         onShowCoverSourceBadgeChange = { enabled ->
                                             scope.launch { repo.setShowCoverSourceBadge(enabled) }
+                                        },
+                                        nowPlayingToolbarDockEnabled = nowPlayingToolbarDockEnabled,
+                                        onNowPlayingToolbarDockEnabledChange = { enabled ->
+                                            scope.launch { repo.setNowPlayingToolbarDockEnabled(enabled) }
+                                        },
+                                        showNowPlayingProgressQualitySwitch = showNowPlayingProgressQualitySwitch,
+                                        onShowNowPlayingProgressQualitySwitchChange = { enabled ->
+                                            scope.launch {
+                                                repo.setNowPlayingProgressShowQualitySwitch(enabled)
+                                            }
+                                        },
+                                        showNowPlayingProgressAudioCodec = showNowPlayingProgressAudioCodec,
+                                        onShowNowPlayingProgressAudioCodecChange = { enabled ->
+                                            scope.launch {
+                                                repo.setNowPlayingProgressShowAudioCodec(enabled)
+                                            }
+                                        },
+                                        showNowPlayingProgressAudioSpec = showNowPlayingProgressAudioSpec,
+                                        onShowNowPlayingProgressAudioSpecChange = { enabled ->
+                                            scope.launch {
+                                                repo.setNowPlayingProgressShowAudioSpec(enabled)
+                                            }
                                         },
                                         silentGitHubSyncFailure = silentGitHubSyncFailure,
                                         onSilentGitHubSyncFailureChange = { enabled ->
@@ -1317,6 +1375,7 @@ fun NeriApp(
                                         onShowHomeRecommendedCardChange = { enabled ->
                                             scope.launch { repo.setHomeCardRecommended(enabled) }
                                         },
+                                        homeHasRecentUsage = homeUsageEntries.isNotEmpty(),
                                         playbackFadeIn = playbackFadeIn,
                                         onPlaybackFadeInChange = { enabled ->
                                             scope.launch { repo.setPlaybackFadeIn(enabled) }
@@ -1524,6 +1583,7 @@ fun NeriApp(
                                     artist = currentSong?.displayArtist() ?: "",
                                     coverUrl = currentSong.resolveUiCoverSource(context),
                                     isPlaying = isPlaying,
+                                    modifier = Modifier,
                                     onPlayPause = { PlayerManager.togglePlayPause() },
                                     onExpand = { showNowPlaying = true },
                                     onHeightChanged = { heightInPixels ->
@@ -1759,9 +1819,9 @@ fun NeriApp(
                         snapshot = themeRevealSnapshot,
                         fallbackColor = revealFallbackColor,
                         originInWindow = revealOrigin,
+                        modifier = Modifier.fillMaxSize(),
                         startRadiusPx = themeRevealStartRadiusPx,
                         legacySnapshotDim = true,
-                        modifier = Modifier.fillMaxSize(),
                         durationMillis = 720,
                         onFinished = clearThemeRevealState
                     )

@@ -1,0 +1,18 @@
+<resources>
+    <!-- Time -->
+    <plurals name="time_minutes_ago">
+        <item quantity="other">%d 分钟前</item>
+    </plurals>
+    <plurals name="time_hours_ago">
+        <item quantity="other">%d 小时前</item>
+    </plurals>
+    <plurals name="time_days_ago">
+        <item quantity="other">%d 天前</item>
+    </plurals>
+    <plurals name="time_minutes_only">
+        <item quantity="other">%d分钟</item>
+    </plurals>
+    <plurals name="time_hours_minutes">
+        <item quantity="other">%1$d小时%2$s</item>
+    </plurals>
+</resources>

@@ -1,4 +1,28 @@
-﻿package moe.ouom.neriplayer.ui.screen
+package moe.ouom.neriplayer.ui.screen
+
+/*
+ * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
+ * Copyright (C) 2025-2025 NeriPlayer developers
+ * https://github.com/cwuom/NeriPlayer
+ *
+ * This software is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This software is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this software.
+ * If not, see <https://www.gnu.org/licenses/>.
+ *
+ * File: moe.ouom.neriplayer.ui.screen/RecentScreen
+ * Updated: 2026/3/23
+ */
+
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -66,6 +90,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -75,13 +100,13 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.data.isLocalSong
-import moe.ouom.neriplayer.data.displayAlbum
-import moe.ouom.neriplayer.data.displayArtist
-import moe.ouom.neriplayer.data.displayCoverUrl
-import moe.ouom.neriplayer.data.displayName
-import moe.ouom.neriplayer.data.sameIdentityAs
-import moe.ouom.neriplayer.data.stableKey
+import moe.ouom.neriplayer.data.local.media.isLocalSong
+import moe.ouom.neriplayer.data.local.media.displayAlbum
+import moe.ouom.neriplayer.data.model.displayArtist
+import moe.ouom.neriplayer.data.model.displayCoverUrl
+import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.model.sameIdentityAs
+import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.HapticIconButton
@@ -93,6 +118,7 @@ import kotlin.random.Random
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+@Suppress("AssignedValueIsNeverRead")
 fun RecentScreen(
     onBack: () -> Unit = {},
     onSongClick: (List<SongItem>, Int) -> Unit
@@ -226,7 +252,15 @@ fun RecentScreen(
             } else {
                 val allSelected = selectedKeys.size == displayedSongs.size && displayedSongs.isNotEmpty()
                 TopAppBar(
-                    title = { Text(stringResource(R.string.common_selected_count, selectedKeys.size)) },
+                    title = {
+                        Text(
+                            pluralStringResource(
+                                R.plurals.common_selected_count,
+                                selectedKeys.size,
+                                selectedKeys.size
+                            )
+                        )
+                    },
                     navigationIcon = {
                         HapticIconButton(onClick = { exitSelection() }) {
                             Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.cd_exit_select))
@@ -395,7 +429,11 @@ fun RecentScreen(
             val songName = pendingDeleteSongs.firstOrNull()?.displayName().orEmpty()
             stringResource(R.string.download_delete_confirm, songName)
         } else {
-            stringResource(R.string.download_delete_selected_confirm, deleteCount)
+            pluralStringResource(
+                R.plurals.download_delete_selected_confirm,
+                deleteCount,
+                deleteCount
+            )
         }
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
@@ -537,7 +575,7 @@ private fun RecentRowRich(
                 )
                 // 已下载标志
                 if (remember(downloadedSongFilePaths, song) {
-                        AudioDownloadManager.getLocalFilePath(ctx, song) != null
+                        AudioDownloadManager.hasLocalDownload(ctx, song)
                     }) {
                     Spacer(Modifier.width(6.dp))
                     Icon(

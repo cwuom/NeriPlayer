@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="local_song_details_title">本地歌曲详情</string>
-    <string name="local_song_details_loading">正在读取本地歌曲信息...</string>
+    <string name="local_song_details_loading">正在读取本地歌曲信息…</string>
     <string name="local_song_details_failed">读取本地歌曲信息失败：%1$s</string>
     <string name="local_song_detail_display_name">文件名</string>
     <string name="local_song_detail_title">标题</string>

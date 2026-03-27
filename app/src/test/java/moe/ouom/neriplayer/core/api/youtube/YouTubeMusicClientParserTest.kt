@@ -95,6 +95,52 @@ class YouTubeMusicClientParserTest {
     }
 
     @Test
+    fun parseBootstrapConfig_extractsLoggedInUserSessionFromDataSyncId() {
+        val bootstrap = YouTubeMusicParser.parseBootstrapConfig(
+            html = """
+                "INNERTUBE_API_KEY":"api-key"
+                "INNERTUBE_CLIENT_VERSION":"1.20260325.01.00"
+                "VISITOR_DATA":"visitor-data"
+                "SESSION_INDEX":"3"
+                "DATASYNC_ID":"delegated-session||user-session"
+                "LOGGED_IN":true
+            """.trimIndent(),
+            cookieHeader = "SAPISID=sap-value",
+            userAgent = "UnitTestAgent/9.0"
+        )
+
+        assertEquals("3", bootstrap.sessionIndex)
+        assertTrue(bootstrap.loggedIn)
+        assertEquals("user-session", bootstrap.userSessionId)
+    }
+
+    @Test
+    fun parseBootstrapConfig_supportsYtcfgJsonWithEscapedQuotes() {
+        val bootstrap = YouTubeMusicParser.parseBootstrapConfig(
+            html = """
+                <script>
+                ytcfg.set({
+                  \x22INNERTUBE_API_KEY\x22 : \x22api-key\x22,
+                  \x22INNERTUBE_CONTEXT_CLIENT_VERSION\x22 : \x221.20260325.02.00\x22,
+                  \x22VISITOR_DATA\x22 : \x22visitor-data\x22,
+                  \x22DATASYNC_ID\x22 : \x22delegated-session||user-session\x22,
+                  \x22LOGGED_IN\x22 : false
+                });
+                </script>
+            """.trimIndent(),
+            cookieHeader = "",
+            userAgent = "UnitTestAgent/10.0"
+        )
+
+        assertEquals("api-key", bootstrap.apiKey)
+        assertEquals("1.20260325.02.00", bootstrap.webRemixClientVersion)
+        assertEquals("visitor-data", bootstrap.visitorData)
+        assertEquals("0", bootstrap.sessionIndex)
+        assertFalse(bootstrap.loggedIn)
+        assertEquals("user-session", bootstrap.userSessionId)
+    }
+
+    @Test
     fun requestCandidates_appendsUsFallbackForNonUsLocale() {
         val candidates = YouTubeMusicLocaleResolver.requestCandidates(
             preferredLocale = YouTubeMusicLocaleResolver.preferred(Locale.forLanguageTag("zh-CN"))

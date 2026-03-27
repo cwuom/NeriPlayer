@@ -19,7 +19,7 @@ package moe.ouom.neriplayer.ui.viewmodel.debug
  * along with this software.
  * If not, see <https://www.gnu.org/licenses/>.
  *
- * File: moe.ouom.neriplayer.ui.viewmodel/BiliApiProbeViewModel
+ * File: moe.ouom.neriplayer.ui.viewmodel.debug/BiliApiProbeViewModel
  * Created: 2025/8/14
  */
 
@@ -109,7 +109,13 @@ class BiliApiProbeViewModel(app: Application) : AndroidViewModel(app) {
         val pages = client.getVideoPageList(bvid = bvid)
         val targetPage = pages.find { it.page == page }
             ?: pages.firstOrNull()
-            ?: throw IllegalArgumentException(getApplication<Application>().getString(R.string.debug_page_not_found, page))
+            ?: throw IllegalArgumentException(
+                getApplication<Application>().resources.getQuantityString(
+                    R.plurals.debug_page_not_found,
+                    page,
+                    page
+                )
+            )
         return targetPage.cid
     }
 
@@ -118,7 +124,13 @@ class BiliApiProbeViewModel(app: Application) : AndroidViewModel(app) {
         val pages = client.getVideoPageList(aid = aid)
         val targetPage = pages.find { it.page == page }
             ?: pages.firstOrNull()
-            ?: throw IllegalArgumentException(getApplication<Application>().getString(R.string.debug_page_not_found, page))
+            ?: throw IllegalArgumentException(
+                getApplication<Application>().resources.getQuantityString(
+                    R.plurals.debug_page_not_found,
+                    page,
+                    page
+                )
+            )
         return targetPage.cid
     }
 

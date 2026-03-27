@@ -1,0 +1,15 @@
+<resources>
+    <!-- Authentication -->
+    <plurals name="settings_bili_reauth_stale_message">
+        <item quantity="one">The current Cookie has been stored for more than %1$d day. The app cannot determine the server-side expiry precisely, but it may fail when used. Last saved at: %2$s. It is recommended to sign in again or import a fresh Cookie now.</item>
+        <item quantity="other">The current Cookie has been stored for more than %1$d days. The app cannot determine the server-side expiry precisely, but it may fail when used. Last saved at: %2$s. It is recommended to sign in again or import a fresh Cookie now.</item>
+    </plurals>
+    <plurals name="settings_netease_reauth_stale_message">
+        <item quantity="one">The current Cookie has been stored for more than %1$d day. The app cannot determine the server-side expiry precisely, but it may fail when used. Last saved at: %2$s. It is recommended to sign in again or import a fresh Cookie now.</item>
+        <item quantity="other">The current Cookie has been stored for more than %1$d days. The app cannot determine the server-side expiry precisely, but it may fail when used. Last saved at: %2$s. It is recommended to sign in again or import a fresh Cookie now.</item>
+    </plurals>
+    <plurals name="settings_youtube_reauth_stale_message">
+        <item quantity="one">The current Cookie has been stored for more than %1$d day. The app cannot determine the server-side expiry precisely, but it may fail when used. Last saved at: %2$s. It is recommended to sign in again or import a fresh Cookie now.</item>
+        <item quantity="other">The current Cookie has been stored for more than %1$d days. The app cannot determine the server-side expiry precisely, but it may fail when used. Last saved at: %2$s. It is recommended to sign in again or import a fresh Cookie now.</item>
+    </plurals>
+</resources>

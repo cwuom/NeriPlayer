@@ -1,4 +1,28 @@
 package moe.ouom.neriplayer.core.player
+
+/*
+ * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
+ * Copyright (C) 2025-2025 NeriPlayer developers
+ * https://github.com/cwuom/NeriPlayer
+ *
+ * This software is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This software is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this software.
+ * If not, see <https://www.gnu.org/licenses/>.
+ *
+ * File: moe.ouom.neriplayer.core.player/AudioPlayerService
+ * Updated: 2026/3/23
+ */
+
 import android.app.Application
 import android.app.Notification
 import android.app.NotificationChannel
@@ -16,6 +40,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.IBinder
 import android.os.Build
+import android.os.SystemClock
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
@@ -36,17 +61,46 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.MainActivity
-import moe.ouom.neriplayer.data.FavoritesPlaylist
-import moe.ouom.neriplayer.data.LocalSongSupport
-import moe.ouom.neriplayer.data.displayArtist
-import moe.ouom.neriplayer.data.displayName
-import moe.ouom.neriplayer.data.sameIdentityAs
+import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.model.displayArtist
+import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import androidx.core.graphics.createBitmap
 import java.io.File
 import android.content.pm.ServiceInfo
 import androidx.core.net.toUri
+
+private data class PlaybackNotificationSnapshot(
+    val title: String,
+    val text: String,
+    val isTransportActive: Boolean,
+    val isFavorite: Boolean,
+    val requiresInteractiveFavoriteConfirmation: Boolean,
+    val largeIconReady: Boolean,
+    val coverSource: String?,
+)
+
+internal const val MEDIA_SESSION_STOP_SOURCE = "media_session_stop"
+
+internal fun shouldStopServiceForExternalPauseCommand(
+    source: String,
+    stopServiceRequested: Boolean,
+): Boolean {
+    // 系统外部控制面板的 stop 经常只是“结束本次会话”，不能把当前队列一并释放掉
+    return stopServiceRequested && source != MEDIA_SESSION_STOP_SOURCE
+}
+
+internal fun mediaSessionPlaybackActions(): Long {
+    return PlaybackStateCompat.ACTION_PLAY or
+        PlaybackStateCompat.ACTION_PAUSE or
+        PlaybackStateCompat.ACTION_PLAY_PAUSE or
+        PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
+        PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
+        PlaybackStateCompat.ACTION_SEEK_TO
+}
 
 @Suppress("unused")
 class AudioPlayerService : Service() {
@@ -68,24 +122,28 @@ class AudioPlayerService : Service() {
 
     private lateinit var mediaSession: MediaSessionCompat
 
-    // 灏侀潰缂撳瓨
     private var currentCoverSource: String? = null
     private var currentLargeIcon: Bitmap? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val mediaSessionPlaybackStateThrottler = MediaSessionPlaybackStateThrottler()
     private var allowServiceRestart = true
     private var hasReceivedStartCommand = false
     private var isForegroundStarted = false
+    private var lastNotificationSnapshot: PlaybackNotificationSnapshot? = null
 
     private val mediaSessionCallback = object : MediaSessionCompat.Callback() {
         override fun onPlay() { PlayerManager.play(); updateAll() }
-        override fun onPause() { PlayerManager.pause(); updateAll() }
+        override fun onPause() { handleExternalPauseCommand("media_session_pause") }
         override fun onSkipToNext() { PlayerManager.next(); updateAll() }
         override fun onSkipToPrevious() { PlayerManager.previous(); updateAll() }
         override fun onStop() {
-            PlayerManager.pause()
-            updateAll()
+            handleExternalPauseCommand(MEDIA_SESSION_STOP_SOURCE, stopService = true)
         }
-        override fun onSeekTo(pos: Long) { PlayerManager.seekTo(pos); updatePlaybackState(); updateNotification() }
+        override fun onSeekTo(pos: Long) {
+            PlayerManager.seekTo(pos)
+            updatePlaybackState(force = true)
+            updateNotification()
+        }
         override fun onCustomAction(action: String?, extras: Bundle?) {
             if (action == ACTION_TOGGLE_FAV) {
                 if (canToggleFavoriteFromExternalSurface(PlayerManager.currentSongFlow.value)) {
@@ -93,6 +151,30 @@ class AudioPlayerService : Service() {
                 }
                 updateAll()
             }
+        }
+    }
+
+    private fun handleExternalPauseCommand(source: String, stopService: Boolean = false) {
+        NPLogger.d("NERI-APS", "Received external pause command: source=$source")
+        if (PlayerManager.shouldIgnoreExternalPauseCommand()) {
+            NPLogger.w(
+                "NERI-APS",
+                "Ignored stale external pause during auto track transition: source=$source"
+            )
+            updatePlaybackState(force = true)
+            updateNotification()
+            return
+        }
+        PlayerManager.pause()
+        updateAll()
+        val shouldStopService = shouldStopServiceForExternalPauseCommand(source, stopService)
+        if (stopService && !shouldStopService) {
+            NPLogger.w("NERI-APS", "Treating external stop as pause-only: source=$source")
+        }
+        if (shouldStopService) {
+            allowServiceRestart = false
+            stopForegroundIfStarted()
+            stopSelf()
         }
     }
 
@@ -126,6 +208,7 @@ class AudioPlayerService : Service() {
                     return@collect
                 }
                 updateMetadata()
+                updatePlaybackState(force = true)
                 updateNotification()
             }
         }
@@ -137,8 +220,25 @@ class AudioPlayerService : Service() {
             }
         }
         serviceScope.launch {
+            PlayerManager.playWhenReadyFlow.collect {
+                updatePlaybackState()
+                updateNotification()
+            }
+        }
+        serviceScope.launch {
+            PlayerManager.playerPlaybackStateFlow.collect {
+                updatePlaybackState()
+                updateNotification()
+            }
+        }
+        serviceScope.launch {
             PlayerManager.playbackPositionFlow.collect {
                 updatePlaybackState()
+            }
+        }
+        serviceScope.launch {
+            PlayerManager.playbackSoundStateFlow.collect {
+                updatePlaybackState(force = true)
             }
         }
 
@@ -153,7 +253,7 @@ class AudioPlayerService : Service() {
                 if (intent.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
                     if (PlayerManager.handleAudioBecomingNoisy()) {
                         NPLogger.d("NERI-APS", "Handled audio becoming noisy according to playback policy.")
-                        updatePlaybackState()
+                        updatePlaybackState(force = true)
                         updateNotification()
                     }
                 }
@@ -162,7 +262,7 @@ class AudioPlayerService : Service() {
         registerReceiver(becomingNoisyReceiver, IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY))
 
         updateMetadata()
-        updatePlaybackState()
+        updatePlaybackState(force = true)
         updateNotification()
     }
 
@@ -202,8 +302,7 @@ class AudioPlayerService : Service() {
                 updateAll()
             }
             ACTION_PAUSE -> {
-                PlayerManager.pause()
-                updateAll()
+                handleExternalPauseCommand("intent_pause")
             }
             ACTION_NEXT -> {
                 PlayerManager.next()
@@ -214,10 +313,7 @@ class AudioPlayerService : Service() {
                 updateAll()
             }
             ACTION_STOP -> {
-                allowServiceRestart = false
-                PlayerManager.pause()
-                stopForegroundIfStarted()
-                stopSelf()
+                handleExternalPauseCommand("intent_stop", stopService = true)
                 return START_NOT_STICKY
             }
 
@@ -257,7 +353,7 @@ class AudioPlayerService : Service() {
                     updateAll()
                 }
             }
-        } else if (action != ACTION_STOP) {
+        } else {
             allowServiceRestart = false
             stopForegroundIfStarted()
             stopSelf()
@@ -268,7 +364,7 @@ class AudioPlayerService : Service() {
     }
 
     private fun buildNotification(): Notification {
-        val isPlaying = PlayerManager.isPlayingFlow.value
+        val isTransportActive = PlayerManager.isTransportActive()
         val song = PlayerManager.currentSongFlow.value
 
         val contentIntent = PendingIntent.getActivity(
@@ -318,17 +414,15 @@ class AudioPlayerService : Service() {
 
         builder.addAction(R.drawable.round_skip_previous_24, getString(R.string.player_previous), prevIntent)
         builder.addAction(
-            if (isPlaying) R.drawable.round_pause_24 else R.drawable.round_play_arrow_24,
-            if (isPlaying) getString(R.string.player_pause) else getString(R.string.player_play),
-            if (isPlaying) pauseIntent else playIntent
+            if (isTransportActive) R.drawable.round_pause_24 else R.drawable.round_play_arrow_24,
+            if (isTransportActive) getString(R.string.player_pause) else getString(R.string.player_play),
+            if (isTransportActive) pauseIntent else playIntent
         )
         builder.addAction(favAction)
         builder.addAction(R.drawable.round_skip_next_24, getString(R.string.player_next), nextIntent)
 
-        // 璁剧疆鏍囬鍜屽壇鏍囬
         builder.setContentTitle(song?.displayName() ?: "NeriPlayer")
 
-        // 濡傛灉瀹氭椂鍣ㄦ縺娲伙紝鍦ㄥ壇鏍囬涓樉绀哄墿浣欐椂闂?
         val timerState = PlayerManager.sleepTimerManager.timerState.value
         val contentText = if (timerState.isActive) {
             val timerInfo = when (timerState.mode) {
@@ -375,9 +469,6 @@ class AudioPlayerService : Service() {
             .build()
     }
 
-    /**
-     * 鑱氬悎鏇存柊
-     */
     private fun isFavoriteSong(song: SongItem?): Boolean {
         if (song == null) return false
         val favorites = PlayerManager.playlistsFlow.value
@@ -397,7 +488,7 @@ class AudioPlayerService : Service() {
 
     private fun updateAll() {
         updateMetadata()
-        updatePlaybackState()
+        updatePlaybackState(force = true)
         updateNotification()
     }
 
@@ -415,8 +506,43 @@ class AudioPlayerService : Service() {
         if (!isForegroundStarted) {
             return
         }
+        val snapshot = buildNotificationSnapshot()
+        if (snapshot == lastNotificationSnapshot) {
+            return
+        }
+        lastNotificationSnapshot = snapshot
         val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         nm.notify(NOTIFICATION_ID, buildNotification())
+    }
+
+    private fun buildNotificationSnapshot(): PlaybackNotificationSnapshot {
+        val song = PlayerManager.currentSongFlow.value
+        val timerState = PlayerManager.sleepTimerManager.timerState.value
+        val text = if (timerState.isActive) {
+            val timerInfo = when (timerState.mode) {
+                SleepTimerMode.COUNTDOWN -> {
+                    val remaining = PlayerManager.sleepTimerManager.formatRemainingTime()
+                    getString(R.string.notification_timer_remaining, remaining)
+                }
+                SleepTimerMode.FINISH_CURRENT -> getString(R.string.notification_stop_after_current)
+                SleepTimerMode.FINISH_PLAYLIST -> getString(R.string.notification_stop_after_playlist)
+            }
+            song?.displayArtist()
+                ?.takeIf { it.isNotBlank() }
+                ?.let { "$it | $timerInfo" }
+                ?: timerInfo
+        } else {
+            song?.displayArtist() ?: ""
+        }
+        return PlaybackNotificationSnapshot(
+            title = song?.displayName() ?: "NeriPlayer",
+            text = text,
+            isTransportActive = PlayerManager.isTransportActive(),
+            isFavorite = isFavoriteSong(song),
+            requiresInteractiveFavoriteConfirmation = requiresInteractiveFavoriteConfirmation(song),
+            largeIconReady = currentLargeIcon != null,
+            coverSource = currentCoverSource,
+        )
     }
 
     private fun updateMetadata() {
@@ -424,7 +550,6 @@ class AudioPlayerService : Service() {
         val duration = song?.durationMs ?: 0L
         val coverSource = song.effectiveCoverSource()
 
-        // 灏侀潰 URL 鍙樻洿鍒欏紓姝ュ姞杞?
         if (coverSource != currentCoverSource) {
             currentCoverSource = coverSource
             currentLargeIcon = null
@@ -446,13 +571,14 @@ class AudioPlayerService : Service() {
 
         // Do not set local URIs to METADATA_KEY_ALBUM_ART_URI, as it may prompt the System UI
         // to attempt loading them directly (which can fail due to permission issues) and
-        // override the bitmap we already provided via METADATA_KEY_ALBUM_ART.
+        // override the bitmap we already provided via METADATA_KEY_ALBUM_ART
 
         mediaSession.setMetadata(metadataBuilder.build())
     }
 
-    private fun updatePlaybackState() {
-        val isPlaying = PlayerManager.isPlayingFlow.value
+    private fun updatePlaybackState(force: Boolean = false) {
+        val isTransportActive = PlayerManager.isTransportActive()
+        val isBuffering = PlayerManager.isTransportBuffering()
         val pos = PlayerManager.playbackPositionFlow.value
 
         val song = PlayerManager.currentSongFlow.value
@@ -466,21 +592,43 @@ class AudioPlayerService : Service() {
             ACTION_TOGGLE_FAV, favText, favIconRes
         ).build()
 
-        val actions =
-            PlaybackStateCompat.ACTION_PLAY or
-                    PlaybackStateCompat.ACTION_PAUSE or
-                    PlaybackStateCompat.ACTION_PLAY_PAUSE or
-                    PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
-                    PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
-                    PlaybackStateCompat.ACTION_SEEK_TO or
-                    PlaybackStateCompat.ACTION_STOP
+        val actions = mediaSessionPlaybackActions()
+
+        val playbackState = when {
+            isBuffering -> PlaybackStateCompat.STATE_BUFFERING
+            isTransportActive -> PlaybackStateCompat.STATE_PLAYING
+            else -> PlaybackStateCompat.STATE_PAUSED
+        }
+        val playbackSpeed = if (playbackState == PlaybackStateCompat.STATE_PLAYING) {
+            PlayerManager.playbackSoundStateFlow.value.speed
+        } else {
+            0.0f
+        }
+        val controlFingerprint = when {
+            !canToggleFavoriteFromExternalSurface(song) -> 0
+            isFav -> 2
+            else -> 1
+        }
+        val nowElapsedRealtimeMs = SystemClock.elapsedRealtime()
+
+        if (!mediaSessionPlaybackStateThrottler.shouldDispatch(
+                playbackState = playbackState,
+                positionMs = pos,
+                speed = playbackSpeed,
+                controlFingerprint = controlFingerprint,
+                nowElapsedRealtimeMs = nowElapsedRealtimeMs,
+                force = force,
+            )
+        ) {
+            return
+        }
 
         val stateBuilder = PlaybackStateCompat.Builder()
             .setActions(actions)
             .setState(
-                if (isPlaying) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED,
+                playbackState,
                 pos,
-                if (isPlaying) 1.0f else 0.0f
+                playbackSpeed
             )
 
         if (canToggleFavoriteFromExternalSurface(song)) {
@@ -488,15 +636,17 @@ class AudioPlayerService : Service() {
         }
 
         mediaSession.setPlaybackState(stateBuilder.build())
+        mediaSessionPlaybackStateThrottler.recordDispatch(
+            playbackState = playbackState,
+            positionMs = pos,
+            speed = playbackSpeed,
+            controlFingerprint = controlFingerprint,
+            nowElapsedRealtimeMs = nowElapsedRealtimeMs,
+        )
     }
 
-    /**
-     * 浣跨敤 Coil 寮傛鍔犺浇閫氱煡澶у浘鏍囧皝闈?
-     * 浠呭綋鍥炶皟鏃?URL 浠嶆槸褰撳墠鏇茬洰鐨勫皝闈㈡椂鎵嶅簲鐢紝閬垮厤绔炴€佸鑷寸殑灏侀潰閿欎綅
-     */
     private fun requestLargeIconAsync(url: String?) {
         if (url.isNullOrBlank()) {
-            // 娓呯┖灏侀潰 UI
             currentLargeIcon = null
             updateNotification()
             return

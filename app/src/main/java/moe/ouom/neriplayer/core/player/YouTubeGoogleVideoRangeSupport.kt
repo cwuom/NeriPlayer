@@ -1,11 +1,36 @@
 package moe.ouom.neriplayer.core.player
 
+/*
+ * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
+ * Copyright (C) 2025-2025 NeriPlayer developers
+ * https://github.com/cwuom/NeriPlayer
+ *
+ * This software is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This software is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this software.
+ * If not, see <https://www.gnu.org/licenses/>.
+ *
+ * File: moe.ouom.neriplayer.core.player/YouTubeGoogleVideoRangeSupport
+ * Updated: 2026/3/23
+ */
+
+
 import android.net.Uri
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.BaseDataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.HttpDataSource
+import moe.ouom.neriplayer.data.platform.youtube.isYouTubeGoogleVideoHost
 import moe.ouom.neriplayer.util.NPLogger
 import okhttp3.Request
 import java.io.IOException
@@ -28,7 +53,7 @@ internal object YouTubeGoogleVideoRangeSupport {
     fun supportsSeekingWithoutUrlRefresh(url: String): Boolean {
         val uri = runCatching { java.net.URI(url) }.getOrNull() ?: return false
         val host = uri.host?.lowercase(Locale.US) ?: return false
-        if (!host.contains("googlevideo.com")) {
+        if (!isYouTubeGoogleVideoHost(host)) {
             return false
         }
         val path = uri.path?.lowercase(Locale.US).orEmpty()
@@ -54,7 +79,7 @@ internal object YouTubeGoogleVideoRangeSupport {
         val uri = runCatching { java.net.URI(url) }.getOrNull() ?: return false
         val host = uri.host?.lowercase(Locale.US)
             ?: return false
-        if (!host.contains("googlevideo.com")) {
+        if (!isYouTubeGoogleVideoHost(host)) {
             return false
         }
         if (supportsSeekingWithoutUrlRefresh(url)) {
@@ -80,7 +105,7 @@ internal object YouTubeGoogleVideoRangeSupport {
     fun shouldForceExplicitFullRange(url: String): Boolean {
         val uri = runCatching { java.net.URI(url) }.getOrNull() ?: return false
         val host = uri.host?.lowercase(Locale.US) ?: return false
-        if (!host.contains("googlevideo.com")) {
+        if (!isYouTubeGoogleVideoHost(host)) {
             return false
         }
         val path = uri.path?.lowercase(Locale.US).orEmpty()
@@ -218,7 +243,7 @@ internal object YouTubeGoogleVideoRangeSupport {
         headers: Map<String, List<String>>,
         delegateOpenLength: Long
     ): Long {
-        if (delegateOpenLength > 0L && delegateOpenLength != C.LENGTH_UNSET.toLong()) {
+        if (delegateOpenLength > 0L) {
             return delegateOpenLength
         }
 

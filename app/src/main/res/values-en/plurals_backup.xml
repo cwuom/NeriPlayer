@@ -1,0 +1,27 @@
+<resources>
+    <!-- Backup & Restore -->
+    <plurals name="playlist_import_count">
+        <item quantity="one">Successfully imported: %d playlist</item>
+        <item quantity="other">Successfully imported: %d playlists</item>
+    </plurals>
+    <plurals name="playlist_merge_count">
+        <item quantity="one">Smart merged: %d playlist</item>
+        <item quantity="other">Smart merged: %d playlists</item>
+    </plurals>
+    <plurals name="playlist_skip_count">
+        <item quantity="one">Skipped duplicate: %d playlist</item>
+        <item quantity="other">Skipped duplicates: %d playlists</item>
+    </plurals>
+    <plurals name="playlist_count_format">
+        <item quantity="one">%d playlist</item>
+        <item quantity="other">%d playlists</item>
+    </plurals>
+    <plurals name="backup_playlist_merged">
+        <item quantity="one">Playlist \'%1$s\' merged, added %2$d song</item>
+        <item quantity="other">Playlist \'%1$s\' merged, added %2$d songs</item>
+    </plurals>
+    <plurals name="backup_playlist_created">
+        <item quantity="one">Playlist \'%1$s\' created with %2$d song</item>
+        <item quantity="other">Playlist \'%1$s\' created with %2$d songs</item>
+    </plurals>
+</resources>

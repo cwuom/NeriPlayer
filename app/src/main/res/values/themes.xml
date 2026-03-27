@@ -3,6 +3,7 @@
     <style name="Base.Theme.NeriPlayer" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="android:windowBackground">#FFFFFFFF</item>
         <item name="android:windowNoTitle">true</item>
+        <item name="android:windowDisablePreview">true</item>
     </style>
 
     <style name="Theme.NeriPlayer" parent="Base.Theme.NeriPlayer" />

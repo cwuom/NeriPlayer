@@ -1,17 +1,47 @@
 package moe.ouom.neriplayer.core.api.youtube
 
+/*
+ * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
+ * Copyright (C) 2025-2025 NeriPlayer developers
+ * https://github.com/cwuom/NeriPlayer
+ *
+ * This software is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This software is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this software.
+ * If not, see <https://www.gnu.org/licenses/>.
+ *
+ * File: moe.ouom.neriplayer.core.api.youtube/YouTubeMusicClient
+ * Updated: 2026/3/23
+ */
+
+
 import java.io.IOException
 import java.net.URLDecoder
 import java.net.URLEncoder
-import java.security.MessageDigest
 import java.util.Locale
 import java.util.TimeZone
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.data.YouTubeAuthRepository
-import moe.ouom.neriplayer.data.effectiveCookieHeader
-import moe.ouom.neriplayer.data.resolveRequestUserAgent
-import moe.ouom.neriplayer.data.resolveXGoogAuthUser
+import moe.ouom.neriplayer.data.auth.youtube.isYouTubeAuthRecoverableFailure
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthAutoRefreshManager
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRepository
+import moe.ouom.neriplayer.data.platform.youtube.buildBootstrapAuthFingerprint
+import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeInnertubeRequestHeaders
+import moe.ouom.neriplayer.data.platform.youtube.buildYouTubePageRequestHeaders
+import moe.ouom.neriplayer.data.platform.youtube.effectiveCookieHeader
+import moe.ouom.neriplayer.data.platform.youtube.YOUTUBE_WEB_ORIGIN
+import moe.ouom.neriplayer.data.platform.youtube.resolveBootstrapUserAgent
+import moe.ouom.neriplayer.data.platform.youtube.resolveRequestUserAgent
+import moe.ouom.neriplayer.data.platform.youtube.resolveXGoogAuthUser
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -21,10 +51,6 @@ import org.json.JSONObject
 
 private const val YOUTUBE_MUSIC_BROWSE_ID_LIBRARY_PLAYLISTS = "FEmusic_liked_playlists"
 private const val YOUTUBE_MUSIC_MUSIC_ORIGIN = "https://music.youtube.com"
-private const val YOUTUBE_MUSIC_DEFAULT_WEB_UA =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-        "AppleWebKit/537.36 (KHTML, like Gecko) " +
-        "Chrome/134.0.0.0 Safari/537.36"
 private const val YOUTUBE_MUSIC_BOOTSTRAP_TTL_MS = 10L * 60L * 1000L
 private const val YOUTUBE_MUSIC_CLIENT_NAME_NUM_WEB_REMIX = "67"
 private const val YOUTUBE_MUSIC_CLIENT_NAME_WEB_REMIX = "WEB_REMIX"
@@ -34,6 +60,10 @@ private const val YOUTUBE_MUSIC_SAFE_FALLBACK_HL = "zh-CN"
 private const val YOUTUBE_MUSIC_SAFE_FALLBACK_GL = "JP"
 private const val YOUTUBE_MUSIC_HOME_PLAYLIST_ITEM_LIMIT = 24
 private const val YOUTUBE_MUSIC_SEARCH_ITEM_LIMIT = 30
+private val YOUTUBE_MUSIC_BOOTSTRAP_PAGE_ORIGINS = listOf(
+    YOUTUBE_MUSIC_MUSIC_ORIGIN,
+    YOUTUBE_WEB_ORIGIN
+)
 
 data class YouTubeMusicLibraryPlaylist(
     val browseId: String,
@@ -111,7 +141,10 @@ data class YouTubeMusicHomeItem(
     val subtitle: String,
     val coverUrl: String,
     val browseId: String = "",
-    val videoId: String = ""
+    val videoId: String = "",
+    val pageType: String = "",
+    val durationText: String = "",
+    val durationMs: Long = 0L
 )
 
 internal data class ParsedYouTubeMusicHomeShelf(
@@ -131,7 +164,10 @@ internal data class YouTubeMusicBootstrapConfig(
     val webRemixClientVersion: String,
     val visitorData: String,
     val sessionIndex: String,
+    val loggedIn: Boolean,
+    val userSessionId: String,
     val cookieHeader: String,
+    val authFingerprint: String,
     val webUserAgent: String,
     val fetchedAtMs: Long
 )
@@ -216,6 +252,11 @@ internal object YouTubeMusicSearchParams {
     }
 }
 
+internal data class YouTubeMusicHomeSongMetadata(
+    val artist: String,
+    val album: String
+)
+
 internal object YouTubeMusicParser {
     fun parseBootstrapConfig(
         html: String,
@@ -223,12 +264,34 @@ internal object YouTubeMusicParser {
         userAgent: String
     ): YouTubeMusicBootstrapConfig {
         val now = System.currentTimeMillis()
+        val bootstrapSource = YouTubeBootstrapHtmlSource(html)
+        val dataSyncId = bootstrapSource.optionalString("DATASYNC_ID", "datasyncId")
+        val (_, derivedUserSessionId) = parseDataSyncId(dataSyncId)
+        val loggedIn = bootstrapSource.optionalBoolean("LOGGED_IN")
+            .equals("true", ignoreCase = true)
         return YouTubeMusicBootstrapConfig(
-            apiKey = findRequired(html, "\"INNERTUBE_API_KEY\":\"([^\"]+)\""),
-            webRemixClientVersion = findRequired(html, "\"INNERTUBE_CLIENT_VERSION\":\"([^\"]+)\""),
-            visitorData = findRequired(html, "\"VISITOR_DATA\":\"([^\"]+)\""),
-            sessionIndex = findOptional(html, "\"SESSION_INDEX\":\"?([0-9]+)\"?").ifBlank { "0" },
+            apiKey = bootstrapSource.requireString(
+                "YouTube Music bootstrap parse failed",
+                "INNERTUBE_API_KEY",
+                "innertubeApiKey"
+            ),
+            webRemixClientVersion = bootstrapSource.requireString(
+                "YouTube Music bootstrap parse failed",
+                "INNERTUBE_CLIENT_VERSION",
+                "INNERTUBE_CONTEXT_CLIENT_VERSION",
+                "innertubeContextClientVersion"
+            ),
+            visitorData = bootstrapSource.requireString(
+                "YouTube Music bootstrap parse failed",
+                "VISITOR_DATA",
+                "visitorData"
+            ),
+            sessionIndex = bootstrapSource.optionalNumber("SESSION_INDEX").ifBlank { "0" },
+            loggedIn = loggedIn,
+            userSessionId = bootstrapSource.optionalString("USER_SESSION_ID")
+                .ifBlank { derivedUserSessionId },
             cookieHeader = cookieHeader,
+            authFingerprint = "",
             webUserAgent = userAgent,
             fetchedAtMs = now
         )
@@ -271,16 +334,6 @@ internal object YouTubeMusicParser {
         return extractContinuationToken(findLibraryGridRenderer(root))
     }
 
-    /** 解析首页推荐 carousel shelves */
-    fun parseHomeShelves(root: JSONObject): List<YouTubeMusicHomeShelf> {
-        return parseHomeShelfPages(root).map { shelf ->
-            YouTubeMusicHomeShelf(
-                title = shelf.title,
-                items = shelf.items
-            )
-        }
-    }
-
     fun parseHomeShelfPages(root: JSONObject): List<ParsedYouTubeMusicHomeShelf> {
         val sections = findHomeSections(root) ?: return emptyList()
 
@@ -318,6 +371,29 @@ internal object YouTubeMusicParser {
 
     fun extractHomeShelfContinuation(root: JSONObject): String? {
         return extractContinuationToken(findHomeShelfContinuationRenderer(root))
+    }
+
+    fun parseHomeSongMetadata(
+        subtitle: String,
+        fallbackAlbum: String,
+        fallbackArtist: String = "YouTube Music"
+    ): YouTubeMusicHomeSongMetadata {
+        val metadataParts = subtitle
+            .split('•', '·', '|')
+            .asSequence()
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .filterNot(::looksLikeHomeSongTypeLabel)
+            .filterNot(::looksLikeDurationText)
+            .filterNot(::looksLikeSearchStatText)
+            .toList()
+
+        val artist = metadataParts.firstOrNull().orEmpty().ifBlank { fallbackArtist }
+        val album = metadataParts.drop(1).firstOrNull().orEmpty().ifBlank { fallbackAlbum }
+        return YouTubeMusicHomeSongMetadata(
+            artist = artist,
+            album = album
+        )
     }
 
     fun parsePlaylistDetail(
@@ -561,7 +637,10 @@ internal object YouTubeMusicParser {
                 if (twoRow != null) {
                     val title = extractText(twoRow.optJSONObject("title"))
                     if (title.isBlank()) continue
+                    val subtitleNode = twoRow.optJSONObject("subtitle")
+                    val durationText = extractDurationText(subtitleNode)
                     val navigationEndpoint = twoRow.optJSONObject("navigationEndpoint")
+                    val browseEndpoint = navigationEndpoint?.optJSONObject("browseEndpoint")
                     val browseId = navigationEndpoint
                         ?.optJSONObject("browseEndpoint")
                         ?.optString("browseId", "")
@@ -573,10 +652,17 @@ internal object YouTubeMusicParser {
                     add(
                         YouTubeMusicHomeItem(
                             title = title,
-                            subtitle = extractText(twoRow.optJSONObject("subtitle")),
+                            subtitle = extractText(subtitleNode),
                             coverUrl = extractMusicThumbnailUrl(twoRow.optJSONObject("thumbnailRenderer")),
                             browseId = browseId,
-                            videoId = videoId
+                            videoId = videoId,
+                            pageType = browseEndpoint
+                                ?.optJSONObject("browseEndpointContextSupportedConfigs")
+                                ?.optJSONObject("browseEndpointContextMusicConfig")
+                                ?.optString("pageType")
+                                .orEmpty(),
+                            durationText = durationText,
+                            durationMs = parseDurationTextToMs(durationText)
                         )
                     )
                     continue
@@ -590,6 +676,15 @@ internal object YouTubeMusicParser {
                         rendererKey = "musicResponsiveListItemFlexColumnRenderer"
                     )
                     if (title.isBlank()) continue
+                    val durationText = findDurationText(
+                        columns = listItem.optJSONArray("fixedColumns"),
+                        rendererKey = "musicResponsiveListItemFixedColumnRenderer"
+                    ).ifBlank {
+                        findDurationText(
+                            columns = listItem.optJSONArray("flexColumns"),
+                            rendererKey = "musicResponsiveListItemFlexColumnRenderer"
+                        )
+                    }
                     add(
                         YouTubeMusicHomeItem(
                             title = title,
@@ -599,7 +694,9 @@ internal object YouTubeMusicParser {
                                 rendererKey = "musicResponsiveListItemFlexColumnRenderer"
                             ),
                             coverUrl = extractMusicThumbnailUrl(listItem.optJSONObject("thumbnail")),
-                            videoId = extractTrackVideoId(listItem)
+                            videoId = extractTrackVideoId(listItem),
+                            durationText = durationText,
+                            durationMs = parseDurationTextToMs(durationText)
                         )
                     )
                 }
@@ -617,24 +714,6 @@ internal object YouTubeMusicParser {
             section.optJSONObject("musicShelfRenderer")?.let { return it }
         }
         return null
-    }
-
-    fun hasSearchSectionList(root: JSONObject): Boolean {
-        return findSearchSectionListRenderer(root) != null
-    }
-
-    fun parseSearchResults(
-        root: JSONObject,
-        limit: Int = YOUTUBE_MUSIC_SEARCH_ITEM_LIMIT
-    ): List<YouTubeMusicSearchResult> {
-        val items = buildList {
-            for (shelf in findSearchShelfRenderers(root)) {
-                addAll(parseSearchRendererItems(shelf.optJSONArray("contents")))
-            }
-        }
-        return items
-            .distinctBy { it.videoId }
-            .take(limit.coerceAtLeast(1))
     }
 
     fun hasSongSearchShelf(root: JSONObject): Boolean {
@@ -945,12 +1024,28 @@ internal object YouTubeMusicParser {
             return ""
         }
         for (index in 0 until columns.length()) {
-            val text = extractColumnText(columns, index, rendererKey)
-            if (looksLikeDurationText(text)) {
-                return text
+            val textNode = columns.optJSONObject(index)
+                ?.optJSONObject(rendererKey)
+                ?.optJSONObject("text")
+            val durationText = extractDurationText(textNode)
+            if (durationText.isNotBlank()) {
+                return durationText
             }
         }
         return ""
+    }
+
+    private fun extractDurationText(node: JSONObject?): String {
+        if (node == null) {
+            return ""
+        }
+        val directText = extractText(node)
+        if (looksLikeDurationText(directText)) {
+            return directText
+        }
+        return extractTextParts(node)
+            .firstOrNull(::looksLikeDurationText)
+            .orEmpty()
     }
 
     private fun looksLikeDurationText(text: String): Boolean {
@@ -1000,6 +1095,14 @@ internal object YouTubeMusicParser {
         }
     }
 
+    private fun looksLikeHomeSongTypeLabel(text: String): Boolean {
+        return when (normalizeSearchTypeToken(text)) {
+            "song", "songs", "歌曲", "曲" -> true
+            "video", "videos", "视频", "mv" -> true
+            else -> false
+        }
+    }
+
     private fun firstNonBlank(vararg values: String?): String {
         return values.firstOrNull { !it.isNullOrBlank() }.orEmpty()
     }
@@ -1018,14 +1121,35 @@ internal object YouTubeMusicParser {
         return null
     }
 
-    private fun findRequired(source: String, pattern: String): String {
-        return findOptional(source, pattern).ifBlank {
-            throw IOException("YouTube Music bootstrap parse failed: $pattern")
+    private fun findRequired(source: String, vararg patterns: String): String {
+        return findOptional(source, *patterns).ifBlank {
+            throw IOException(
+                "YouTube Music bootstrap parse failed: ${patterns.firstOrNull().orEmpty()}"
+            )
         }
     }
 
-    private fun findOptional(source: String, pattern: String): String {
-        return Regex(pattern).find(source)?.groupValues?.getOrNull(1).orEmpty()
+    private fun findOptional(source: String, vararg patterns: String): String {
+        return patterns.asSequence()
+            .map { pattern ->
+                Regex(pattern).find(source)?.groupValues?.getOrNull(1).orEmpty()
+            }
+            .firstOrNull { it.isNotBlank() }
+            .orEmpty()
+    }
+
+    private fun parseDataSyncId(dataSyncId: String): Pair<String, String> {
+        if (dataSyncId.isBlank()) {
+            return "" to ""
+        }
+        val (first, second) = dataSyncId.split("||", limit = 2).let { parts ->
+            parts.getOrElse(0) { "" } to parts.getOrElse(1) { "" }
+        }
+        return if (second.isNotBlank()) {
+            first to second
+        } else {
+            "" to first
+        }
     }
 
     private fun extractColumnText(columns: JSONArray?, index: Int, rendererKey: String): String {
@@ -1267,7 +1391,8 @@ internal object YouTubeMusicPlayerParser {
 
 class YouTubeMusicClient(
     private val authRepo: YouTubeAuthRepository,
-    private val okHttpClient: OkHttpClient
+    private val okHttpClient: OkHttpClient,
+    private val authAutoRefreshManager: YouTubeAuthAutoRefreshManager? = null
 ) {
     @Volatile
     private var bootstrapCache: YouTubeMusicBootstrapConfig? = null
@@ -1548,6 +1673,7 @@ class YouTubeMusicClient(
         if (query.isBlank()) {
             return@withContext emptyList()
         }
+        authAutoRefreshManager?.refreshIfNeeded(reason = "search", force = false)
         val requestedLimit = limit.coerceAtLeast(1)
         var bootstrap = bootstrap()
         var requestLocale = YouTubeMusicLocaleResolver.preferred()
@@ -1598,6 +1724,7 @@ class YouTubeMusicClient(
     }
 
     suspend fun getLibraryPlaylists(): List<YouTubeMusicLibraryPlaylist> = withContext(Dispatchers.IO) {
+        authAutoRefreshManager?.refreshIfNeeded(reason = "library_playlists", force = false)
         var bootstrap = bootstrap()
         var requestLocale = YouTubeMusicLocaleResolver.preferred()
         val items = mutableListOf<YouTubeMusicLibraryPlaylist>()
@@ -1634,7 +1761,7 @@ class YouTubeMusicClient(
             if (playlists[index].trackCount != null) {
                 return@forEach
             }
-            val resolvedTrackCount = runCatching {
+            val resolvedTrackCount = try {
                 val response = resolvePlaylistTrackCount(
                     bootstrap = bootstrap,
                     browseId = playlists[index].browseId,
@@ -1643,16 +1770,29 @@ class YouTubeMusicClient(
                 bootstrap = response.bootstrap
                 requestLocale = response.requestLocale
                 response.root
-            }.getOrNull() ?: return@forEach
+            } catch (_: IOException) {
+                null
+            } ?: return@forEach
             playlists[index] = playlists[index].copy(
                 trackCount = YouTubeMusicParser.parsePlaylistTrackCount(resolvedTrackCount)
             )
+        }
+        if (playlists.isEmpty() && authRepo.getAuthOnce().hasLoginCookies()) {
+            val refreshResult = authAutoRefreshManager?.refreshIfNeeded(
+                reason = "library_playlists_empty",
+                force = true
+            )
+            if (refreshResult?.refreshed == true) {
+                bootstrapCache = null
+                return@withContext getLibraryPlaylists()
+            }
         }
         playlists
     }
 
     /** 获取 YouTube Music 首页推荐 */
     suspend fun getHomeFeed(): List<YouTubeMusicHomeShelf> = withContext(Dispatchers.IO) {
+        authAutoRefreshManager?.refreshIfNeeded(reason = "home_feed", force = false)
         var bootstrap = bootstrap()
         var requestLocale = YouTubeMusicLocaleResolver.preferred()
         val result = mutableListOf<YouTubeMusicHomeShelf>()
@@ -1719,6 +1859,16 @@ class YouTubeMusicClient(
             page++
         }
 
+        if (result.isEmpty() && authRepo.getAuthOnce().hasLoginCookies()) {
+            val refreshResult = authAutoRefreshManager?.refreshIfNeeded(
+                reason = "home_feed_empty",
+                force = true
+            )
+            if (refreshResult?.refreshed == true) {
+                bootstrapCache = null
+                return@withContext getHomeFeed()
+            }
+        }
         result
     }
 
@@ -1728,6 +1878,7 @@ class YouTubeMusicClient(
         fallbackSubtitle: String = "",
         fallbackCoverUrl: String = ""
     ): YouTubeMusicPlaylistDetail = withContext(Dispatchers.IO) {
+        authAutoRefreshManager?.refreshIfNeeded(reason = "playlist_detail", force = false)
         var bootstrap = bootstrap()
         var requestLocale = YouTubeMusicLocaleResolver.preferred()
         var detail: YouTubeMusicPlaylistDetail? = null
@@ -1786,12 +1937,12 @@ class YouTubeMusicClient(
     }
 
     suspend fun getPlayableAudio(videoId: String): YouTubeMusicPlayableAudio = withContext(Dispatchers.IO) {
+        authAutoRefreshManager?.refreshIfNeeded(reason = "playable_audio", force = false)
         var bootstrap = bootstrap()
         var lastError: IOException? = null
 
         for (requestLocale in YouTubeMusicLocaleResolver.requestCandidates()) {
-            var attempt = 0
-            while (attempt < YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS) {
+            for (attempt in 0 until YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS) {
                 try {
                     val root = postMusicPlayer(
                         bootstrap = bootstrap,
@@ -1803,8 +1954,7 @@ class YouTubeMusicClient(
                         ?: throw IOException("YouTube Music player missing playable audio formats")
                 } catch (error: IOException) {
                     lastError = error
-                    attempt++
-                    if (attempt >= YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS) {
+                    if (attempt == YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS - 1) {
                         break
                     }
                     bootstrapCache = null
@@ -1817,6 +1967,7 @@ class YouTubeMusicClient(
     }
 
     suspend fun getLyrics(videoId: String): YouTubeMusicLyrics? = withContext(Dispatchers.IO) {
+        authAutoRefreshManager?.refreshIfNeeded(reason = "lyrics", force = false)
         val bootstrap = bootstrap()
         val requestLocale = YouTubeMusicLocaleResolver.preferred()
 
@@ -1871,6 +2022,8 @@ class YouTubeMusicClient(
             .put("webRemixClientVersion", bootstrap.webRemixClientVersion)
             .put("visitorData", bootstrap.visitorData)
             .put("sessionIndex", bootstrap.sessionIndex)
+            .put("loggedIn", bootstrap.loggedIn)
+            .put("userSessionId", bootstrap.userSessionId)
             .put("webUserAgent", bootstrap.webUserAgent)
             .put("cookieHeaderLength", bootstrap.cookieHeader.length)
             .put("fetchedAtMs", bootstrap.fetchedAtMs)
@@ -1935,7 +2088,11 @@ class YouTubeMusicClient(
         }
     }
 
-    private fun bootstrap(forceRefresh: Boolean = false): YouTubeMusicBootstrapConfig {
+    private suspend fun bootstrap(forceRefresh: Boolean = false): YouTubeMusicBootstrapConfig {
+        authAutoRefreshManager?.refreshIfNeeded(
+            reason = "music_bootstrap",
+            force = forceRefresh
+        )
         val auth = authRepo.getAuthOnce().normalized()
         val authHealth = authRepo.getAuthHealthOnce()
         val cookieHeader = if (authHealth.activeCookieKeys.isEmpty()) {
@@ -1943,34 +2100,103 @@ class YouTubeMusicClient(
         } else {
             auth.effectiveCookieHeader().trim()
         }
+        val cacheUserAgent = auth.resolveBootstrapUserAgent()
+        val authFingerprint = auth.buildBootstrapAuthFingerprint(
+            origin = YOUTUBE_MUSIC_MUSIC_ORIGIN
+        )
 
         val cached = bootstrapCache
         val now = System.currentTimeMillis()
         if (!forceRefresh &&
             cached != null &&
-            cached.cookieHeader == cookieHeader &&
+            cached.authFingerprint == authFingerprint &&
             now - cached.fetchedAtMs < YOUTUBE_MUSIC_BOOTSTRAP_TTL_MS
         ) {
             return cached
         }
 
-        val userAgent = auth.resolveRequestUserAgent().ifBlank { YOUTUBE_MUSIC_DEFAULT_WEB_UA }
+        var workingAuth = auth
+        var workingCookieHeader = cookieHeader
+        var userAgent = cacheUserAgent
         val requestLocale = YouTubeMusicLocaleResolver.preferred()
-        val homeHtml = executeText(
-            Request.Builder()
-                .url("$YOUTUBE_MUSIC_MUSIC_ORIGIN/")
-                .applyCookieHeader(cookieHeader)
-                .header("User-Agent", userAgent)
-                .header("Accept-Language", requestLocale.acceptLanguage)
-                .build()
-        )
-        val parsedConfig = YouTubeMusicParser.parseBootstrapConfig(
-            html = homeHtml,
-            cookieHeader = cookieHeader,
-            userAgent = userAgent
+        fun fetchBootstrapConfig(): YouTubeMusicBootstrapConfig {
+            val pageAuth = workingAuth.copy(
+                cookieHeader = workingCookieHeader,
+                cookies = emptyMap()
+            )
+            val requestHeaders = pageAuth.buildYouTubePageRequestHeaders(
+                original = linkedMapOf(
+                    "Accept-Language" to requestLocale.acceptLanguage
+                ),
+                userAgent = userAgent
+            )
+            val requestCookieHeader = requestHeaders["Cookie"].orEmpty()
+            var lastError: IOException? = null
+            for (origin in YOUTUBE_MUSIC_BOOTSTRAP_PAGE_ORIGINS) {
+                val html = try {
+                    executeText(
+                        Request.Builder()
+                            .url("$origin/")
+                            .apply {
+                                requestHeaders.forEach { (name, value) ->
+                                    header(name, value)
+                                }
+                            }
+                            .build()
+                    )
+                } catch (error: IOException) {
+                    lastError = error
+                    continue
+                }
+                try {
+                    return YouTubeMusicParser.parseBootstrapConfig(
+                        html = html,
+                        cookieHeader = requestCookieHeader,
+                        userAgent = userAgent
+                    )
+                } catch (error: IOException) {
+                    lastError = error
+                }
+            }
+            throw lastError ?: IOException("YouTube Music bootstrap request failed")
+        }
+        suspend fun refreshWorkingAuth(reason: String) {
+            authAutoRefreshManager?.refreshIfNeeded(
+                reason = reason,
+                force = true
+            )
+            workingAuth = authRepo.getAuthOnce().normalized()
+            val refreshedHealth = authRepo.getAuthHealthOnce()
+            workingCookieHeader = if (refreshedHealth.activeCookieKeys.isEmpty()) {
+                ""
+            } else {
+                workingAuth.effectiveCookieHeader().trim()
+            }
+            userAgent = workingAuth.resolveBootstrapUserAgent()
+        }
+        val parsedConfig = try {
+            fetchBootstrapConfig()
+        } catch (error: IOException) {
+            val recoverableFailure = isYouTubeAuthRecoverableFailure(error)
+            if (workingCookieHeader.isBlank() && !recoverableFailure) {
+                throw error
+            }
+            val refreshReason = if (recoverableFailure) {
+                "music_bootstrap_http_recoverable"
+            } else {
+                "music_bootstrap_parse_recoverable"
+            }
+            refreshWorkingAuth(refreshReason)
+            fetchBootstrapConfig()
+        }
+        val resolvedFingerprint = workingAuth.buildBootstrapAuthFingerprint(
+            origin = YOUTUBE_MUSIC_MUSIC_ORIGIN
         )
         return parsedConfig.copy(
-            sessionIndex = auth.resolveXGoogAuthUser().ifBlank { parsedConfig.sessionIndex }
+            sessionIndex = workingAuth.resolveXGoogAuthUser(
+                fallback = parsedConfig.sessionIndex
+            ),
+            authFingerprint = resolvedFingerprint
         ).also { bootstrapCache = it }
     }
 
@@ -1986,20 +2212,19 @@ class YouTubeMusicClient(
             body.put(key, payload.get(key))
         }
 
+        val requestHeaders = buildMusicInnertubeRequestHeaders(
+            bootstrap = bootstrap,
+            requestLocale = requestLocale,
+            includeVisitorId = false
+        )
         return executeJson(
             Request.Builder()
                 .url("$YOUTUBE_MUSIC_MUSIC_ORIGIN/youtubei/v1/browse?prettyPrint=false&key=${bootstrap.apiKey}")
-                .applyCookieHeader(bootstrap.cookieHeader)
-                .header("User-Agent", bootstrap.webUserAgent)
-                .header("Accept-Language", requestLocale.acceptLanguage)
-                .header("Content-Type", "application/json")
-                .header("Origin", YOUTUBE_MUSIC_MUSIC_ORIGIN)
-                .header("X-Origin", YOUTUBE_MUSIC_MUSIC_ORIGIN)
-                .header("Referer", "$YOUTUBE_MUSIC_MUSIC_ORIGIN/")
-                .header("X-Goog-AuthUser", bootstrap.sessionIndex)
-                .header("X-YouTube-Client-Name", YOUTUBE_MUSIC_CLIENT_NAME_NUM_WEB_REMIX)
-                .header("X-YouTube-Client-Version", bootstrap.webRemixClientVersion)
-                .applySidAuthorization(bootstrap.cookieHeader, YOUTUBE_MUSIC_MUSIC_ORIGIN)
+                .apply {
+                    requestHeaders.forEach { (name, value) ->
+                        header(name, value)
+                    }
+                }
                 .post(body.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
                 .build()
         )
@@ -2013,6 +2238,11 @@ class YouTubeMusicClient(
         val body = JSONObject().put("context", buildMusicContext(bootstrap, requestLocale))
         copyJsonFields(from = payload, to = body)
 
+        val requestHeaders = buildMusicInnertubeRequestHeaders(
+            bootstrap = bootstrap,
+            requestLocale = requestLocale,
+            includeVisitorId = true
+        )
         return executeJson(
             Request.Builder()
                 .url(
@@ -2021,18 +2251,11 @@ class YouTubeMusicClient(
                         continuation = payload.optString("continuation").ifBlank { null }
                     )
                 )
-                .applyCookieHeader(bootstrap.cookieHeader)
-                .header("User-Agent", bootstrap.webUserAgent)
-                .header("Accept-Language", requestLocale.acceptLanguage)
-                .header("Content-Type", "application/json")
-                .header("Origin", YOUTUBE_MUSIC_MUSIC_ORIGIN)
-                .header("X-Origin", YOUTUBE_MUSIC_MUSIC_ORIGIN)
-                .header("Referer", "$YOUTUBE_MUSIC_MUSIC_ORIGIN/")
-                .header("X-Goog-AuthUser", bootstrap.sessionIndex)
-                .header("X-Goog-Visitor-Id", bootstrap.visitorData)
-                .header("X-YouTube-Client-Name", YOUTUBE_MUSIC_CLIENT_NAME_NUM_WEB_REMIX)
-                .header("X-YouTube-Client-Version", bootstrap.webRemixClientVersion)
-                .applySidAuthorization(bootstrap.cookieHeader, YOUTUBE_MUSIC_MUSIC_ORIGIN)
+                .apply {
+                    requestHeaders.forEach { (name, value) ->
+                        header(name, value)
+                    }
+                }
                 .post(body.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
                 .build()
         )
@@ -2049,21 +2272,19 @@ class YouTubeMusicClient(
             .put("contentCheckOk", true)
             .put("racyCheckOk", true)
 
+        val requestHeaders = buildMusicInnertubeRequestHeaders(
+            bootstrap = bootstrap,
+            requestLocale = requestLocale,
+            includeVisitorId = true
+        )
         return executeJson(
             Request.Builder()
                 .url("$YOUTUBE_MUSIC_MUSIC_ORIGIN/youtubei/v1/player?prettyPrint=false&key=${bootstrap.apiKey}")
-                .applyCookieHeader(bootstrap.cookieHeader)
-                .header("User-Agent", bootstrap.webUserAgent)
-                .header("Accept-Language", requestLocale.acceptLanguage)
-                .header("Content-Type", "application/json")
-                .header("Origin", YOUTUBE_MUSIC_MUSIC_ORIGIN)
-                .header("X-Origin", YOUTUBE_MUSIC_MUSIC_ORIGIN)
-                .header("Referer", "$YOUTUBE_MUSIC_MUSIC_ORIGIN/")
-                .header("X-Goog-AuthUser", bootstrap.sessionIndex)
-                .header("X-Goog-Visitor-Id", bootstrap.visitorData)
-                .header("X-YouTube-Client-Name", YOUTUBE_MUSIC_CLIENT_NAME_NUM_WEB_REMIX)
-                .header("X-YouTube-Client-Version", bootstrap.webRemixClientVersion)
-                .applySidAuthorization(bootstrap.cookieHeader, YOUTUBE_MUSIC_MUSIC_ORIGIN)
+                .apply {
+                    requestHeaders.forEach { (name, value) ->
+                        header(name, value)
+                    }
+                }
                 .post(body.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
                 .build()
         )
@@ -2079,26 +2300,55 @@ class YouTubeMusicClient(
             .put("videoId", videoId)
             .put("isAudioOnly", true)
 
+        val requestHeaders = buildMusicInnertubeRequestHeaders(
+            bootstrap = bootstrap,
+            requestLocale = requestLocale,
+            includeVisitorId = false
+        )
         return executeJson(
             Request.Builder()
                 .url("$YOUTUBE_MUSIC_MUSIC_ORIGIN/youtubei/v1/next?prettyPrint=false&key=${bootstrap.apiKey}")
-                .applyCookieHeader(bootstrap.cookieHeader)
-                .header("User-Agent", bootstrap.webUserAgent)
-                .header("Accept-Language", requestLocale.acceptLanguage)
-                .header("Content-Type", "application/json")
-                .header("Origin", YOUTUBE_MUSIC_MUSIC_ORIGIN)
-                .header("X-Origin", YOUTUBE_MUSIC_MUSIC_ORIGIN)
-                .header("Referer", "$YOUTUBE_MUSIC_MUSIC_ORIGIN/")
-                .header("X-Goog-AuthUser", bootstrap.sessionIndex)
-                .header("X-YouTube-Client-Name", YOUTUBE_MUSIC_CLIENT_NAME_NUM_WEB_REMIX)
-                .header("X-YouTube-Client-Version", bootstrap.webRemixClientVersion)
-                .applySidAuthorization(bootstrap.cookieHeader, YOUTUBE_MUSIC_MUSIC_ORIGIN)
+                .apply {
+                    requestHeaders.forEach { (name, value) ->
+                        header(name, value)
+                    }
+                }
                 .post(body.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
                 .build()
         )
     }
 
-    private fun resolvePlaylistTrackCount(
+    private fun buildMusicInnertubeRequestHeaders(
+        bootstrap: YouTubeMusicBootstrapConfig,
+        requestLocale: YouTubeMusicRequestLocale,
+        includeVisitorId: Boolean
+    ): Map<String, String> {
+        val auth = authRepo.getAuthOnce().normalized()
+        val headers = auth.buildYouTubeInnertubeRequestHeaders(
+            original = linkedMapOf(
+                "Cookie" to bootstrap.cookieHeader,
+                "User-Agent" to bootstrap.webUserAgent,
+                "Accept-Language" to requestLocale.acceptLanguage,
+                "Content-Type" to "application/json",
+                "X-Goog-AuthUser" to bootstrap.sessionIndex,
+                "X-YouTube-Client-Name" to YOUTUBE_MUSIC_CLIENT_NAME_NUM_WEB_REMIX,
+                "X-YouTube-Client-Version" to bootstrap.webRemixClientVersion
+            ),
+            authorizationOrigin = YOUTUBE_MUSIC_MUSIC_ORIGIN,
+            includeAuthorization = true,
+            userSessionId = bootstrap.userSessionId.takeIf { bootstrap.loggedIn }.orEmpty()
+        )
+        return LinkedHashMap(headers).apply {
+            put("Origin", YOUTUBE_MUSIC_MUSIC_ORIGIN)
+            put("X-Origin", YOUTUBE_MUSIC_MUSIC_ORIGIN)
+            put("Referer", "$YOUTUBE_MUSIC_MUSIC_ORIGIN/")
+            if (includeVisitorId) {
+                put("X-Goog-Visitor-Id", bootstrap.visitorData)
+            }
+        }
+    }
+
+    private suspend fun resolvePlaylistTrackCount(
         bootstrap: YouTubeMusicBootstrapConfig,
         browseId: String,
         requestLocale: YouTubeMusicRequestLocale
@@ -2117,7 +2367,7 @@ class YouTubeMusicClient(
         )
     }
 
-    private fun postMusicBrowseWithRetry(
+    private suspend fun postMusicBrowseWithRetry(
         bootstrap: YouTubeMusicBootstrapConfig,
         payload: JSONObject,
         preferredLocale: YouTubeMusicRequestLocale
@@ -2125,8 +2375,7 @@ class YouTubeMusicClient(
         var activeBootstrap = bootstrap
         var lastError: IOException? = null
         for (requestLocale in YouTubeMusicLocaleResolver.requestCandidates(preferredLocale)) {
-            var attempt = 0
-            while (attempt < YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS) {
+            for (attempt in 0 until YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS) {
                 try {
                     val root = postMusicBrowse(
                         bootstrap = activeBootstrap,
@@ -2147,9 +2396,14 @@ class YouTubeMusicClient(
                     )
                 } catch (error: IOException) {
                     lastError = error
-                    attempt++
-                    if (attempt >= YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS) {
+                    if (attempt == YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS - 1) {
                         break
+                    }
+                    if (isYouTubeAuthRecoverableFailure(error)) {
+                        authAutoRefreshManager?.refreshIfNeeded(
+                            reason = "browse_http_recoverable",
+                            force = true
+                        )
                     }
                     bootstrapCache = null
                     activeBootstrap = bootstrap(forceRefresh = true)
@@ -2159,7 +2413,7 @@ class YouTubeMusicClient(
         throw lastError ?: IOException("YouTube Music request failed")
     }
 
-    private fun postMusicSearchWithRetry(
+    private suspend fun postMusicSearchWithRetry(
         bootstrap: YouTubeMusicBootstrapConfig,
         payload: JSONObject,
         preferredLocale: YouTubeMusicRequestLocale,
@@ -2168,8 +2422,7 @@ class YouTubeMusicClient(
         var activeBootstrap = bootstrap
         var lastError: IOException? = null
         for (requestLocale in YouTubeMusicLocaleResolver.requestCandidates(preferredLocale)) {
-            var attempt = 0
-            while (attempt < YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS) {
+            for (attempt in 0 until YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS) {
                 try {
                     val root = postMusicSearch(
                         bootstrap = activeBootstrap,
@@ -2195,9 +2448,14 @@ class YouTubeMusicClient(
                     )
                 } catch (error: IOException) {
                     lastError = error
-                    attempt++
-                    if (attempt >= YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS) {
+                    if (attempt == YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS - 1) {
                         break
+                    }
+                    if (isYouTubeAuthRecoverableFailure(error)) {
+                        authAutoRefreshManager?.refreshIfNeeded(
+                            reason = "search_http_recoverable",
+                            force = true
+                        )
                     }
                     bootstrapCache = null
                     activeBootstrap = bootstrap(forceRefresh = true)
@@ -2235,35 +2493,6 @@ class YouTubeMusicClient(
             .put("user", JSONObject().put("lockedSafetyMode", false))
     }
 
-    private fun Request.Builder.applyCookieHeader(cookieHeader: String): Request.Builder {
-        if (cookieHeader.isBlank()) {
-            return this
-        }
-        return header("Cookie", cookieHeader)
-    }
-
-    private fun Request.Builder.applySidAuthorization(
-        cookieHeader: String,
-        origin: String
-    ): Request.Builder {
-        val cookies = cookieHeader
-            .split(';')
-            .map(String::trim)
-            .filter { it.isNotBlank() && it.contains('=') }
-            .associate {
-                val delimiterIndex = it.indexOf('=')
-                it.substring(0, delimiterIndex) to it.substring(delimiterIndex + 1)
-            }
-        val sid = cookies["__Secure-3PAPISID"]
-            ?: cookies["SAPISID"]
-            ?: cookies["__Secure-1PAPISID"]
-            ?: cookies["APISID"]
-            ?: return this
-        val timestamp = (System.currentTimeMillis() / 1000L).toString()
-        val digest = sha1Hex("$timestamp $sid $origin")
-        return header("Authorization", "SAPISIDHASH ${timestamp}_$digest")
-    }
-
     private fun executeJson(request: Request): JSONObject {
         return JSONObject(executeText(request))
     }
@@ -2280,12 +2509,5 @@ class YouTubeMusicClient(
 
     private fun utcOffsetMinutes(): Int {
         return TimeZone.getDefault().getOffset(System.currentTimeMillis()) / (60 * 1000)
-    }
-
-    private fun sha1Hex(value: String): String {
-        val digest = MessageDigest.getInstance("SHA-1").digest(value.toByteArray(Charsets.UTF_8))
-        return buildString(digest.size * 2) {
-            digest.forEach { byte -> append("%02x".format(Locale.US, byte.toInt() and 0xff)) }
-        }
     }
 }

@@ -1,17 +1,16 @@
-﻿package moe.ouom.neriplayer.util
+package moe.ouom.neriplayer.util
 
 import android.app.Application
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.os.Process
-import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import java.io.File
 import java.io.FileOutputStream
@@ -141,38 +140,12 @@ object ExceptionHandler {
     }
     
     /**
-     * 创建协程异常处理器
-     * @param source 异常来源标识
-     * @return CoroutineExceptionHandler
-     */
-    fun createCoroutineExceptionHandler(source: String): CoroutineExceptionHandler {
-        return CoroutineExceptionHandler { _, throwable ->
-            handleException(source, throwable)
-        }
-    }
-    
-    /**
      * 安全执行代码块，捕获异常并处理
      * @param source 异常来源标识
      * @param block 要执行的代码块
      * @return 执行结果，如果发生异常返回null
      */
     inline fun <T> safeExecute(source: String, block: () -> T): T? {
-        return try {
-            block()
-        } catch (e: Exception) {
-            handleException(source, e)
-            null
-        }
-    }
-    
-    /**
-     * 安全执行挂起函数，捕获异常并处理
-     * @param source 异常来源标识
-     * @param block 要执行的挂起函数
-     * @return 执行结果，如果发生异常返回null
-     */
-    suspend inline fun <T> safeExecuteSuspend(source: String, block: suspend () -> T): T? {
         return try {
             block()
         } catch (e: Exception) {

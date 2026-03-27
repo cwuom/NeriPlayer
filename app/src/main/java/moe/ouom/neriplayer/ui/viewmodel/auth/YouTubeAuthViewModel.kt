@@ -35,9 +35,9 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.YouTubeAuthBundle
-import moe.ouom.neriplayer.data.YouTubeAuthHealth
-import moe.ouom.neriplayer.data.evaluateYouTubeAuthHealth
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthHealth
+import moe.ouom.neriplayer.data.auth.youtube.evaluateYouTubeAuthHealth
 
 data class YouTubeAuthUiState(
     val health: YouTubeAuthHealth = evaluateYouTubeAuthHealth(YouTubeAuthBundle())

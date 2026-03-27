@@ -1,4 +1,4 @@
-﻿package moe.ouom.neriplayer.ui.screen
+package moe.ouom.neriplayer.ui.screen
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -97,6 +97,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -106,19 +107,21 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.data.FavoritesPlaylist
-import moe.ouom.neriplayer.data.LocalFilesPlaylist
-import moe.ouom.neriplayer.data.displayArtist
-import moe.ouom.neriplayer.data.displayCoverUrl
-import moe.ouom.neriplayer.data.displayName
-import moe.ouom.neriplayer.data.isLocalSong
-import moe.ouom.neriplayer.data.sameIdentityAs
+import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
+import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
+import moe.ouom.neriplayer.data.settings.scaledLyricFontSize
+import moe.ouom.neriplayer.data.model.displayArtist
+import moe.ouom.neriplayer.data.model.displayCoverUrl
+import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.local.media.isLocalSong
+import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.ui.component.AppleMusicLyric
 import moe.ouom.neriplayer.ui.component.LyricEntry
 import moe.ouom.neriplayer.ui.component.LocalSongDetailsDialog
 import moe.ouom.neriplayer.ui.component.LocalSongSyncConfirmDialog
 import moe.ouom.neriplayer.ui.component.LyricVisualSpec
 import moe.ouom.neriplayer.ui.component.WaveformSlider
+import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.HapticFilledIconButton
@@ -450,7 +453,7 @@ fun LyricsScreen(
                     modifier = Modifier.fillMaxSize(),
                     textColor = MaterialTheme.colorScheme.onBackground,
                     // 放大歌词与行距，增强可读性
-                    fontSize = (20f * lyricFontScale).coerceIn(16f, 30f).sp,
+                    fontSize = scaledLyricFontSize(20f, lyricFontScale).sp,
                     centerPadding = 24.dp,
                     visualSpec = LyricVisualSpec(
                         // 控制缩放范围，避免超界
@@ -467,7 +470,7 @@ fun LyricsScreen(
                         onSeekTo(lyricEntry.startTimeMs)
                     },
                     translatedLyrics = if (showLyricTranslation) translatedLyrics else null,
-                    translationFontSize = (16 * lyricFontScale).coerceIn(12f, 26f).sp,
+                    translationFontSize = scaledLyricFontSize(16f, lyricFontScale).sp,
                 )
             } else {
                 Box(
@@ -764,7 +767,8 @@ fun LyricsScreen(
             // 音量控制弹窗
             if (showVolumeSheet) {
                 androidx.compose.material3.ModalBottomSheet(
-                    onDismissRequest = { showVolumeSheet = false }
+                    onDismissRequest = { showVolumeSheet = false },
+                    sheetGesturesEnabled = false
                 ) {
                     VolumeControlSheetContent()
                 }
@@ -788,9 +792,13 @@ fun LyricsScreen(
                 }
 
                 androidx.compose.material3.ModalBottomSheet(
-                    onDismissRequest = { showQueueSheet = false }
+                    onDismissRequest = { showQueueSheet = false },
+                    sheetGesturesEnabled = false
                 ) {
-                    androidx.compose.foundation.lazy.LazyColumn(state = listState) {
+                    androidx.compose.foundation.lazy.LazyColumn(
+                        state = listState,
+                        modifier = Modifier.bottomSheetScrollGuard()
+                    ) {
                         itemsIndexed(displayedQueue) { index, song ->
                             Row(
                                 modifier = Modifier
@@ -876,9 +884,12 @@ fun LyricsScreen(
                     playlists.filterNot { LocalFilesPlaylist.isSystemPlaylist(it, context) }
                 }
                 androidx.compose.material3.ModalBottomSheet(
-                    onDismissRequest = { showAddSheet = false }
+                    onDismissRequest = { showAddSheet = false },
+                    sheetGesturesEnabled = false
                 ) {
-                    androidx.compose.foundation.lazy.LazyColumn {
+                    androidx.compose.foundation.lazy.LazyColumn(
+                        modifier = Modifier.bottomSheetScrollGuard()
+                    ) {
                         itemsIndexed(selectablePlaylists) { _, pl ->
                             Row(
                                 modifier = Modifier
@@ -897,7 +908,14 @@ fun LyricsScreen(
                             ) {
                                 Text(pl.name, style = MaterialTheme.typography.bodyLarge)
                                 Spacer(modifier = Modifier.weight(1f))
-                                Text(stringResource(R.string.lyrics_song_count, pl.songs.size), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                pluralStringResource(
+                                    R.plurals.lyrics_song_count,
+                                    pl.songs.size,
+                                    pl.songs.size
+                                ),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                             }
                         }
                     }

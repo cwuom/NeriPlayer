@@ -1,0 +1,18 @@
+<resources>
+    <!-- Selection & Confirmation -->
+    <plurals name="common_selected_count">
+        <item quantity="other">已选 %d 项</item>
+    </plurals>
+    <plurals name="download_selected_count">
+        <item quantity="other">已选 %d 首</item>
+    </plurals>
+    <plurals name="download_delete_selected_confirm">
+        <item quantity="other">确定要删除选中的 %d 首歌曲吗？此操作不可撤销。</item>
+    </plurals>
+    <plurals name="local_playlist_delete_songs_confirm">
+        <item quantity="other">确定要从歌单移除所选的 %d 首歌曲吗？</item>
+    </plurals>
+    <plurals name="library_delete_selected_confirm">
+        <item quantity="other">确定要删除选中的 %d 个歌单吗？此操作不可撤销。</item>
+    </plurals>
+</resources>

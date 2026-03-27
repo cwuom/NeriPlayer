@@ -1,5 +1,29 @@
 package moe.ouom.neriplayer.ui.viewmodel.playlist
 
+/*
+ * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
+ * Copyright (C) 2025-2025 NeriPlayer developers
+ * https://github.com/cwuom/NeriPlayer
+ *
+ * This software is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This software is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this software.
+ * If not, see <https://www.gnu.org/licenses/>.
+ *
+ * File: moe.ouom.neriplayer.ui.viewmodel.playlist/LocalPlaylistDetailViewModel
+ * Updated: 2026/3/23
+ */
+
+
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -9,16 +33,16 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.LocalAudioImportManager
-import moe.ouom.neriplayer.data.LocalAudioImportResult
-import moe.ouom.neriplayer.data.LocalFilesPlaylist
-import moe.ouom.neriplayer.data.LocalPlaylist
-import moe.ouom.neriplayer.data.LocalPlaylistRepository
-import moe.ouom.neriplayer.data.NeteaseLikeSyncResult
-import moe.ouom.neriplayer.data.LocalSongSupport
-import moe.ouom.neriplayer.data.SongIdentity
-import moe.ouom.neriplayer.data.identity
-import moe.ouom.neriplayer.data.stableKey
+import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
+import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportResult
+import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
+import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.local.playlist.sync.NeteaseLikeSyncResult
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.model.SongIdentity
+import moe.ouom.neriplayer.data.model.identity
+import moe.ouom.neriplayer.data.model.stableKey
 
 data class LocalPlaylistDetailUiState(
     val playlist: LocalPlaylist? = null,

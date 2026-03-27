@@ -493,6 +493,184 @@ class YouTubeMusicParserTest {
     }
 
     @Test
+    fun parseHomeShelfPages_readsBrowsePageTypeForHomeCards() {
+        val root = JSONObject(
+            """
+            {
+              "contents": {
+                "singleColumnBrowseResultsRenderer": {
+                  "tabs": [
+                    {
+                      "tabRenderer": {
+                        "content": {
+                          "sectionListRenderer": {
+                            "contents": [
+                              {
+                                "musicCarouselShelfRenderer": {
+                                  "header": {
+                                    "musicCarouselShelfBasicHeaderRenderer": {
+                                      "title": { "simpleText": "为你推荐" }
+                                    }
+                                  },
+                                  "contents": [
+                                    {
+                                      "musicTwoRowItemRenderer": {
+                                        "title": { "simpleText": "Playlist A" },
+                                        "subtitle": { "simpleText": "42 songs" },
+                                        "navigationEndpoint": {
+                                          "browseEndpoint": {
+                                            "browseId": "VLPL-home-playlist",
+                                            "browseEndpointContextSupportedConfigs": {
+                                              "browseEndpointContextMusicConfig": {
+                                                "pageType": "MUSIC_PAGE_TYPE_PLAYLIST"
+                                              }
+                                            }
+                                          }
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "musicTwoRowItemRenderer": {
+                                        "title": { "simpleText": "Artist A" },
+                                        "subtitle": { "simpleText": "Artist • 1M subscribers" },
+                                        "navigationEndpoint": {
+                                          "browseEndpoint": {
+                                            "browseId": "UC-artist-home",
+                                            "browseEndpointContextSupportedConfigs": {
+                                              "browseEndpointContextMusicConfig": {
+                                                "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                                              }
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  ]
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+            """.trimIndent()
+        )
+
+        val shelves = YouTubeMusicParser.parseHomeShelfPages(root)
+
+        assertEquals(1, shelves.size)
+        assertEquals("MUSIC_PAGE_TYPE_PLAYLIST", shelves.first().items[0].pageType)
+        assertEquals("MUSIC_PAGE_TYPE_ARTIST", shelves.first().items[1].pageType)
+    }
+
+    @Test
+    fun parseHomeShelfPages_readsDurationForHomeSongItems() {
+        val root = JSONObject(
+            """
+            {
+              "contents": {
+                "singleColumnBrowseResultsRenderer": {
+                  "tabs": [
+                    {
+                      "tabRenderer": {
+                        "content": {
+                          "sectionListRenderer": {
+                            "contents": [
+                              {
+                                "musicCarouselShelfRenderer": {
+                                  "header": {
+                                    "musicCarouselShelfBasicHeaderRenderer": {
+                                      "title": { "simpleText": "猜你喜欢" }
+                                    }
+                                  },
+                                  "contents": [
+                                    {
+                                      "musicTwoRowItemRenderer": {
+                                        "title": { "simpleText": "Song A" },
+                                        "subtitle": { "simpleText": "Artist A • Album A • 3:21" },
+                                        "navigationEndpoint": {
+                                          "watchEndpoint": { "videoId": "video-a" }
+                                        }
+                                      }
+                                    },
+                                    {
+                                      "musicResponsiveListItemRenderer": {
+                                        "playlistItemData": { "videoId": "video-b" },
+                                        "flexColumns": [
+                                          {
+                                            "musicResponsiveListItemFlexColumnRenderer": {
+                                              "text": { "simpleText": "Song B" }
+                                            }
+                                          },
+                                          {
+                                            "musicResponsiveListItemFlexColumnRenderer": {
+                                              "text": { "simpleText": "Artist B • Album B • 4:05" }
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  ]
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+            """.trimIndent()
+        )
+
+        val items = YouTubeMusicParser.parseHomeShelfPages(root).single().items
+
+        assertEquals("3:21", items[0].durationText)
+        assertEquals(201_000L, items[0].durationMs)
+        assertEquals("4:05", items[1].durationText)
+        assertEquals(245_000L, items[1].durationMs)
+    }
+
+    @Test
+    fun parseHomeSongMetadata_skipsSongTypeLabelAndDuration() {
+        val metadata = YouTubeMusicParser.parseHomeSongMetadata(
+            subtitle = "歌曲 • 陈芳语 • 爱你 • 3:27",
+            fallbackAlbum = "猜你喜欢"
+        )
+
+        assertEquals("陈芳语", metadata.artist)
+        assertEquals("爱你", metadata.album)
+    }
+
+    @Test
+    fun parseHomeSongMetadata_preservesNormalArtistAndAlbum() {
+        val metadata = YouTubeMusicParser.parseHomeSongMetadata(
+            subtitle = "Artist A • Album A",
+            fallbackAlbum = "每日发现"
+        )
+
+        assertEquals("Artist A", metadata.artist)
+        assertEquals("Album A", metadata.album)
+    }
+
+    @Test
+    fun parseHomeSongMetadata_dropsVideoStatsAndFallsBackAlbum() {
+        val metadata = YouTubeMusicParser.parseHomeSongMetadata(
+            subtitle = "视频 • Owner A • 1M views",
+            fallbackAlbum = "翻唱与混音"
+        )
+
+        assertEquals("Owner A", metadata.artist)
+        assertEquals("翻唱与混音", metadata.album)
+    }
+
+    @Test
     fun extractHomeContinuationAndShelfItems_supportSectionContinuationPayload() {
         val root = JSONObject(
             """
@@ -545,56 +723,6 @@ class YouTubeMusicParserTest {
         assertEquals(1, YouTubeMusicParser.parseHomeShelfContinuationItems(root).size)
         assertEquals("video-c", YouTubeMusicParser.parseHomeShelfContinuationItems(root).first().videoId)
         assertEquals("home-shelf-next-token", YouTubeMusicParser.extractHomeShelfContinuation(root))
-    }
-
-    @Test
-    fun hasSearchSectionList_detectsSearchTabRenderer() {
-        val root = createMixedSearchResultsRoot()
-
-        assertTrue(YouTubeMusicParser.hasSearchSectionList(root))
-        assertTrue(!YouTubeMusicParser.hasSearchSectionList(JSONObject()))
-    }
-
-    @Test
-    fun parseSearchResults_extractsPlayableSongAndVideoFromMixedShelf() {
-        val results = YouTubeMusicParser.parseSearchResults(createMixedSearchResultsRoot())
-
-        assertEquals(2, results.size)
-
-        val song = results[0]
-        assertEquals("song-video-id", song.videoId)
-        assertEquals("Song Result", song.title)
-        assertEquals("Artist A", song.artist)
-        assertEquals("Album A", song.album)
-        assertEquals("Song • Artist A • Album A", song.subtitle)
-        assertEquals("https://i.ytimg.com/vi/song-video-id/hqdefault.jpg", song.coverUrl)
-        assertEquals("3:21", song.durationText)
-        assertEquals(201_000L, song.durationMs)
-        assertEquals(YouTubeMusicSearchResultType.Song, song.type)
-
-        val video = results[1]
-        assertEquals("video-video-id", video.videoId)
-        assertEquals("Video Result", video.title)
-        assertEquals("Artist B", video.artist)
-        assertEquals("", video.album)
-        assertEquals("Video • Artist B", video.subtitle)
-        assertEquals("https://i.ytimg.com/vi/video-video-id/hqdefault.jpg", video.coverUrl)
-        assertEquals("4:05", video.durationText)
-        assertEquals(245_000L, video.durationMs)
-        assertEquals(YouTubeMusicSearchResultType.Video, video.type)
-    }
-
-    @Test
-    fun parseSearchResults_filtersNonPlayableEntriesAndHonorsLimit() {
-        val results = YouTubeMusicParser.parseSearchResults(
-            root = createMixedSearchResultsRoot(),
-            limit = 1
-        )
-
-        assertEquals(1, results.size)
-        assertEquals("song-video-id", results.single().videoId)
-        assertTrue(results.none { it.title == "Artist Result" })
-        assertTrue(results.none { it.title == "Unavailable Song" })
     }
 
     @Test

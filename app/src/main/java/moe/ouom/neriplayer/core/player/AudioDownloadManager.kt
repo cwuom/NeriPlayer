@@ -1,3 +1,5 @@
+@file:Suppress("SpellCheckingInspection")
+
 package moe.ouom.neriplayer.core.player
 
 /*
@@ -26,7 +28,7 @@ package moe.ouom.neriplayer.core.player
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
-import android.os.Environment
+import android.os.Looper
 import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,41 +44,44 @@ import moe.ouom.neriplayer.core.api.youtube.YouTubePlayableStreamType
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.clearSongCancelled
-import moe.ouom.neriplayer.data.BiliAudioStreamInfo
-import moe.ouom.neriplayer.data.LocalMediaSupport
-import moe.ouom.neriplayer.data.LocalSongSupport
-import moe.ouom.neriplayer.data.YOUTUBE_MUSIC_ORIGIN
-import moe.ouom.neriplayer.data.buildYouTubeStreamRequestHeaders
-import moe.ouom.neriplayer.data.displayArtist
-import moe.ouom.neriplayer.data.displayCoverUrl
-import moe.ouom.neriplayer.data.displayName
-import moe.ouom.neriplayer.data.extractYouTubeMusicVideoId
-import moe.ouom.neriplayer.data.isYouTubeMusicSong
-import moe.ouom.neriplayer.data.stableKey
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.data.platform.bili.BiliAudioStreamInfo
+import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
+import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeStreamRequestHeaders
+import moe.ouom.neriplayer.data.model.displayCoverUrl
+import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
+import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
+import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import okhttp3.Request
 import okio.Buffer
 import okio.buffer
 import okio.sink
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
 import java.net.URLConnection
-import java.text.Normalizer
 import kotlin.math.roundToInt
 
 /**
- * 音频下载管理器：解析来源（网易云 / Bilibili）并保存到本地 App 专属音乐目录
+ * 音频下载管理器：解析来源（网易云 / Bilibili）并保存到本地目录
  * - 不依赖系统 DownloadManager，直接用共享 OkHttpClient，实现自定义 Header 与代理
- * - 保存路径：/Android/data/<package>/files/Music/NeriPlayer/<Artist - Title>.<ext>
+ * - 默认保存路径：/Android/data/<package>/files/Music/NeriPlayer/<Artist - Title>.<ext>
+ * - 支持通过 SAF 将下载目录切换到自定义文件夹
  */
 object AudioDownloadManager {
 
     private const val TAG = "NERI-Downloader"
     private const val BILI_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     private const val BILI_REFERER = "https://www.bilibili.com"
+
+    private fun canBlockStorageLookup(): Boolean {
+        return Looper.myLooper() != Looper.getMainLooper()
+    }
     private const val DOWNLOAD_READ_BUFFER_BYTES = 64L * 1024L
     private const val YOUTUBE_DOWNLOAD_PREFERRED_CHUNK_SIZE_BYTES = 4L * 1024L * 1024L
 
@@ -140,8 +145,7 @@ object AudioDownloadManager {
                     return@withContext
                 }
 
-                val existingFilePath = getLocalFilePath(context, song)
-                if (existingFilePath != null) {
+                if (ManagedDownloadStorage.findDownloadedAudio(context, song) != null) {
                     NPLogger.d(TAG, context.getString(R.string.download_file_exists, song.name))
                     // 文件已存在，设置进度为null触发任务完成
                     _progressFlow.value = null
@@ -179,12 +183,10 @@ object AudioDownloadManager {
                     else -> extFromUrl(url) ?: extGuess
                 }
 
-                val baseName = sanitizeFileName("${song.displayArtist()} - ${song.displayName()}")
+                val baseName = ManagedDownloadStorage.buildDisplayBaseName(song)
                 val fileName = if (ext.isNullOrBlank()) baseName else "$baseName.$ext"
 
-                val baseDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir
-                val downloadDir = File(baseDir, "NeriPlayer").apply { mkdirs() }
-                val tempFile = File(downloadDir, "$fileName.downloading")
+                val tempFile = ManagedDownloadStorage.createWorkingFile(context, fileName)
                 if (tempFile.exists()) tempFile.delete()
 
                 sidecarJob = launchSidecarDownload(context, song, baseName)
@@ -237,23 +239,16 @@ object AudioDownloadManager {
                     singleThreadDownload(client, request, tempFile, workingSong.id, workingSong.stableKey())
                 }
 
-                // 下载完成后，重命名为正式文件
-                val destFile = uniqueFile(downloadDir, fileName)
-                val renamed = tempFile.renameTo(destFile)
-                if (!renamed) {
-                    runCatching {
-                        tempFile.copyTo(destFile, overwrite = true)
-                        tempFile.delete()
-                    }.getOrElse {
-                        tempFile.delete()
-                        throw IllegalStateException("保存失败：无法重命名临时文件")
-                    }
-                }
+                val storedAudio = ManagedDownloadStorage.saveAudioFromTemp(
+                    context = context,
+                    fileName = fileName,
+                    tempFile = tempFile,
+                    mimeType = mime
+                )
 
                 _progressFlow.value = null
-                // 通知媒体库（仅当保存到公共目录时必要；App 专属目录通常播放器可直接访问）
                 try {
-                    context.contentResolver.openInputStream(Uri.fromFile(destFile))?.close()
+                    context.contentResolver.openInputStream(storedAudio.playbackUri.toUri())?.close()
                 } catch (_: Exception) { }
 
             } catch (e: Exception) {
@@ -299,75 +294,69 @@ object AudioDownloadManager {
         song: SongItem,
         baseName: String
     ) {
-        val baseDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir
-        val downloadDir = File(baseDir, "NeriPlayer")
-        val coverDir = File(downloadDir, "Covers").apply { mkdirs() }
         val coverUrl = song.displayCoverUrl()
         if (coverUrl.isNullOrBlank()) {
             return
         }
 
-        val coverFile = File(coverDir, "$baseName.jpg")
-        if (isUsableCoverFile(coverFile)) {
-            return
+        val existingAudio = ManagedDownloadStorage.findAudio(context, song)
+        val existingCover = existingAudio?.let {
+            runBlocking(Dispatchers.IO) {
+                ManagedDownloadStorage.findCoverReference(context, it)
+            }
         }
-        val tempFile = File(coverDir, "${coverFile.name}.downloading")
-        if (tempFile.exists()) {
-            tempFile.delete()
+        if (!existingCover.isNullOrBlank()) {
+            return
         }
 
         val req = Request.Builder().url(coverUrl).build()
-        try {
-            AppContainer.sharedOkHttpClient.newCall(req).execute().use { response ->
-                if (!response.isSuccessful) {
-                    return
-                }
-                val body = response.body ?: return
-                val contentType = body.contentType()?.toString().orEmpty()
-                if (contentType.isNotBlank() && !contentType.startsWith("image/", ignoreCase = true)) {
-                    throw IOException("封面响应不是图片: $contentType")
-                }
-                val expectedLength = body.contentLength()
-                val copiedBytes = body.byteStream().use { input ->
-                    tempFile.outputStream().use { output ->
-                        input.copyTo(output)
-                    }
-                }
-                if (copiedBytes <= 0L) {
-                    throw IOException("封面写入为空")
-                }
-                if (expectedLength > 0L && copiedBytes < expectedLength) {
-                    throw IOException("封面写入不完整: $copiedBytes/$expectedLength")
-                }
-                if (!isUsableCoverFile(tempFile)) {
-                    throw IOException("封面文件校验失败")
-                }
-                replaceFileAtomically(tempFile, coverFile)
+        AppContainer.sharedOkHttpClient.newCall(req).execute().use { response ->
+            if (!response.isSuccessful) {
+                return
             }
-        } finally {
-            if (tempFile.exists()) {
-                tempFile.delete()
+            val body = response.body ?: return
+            val contentType = body.contentType()?.toString().orEmpty()
+            if (contentType.isNotBlank() && !contentType.startsWith("image/", ignoreCase = true)) {
+                throw IOException("封面响应不是图片: $contentType")
+            }
+            val expectedLength = body.contentLength()
+            val bytes = body.bytes()
+            val copiedBytes = bytes.size.toLong()
+            if (copiedBytes <= 0L) {
+                throw IOException("封面写入为空")
+            }
+            if (expectedLength > 0L && copiedBytes < expectedLength) {
+                throw IOException("封面写入不完整: $copiedBytes/$expectedLength")
+            }
+            if (!isUsableCoverBytes(bytes)) {
+                throw IOException("封面文件校验失败")
+            }
+            val tempFile = ManagedDownloadStorage.createWorkingFile(context, "$baseName.jpg")
+            runCatching {
+                tempFile.writeBytes(bytes)
+                ManagedDownloadStorage.commitCoverFile(
+                    context = context,
+                    tempFile = tempFile,
+                    fileName = "$baseName.jpg",
+                    mimeType = contentType.takeIf { it.isNotBlank() }
+                )
+            }.also {
+                if (tempFile.exists()) {
+                    tempFile.delete()
+                }
             }
         }
     }
 
-    private fun isUsableCoverFile(file: File): Boolean {
-        if (!file.exists() || !file.isFile || file.length() <= 0L) {
+    private fun isUsableCoverBytes(bytes: ByteArray): Boolean {
+        if (bytes.isEmpty()) {
             return false
         }
         return runCatching {
             val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeFile(file.absolutePath, options)
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
             options.outWidth > 0 && options.outHeight > 0
         }.getOrDefault(false)
-    }
-
-    private fun replaceFileAtomically(tempFile: File, targetFile: File) {
-        if (tempFile.renameTo(targetFile)) {
-            return
-        }
-        tempFile.copyTo(targetFile, overwrite = true)
-        tempFile.delete()
     }
 
     /** 批量下载歌单中的所有歌曲 */
@@ -489,26 +478,35 @@ object AudioDownloadManager {
     /** 下载歌词文件 */
     private fun downloadLyrics(context: Context, song: SongItem) {
         try {
-            val lyricFiles = buildLyricFiles(context, song)
-            val lyricFile = lyricFiles.lyricById
-            val baseNameLyricFile = lyricFiles.lyricByName
-            val transLyricFile = lyricFiles.translatedById
-            val baseNameTransLyricFile = lyricFiles.translatedByName
-
-            // 优先使用song.matchedLyric中的歌词
-            if (!song.matchedLyric.isNullOrBlank()) {
-                lyricFile.writeText(song.matchedLyric, Charsets.UTF_8)
-                baseNameLyricFile.writeText(song.matchedLyric, Charsets.UTF_8)
+            var lyricText = song.matchedLyric?.takeIf { it.isNotBlank() }
+            var translatedText: String? = null
+            if (lyricText != null) {
                 NPLogger.d(TAG, context.getString(R.string.download_lyrics_matched, song.name))
             }
-
             val isYouTubeMusic = isYouTubeMusicSong(song)
             val isBili = song.album.startsWith(PlayerManager.BILI_SOURCE_TAG)
 
             when {
-                isYouTubeMusic -> downloadYouTubeMusicLyrics(song, lyricFile, baseNameLyricFile)
+                isYouTubeMusic -> {
+                    if (lyricText == null) {
+                        lyricText = downloadYouTubeMusicLyrics(song)
+                    }
+                }
                 isBili -> { /* B站暂无歌词源 */ }
-                else -> downloadNeteaseLyrics(song, lyricFile, baseNameLyricFile, transLyricFile, baseNameTransLyricFile)
+                else -> {
+                    val downloaded = downloadNeteaseLyrics(song)
+                    if (lyricText == null) {
+                        lyricText = downloaded.lyricText
+                    }
+                    translatedText = downloaded.translatedText
+                }
+            }
+
+            lyricText?.takeIf { it.isNotBlank() }?.let { lyric ->
+                writeManagedLyrics(context, song, lyric, translated = false)
+            }
+            translatedText?.takeIf { it.isNotBlank() }?.let { lyric ->
+                writeManagedLyrics(context, song, lyric, translated = true)
             }
         } catch (e: Exception) {
             NPLogger.w(TAG, "歌词下载失败: ${song.name} - ${e.message}")
@@ -517,11 +515,9 @@ object AudioDownloadManager {
 
     /** 从 LRCLIB / YouTube Music API 获取歌词并保存 */
     private fun downloadYouTubeMusicLyrics(
-        song: SongItem,
-        lyricFile: File,
-        baseNameLyricFile: File
-    ) {
-        if (!song.matchedLyric.isNullOrBlank()) return
+        song: SongItem
+    ): String? {
+        if (!song.matchedLyric.isNullOrBlank()) return null
         try {
             val lrcLibResult = try {
                 runBlocking(Dispatchers.IO) {
@@ -539,41 +535,33 @@ object AudioDownloadManager {
 
             when {
                 syncedLyrics != null -> {
-                    lyricFile.writeText(syncedLyrics, Charsets.UTF_8)
-                    baseNameLyricFile.writeText(syncedLyrics, Charsets.UTF_8)
                     NPLogger.d(TAG, "LRCLIB 同步歌词保存: ${song.name}")
-                    return
+                    return syncedLyrics
                 }
                 plainLyrics != null -> {
-                    lyricFile.writeText(plainLyrics, Charsets.UTF_8)
-                    baseNameLyricFile.writeText(plainLyrics, Charsets.UTF_8)
                     NPLogger.d(TAG, "LRCLIB 纯文本歌词保存: ${song.name}")
-                    return
+                    return plainLyrics
                 }
             }
 
             // 回退 YouTube Music API
-            val videoId = extractYouTubeMusicVideoId(song.mediaUri) ?: return
+            val videoId = extractYouTubeMusicVideoId(song.mediaUri) ?: return null
             val ytResult = runBlocking(Dispatchers.IO) {
                 AppContainer.youtubeMusicClient.getLyrics(videoId)
-            } ?: return
-            val lyricsText = ytResult.lyrics.takeIf { it.isNotBlank() } ?: return
-            lyricFile.writeText(lyricsText, Charsets.UTF_8)
-            baseNameLyricFile.writeText(lyricsText, Charsets.UTF_8)
+            } ?: return null
+            val lyricsText = ytResult.lyrics.takeIf { it.isNotBlank() } ?: return null
             NPLogger.d(TAG, "YouTube Music API 歌词保存: ${song.name}")
+            return lyricsText
         } catch (e: Exception) {
             NPLogger.w(TAG, "YouTube Music 歌词下载失败: ${song.name} - ${e.message}")
         }
+        return null
     }
 
     /** 从网易云 API 获取歌词并保存 */
     private fun downloadNeteaseLyrics(
-        song: SongItem,
-        lyricFile: File,
-        baseNameLyricFile: File,
-        transLyricFile: File,
-        baseNameTransLyricFile: File
-    ) {
+        song: SongItem
+    ): DownloadedLyrics {
         if (!song.matchedLyric.isNullOrBlank()) {
             try {
                 val lyrics = AppContainer.neteaseClient.getLyricNew(song.id)
@@ -581,99 +569,98 @@ object AudioDownloadManager {
                 if (root.optInt("code") == 200) {
                     val tlyric = root.optJSONObject("tlyric")?.optString("lyric") ?: ""
                     if (tlyric.isNotBlank()) {
-                        transLyricFile.writeText(tlyric, Charsets.UTF_8)
-                        baseNameTransLyricFile.writeText(tlyric, Charsets.UTF_8)
                         NPLogger.d(TAG, "翻译歌词保存: ${song.name}")
+                        return DownloadedLyrics(translatedText = tlyric)
                     }
                 }
             } catch (e: Exception) {
                 NPLogger.w(TAG, "翻译歌词下载失败: ${song.name} - ${e.message}")
             }
-            return
+            return DownloadedLyrics()
         }
 
         try {
             val lyrics = AppContainer.neteaseClient.getLyricNew(song.id)
             val root = JSONObject(lyrics)
-            if (root.optInt("code") != 200) return
+            if (root.optInt("code") != 200) return DownloadedLyrics()
 
             val lrc = root.optJSONObject("lrc")?.optString("lyric") ?: ""
+            val translated = root.optJSONObject("tlyric")?.optString("lyric") ?: ""
             if (lrc.isNotBlank()) {
-                lyricFile.writeText(lrc, Charsets.UTF_8)
-                baseNameLyricFile.writeText(lrc, Charsets.UTF_8)
                 NPLogger.d(TAG, "从API获取歌词保存: ${song.name}")
             }
-
-            val tlyric = root.optJSONObject("tlyric")?.optString("lyric") ?: ""
-            if (tlyric.isNotBlank()) {
-                transLyricFile.writeText(tlyric, Charsets.UTF_8)
-                baseNameTransLyricFile.writeText(tlyric, Charsets.UTF_8)
+            if (translated.isNotBlank()) {
                 NPLogger.d(TAG, "从API获取翻译歌词保存: ${song.name}")
             }
+            return DownloadedLyrics(
+                lyricText = lrc.takeIf { it.isNotBlank() },
+                translatedText = translated.takeIf { it.isNotBlank() }
+            )
         } catch (e: Exception) {
             NPLogger.w(TAG, "网易云歌词下载失败: ${song.name} - ${e.message}")
         }
+        return DownloadedLyrics()
     }
 
-    /** 获取本地音频文件路径 */
-fun getLocalFilePath(context: Context, song: SongItem): String? {
-        val baseDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir
-        val downloadDir = File(baseDir, "NeriPlayer")
-        if (!downloadDir.exists()) return null
-        
-        // 查找可能的文件扩展名
-        val possibleExtensions = listOf("flac", "m4a", "mp3", "eac3", "aac", "wav", "ogg", "webm")
-        val baseNames = candidateBaseNames(song)
-        for (baseName in baseNames) {
-            for (ext in possibleExtensions) {
-                val file = File(downloadDir, "$baseName.$ext")
-                if (file.exists()) return file.absolutePath
-            }
+    private fun writeManagedLyrics(
+        context: Context,
+        song: SongItem,
+        content: String,
+        translated: Boolean
+    ) {
+        ManagedDownloadStorage.writeLyrics(
+            context = context,
+            songId = song.id,
+            baseName = ManagedDownloadStorage.buildDisplayBaseName(song),
+            content = content,
+            translated = translated
+        )
+    }
+
+    fun getLocalPlaybackUri(context: Context, song: SongItem): String? {
+        ManagedDownloadStorage.peekDownloadedAudio(song)?.let { return it.playbackUri }
+        if (!canBlockStorageLookup()) return null
+        return ManagedDownloadStorage.findAudio(context, song)?.playbackUri
+    }
+
+    fun hasLocalDownload(context: Context, song: SongItem): Boolean {
+        if (ManagedDownloadStorage.peekDownloadedAudio(song) != null) {
+            return true
         }
-        val fileNamePatterns = baseNames.map { baseName ->
-            Regex("^${Regex.escape(baseName)}(?: \\(\\d+\\))?$")
+        if (!canBlockStorageLookup()) {
+            return false
         }
-        return downloadDir.listFiles()
-            ?.firstOrNull { file ->
-                file.isFile &&
-                    file.extension.lowercase() in possibleExtensions &&
-                    fileNamePatterns.any { pattern -> pattern.matches(file.nameWithoutExtension) }
-            }
-            ?.absolutePath
+        return ManagedDownloadStorage.hasDownloadedAudio(context, song)
     }
 
     /** 解析下载歌曲对应的本地封面，供离线 UI 兜底使用 */
     fun getLocalCoverUri(context: Context, song: SongItem): String? {
-        val baseDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir
-        val coverDir = File(File(baseDir, "NeriPlayer"), "Covers")
-        val possibleExtensions = listOf("jpg", "jpeg", "png", "webp")
-        val baseNames = candidateBaseNames(song)
-        if (coverDir.exists()) {
-            for (baseName in baseNames) {
-                for (ext in possibleExtensions) {
-                    val file = File(coverDir, "$baseName.$ext")
-                    if (file.exists()) return file.toURI().toString()
+        val allowBlockingLookup = canBlockStorageLookup()
+        val localAudio = ManagedDownloadStorage.peekDownloadedAudio(song)
+            ?: if (allowBlockingLookup) ManagedDownloadStorage.findAudio(context, song) else null
+        val coverReference = localAudio?.let {
+            ManagedDownloadStorage.peekCoverReference(it)
+                ?: if (allowBlockingLookup) {
+                    runBlocking(Dispatchers.IO) {
+                        ManagedDownloadStorage.findCoverReference(context, it)
+                    }
+                } else {
+                    null
                 }
-            }
-
-            val fileNamePatterns = baseNames.map { baseName ->
-                Regex("^${Regex.escape(baseName)}(?: \\(\\d+\\))?$")
-            }
-            coverDir.listFiles()
-                ?.firstOrNull { file ->
-                    file.isFile &&
-                        file.extension.lowercase() in possibleExtensions &&
-                        fileNamePatterns.any { pattern -> pattern.matches(file.nameWithoutExtension) }
-                }
-                ?.toURI()
-                ?.toString()
-                ?.let { return it }
+        }
+        if (!coverReference.isNullOrBlank()) {
+            return ManagedDownloadStorage.toPlayableUri(coverReference) ?: coverReference
         }
 
-        val localAudioPath = getLocalFilePath(context, song)
-            ?: song.localFilePath?.takeIf { File(it).exists() }
+        if (localAudio != null || !allowBlockingLookup) {
+            return null
+        }
+
+        val localAudioUri = song.localFilePath
+            ?.takeIf { File(it).exists() }
+            ?.let { Uri.fromFile(File(it)) }
+            ?: song.mediaUri?.takeIf { it.isNotBlank() }?.toUri()
             ?: return null
-        val localAudioUri = Uri.fromFile(File(localAudioPath))
         return runCatching {
             LocalMediaSupport.inspect(context, localAudioUri).coverUri
         }.getOrElse {
@@ -683,41 +670,15 @@ fun getLocalFilePath(context: Context, song: SongItem): String? {
     }
 
     private fun candidateBaseNames(song: SongItem): List<String> {
-        val baseNames = linkedSetOf<String>()
-        baseNames += sanitizeFileName("${song.customArtist ?: song.artist} - ${song.customName ?: song.name}")
-        baseNames += sanitizeFileName("${song.artist} - ${song.name}")
-
-        val originalName = song.originalName?.takeIf { it.isNotBlank() } ?: song.name
-        val originalArtist = song.originalArtist?.takeIf { it.isNotBlank() } ?: song.artist
-        baseNames += sanitizeFileName("$originalArtist - $originalName")
-
-        return baseNames.toList()
+        return ManagedDownloadStorage.buildCandidateBaseNames(song)
     }
 
-    /** 获取本地歌词文件路径 */
-    fun getLyricFilePath(context: Context, song: SongItem): String? {
-        val files = buildLyricFiles(context, song)
-        return sequenceOf(files.lyricById, files.lyricByName)
-            .firstOrNull(File::exists)
-            ?.absolutePath
+    fun getLyricContent(context: Context, song: SongItem): String? {
+        return ManagedDownloadStorage.readLyrics(context, song, translated = false)
     }
 
-    /** 获取本地翻译歌词文件路径 */
-    fun getTranslatedLyricFilePath(context: Context, song: SongItem): String? {
-        val files = buildLyricFiles(context, song)
-        return sequenceOf(files.translatedById, files.translatedByName)
-            .firstOrNull(File::exists)
-            ?.absolutePath
-    }
-
-    fun getManagedLyricFiles(context: Context, song: SongItem): List<File> {
-        val files = buildLyricFiles(context, song)
-        return listOf(
-            files.lyricById,
-            files.lyricByName,
-            files.translatedById,
-            files.translatedByName
-        )
+    fun getTranslatedLyricContent(context: Context, song: SongItem): String? {
+        return ManagedDownloadStorage.readLyrics(context, song, translated = true)
     }
 
     // 解析网易云直链
@@ -727,19 +688,15 @@ fun getLocalFilePath(context: Context, song: SongItem): String? {
         return try {
             val root = JSONObject(raw)
             if (root.optInt("code") != 200) return tryWeapiFallback(songId, quality)
-            val data = when (val d = root.opt("data")) {
-                is JSONObject -> d
-                is JSONArray -> d.optJSONObject(0)
-                else -> null
-            } ?: return tryWeapiFallback(songId, quality)
-            val url = data.optString("url", "")
-            if (url.isNullOrBlank()) return tryWeapiFallback(songId, quality)
-            val type = data.optString("type", "") // e.g., mp3/flac
+            val data = NeteasePlaybackResponseParser.parseDownloadInfo(raw)
+                ?: return tryWeapiFallback(songId, quality)
+            val url = data.url
+            val type = data.type.orEmpty() // e.g., mp3/flac
             val mime = guessMimeFromUrl(url)
             ResolvedDownloadSource(
                 url = ensureHttps(url),
                 mimeType = mime,
-                fileExtensionHint = type.lowercase()
+                fileExtensionHint = type.lowercase().ifBlank { extFromUrl(url) }
             )
         } catch (_: Exception) {
             tryWeapiFallback(songId, quality)
@@ -757,15 +714,8 @@ fun getLocalFilePath(context: Context, song: SongItem): String? {
         return try {
             val br = bitrateForQuality(level)
             val raw = AppContainer.neteaseClient.getSongUrl(songId, bitrate = br)
-            val root = JSONObject(raw)
-            if (root.optInt("code", -1) != 200) return null
-            val data = when (val d = root.opt("data")) {
-                is JSONObject -> d
-                is JSONArray -> d.optJSONObject(0)
-                else -> null
-            } ?: return null
-            val url = data.optString("url", "")
-            if (url.isNullOrBlank()) return null
+            val data = NeteasePlaybackResponseParser.parseDownloadInfo(raw) ?: return null
+            val url = data.url
             val finalUrl = ensureHttps(url)
             val mime = guessMimeFromUrl(finalUrl)
             val ext = extFromUrl(finalUrl)
@@ -822,47 +772,10 @@ fun getLocalFilePath(context: Context, song: SongItem): String? {
         return ResolvedDownloadSource(url = url, mimeType = mime, fileExtensionHint = ext)
     }
 
-    private fun sanitizeFileName(name: String): String {
-        val n = Normalizer.normalize(name, Normalizer.Form.NFKD)
-        return n.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().ifBlank { "audio" }
-    }
-
-    private fun buildLyricFiles(context: Context, song: SongItem): LyricFiles {
-        val lyricsDir = getLyricsDirectory(context)
-        val baseName = sanitizeFileName("${song.displayArtist()} - ${song.displayName()}")
-        return LyricFiles(
-            lyricById = File(lyricsDir, "${song.id}.lrc"),
-            lyricByName = File(lyricsDir, "$baseName.lrc"),
-            translatedById = File(lyricsDir, "${song.id}_trans.lrc"),
-            translatedByName = File(lyricsDir, "${baseName}_trans.lrc")
-        )
-    }
-
-    private fun getLyricsDirectory(context: Context): File {
-        val baseDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir
-        return File(baseDir, "NeriPlayer/Lyrics").apply { mkdirs() }
-    }
-
-    private data class LyricFiles(
-        val lyricById: File,
-        val lyricByName: File,
-        val translatedById: File,
-        val translatedByName: File
+    private data class DownloadedLyrics(
+        val lyricText: String? = null,
+        val translatedText: String? = null
     )
-
-    private fun uniqueFile(dir: File, name: String): File {
-        var f = File(dir, name)
-        if (!f.exists()) return f
-        val base = name.substringBeforeLast('.', name)
-        val ext = name.substringAfterLast('.', "")
-        var idx = 1
-        while (f.exists() && idx < 10_000) {
-            val candidate = if (ext.isBlank()) "$base (${idx})" else "$base (${idx}).${ext}"
-            f = File(dir, candidate)
-            idx++
-        }
-        return f
-    }
 
     private fun ensureHttps(url: String): String = if (url.startsWith("http://")) url.replaceFirst("http://", "https://") else url
 
@@ -871,6 +784,7 @@ fun getLocalFilePath(context: Context, song: SongItem): String? {
         "audio/x-flac" -> "flac"
         "audio/eac3", "audio/e-ac-3" -> "eac3"
         "audio/mp4", "audio/m4a", "audio/aac" -> "m4a"
+        "video/mp4" -> "mp4"
         "audio/webm" -> "webm"
         "audio/ogg" -> "ogg"
         "audio/mpeg" -> "mp3"

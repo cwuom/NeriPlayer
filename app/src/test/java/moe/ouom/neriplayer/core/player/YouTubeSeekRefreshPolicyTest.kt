@@ -109,6 +109,17 @@ class YouTubeSeekRefreshPolicyTest {
     }
 
     @Test
+    fun shouldRefreshUrlBeforeSeek_returnsTrueForLookalikeGoogleVideoHost() {
+        val song = createSong(mediaUri = "https://music.youtube.com/watch?v=fbvvS8e1KgI")
+        val url =
+            "https://rr1---sn-aigl6ney.fakegooglevideo.com/videoplayback" +
+                "?source=youtube&c=WEB_REMIX&mime=audio%2Fwebm&clen=3586688&n=resolved-n&sig=resolved-signature&pot=po-token-123"
+
+        assertTrue(YouTubeSeekRefreshPolicy.shouldRefreshUrlBeforeSeek(song, url))
+        assertFalse(YouTubeSeekRefreshPolicy.shouldRefreshUrlBeforeResume(song, url))
+    }
+
+    @Test
     fun shouldRefreshUrlBeforeSeek_returnsFalseForOfflineCacheUrl() {
         val song = createSong(mediaUri = "https://music.youtube.com/watch?v=fbvvS8e1KgI")
 

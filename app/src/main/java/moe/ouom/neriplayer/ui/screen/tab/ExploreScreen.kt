@@ -98,6 +98,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -113,13 +114,14 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.data.LocalFilesPlaylist
-import moe.ouom.neriplayer.data.LocalPlaylistRepository
-import moe.ouom.neriplayer.data.displayAlbum
-import moe.ouom.neriplayer.data.displayArtist
-import moe.ouom.neriplayer.data.displayCoverUrl
-import moe.ouom.neriplayer.data.displayName
+import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
+import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.local.media.displayAlbum
+import moe.ouom.neriplayer.data.model.displayArtist
+import moe.ouom.neriplayer.data.model.displayCoverUrl
+import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.ExploreUiState
 import moe.ouom.neriplayer.ui.viewmodel.tab.ExploreViewModel
@@ -135,6 +137,7 @@ import moe.ouom.neriplayer.util.performHapticFeedback
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
+@Suppress("AssignedValueIsNeverRead")
 fun ExploreScreen(
     gridState: LazyGridState,
     onPlay: (NeteasePlaylist) -> Unit,
@@ -431,13 +434,26 @@ fun ExploreScreen(
                 showPartsSheet = false
                 exitPartsSelection()
             },
-            sheetState = partsSheetState
+            sheetState = partsSheetState,
+            sheetGesturesEnabled = false
         ) {
-            Column(Modifier.padding(bottom = 12.dp)) {
+            Column(
+                Modifier
+                    .bottomSheetScrollGuard()
+                    .padding(bottom = 12.dp)
+            ) {
                 AnimatedVisibility(visible = partsSelectionMode) {
                     val allSelected = selectedParts.size == currentPartsInfo.pages.size
                     TopAppBar(
-                        title = { Text(stringResource(R.string.common_selected_count, selectedParts.size)) },
+                    title = {
+                        Text(
+                            pluralStringResource(
+                                R.plurals.common_selected_count,
+                                selectedParts.size,
+                                selectedParts.size
+                            )
+                        )
+                    },
                         navigationIcon = {
                             HapticIconButton(onClick = { exitPartsSelection() }) {
                                 Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.explore_exit_selection))
@@ -551,9 +567,14 @@ fun ExploreScreen(
     if (showExportSheet) {
         ModalBottomSheet(
             onDismissRequest = { showExportSheet = false },
-            sheetState = exportSheetState
+            sheetState = exportSheetState,
+            sheetGesturesEnabled = false
         ) {
-            Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+            Column(
+                Modifier
+                    .bottomSheetScrollGuard()
+                    .padding(horizontal = 20.dp, vertical = 12.dp)
+            ) {
                 Text(stringResource(R.string.playlist_export_to_local), style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(8.dp))
 
@@ -580,7 +601,14 @@ fun ExploreScreen(
                         ) {
                             Text(pl.name, style = MaterialTheme.typography.bodyLarge)
                             Spacer(Modifier.weight(1f))
-                            Text(stringResource(R.string.explore_song_count, pl.songs.size), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(
+                                    pluralStringResource(
+                                        R.plurals.explore_song_count,
+                                        pl.songs.size,
+                                        pl.songs.size
+                                    ),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                         }
                     }
                 }
@@ -869,7 +897,7 @@ private fun YouTubeMusicExploreContent(
                     )
                     Spacer(Modifier.height(8.dp))
                     HapticTextButton(onClick = { vm.loadYtMusicPlaylists() }) {
-                        Text(stringResource(R.string.home_retry_hint))
+                        Text(stringResource(R.string.action_retry))
                     }
                 }
             }

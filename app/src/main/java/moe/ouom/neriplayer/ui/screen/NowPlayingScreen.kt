@@ -1,12 +1,41 @@
 package moe.ouom.neriplayer.ui.screen
+
+/*
+ * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
+ * Copyright (C) 2025-2025 NeriPlayer developers
+ * https://github.com/cwuom/NeriPlayer
+ *
+ * This software is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This software is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this software.
+ * If not, see <https://www.gnu.org/licenses/>.
+ *
+ * File: moe.ouom.neriplayer.ui.screen/NowPlayingScreen
+ * Updated: 2026/3/23
+ */
+
+import android.Manifest
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
+import android.os.Build
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -26,11 +55,13 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -44,6 +75,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -75,6 +107,7 @@ import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.LibraryMusic
+import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
@@ -85,10 +118,13 @@ import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material.icons.outlined.Timer
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -100,6 +136,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -124,9 +162,6 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ClipEntry
@@ -137,6 +172,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
@@ -145,6 +181,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.Player
 import coil.compose.AsyncImage
@@ -158,27 +195,44 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.data.FavoritesPlaylist
-import moe.ouom.neriplayer.data.LocalFilesPlaylist
-import moe.ouom.neriplayer.data.LocalMediaSupport
-import moe.ouom.neriplayer.data.displayArtist
-import moe.ouom.neriplayer.data.displayCoverUrl
-import moe.ouom.neriplayer.data.displayName
-import moe.ouom.neriplayer.data.extractYouTubeMusicVideoId
-import moe.ouom.neriplayer.data.isLocalSong
-import moe.ouom.neriplayer.data.isYouTubeMusicSong
-import moe.ouom.neriplayer.data.sameIdentityAs
-import moe.ouom.neriplayer.data.stableKey
+import moe.ouom.neriplayer.core.player.model.MAX_PLAYBACK_PITCH
+import moe.ouom.neriplayer.core.player.model.MAX_PLAYBACK_SPEED
+import moe.ouom.neriplayer.core.player.model.MIN_PLAYBACK_PITCH
+import moe.ouom.neriplayer.core.player.model.MIN_PLAYBACK_SPEED
+import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
+import moe.ouom.neriplayer.core.player.model.PlaybackEqualizerPresetId
+import moe.ouom.neriplayer.core.player.model.PlaybackQualityOption
+import moe.ouom.neriplayer.core.player.model.PlaybackEqualizerPresets
+import moe.ouom.neriplayer.core.player.model.findPlaybackEqualizerPreset
+import moe.ouom.neriplayer.core.player.model.formatEqualizerFrequencyLabel
+import moe.ouom.neriplayer.data.settings.MAX_LYRIC_FONT_SCALE
+import moe.ouom.neriplayer.data.settings.MIN_LYRIC_FONT_SCALE
+import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
+import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
+import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
+import moe.ouom.neriplayer.data.model.displayArtist
+import moe.ouom.neriplayer.data.model.displayCoverUrl
+import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
+import moe.ouom.neriplayer.data.local.media.isLocalSong
+import moe.ouom.neriplayer.data.settings.normalizeLyricFontScale
+import moe.ouom.neriplayer.data.settings.scaledLyricFontSize
+import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
+import moe.ouom.neriplayer.data.model.sameIdentityAs
+import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.AppleMusicLyric
 import moe.ouom.neriplayer.ui.component.LocalSongDetailsDialog
 import moe.ouom.neriplayer.ui.component.LocalSongSyncConfirmDialog
 import moe.ouom.neriplayer.ui.component.LyricEntry
 import moe.ouom.neriplayer.ui.component.LyricVisualSpec
+import moe.ouom.neriplayer.ui.component.PlaybackSoundSheet
 import moe.ouom.neriplayer.ui.component.PlaybackSourceBadge
 import moe.ouom.neriplayer.ui.component.PlaybackSourceType
 import moe.ouom.neriplayer.ui.component.SleepTimerDialog
 import moe.ouom.neriplayer.ui.component.WaveformSlider
+import moe.ouom.neriplayer.ui.component.bottomSheetDragBlocker
+import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.component.parseNeteaseLrc
 import moe.ouom.neriplayer.ui.component.parseNeteaseYrc
 import moe.ouom.neriplayer.ui.screen.debug.ListenTogetherRoomPanel
@@ -191,12 +245,16 @@ import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.formatDuration
 import moe.ouom.neriplayer.util.offlineCachedImageRequest
+import moe.ouom.neriplayer.util.saveCoverToPictures
+import java.util.Locale
 import kotlin.math.roundToInt
 
 private const val LyricsPageTransitionDurationMs = 300
 private const val CoverSourceBadgeRevealBufferMs = 120
 private const val CoverSourceBadgeRevealDelayMs =
     LyricsPageTransitionDurationMs + CoverSourceBadgeRevealBufferMs
+
+internal fun shouldHideDownloadActionForSong(hasLocalDownload: Boolean): Boolean = hasLocalDownload
 
 private fun buildRemoteSongShareUrl(originalSong: SongItem, queue: List<SongItem>): String {
     extractYouTubeMusicVideoId(originalSong.mediaUri)?.let { videoId ->
@@ -229,6 +287,7 @@ private fun buildRemoteSongShareUrl(originalSong: SongItem, queue: List<SongItem
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalSharedTransitionApi::class)
 @Composable
+@Suppress("AssignedValueIsNeverRead")
 fun NowPlayingScreen(
     onNavigateUp: () -> Unit,
     onEnterAlbum: (NeteaseAlbum) -> Unit,
@@ -246,6 +305,20 @@ fun NowPlayingScreen(
     val currentPosition by PlayerManager.playbackPositionFlow.collectAsState()
     val durationMs = currentSong?.durationMs ?: 0L
     val sleepTimerState by PlayerManager.sleepTimerManager.timerState.collectAsState()
+    val currentPlaybackAudioInfo by PlayerManager.currentPlaybackAudioInfoFlow.collectAsState()
+    val settingsRepo = remember { AppContainer.settingsRepo }
+    val showProgressQualitySwitch by settingsRepo
+        .nowPlayingProgressShowQualitySwitchFlow
+        .collectAsState(initial = true)
+    val nowPlayingToolbarDockEnabled by settingsRepo
+        .nowPlayingToolbarDockEnabledFlow
+        .collectAsState(initial = true)
+    val showProgressAudioCodec by settingsRepo
+        .nowPlayingProgressShowAudioCodecFlow
+        .collectAsState(initial = true)
+    val showProgressAudioSpec by settingsRepo
+        .nowPlayingProgressShowAudioSpecFlow
+        .collectAsState(initial = true)
 
     // 订阅当前播放链接
     val currentMediaUrl by PlayerManager.currentMediaUrlFlow.collectAsState()
@@ -272,6 +345,7 @@ fun NowPlayingScreen(
 
     val playlists by PlayerManager.playlistsFlow.collectAsState()
     val context = LocalContext.current
+    val currentCoverUrl = currentSong?.displayCoverUrl(context)
 
     // 点击即切换，回流后撤销覆盖
     var favOverride by remember(currentSong) { mutableStateOf<Boolean?>(null) }
@@ -297,8 +371,11 @@ fun NowPlayingScreen(
     var showCoverPageSourceBadge by remember { mutableStateOf(false) }
     var animateCoverPageSourceBadge by remember { mutableStateOf(false) }
     var previousLyricsScreenState by remember { mutableStateOf(false) }
+    var showCoverMenu by remember { mutableStateOf(false) }
+    var showMoreOptions by remember { mutableStateOf(false) }
     var showSongNameMenu by remember { mutableStateOf(false) }
     var showArtistMenu by remember { mutableStateOf(false) }
+    var showQualitySwitchDialog by remember { mutableStateOf(false) }
     val addSheetState = rememberModalBottomSheetState()
     val queueSheetState = rememberModalBottomSheetState()
 
@@ -309,7 +386,66 @@ fun NowPlayingScreen(
     var pendingSyncConfirmLabel by remember { mutableStateOf("") }
 
     val clipboard = LocalClipboard.current
-    val clipboardScope = rememberCoroutineScope()
+    val screenScope = rememberCoroutineScope()
+
+    val downloadCurrentCover: () -> Unit = {
+        val song = currentSong
+        if (song == null || currentCoverUrl.isNullOrBlank()) {
+            screenScope.launch {
+                snackbarHostState.showSnackbar(
+                    context.getString(R.string.cover_download_unavailable)
+                )
+            }
+        } else {
+            screenScope.launch {
+                saveCoverToPictures(
+                    context = context,
+                    imageUrl = currentCoverUrl,
+                    suggestedName = "${song.displayArtist()} - ${song.displayName()} 封面"
+                ).onSuccess { fileName ->
+                    snackbarHostState.showSnackbar(
+                        context.getString(R.string.cover_download_success, fileName)
+                    )
+                }.onFailure { error ->
+                    val errorMessage = error.message ?: context.getString(R.string.download_failed)
+                    snackbarHostState.showSnackbar(
+                        context.getString(R.string.cover_download_failed, errorMessage)
+                    )
+                }
+            }
+        }
+    }
+
+    val coverPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            downloadCurrentCover()
+        } else {
+            screenScope.launch {
+                snackbarHostState.showSnackbar(
+                    context.getString(R.string.cover_download_permission_required)
+                )
+            }
+        }
+    }
+
+    val requestCoverDownload: () -> Unit = {
+        showCoverMenu = false
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
+            val hasPermission = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE
+            ) == PackageManager.PERMISSION_GRANTED
+            if (hasPermission) {
+                downloadCurrentCover()
+            } else {
+                coverPermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            }
+        } else {
+            downloadCurrentCover()
+        }
+    }
 
     // 是否拖拽进度条
     var isUserDraggingSlider by remember(currentSong?.id) { mutableStateOf(false) }
@@ -368,6 +504,7 @@ fun NowPlayingScreen(
 
     LaunchedEffect(Unit) { contentVisible = true }
     LaunchedEffect(currentPosition) { if (!isUserDraggingSlider) sliderPosition = currentPosition.toFloat() }
+    LaunchedEffect(currentSong?.id) { showQualitySwitchDialog = false }
     LaunchedEffect(showLyricsScreen, showCoverSourceBadge) {
         val returningFromLyrics = previousLyricsScreenState && !showLyricsScreen
         previousLyricsScreenState = showLyricsScreen
@@ -445,6 +582,19 @@ fun NowPlayingScreen(
     val platformOffset = if (currentSong?.matchedLyricSource == MusicPlatform.QQ_MUSIC) 500L else 1000L
     val userOffset = currentSong?.userLyricOffsetMs ?: 0L
     val totalOffset = platformOffset + userOffset
+    val progressInfoSegments = remember(
+        currentPlaybackAudioInfo,
+        showProgressQualitySwitch,
+        showProgressAudioCodec,
+        showProgressAudioSpec
+    ) {
+        buildNowPlayingProgressInfoSegments(
+            audioInfo = currentPlaybackAudioInfo,
+            showQualitySwitch = showProgressQualitySwitch,
+            showAudioCodec = showProgressAudioCodec,
+            showAudioSpec = showProgressAudioSpec
+        )
+    }
 
     CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
         SharedTransitionLayout {
@@ -573,7 +723,6 @@ fun NowPlayingScreen(
 
                             Spacer(modifier = Modifier.width(6.dp))
 
-                            var showMoreOptions by remember { mutableStateOf(false) }
                             HapticIconButton(
                                 onClick = { showMoreOptions = true },
                                 modifier = Modifier.size(48.dp)
@@ -597,7 +746,9 @@ fun NowPlayingScreen(
                                     onNavigateUp = onNavigateUp,
                                     snackbarHostState = snackbarHostState,
                                     lyricFontScale = lyricFontScale,
-                                    onLyricFontScaleChange = onLyricFontScaleChange
+                                    onLyricFontScaleChange = onLyricFontScaleChange,
+                                    currentPlaybackAudioInfo = currentPlaybackAudioInfo,
+                                    onShowQualitySwitch = { showQualitySwitchDialog = true }
                                 )
                             }
                         }
@@ -636,16 +787,30 @@ fun NowPlayingScreen(
                                     )
                                     .clip(RoundedCornerShape(24.dp))
                                     .background(
-                                        color = if (currentSong?.displayCoverUrl(LocalContext.current) != null) {
+                                        color = if (currentCoverUrl != null) {
                                             Color.Transparent
                                         } else {
                                             MaterialTheme.colorScheme.primaryContainer
                                         }
                                     )
+                                    .combinedClickable(
+                                        onClick = {},
+                                        onLongClick = {
+                                            if (currentCoverUrl.isNullOrBlank()) {
+                                                screenScope.launch {
+                                                    snackbarHostState.showSnackbar(
+                                                        context.getString(
+                                                            R.string.cover_download_unavailable
+                                                        )
+                                                    )
+                                                }
+                                            } else {
+                                                showCoverMenu = true
+                                            }
+                                        }
+                                    )
                             ) {
-                                val displayCoverUrl = currentSong?.displayCoverUrl(LocalContext.current)
-                                displayCoverUrl?.let { cover ->
-                                    val context = LocalContext.current
+                                currentCoverUrl?.let { cover ->
                                     AsyncImage(
                                         model = offlineCachedImageRequest(context, cover),
                                         contentDescription = currentSong?.customName ?: currentSong?.name ?: "",
@@ -653,6 +818,22 @@ fun NowPlayingScreen(
                                         modifier = Modifier.fillMaxSize()
                                     )
                                 }
+                            }
+
+                            DropdownMenu(
+                                expanded = showCoverMenu,
+                                onDismissRequest = { showCoverMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.action_download_cover)) },
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Outlined.Download,
+                                            contentDescription = null
+                                        )
+                                    },
+                                    onClick = requestCoverDownload
+                                )
                             }
 
                             val coverPageSourceBadgeScale by animateFloatAsState(
@@ -724,7 +905,7 @@ fun NowPlayingScreen(
                                         onClick = {
                                             val displayName = currentSong?.customName ?: currentSong?.name
                                             displayName?.let { text ->
-                                                clipboardScope.launch {
+                                                screenScope.launch {
                                                     clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("text", text)))
                                                 }
                                             }
@@ -760,7 +941,7 @@ fun NowPlayingScreen(
                                         onClick = {
                                             val displayArtist = currentSong?.customArtist ?: currentSong?.artist
                                             displayArtist?.let { text ->
-                                                clipboardScope.launch {
+                                                screenScope.launch {
                                                     clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("text", text)))
                                                 }
                                             }
@@ -812,7 +993,17 @@ fun NowPlayingScreen(
                         )
                     }
 
-                    Spacer(Modifier.height(if (useWideLandscapeLayout) 14.dp else 8.dp))
+                    if (progressInfoSegments.isNotEmpty()) {
+                        Spacer(Modifier.height(0.dp))
+                        NowPlayingProgressInfoRow(
+                            segments = progressInfoSegments,
+                            modifier = Modifier
+                                .fillMaxWidth(if (useWideLandscapeLayout) 0.88f else 1f)
+                                .offset(y = if (useWideLandscapeLayout) (-5).dp else (-6).dp)
+                        )
+                    }
+
+                    Spacer(Modifier.height(if (useWideLandscapeLayout) 14.dp else 10.dp))
 
                     // 控制按钮
                     Row(
@@ -895,8 +1086,8 @@ fun NowPlayingScreen(
                                 .fillMaxWidth()
                                 .weight(8f),
                             textColor = MaterialTheme.colorScheme.onBackground,
-                            fontSize = (18f * lyricFontScale).coerceIn(14f, 26f).sp,
-                            translationFontSize = (14f * lyricFontScale).coerceIn(12f, 22f).sp,
+                            fontSize = scaledLyricFontSize(18f, lyricFontScale).sp,
+                            translationFontSize = scaledLyricFontSize(14f, lyricFontScale).sp,
                             visualSpec = LyricVisualSpec(),
                             lyricOffsetMs = totalOffset,
                             lyricBlurEnabled = lyricBlurEnabled,
@@ -914,123 +1105,161 @@ fun NowPlayingScreen(
                     }
 
                     // 底部操作栏（固定在底部）
-                    Row(
+                    Column(
                         modifier = if (useWideLandscapeLayout) {
                             Modifier
                                 .fillMaxWidth(0.9f)
-                                .clip(RoundedCornerShape(28.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.32f))
-                                .padding(horizontal = 18.dp, vertical = 12.dp)
+                                .windowInsetsPadding(WindowInsets.navigationBars)
                         } else {
                             Modifier
                                 .fillMaxWidth()
                                 .windowInsetsPadding(WindowInsets.navigationBars)
                                 .padding(horizontal = 16.dp, vertical = 8.dp)
+                                .padding(bottom = if (nowPlayingToolbarDockEnabled) 2.dp else 0.dp)
                         },
-                        horizontalArrangement = if (useWideLandscapeLayout) {
-                            Arrangement.SpaceEvenly
-                        } else {
-                            Arrangement.SpaceBetween
-                        },
-                        verticalAlignment = Alignment.CenterVertically
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        // 播放队列
-                        HapticIconButton(onClick = { showQueueSheet = true },
-                            modifier = Modifier
-                                .sharedBounds(
-                                rememberSharedContentState(key = "btn_queue"),
-                                    animatedVisibilityScope = this@AnimatedContent,
-                                    enter = EnterTransition.None,
-                                    exit = ExitTransition.None,
-                                ).zIndex(1f)) {
-                            Icon(
-                                Icons.AutoMirrored.Outlined.QueueMusic,
-                                contentDescription = stringResource(R.string.playlist_queue),
-                                modifier = Modifier.size(if (useWideLandscapeLayout) 22.dp else 20.dp)
-                            )
-                        }
+                        val toolbarContainerModifier = Modifier.fillMaxWidth()
+                        val toolbarContent: @Composable () -> Unit = {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(
+                                        horizontal = if (nowPlayingToolbarDockEnabled || useWideLandscapeLayout) {
+                                            18.dp
+                                        } else {
+                                            6.dp
+                                        },
+                                        vertical = if (nowPlayingToolbarDockEnabled || useWideLandscapeLayout) {
+                                            12.dp
+                                        } else {
+                                            8.dp
+                                        }
+                                    ),
+                                horizontalArrangement = if (useWideLandscapeLayout || nowPlayingToolbarDockEnabled) {
+                                    Arrangement.SpaceEvenly
+                                } else {
+                                    Arrangement.SpaceBetween
+                                },
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // 播放队列
+                                HapticIconButton(onClick = { showQueueSheet = true },
+                                    modifier = Modifier
+                                        .sharedBounds(
+                                        rememberSharedContentState(key = "btn_queue"),
+                                            animatedVisibilityScope = this@AnimatedContent,
+                                            enter = EnterTransition.None,
+                                            exit = ExitTransition.None,
+                                        ).zIndex(1f)) {
+                                    Icon(
+                                        Icons.AutoMirrored.Outlined.QueueMusic,
+                                        contentDescription = stringResource(R.string.playlist_queue),
+                                        modifier = Modifier.size(if (useWideLandscapeLayout) 22.dp else 20.dp)
+                                    )
+                                }
 
-                        // 定时器按钮
-                        HapticIconButton(onClick = { showSleepTimerDialog = true },
-                            modifier = Modifier
-                            .sharedBounds(
-                                rememberSharedContentState(key = "btn_timer"),
-                                animatedVisibilityScope = this@AnimatedContent,
-                                enter = EnterTransition.None,
-                                exit = ExitTransition.None,
-                            ).zIndex(1f)) {
-                            Icon(
-                                Icons.Outlined.Timer,
-                                contentDescription = stringResource(R.string.sleep_timer_short),
-                                tint = if (sleepTimerState.isActive) MaterialTheme.colorScheme.primary else LocalContentColor.current,
-                                modifier = Modifier.size(if (useWideLandscapeLayout) 22.dp else 20.dp)
-                            )
-                        }
+                                // 定时器按钮
+                                HapticIconButton(onClick = { showSleepTimerDialog = true },
+                                    modifier = Modifier
+                                    .sharedBounds(
+                                        rememberSharedContentState(key = "btn_timer"),
+                                        animatedVisibilityScope = this@AnimatedContent,
+                                        enter = EnterTransition.None,
+                                        exit = ExitTransition.None,
+                                    ).zIndex(1f)) {
+                                    Icon(
+                                        Icons.Outlined.Timer,
+                                        contentDescription = stringResource(R.string.sleep_timer_short),
+                                        tint = if (sleepTimerState.isActive) MaterialTheme.colorScheme.primary else LocalContentColor.current,
+                                        modifier = Modifier.size(if (useWideLandscapeLayout) 22.dp else 20.dp)
+                                    )
+                                }
 
-                        // 音量按钮（根据设备显示不同图标，居中）
-                        val audioDeviceInfo = rememberAudioDeviceInfo()
-                        HapticIconButton(onClick = { showVolumeSheet = true },
-                            modifier = Modifier
-                            .sharedBounds(
-                                rememberSharedContentState(key = "btn_volume"),
-                                animatedVisibilityScope = this@AnimatedContent,
-                                enter = EnterTransition.None,
-                                exit = ExitTransition.None,
-                            ).zIndex(1f)
-                        ) {
-                            Icon(
-                                audioDeviceInfo.second,
-                                contentDescription = audioDeviceInfo.first,
-                                modifier = Modifier.size(if (useWideLandscapeLayout) 22.dp else 20.dp)
-                            )
-                        }
+                                // 音量按钮（根据设备显示不同图标，居中）
+                                val audioDeviceInfo = rememberAudioDeviceInfo()
+                                HapticIconButton(onClick = { showVolumeSheet = true },
+                                    modifier = Modifier
+                                    .sharedBounds(
+                                        rememberSharedContentState(key = "btn_volume"),
+                                        animatedVisibilityScope = this@AnimatedContent,
+                                        enter = EnterTransition.None,
+                                        exit = ExitTransition.None,
+                                    ).zIndex(1f)
+                                ) {
+                                    Icon(
+                                        audioDeviceInfo.second,
+                                        contentDescription = audioDeviceInfo.first,
+                                        modifier = Modifier.size(if (useWideLandscapeLayout) 22.dp else 20.dp)
+                                    )
+                                }
 
-                        // 歌词按钮
-                        HapticIconButton(
-                            onClick = { showLyricsScreen = !showLyricsScreen },
-                            enabled = lyrics.isNotEmpty(),
-                            modifier = Modifier
-                                .sharedBounds(
-                                    rememberSharedContentState(key = "btn_lyrics"),
-                                    animatedVisibilityScope = this@AnimatedContent,
-                                    enter = EnterTransition.None,
-                                    exit = ExitTransition.None,
-                                ).zIndex(1f)
-                        ) {
-                            AnimatedContent(
-                                targetState = showLyricsScreen,
-                                label = "lyrics_icon"
-                            ) { isShowingLyrics ->
-                                Icon(
-                                    imageVector = if (isShowingLyrics) Icons.Outlined.LibraryMusic else Icons.Outlined.LibraryMusic,
-                                    contentDescription = stringResource(R.string.lyrics_title),
-                                    tint = if (lyrics.isEmpty()) {
-                                        LocalContentColor.current.copy(alpha = 0.38f)
-                                    } else if (isShowingLyrics) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        LocalContentColor.current
-                                    },
-                                    modifier = Modifier.size(if (useWideLandscapeLayout) 22.dp else 20.dp)
-                                )
+                                // 歌词按钮
+                                HapticIconButton(
+                                    onClick = { showLyricsScreen = !showLyricsScreen },
+                                    enabled = lyrics.isNotEmpty(),
+                                    modifier = Modifier
+                                        .sharedBounds(
+                                            rememberSharedContentState(key = "btn_lyrics"),
+                                            animatedVisibilityScope = this@AnimatedContent,
+                                            enter = EnterTransition.None,
+                                            exit = ExitTransition.None,
+                                        ).zIndex(1f)
+                                ) {
+                                    AnimatedContent(
+                                        targetState = showLyricsScreen,
+                                        label = "lyrics_icon"
+                                    ) { isShowingLyrics ->
+                                        Icon(
+                                            imageVector = if (isShowingLyrics) Icons.Outlined.LibraryMusic else Icons.Outlined.LibraryMusic,
+                                            contentDescription = stringResource(R.string.lyrics_title),
+                                            tint = if (lyrics.isEmpty()) {
+                                                LocalContentColor.current.copy(alpha = 0.38f)
+                                            } else if (isShowingLyrics) {
+                                                MaterialTheme.colorScheme.primary
+                                            } else {
+                                                LocalContentColor.current
+                                            },
+                                            modifier = Modifier.size(if (useWideLandscapeLayout) 22.dp else 20.dp)
+                                        )
+                                    }
+                                }
+
+                                // 添加到歌单
+                                HapticIconButton(onClick = { showAddSheet = true },
+                                    modifier = Modifier
+                                        .sharedBounds(
+                                            rememberSharedContentState(key = "btn_add"),
+                                            animatedVisibilityScope = this@AnimatedContent,
+                                            enter = EnterTransition.None,
+                                            exit = ExitTransition.None,
+                                        ).zIndex(1f)
+                                ) {
+                                    Icon(
+                                        Icons.AutoMirrored.Outlined.PlaylistAdd,
+                                        contentDescription = stringResource(R.string.playlist_add_to),
+                                        modifier = Modifier.size(if (useWideLandscapeLayout) 22.dp else 20.dp)
+                                    )
+                                }
                             }
                         }
 
-                        // 添加到歌单
-                        HapticIconButton(onClick = { showAddSheet = true },
-                            modifier = Modifier
-                                .sharedBounds(
-                                    rememberSharedContentState(key = "btn_add"),
-                                    animatedVisibilityScope = this@AnimatedContent,
-                                    enter = EnterTransition.None,
-                                    exit = ExitTransition.None,
-                                ).zIndex(1f)
-                        ) {
-                            Icon(
-                                Icons.AutoMirrored.Outlined.PlaylistAdd,
-                                contentDescription = stringResource(R.string.playlist_add_to),
-                                modifier = Modifier.size(if (useWideLandscapeLayout) 22.dp else 20.dp)
-                            )
+                        if (nowPlayingToolbarDockEnabled) {
+                            Surface(
+                                modifier = toolbarContainerModifier,
+                                shape = RoundedCornerShape(30.dp),
+                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.40f),
+                                tonalElevation = 0.dp,
+                                shadowElevation = 0.dp,
+                                border = BorderStroke(
+                                    width = 1.dp,
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.12f)
+                                )
+                            ) {
+                                toolbarContent()
+                            }
+                        } else {
+                            toolbarContent()
                         }
                     }
                 }
@@ -1059,8 +1288,8 @@ fun NowPlayingScreen(
                                     currentTimeMs = currentPosition,
                                     modifier = Modifier.fillMaxSize(),
                                     textColor = MaterialTheme.colorScheme.onBackground,
-                                    fontSize = (18f * lyricFontScale).coerceIn(14f, 26f).sp,
-                                    translationFontSize = (14f * lyricFontScale).coerceIn(12f, 22f).sp,
+                                    fontSize = scaledLyricFontSize(18f, lyricFontScale).sp,
+                                    translationFontSize = scaledLyricFontSize(14f, lyricFontScale).sp,
                                     visualSpec = LyricVisualSpec(),
                                     lyricOffsetMs = totalOffset,
                                     lyricBlurEnabled = lyricBlurEnabled,
@@ -1106,7 +1335,8 @@ fun NowPlayingScreen(
             if (showVolumeSheet) {
                 ModalBottomSheet(
                     onDismissRequest = { showVolumeSheet = false },
-                    sheetState = volumeSheetState
+                    sheetState = volumeSheetState,
+                    sheetGesturesEnabled = false
                 ) {
                     VolumeControlSheetContent()
                 }
@@ -1125,9 +1355,13 @@ fun NowPlayingScreen(
 
                 ModalBottomSheet(
                     onDismissRequest = { showQueueSheet = false },
-                    sheetState = queueSheetState
+                    sheetState = queueSheetState,
+                    sheetGesturesEnabled = false
                 ) {
-                    LazyColumn(state = listState) {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.bottomSheetScrollGuard()
+                    ) {
                         itemsIndexed(displayedQueue) { index, song ->
                             Row(
                                 modifier = Modifier
@@ -1206,15 +1440,29 @@ fun NowPlayingScreen(
                 }
             }
 
+            if (showQualitySwitchDialog && currentPlaybackAudioInfo != null) {
+                NowPlayingQualityOptionsDialog(
+                    title = stringResource(R.string.nowplaying_quality_switch_title),
+                    selectedKey = currentPlaybackAudioInfo?.qualityKey,
+                    options = currentPlaybackAudioInfo?.qualityOptions.orEmpty(),
+                    onDismiss = { showQualitySwitchDialog = false },
+                    onSelect = { option ->
+                        PlayerManager.changeCurrentPlaybackQuality(option.key)
+                        showQualitySwitchDialog = false
+                    }
+                )
+            }
+
             if (showAddSheet) {
                 val selectablePlaylists = remember(playlists, context) {
                     playlists.filterNot { LocalFilesPlaylist.isSystemPlaylist(it, context) }
                 }
                 ModalBottomSheet(
                     onDismissRequest = { showAddSheet = false },
-                    sheetState = addSheetState
+                    sheetState = addSheetState,
+                    sheetGesturesEnabled = false
                 ) {
-                    LazyColumn {
+                    LazyColumn(modifier = Modifier.bottomSheetScrollGuard()) {
                         itemsIndexed(selectablePlaylists) { _, pl ->
                             Row(
                                 modifier = Modifier
@@ -1233,7 +1481,14 @@ fun NowPlayingScreen(
                             ) {
                                 Text(pl.name, style = MaterialTheme.typography.bodyLarge)
                                 Spacer(modifier = Modifier.weight(1f))
-                                Text(stringResource(R.string.nowplaying_song_count_format, pl.songs.size), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(
+                                    pluralStringResource(
+                                        R.plurals.nowplaying_song_count_format,
+                                        pl.songs.size,
+                                        pl.songs.size
+                                    ),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         }
                     }
@@ -1325,7 +1580,9 @@ fun MoreOptionsSheet(
     onNavigateUp: () -> Unit,
     snackbarHostState: SnackbarHostState,
     lyricFontScale: Float,
-    onLyricFontScaleChange: (Float) -> Unit
+    onLyricFontScaleChange: (Float) -> Unit,
+    currentPlaybackAudioInfo: PlaybackAudioInfo? = null,
+    onShowQualitySwitch: () -> Unit = {}
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var showSearchView by remember { mutableStateOf(false) }
@@ -1333,6 +1590,7 @@ fun MoreOptionsSheet(
     var showFontSizeSheet by remember { mutableStateOf(false) }
     var showEditInfoSheet by remember { mutableStateOf(false) }
     var showListenTogetherSheet by remember { mutableStateOf(false) }
+    var showPlaybackSoundSheet by remember { mutableStateOf(false) }
 
     val focusManager = LocalFocusManager.current
     val searchFocusRequester = remember { FocusRequester() }
@@ -1341,6 +1599,20 @@ fun MoreOptionsSheet(
     val coroutineScope = rememberCoroutineScope()
     val isLocalSong = originalSong.isLocalSong()
     val autoShowKeyboard by AppContainer.settingsRepo.autoShowKeyboardFlow.collectAsState(initial = false)
+    val qualityOptions = currentPlaybackAudioInfo?.qualityOptions.orEmpty()
+    val canSwitchQuality = qualityOptions.size > 1
+    val currentQualityLabel = currentPlaybackAudioInfo?.qualityLabel
+    val playbackSoundState by PlayerManager.playbackSoundStateFlow.collectAsState()
+    val downloadedSongs by GlobalDownloadManager.downloadedSongs.collectAsState()
+    val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsState()
+    val hasLocalDownload = remember(downloadedSongs, originalSong, context) {
+        AudioDownloadManager.hasLocalDownload(context, originalSong)
+    }
+    val downloadSongKey = remember(originalSong) { originalSong.stableKey() }
+    val currentDownloadTask = remember(downloadTasks, downloadSongKey) {
+        downloadTasks.firstOrNull { it.song.stableKey() == downloadSongKey }
+    }
+    val shouldHideDownloadAction = shouldHideDownloadActionForSong(hasLocalDownload)
 
     LaunchedEffect(showSearchView) {
         if (showSearchView) {
@@ -1365,18 +1637,33 @@ fun MoreOptionsSheet(
         containerColor = MaterialTheme.colorScheme.surface
     ) {
         // 处理子页面的返回键导航
-        BackHandler(enabled = showOffsetSheet || showFontSizeSheet || showSearchView || showEditInfoSheet || showListenTogetherSheet) {
+        BackHandler(
+            enabled = showOffsetSheet ||
+                showFontSizeSheet ||
+                showSearchView ||
+                showEditInfoSheet ||
+                showListenTogetherSheet ||
+                showPlaybackSoundSheet
+        ) {
             when {
                 showOffsetSheet -> showOffsetSheet = false
                 showFontSizeSheet -> showFontSizeSheet = false
                 showSearchView -> showSearchView = false
                 showEditInfoSheet -> showEditInfoSheet = false
                 showListenTogetherSheet -> showListenTogetherSheet = false
+                showPlaybackSoundSheet -> showPlaybackSoundSheet = false
             }
         }
 
         // 处理主页面的返回键
-        BackHandler(enabled = !showOffsetSheet && !showFontSizeSheet && !showSearchView && !showEditInfoSheet && !showListenTogetherSheet) {
+        BackHandler(
+            enabled = !showOffsetSheet &&
+                !showFontSizeSheet &&
+                !showSearchView &&
+                !showEditInfoSheet &&
+                !showListenTogetherSheet &&
+                !showPlaybackSoundSheet
+        ) {
             coroutineScope.launch {
                 sheetState.hide()
                 onDismiss()
@@ -1390,6 +1677,7 @@ fun MoreOptionsSheet(
                 showSearchView -> "Search"
                 showEditInfoSheet -> "EditInfo"
                 showListenTogetherSheet -> "ListenTogether"
+                showPlaybackSoundSheet -> "PlaybackSound"
                 else -> "Main"
             },
             transitionSpec = {
@@ -1401,7 +1689,13 @@ fun MoreOptionsSheet(
         ) { targetState ->
             when (targetState) {
                 "Main" -> {
-                    Column(Modifier.padding(bottom = 32.dp)) {
+                    val mainScrollState = rememberScrollState()
+                    Column(
+                        Modifier
+                            .bottomSheetScrollGuard { mainScrollState.value == 0 }
+                            .verticalScroll(mainScrollState)
+                            .padding(bottom = 32.dp)
+                    ) {
                         ListItem(
                             headlineContent = { Text(stringResource(R.string.music_get_info)) },
                             leadingContent = { Icon(Icons.Outlined.Info, null) },
@@ -1412,6 +1706,27 @@ fun MoreOptionsSheet(
                             leadingContent = { Icon(Icons.Outlined.Edit, null) },
                             modifier = Modifier.clickable { showEditInfoSheet = true }
                         )
+                        if (canSwitchQuality) {
+                            ListItem(
+                                headlineContent = { Text(stringResource(R.string.nowplaying_quality_switch_title)) },
+                                leadingContent = { Icon(Icons.Outlined.MusicNote, null) },
+                                supportingContent = currentQualityLabel?.takeIf { it.isNotBlank() }?.let { label ->
+                                    { Text(label) }
+                                },
+                                modifier = Modifier.clickable {
+                                    onDismiss()
+                                    onShowQualitySwitch()
+                                }
+                            )
+                        }
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.nowplaying_audio_effects_title)) },
+                            leadingContent = { Icon(Icons.Outlined.Tune, null) },
+                            supportingContent = {
+                                Text(stringResource(R.string.nowplaying_audio_effects_desc))
+                            },
+                            modifier = Modifier.clickable { showPlaybackSoundSheet = true }
+                        )
                         if (isLocalSong) {
                             ListItem(
                                 headlineContent = { Text(stringResource(R.string.local_song_open_details)) },
@@ -1421,12 +1736,7 @@ fun MoreOptionsSheet(
                                     onDismiss()
                                 }
                             )
-                        } else if (AudioDownloadManager.getLocalFilePath(context, originalSong) == null) {
-                            val songKey = remember(originalSong) { originalSong.stableKey() }
-                            val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsState()
-                            val currentDownloadTask = remember(downloadTasks, songKey) {
-                                downloadTasks.firstOrNull { it.song.stableKey() == songKey }
-                            }
+                        } else if (!shouldHideDownloadAction) {
                             val downloadHeadlineRes = when (currentDownloadTask?.status) {
                                 DownloadStatus.DOWNLOADING -> R.string.download_cancel_download
                                 DownloadStatus.CANCELLED -> R.string.download_to_local
@@ -1469,11 +1779,11 @@ fun MoreOptionsSheet(
                                 modifier = Modifier.clickable {
                                     when (currentDownloadTask?.status) {
                                         DownloadStatus.DOWNLOADING -> {
-                                            viewModel.cancelDownload(songKey)
+                                            viewModel.cancelDownload(downloadSongKey)
                                         }
 
                                         DownloadStatus.CANCELLED -> {
-                                            viewModel.resumeDownload(context, songKey)
+                                            viewModel.resumeDownload(context, downloadSongKey)
                                         }
 
                                         DownloadStatus.FAILED -> {
@@ -1529,17 +1839,17 @@ fun MoreOptionsSheet(
                             leadingContent = { Icon(Icons.Outlined.Share, null) },
                             modifier = Modifier.clickable {
                                 if (originalSong.isLocalSong()) {
-                                    val shared = runCatching {
-                                        LocalMediaSupport.shareSongFile(context, originalSong)
-                                    }.getOrElse { false }
-                                    if (!shared) {
-                                        coroutineScope.launch {
+                                    coroutineScope.launch {
+                                        val shared = runCatching {
+                                            LocalMediaSupport.shareSongFile(context, originalSong)
+                                        }.getOrElse { false }
+                                        if (!shared) {
                                             snackbarHostState.showSnackbar(
                                                 context.getString(R.string.local_song_share_failed)
                                             )
+                                        } else {
+                                            onDismiss()
                                         }
-                                    } else {
-                                        onDismiss()
                                     }
                                 } else {
                                     val url = buildRemoteSongShareUrl(originalSong, queue)
@@ -1585,6 +1895,7 @@ fun MoreOptionsSheet(
                 "Search" -> {
                     // 搜索界面
                     val searchState by viewModel.manualSearchState.collectAsState()
+                    val searchResultsListState = rememberLazyListState()
 
                     Column(
                         Modifier
@@ -1632,7 +1943,12 @@ fun MoreOptionsSheet(
                             if (searchState.isLoading) {
                                 CircularProgressIndicator(Modifier.align(Alignment.Center))
                             } else if (searchState.searchResults.isNotEmpty()) {
-                                LazyColumn {
+                                LazyColumn(
+                                    state = searchResultsListState,
+                                    modifier = Modifier.bottomSheetScrollGuard {
+                                        !searchResultsListState.canScrollBackward
+                                    }
+                                ) {
                                     items(searchState.searchResults) { songResult ->
                                         ListItem(
                                             headlineContent = { Text(songResult.songName, maxLines = 1) },
@@ -1704,6 +2020,20 @@ fun MoreOptionsSheet(
                         snackbarHostState = snackbarHostState
                     )
                 }
+
+                "PlaybackSound" -> {
+                    PlaybackSoundSheet(
+                        state = playbackSoundState,
+                        onSpeedChange = viewModel::setPlaybackSpeed,
+                        onPitchChange = viewModel::setPlaybackPitch,
+                        onLoudnessGainChange = viewModel::setPlaybackLoudnessGain,
+                        onEqualizerEnabledChange = viewModel::setPlaybackEqualizerEnabled,
+                        onPresetSelected = viewModel::selectPlaybackEqualizerPreset,
+                        onBandLevelChange = viewModel::updatePlaybackEqualizerBandLevel,
+                        onReset = viewModel::resetPlaybackSoundSettings,
+                        onDismiss = { showPlaybackSoundSheet = false }
+                    )
+                }
             }
 
             // Snackbar
@@ -1713,6 +2043,118 @@ fun MoreOptionsSheet(
             )
         }
     }
+}
+
+private data class NowPlayingProgressInfoSegment(
+    val label: String,
+    val highlighted: Boolean = false
+)
+
+private fun buildNowPlayingProgressInfoSegments(
+    audioInfo: PlaybackAudioInfo?,
+    showQualitySwitch: Boolean,
+    showAudioCodec: Boolean,
+    showAudioSpec: Boolean
+): List<NowPlayingProgressInfoSegment> {
+    if (audioInfo == null) return emptyList()
+    val segments = mutableListOf<NowPlayingProgressInfoSegment>()
+    val qualityLabel = audioInfo.qualityLabel
+    if (showQualitySwitch && !qualityLabel.isNullOrBlank()) {
+        segments += NowPlayingProgressInfoSegment(
+            label = qualityLabel,
+            highlighted = true
+        )
+    }
+    val codecLabel = audioInfo.codecLabel
+    if (showAudioCodec && !codecLabel.isNullOrBlank()) {
+        segments += NowPlayingProgressInfoSegment(label = codecLabel)
+    }
+    val specLabel = audioInfo.specLabel?.takeIf { it.isNotBlank() }
+    if (showAudioSpec && specLabel != null) {
+        segments += NowPlayingProgressInfoSegment(label = specLabel)
+    }
+    return segments
+}
+
+@Composable
+private fun NowPlayingProgressInfoRow(
+    segments: List<NowPlayingProgressInfoSegment>,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier,
+        contentAlignment = Alignment.Center
+    ) {
+        Row(
+            modifier = Modifier
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 2.dp, vertical = 0.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            segments.forEachIndexed { index, segment ->
+                if (index > 0) {
+                    Text(
+                        text = "  ·  ",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.46f)
+                    )
+                }
+                Text(
+                    text = segment.label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (segment.highlighted) {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.92f)
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f)
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun NowPlayingQualityOptionsDialog(
+    title: String,
+    selectedKey: String?,
+    options: List<PlaybackQualityOption>,
+    onDismiss: () -> Unit,
+    onSelect: (PlaybackQualityOption) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column {
+                options.forEach { option ->
+                    ListItem(
+                        headlineContent = { Text(option.label) },
+                        trailingContent = {
+                            if (option.key == selectedKey) {
+                                Text(
+                                    text = stringResource(R.string.common_selected),
+                                    color = MaterialTheme.colorScheme.primary,
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                            }
+                        },
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { onSelect(option) },
+                        colors = androidx.compose.material3.ListItemDefaults.colors(
+                            containerColor = Color.Transparent
+                        )
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            HapticTextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.action_close))
+            }
+        }
+    )
 }
 
 @Composable
@@ -1729,6 +2171,7 @@ fun VolumeControlSheetContent() {
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .bottomSheetDragBlocker()
             .padding(horizontal = 24.dp, vertical = 16.dp)
             .windowInsetsPadding(WindowInsets.navigationBars),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -1762,6 +2205,7 @@ fun LyricOffsetSheet(song: SongItem, onDismiss: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .bottomSheetDragBlocker()
             .padding(horizontal = 24.dp, vertical = 16.dp)
             .windowInsetsPadding(WindowInsets.navigationBars),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -1805,15 +2249,16 @@ fun LyricFontSizeSheet(
     onScaleCommit: (Float) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var sliderValue by remember { mutableFloatStateOf(currentScale) }
+    var sliderValue by remember { mutableFloatStateOf(normalizeLyricFontScale(currentScale)) }
 
     LaunchedEffect(currentScale) {
-        sliderValue = currentScale
+        sliderValue = normalizeLyricFontScale(currentScale)
     }
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .bottomSheetDragBlocker()
             .padding(horizontal = 24.dp, vertical = 16.dp)
             .windowInsetsPadding(WindowInsets.navigationBars),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -1832,8 +2277,8 @@ fun LyricFontSizeSheet(
         Slider(
             value = sliderValue,
             onValueChange = { sliderValue = it },
-            onValueChangeFinished = { onScaleCommit(sliderValue) },
-            valueRange = 0.5f..1.6f,
+            onValueChangeFinished = { onScaleCommit(normalizeLyricFontScale(sliderValue)) },
+            valueRange = MIN_LYRIC_FONT_SCALE..MAX_LYRIC_FONT_SCALE,
             steps = 10
         )
 
@@ -1843,12 +2288,12 @@ fun LyricFontSizeSheet(
                 .fillMaxWidth()
                 .padding(top = 4.dp),
             textAlign = TextAlign.Center,
-            fontSize = (18f * sliderValue).coerceIn(12f, 28f).sp
+            fontSize = scaledLyricFontSize(18f, sliderValue).sp
         )
 
         Spacer(Modifier.height(16.dp))
         HapticTextButton(onClick = {
-            onScaleCommit(sliderValue)
+            onScaleCommit(normalizeLyricFontScale(sliderValue))
             onDismiss()
         }) {
             Text(stringResource(R.string.action_done))
@@ -1858,6 +2303,7 @@ fun LyricFontSizeSheet(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+@Suppress("AssignedValueIsNeverRead")
 fun EditSongInfoSheet(
     viewModel: NowPlayingViewModel,
     originalSong: SongItem,
@@ -1894,31 +2340,7 @@ fun EditSongInfoSheet(
 
     val searchState by viewModel.manualSearchState.collectAsState()
 
-    // 创建嵌套滚动连接来消费滚动事件，防止传递给 ModalBottomSheet
     val scrollState = rememberScrollState()
-    val nestedScrollConnection = remember {
-        object : NestedScrollConnection {
-            override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: NestedScrollSource): androidx.compose.ui.geometry.Offset {
-                // 在滚动前不消费，让 verticalScroll 正常处理
-                return androidx.compose.ui.geometry.Offset.Zero
-            }
-
-            override fun onPostScroll(consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset, source: NestedScrollSource): androidx.compose.ui.geometry.Offset {
-                // 消费所有剩余滚动事件，防止传递给 ModalBottomSheet
-                return available
-            }
-
-            override suspend fun onPreFling(available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
-                // 消费所有 fling 速度，防止传递给 ModalBottomSheet
-                return available
-            }
-
-            override suspend fun onPostFling(consumed: androidx.compose.ui.unit.Velocity, available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
-                // 消费所有剩余 fling 速度
-                return available
-            }
-        }
-    }
 
     // 当歌曲信息更新时，同步更新UI（仅在用户未手动编辑时）
     LaunchedEffect(actualSong) {
@@ -2002,7 +2424,7 @@ fun EditSongInfoSheet(
         Column(
             modifier = Modifier
                 .weight(1f)
-                .nestedScroll(nestedScrollConnection)
+                .bottomSheetScrollGuard { scrollState.value == 0 }
                 .verticalScroll(scrollState),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -2152,7 +2574,7 @@ fun EditSongInfoSheet(
                             showLyricsEditor = true
                         } catch (e: Exception) {
                             e.printStackTrace()
-                            lyricsToEdit = actualSong.matchedLyric ?: ""
+                            lyricsToEdit = ""
                             translatedLyricsToEdit = ""
                             showLyricsEditor = true
                         }
@@ -2166,7 +2588,10 @@ fun EditSongInfoSheet(
             }
         }
 
-        val actionButtonFontSize = if (LocalConfiguration.current.screenWidthDp < 420) 11.sp else 13.sp
+        val actionButtonContainerWidth = with(LocalDensity.current) {
+            LocalWindowInfo.current.containerSize.width.toDp()
+        }
+        val actionButtonFontSize = if (actionButtonContainerWidth < 420.dp) 11.sp else 13.sp
 
         // 搜索自动填充按钮
         Row(
@@ -2340,7 +2765,8 @@ fun EditSongInfoSheet(
     if (showSearchResults) {
         ModalBottomSheet(
             onDismissRequest = { showSearchResults = false },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            sheetGesturesEnabled = false
         ) {
             Column(
                 modifier = Modifier
@@ -2392,6 +2818,7 @@ fun EditSongInfoSheet(
                         CircularProgressIndicator()
                     } else if (searchState.searchResults.isNotEmpty()) {
                         LazyColumn(
+                            modifier = Modifier.bottomSheetScrollGuard(),
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             items(searchState.searchResults) { songResult ->
@@ -2460,40 +2887,12 @@ fun LyricsEditorSheet(
     var isSaving by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableIntStateOf(0) }
 
-    // 创建嵌套滚动连接来消费滚动事件，防止传递给 ModalBottomSheet
-    val nestedScrollConnection = remember {
-        object : NestedScrollConnection {
-            override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: NestedScrollSource): androidx.compose.ui.geometry.Offset {
-                // 在滚动前不消费，让内部滚动正常处理
-                return androidx.compose.ui.geometry.Offset.Zero
-            }
-
-            override fun onPostScroll(consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset, source: NestedScrollSource): androidx.compose.ui.geometry.Offset {
-                // 消费所有剩余滚动事件，防止传递给 ModalBottomSheet
-                return available
-            }
-
-            override suspend fun onPreFling(available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
-                // 消费所有 fling 速度，防止传递给 ModalBottomSheet
-                return available
-            }
-
-            override suspend fun onPostFling(consumed: androidx.compose.ui.unit.Velocity, available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
-                // 消费所有剩余 fling 速度
-                return available
-            }
-        }
-    }
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .fillMaxHeight(0.9f)
-            .pointerInput(Unit) {
-                // 拦截所有触摸事件，防止传递给 ModalBottomSheet
-                detectVerticalDragGestures { _, _ -> }
-            }
-            .nestedScroll(nestedScrollConnection)
+            .bottomSheetScrollGuard()
             .padding(horizontal = 24.dp, vertical = 16.dp)
             .windowInsetsPadding(WindowInsets.navigationBars),
         verticalArrangement = Arrangement.spacedBy(12.dp)

@@ -4,7 +4,23 @@
     <string name="player_playback_network_error">网络连接失败，请检查网络后重试</string>
     <string name="player_playback_failed_with_code">播放失败：%1$s</string>
     <string name="player_playback_login_required">需要登录后才能播放该歌曲</string>
+    <string name="player_netease_preview_only">你访问的是该平台的试听资源，当前仅可播放部分试听片段</string>
+    <string name="player_netease_no_permission_switch_platform">你访问的是该平台的受限资源，可能因版权、会员权限或当前音质限制而无法播放。可尝试降低音质，或在其他平台搜索这首歌畅听</string>
     <string name="player_playback_video_info_unavailable">暂时无法获取视频音频信息</string>
     <string name="player_playback_restore_failed">恢复播放状态失败：%1$s</string>
     <string name="player_playback_url_error_detail">获取播放地址失败：%1$s</string>
+    <string name="nowplaying_audio_effects_title">音效与倍速</string>
+    <string name="nowplaying_audio_effects_desc">速度、音调和均衡器预设</string>
+    <string name="nowplaying_playback_speed">播放速度</string>
+    <string name="nowplaying_playback_pitch">音调</string>
+    <string name="nowplaying_loudness_enhancer">响度增强</string>
+    <string name="nowplaying_loudness_desc">补一点厚度和能量，但不会改变音高</string>
+    <string name="nowplaying_equalizer">均衡器</string>
+    <string name="nowplaying_equalizer_presets">预设</string>
+    <string name="nowplaying_equalizer_manual_bands">手动频段</string>
+    <string name="nowplaying_audio_effects_reset">重置音效与倍速</string>
+    <string name="nowplaying_audio_effects_hint">速度与音调可分开调节，均衡器会绑定当前播放会话</string>
+    <string name="nowplaying_equalizer_wait_for_session">开始播放后会应用到当前音频会话</string>
+    <string name="nowplaying_equalizer_unsupported">当前设备可能不支持系统均衡器</string>
+    <string name="nowplaying_loudness_unsupported">当前设备可能不支持响度增强</string>
 </resources>

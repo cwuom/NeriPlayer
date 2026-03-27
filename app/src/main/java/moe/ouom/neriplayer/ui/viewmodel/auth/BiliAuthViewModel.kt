@@ -19,7 +19,7 @@ package moe.ouom.neriplayer.ui.viewmodel.auth
  * along with this software.
  * If not, see <https://www.gnu.org/licenses/>.
  *
- * File: moe.ouom.neriplayer.ui.viewmodel/BiliAuthViewModel
+ * File: moe.ouom.neriplayer.ui.viewmodel.auth/BiliAuthViewModel
  * Created: 2025/8/13
  */
 
@@ -35,8 +35,8 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.SavedCookieAuthHealth
-import moe.ouom.neriplayer.data.SavedCookieAuthState
+import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthHealth
+import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import org.json.JSONObject
 
 data class BiliAuthUiState(

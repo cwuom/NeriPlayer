@@ -1,5 +1,29 @@
 package moe.ouom.neriplayer.core.api.youtube
 
+/*
+ * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
+ * Copyright (C) 2025-2025 NeriPlayer developers
+ * https://github.com/cwuom/NeriPlayer
+ *
+ * This software is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This software is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this software.
+ * If not, see <https://www.gnu.org/licenses/>.
+ *
+ * File: moe.ouom.neriplayer.core.api.youtube/YouTubeMusicPlaybackRepository
+ * Updated: 2026/3/23
+ */
+
+
 import android.content.Context
 import androidx.media3.common.MimeTypes
 import java.io.IOException
@@ -9,28 +33,34 @@ import java.net.URLEncoder
 import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.random.Random
 import kotlin.jvm.Volatile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.data.SettingsRepository
-import moe.ouom.neriplayer.data.YouTubeAuthBundle
-import moe.ouom.neriplayer.data.YOUTUBE_MUSIC_ORIGIN
-import moe.ouom.neriplayer.data.YOUTUBE_WEB_ORIGIN
-import moe.ouom.neriplayer.data.appendYouTubeConsentCookie
-import moe.ouom.neriplayer.data.buildYouTubePageRequestHeaders
-import moe.ouom.neriplayer.data.buildYouTubeStreamRequestHeaders
-import moe.ouom.neriplayer.data.effectiveCookieHeader
-import moe.ouom.neriplayer.data.resolveAuthorizationHeader
-import moe.ouom.neriplayer.data.resolveBootstrapUserAgent
-import moe.ouom.neriplayer.data.resolveXGoogAuthUser
+import moe.ouom.neriplayer.data.auth.youtube.isYouTubeAuthRecoverableFailure
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthAutoRefreshManager
+import moe.ouom.neriplayer.data.settings.SettingsRepository
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
+import moe.ouom.neriplayer.data.platform.youtube.YOUTUBE_WEB_ORIGIN
+import moe.ouom.neriplayer.data.platform.youtube.appendYouTubeConsentCookie
+import moe.ouom.neriplayer.data.platform.youtube.buildBootstrapAuthFingerprint
+import moe.ouom.neriplayer.data.platform.youtube.buildYouTubePageRequestHeaders
+import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeStreamRequestHeaders
+import moe.ouom.neriplayer.data.platform.youtube.effectiveCookieHeader
+import moe.ouom.neriplayer.data.platform.youtube.isYouTubeGoogleVideoHost
+import moe.ouom.neriplayer.data.platform.youtube.resolveAuthorizationHeader
+import moe.ouom.neriplayer.data.platform.youtube.resolveBootstrapUserAgent
+import moe.ouom.neriplayer.data.platform.youtube.resolveXGoogAuthUser
 import moe.ouom.neriplayer.util.NPLogger
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -45,14 +75,6 @@ import org.schabi.newpipe.extractor.services.youtube.YoutubeJavaScriptPlayerMana
 import org.schabi.newpipe.extractor.stream.AudioStream
 import org.schabi.newpipe.extractor.stream.DeliveryMethod
 import org.schabi.newpipe.extractor.stream.StreamInfo
-
-private const val YOUTUBE_PLAYER_ANDROID_CLIENT_ID = "3"
-private const val YOUTUBE_PLAYER_ANDROID_CLIENT_NAME = "ANDROID"
-private const val YOUTUBE_PLAYER_ANDROID_CLIENT_VERSION = "21.03.36"
-private const val YOUTUBE_PLAYER_ANDROID_USER_AGENT =
-    "com.google.android.youtube/21.03.36 (Linux; U; Android 15; US) gzip"
-private const val YOUTUBE_PLAYER_ANDROID_OS_VERSION = "16"
-private const val YOUTUBE_PLAYER_ANDROID_SDK_VERSION = 36
 
 private const val YOUTUBE_PLAYER_IOS_CLIENT_ID = "5"
 private const val YOUTUBE_PLAYER_IOS_CLIENT_NAME = "IOS"
@@ -103,7 +125,9 @@ data class YouTubePlayableAudio(
     val durationMs: Long = 0L,
     val mimeType: String? = null,
     val contentLength: Long? = null,
-    val streamType: YouTubePlayableStreamType = YouTubePlayableStreamType.DIRECT
+    val streamType: YouTubePlayableStreamType = YouTubePlayableStreamType.DIRECT,
+    val bitrateKbps: Int? = null,
+    val sampleRateHz: Int? = null
 )
 
 internal data class YouTubeAudioMetadata(
@@ -118,6 +142,7 @@ private data class YouTubePlaybackBootstrap(
     val visitorData: String,
     val playerJsUrl: String,
     val cookieHeader: String,
+    val authFingerprint: String,
     val sessionIndex: String,
     val userAgent: String,
     val remoteHost: String,
@@ -253,7 +278,9 @@ internal object YouTubeMusicPlaybackParser {
             url = selected.url,
             durationMs = selected.durationMs.takeIf { it > 0L } ?: parseDurationMs(root),
             mimeType = selected.mimeType,
-            contentLength = selected.contentLength
+            contentLength = selected.contentLength,
+            bitrateKbps = selected.bitrate.takeIf { it > 0 }?.let { (it + 500) / 1000 },
+            sampleRateHz = selected.audioSampleRate.takeIf { it > 0 }
         )
     }
 
@@ -480,52 +507,6 @@ internal object YouTubeMusicPlaybackParser {
         }
     }
 
-    private fun extractQueryParameterFromUrl(url: String, key: String): String? {
-        val rawQuery = runCatching { URI(url).rawQuery }.getOrNull().orEmpty()
-        return rawQuery.split('&')
-            .asSequence()
-            .mapNotNull { segment ->
-                val resolvedKey = URLDecoder.decode(
-                    segment.substringBefore('='),
-                    Charsets.UTF_8.name()
-                )
-                if (resolvedKey.isBlank()) {
-                    null
-                } else {
-                    resolvedKey to URLDecoder.decode(
-                        segment.substringAfter('=', ""),
-                        Charsets.UTF_8.name()
-                    )
-                }
-            }
-            .firstOrNull { (resolvedKey, _) -> resolvedKey == key }
-            ?.second
-    }
-
-    private fun replaceQueryParameterInUrl(url: String, key: String, value: String): String {
-        val pattern = Regex("([?&])${Regex.escape(key)}=[^&]*")
-        return if (pattern.containsMatchIn(url)) {
-            val match = pattern.find(url) ?: return url
-            buildString(url.length + value.length) {
-                append(url, 0, match.range.first)
-                append(match.groupValues[1])
-                append(key)
-                append('=')
-                append(URLEncoder.encode(value, Charsets.UTF_8.name()))
-                append(url, match.range.last + 1, url.length)
-            }
-        } else {
-            val separator = if (url.contains('?')) '&' else '?'
-            buildString(url.length + key.length + value.length + 2) {
-                append(url)
-                append(separator)
-                append(key)
-                append('=')
-                append(URLEncoder.encode(value, Charsets.UTF_8.name()))
-            }
-        }
-    }
-
     private fun parseLongLike(vararg values: Any?): Long {
         values.forEach { value ->
             when (value) {
@@ -745,7 +726,7 @@ private fun isYouTubeGoogleVideoStream(url: String): Boolean {
         .getOrNull()
         ?.lowercase(Locale.US)
         .orEmpty()
-    if (!host.contains("googlevideo.com")) {
+    if (!isYouTubeGoogleVideoHost(host)) {
         return false
     }
     return extractStreamQueryParameter(url, "source")
@@ -756,8 +737,9 @@ class YouTubeMusicPlaybackRepository(
     private val okHttpClient: OkHttpClient,
     private val settings: SettingsRepository? = null,
     private val authProvider: () -> YouTubeAuthBundle = { YouTubeAuthBundle() },
+    private val authAutoRefreshManager: YouTubeAuthAutoRefreshManager? = null,
     private val streamingCipherResolverFactory: ((String) -> YouTubeStreamingCipherResolver)? = null,
-    private val applicationContext: Context? = null,
+    applicationContext: Context? = null,
     poTokenProvider: YouTubePoTokenProvider? = null
 ) {
     private val downloader = NewPipeOkHttpDownloader(okHttpClient, authProvider)
@@ -773,6 +755,15 @@ class YouTubeMusicPlaybackRepository(
 
     @Volatile
     private var bootstrapCache: YouTubePlaybackBootstrap? = null
+    private val warmBootstrapLock = Any()
+
+    @Volatile
+    private var inFlightWarmBootstrap: Deferred<Unit>? = null
+
+    @Volatile
+    private var authCacheGeneration: Long = 0L
+    @Volatile
+    private var lastAuthFingerprint: String? = null
 
     suspend fun getBestPlayableAudio(
         videoId: String,
@@ -781,6 +772,7 @@ class YouTubeMusicPlaybackRepository(
         requireDirect: Boolean = false,
         preferM4a: Boolean = false
     ): YouTubePlayableAudio? = withContext(Dispatchers.IO) {
+        syncAuthBoundCachesIfNeeded(authProvider().normalized())
         val preferredQualityKey = resolvePreferredQualityKey(preferredQualityOverride)
         val cacheKey = if (preferM4a) "${preferredQualityKey}_m4a" else preferredQualityKey
         if (!forceRefresh) {
@@ -807,6 +799,7 @@ class YouTubeMusicPlaybackRepository(
         requireDirect: Boolean = false,
         preferM4a: Boolean = false
     ) = withContext(Dispatchers.IO) {
+        syncAuthBoundCachesIfNeeded(authProvider().normalized())
         val preferredQualityKey = resolvePreferredQualityKey(preferredQualityOverride)
         val cacheKey = if (preferM4a) "${preferredQualityKey}_m4a" else preferredQualityKey
         if (
@@ -818,7 +811,36 @@ class YouTubeMusicPlaybackRepository(
         ) {
             return@withContext
         }
-        resolvePlayableAudioShared(
+        startPlayableAudioResolution(
+            videoId = videoId,
+            preferredQualityKey = preferredQualityKey,
+            requireDirect = requireDirect,
+            logFailure = false,
+            preferM4a = preferM4a,
+            cacheKey = cacheKey,
+            forceRefresh = false
+        ).await()
+    }
+
+    fun kickoffPlayableAudioPrefetch(
+        videoId: String,
+        preferredQualityOverride: String,
+        requireDirect: Boolean = false,
+        preferM4a: Boolean = false
+    ) {
+        syncAuthBoundCachesIfNeeded(authProvider().normalized())
+        val preferredQualityKey = preferredQualityOverride.ifBlank { "very_high" }
+        val cacheKey = if (preferM4a) "${preferredQualityKey}_m4a" else preferredQualityKey
+        if (
+            getCachedPlayableAudio(
+                videoId = videoId,
+                preferredQualityKey = cacheKey,
+                requireDirect = requireDirect
+            ) != null
+        ) {
+            return
+        }
+        startPlayableAudioResolution(
             videoId = videoId,
             preferredQualityKey = preferredQualityKey,
             requireDirect = requireDirect,
@@ -830,7 +852,9 @@ class YouTubeMusicPlaybackRepository(
     }
 
     suspend fun warmBootstrap() = withContext(Dispatchers.IO) {
+        authAutoRefreshManager?.refreshIfNeeded(reason = "playback_warm_bootstrap", force = false)
         val auth = authProvider().normalized()
+        syncAuthBoundCachesIfNeeded(auth)
         if (!auth.hasLoginCookies()) {
             return@withContext
         }
@@ -845,6 +869,76 @@ class YouTubeMusicPlaybackRepository(
                 error
             )
         }
+    }
+
+    fun warmBootstrapAsync() {
+        val warmTask = synchronized(warmBootstrapLock) {
+            inFlightWarmBootstrap
+                ?.takeUnless { it.isCompleted || it.isCancelled }
+                ?: run {
+                    lateinit var created: Deferred<Unit>
+                    created = inFlightPlayableAudioScope.async(start = CoroutineStart.LAZY) {
+                        try {
+                            warmBootstrap()
+                        } finally {
+                            synchronized(warmBootstrapLock) {
+                                if (inFlightWarmBootstrap === created) {
+                                    inFlightWarmBootstrap = null
+                                }
+                            }
+                        }
+                    }
+                    inFlightWarmBootstrap = created
+                    created
+                }
+        }
+        if (!warmTask.isActive && !warmTask.isCompleted && !warmTask.isCancelled) {
+            warmTask.start()
+        }
+    }
+
+    fun clearAuthBoundCaches(cancelInFlightPlayableAudio: Boolean = true) {
+        authCacheGeneration += 1L
+        bootstrapCache = null
+        lastAuthFingerprint = null
+        synchronized(playableAudioCache) {
+            playableAudioCache.clear()
+        }
+        synchronized(warmBootstrapLock) {
+            inFlightWarmBootstrap?.cancel(CancellationException("YouTube auth updated"))
+            inFlightWarmBootstrap = null
+        }
+        synchronized(inFlightPlayableAudio) {
+            val deferreds = inFlightPlayableAudio.values.toList()
+            inFlightPlayableAudio.clear()
+            if (cancelInFlightPlayableAudio) {
+                deferreds.forEach { deferred ->
+                    deferred.cancel(CancellationException("YouTube auth updated"))
+                }
+            }
+        }
+        poTokenProvider?.clearSession()
+    }
+
+    internal fun shouldClearAuthBoundCachesForFingerprintChange(
+        previousFingerprint: String?,
+        nextFingerprint: String
+    ): Boolean {
+        return previousFingerprint != null && previousFingerprint != nextFingerprint
+    }
+
+    private fun syncAuthBoundCachesIfNeeded(auth: YouTubeAuthBundle) {
+        val fingerprint = auth.buildBootstrapAuthFingerprint(
+            origin = auth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN }
+        )
+        val previousFingerprint = lastAuthFingerprint
+        if (previousFingerprint == fingerprint) {
+            return
+        }
+        if (shouldClearAuthBoundCachesForFingerprintChange(previousFingerprint, fingerprint)) {
+            clearAuthBoundCaches()
+        }
+        lastAuthFingerprint = fingerprint
     }
 
     private fun ensureInitialized() {
@@ -877,6 +971,7 @@ class YouTubeMusicPlaybackRepository(
         cacheKey: String,
         forceRefresh: Boolean
     ): YouTubePlayableAudio? {
+        val authGeneration = authCacheGeneration
         val playerResolution = resolvePlayerAudioViaPlayerApi(
             videoId = videoId,
             preferredQualityKey = preferredQualityKey,
@@ -886,7 +981,9 @@ class YouTubeMusicPlaybackRepository(
             forceRefresh = forceRefresh
         )
         playerResolution?.playableAudio?.let { playableAudio ->
-            cachePlayableAudio(videoId, cacheKey, playableAudio)
+            if (authGeneration == authCacheGeneration) {
+                cachePlayableAudio(videoId, cacheKey, playableAudio)
+            }
             return playableAudio
         }
 
@@ -898,7 +995,9 @@ class YouTubeMusicPlaybackRepository(
             preferM4a = preferM4a
         )?.mergeMetadataFrom(playerResolution?.metadata)
             ?.also { playableAudio ->
-            cachePlayableAudio(videoId, cacheKey, playableAudio)
+            if (authGeneration == authCacheGeneration) {
+                cachePlayableAudio(videoId, cacheKey, playableAudio)
+            }
         }
     }
 
@@ -911,6 +1010,26 @@ class YouTubeMusicPlaybackRepository(
         cacheKey: String,
         forceRefresh: Boolean
     ): YouTubePlayableAudio? {
+        return startPlayableAudioResolution(
+            videoId = videoId,
+            preferredQualityKey = preferredQualityKey,
+            requireDirect = requireDirect,
+            logFailure = logFailure,
+            preferM4a = preferM4a,
+            cacheKey = cacheKey,
+            forceRefresh = forceRefresh
+        ).await()
+    }
+
+    private fun startPlayableAudioResolution(
+        videoId: String,
+        preferredQualityKey: String,
+        requireDirect: Boolean,
+        logFailure: Boolean,
+        preferM4a: Boolean,
+        cacheKey: String,
+        forceRefresh: Boolean
+    ): Deferred<YouTubePlayableAudio?> {
         val request = InFlightPlayableAudioRequest(
             videoId = videoId,
             preferredQualityKey = preferredQualityKey,
@@ -919,36 +1038,34 @@ class YouTubeMusicPlaybackRepository(
             forceRefresh = forceRefresh
         )
         val deferred = synchronized(inFlightPlayableAudio) {
-            inFlightPlayableAudio[request] ?: inFlightPlayableAudioScope.async(
-                start = CoroutineStart.LAZY
-            ) {
-                resolvePlayableAudio(
-                    videoId = videoId,
-                    preferredQualityKey = preferredQualityKey,
-                    requireDirect = requireDirect,
-                    logFailure = logFailure,
-                    preferM4a = preferM4a,
-                    cacheKey = cacheKey,
-                    forceRefresh = forceRefresh
-                )
-            }.also { created ->
+            inFlightPlayableAudio[request] ?: run {
+                lateinit var created: Deferred<YouTubePlayableAudio?>
+                created = inFlightPlayableAudioScope.async(start = CoroutineStart.LAZY) {
+                    resolvePlayableAudio(
+                        videoId = videoId,
+                        preferredQualityKey = preferredQualityKey,
+                        requireDirect = requireDirect,
+                        logFailure = logFailure,
+                        preferM4a = preferM4a,
+                        cacheKey = cacheKey,
+                        forceRefresh = forceRefresh
+                    )
+                }
+                created.invokeOnCompletion {
+                    synchronized(inFlightPlayableAudio) {
+                        if (inFlightPlayableAudio[request] === created) {
+                            inFlightPlayableAudio.remove(request)
+                        }
+                    }
+                }
                 inFlightPlayableAudio[request] = created
+                created
             }
         }
         if (!deferred.isActive && !deferred.isCompleted && !deferred.isCancelled) {
             deferred.start()
         }
-        return try {
-            deferred.await()
-        } finally {
-            synchronized(inFlightPlayableAudio) {
-                if (inFlightPlayableAudio[request] === deferred &&
-                    (deferred.isCompleted || deferred.isCancelled)
-                ) {
-                    inFlightPlayableAudio.remove(request)
-                }
-            }
-        }
+        return deferred
     }
 
     private suspend fun resolvePlayerAudioViaPlayerApi(
@@ -1190,8 +1307,8 @@ class YouTubeMusicPlaybackRepository(
         }
         ensureInitialized()
 
-        var signatureErrorLogged = false
-        var throttlingErrorLogged = false
+        val signatureErrorLogged = AtomicBoolean(false)
+        val throttlingErrorLogged = AtomicBoolean(false)
 
         return object : YouTubeStreamingCipherResolver {
             override fun resolveSignature(encryptedSignature: String): String? {
@@ -1212,8 +1329,7 @@ class YouTubeMusicPlaybackRepository(
                 return runCatching {
                     YoutubeJavaScriptPlayerManager.deobfuscateSignature(videoId, encryptedSignature)
                 }.onFailure { error ->
-                    if (!signatureErrorLogged) {
-                        signatureErrorLogged = true
+                    if (signatureErrorLogged.compareAndSet(false, true)) {
                         NPLogger.w(
                             "YouTubeMusicPlayback",
                             "Failed to deobfuscate streaming signature for $videoId",
@@ -1249,8 +1365,7 @@ class YouTubeMusicPlaybackRepository(
                         url
                     )
                 }.onFailure { error ->
-                    if (!throttlingErrorLogged) {
-                        throttlingErrorLogged = true
+                    if (throttlingErrorLogged.compareAndSet(false, true)) {
                         NPLogger.w(
                             "YouTubeMusicPlayback",
                             "Failed to deobfuscate throttling parameter for $videoId",
@@ -1315,7 +1430,10 @@ class YouTubeMusicPlaybackRepository(
             durationMs = durationMs,
             mimeType = MimeTypes.APPLICATION_M3U8,
             contentLength = selectedAudioPlaylist.contentLength,
-            streamType = YouTubePlayableStreamType.HLS
+            streamType = YouTubePlayableStreamType.HLS,
+            bitrateKbps = selectedAudioPlaylist.estimatedBitrate
+                .takeIf { it > 0 }
+                ?.let { (it + 500) / 1000 }
         )
     }
 
@@ -1423,7 +1541,9 @@ class YouTubeMusicPlaybackRepository(
             "User-Agent" to userAgent,
             "Accept-Language" to requestLocale.acceptLanguage,
             "Content-Type" to "application/json",
-            "X-Goog-AuthUser" to auth.resolveXGoogAuthUser().ifBlank { bootstrap.sessionIndex },
+            "X-Goog-AuthUser" to auth.resolveXGoogAuthUser(
+                fallback = bootstrap.sessionIndex
+            ),
             "X-Goog-Visitor-Id" to bootstrap.visitorData,
             "X-YouTube-Client-Name" to profile.clientId,
             "X-YouTube-Client-Version" to clientVersion
@@ -1616,7 +1736,7 @@ class YouTubeMusicPlaybackRepository(
             append("&key=")
             append(bootstrap.apiKey)
             if (profile.responseField != null) {
-                append("&\$fields=")
+                append("&fields=")
                 append(profile.responseField)
             }
         }
@@ -1653,84 +1773,131 @@ class YouTubeMusicPlaybackRepository(
         }
     }
 
-    private fun bootstrap(
+    private suspend fun bootstrap(
         auth: YouTubeAuthBundle,
         forceRefresh: Boolean = false
     ): YouTubePlaybackBootstrap {
-        val cookieHeader = appendYouTubeConsentCookie(auth.effectiveCookieHeader())
+        authAutoRefreshManager?.refreshIfNeeded(
+            reason = "playback_bootstrap",
+            force = forceRefresh
+        )
+        var workingAuth = authProvider().normalized().takeIf { it.hasLoginCookies() } ?: auth
+        var userAgent = workingAuth.resolveBootstrapUserAgent()
+        var authFingerprint = workingAuth.buildBootstrapAuthFingerprint(
+            origin = workingAuth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN }
+        )
+        var cookieHeader = appendYouTubeConsentCookie(workingAuth.effectiveCookieHeader())
         if (cookieHeader.isBlank()) {
             throw IOException("YouTube Music auth cookies missing")
         }
 
         val now = System.currentTimeMillis()
+        val authGeneration = authCacheGeneration
         val cached = bootstrapCache
         if (!forceRefresh &&
             cached != null &&
-            cached.cookieHeader == cookieHeader &&
+            cached.authFingerprint == authFingerprint &&
             now - cached.fetchedAtMs < PLAYABLE_BOOTSTRAP_TTL_MS
         ) {
             return cached
         }
 
-        val userAgent = auth.resolveBootstrapUserAgent()
-        val homeHtml = fetchBootstrapHtml(
-            auth = auth,
-            userAgent = userAgent,
-            cookieHeader = cookieHeader
-        )
-        val dataSyncId = findOptional(
-            homeHtml,
-            "\"DATASYNC_ID\":\"([^\"]+)\"",
-            "\"datasyncId\":\"([^\"]+)\""
-        )
+        val homeHtml = try {
+            fetchBootstrapHtml(
+                auth = workingAuth,
+                userAgent = userAgent,
+                cookieHeader = cookieHeader
+            )
+        } catch (error: IOException) {
+            if (isYouTubeAuthRecoverableFailure(error)) {
+                authAutoRefreshManager?.refreshIfNeeded(
+                    reason = "playback_bootstrap_http_recoverable",
+                    force = true
+                )
+                workingAuth = authProvider().normalized()
+                cookieHeader = appendYouTubeConsentCookie(workingAuth.effectiveCookieHeader())
+                if (cookieHeader.isBlank()) {
+                    throw error
+                }
+                userAgent = workingAuth.resolveBootstrapUserAgent()
+                authFingerprint = workingAuth.buildBootstrapAuthFingerprint(
+                    origin = workingAuth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN }
+                )
+                fetchBootstrapHtml(
+                    auth = workingAuth,
+                    userAgent = userAgent,
+                    cookieHeader = cookieHeader
+                )
+            } else {
+                throw error
+            }
+        }
+        val bootstrapSource = YouTubeBootstrapHtmlSource(homeHtml)
+        val dataSyncId = bootstrapSource.optionalString("DATASYNC_ID", "datasyncId")
         val (derivedDelegatedSessionId, derivedUserSessionId) = parseDataSyncId(dataSyncId)
-        val playerJsUrl = resolvePlayerJavaScriptUrl(findRequired(homeHtml, "\"jsUrl\":\"([^\"]+)\""))
+        val playerJsUrl = resolvePlayerJavaScriptUrl(
+            bootstrapSource.requireString(
+                "YouTube bootstrap parse failed",
+                "jsUrl"
+            )
+        )
         val parsedBootstrap = YouTubePlaybackBootstrap(
-            apiKey = findRequired(homeHtml, "\"INNERTUBE_API_KEY\":\"([^\"]+)\""),
-            webRemixClientVersion = findRequired(homeHtml, "\"INNERTUBE_CLIENT_VERSION\":\"([^\"]+)\""),
-            visitorData = findRequired(homeHtml, "\"VISITOR_DATA\":\"([^\"]+)\""),
+            apiKey = bootstrapSource.requireString(
+                "YouTube bootstrap parse failed",
+                "INNERTUBE_API_KEY",
+                "innertubeApiKey"
+            ),
+            webRemixClientVersion = bootstrapSource.requireString(
+                "YouTube bootstrap parse failed",
+                "INNERTUBE_CLIENT_VERSION",
+                "INNERTUBE_CONTEXT_CLIENT_VERSION",
+                "innertubeContextClientVersion"
+            ),
+            visitorData = bootstrapSource.requireString(
+                "YouTube bootstrap parse failed",
+                "VISITOR_DATA",
+                "visitorData"
+            ),
             playerJsUrl = playerJsUrl,
             cookieHeader = cookieHeader,
-            sessionIndex = auth.resolveXGoogAuthUser().ifBlank {
-                findOptional(homeHtml, "\"SESSION_INDEX\":\"?([0-9]+)\"?").ifBlank { "0" }
-            },
+            authFingerprint = authFingerprint,
+            sessionIndex = workingAuth.resolveXGoogAuthUser(
+                fallback = bootstrapSource.optionalNumber("SESSION_INDEX").ifBlank { "0" }
+            ),
             userAgent = userAgent,
-            remoteHost = findOptional(homeHtml, "\"remoteHost\":\"([^\"]+)\""),
-            signatureTimestamp = findOptional(homeHtml, "\"STS\":(\\d+)")
-                .ifBlank { findOptional(homeHtml, "\"signatureTimestamp\":(\\d+)") }
+            remoteHost = bootstrapSource.optionalString("remoteHost"),
+            signatureTimestamp = bootstrapSource.optionalNumber("STS", "signatureTimestamp")
                 .ifBlank { fetchPlayerSignatureTimestamp(playerJsUrl, userAgent)?.toString().orEmpty() }
                 .toIntOrNull(),
-            appInstallData = findOptional(homeHtml, "\"appInstallData\":\"([^\"]+)\""),
-            coldConfigData = findOptional(homeHtml, "\"coldConfigData\":\"([^\"]+)\""),
-            coldHashData = findOptional(
-                homeHtml,
-                "\"coldHashData\":\"([^\"]+)\"",
-                "\"SERIALIZED_COLD_HASH_DATA\":\"([^\"]+)\""
+            appInstallData = bootstrapSource.optionalString("appInstallData"),
+            coldConfigData = bootstrapSource.optionalString("coldConfigData"),
+            coldHashData = bootstrapSource.optionalString(
+                "coldHashData",
+                "SERIALIZED_COLD_HASH_DATA"
             ),
-            hotHashData = findOptional(
-                homeHtml,
-                "\"hotHashData\":\"([^\"]+)\"",
-                "\"SERIALIZED_HOT_HASH_DATA\":\"([^\"]+)\""
+            hotHashData = bootstrapSource.optionalString(
+                "hotHashData",
+                "SERIALIZED_HOT_HASH_DATA"
             ),
-            deviceExperimentId = findOptional(homeHtml, "\"deviceExperimentId\":\"([^\"]+)\""),
-            rolloutToken = findOptional(homeHtml, "\"rolloutToken\":\"([^\"]+)\""),
+            deviceExperimentId = bootstrapSource.optionalString("deviceExperimentId"),
+            rolloutToken = bootstrapSource.optionalString("rolloutToken"),
             dataSyncId = dataSyncId,
-            delegatedSessionId = findOptional(
-                homeHtml,
-                "\"DELEGATED_SESSION_ID\":\"([^\"]+)\""
-            ).ifBlank { derivedDelegatedSessionId },
-            userSessionId = findOptional(
-                homeHtml,
-                "\"USER_SESSION_ID\":\"([^\"]+)\""
-            ).ifBlank { derivedUserSessionId },
-            loggedIn = findOptional(homeHtml, "\"LOGGED_IN\":(true|false)")
+            delegatedSessionId = bootstrapSource.optionalString("DELEGATED_SESSION_ID")
+                .ifBlank { derivedDelegatedSessionId },
+            userSessionId = bootstrapSource.optionalString("USER_SESSION_ID")
+                .ifBlank { derivedUserSessionId },
+            loggedIn = bootstrapSource.optionalBoolean("LOGGED_IN")
                 .equals("true", ignoreCase = true),
             fetchedAtMs = now
         )
         if (cached != null && cached.webRemixClientVersion != parsedBootstrap.webRemixClientVersion) {
             YoutubeJavaScriptPlayerManager.clearAllCaches()
         }
-        return parsedBootstrap.also { bootstrapCache = it }
+        return parsedBootstrap.also { parsed ->
+            if (authGeneration == authCacheGeneration) {
+                bootstrapCache = parsed
+            }
+        }
     }
 
     private fun fetchBootstrapHtml(
@@ -1860,8 +2027,12 @@ class YouTubeMusicPlaybackRepository(
         return YouTubePlayableAudio(
             url = selectedStream.content,
             durationMs = resolvedDurationMs,
-            mimeType = null,
-            contentLength = null
+            mimeType = selectedStream.format?.mimeType,
+            contentLength = null,
+            bitrateKbps = selectedStream.averageBitrate
+                .takeIf { it > 0 }
+                ?.let { (it + 500) / 1000 }
+                ?: selectedStream.bitrate.takeIf { it > 0 }?.let { (it + 500) / 1000 }
         )
     }
 
@@ -1918,52 +2089,6 @@ class YouTubeMusicPlaybackRepository(
             mimeType = mimeType ?: metadata.mimeType,
             contentLength = contentLength ?: metadata.contentLength
         )
-    }
-
-    internal fun extractQueryParameterFromUrl(url: String, key: String): String? {
-        val rawQuery = runCatching { URI(url).rawQuery }.getOrNull().orEmpty()
-        return rawQuery.split('&')
-            .asSequence()
-            .mapNotNull { segment ->
-                val resolvedKey = URLDecoder.decode(
-                    segment.substringBefore('='),
-                    Charsets.UTF_8.name()
-                )
-                if (resolvedKey.isBlank()) {
-                    null
-                } else {
-                    resolvedKey to URLDecoder.decode(
-                        segment.substringAfter('=', ""),
-                        Charsets.UTF_8.name()
-                    )
-                }
-            }
-            .firstOrNull { (resolvedKey, _) -> resolvedKey == key }
-            ?.second
-    }
-
-    internal fun replaceQueryParameterInUrl(url: String, key: String, value: String): String {
-        val pattern = Regex("([?&])${Regex.escape(key)}=[^&]*")
-        return if (pattern.containsMatchIn(url)) {
-            val match = pattern.find(url) ?: return url
-            buildString(url.length + value.length) {
-                append(url, 0, match.range.first)
-                append(match.groupValues[1])
-                append(key)
-                append('=')
-                append(URLEncoder.encode(value, Charsets.UTF_8.name()))
-                append(url, match.range.last + 1, url.length)
-            }
-        } else {
-            val separator = if (url.contains('?')) '&' else '?'
-            buildString(url.length + key.length + value.length + 2) {
-                append(url)
-                append(separator)
-                append(key)
-                append('=')
-                append(URLEncoder.encode(value, Charsets.UTF_8.name()))
-            }
-        }
     }
 
     private fun playerClientProfiles(): List<YouTubePlayerClientProfile> {
@@ -2156,8 +2281,8 @@ class YouTubeMusicPlaybackRepository(
         return YouTubeWebRemixRequestMetadata(
             originalUrl = originalUrl,
             playlistId = playlistId,
-            cpn = generateRequestNonce(16),
-            clientScreenNonce = generateRequestNonce(16)
+            cpn = generateRequestNonce(),
+            clientScreenNonce = generateRequestNonce()
         )
     }
 
@@ -2209,10 +2334,10 @@ class YouTubeMusicPlaybackRepository(
         }
     }
 
-    private fun generateRequestNonce(length: Int): String {
+    private fun generateRequestNonce(): String {
         val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
-        return buildString(length) {
-            repeat(length) {
+        return buildString(16) {
+            repeat(16) {
                 append(alphabet[Random.nextInt(alphabet.length)])
             }
         }

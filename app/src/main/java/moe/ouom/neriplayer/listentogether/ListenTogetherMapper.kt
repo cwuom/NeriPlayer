@@ -2,10 +2,10 @@ package moe.ouom.neriplayer.listentogether
 
 import android.net.Uri
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.data.LocalSongSupport
-import moe.ouom.neriplayer.data.buildYouTubeMusicMediaUri
-import moe.ouom.neriplayer.data.extractYouTubeMusicVideoId
-import moe.ouom.neriplayer.data.stableYouTubeMusicId
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeMusicMediaUri
+import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
+import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 

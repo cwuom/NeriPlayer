@@ -1,11 +1,36 @@
 package moe.ouom.neriplayer.core.api.youtube
 
+/*
+ * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
+ * Copyright (C) 2025-2025 NeriPlayer developers
+ * https://github.com/cwuom/NeriPlayer
+ *
+ * This software is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This software is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this software.
+ * If not, see <https://www.gnu.org/licenses/>.
+ *
+ * File: moe.ouom.neriplayer.core.api.youtube/YouTubeWebPoTokenProvider
+ * Updated: 2026/3/23
+ */
+
 import android.annotation.SuppressLint
 import android.content.Context
+import android.net.Uri
 import android.util.Base64
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -16,10 +41,12 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import moe.ouom.neriplayer.data.YouTubeAuthBundle
-import moe.ouom.neriplayer.data.YouTubeCookieSupport
-import moe.ouom.neriplayer.data.effectiveCookieHeader
-import moe.ouom.neriplayer.data.resolveBootstrapUserAgent
+import moe.ouom.neriplayer.data.auth.youtube.applyYouTubeWebCookies
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.platform.youtube.effectiveCookieHeader
+import moe.ouom.neriplayer.data.platform.youtube.isTrustedYouTubeBootstrapHost
+import moe.ouom.neriplayer.data.platform.youtube.resolveBootstrapUserAgent
+import moe.ouom.neriplayer.util.isAllowedMainFrameRequest
 import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
 import org.json.JSONTokener
@@ -34,6 +61,8 @@ interface YouTubePoTokenProvider {
         remoteHost: String,
         forceRefresh: Boolean = false
     ): String?
+
+    fun clearSession() {}
 }
 
 private data class WebPoPageSnapshot(
@@ -69,12 +98,14 @@ internal class YouTubeWebPoTokenProvider(
         )
         private const val PAGE_PREPARE_ATTEMPTS = 16
         private const val PAGE_PREPARE_BACKOFF_MS = 1_000L
+        private const val PAGE_READY_UNAVAILABLE_THRESHOLD = 2
         private const val MINT_ATTEMPTS = 10
         private const val MINT_BACKOFF_MS = 1_000L
         private const val WEBVIEW_RELOAD_TTL_MS = 20L * 60L * 1000L
         private const val TOKEN_TTL_MS = 6L * 60L * 60L * 1000L
         private const val ASYNC_SCRIPT_TIMEOUT_MS = 20_000L
         private const val TOKEN_CACHE_MAX_SIZE = 16
+        private const val UNAVAILABLE_LOG_INTERVAL_MS = 10L * 60L * 1000L
     }
 
     private val applicationContext = context.applicationContext
@@ -94,6 +125,9 @@ internal class YouTubeWebPoTokenProvider(
     @Volatile
     private var preparedUrl: String = WEB_PO_BOOTSTRAP_URLS.first()
 
+    @Volatile
+    private var lastUnavailableLogAtMs: Long = 0L
+
     override suspend fun warmSession() {
         val auth = authProvider().normalized()
         if (!auth.hasLoginCookies()) {
@@ -106,6 +140,15 @@ internal class YouTubeWebPoTokenProvider(
                 forceRefresh = false
             )
         }
+    }
+
+    override fun clearSession() {
+        synchronized(tokenCache) {
+            tokenCache.clear()
+        }
+        preparedCookieFingerprint = null
+        preparedAtMs = 0L
+        preparedUrl = WEB_PO_BOOTSTRAP_URLS.first()
     }
 
     override suspend fun getWebRemixGvsPoToken(
@@ -123,6 +166,9 @@ internal class YouTubeWebPoTokenProvider(
             authFingerprint = authFingerprint,
             forceRefresh = forceRefresh
         ) ?: return@withLock null
+        if (!pageSnapshot.hasWebPoClient) {
+            return@withLock null
+        }
 
         val contentBinding = resolveContentBinding(
             videoId = videoId,
@@ -162,6 +208,14 @@ internal class YouTubeWebPoTokenProvider(
 
                 result?.status == "backoff" -> {
                     delay(MINT_BACKOFF_MS)
+                }
+
+                result?.status == "missing" -> {
+                    logUnavailable(
+                        url = preparedUrl,
+                        snapshot = pageSnapshot
+                    )
+                    return@withLock null
                 }
 
                 attempt < MINT_ATTEMPTS - 1 -> {
@@ -223,25 +277,34 @@ internal class YouTubeWebPoTokenProvider(
         preparedCookieFingerprint = authFingerprint
 
         for (bootstrapUrl in WEB_PO_BOOTSTRAP_URLS) {
+            var readyWithoutClientCount = 0
             withContext(Dispatchers.Main) {
                 activeWebView.settings.userAgentString = auth.resolveBootstrapUserAgent()
                 activeWebView.stopLoading()
                 activeWebView.loadUrl(bootstrapUrl)
             }
 
-            repeat(PAGE_PREPARE_ATTEMPTS) { attempt ->
+            for (attempt in 0 until PAGE_PREPARE_ATTEMPTS) {
                 delay(PAGE_PREPARE_BACKOFF_MS)
-                val snapshot = readPageSnapshot() ?: return@repeat
+                val snapshot = readPageSnapshot() ?: continue
                 if (snapshot.hasYtcfg && snapshot.hasWebPoClient) {
                     preparedAtMs = System.currentTimeMillis()
                     preparedUrl = bootstrapUrl
                     return snapshot
                 }
+                val pageReady = snapshot.readyState.equals("interactive", ignoreCase = true) ||
+                    snapshot.readyState.equals("complete", ignoreCase = true)
+                if (pageReady && !snapshot.hasWebPoClient) {
+                    readyWithoutClientCount += 1
+                    if (readyWithoutClientCount >= PAGE_READY_UNAVAILABLE_THRESHOLD) {
+                        logUnavailable(bootstrapUrl, snapshot)
+                        break
+                    }
+                } else {
+                    readyWithoutClientCount = 0
+                }
                 if (attempt == PAGE_PREPARE_ATTEMPTS - 1) {
-                    NPLogger.w(
-                        TAG,
-                        "WebPoClient unavailable on $bootstrapUrl, ready=${snapshot.readyState}, ytcfg=${snapshot.hasYtcfg}"
-                    )
+                    logUnavailable(bootstrapUrl, snapshot)
                 }
             }
         }
@@ -256,14 +319,16 @@ internal class YouTubeWebPoTokenProvider(
         WebView(applicationContext).apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
-            settings.databaseEnabled = true
             settings.cacheMode = WebSettings.LOAD_DEFAULT
             settings.loadsImagesAutomatically = false
             settings.mediaPlaybackRequiresUserGesture = false
+            settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            settings.allowFileAccess = false
+            settings.allowContentAccess = false
             CookieManager.getInstance().setAcceptCookie(true)
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
             webChromeClient = WebChromeClient()
-            webViewClient = WebViewClient()
+            webViewClient = BootstrapWebViewClient()
             addJavascriptInterface(WebPoResultBridge(), JS_BRIDGE_NAME)
         }.also { created ->
             webView = created
@@ -276,18 +341,12 @@ internal class YouTubeWebPoTokenProvider(
     ) = withContext(Dispatchers.Main) {
         val cookieManager = CookieManager.getInstance()
         val cookies = auth.normalized(savedAt = auth.savedAt).cookies
-        YouTubeCookieSupport.webUrls.forEach { url ->
-            cookies.forEach { (key, value) ->
-                cookieManager.setCookie(
-                    url,
-                    "$key=$value; Path=/; Domain=.youtube.com; Secure"
-                )
-            }
-            cookieManager.setCookie(
-                url,
-                "SOCS=CAI; Path=/; Domain=.youtube.com; Secure"
-            )
-        }
+        applyYouTubeWebCookies(
+            cookieManager = cookieManager,
+            cookies = cookies,
+            skipExisting = true,
+            includeConsentCookie = true
+        )
         cookieManager.setAcceptCookie(true)
         cookieManager.setAcceptThirdPartyCookies(activeWebView, true)
         cookieManager.flush()
@@ -489,6 +548,21 @@ internal class YouTubeWebPoTokenProvider(
         }
     }
 
+    private fun logUnavailable(
+        url: String,
+        snapshot: WebPoPageSnapshot
+    ) {
+        val now = System.currentTimeMillis()
+        if (now - lastUnavailableLogAtMs < UNAVAILABLE_LOG_INTERVAL_MS) {
+            return
+        }
+        lastUnavailableLogAtMs = now
+        NPLogger.d(
+            TAG,
+            "WebPoClient unavailable on $url, ready=${snapshot.readyState}, ytcfg=${snapshot.hasYtcfg}"
+        )
+    }
+
     private fun buildCacheKey(
         contentBinding: String,
         remoteHost: String
@@ -513,7 +587,31 @@ internal class YouTubeWebPoTokenProvider(
         }
     }
 
+    private fun isAllowedBootstrapUri(uri: Uri?): Boolean {
+        val resolvedUri = uri ?: return false
+        if (resolvedUri.toString() == "about:blank") {
+            return true
+        }
+        if (!resolvedUri.scheme.equals("https", ignoreCase = true)) {
+            return false
+        }
+        return isTrustedYouTubeBootstrapHost(resolvedUri.host)
+    }
+
+    private inner class BootstrapWebViewClient : WebViewClient() {
+        override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+            val currentRequest = request ?: return false
+            val uri = currentRequest.url
+            if (!isAllowedMainFrameRequest(currentRequest) { isAllowedBootstrapUri(it) }) {
+                NPLogger.w(TAG, "Blocked unexpected WebPo navigation: $uri")
+                return true
+            }
+            return false
+        }
+    }
+
     private inner class WebPoResultBridge {
+        @Suppress("unused")
         @JavascriptInterface
         fun postResult(requestId: String, encodedPayload: String) {
             val payload = runCatching {

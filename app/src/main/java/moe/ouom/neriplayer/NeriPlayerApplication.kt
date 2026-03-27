@@ -31,6 +31,7 @@ import coil.memory.MemoryCache
 import coil.request.CachePolicy
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicLibraryGateway
 import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicPlaylistDetail
@@ -48,6 +49,7 @@ class NeriPlayerApplication : Application() {
         ExceptionHandler.init(this)
 
         AppContainer.initialize(this)
+        ManagedDownloadStorage.initialize(this)
         YouTubeMusicUiDependencies.libraryGateway = object : YouTubeMusicLibraryGateway {
             override suspend fun getLibraryPlaylists(): List<YouTubeMusicPlaylist> {
                 return AppContainer.youtubeMusicClient.getLibraryPlaylists().map { playlist ->

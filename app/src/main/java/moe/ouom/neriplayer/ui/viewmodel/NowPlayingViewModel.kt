@@ -1,4 +1,4 @@
-﻿package moe.ouom.neriplayer.ui.viewmodel
+package moe.ouom.neriplayer.ui.viewmodel
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -38,7 +38,7 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.SearchManager
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.stableKey
+import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.R
 
@@ -113,6 +113,38 @@ class NowPlayingViewModel : ViewModel() {
         GlobalDownloadManager.startDownload(context, song)
     }
 
+    fun setPlaybackSpeed(speed: Float, persist: Boolean = true) {
+        PlayerManager.setPlaybackSpeed(speed, persist)
+    }
+
+    fun setPlaybackPitch(pitch: Float, persist: Boolean = true) {
+        PlayerManager.setPlaybackPitch(pitch, persist)
+    }
+
+    fun setPlaybackLoudnessGain(levelMb: Int, persist: Boolean = true) {
+        PlayerManager.setPlaybackLoudnessGain(levelMb, persist)
+    }
+
+    fun setPlaybackEqualizerEnabled(enabled: Boolean, persist: Boolean = true) {
+        PlayerManager.setPlaybackEqualizerEnabled(enabled, persist)
+    }
+
+    fun selectPlaybackEqualizerPreset(presetId: String, persist: Boolean = true) {
+        PlayerManager.selectPlaybackEqualizerPreset(presetId, persist)
+    }
+
+    fun updatePlaybackEqualizerBandLevel(
+        index: Int,
+        levelMb: Int,
+        persist: Boolean = true
+    ) {
+        PlayerManager.updatePlaybackEqualizerBandLevel(index, levelMb, persist)
+    }
+
+    fun resetPlaybackSoundSettings(persist: Boolean = true) {
+        PlayerManager.resetPlaybackSoundSettings(persist)
+    }
+
     fun fillLyrics(context: Context, song: SongItem, selectedSong: SongSearchInfo, onComplete: (Boolean, String) -> Unit) {
         viewModelScope.launch {
             try {
@@ -176,12 +208,7 @@ class NowPlayingViewModel : ViewModel() {
                 val isBili = originalSong.album.startsWith(PlayerManager.BILI_SOURCE_TAG)
 
                 if (!originalSong.mediaUri.isNullOrBlank()) {
-                    val info = OriginalSongInfo(
-                        name = originalSong.originalName ?: originalSong.name,
-                        artist = originalSong.originalArtist ?: originalSong.artist,
-                        coverUrl = originalSong.originalCoverUrl ?: originalSong.coverUrl,
-                        shouldClearLyrics = true
-                    )
+                    val info = buildLocalOriginalSongInfo(originalSong)
                     onResult(true, info, context.getString(R.string.music_restore_success))
                 } else if (isBili) {
                     val resolved = resolveBiliSong(originalSong, AppContainer.biliClient)
@@ -228,4 +255,18 @@ class NowPlayingViewModel : ViewModel() {
         }
     }
 
+}
+
+internal fun buildLocalOriginalSongInfo(song: SongItem): NowPlayingViewModel.OriginalSongInfo {
+    val lyric = song.originalLyric
+    val translatedLyric = song.originalTranslatedLyric
+    val shouldClearLyrics = lyric.isNullOrBlank() && translatedLyric.isNullOrBlank()
+    return NowPlayingViewModel.OriginalSongInfo(
+        name = song.originalName ?: song.name,
+        artist = song.originalArtist ?: song.artist,
+        coverUrl = song.originalCoverUrl ?: song.coverUrl,
+        shouldClearLyrics = shouldClearLyrics,
+        lyric = lyric,
+        translatedLyric = translatedLyric
+    )
 }

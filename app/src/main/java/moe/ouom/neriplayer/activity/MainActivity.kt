@@ -108,17 +108,18 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.AudioPlayerService
-import moe.ouom.neriplayer.core.player.PlayerEvent
+import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.data.LocalAudioImportManager
-import moe.ouom.neriplayer.data.SettingsRepository
-import moe.ouom.neriplayer.data.readThemePreferenceSnapshotSync
+import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
+import moe.ouom.neriplayer.data.settings.SettingsRepository
+import moe.ouom.neriplayer.data.settings.readThemePreferenceSnapshotSync
 import moe.ouom.neriplayer.listentogether.DEFAULT_LISTEN_TOGETHER_BASE_URL
 import moe.ouom.neriplayer.listentogether.ListenTogetherInvite
 import moe.ouom.neriplayer.listentogether.normalizeListenTogetherRoomId
 import moe.ouom.neriplayer.listentogether.parseListenTogetherInvite
 import moe.ouom.neriplayer.listentogether.resolveListenTogetherBaseUrl
 import moe.ouom.neriplayer.ui.NeriApp
+import moe.ouom.neriplayer.ui.onboarding.StartupOnboardingScreen
 import moe.ouom.neriplayer.util.ExceptionHandler
 import moe.ouom.neriplayer.util.HapticButton
 import moe.ouom.neriplayer.util.HapticTextButton
@@ -128,7 +129,7 @@ import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.lockPortraitIfPhone
 import androidx.core.view.WindowInsetsControllerCompat
 
-private enum class AppStage { Loading, Disclaimer, Main }
+private enum class AppStage { Loading, Disclaimer, Onboarding, Main }
 
 class MainActivity : ComponentActivity() {
     private val settingsRepository by lazy { SettingsRepository(applicationContext) }
@@ -178,6 +179,7 @@ class MainActivity : ComponentActivity() {
                 initial = startupThemeSnapshot.followSystemDark
             )
             val disclaimerAcceptedNullable by settingsRepository.disclaimerAcceptedFlow.collectAsState(initial = null)
+            val startupOnboardingCompletedNullable by settingsRepository.startupOnboardingCompletedFlow.collectAsState(initial = null)
 
             val systemDark = isSystemInDarkTheme()
             val useDark = remember(forceDark, followSystemDark, systemDark) {
@@ -200,9 +202,9 @@ class MainActivity : ComponentActivity() {
             // GitHub自动同步 - 应用启动时拉取最新数据(异步,不阻塞UI)
             LaunchedEffect(Unit) {
                     delay(1000) // 延迟1秒,避免阻塞启动
-                    val storage = moe.ouom.neriplayer.data.github.SecureTokenStorage(this@MainActivity)
+                    val storage = moe.ouom.neriplayer.data.sync.github.SecureTokenStorage(this@MainActivity)
                     if (storage.isConfigured()) {
-                        moe.ouom.neriplayer.data.github.GitHubSyncWorker.scheduleDelayedSync(
+                        moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker.scheduleDelayedSync(
                             this@MainActivity,
                             markMutation = false
                         )
@@ -226,7 +228,11 @@ class MainActivity : ComponentActivity() {
 
                 val stage = when (disclaimerAcceptedNullable) {
                     null -> AppStage.Loading
-                    true -> AppStage.Main
+                    true -> when (startupOnboardingCompletedNullable) {
+                        null -> AppStage.Loading
+                        true -> AppStage.Main
+                        false -> AppStage.Onboarding
+                    }
                     false -> AppStage.Disclaimer
                 }
 
@@ -263,6 +269,9 @@ class MainActivity : ComponentActivity() {
                             DisclaimerScreen(
                                 onAgree = { scope.launch { settingsRepository.setDisclaimerAccepted(true) } }
                             )
+                        }
+                        AppStage.Onboarding -> {
+                            StartupOnboardingScreen()
                         }
                         AppStage.Main -> {
                             // 弹窗状态管理和事件监听
@@ -311,7 +320,7 @@ class MainActivity : ComponentActivity() {
                             LaunchedEffect(lifecycleOwner.lifecycle) {
                                 lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
                                     while (true) {
-                                        val storage = moe.ouom.neriplayer.data.github.SecureTokenStorage(this@MainActivity)
+                                        val storage = moe.ouom.neriplayer.data.sync.github.SecureTokenStorage(this@MainActivity)
                                         // 如果有仓库信息但token缺失，或者曾经同步过但现在未配置，显示警告
                                         val hasRepoInfo = !storage.getRepoOwner().isNullOrEmpty() || !storage.getRepoName().isNullOrEmpty()
                                         val hasSyncHistory = storage.getLastSyncTime() > 0
@@ -548,7 +557,7 @@ class MainActivity : ComponentActivity() {
                                     dismissButton = {
                                         HapticTextButton(
                                             onClick = {
-                                                val storage = moe.ouom.neriplayer.data.github.SecureTokenStorage(this@MainActivity)
+                                                val storage = moe.ouom.neriplayer.data.sync.github.SecureTokenStorage(this@MainActivity)
                                                 storage.setTokenWarningDismissed(true)
                                                 showTokenWarningDialog = false
                                             },

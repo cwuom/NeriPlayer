@@ -1,4 +1,4 @@
-﻿package moe.ouom.neriplayer.ui.component
+package moe.ouom.neriplayer.ui.component
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -33,8 +33,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.SleepTimerMode
 import moe.ouom.neriplayer.R
@@ -108,7 +109,11 @@ fun SleepTimerDialog(
                 )
 
                 Text(
-                    text = stringResource(R.string.sleep_timer_minutes, sliderValue.toInt()),
+                            text = pluralStringResource(
+                                R.plurals.sleep_timer_minutes,
+                                sliderValue.toInt(),
+                                sliderValue.toInt()
+                            ),
                     style = MaterialTheme.typography.headlineSmall,
                     modifier = Modifier.align(Alignment.CenterHorizontally)
                 )

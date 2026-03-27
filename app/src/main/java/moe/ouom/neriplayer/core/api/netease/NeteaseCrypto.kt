@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.api.netease
 
 import moe.ouom.neriplayer.util.JsonUtil
+import android.annotation.SuppressLint
 import java.nio.charset.StandardCharsets
 import java.security.KeyFactory
 import java.security.MessageDigest
@@ -37,14 +38,14 @@ import javax.crypto.spec.SecretKeySpec
 
 /** 加解密工具 */
 object NeteaseCrypto {
-    private const val base62 = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-    private const val presetKey = "0CoJUm6Qyw8W8jud"
-    private const val iv = "0102030405060708"
-    private const val linuxKey = "rFgB&h#%2?^eDg:Q"
-    private const val eapiKey = "e82ckenh8dichen8"
-    private const val eapiFormat = "%s-36cd479b6b5-%s-36cd479b6b5-%s"
-    private const val eapiSalt = "nobody%suse%smd5forencrypt"
-    private const val publicKeyPem = """
+    private const val BASE62 = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    private const val PRESET_KEY = "0CoJUm6Qyw8W8jud"
+    private const val IV = "0102030405060708"
+    private const val LINUX_KEY = "rFgB&h#%2?^eDg:Q"
+    private const val EAPI_KEY = "e82ckenh8dichen8"
+    private const val EAPI_FORMAT = "%s-36cd479b6b5-%s-36cd479b6b5-%s"
+    private const val EAPI_SALT = "nobody%suse%smd5forencrypt"
+    private const val PUBLIC_KEY_PEM = """
         -----BEGIN PUBLIC KEY-----
         MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDgtQn2JZ34ZC28NWYpAUd98iZ37BUrX/aKzmFb
         t7clFSs6sXqHauqKWqdtLkF2KexO40H1YTX8z2lSgBBOAxLsvaklV8k4cBFK9snQXE9/DDaFt6Rr7iVZ
@@ -56,12 +57,13 @@ object NeteaseCrypto {
 
     fun randomKey(): String {
         val sb = StringBuilder()
-        repeat(16) { sb.append(base62[secureRandom.nextInt(base62.length)]) }
+        repeat(16) { sb.append(BASE62[secureRandom.nextInt(BASE62.length)]) }
         return sb.toString()
     }
 
     private fun reverseString(input: String) = input.reversed()
 
+    @SuppressLint("GetInstance")
     private fun aesEncrypt(text: String, key: String, ivStr: String, mode: String, format: String): String {
         val secretKey = SecretKeySpec(key.toByteArray(StandardCharsets.UTF_8), "AES")
         val cipher: Cipher = when (mode.lowercase(Locale.getDefault())) {
@@ -87,46 +89,10 @@ object NeteaseCrypto {
         }
     }
 
-    private fun aesDecrypt(cipherText: String, key: String, ivStr: String, mode: String, format: String): ByteArray {
-        val data = when (format.lowercase(Locale.getDefault())) {
-            "base64" -> Base64.getDecoder().decode(cipherText)
-            "hex" -> {
-                val len = cipherText.length
-                val arr = ByteArray(len / 2)
-                var i = 0
-                while (i < len) {
-                    arr[i / 2] = (((Character.digit(cipherText[i], 16) shl 4) +
-                            Character.digit(cipherText[i + 1], 16))).toByte()
-                    i += 2
-                }
-                arr
-            }
-            "" -> cipherText.toByteArray(StandardCharsets.UTF_8)
-            else -> throw IllegalArgumentException("未知解码格式: $format")
-        }
-        val secretKey = SecretKeySpec(key.toByteArray(StandardCharsets.UTF_8), "AES")
-        val plain = when (mode.lowercase(Locale.getDefault())) {
-            "cbc" -> {
-                val ci = Cipher.getInstance("AES/CBC/PKCS5Padding")
-                ci.init(Cipher.DECRYPT_MODE, secretKey, IvParameterSpec(ivStr.toByteArray(StandardCharsets.UTF_8)))
-                ci.doFinal(data)
-            }
-            "ecb" -> {
-                val ci = Cipher.getInstance("AES/ECB/PKCS5Padding")
-                ci.init(Cipher.DECRYPT_MODE, secretKey)
-                ci.doFinal(data)
-            }
-            else -> throw IllegalArgumentException("未知 AES 模式: $mode")
-        }
-        // PKCS#7 去填充
-        val pad = plain.last().toInt()
-        return plain.copyOfRange(0, plain.size - pad)
-    }
-
     /** RSA 加密随机密钥，使用与官方客户端一致的无填充算法  */
     private fun rsaEncrypt(text: String): String {
         return try {
-            val cleanedKey = publicKeyPem
+            val cleanedKey = PUBLIC_KEY_PEM
                 .replace("-----BEGIN PUBLIC KEY-----", "")
                 .replace("-----END PUBLIC KEY-----", "")
                 .replace("\\s".toRegex(), "")
@@ -163,30 +129,42 @@ object NeteaseCrypto {
     fun weApiEncrypt(payload: Map<String, Any>): Map<String, String> {
         val json = JsonUtil.toJson(payload)
         val secretKey = randomKey()
-        val enc1 = aesEncrypt(json, presetKey, iv, "cbc", "base64")
-        val params = aesEncrypt(enc1, secretKey, iv, "cbc", "base64")
+        val enc1 = aesEncrypt(json, PRESET_KEY, IV, "cbc", "base64")
+        val params = aesEncrypt(enc1, secretKey, IV, "cbc", "base64")
         val encSecKey = rsaEncrypt(reverseString(secretKey))
         return mapOf("params" to params, "encSecKey" to encSecKey)
     }
 
     fun linuxApiEncrypt(payload: Map<String, Any>) =
-        mapOf("eparams" to aesEncrypt(JsonUtil.toJson(payload), linuxKey, "", "ecb", "hex"))
+        mapOf("eparams" to aesEncrypt(JsonUtil.toJson(payload), LINUX_KEY, "", "ecb", "hex"))
 
     fun eApiEncrypt(url: String, payload: Map<String, Any>): Map<String, String> {
         val data = JsonUtil.toJson(payload)
         val message = String.format(
-            eapiFormat,
+            EAPI_FORMAT,
             url.replace("/eapi", "/api"),
             data,
-            md5Hex(String.format(eapiSalt, url.replace("/eapi", "/api"), data))
+            md5Hex(String.format(EAPI_SALT, url.replace("/eapi", "/api"), data))
         )
-        val cipher = aesEncrypt(message, eapiKey, "", "ecb", "hex").uppercase(Locale.getDefault())
+        val cipher = aesEncrypt(message, EAPI_KEY, "", "ecb", "hex").uppercase(Locale.getDefault())
         return mapOf("params" to cipher)
     }
 
     fun linuxApiDecrypt(cipher: String): String {
-        val plain = aesDecrypt(cipher, linuxKey, "", "ecb", "hex")
+        val plain = decryptLinuxApiCipher(cipher)
         return String(plain, StandardCharsets.UTF_8)
+    }
+
+    @SuppressLint("GetInstance")
+    private fun decryptLinuxApiCipher(cipher: String): ByteArray {
+        val data = cipher.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+        val secretKey = SecretKeySpec(LINUX_KEY.toByteArray(StandardCharsets.UTF_8), "AES")
+        val plain = Cipher.getInstance("AES/ECB/PKCS5Padding").run {
+            init(Cipher.DECRYPT_MODE, secretKey)
+            doFinal(data)
+        }
+        val pad = plain.last().toInt()
+        return plain.copyOfRange(0, plain.size - pad)
     }
 
     fun anonymous(deviceId: String): String {

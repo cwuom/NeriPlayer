@@ -20,45 +20,47 @@ package moe.ouom.neriplayer.core.download
  * If not, see <https://www.gnu.org/licenses/>.
  *
  * File: moe.ouom.neriplayer.core.download/GlobalDownloadManager
- * Created: 2025/8/20
+ * Updated: 2026/3/24
  */
 
 import android.content.Context
+import android.net.Uri
 import androidx.core.net.toUri
-import android.os.Environment
+import java.io.File
+import java.util.Collections
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.data.LocalMediaSupport
-import moe.ouom.neriplayer.data.LocalSongSupport
-import moe.ouom.neriplayer.data.stableKey
+import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
-import java.io.File
-import java.util.Collections
 import org.json.JSONObject
 
 /**
- * 全局下载管理器单例，用于管理下载任务和状态
- * 不依赖于特定的ViewModel或Composable的生命周期
+ * 全局下载管理器，统一维护下载任务和本地下载列表
  */
 object GlobalDownloadManager {
-    private const val DOWNLOAD_METADATA_SUFFIX = ".npmeta.json"
+    private const val TAG = "GlobalDownloadManager"
+    private const val INITIAL_SCAN_DELAY_MS = 1_500L
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    // 单首下载锁，确保同时只有一个单首下载任务在执行
     private val _isSingleDownloading = MutableStateFlow(false)
-
     private val _downloadTasks = MutableStateFlow<List<DownloadTask>>(emptyList())
     val downloadTasks: StateFlow<List<DownloadTask>> = _downloadTasks.asStateFlow()
 
@@ -69,68 +71,77 @@ object GlobalDownloadManager {
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
     private val cancelledSongKeys = Collections.synchronizedSet(mutableSetOf<String>())
-    
+    private var refreshJob: Job? = null
+
+    @Volatile
+    private var pendingRefresh = false
+
+    @Volatile
+    private var pendingForceRefresh = false
+
     private var initialized = false
-    
+
     fun initialize(context: Context) {
         if (initialized) return
         initialized = true
-        
-        // 观察下载进度
-        observeDownloadProgress(context)
-        
-        // 初始化时扫描本地文件
-        scanLocalFiles(context)
+
+        val appContext = context.applicationContext
+        observeDownloadProgress(appContext)
+        scope.launch {
+            delay(INITIAL_SCAN_DELAY_MS)
+            scanLocalFiles(appContext)
+        }
     }
-    
+
     private fun observeDownloadProgress(context: Context) {
         var lastProgressSongKey: String? = null
 
         scope.launch {
             AudioDownloadManager.progressFlow.collect { progress ->
-                progress?.let {
-                    lastProgressSongKey = it.songKey
-                    updateDownloadProgress(it)
-                } ?: run {
-                    // 下载完成，更新任务状态
-                    // 使用最后记录的 songId 来标记任务为完成
-                    lastProgressSongKey?.let { songKey ->
-                        val task = _downloadTasks.value.find { it.song.stableKey() == songKey }
-                        if (task != null && task.status == DownloadStatus.DOWNLOADING) {
-                            // 验证文件是否真的存在，避免误标记
-                            val filePath = AudioDownloadManager.getLocalFilePath(context, task.song)
-                            if (filePath != null) {
-                                val latestSong = task.song
-                                persistDownloadedMetadata(
-                                    audioFile = File(filePath),
-                                    song = latestSong
-                                )
-                                NPLogger.d("GlobalDownloadManager", "任务完成，文件已存在: ${task.song.name}")
-                                updateTaskStatus(songKey, DownloadStatus.COMPLETED)
-                                scanLocalFiles(context)
-                            } else {
-                                NPLogger.w("GlobalDownloadManager", "任务标记完成但文件不存在: ${task.song.name}")
-                            }
-                        }
-                    }
-                    lastProgressSongKey = null
+                if (progress != null) {
+                    lastProgressSongKey = progress.songKey
+                    updateDownloadProgress(progress)
+                    return@collect
                 }
+
+                val songKey = lastProgressSongKey
+                lastProgressSongKey = null
+                if (songKey.isNullOrBlank()) {
+                    return@collect
+                }
+
+                val task = _downloadTasks.value.find { it.song.stableKey() == songKey }
+                    ?: return@collect
+                if (task.status != DownloadStatus.DOWNLOADING) {
+                    return@collect
+                }
+
+                val storedAudio = resolveStoredAudio(context, task.song)
+                if (storedAudio == null) {
+                    NPLogger.w(TAG, "任务完成但未找到已下载文件: ${task.song.name}")
+                    return@collect
+                }
+
+                persistDownloadedMetadata(
+                    context = context,
+                    audio = storedAudio,
+                    song = task.song
+                )
+                updateTaskStatus(songKey, DownloadStatus.COMPLETED)
+                scanLocalFiles(context)
             }
         }
 
         scope.launch {
             AudioDownloadManager.batchProgressFlow.collect { batchProgress ->
-                batchProgress?.let {
-                    updateBatchProgress(context, it)
-                } ?: run {
-                    // 批量下载完成或取消，刷新本地文件列表
-                    // 不清空进度，让每个任务的进度通过 progressFlow 自然清空
+                if (batchProgress != null) {
+                    updateBatchProgress(context, batchProgress)
+                } else {
                     scanLocalFiles(context)
                 }
             }
         }
 
-        // 监听下载取消状态
         scope.launch {
             AudioDownloadManager.isCancelledFlow.collect { isCancelled ->
                 if (isCancelled) {
@@ -139,7 +150,7 @@ object GlobalDownloadManager {
             }
         }
     }
-    
+
     private fun updateDownloadProgress(progress: AudioDownloadManager.DownloadProgress) {
         _downloadTasks.value = _downloadTasks.value.map { task ->
             if (task.song.stableKey() == progress.songKey && task.status == DownloadStatus.DOWNLOADING) {
@@ -154,106 +165,156 @@ object GlobalDownloadManager {
         context: Context,
         batchProgress: AudioDownloadManager.BatchDownloadProgress
     ) {
-        // 只更新当前下载任务的进度
-        // 任务完成状态由 progressFlow 的 null 值触发，不在这里处理
-        if (batchProgress.currentProgress != null) {
-            updateDownloadProgress(batchProgress.currentProgress)
-        }
+        batchProgress.currentProgress?.let(::updateDownloadProgress)
 
-        // 如果批量下载完成，刷新本地文件列表
         if (batchProgress.completedSongs >= batchProgress.totalSongs) {
             scope.launch {
-                delay(1000) // 延迟一下，确保文件写入完成
+                delay(600)
                 scanLocalFiles(context)
             }
         }
     }
 
-    /**
-     * 扫描本地文件，更新已下载歌曲列表
-     */
-    fun scanLocalFiles(context: Context) {
-        scope.launch {
-            _isRefreshing.value = true
-            try {
-                val baseDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) 
-                    ?: context.filesDir
-                val downloadDir = File(baseDir, "NeriPlayer")
-                
-                if (!downloadDir.exists()) {
-                    _downloadedSongs.value = emptyList()
-                    return@launch
-                }
-                
-                val songs = mutableListOf<DownloadedSong>()
-                val audioExtensions = setOf("mp3", "m4a", "aac", "flac", "wav", "ogg", "webm")
-                
-                downloadDir.listFiles()?.forEach { file ->
-                    if (file.isFile && file.extension.lowercase() in audioExtensions) {
-                        try {
-                            buildDownloadedSong(
-                                context = context,
-                                downloadDir = downloadDir,
-                                audioFile = file
-                            ).let(songs::add)
-                        } catch (e: Exception) {
-                            NPLogger.w("GlobalDownloadManager", "解析文件失败: ${file.name} - ${e.message}")
-                        }
-                    }
-                }
-                
-                _downloadedSongs.value = songs.sortedByDescending { it.downloadTime }
-                
-            } catch (e: Exception) {
-                NPLogger.e("GlobalDownloadManager", "扫描本地文件失败: ${e.message}")
-            } finally {
-                _isRefreshing.value = false
+    fun scanLocalFiles(context: Context, forceRefresh: Boolean = false) {
+        val appContext = context.applicationContext
+        synchronized(this) {
+            if (refreshJob?.isActive == true) {
+                pendingRefresh = true
+                pendingForceRefresh = pendingForceRefresh || forceRefresh
+                return
             }
+
+            refreshJob = scope.launch {
+                var nextForceRefresh = forceRefresh
+                while (true) {
+                    reloadDownloadedSongs(appContext, forceRefresh = nextForceRefresh)
+                    nextForceRefresh = consumePendingRefreshRequest() ?: break
+                }
+            }
+        }
+    }
+
+    private fun consumePendingRefreshRequest(): Boolean? = synchronized(this) {
+        val shouldRefreshAgain = pendingRefresh
+        val shouldForceRefresh = pendingForceRefresh
+        pendingRefresh = false
+        pendingForceRefresh = false
+        if (!shouldRefreshAgain) {
+            refreshJob = null
+            return null
+        }
+        shouldForceRefresh
+    }
+
+    private suspend fun reloadDownloadedSongs(context: Context, forceRefresh: Boolean = false) {
+        _isRefreshing.value = true
+        try {
+            val snapshot = ManagedDownloadStorage.buildDownloadLibrarySnapshot(
+                context = context,
+                forceRefresh = forceRefresh
+            )
+            val songs = snapshot.audioEntries
+                .mapNotNull { storedAudio ->
+                    runCatching {
+                        buildDownloadedSong(
+                            context = context,
+                            storedAudio = storedAudio,
+                            snapshot = snapshot
+                        )
+                    }.onFailure { error ->
+                        NPLogger.w(TAG, "解析下载文件失败: ${storedAudio.name} - ${error.message}")
+                    }.getOrNull()
+                }
+                .sortedByDescending { it.downloadTime }
+            _downloadedSongs.value = songs
+        } catch (error: Exception) {
+            NPLogger.e(TAG, "扫描已下载文件失败: ${error.message}", error)
+        } finally {
+            _isRefreshing.value = false
         }
     }
 
     fun syncDownloadedSongMetadata(song: SongItem) {
-        val audioFile = resolveLocalAudioFile(song) ?: return
-        if (!audioFile.exists()) return
-        if (!isManagedDownloadFile(audioFile)) return
-        persistDownloadedMetadata(audioFile, song)
-        _downloadedSongs.value = _downloadedSongs.value.map { downloaded ->
-            if (downloaded.filePath == audioFile.absolutePath) {
-                buildDownloadedSong(
-                    context = null,
-                    downloadDir = audioFile.parentFile ?: return@map downloaded,
-                    audioFile = audioFile,
-                    existingDownloadTime = downloaded.downloadTime
-                )
+        scope.launch {
+            val context = AppContainer.applicationContext
+            val storedAudio = resolveStoredAudio(context, song) ?: return@launch
+
+            persistDownloadedMetadata(context, storedAudio, song)
+
+            var updated = false
+            val refreshedSongs = _downloadedSongs.value.map { downloaded ->
+                if (downloaded.filePath == storedAudio.reference) {
+                    updated = true
+                    buildDownloadedSong(
+                        context = context,
+                        storedAudio = storedAudio,
+                        existingDownloadTime = downloaded.downloadTime
+                    )
+                } else {
+                    downloaded
+                }
+            }
+
+            if (updated) {
+                _downloadedSongs.value = refreshedSongs
             } else {
-                downloaded
+                reloadDownloadedSongs(context)
             }
         }
     }
 
-    private fun buildDownloadedSong(
-        context: Context?,
-        downloadDir: File,
-        audioFile: File,
-        existingDownloadTime: Long? = null
+    private suspend fun buildDownloadedSong(
+        context: Context,
+        storedAudio: ManagedDownloadStorage.StoredEntry,
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot? = null,
+        existingDownloadTime: Long? = null,
+        resolveLyricFallbacks: Boolean = false
     ): DownloadedSong {
-        val metadata = readDownloadedMetadata(audioFile)
-        val (parsedArtist, parsedTitle) = parseDownloadedFileName(audioFile)
-        val coverPath = metadata?.coverPath
-            ?.takeIf { File(it).exists() }
-            ?: findCoverFile(downloadDir, audioFile)
+        val effectiveSnapshot = snapshot ?: ManagedDownloadStorage.buildDownloadLibrarySnapshot(context)
+        val metadata = readDownloadedMetadata(
+            context = context,
+            audio = storedAudio,
+            metadataEntry = effectiveSnapshot.metadataEntriesByAudioName[storedAudio.name]
+        )
+        val (parsedArtist, parsedTitle) = parseDownloadedFileName(storedAudio.name)
+        val coverReference = metadata?.coverPath
+            ?.takeIf { it in effectiveSnapshot.knownReferences || ManagedDownloadStorage.exists(context, it) }
+            ?: findIndexedCoverReference(storedAudio, effectiveSnapshot)
+        val matchedLyric = metadata?.matchedLyric ?: if (resolveLyricFallbacks) {
+            findIndexedLyricText(
+                context = context,
+                audio = storedAudio,
+                songId = metadata?.songId,
+                translated = false,
+                snapshot = effectiveSnapshot
+            )
+        } else {
+            null
+        }
+        val matchedTranslatedLyric = metadata?.matchedTranslatedLyric ?: if (resolveLyricFallbacks) {
+            findIndexedLyricText(
+                context = context,
+                audio = storedAudio,
+                songId = metadata?.songId,
+                translated = true,
+                snapshot = effectiveSnapshot
+            )
+        } else {
+            null
+        }
+
         return DownloadedSong(
-            id = metadata?.songId ?: audioFile.hashCode().toLong(),
-            name = metadata?.name?.takeIf { it.isNotBlank() } ?: parsedTitle,
-            artist = metadata?.artist?.takeIf { it.isNotBlank() } ?: parsedArtist,
-            album = context?.getString(R.string.local_files) ?: LocalSongSupport.LOCAL_ALBUM_IDENTITY,
-            filePath = audioFile.absolutePath,
-            fileSize = audioFile.length(),
-            downloadTime = existingDownloadTime ?: audioFile.lastModified(),
-            coverPath = coverPath,
+            id = metadata?.songId ?: storedAudio.reference.hashCode().toLong(),
+            name = metadata?.name?.takeIf(String::isNotBlank) ?: parsedTitle,
+            artist = metadata?.artist?.takeIf(String::isNotBlank) ?: parsedArtist,
+            album = context.getString(R.string.local_files),
+            filePath = storedAudio.reference,
+            fileSize = storedAudio.sizeBytes,
+            downloadTime = existingDownloadTime ?: storedAudio.lastModifiedMs,
+            coverPath = coverReference,
             coverUrl = metadata?.coverUrl,
-            matchedLyric = metadata?.matchedLyric ?: findLyricFile(downloadDir, audioFile, metadata?.songId),
-            matchedTranslatedLyric = metadata?.matchedTranslatedLyric ?: findTranslatedLyricFile(downloadDir, audioFile, metadata?.songId),
+            matchedLyric = matchedLyric,
+            matchedTranslatedLyric = matchedTranslatedLyric,
             matchedLyricSource = metadata?.matchedLyricSource,
             matchedSongId = metadata?.matchedSongId,
             userLyricOffsetMs = metadata?.userLyricOffsetMs ?: 0L,
@@ -265,13 +326,13 @@ object GlobalDownloadManager {
             originalCoverUrl = metadata?.originalCoverUrl,
             originalLyric = metadata?.originalLyric,
             originalTranslatedLyric = metadata?.originalTranslatedLyric,
-            mediaUri = metadata?.mediaUri,
+            mediaUri = storedAudio.playbackUri,
             durationMs = metadata?.durationMs ?: 0L
         )
     }
 
-    private fun parseDownloadedFileName(audioFile: File): Pair<String, String> {
-        val nameWithoutExt = audioFile.nameWithoutExtension
+    private fun parseDownloadedFileName(fileName: String): Pair<String, String> {
+        val nameWithoutExt = fileName.substringBeforeLast('.', fileName)
         val parts = nameWithoutExt.split(" - ", limit = 2)
         return if (parts.size >= 2) {
             parts[0].trim() to parts[1].trim()
@@ -280,26 +341,13 @@ object GlobalDownloadManager {
         }
     }
 
-    private fun resolveLocalAudioFile(song: SongItem): File? {
-        song.localFilePath
-            ?.takeIf { it.isNotBlank() }
-            ?.let(::File)
-            ?.takeIf(File::exists)
-            ?.let { return it }
-        val mediaUri = song.mediaUri?.takeIf { it.isNotBlank() } ?: return null
-        val candidate = when {
-            mediaUri.startsWith("/") -> File(mediaUri)
-            mediaUri.startsWith("file://") -> File(mediaUri.toUri().path.orEmpty())
-            else -> null
-        }
-        return candidate?.takeIf(File::exists)
-    }
-
-    private fun persistDownloadedMetadata(audioFile: File, song: SongItem) {
-        val metadataFile = metadataFileForAudio(audioFile)
-        val downloadDir = audioFile.parentFile ?: return
-        val coverPath = findCoverFile(downloadDir, audioFile)
-        val json = JSONObject().apply {
+    private suspend fun persistDownloadedMetadata(
+        context: Context,
+        audio: ManagedDownloadStorage.StoredEntry,
+        song: SongItem
+    ) {
+        val coverReference = ManagedDownloadStorage.findCoverReference(context, audio)
+        val payload = JSONObject().apply {
             put("songId", song.id)
             put("name", song.name)
             put("artist", song.artist)
@@ -318,180 +366,150 @@ object GlobalDownloadManager {
             put("originalLyric", song.originalLyric)
             put("originalTranslatedLyric", song.originalTranslatedLyric)
             put("mediaUri", song.mediaUri)
-            put("coverPath", coverPath)
+            put("coverPath", coverReference)
             put("durationMs", song.durationMs)
         }
-        runCatching { metadataFile.writeText(json.toString(), Charsets.UTF_8) }
-            .onFailure { NPLogger.w("GlobalDownloadManager", "写入下载元数据失败: ${metadataFile.name} - ${it.message}") }
+
+        runCatching {
+            ManagedDownloadStorage.saveMetadata(context, audio, payload.toString())
+        }.onFailure { error ->
+            NPLogger.w(TAG, "写入下载元数据失败: ${audio.name} - ${error.message}")
+        }
     }
 
-    private fun readDownloadedMetadata(audioFile: File): DownloadedSongMetadata? {
-        val metadataFile = metadataFileForAudio(audioFile)
-        if (!metadataFile.exists()) {
-            return null
-        }
+    private suspend fun readDownloadedMetadata(
+        context: Context,
+        audio: ManagedDownloadStorage.StoredEntry,
+        metadataEntry: ManagedDownloadStorage.StoredEntry? = null
+    ): DownloadedSongMetadata? {
+        val resolvedMetadataEntry = metadataEntry
+            ?: ManagedDownloadStorage.findMetadataForAudio(context, audio)
+            ?: return null
+        val raw = ManagedDownloadStorage.readText(context, resolvedMetadataEntry.reference) ?: return null
+
         return runCatching {
-            val root = JSONObject(metadataFile.readText(Charsets.UTF_8))
+            val root = JSONObject(raw)
             DownloadedSongMetadata(
-                songId = root.optLong("songId", 0L).takeIf { it > 0L },
-                name = root.optString("name").takeIf { it.isNotBlank() },
-                artist = root.optString("artist").takeIf { it.isNotBlank() },
-                coverUrl = root.optString("coverUrl").takeIf { it.isNotBlank() },
-                matchedLyric = root.optString("matchedLyric").takeIf { it.isNotBlank() },
-                matchedTranslatedLyric = root.optString("matchedTranslatedLyric").takeIf { it.isNotBlank() },
-                matchedLyricSource = root.optString("matchedLyricSource").takeIf { it.isNotBlank() },
-                matchedSongId = root.optString("matchedSongId").takeIf { it.isNotBlank() },
-                userLyricOffsetMs = root.optLong("userLyricOffsetMs", 0L),
-                customCoverUrl = root.optString("customCoverUrl").takeIf { it.isNotBlank() },
-                customName = root.optString("customName").takeIf { it.isNotBlank() },
-                customArtist = root.optString("customArtist").takeIf { it.isNotBlank() },
-                originalName = root.optString("originalName").takeIf { it.isNotBlank() },
-                originalArtist = root.optString("originalArtist").takeIf { it.isNotBlank() },
-                originalCoverUrl = root.optString("originalCoverUrl").takeIf { it.isNotBlank() },
-                originalLyric = root.optString("originalLyric").takeIf { it.isNotBlank() },
-                originalTranslatedLyric = root.optString("originalTranslatedLyric").takeIf { it.isNotBlank() },
-                coverPath = root.optString("coverPath").takeIf { it.isNotBlank() },
-                mediaUri = root.optString("mediaUri").takeIf { it.isNotBlank() },
-                durationMs = root.optLong("durationMs", 0L)
+                songId = root.optLong("songId").takeIf { it > 0L },
+                name = root.optString("name").takeIf(String::isNotBlank),
+                artist = root.optString("artist").takeIf(String::isNotBlank),
+                coverUrl = root.optString("coverUrl").takeIf(String::isNotBlank),
+                matchedLyric = null,
+                matchedTranslatedLyric = null,
+                matchedLyricSource = root.optString("matchedLyricSource").takeIf(String::isNotBlank),
+                matchedSongId = root.optString("matchedSongId").takeIf(String::isNotBlank),
+                userLyricOffsetMs = root.optLong("userLyricOffsetMs"),
+                customCoverUrl = root.optString("customCoverUrl").takeIf(String::isNotBlank),
+                customName = root.optString("customName").takeIf(String::isNotBlank),
+                customArtist = root.optString("customArtist").takeIf(String::isNotBlank),
+                originalName = root.optString("originalName").takeIf(String::isNotBlank),
+                originalArtist = root.optString("originalArtist").takeIf(String::isNotBlank),
+                originalCoverUrl = root.optString("originalCoverUrl").takeIf(String::isNotBlank),
+                originalLyric = null,
+                originalTranslatedLyric = null,
+                coverPath = root.optString("coverPath").takeIf(String::isNotBlank),
+                mediaUri = root.optString("mediaUri").takeIf(String::isNotBlank),
+                durationMs = root.optLong("durationMs")
             )
-        }.getOrElse {
-            NPLogger.w("GlobalDownloadManager", "解析下载元数据失败: ${metadataFile.name} - ${it.message}")
+        }.getOrElse { error ->
+            NPLogger.w(TAG, "解析下载元数据失败: ${audio.name} - ${error.message}")
             null
         }
     }
 
-    private fun metadataFileForAudio(audioFile: File): File {
-        return File(audioFile.parentFile, "${audioFile.name}$DOWNLOAD_METADATA_SUFFIX")
-    }
-
-    private fun isManagedDownloadFile(audioFile: File): Boolean {
-        return audioFile.parentFile?.name.equals("NeriPlayer", ignoreCase = true)
-    }
-
-    private fun findCoverFile(downloadDir: File, audioFile: File): String? {
-        val coverDir = File(downloadDir, "Covers")
-        if (!coverDir.exists()) return null
+    private suspend fun findIndexedLyricText(
+        context: Context,
+        audio: ManagedDownloadStorage.StoredEntry,
+        songId: Long?,
+        translated: Boolean,
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
+    ): String? {
         val candidates = buildList {
-            add(audioFile.nameWithoutExtension)
-            add(audioFile.hashCode().toString())
-        }
-        candidates.forEach { baseName ->
-            listOf("jpg", "jpeg", "png", "webp").forEach { ext ->
-                val file = File(coverDir, "$baseName.$ext")
-                if (file.exists()) {
-                    return file.absolutePath
-                }
+            if (songId != null && songId > 0L) {
+                add(if (translated) "${songId}_trans.lrc" else "${songId}.lrc")
+            }
+            candidateManagedDownloadBaseNames(audio.nameWithoutExtension).forEach { baseName ->
+                add(if (translated) "${baseName}_trans.lrc" else "$baseName.lrc")
             }
         }
-        return null
+        val reference = candidates.firstNotNullOfOrNull { candidate ->
+            snapshot.lyricEntriesByName[candidate]?.reference
+        } ?: return null
+        return ManagedDownloadStorage.readText(context, reference)
     }
 
-    private fun findLyricFile(downloadDir: File, audioFile: File, songId: Long? = null): String? {
-        val lyricsDir = File(downloadDir, "Lyrics")
-        if (!lyricsDir.exists()) return null
-        return buildList {
-            // 按 songId 查找（AudioDownloadManager.buildLyricFiles 用 songId 保存）
-            if (songId != null) add(File(lyricsDir, "${songId}.lrc"))
-            add(File(lyricsDir, "${audioFile.hashCode()}.lrc"))
-            add(File(lyricsDir, "${audioFile.nameWithoutExtension}.lrc"))
-        }.firstNotNullOfOrNull(::readTextFileSafely)
+    private fun findIndexedCoverReference(
+        audio: ManagedDownloadStorage.StoredEntry,
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
+    ): String? {
+        return candidateManagedDownloadBaseNames(audio.nameWithoutExtension)
+            .firstNotNullOfOrNull { baseName ->
+                sequenceOf("jpg", "jpeg", "png", "webp").firstNotNullOfOrNull { extension ->
+                    snapshot.coverEntriesByName["$baseName.$extension"]?.reference
+                }
+            }
     }
 
-    private fun findTranslatedLyricFile(downloadDir: File, audioFile: File, songId: Long? = null): String? {
-        val lyricsDir = File(downloadDir, "Lyrics")
-        if (!lyricsDir.exists()) return null
-        return buildList {
-            if (songId != null) add(File(lyricsDir, "${songId}_trans.lrc"))
-            add(File(lyricsDir, "${audioFile.hashCode()}_trans.lrc"))
-            add(File(lyricsDir, "${audioFile.nameWithoutExtension}_trans.lrc"))
-        }.firstNotNullOfOrNull(::readTextFileSafely)
-    }
-
-    private fun readTextFileSafely(file: File): String? {
-        if (!file.exists()) {
-            return null
-        }
-        return try {
-            LocalMediaSupport.readTextFile(file)
-        } catch (_: Exception) {
-            NPLogger.w("GlobalDownloadManager", "读取文件失败: ${file.name}")
-            null
-        }
-    }
-    
-    /**
-     * 删除已下载的歌曲
-     */
     fun deleteDownloadedSong(context: Context, song: DownloadedSong) {
+        val appContext = context.applicationContext
         scope.launch {
             try {
-                val file = File(song.filePath)
-                if (file.exists() && file.delete()) {
-                    AudioDownloadManager.getManagedLyricFiles(
-                        context,
-                        SongItem(
-                            id = song.id,
-                            name = song.name,
-                            artist = song.artist,
-                            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
-                            albumId = 0L,
-                            durationMs = 0L,
-                            coverUrl = song.coverUrl,
-                            matchedLyric = song.matchedLyric,
-                            matchedTranslatedLyric = song.matchedTranslatedLyric,
-                            matchedLyricSource = song.matchedLyricSource?.let {
-                                runCatching { MusicPlatform.valueOf(it) }.getOrNull()
-                            },
-                            matchedSongId = song.matchedSongId,
-                            userLyricOffsetMs = song.userLyricOffsetMs,
-                            customCoverUrl = song.customCoverUrl,
-                            customName = song.customName,
-                            customArtist = song.customArtist,
-                            originalName = song.originalName,
-                            originalArtist = song.originalArtist,
-                            originalCoverUrl = song.originalCoverUrl,
-                            originalLyric = song.originalLyric,
-                            originalTranslatedLyric = song.originalTranslatedLyric,
-                            localFilePath = song.filePath
-                        )
-                    ).forEach { lyricFile ->
-                        if (lyricFile.exists()) {
-                            lyricFile.delete()
-                        }
-                    }
-                    metadataFileForAudio(file).takeIf(File::exists)?.delete()
-                    
-                    // 删除封面文件
-                    song.coverPath?.let { coverPath ->
-                        val coverFile = File(coverPath)
-                        if (coverFile.exists()) {
-                            coverFile.delete()
-                        }
-                    }
-                    
-                    // 刷新本地文件列表
-                    scanLocalFiles(context)
-                    NPLogger.d("GlobalDownloadManager", "删除文件成功: ${song.name}")
+                val storedAudio = resolveStoredAudio(appContext, song.filePath)
+                val baseNames = candidateBaseNames(song, storedAudio?.nameWithoutExtension)
+                val metadataReference = storedAudio?.let {
+                    ManagedDownloadStorage.findMetadataForAudio(appContext, it)?.reference
                 }
-            } catch (e: Exception) {
-                NPLogger.e("GlobalDownloadManager", "删除文件失败: ${e.message}")
+                val lyricReferences = buildList {
+                    ManagedDownloadStorage.findLyricLocation(
+                        context = appContext,
+                        songId = song.id,
+                        candidateBaseNames = baseNames,
+                        translated = false
+                    )?.let(::add)
+                    ManagedDownloadStorage.findLyricLocation(
+                        context = appContext,
+                        songId = song.id,
+                        candidateBaseNames = baseNames,
+                        translated = true
+                    )?.let(::add)
+                }
+
+                storedAudio?.let {
+                    ManagedDownloadStorage.deleteReference(appContext, it.reference)
+                } ?: ManagedDownloadStorage.deleteReference(appContext, song.filePath)
+
+                listOfNotNull(song.coverPath, metadataReference)
+                    .plus(lyricReferences)
+                    .distinct()
+                    .forEach { reference ->
+                        ManagedDownloadStorage.deleteReference(appContext, reference)
+                    }
+
+                reloadDownloadedSongs(appContext)
+                NPLogger.d(TAG, "删除下载文件完成: ${song.name}")
+            } catch (error: Exception) {
+                NPLogger.e(TAG, "删除下载文件失败: ${error.message}", error)
             }
         }
     }
-    
-    /**
-     * 播放已下载的歌曲
-     */
-    fun playDownloadedSong(song: DownloadedSong) {
-        try {
-            val file = File(song.filePath)
-            if (file.exists()) {
-                // 获取音频文件的实际时长
-                var durationMs = song.durationMs
-                if (durationMs <= 0L) {
-                    durationMs = getAudioDuration(file)
+
+    fun playDownloadedSong(context: Context, song: DownloadedSong) {
+        val appContext = context.applicationContext
+        scope.launch {
+            try {
+                if (!ManagedDownloadStorage.exists(appContext, song.filePath)) {
+                    NPLogger.w(TAG, "下载文件不存在: ${song.filePath}")
+                    reloadDownloadedSongs(appContext, forceRefresh = true)
+                    return@launch
                 }
-                // 使用PlayerManager播放本地文件
+
+                val storedAudio = resolveStoredAudio(appContext, song.filePath)
+                val playbackUri = storedAudio?.playbackUri
+                    ?: ManagedDownloadStorage.toPlayableUri(song.filePath)
+                    ?: song.filePath
+                val durationMs = song.durationMs.takeIf { it > 0L }
+                    ?: resolveAudioDuration(appContext, playbackUri)
+
                 val songItem = SongItem(
                     id = song.id,
                     name = song.name,
@@ -499,10 +517,8 @@ object GlobalDownloadManager {
                     album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
                     albumId = 0L,
                     durationMs = durationMs,
-                    coverUrl = song.coverUrl,
-                    mediaUri = song.mediaUri ?: file.absolutePath,
-                    matchedLyric = song.matchedLyric,
-                    matchedTranslatedLyric = song.matchedTranslatedLyric,
+                    coverUrl = song.coverPath ?: song.coverUrl,
+                    mediaUri = playbackUri,
                     matchedLyricSource = song.matchedLyricSource?.let {
                         runCatching { MusicPlatform.valueOf(it) }.getOrNull()
                     },
@@ -514,79 +530,46 @@ object GlobalDownloadManager {
                     originalName = song.originalName,
                     originalArtist = song.originalArtist,
                     originalCoverUrl = song.originalCoverUrl,
-                    originalLyric = song.originalLyric,
-                    originalTranslatedLyric = song.originalTranslatedLyric,
-                    localFileName = file.name,
-                    localFilePath = file.absolutePath
+                    localFileName = storedAudio?.name,
+                    localFilePath = storedAudio?.localFilePath
                 )
-                
-                // 调用PlayerManager播放
-                PlayerManager.playPlaylist(listOf(songItem), 0)
-                NPLogger.d("GlobalDownloadManager", "使用PlayerManager播放本地文件: ${song.name}, 时长: ${durationMs}ms")
-            } else {
-                NPLogger.w("GlobalDownloadManager", "文件不存在: ${song.filePath}")
+                withContext(Dispatchers.Main.immediate) {
+                    PlayerManager.playPlaylist(listOf(songItem), 0)
+                }
+            } catch (error: Exception) {
+                NPLogger.e(TAG, "播放下载文件失败: ${error.message}", error)
             }
-        } catch (e: Exception) {
-            NPLogger.e("GlobalDownloadManager", "播放文件失败: ${e.message}")
         }
     }
-    
-    /**
-     * 获取音频文件的实际时长
-     */
-    private fun getAudioDuration(file: File): Long {
-        try {
-            val extractor = android.media.MediaExtractor()
-            extractor.setDataSource(file.absolutePath)
-            for (i in 0 until extractor.trackCount) {
-                val format = extractor.getTrackFormat(i)
-                val mime = format.getString(android.media.MediaFormat.KEY_MIME)
-                if (mime?.startsWith("audio/") == true) {
-                    val durationUs = format.getLong(android.media.MediaFormat.KEY_DURATION)
-                    extractor.release()
-                    return durationUs / 1000L
-                }
-            }
-            extractor.release()
-        } catch (e: Exception) {
-            NPLogger.w("GlobalDownloadManager", "MediaExtractor 获取音频时长失败: ${e.message}")
-        }
 
-        return try {
-            val mediaMetadataRetriever = android.media.MediaMetadataRetriever()
-            mediaMetadataRetriever.setDataSource(file.absolutePath)
-            val durationStr = mediaMetadataRetriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
-            mediaMetadataRetriever.release()
-            
-            durationStr?.toLongOrNull() ?: 0L
-        } catch (e: Exception) {
-            NPLogger.w("GlobalDownloadManager", "MediaMetadataRetriever 获取音频时长失败: ${e.message}")
+    private fun resolveAudioDuration(context: Context, location: String): Long {
+        val uri = when {
+            location.startsWith("/") -> Uri.fromFile(File(location))
+            else -> location.toUri()
+        }
+        return runCatching {
+            LocalMediaSupport.inspect(context, uri).durationMs
+        }.getOrElse { error ->
+            NPLogger.w(TAG, "读取下载音频时长失败: ${error.message}")
             0L
         }
     }
 
-    /**
-     * 开始下载单首歌曲
-     */
     fun startDownload(context: Context, song: SongItem) {
+        val appContext = context.applicationContext
         scope.launch {
             val songKey = song.stableKey()
             try {
-                // 添加下载任务，如果已存在则跳过
-                if (shouldSkipDownload(context, song) || !addDownloadTask(context, song)) {
+                if (shouldSkipDownload(appContext, song) || !addDownloadTask(appContext, song)) {
                     return@launch
                 }
 
-                // 检查文件是否已存在
-                val existingFilePath = AudioDownloadManager.getLocalFilePath(context, song)
-                if (existingFilePath != null) {
-                    NPLogger.d("GlobalDownloadManager", "文件已存在，直接标记为完成: ${song.name}")
+                if (ManagedDownloadStorage.findDownloadedAudio(appContext, song) != null) {
                     updateTaskStatus(songKey, DownloadStatus.COMPLETED)
-                    scanLocalFiles(context)
+                    reloadDownloadedSongs(appContext)
                     return@launch
                 }
 
-                // 等待其他单首下载任务完成，避免 progressFlow 冲突
                 while (_isSingleDownloading.value) {
                     if (isSongCancelled(songKey)) {
                         throw CancellationException("Download cancelled before start")
@@ -598,76 +581,57 @@ object GlobalDownloadManager {
                     throw CancellationException("Download cancelled before start")
                 }
 
-                // 设置下载锁
                 _isSingleDownloading.value = true
                 try {
-                    // 调用实际的下载方法
-                    AudioDownloadManager.downloadSong(context, song)
-
-                    // 下载成功，直接标记为完成
-                    NPLogger.d("GlobalDownloadManager", "下载完成，标记任务: ${song.name}")
+                    AudioDownloadManager.downloadSong(appContext, song)
                     updateTaskStatus(songKey, DownloadStatus.COMPLETED)
-                    scanLocalFiles(context)
+                    reloadDownloadedSongs(appContext)
                 } finally {
-                    // 释放下载锁
                     _isSingleDownloading.value = false
                 }
             } catch (_: CancellationException) {
-                NPLogger.d("GlobalDownloadManager", "下载已取消: ${song.name}")
                 clearSongCancelled(songKey)
                 updateTaskStatus(songKey, DownloadStatus.CANCELLED)
                 _isSingleDownloading.value = false
-            } catch (e: Exception) {
-                NPLogger.e("GlobalDownloadManager", "下载失败: ${e.message}")
+            } catch (error: Exception) {
+                NPLogger.e(TAG, "下载失败: ${song.name} - ${error.message}", error)
                 updateTaskStatus(songKey, DownloadStatus.FAILED)
                 _isSingleDownloading.value = false
             }
         }
     }
-    
-    /**
-     * 开始批量下载
-     */
+
     fun startBatchDownload(context: Context, songs: List<SongItem>) {
         if (songs.isEmpty()) return
 
+        val appContext = context.applicationContext
         scope.launch {
             try {
-                // 添加所有下载任务，过滤已存在的
-                val newSongs = songs
-                    .filterNot { shouldSkipDownload(context, it) }
-                    .filter { song ->
-                    addDownloadTask(context, song)
-                }
+                val pendingSongs = songs
+                    .filterNot { shouldSkipDownload(appContext, it) }
+                    .filter { addDownloadTask(appContext, it) }
 
-                if (newSongs.isEmpty()) {
-                    NPLogger.d("GlobalDownloadManager", "所有歌曲已在下载队列中")
+                if (pendingSongs.isEmpty()) {
+                    NPLogger.d(TAG, "没有新的批量下载任务")
                     return@launch
                 }
 
-                // 调用批量下载方法
-                AudioDownloadManager.downloadPlaylist(context, newSongs)
-
-                NPLogger.d("GlobalDownloadManager", "开始批量下载: ${newSongs.size} 首歌曲")
+                AudioDownloadManager.downloadPlaylist(appContext, pendingSongs)
             } catch (_: CancellationException) {
-                NPLogger.d("GlobalDownloadManager", "批量下载已取消")
                 val cancelledKeys = songs.map { it.stableKey() }.toSet()
                 _downloadTasks.value = _downloadTasks.value.filterNot { task ->
                     task.song.stableKey() in cancelledKeys && task.status != DownloadStatus.COMPLETED
                 }
-                cancelledKeys.forEach { clearSongCancelled(it) }
-            } catch (e: Exception) {
-                NPLogger.e("GlobalDownloadManager", "批量下载失败: ${e.message}")
+                cancelledKeys.forEach(::clearSongCancelled)
+            } catch (error: Exception) {
+                NPLogger.e(TAG, "批量下载失败: ${error.message}", error)
                 songs.forEach { song ->
                     updateTaskStatus(song.stableKey(), DownloadStatus.FAILED)
                 }
             }
         }
     }
-    
-    /**
-     * 添加下载任务
-     */
+
     private fun addDownloadTask(context: Context, song: SongItem): Boolean {
         if (shouldSkipDownload(context, song)) {
             return false
@@ -677,23 +641,22 @@ object GlobalDownloadManager {
         clearSongCancelled(songKey)
         val existingTask = _downloadTasks.value.find { it.song.stableKey() == songKey }
         if (existingTask != null) {
-            // 如果任务已完成或已取消，移除旧任务，允许重新下载
-            if (existingTask.status == DownloadStatus.COMPLETED || existingTask.status == DownloadStatus.CANCELLED) {
-                NPLogger.d("GlobalDownloadManager", "移除旧任务并重新下载: ${song.name}, 旧状态: ${existingTask.status}")
-                removeDownloadTask(songKey)
-            } else {
-                // 如果任务正在下载，不允许重复添加
-                NPLogger.d("GlobalDownloadManager", "歌曲已在下载队列中: ${song.name}, 状态: ${existingTask.status}")
-                return false
+            return when (existingTask.status) {
+                DownloadStatus.COMPLETED,
+                DownloadStatus.CANCELLED,
+                DownloadStatus.FAILED -> {
+                    removeDownloadTask(songKey)
+                    true
+                }
+                DownloadStatus.DOWNLOADING -> false
             }
         }
-        val newTask = DownloadTask(
+
+        _downloadTasks.value += DownloadTask(
             song = song,
             progress = null,
             status = DownloadStatus.DOWNLOADING
         )
-        _downloadTasks.value += newTask
-        NPLogger.d("GlobalDownloadManager", "添加新下载任务: ${song.name}")
         return true
     }
 
@@ -701,14 +664,10 @@ object GlobalDownloadManager {
         if (!LocalSongSupport.isLocalSong(song, context)) {
             return false
         }
-
-        NPLogger.d("GlobalDownloadManager", "Skip local song download: ${song.name}")
+        NPLogger.d(TAG, "跳过本地歌曲下载: ${song.name}")
         return true
     }
-    
-    /**
-     * 更新任务状态（公开方法，供外部调用）
-     */
+
     fun updateTaskStatus(songKey: String, status: DownloadStatus) {
         _downloadTasks.value = _downloadTasks.value.map { task ->
             if (task.song.stableKey() == songKey) {
@@ -719,9 +678,6 @@ object GlobalDownloadManager {
         }
     }
 
-    /**
-     * 移除下载任务
-     */
     fun removeDownloadTask(songKey: String) {
         _downloadTasks.value = _downloadTasks.value.filter { it.song.stableKey() != songKey }
     }
@@ -735,75 +691,92 @@ object GlobalDownloadManager {
     }
 
     private fun cancelAllActiveTasks() {
-        val remaining = _downloadTasks.value.filter { it.status != DownloadStatus.DOWNLOADING }
-        _downloadTasks.value = remaining
+        _downloadTasks.value = _downloadTasks.value.filter { it.status != DownloadStatus.DOWNLOADING }
     }
 
-    /**
-     * 取消单个下载任务
-     */
     fun cancelDownloadTask(songKey: String) {
         val task = _downloadTasks.value.find { it.song.stableKey() == songKey } ?: return
-        if (task.status != DownloadStatus.DOWNLOADING) {
-            return
-        }
+        if (task.status != DownloadStatus.DOWNLOADING) return
 
-        // 只取消单个任务，不影响其他任务
         markSongCancelled(songKey)
         updateTaskStatus(songKey, DownloadStatus.CANCELLED)
     }
 
-    /**
-     * 检查歌曲是否已被取消
-     */
     fun isSongCancelled(songKey: String): Boolean {
         return cancelledSongKeys.contains(songKey)
     }
 
-    /**
-     * 恢复下载任务
-     */
     fun resumeDownloadTask(context: Context, songKey: String) {
-        val task = _downloadTasks.value.find { it.song.stableKey() == songKey }
-        if (task != null && task.status == DownloadStatus.CANCELLED) {
-            if (isSongCancelled(songKey)) {
-                NPLogger.d("GlobalDownloadManager", "取消仍在处理中，暂不恢复: ${task.song.name}")
-                return
-            }
-            // 移除旧任务
-            removeDownloadTask(songKey)
-            // 重新开始下载（会重新获取下载链接）
-            startDownload(context, task.song)
+        val task = _downloadTasks.value.find { it.song.stableKey() == songKey } ?: return
+        if (task.status != DownloadStatus.CANCELLED || isSongCancelled(songKey)) {
+            return
         }
+
+        removeDownloadTask(songKey)
+        startDownload(context, task.song)
     }
 
-    /**
-     * 清除已完成和已取消的任务
-     */
     fun clearCompletedTasks() {
-        // 先取消所有正在下载的任务
         val downloadingTasks = _downloadTasks.value.filter { it.status == DownloadStatus.DOWNLOADING }
         if (downloadingTasks.isNotEmpty()) {
-            // 调用 AudioDownloadManager 停止批量下载
             AudioDownloadManager.cancelDownload()
-
-            // 标记所有下载中的任务为已取消
             downloadingTasks.forEach { task ->
                 cancelDownloadTask(task.song.stableKey())
             }
         }
 
-        // 清除所有任务
         _downloadTasks.value = emptyList()
         cancelledSongKeys.clear()
 
-        // 重置取消标志，允许用户立即开始新的下载
         scope.launch {
-            delay(100) // 短暂延迟，确保取消操作完成
+            delay(100)
             AudioDownloadManager.resetCancelFlag()
         }
+    }
 
-        NPLogger.d("GlobalDownloadManager", "已清除所有下载任务")
+    private fun candidateBaseNames(
+        song: DownloadedSong,
+        actualAudioBaseName: String? = null
+    ): List<String> {
+        val baseNames = linkedSetOf<String>()
+        actualAudioBaseName?.takeIf { it.isNotBlank() }?.let(baseNames::add)
+        baseNames += sanitizeManagedDownloadFileName("${song.displayArtist()} - ${song.displayName()}")
+        baseNames += sanitizeManagedDownloadFileName("${song.artist} - ${song.name}")
+
+        val originalName = song.originalName?.takeIf { it.isNotBlank() } ?: song.name
+        val originalArtist = song.originalArtist?.takeIf { it.isNotBlank() } ?: song.artist
+        baseNames += sanitizeManagedDownloadFileName("$originalArtist - $originalName")
+        return baseNames.toList()
+    }
+
+    private suspend fun resolveStoredAudio(
+        context: Context,
+        song: SongItem
+    ): ManagedDownloadStorage.StoredEntry? {
+        resolveStoredAudio(context, resolveSongLocation(song))?.let { return it }
+        return ManagedDownloadStorage.findDownloadedAudio(context, song)
+    }
+
+    private suspend fun resolveStoredAudio(
+        context: Context,
+        reference: String?
+    ): ManagedDownloadStorage.StoredEntry? {
+        val normalized = reference?.takeIf { it.isNotBlank() } ?: return null
+        return ManagedDownloadStorage.queryStoredEntry(context, normalized)
+    }
+
+    private fun resolveSongLocation(song: SongItem): String? {
+        song.localFilePath
+            ?.takeIf { it.isNotBlank() }
+            ?.let { return it }
+
+        val mediaUri = song.mediaUri?.takeIf { it.isNotBlank() } ?: return null
+        return when {
+            mediaUri.startsWith("/") -> mediaUri
+            mediaUri.startsWith("file://") -> mediaUri
+            mediaUri.startsWith("content://") -> mediaUri
+            else -> null
+        }
     }
 }
 
