@@ -66,6 +66,7 @@ import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 
 @Composable
 fun DebugHomeScreen(
+    onOpenListenTogetherDebug: () -> Unit,
     onOpenYouTubeDebug: () -> Unit,
     onOpenBiliDebug: () -> Unit,
     onOpenNeteaseDebug: () -> Unit,
@@ -115,13 +116,11 @@ fun DebugHomeScreen(
                         )
                     },
                     headlineContent = { Text(stringResource(R.string.listen_together_title)) },
+                    supportingContent = { Text(stringResource(R.string.listen_together_debug_entry_desc)) },
+                    modifier = Modifier.clickable(onClick = onOpenListenTogetherDebug),
                     colors = ListItemDefaults.colors(
                         containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
                     )
-                )
-
-                ListenTogetherDebugPanel(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
                 )
 
                 ListItem(

@@ -289,7 +289,7 @@ class MainActivity : ComponentActivity() {
                             val listenTogetherRoomState by AppContainer.listenTogetherSessionManager.roomState.collectAsState()
                             val isListenTogetherRoomActive = !listenTogetherSessionState.roomId.isNullOrBlank()
                             var hadActiveListenTogetherRoom by rememberSaveable { mutableStateOf(false) }
-                            var lastShownListenTogetherMemberNotice by rememberSaveable { mutableStateOf<String?>(null) }
+                            var lastShownListenTogetherNotice by rememberSaveable { mutableStateOf<String?>(null) }
                             val effectiveListenTogetherStatus = when {
                                 joiningInvite -> getString(R.string.listen_together_status_joining)
                                 !listenTogetherStatus.isNullOrBlank() -> listenTogetherStatus
@@ -299,11 +299,8 @@ class MainActivity : ComponentActivity() {
                                 isListenTogetherRoomActive -> getString(R.string.listen_together_status_active)
                                 else -> null
                             }
-                            val showLeaveListenTogetherAction = isListenTogetherRoomActive && (
-                                dialogMessage == getString(R.string.listen_together_error_controller_offline) ||
-                                    dialogMessage.contains("一起听", ignoreCase = false) ||
-                                    dialogMessage.contains("controller offline", ignoreCase = true)
-                                )
+                            val showLeaveListenTogetherAction = isListenTogetherRoomActive &&
+                                shouldOfferListenTogetherLeaveAction(dialogMessage)
 
                             // 初始化异常处理器事件监听
                             LaunchedEffect(Unit) {
@@ -395,16 +392,17 @@ class MainActivity : ComponentActivity() {
                                 listenTogetherRoomState?.version
                             ) {
                                 val notice = listenTogetherSessionState.roomNotice ?: return@LaunchedEffect
-                                if (!notice.startsWith("member_joined:") && !notice.startsWith("member_left:")) {
+                                val displayNotice = notice.toListenTogetherDisplayMessage()
+                                if (displayNotice.isBlank()) {
                                     return@LaunchedEffect
                                 }
                                 val noticeKey = "${listenTogetherRoomState?.version ?: -1L}:$notice"
-                                if (lastShownListenTogetherMemberNotice == noticeKey) {
+                                if (lastShownListenTogetherNotice == noticeKey) {
                                     return@LaunchedEffect
                                 }
-                                lastShownListenTogetherMemberNotice = noticeKey
+                                lastShownListenTogetherNotice = noticeKey
                                 showListenTogetherStatusToast(
-                                    message = notice.toListenTogetherNoticeDisplay(),
+                                    message = displayNotice,
                                     atBottom = true
                                 )
                             }
@@ -480,8 +478,6 @@ class MainActivity : ComponentActivity() {
                                                         val userUuid = preferences.getOrCreateUserUuid()
                                                         val nickname = preferences.getOrCreateNickname()
                                                         preferences.setWorkerBaseUrl(baseUrl)
-                                                        PlayerManager.resetForListenTogetherJoin()
-                                                        sessionManager.leaveRoom()
                                                         updateListenTogetherStatus(getString(R.string.listen_together_status_syncing))
                                                         sessionManager.joinRoom(
                                                             baseUrl = baseUrl,
@@ -493,7 +489,9 @@ class MainActivity : ComponentActivity() {
                                                         clearPendingListenTogetherInvite()
                                                     } catch (error: Throwable) {
                                                         updateListenTogetherStatus(null)
-                                                        dialogMessage = error.message ?: error.javaClass.simpleName
+                                                        dialogMessage = (
+                                                            error.message ?: error.javaClass.simpleName
+                                                            ).toListenTogetherDisplayMessage()
                                                         showDialog = true
                                                     } finally {
                                                         joiningInvite = false
@@ -686,21 +684,53 @@ class MainActivity : ComponentActivity() {
         }.show()
     }
 
-    private fun String.toListenTogetherNoticeDisplay(): String = when {
-        startsWith("controller_offline:") ->
-            getString(
-                R.string.listen_together_notice_controller_offline,
-                substringAfter(':').toLongOrNull() ?: 10L
-            )
-        startsWith("member_joined:") ->
-            getString(R.string.listen_together_notice_member_joined, substringAfter(':'))
-        startsWith("member_left:") ->
-            getString(R.string.listen_together_notice_member_left, substringAfter(':'))
-        this == "controller_reconnected" ->
-            getString(R.string.listen_together_notice_controller_reconnected)
-        this == "controller_timeout" || this == "room_closed" ->
-            getString(R.string.listen_together_notice_room_closed)
-        else -> this
+    private fun shouldOfferListenTogetherLeaveAction(message: String): Boolean {
+        return message == getString(R.string.listen_together_error_controller_offline) ||
+            message == getString(R.string.listen_together_error_unauthorized) ||
+            message == getString(R.string.listen_together_error_room_not_found) ||
+            message == getString(R.string.listen_together_notice_room_closed) ||
+            message == getString(R.string.listen_together_error_reconnecting) ||
+            message == getString(R.string.listen_together_error_rejoining)
+    }
+
+    private fun String.toListenTogetherDisplayMessage(): String {
+        val normalized = trim()
+        val lowered = normalized.lowercase()
+        return when {
+            startsWith("controller_offline:") ->
+                getString(
+                    R.string.listen_together_notice_controller_offline,
+                    substringAfter(':').toLongOrNull() ?: 10L
+                )
+            startsWith("member_joined:") ->
+                getString(R.string.listen_together_notice_member_joined, substringAfter(':'))
+            startsWith("member_left:") ->
+                getString(R.string.listen_together_notice_member_left, substringAfter(':'))
+            normalized == "controller_reconnected" ->
+                getString(R.string.listen_together_notice_controller_reconnected)
+            normalized == "controller_timeout" ||
+                normalized == "room_closed" ||
+                "room closed" in lowered ->
+                getString(R.string.listen_together_notice_room_closed)
+            "unauthorized" in lowered ||
+                "http=401" in lowered ||
+                "(401)" in lowered ->
+                getString(R.string.listen_together_error_unauthorized)
+            "room not initialized" in lowered ||
+                "not found in do" in lowered ->
+                getString(R.string.listen_together_error_room_not_found)
+            "controller offline" in lowered ->
+                getString(R.string.listen_together_error_controller_offline)
+            "member control disabled" in lowered ->
+                getString(R.string.listen_together_error_member_control_disabled)
+            "一起听连接不可用" in normalized ||
+                ("listen together" in lowered && "reconnect" in lowered) ->
+                getString(R.string.listen_together_error_reconnecting)
+            "一起听连接已失效" in normalized ||
+                ("rejoin" in lowered && "room" in lowered) ->
+                getString(R.string.listen_together_error_rejoining)
+            else -> normalized
+        }
     }
 
     private fun presentListenTogetherInvite(invite: ListenTogetherInvite) {

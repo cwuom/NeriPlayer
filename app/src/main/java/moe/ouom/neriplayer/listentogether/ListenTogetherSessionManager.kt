@@ -1318,7 +1318,9 @@ class ListenTogetherSessionManager(
     private fun isTerminalReconnectError(errorMessage: String?): Boolean {
         val normalized = errorMessage?.trim()?.lowercase().orEmpty()
         if (normalized.isBlank()) return false
-        return TERMINAL_RECONNECT_ERROR_MARKERS.any(normalized::contains)
+        return isUnauthorizedReconnectError(normalized) ||
+            isClosedRoomReconnectError(normalized) ||
+            isMissingRoomReconnectError(normalized)
     }
 
     private fun noteOutboundSync() {
@@ -1609,25 +1611,20 @@ class ListenTogetherSessionManager(
             "PAUSE",
             "SEEK"
         )
-        private val TERMINAL_RECONNECT_ERROR_MARKERS = setOf(
-            "401 unauthorized",
-            "http=401",
-            "(401)",
-            "unauthorized",
-            "\"error\":\"unauthorized\"",
-            "room closed",
-            "\"error\":\"room closed\"",
-            "room not initialized",
-            "not found in do",
-            "room not found",
-            "\"error\":\"not found in do\"",
-            "\"error\":\"room not found\"",
-            "not found",
-            "http=404",
-            "(404)",
-            "http=410",
-            "(410)"
-        )
+        private fun isUnauthorizedReconnectError(normalized: String): Boolean {
+            return "unauthorized" in normalized
+        }
+
+        private fun isClosedRoomReconnectError(normalized: String): Boolean {
+            return "room closed" in normalized || "http=410" in normalized || "(410)" in normalized
+        }
+
+        private fun isMissingRoomReconnectError(normalized: String): Boolean {
+            return "room not initialized" in normalized ||
+                "\"error\":\"room not initialized\"" in normalized ||
+                "not found in do" in normalized ||
+                "\"error\":\"not found in do\"" in normalized
+        }
 
         private fun reconnectDelayMs(attempt: Int): Long {
             return when (attempt) {
