@@ -777,6 +777,33 @@
     <string name="github_token_expired_message">GitHub Token 已过期或无效，请重新配置</string>
     <string name="github_backup_file_invalid">远端备份文件无效或已损坏</string>
     <string name="github_sync_failed">同步失败: %s</string>
+    <string name="webdav_sync_title">WebDAV 同步</string>
+    <string name="webdav_sync_desc">配置 WebDAV 服务器、用户名、密码和初始路径</string>
+    <string name="webdav_auto_sync_desc">修改后自动同步到 WebDAV</string>
+    <string name="webdav_server_url_label">服务器 URL</string>
+    <string name="webdav_server_url_placeholder">https://example.com/dav</string>
+    <string name="webdav_username_label">用户名</string>
+    <string name="webdav_username_placeholder">your-username</string>
+    <string name="webdav_password_label">密码</string>
+    <string name="webdav_base_path_label">初始路径</string>
+    <string name="webdav_base_path_placeholder">backup/neriplayer</string>
+    <string name="webdav_remote_file_hint">文件将保存为名为 neriplayer-sync.json 的文件，程序会自动拼接到上面的目录下。</string>
+    <string name="webdav_validate_and_save">验证并保存</string>
+    <string name="webdav_validate_success">WebDAV 配置成功</string>
+    <string name="webdav_validate_failed">WebDAV 配置失败: %s</string>
+    <string name="webdav_required_fields">请完整填写服务器 URL、用户名和密码</string>
+    <string name="webdav_auth_failed">WebDAV 用户名或密码错误</string>
+    <string name="webdav_sync_failed">WebDAV 同步失败: %s</string>
+    <string name="webdav_sync_failed_message">WebDAV 同步失败</string>
+    <string name="webdav_not_configured">WebDAV 未配置</string>
+    <string name="webdav_backup_file_invalid">WebDAV 远端备份文件无效或已损坏</string>
+    <string name="webdav_sync_in_progress">WebDAV 同步正在进行中,已跳过</string>
+    <string name="webdav_sync_no_change">WebDAV 同步成功(无变化)</string>
+    <string name="webdav_sync_success_detail">WebDAV 同步成功</string>
+    <string name="webdav_clear_config_desc">这将清除所有 WebDAV 同步配置。本地数据不会被删除。</string>
+    <string name="webdav_sync_channel_name">WebDAV同步</string>
+    <string name="webdav_sync_channel_desc">WebDAV同步状态通知</string>
+    <string name="webdav_sync_failed_title">WebDAV 同步失败</string>
 
     <!-- Lyrics / Player Screen -->
     <string name="lyrics_unknown_song">未知歌曲</string>

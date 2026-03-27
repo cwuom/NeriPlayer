@@ -46,6 +46,7 @@ import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.sync.github.CoverUrlMapper
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
+import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
@@ -154,9 +155,9 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
             storage.markSyncMutation()
             if (!storage.isAutoSyncEnabled()) {
                 NPLogger.d("LocalPlaylistRepo", "Auto sync disabled, skip")
-                return
             }
             GitHubSyncWorker.scheduleDelayedSync(context, triggerByUserAction = false)
+            WebDavSyncWorker.scheduleDelayedSync(context, triggerByUserAction = false)
         } catch (e: Exception) {
             NPLogger.e("LocalPlaylistRepo", "Failed to schedule sync", e)
         }

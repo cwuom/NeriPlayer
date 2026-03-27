@@ -1,0 +1,964 @@
+package moe.ouom.neriplayer.data.sync.webdav
+
+/*
+ * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
+ * Copyright (C) 2025-2025 NeriPlayer developers
+ * https://github.com/cwuom/NeriPlayer
+ *
+ * This software is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This software is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this software.
+ * If not, see <https://www.gnu.org/licenses/>.
+ *
+ * File: moe.ouom.neriplayer.data.sync.github/GitHubSyncManager
+ * Updated: 2026/3/23
+ */
+
+
+import android.content.Context
+import android.os.Build
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.data.history.PlayedEntry
+import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
+import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
+import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
+import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.history.PlayHistoryRepository
+import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
+import moe.ouom.neriplayer.data.model.identity
+import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.data.sync.github.ConflictResolution
+import moe.ouom.neriplayer.data.sync.github.ConflictType
+import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
+import moe.ouom.neriplayer.data.sync.github.SyncConflict
+import moe.ouom.neriplayer.data.sync.github.SyncData
+import moe.ouom.neriplayer.data.sync.github.SyncDataSerializer
+import moe.ouom.neriplayer.data.sync.github.SyncFavoritePlaylist
+import moe.ouom.neriplayer.data.sync.github.SyncPlaylist
+import moe.ouom.neriplayer.data.sync.github.SyncRecentPlay
+import moe.ouom.neriplayer.data.sync.github.SyncRecentPlayDeletion
+import moe.ouom.neriplayer.data.sync.github.SyncResult
+import moe.ouom.neriplayer.data.sync.github.SyncSong
+import moe.ouom.neriplayer.util.LanguageManager
+import moe.ouom.neriplayer.util.NPLogger
+import java.io.IOException
+
+class WebDavSyncManager private constructor(context: Context) {
+    private val appContext = context.applicationContext
+    private val storage = SecureTokenStorage(appContext)
+    private val webDavStorage = WebDavStorage(appContext)
+    private val playlistRepo = LocalPlaylistRepository.getInstance(appContext)
+    private val favoriteRepo = FavoritePlaylistRepository.getInstance(appContext)
+    private val playHistoryRepo = PlayHistoryRepository.getInstance(appContext)
+    private val syncLock = Mutex()
+
+    companion object {
+        private const val TAG = "WebDavSyncManager"
+
+        @Volatile
+        private var instance: WebDavSyncManager? = null
+
+        fun getInstance(context: Context): WebDavSyncManager {
+            return instance ?: synchronized(this) {
+                instance ?: WebDavSyncManager(context.applicationContext).also { instance = it }
+            }
+        }
+    }
+
+    suspend fun performSync(): Result<SyncResult> = withContext(Dispatchers.IO) {
+        val localizedContext = LanguageManager.applyLanguage(appContext)
+
+        if (!syncLock.tryLock()) {
+            return@withContext Result.failure(
+                WebDavSyncInProgressException(
+                    localizedContext.getString(R.string.webdav_sync_in_progress)
+                )
+            )
+        }
+
+        try {
+            val remoteUrl = webDavStorage.getRemoteFileUrl()
+            val username = webDavStorage.getUsername()
+            val password = webDavStorage.getPassword()
+            if (remoteUrl == null || username == null || password == null) {
+                return@withContext Result.failure(
+                    IllegalStateException(localizedContext.getString(R.string.webdav_not_configured))
+                )
+            }
+
+            val apiClient = WebDavApiClient(appContext, username, password)
+            val startMutationVersion = storage.getSyncMutationVersion()
+            val localData = sanitizeSyncData(buildLocalSyncData(localizedContext))
+            val uploadedDeletedPlaylistIds = localData.playlists
+                .asSequence()
+                .filter(SyncPlaylist::isDeleted)
+                .map(SyncPlaylist::id)
+                .toSet()
+            val remoteResult = apiClient.getFileContentStrict(remoteUrl)
+
+            if (remoteResult.isFailure) {
+                val error = remoteResult.exceptionOrNull()
+                if (error is WebDavFileNotFoundException) {
+                    return@withContext handleInitialUpload(
+                        apiClient = apiClient,
+                        remoteUrl = remoteUrl,
+                        localData = localData,
+                        localizedContext = localizedContext,
+                        startMutationVersion = startMutationVersion,
+                        uploadedDeletedPlaylistIds = uploadedDeletedPlaylistIds
+                    )
+                }
+                return@withContext Result.failure(
+                    error ?: IOException(localizedContext.getString(R.string.webdav_sync_failed_message))
+                )
+            }
+
+            val (remoteContent, remoteFingerprint) = remoteResult.getOrThrow()
+            if (remoteContent.isEmpty()) {
+                return@withContext Result.failure(
+                    IOException(localizedContext.getString(R.string.webdav_backup_file_invalid))
+                )
+            }
+
+            val remoteData = try {
+                sanitizeSyncData(SyncDataSerializer.deserialize(remoteContent, false))
+            } catch (e: Exception) {
+                NPLogger.e(TAG, "Failed to parse remote data", e)
+                return@withContext Result.failure(e)
+            }
+
+            val lastRemoteFingerprint = webDavStorage.getLastRemoteFingerprint()
+            val isFirstSync = lastRemoteFingerprint == null
+            val remoteHasChanged =
+                lastRemoteFingerprint != null && lastRemoteFingerprint != remoteFingerprint
+            val lastSyncTime = webDavStorage.getLastSyncTime()
+            val mergeResult = performThreeWayMerge(localData, remoteData, lastSyncTime)
+            val localMutatedDuringSync =
+                storage.getSyncMutationVersion() != startMutationVersion
+
+            if (!localMutatedDuringSync) {
+                applyMergedDataToLocal(
+                    mergedData = mergeResult.mergedData,
+                    remoteHasChanged = isFirstSync || remoteHasChanged
+                )
+            } else {
+                NPLogger.w(TAG, "Skip applying merged sync data because local state changed during sync")
+            }
+
+            if (!hasDataChanged(remoteData, mergeResult.mergedData) && !remoteHasChanged) {
+                webDavStorage.saveLastRemoteFingerprint(remoteFingerprint)
+                webDavStorage.saveLastSyncTime(System.currentTimeMillis())
+                if (localMutatedDuringSync) {
+                    WebDavSyncWorker.scheduleDelayedSync(
+                        appContext,
+                        triggerByUserAction = false,
+                        markMutation = false
+                    )
+                }
+                return@withContext Result.success(
+                    SyncResult(
+                        success = true,
+                        message = localizedContext.getString(R.string.webdav_sync_no_change)
+                    )
+                )
+            }
+
+            val uploadResult = uploadLocalData(
+                apiClient = apiClient,
+                remoteUrl = remoteUrl,
+                data = mergeResult.mergedData
+            )
+
+            if (uploadResult.isFailure) {
+                return@withContext Result.failure(
+                    uploadResult.exceptionOrNull()
+                        ?: Exception(localizedContext.getString(R.string.sync_upload_failed))
+                )
+            }
+
+            uploadResult.getOrNull()?.let(webDavStorage::saveLastRemoteFingerprint)
+            webDavStorage.saveLastSyncTime(System.currentTimeMillis())
+            storage.removeDeletedPlaylistIds(uploadedDeletedPlaylistIds)
+            if (localMutatedDuringSync) {
+                WebDavSyncWorker.scheduleDelayedSync(
+                    appContext,
+                    triggerByUserAction = false,
+                    markMutation = false
+                )
+            }
+            Result.success(mergeResult.syncResult)
+        } catch (e: Exception) {
+            NPLogger.e(TAG, "Sync failed", e)
+            Result.failure(e)
+        } finally {
+            syncLock.unlock()
+        }
+    }
+
+    private suspend fun handleInitialUpload(
+        apiClient: WebDavApiClient,
+        remoteUrl: String,
+        localData: SyncData,
+        localizedContext: Context,
+        startMutationVersion: Long,
+        uploadedDeletedPlaylistIds: Set<Long>
+    ): Result<SyncResult> {
+        val uploadResult = uploadLocalData(
+            apiClient = apiClient,
+            remoteUrl = remoteUrl,
+            data = localData
+        )
+        if (uploadResult.isSuccess) {
+            uploadResult.getOrNull()?.let(webDavStorage::saveLastRemoteFingerprint)
+            webDavStorage.saveLastSyncTime(System.currentTimeMillis())
+            storage.removeDeletedPlaylistIds(uploadedDeletedPlaylistIds)
+            if (storage.getSyncMutationVersion() != startMutationVersion) {
+                WebDavSyncWorker.scheduleDelayedSync(
+                    appContext,
+                    triggerByUserAction = false,
+                    markMutation = false
+                )
+            }
+            return Result.success(
+                SyncResult(
+                    success = true,
+                    message = localizedContext.getString(R.string.sync_initial_uploaded)
+                )
+            )
+        }
+
+        return Result.failure(
+            uploadResult.exceptionOrNull()
+                ?: IOException(localizedContext.getString(R.string.sync_upload_failed))
+        )
+    }
+
+    private fun buildLocalSyncData(localizedContext: Context): SyncData {
+        val playlists = playlistRepo.playlists.value
+        val syncPlaylists = playlists.map { playlist ->
+            SyncPlaylist.fromLocalPlaylist(playlist, playlist.modifiedAt, localizedContext)
+        }.toMutableList()
+
+        storage.getDeletedPlaylistIds().forEach { deletedId ->
+            if (playlists.none { it.id == deletedId }) {
+                syncPlaylists += SyncPlaylist(
+                    id = deletedId,
+                    name = "",
+                    songs = emptyList(),
+                    createdAt = 0L,
+                    modifiedAt = System.currentTimeMillis(),
+                    isDeleted = true
+                )
+            }
+        }
+
+        val syncFavoritePlaylists = favoriteRepo.getSyncSnapshots().map {
+            SyncFavoritePlaylist.fromFavoritePlaylist(it, localizedContext)
+        }
+
+        val syncRecentPlays = playHistoryRepo.historyFlow.value
+            .filterNot { LocalSongSupport.isLocalSong(it.album, it.mediaUri, it.albumId, localizedContext) }
+            .take(500)
+            .map { playedEntry ->
+                SyncRecentPlay(
+                    songId = playedEntry.id,
+                    song = SyncSong(
+                        id = playedEntry.id,
+                        name = playedEntry.name,
+                        artist = playedEntry.artist,
+                        album = playedEntry.album,
+                        albumId = playedEntry.albumId,
+                        durationMs = playedEntry.durationMs,
+                        coverUrl = playedEntry.coverUrl,
+                        mediaUri = LocalSongSupport.sanitizeMediaUriForSync(playedEntry.mediaUri),
+                        matchedLyric = playedEntry.matchedLyric,
+                        matchedTranslatedLyric = playedEntry.matchedTranslatedLyric,
+                        customCoverUrl = playedEntry.customCoverUrl,
+                        customName = playedEntry.customName,
+                        customArtist = playedEntry.customArtist,
+                        originalName = playedEntry.originalName,
+                        originalArtist = playedEntry.originalArtist,
+                        originalCoverUrl = playedEntry.originalCoverUrl,
+                        originalLyric = playedEntry.originalLyric,
+                        originalTranslatedLyric = playedEntry.originalTranslatedLyric
+                    ),
+                    playedAt = playedEntry.playedAt,
+                    deviceId = getDeviceId()
+                )
+            }
+        val syncRecentPlayDeletions = storage.getRecentPlayDeletions()
+            .map {
+                it.copy(mediaUri = LocalSongSupport.sanitizeMediaUriForSync(it.mediaUri))
+            }
+
+        return SyncData(
+            deviceId = getDeviceId(),
+            deviceName = getDeviceName(),
+            lastModified = System.currentTimeMillis(),
+            playlists = syncPlaylists,
+            favoritePlaylists = syncFavoritePlaylists,
+            recentPlays = syncRecentPlays,
+            syncLog = emptyList(),
+            recentPlayDeletions = syncRecentPlayDeletions
+        )
+    }
+
+    private fun performThreeWayMerge(
+        local: SyncData,
+        remote: SyncData,
+        lastSyncTime: Long
+    ): MergeResult {
+        val localizedContext = LanguageManager.applyLanguage(appContext)
+        val conflicts = mutableListOf<SyncConflict>()
+        var playlistsAdded = 0
+        var playlistsUpdated = 0
+        var playlistsDeleted = 0
+        var songsAdded = 0
+        var songsRemoved = 0
+
+        val mergedPlaylistsById = linkedMapOf<Long, SyncPlaylist>()
+        val localPlaylistsMap = local.playlists.associateBy { it.id }
+        val remotePlaylistsMap = remote.playlists.associateBy { it.id }
+        val allPlaylistIds = (localPlaylistsMap.keys + remotePlaylistsMap.keys).toSet()
+
+        for (playlistId in allPlaylistIds) {
+            val localPlaylist = localPlaylistsMap[playlistId]
+            val remotePlaylist = remotePlaylistsMap[playlistId]
+            when {
+                localPlaylist != null && remotePlaylist == null -> {
+                    if (!localPlaylist.isDeleted) {
+                        mergedPlaylistsById[localPlaylist.id] = localPlaylist
+                        playlistsAdded++
+                    } else {
+                        playlistsDeleted++
+                    }
+                }
+
+                localPlaylist == null && remotePlaylist != null -> {
+                    if (!remotePlaylist.isDeleted) {
+                        mergedPlaylistsById[remotePlaylist.id] = remotePlaylist
+                        playlistsAdded++
+                    } else {
+                        playlistsDeleted++
+                    }
+                }
+
+                localPlaylist != null && remotePlaylist != null -> {
+                    if (localPlaylist.isDeleted || remotePlaylist.isDeleted) {
+                        playlistsDeleted++
+                    } else {
+                        val merged = mergePlaylist(localPlaylist, remotePlaylist, lastSyncTime)
+                        mergedPlaylistsById[merged.playlist.id] = merged.playlist
+                        merged.conflict?.let { conflicts += it }
+                        songsAdded += merged.songsAdded
+                        songsRemoved += merged.songsRemoved
+                        if (merged.isUpdated) {
+                            playlistsUpdated++
+                        }
+                    }
+                }
+            }
+        }
+
+        val mergedFavoritePlaylists = (local.favoritePlaylists + remote.favoritePlaylists)
+            .groupBy { "${it.id}_${it.source}" }
+            .map { (_, snapshots) ->
+                snapshots.reduce(::mergeFavoritePlaylist)
+            }
+            .sortedByDescending { it.sortOrder }
+
+        val mergedRecentPlayDeletions = pruneRecentPlayDeletions(
+            mergeRecentPlayDeletions(local.recentPlayDeletions, remote.recentPlayDeletions),
+            local.recentPlays + remote.recentPlays
+        )
+        val mergedPlaylists = orderMergedPlaylists(
+            local = local.playlists,
+            remote = remote.playlists,
+            mergedById = mergedPlaylistsById,
+            lastSyncTime = lastSyncTime
+        )
+        val mergedRecentPlays = mergeRecentPlays(
+            local = local.recentPlays,
+            remote = remote.recentPlays,
+            deletions = mergedRecentPlayDeletions
+        )
+
+        val mergedData = SyncData(
+            deviceId = local.deviceId,
+            deviceName = local.deviceName,
+            lastModified = System.currentTimeMillis(),
+            playlists = mergedPlaylists,
+            favoritePlaylists = mergedFavoritePlaylists,
+            recentPlays = mergedRecentPlays,
+            syncLog = (local.syncLog + remote.syncLog)
+                .distinctBy { it.timestamp }
+                .sortedByDescending { it.timestamp }
+                .take(100),
+            recentPlayDeletions = mergedRecentPlayDeletions
+        )
+
+        return MergeResult(
+            mergedData = mergedData,
+            syncResult = SyncResult(
+                success = true,
+                message = localizedContext.getString(R.string.webdav_sync_success_detail),
+                playlistsAdded = playlistsAdded,
+                playlistsUpdated = playlistsUpdated,
+                playlistsDeleted = playlistsDeleted,
+                songsAdded = songsAdded,
+                songsRemoved = songsRemoved,
+                conflicts = conflicts
+            )
+        )
+    }
+
+    private fun orderMergedPlaylists(
+        local: List<SyncPlaylist>,
+        remote: List<SyncPlaylist>,
+        mergedById: Map<Long, SyncPlaylist>,
+        lastSyncTime: Long
+    ): List<SyncPlaylist> {
+        if (mergedById.isEmpty()) return emptyList()
+
+        val localChangedAfterSync = hasPlaylistCollectionChangedAfterSync(local, lastSyncTime)
+        val remoteChangedAfterSync = hasPlaylistCollectionChangedAfterSync(remote, lastSyncTime)
+        val primary = if (remoteChangedAfterSync && !localChangedAfterSync) remote else local
+        val secondary = if (primary === local) remote else local
+        val orderedIds = LinkedHashSet<Long>()
+
+        fun appendPlaylistIds(source: List<SyncPlaylist>) {
+            source.asSequence()
+                .filterNot(SyncPlaylist::isDeleted)
+                .map(SyncPlaylist::id)
+                .filter(mergedById::containsKey)
+                .forEach(orderedIds::add)
+        }
+
+        appendPlaylistIds(primary)
+        appendPlaylistIds(secondary)
+        mergedById.keys.forEach(orderedIds::add)
+
+        return orderedIds.mapNotNull(mergedById::get)
+    }
+
+    private fun hasPlaylistCollectionChangedAfterSync(
+        playlists: List<SyncPlaylist>,
+        lastSyncTime: Long
+    ): Boolean {
+        return playlists.any { it.modifiedAt > lastSyncTime }
+    }
+
+    private fun mergePlaylist(
+        local: SyncPlaylist,
+        remote: SyncPlaylist,
+        lastSyncTime: Long
+    ): PlaylistMergeResult {
+        val localizedContext = LanguageManager.applyLanguage(appContext)
+        var conflict: SyncConflict? = null
+        var hasConflict = false
+        var isUpdated = false
+
+        val systemDescriptor = SystemLocalPlaylists.resolve(local.id, local.name, localizedContext)
+            ?: SystemLocalPlaylists.resolve(remote.id, remote.name, localizedContext)
+        val isFavorites = systemDescriptor?.id == FavoritesPlaylist.SYSTEM_ID
+        val localChangedAfterSync = local.modifiedAt > lastSyncTime
+        val remoteChangedAfterSync = remote.modifiedAt > lastSyncTime
+
+        val finalName = when {
+            systemDescriptor != null -> systemDescriptor.currentName
+            local.name == remote.name -> local.name
+            remoteChangedAfterSync && !localChangedAfterSync -> {
+                hasConflict = true
+                isUpdated = true
+                conflict = SyncConflict(
+                    type = ConflictType.PLAYLIST_RENAMED_BOTH_SIDES,
+                    playlistId = remote.id,
+                    playlistName = remote.name,
+                    description = localizedContext.getString(R.string.github_playlist_renamed_remote, remote.name),
+                    resolution = ConflictResolution.REMOTE_WINS
+                )
+                remote.name
+            }
+            localChangedAfterSync && !remoteChangedAfterSync -> {
+                hasConflict = true
+                conflict = SyncConflict(
+                    type = ConflictType.PLAYLIST_RENAMED_BOTH_SIDES,
+                    playlistId = local.id,
+                    playlistName = local.name,
+                    description = localizedContext.getString(R.string.github_playlist_renamed_local, local.name),
+                    resolution = ConflictResolution.LOCAL_WINS
+                )
+                local.name
+            }
+            else -> {
+                hasConflict = true
+                conflict = SyncConflict(
+                    type = ConflictType.PLAYLIST_RENAMED_BOTH_SIDES,
+                    playlistId = local.id,
+                    playlistName = local.name,
+                    description = localizedContext.getString(R.string.github_playlist_renamed_local, local.name),
+                    resolution = ConflictResolution.MANUAL_REQUIRED
+                )
+                local.name
+            }
+        }
+
+        val localSongs = local.songs.map { it.identity() }.toSet()
+        val remoteSongs = remote.songs.map { it.identity() }.toSet()
+        val preferRemoteFavorites = isFavorites && localSongs.isEmpty() && remoteSongs.isNotEmpty()
+
+        fun mergeSongsPreservingLocal(
+            localList: List<SyncSong>,
+            remoteList: List<SyncSong>
+        ): List<SyncSong> {
+            val merged = localList.toMutableList()
+            val known = localList.map { it.identity() }.toMutableSet()
+            remoteList.forEach { song ->
+                if (known.add(song.identity())) {
+                    merged += song
+                }
+            }
+            return merged
+        }
+
+        val mergedSongs = when {
+            remoteSongs.isEmpty() && localSongs.isNotEmpty() -> local.songs
+            localSongs.isEmpty() && remoteSongs.isNotEmpty() -> {
+                isUpdated = true
+                remote.songs
+            }
+            preferRemoteFavorites && !localChangedAfterSync -> {
+                isUpdated = true
+                remote.songs
+            }
+            remoteChangedAfterSync && !localChangedAfterSync -> {
+                isUpdated = true
+                remote.songs
+            }
+            localChangedAfterSync && !remoteChangedAfterSync -> local.songs
+            else -> {
+                val merged = mergeSongsPreservingLocal(local.songs, remote.songs)
+                if (merged.size != local.songs.size || merged.size != remote.songs.size) {
+                    isUpdated = true
+                }
+                merged
+            }
+        }
+
+        val mergedIdentities = mergedSongs.map { it.identity() }.toSet()
+        val songsAdded = (mergedIdentities - localSongs).size
+        val songsRemoved = (localSongs - mergedIdentities).size
+
+        return PlaylistMergeResult(
+            playlist = SyncPlaylist(
+                id = systemDescriptor?.id ?: local.id,
+                name = finalName,
+                songs = mergedSongs,
+                createdAt = minOf(local.createdAt, remote.createdAt),
+                modifiedAt = maxOf(local.modifiedAt, remote.modifiedAt)
+            ),
+            hasConflict = hasConflict,
+            conflict = conflict,
+            songsAdded = songsAdded,
+            songsRemoved = songsRemoved,
+            isUpdated = isUpdated
+        )
+    }
+
+    private fun mergeRecentPlays(
+        local: List<SyncRecentPlay>,
+        remote: List<SyncRecentPlay>,
+        deletions: List<SyncRecentPlayDeletion>
+    ): List<SyncRecentPlay> {
+        val deletionByIdentity = deletions.associateBy { it.identity().stableKey() }
+        return (local + remote)
+            .sortedByDescending { it.playedAt }
+            .distinctBy { it.song.identity().stableKey() }
+            .filter { recentPlay ->
+                val deletion = deletionByIdentity[recentPlay.song.identity().stableKey()]
+                deletion == null || recentPlay.playedAt > deletion.deletedAt
+            }
+            .take(500)
+    }
+
+    private fun mergeRecentPlayDeletions(
+        local: List<SyncRecentPlayDeletion>,
+        remote: List<SyncRecentPlayDeletion>
+    ): List<SyncRecentPlayDeletion> {
+        return (local + remote)
+            .groupBy { it.identity().stableKey() }
+            .mapNotNull { (_, snapshots) ->
+                snapshots.maxWithOrNull(
+                    compareBy<SyncRecentPlayDeletion> { it.deletedAt }
+                        .thenBy { it.deviceId }
+                )
+            }
+            .sortedByDescending { it.deletedAt }
+            .take(500)
+    }
+
+    private fun pruneRecentPlayDeletions(
+        deletions: List<SyncRecentPlayDeletion>,
+        recentPlays: List<SyncRecentPlay>
+    ): List<SyncRecentPlayDeletion> {
+        val latestPlayByIdentity = recentPlays
+            .groupBy { it.song.identity().stableKey() }
+            .mapValues { (_, plays) -> plays.maxOf { it.playedAt } }
+        return deletions
+            .filter { deletion ->
+                val latestPlay = latestPlayByIdentity[deletion.identity().stableKey()]
+                latestPlay == null || latestPlay <= deletion.deletedAt
+            }
+            .sortedByDescending { it.deletedAt }
+            .take(500)
+    }
+
+    private fun mergeFavoritePlaylist(
+        left: SyncFavoritePlaylist,
+        right: SyncFavoritePlaylist
+    ): SyncFavoritePlaylist {
+        val newer = if (right.modifiedAt > left.modifiedAt) right else left
+        val older = if (newer === left) right else left
+
+        if (left.isDeleted != right.isDeleted) {
+            return if (left.modifiedAt == right.modifiedAt) {
+                newer.copy(
+                    songs = if (newer.isDeleted) emptyList() else (left.songs + right.songs).distinctBy { it.identity() },
+                    trackCount = if (newer.isDeleted) 0 else maxOf(left.trackCount, right.trackCount, left.songs.size, right.songs.size)
+                )
+            } else {
+                if (newer.isDeleted) {
+                    newer.copy(
+                        songs = emptyList(),
+                        trackCount = 0,
+                        sortOrder = maxOf(left.sortOrder, right.sortOrder)
+                    )
+                } else {
+                    newer.copy(
+                        songs = (left.songs + right.songs).distinctBy { it.identity() },
+                        trackCount = maxOf(left.trackCount, right.trackCount, left.songs.size, right.songs.size),
+                        sortOrder = newer.sortOrder.takeIf { it > 0L } ?: older.sortOrder
+                    )
+                }
+            }
+        }
+
+        if (newer.isDeleted) {
+            return newer.copy(
+                songs = emptyList(),
+                trackCount = 0,
+                addedTime = maxOf(left.addedTime, right.addedTime),
+                sortOrder = maxOf(left.sortOrder, right.sortOrder)
+            )
+        }
+
+        val mergedSongs = (left.songs + right.songs).distinctBy { it.identity() }
+        return newer.copy(
+            coverUrl = newer.coverUrl ?: older.coverUrl,
+            songs = mergedSongs,
+            trackCount = maxOf(left.trackCount, right.trackCount, mergedSongs.size),
+            addedTime = maxOf(left.addedTime, right.addedTime),
+            modifiedAt = maxOf(left.modifiedAt, right.modifiedAt),
+            sortOrder = newer.sortOrder.takeIf { it > 0L } ?: older.sortOrder,
+            isDeleted = false
+        )
+    }
+
+    private suspend fun applyMergedDataToLocal(mergedData: SyncData, remoteHasChanged: Boolean) {
+        val localizedContext = LanguageManager.applyLanguage(appContext)
+        val sanitizedMergedData = sanitizeSyncData(mergedData)
+        val currentPlaylists = playlistRepo.playlists.value.associateBy { playlist ->
+            SystemLocalPlaylists.resolve(playlist.id, playlist.name, localizedContext)?.id ?: playlist.id
+        }
+        val mergedLocalPlaylists = sanitizedMergedData.playlists.map { syncPlaylist ->
+            val systemDescriptor = SystemLocalPlaylists.resolve(
+                syncPlaylist.id,
+                syncPlaylist.name,
+                localizedContext
+            )
+            val normalizedId = systemDescriptor?.id ?: syncPlaylist.id
+            val syncedSongs = syncPlaylist.songs.map { it.toSongItem() }
+            val preservedLocalSongs = currentPlaylists[normalizedId]
+                ?.songs
+                .orEmpty()
+                .filter { LocalSongSupport.isLocalSong(it, localizedContext) }
+
+            LocalPlaylist(
+                id = normalizedId,
+                name = systemDescriptor?.currentName ?: syncPlaylist.name,
+                songs = mergeLocalOnlySongs(syncedSongs, preservedLocalSongs),
+                modifiedAt = syncPlaylist.modifiedAt,
+                customCoverUrl = currentPlaylists[normalizedId]?.customCoverUrl
+            )
+        }
+        playlistRepo.updatePlaylists(mergedLocalPlaylists)
+
+        favoriteRepo.replaceFavoritesFromSync(
+            sanitizedMergedData.favoritePlaylists.map { it.toFavoritePlaylist() }
+        )
+        storage.setRecentPlayDeletions(sanitizedMergedData.recentPlayDeletions)
+
+        val localPlayHistoryEmpty = playHistoryRepo.historyFlow.value.isEmpty()
+        val shouldApplyRemoteHistory = remoteHasChanged ||
+            (localPlayHistoryEmpty && sanitizedMergedData.recentPlays.isNotEmpty())
+
+        if (shouldApplyRemoteHistory) {
+            val syncedHistory = sanitizedMergedData.recentPlays.mapNotNull { syncPlay ->
+                if (LocalSongSupport.isLocalSong(syncPlay.song.album, syncPlay.song.mediaUri, syncPlay.song.albumId, localizedContext)) {
+                    return@mapNotNull null
+                }
+
+                PlayedEntry(
+                    id = syncPlay.song.id,
+                    name = syncPlay.song.name,
+                    artist = syncPlay.song.artist,
+                    album = syncPlay.song.album,
+                    albumId = syncPlay.song.albumId,
+                    durationMs = syncPlay.song.durationMs,
+                    coverUrl = syncPlay.song.coverUrl,
+                    mediaUri = LocalSongSupport.sanitizeMediaUriForSync(syncPlay.song.mediaUri),
+                    matchedLyric = syncPlay.song.matchedLyric,
+                    matchedTranslatedLyric = syncPlay.song.matchedTranslatedLyric,
+                    customCoverUrl = syncPlay.song.customCoverUrl,
+                    customName = syncPlay.song.customName,
+                    customArtist = syncPlay.song.customArtist,
+                    originalName = syncPlay.song.originalName,
+                    originalArtist = syncPlay.song.originalArtist,
+                    originalCoverUrl = syncPlay.song.originalCoverUrl,
+                    originalLyric = syncPlay.song.originalLyric,
+                    originalTranslatedLyric = syncPlay.song.originalTranslatedLyric,
+                    playedAt = syncPlay.playedAt
+                )
+            }
+            val localOnlyHistory = playHistoryRepo.historyFlow.value.filter {
+                LocalSongSupport.isLocalSong(it.album, it.mediaUri, it.albumId, localizedContext)
+            }
+            val playHistory = mergeLocalOnlyHistory(syncedHistory, localOnlyHistory)
+            playHistoryRepo.updateHistory(playHistory)
+        }
+    }
+
+    private fun mergeLocalOnlySongs(
+        syncedSongs: List<moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem>,
+        localOnlySongs: List<moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem>
+    ): MutableList<moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem> {
+        val merged = syncedSongs.toMutableList()
+        val knownIdentities = merged.map { it.identity() }.toMutableSet()
+        localOnlySongs.forEach { song ->
+            if (knownIdentities.add(song.identity())) {
+                merged += song
+            }
+        }
+        return merged
+    }
+
+    private fun mergeLocalOnlyHistory(
+        syncedHistory: List<PlayedEntry>,
+        localOnlyHistory: List<PlayedEntry>
+    ): List<PlayedEntry> {
+        return (syncedHistory + localOnlyHistory)
+            .distinctBy { "${it.id}|${it.album}|${it.mediaUri.orEmpty()}|${it.playedAt}" }
+            .sortedByDescending { it.playedAt }
+            .take(500)
+    }
+
+    private fun sanitizeSyncData(data: SyncData): SyncData {
+        return data.copy(
+            playlists = data.playlists.mapNotNull { sanitizeSyncPlaylist(it) },
+            favoritePlaylists = data.favoritePlaylists.map { sanitizeSyncFavoritePlaylist(it) },
+            recentPlays = data.recentPlays.mapNotNull { sanitizeRecentPlay(it) },
+            recentPlayDeletions = data.recentPlayDeletions.mapNotNull { sanitizeRecentPlayDeletion(it) }
+        )
+    }
+
+    private fun sanitizeSyncPlaylist(playlist: SyncPlaylist): SyncPlaylist? {
+        val localizedContext = LanguageManager.applyLanguage(appContext)
+        val systemDescriptor = SystemLocalPlaylists.resolve(playlist.id, playlist.name, localizedContext)
+        if (systemDescriptor?.id == LocalFilesPlaylist.SYSTEM_ID) {
+            return null
+        }
+        return playlist.copy(
+            id = systemDescriptor?.id ?: playlist.id,
+            name = systemDescriptor?.currentName ?: playlist.name,
+            songs = playlist.songs.mapNotNull { sanitizeSyncSong(it) }
+        )
+    }
+
+    private fun sanitizeSyncFavoritePlaylist(playlist: SyncFavoritePlaylist): SyncFavoritePlaylist {
+        return playlist.copy(
+            songs = if (playlist.isDeleted) {
+                emptyList()
+            } else {
+                playlist.songs.mapNotNull { sanitizeSyncSong(it) }
+            },
+            trackCount = if (playlist.isDeleted) 0 else playlist.trackCount
+        )
+    }
+
+    private fun sanitizeRecentPlay(play: SyncRecentPlay): SyncRecentPlay? {
+        val sanitizedSong = sanitizeSyncSong(play.song) ?: return null
+        return play.copy(songId = sanitizedSong.id, song = sanitizedSong)
+    }
+
+    private fun sanitizeRecentPlayDeletion(
+        deletion: SyncRecentPlayDeletion
+    ): SyncRecentPlayDeletion? {
+        if (LocalSongSupport.isLocalSong(deletion.album, deletion.mediaUri, 0L, appContext)) {
+            return null
+        }
+        return deletion.copy(mediaUri = LocalSongSupport.sanitizeMediaUriForSync(deletion.mediaUri))
+    }
+
+    private fun sanitizeSyncSong(song: SyncSong): SyncSong? {
+        val localizedContext = LanguageManager.applyLanguage(appContext)
+        if (LocalSongSupport.isLocalSong(song.album, song.mediaUri, song.albumId, localizedContext)) {
+            return null
+        }
+        return song.copy(mediaUri = LocalSongSupport.sanitizeMediaUriForSync(song.mediaUri))
+    }
+
+    private fun hasDataChanged(remote: SyncData, merged: SyncData): Boolean {
+        if (remote.playlists.size != merged.playlists.size) return true
+        if (remote.playlists.map(SyncPlaylist::id) != merged.playlists.map(SyncPlaylist::id)) return true
+
+        val remotePlaylistMap = remote.playlists.associateBy { it.id }
+        for (mergedPlaylist in merged.playlists) {
+            val remotePlaylist = remotePlaylistMap[mergedPlaylist.id] ?: return true
+            if (remotePlaylist.name != mergedPlaylist.name) return true
+            if (remotePlaylist.songs.size != mergedPlaylist.songs.size) return true
+            if (remotePlaylist.songs.map { it.identity() } != mergedPlaylist.songs.map { it.identity() }) return true
+            for (i in remotePlaylist.songs.indices) {
+                val remoteSong = remotePlaylist.songs[i]
+                val mergedSong = mergedPlaylist.songs[i]
+                if (!sameSongMetadata(remoteSong, mergedSong)) return true
+            }
+        }
+
+        if (remote.favoritePlaylists.size != merged.favoritePlaylists.size) return true
+        val remoteFavoriteMap = remote.favoritePlaylists.associateBy { "${it.id}_${it.source}" }
+        val mergedFavoriteMap = merged.favoritePlaylists.associateBy { "${it.id}_${it.source}" }
+        if (remoteFavoriteMap.keys != mergedFavoriteMap.keys) return true
+        remoteFavoriteMap.forEach { (key, remoteFavorite) ->
+            val mergedFavorite = mergedFavoriteMap[key] ?: return true
+            if (remoteFavorite.isDeleted != mergedFavorite.isDeleted) return true
+            if (remoteFavorite.modifiedAt != mergedFavorite.modifiedAt) return true
+            if (remoteFavorite.sortOrder != mergedFavorite.sortOrder) return true
+            if (remoteFavorite.trackCount != mergedFavorite.trackCount) return true
+            if (remoteFavorite.songs.map { it.identity() } != mergedFavorite.songs.map { it.identity() }) return true
+            for (i in remoteFavorite.songs.indices) {
+                val remoteSong = remoteFavorite.songs[i]
+                val mergedSong = mergedFavorite.songs[i]
+                if (!sameSongMetadata(remoteSong, mergedSong)) return true
+            }
+        }
+
+        val remoteRecent = remote.recentPlays.take(50)
+        val mergedRecent = merged.recentPlays.take(50)
+        if (remoteRecent.size != mergedRecent.size) return true
+        for (i in remoteRecent.indices) {
+            if (remoteRecent[i].song.identity() != mergedRecent[i].song.identity()) return true
+            if (!sameSongMetadata(remoteRecent[i].song, mergedRecent[i].song)) return true
+            if (remoteRecent[i].playedAt != mergedRecent[i].playedAt) return true
+        }
+
+        val remoteRecentDeletions = remote.recentPlayDeletions.take(100)
+        val mergedRecentDeletions = merged.recentPlayDeletions.take(100)
+        if (remoteRecentDeletions.size != mergedRecentDeletions.size) return true
+        for (i in remoteRecentDeletions.indices) {
+            if (remoteRecentDeletions[i].identity() != mergedRecentDeletions[i].identity()) return true
+            if (remoteRecentDeletions[i].deletedAt != mergedRecentDeletions[i].deletedAt) return true
+            if (remoteRecentDeletions[i].deviceId != mergedRecentDeletions[i].deviceId) return true
+        }
+        return false
+    }
+
+    private fun sameSongMetadata(a: SyncSong, b: SyncSong): Boolean {
+        return a.name == b.name &&
+            a.artist == b.artist &&
+            a.album == b.album &&
+            a.albumId == b.albumId &&
+            a.durationMs == b.durationMs &&
+            a.coverUrl == b.coverUrl &&
+            a.mediaUri == b.mediaUri &&
+            a.matchedLyric == b.matchedLyric &&
+            a.matchedTranslatedLyric == b.matchedTranslatedLyric &&
+            a.matchedLyricSource == b.matchedLyricSource &&
+            a.matchedSongId == b.matchedSongId &&
+            a.userLyricOffsetMs == b.userLyricOffsetMs &&
+            a.customCoverUrl == b.customCoverUrl &&
+            a.customName == b.customName &&
+            a.customArtist == b.customArtist &&
+            a.originalName == b.originalName &&
+            a.originalArtist == b.originalArtist &&
+            a.originalCoverUrl == b.originalCoverUrl &&
+            a.originalLyric == b.originalLyric &&
+            a.originalTranslatedLyric == b.originalTranslatedLyric &&
+            a.channelId == b.channelId &&
+            a.audioId == b.audioId &&
+            a.subAudioId == b.subAudioId &&
+            a.playlistContextId == b.playlistContextId
+    }
+
+    private suspend fun uploadLocalData(
+        apiClient: WebDavApiClient,
+        remoteUrl: String,
+        data: SyncData
+    ): Result<String> {
+        val localizedContext = LanguageManager.applyLanguage(appContext)
+        val content = SyncDataSerializer.serialize(data, false)
+        NPLogger.d(
+            TAG,
+            "Upload data size: ${SyncDataSerializer.getDataSize(data, false)} bytes (WebDAV)"
+        )
+
+        val uploadResult = apiClient.updateFileContent(remoteUrl, content)
+        return if (uploadResult.isSuccess) {
+            Result.success(uploadResult.getOrNull().orEmpty())
+        } else {
+            Result.failure(
+                uploadResult.exceptionOrNull()
+                    ?: Exception(localizedContext.getString(R.string.sync_upload_failed))
+            )
+        }
+    }
+
+    private fun getDeviceId(): String {
+        return storage.getOrCreateDeviceId()
+    }
+
+    private fun getDeviceName(): String {
+        return try {
+            "${Build.MANUFACTURER} ${Build.MODEL}"
+        } catch (_: Exception) {
+            "Unknown Device"
+        }
+    }
+
+    private data class MergeResult(
+        val mergedData: SyncData,
+        val syncResult: SyncResult
+    )
+
+    private data class PlaylistMergeResult(
+        val playlist: SyncPlaylist,
+        val hasConflict: Boolean,
+        val conflict: SyncConflict?,
+        val songsAdded: Int,
+        val songsRemoved: Int,
+        val isUpdated: Boolean
+    )
+}

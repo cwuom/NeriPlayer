@@ -146,6 +146,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.component.maskCookieValue
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.settingsItemClickable
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsGitHubDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsPreferenceDialogs
+import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsWebDavDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.collectAsStateWithLifecycleCompat
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.formatSyncTime
 import moe.ouom.neriplayer.ui.viewmodel.BackupRestoreViewModel
@@ -390,6 +391,8 @@ fun SettingsScreen(
     var showDpiDialog by remember { mutableStateOf(false) }
     var showGitHubConfigDialog by remember { mutableStateOf(false) }
     var showClearGitHubConfigDialog by remember { mutableStateOf(false) }
+    var showWebDavConfigDialog by remember { mutableStateOf(false) }
+    var showClearWebDavConfigDialog by remember { mutableStateOf(false) }
     var showListenTogetherResetUuidDialog by remember { mutableStateOf(false) }
     var showListenTogetherServerDialog by remember { mutableStateOf(false) }
     var listenTogetherServerInput by rememberSaveable { mutableStateOf("") }
@@ -1602,7 +1605,9 @@ fun SettingsScreen(
                     silentGitHubSyncFailure = silentGitHubSyncFailure,
                     onSilentGitHubSyncFailureChange = onSilentGitHubSyncFailureChange,
                     onOpenGitHubConfig = { showGitHubConfigDialog = true },
-                    onOpenClearGitHubConfig = { showClearGitHubConfigDialog = true }
+                    onOpenClearGitHubConfig = { showClearGitHubConfigDialog = true },
+                    onOpenWebDavConfig = { showWebDavConfigDialog = true },
+                    onOpenClearWebDavConfig = { showClearWebDavConfigDialog = true }
                 )
             }
 
@@ -1914,6 +1919,13 @@ fun SettingsScreen(
         onShowGitHubConfigDialogChange = { showGitHubConfigDialog = it },
         showClearGitHubConfigDialog = showClearGitHubConfigDialog,
         onShowClearGitHubConfigDialogChange = { showClearGitHubConfigDialog = it }
+    )
+
+    SettingsWebDavDialogs(
+        showWebDavConfigDialog = showWebDavConfigDialog,
+        onShowWebDavConfigDialogChange = { showWebDavConfigDialog = it },
+        showClearWebDavConfigDialog = showClearWebDavConfigDialog,
+        onShowClearWebDavConfigDialogChange = { showClearWebDavConfigDialog = it }
     )
 
     pendingDownloadDirectoryChange?.let { pendingChange ->

@@ -113,6 +113,8 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.settings.readThemePreferenceSnapshotSync
+import moe.ouom.neriplayer.data.sync.webdav.WebDavStorage
+import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.listentogether.DEFAULT_LISTEN_TOGETHER_BASE_URL
 import moe.ouom.neriplayer.listentogether.ListenTogetherInvite
 import moe.ouom.neriplayer.listentogether.normalizeListenTogetherRoomId
@@ -205,6 +207,13 @@ class MainActivity : ComponentActivity() {
                     val storage = moe.ouom.neriplayer.data.sync.github.SecureTokenStorage(this@MainActivity)
                     if (storage.isConfigured()) {
                         moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker.scheduleDelayedSync(
+                            this@MainActivity,
+                            markMutation = false
+                        )
+                    }
+                    val webDavStorage = WebDavStorage(this@MainActivity)
+                    if (webDavStorage.isConfigured()) {
+                        WebDavSyncWorker.scheduleDelayedSync(
                             this@MainActivity,
                             markMutation = false
                         )

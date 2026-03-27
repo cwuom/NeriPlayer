@@ -777,6 +777,33 @@
     <string name="github_token_expired_message">GitHub Token expired or invalid, please reconfigure</string>
     <string name="github_backup_file_invalid">Remote backup file is invalid or corrupted</string>
     <string name="github_sync_failed">Sync failed: %s</string>
+    <string name="webdav_sync_title">WebDAV Sync</string>
+    <string name="webdav_sync_desc">Configure your WebDAV server, username, password, and initial path</string>
+    <string name="webdav_auto_sync_desc">Auto sync changes to WebDAV</string>
+    <string name="webdav_server_url_label">Server URL</string>
+    <string name="webdav_server_url_placeholder">https://example.com/dav</string>
+    <string name="webdav_username_label">Username</string>
+    <string name="webdav_username_placeholder">your-username</string>
+    <string name="webdav_password_label">Password</string>
+    <string name="webdav_base_path_label">Initial Path</string>
+    <string name="webdav_base_path_placeholder">backup/neriplayer</string>
+    <string name="webdav_remote_file_hint">The file will be saved as a file named neriplayer-sync.json and appended automatically.</string>
+    <string name="webdav_validate_and_save">Validate &amp; Save</string>
+    <string name="webdav_validate_success">WebDAV configured successfully</string>
+    <string name="webdav_validate_failed">WebDAV configuration failed: %s</string>
+    <string name="webdav_required_fields">Please enter the server URL, username, and password</string>
+    <string name="webdav_auth_failed">WebDAV username or password is invalid</string>
+    <string name="webdav_sync_failed">WebDAV sync failed: %s</string>
+    <string name="webdav_sync_failed_message">WebDAV sync failed</string>
+    <string name="webdav_not_configured">WebDAV is not configured</string>
+    <string name="webdav_backup_file_invalid">Remote WebDAV backup file is invalid or corrupted</string>
+    <string name="webdav_sync_in_progress">WebDAV sync in progress, skipped</string>
+    <string name="webdav_sync_no_change">WebDAV sync successful (no changes)</string>
+    <string name="webdav_sync_success_detail">WebDAV sync successful</string>
+    <string name="webdav_clear_config_desc">Clear all WebDAV sync settings. Local data will not be deleted.</string>
+    <string name="webdav_sync_channel_name">WebDAV Sync</string>
+    <string name="webdav_sync_channel_desc">WebDAV sync status notifications</string>
+    <string name="webdav_sync_failed_title">WebDAV Sync Failed</string>
 
     <!-- Lyrics / Player Screen -->
     <string name="lyrics_unknown_song">Unknown Song</string>

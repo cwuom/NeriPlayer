@@ -49,6 +49,7 @@ import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.Backup
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.CloudSync
 import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.Download
@@ -87,6 +88,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
 import moe.ouom.neriplayer.ui.viewmodel.BackupRestoreUiState
 import moe.ouom.neriplayer.ui.viewmodel.GitHubSyncViewModel
+import moe.ouom.neriplayer.ui.viewmodel.WebDavSyncViewModel
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.formatSyncTime
 import moe.ouom.neriplayer.util.HapticTextButton
 
@@ -104,7 +106,9 @@ internal fun SettingsBackupRestoreSection(
     silentGitHubSyncFailure: Boolean,
     onSilentGitHubSyncFailureChange: (Boolean) -> Unit,
     onOpenGitHubConfig: () -> Unit,
-    onOpenClearGitHubConfig: () -> Unit
+    onOpenClearGitHubConfig: () -> Unit,
+    onOpenWebDavConfig: () -> Unit,
+    onOpenClearWebDavConfig: () -> Unit
 ) {
     ExpandableHeader(
         icon = Icons.Outlined.Backup,
@@ -123,7 +127,9 @@ internal fun SettingsBackupRestoreSection(
     ) {
         val context = androidx.compose.ui.platform.LocalContext.current
         val githubVm: GitHubSyncViewModel = viewModel()
+        val webDavVm: WebDavSyncViewModel = viewModel()
         val githubState by githubVm.uiState.collectAsState()
+        val webDavState by webDavVm.uiState.collectAsState()
         var showPlayHistoryModeDialog by remember { mutableStateOf(false) }
         val storage = remember(context) { SecureTokenStorage(context) }
         val currentMode = remember { mutableStateOf(storage.getPlayHistoryUpdateMode()) }
@@ -132,6 +138,9 @@ internal fun SettingsBackupRestoreSection(
 
         LaunchedEffect(githubVm, context) {
             githubVm.initialize(context)
+        }
+        LaunchedEffect(webDavVm, context) {
+            webDavVm.initialize(context)
         }
 
         Column(
@@ -357,33 +366,6 @@ internal fun SettingsBackupRestoreSection(
                 ListItem(
                     leadingContent = {
                         Icon(
-                            Icons.Outlined.Timer,
-                            contentDescription = stringResource(R.string.settings_play_history_update_freq),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
-                    headlineContent = { Text(stringResource(R.string.sync_history_frequency)) },
-                    supportingContent = {
-                        Text(
-                            when (currentMode.value) {
-                                SecureTokenStorage.PlayHistoryUpdateMode.IMMEDIATE -> {
-                                    stringResource(R.string.settings_update_immediate)
-                                }
-                                SecureTokenStorage.PlayHistoryUpdateMode.BATCHED -> {
-                                    stringResource(R.string.settings_sync_batch_update_time)
-                                }
-                            }
-                        )
-                    },
-                    modifier = Modifier.settingsItemClickable {
-                        showPlayHistoryModeDialog = true
-                    },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                )
-
-                ListItem(
-                    leadingContent = {
-                        Icon(
                             Icons.Outlined.Download,
                             contentDescription = stringResource(R.string.settings_data_saver),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -436,8 +418,144 @@ internal fun SettingsBackupRestoreSection(
                 }
             }
 
+            if (githubState.isConfigured || webDavState.isConfigured) {
+                ListItem(
+                    leadingContent = {
+                        Icon(
+                            Icons.Outlined.Timer,
+                            contentDescription = stringResource(R.string.settings_play_history_update_freq),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    headlineContent = { Text(stringResource(R.string.sync_history_frequency)) },
+                    supportingContent = {
+                        Text(
+                            when (currentMode.value) {
+                                SecureTokenStorage.PlayHistoryUpdateMode.IMMEDIATE -> {
+                                    stringResource(R.string.settings_update_immediate)
+                                }
+                                SecureTokenStorage.PlayHistoryUpdateMode.BATCHED -> {
+                                    stringResource(R.string.settings_sync_batch_update_time)
+                                }
+                            }
+                        )
+                    },
+                    modifier = Modifier.settingsItemClickable {
+                        showPlayHistoryModeDialog = true
+                    },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                )
+            }
+
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 8.dp),
+                color = MaterialTheme.colorScheme.outlineVariant
+            )
+
+            ListItem(
+                leadingContent = {
+                    Icon(
+                        Icons.Outlined.Cloud,
+                        contentDescription = stringResource(R.string.webdav_sync_title),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                },
+                headlineContent = { Text(stringResource(R.string.webdav_sync_title)) },
+                supportingContent = {
+                    Text(
+                        if (webDavState.isConfigured) {
+                            stringResource(R.string.settings_configured)
+                        } else {
+                            stringResource(R.string.settings_not_configured)
+                        }
+                    )
+                },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+            )
+
+            if (!webDavState.isConfigured) {
+                ListItem(
+                    leadingContent = {
+                        Icon(
+                            Icons.Outlined.Settings,
+                            contentDescription = stringResource(R.string.settings_configure),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    headlineContent = { Text(stringResource(R.string.sync_config)) },
+                    supportingContent = { Text(stringResource(R.string.webdav_sync_desc)) },
+                    modifier = Modifier.settingsItemClickable(onClick = onOpenWebDavConfig),
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                )
+            } else {
+                ListItem(
+                    leadingContent = {
+                        Icon(
+                            Icons.Outlined.Sync,
+                            contentDescription = stringResource(R.string.settings_auto_sync),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    headlineContent = { Text(stringResource(R.string.sync_auto)) },
+                    supportingContent = { Text(stringResource(R.string.webdav_auto_sync_desc)) },
+                    trailingContent = {
+                        Switch(
+                            checked = webDavState.autoSyncEnabled,
+                            onCheckedChange = { webDavVm.toggleAutoSync(context, it) }
+                        )
+                    },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                )
+
+                ListItem(
+                    leadingContent = {
+                        Icon(
+                            Icons.Outlined.CloudUpload,
+                            contentDescription = stringResource(R.string.settings_sync_now),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    headlineContent = { Text(stringResource(R.string.sync_now)) },
+                    supportingContent = {
+                        if (webDavState.lastSyncTime > 0) {
+                            Text(
+                                stringResource(
+                                    R.string.sync_last_time,
+                                    formatSyncTime(webDavState.lastSyncTime)
+                                )
+                            )
+                        } else {
+                            Text(stringResource(R.string.sync_not_synced))
+                        }
+                    },
+                    trailingContent = {
+                        if (webDavState.isSyncing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            HapticTextButton(onClick = { webDavVm.performSync(context) }) {
+                                Text(stringResource(R.string.sync_title))
+                            }
+                        }
+                    },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                )
+
+                HapticTextButton(
+                    onClick = onOpenClearWebDavConfig,
+                    modifier = Modifier.padding(start = 16.dp)
+                ) {
+                    Text(
+                        stringResource(R.string.settings_clear_config),
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+
             githubState.errorMessage?.let { error ->
-                GitHubMessageCard(
+                SyncMessageCard(
                     message = error,
                     isSuccess = false,
                     onClose = githubVm::clearMessages
@@ -445,10 +563,26 @@ internal fun SettingsBackupRestoreSection(
             }
 
             githubState.successMessage?.let { message ->
-                GitHubMessageCard(
+                SyncMessageCard(
                     message = message,
                     isSuccess = true,
                     onClose = githubVm::clearMessages
+                )
+            }
+
+            webDavState.errorMessage?.let { error ->
+                SyncMessageCard(
+                    message = error,
+                    isSuccess = false,
+                    onClose = webDavVm::clearMessages
+                )
+            }
+
+            webDavState.successMessage?.let { message ->
+                SyncMessageCard(
+                    message = message,
+                    isSuccess = true,
+                    onClose = webDavVm::clearMessages
                 )
             }
         }
@@ -543,7 +677,7 @@ private fun ResultStatusCard(
 }
 
 @Composable
-private fun GitHubMessageCard(
+private fun SyncMessageCard(
     message: String,
     isSuccess: Boolean,
     onClose: () -> Unit
