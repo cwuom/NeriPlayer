@@ -610,14 +610,18 @@ fun NeriApp(
         val cacheSize = repo.maxCacheSizeBytesFlow.first()
         PlayerManager.initialize(context.applicationContext as Application, cacheSize)
         NPLogger.d("NERI-App", "PlayerManager.initialize called")
-        NPLogger.d("PlayerManager.hasItems()", PlayerManager.hasItems().toString())
-        if (PlayerManager.hasItems()) {
+        NPLogger.d(
+            "NERI-App",
+            "Player bootstrap state hasItems=${PlayerManager.hasItems()} transportActive=${PlayerManager.isTransportActive()} isPlaying=${PlayerManager.isPlayingFlow.value}"
+        )
+        if (PlayerManager.hasItems() && PlayerManager.isTransportActive()) {
+            NPLogger.d("NERI-App", "Starting audio service from app bootstrap")
             ContextCompat.startForegroundService(
                 context,
-                Intent(context, AudioPlayerService::class.java).apply {
-                    action = AudioPlayerService.ACTION_SYNC
-                }
+                AudioPlayerService.createSyncIntent(context, "app_bootstrap")
             )
+        } else {
+            NPLogger.d("NERI-App", "Skip audio service bootstrap because transport is inactive")
         }
     }
 
@@ -717,20 +721,21 @@ fun NeriApp(
         showNowPlaying = true
         // 播放队列可能包含歌词等大字段，避免通过 Binder 传整份歌单导致崩溃
         PlayerManager.playPlaylist(songs, index)
+        NPLogger.d("NERI-App", "Starting audio service after playSongsAndOpenNowPlaying")
         ContextCompat.startForegroundService(
             context,
-            Intent(context, AudioPlayerService::class.java).apply {
-                action = AudioPlayerService.ACTION_SYNC
-            }
+            AudioPlayerService.createSyncIntent(context, "play_songs_and_open_now_playing")
         )
     }
 
     fun ensureAudioServiceStarted() {
+        NPLogger.d(
+            "NERI-App",
+            "ensureAudioServiceStarted hasItems=${PlayerManager.hasItems()} transportActive=${PlayerManager.isTransportActive()} isPlaying=${PlayerManager.isPlayingFlow.value}"
+        )
         ContextCompat.startForegroundService(
             context,
-            Intent(context, AudioPlayerService::class.java).apply {
-                action = AudioPlayerService.ACTION_SYNC
-            }
+            AudioPlayerService.createSyncIntent(context, "ensure_audio_service_started")
         )
     }
 
