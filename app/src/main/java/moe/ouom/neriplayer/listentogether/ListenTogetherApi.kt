@@ -9,6 +9,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.util.Locale
 
 data class ListenTogetherServerTestResult(
     val ok: Boolean,
@@ -76,7 +77,11 @@ class ListenTogetherApi(
     }
 
     suspend fun testServerAvailability(baseUrl: String): ListenTogetherServerTestResult = withContext(Dispatchers.IO) {
-        val normalizedBaseUrl = baseUrl.normalizeBaseUrl()
+        val normalizedBaseUrl = baseUrl.normalizedHttpBaseUrlOrNull()
+            ?: return@withContext ListenTogetherServerTestResult(
+                ok = false,
+                message = "invalid_base_url"
+            )
         val request = Request.Builder()
             .url("$normalizedBaseUrl/api/rooms/ABCDEF/state")
             .get()
@@ -146,4 +151,17 @@ class ListenTogetherApi(
     }
 }
 
-internal fun String.normalizeBaseUrl(): String = trim().trimEnd('/')
+internal fun String.normalizeBaseUrl(): String {
+    return normalizedHttpBaseUrlOrNull()
+        ?: throw IllegalArgumentException("ListenTogether baseUrl must use http or https")
+}
+
+internal fun String.normalizedHttpBaseUrlOrNull(): String? {
+    val candidate = trim().trimEnd('/').takeIf { it.isNotBlank() } ?: return null
+    val scheme = runCatching { android.net.Uri.parse(candidate).scheme }
+        .getOrNull()
+        ?.lowercase(Locale.ROOT)
+        ?: return null
+    if (scheme != "http" && scheme != "https") return null
+    return candidate
+}

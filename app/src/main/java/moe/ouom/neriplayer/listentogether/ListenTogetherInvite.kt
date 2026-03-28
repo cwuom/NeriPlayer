@@ -59,12 +59,12 @@ fun buildListenTogetherInviteUri(
 }
 
 fun resolveListenTogetherBaseUrl(value: String?): String {
-    val normalized = value?.trim()?.takeIf { it.isNotBlank() }?.normalizeBaseUrl()
+    val normalized = value?.trim()?.takeIf { it.isNotBlank() }?.normalizedHttpBaseUrlOrNull()
     return normalized ?: DEFAULT_LISTEN_TOGETHER_BASE_URL.normalizeBaseUrl()
 }
 
 fun isDefaultListenTogetherBaseUrl(value: String?): Boolean {
-    val normalized = value?.trim()?.takeIf { it.isNotBlank() }?.normalizeBaseUrl()
+    val normalized = value?.trim()?.takeIf { it.isNotBlank() }?.normalizedHttpBaseUrlOrNull()
     return normalized == DEFAULT_LISTEN_TOGETHER_BASE_URL.normalizeBaseUrl()
 }
 

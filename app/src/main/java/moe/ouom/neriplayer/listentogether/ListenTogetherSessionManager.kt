@@ -430,28 +430,16 @@ class ListenTogetherSessionManager(
 
         val targetIndex = state.currentIndex.coerceIn(0, queue.lastIndex)
         val targetSong = queue[targetIndex]
-        val currentQueue = PlayerManager.currentQueueFlow.value
         val currentSong = PlayerManager.currentSongFlow.value
-        val queueChanged = !currentQueue.sameQueueAs(queue)
-        val localIndex = currentQueue.indexOfFirst { it.sameTrackAs(targetSong) }
-        val targetIndexChanged = localIndex != targetIndex
         val needsAuthoritativeStreamReload = shouldReloadForAuthoritativeStreamUrl(
             targetSong = targetSong,
             currentSong = currentSong
         )
+        val playbackContextChanged = true
+        val targetIndexChanged = true
 
-        val playbackContextChanged =
-            queueChanged || currentSong?.sameTrackAs(targetSong) != true || needsAuthoritativeStreamReload
-
-        if (playbackContextChanged) {
-            PlayerManager.resetListenTogetherSyncPlaybackRate()
-            PlayerManager.playPlaylist(queue, targetIndex, commandSource = PlaybackCommandSource.REMOTE_SYNC)
-        } else {
-            if (localIndex != targetIndex) {
-                PlayerManager.resetListenTogetherSyncPlaybackRate()
-                PlayerManager.playFromQueue(targetIndex, commandSource = PlaybackCommandSource.REMOTE_SYNC)
-            }
-        }
+        PlayerManager.resetListenTogetherSyncPlaybackRate()
+        PlayerManager.playPlaylist(queue, targetIndex, commandSource = PlaybackCommandSource.REMOTE_SYNC)
 
         val resolvedExpectedPositionMs = expectedPositionMs ?: state.playback.expectedPositionMs()
         val localPositionMs = PlayerManager.playbackPositionFlow.value.coerceAtLeast(0L)
@@ -483,7 +471,7 @@ class ListenTogetherSessionManager(
                     applySoftDriftCorrection(
                         driftMs = driftMs,
                         signedDriftMs = signedDriftMs,
-                        allowSoftSync = !queueChanged && !targetIndexChanged
+                        allowSoftSync = false
                     )
                 }
                 if (!localPlaying) {
@@ -1667,11 +1655,6 @@ private fun SongItem.sameTrackAs(other: SongItem): Boolean {
         resolvedAudioId() == other.resolvedAudioId() &&
         resolvedSubAudioId() == other.resolvedSubAudioId() &&
         resolvedPlaylistContextId() == other.resolvedPlaylistContextId()
-}
-
-private fun List<SongItem>.sameQueueAs(other: List<SongItem>): Boolean {
-    if (size != other.size) return false
-    return indices.all { index -> this[index].sameTrackAs(other[index]) }
 }
 
 private fun List<SongItem>.toShareableQueueSnapshot(
