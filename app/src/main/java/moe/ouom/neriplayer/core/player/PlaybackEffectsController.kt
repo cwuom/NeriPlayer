@@ -14,11 +14,16 @@ import moe.ouom.neriplayer.core.player.model.normalizePlaybackLoudnessGainMb
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackPitch
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
 import moe.ouom.neriplayer.core.player.model.resolvePlaybackEqualizerBandLevelsMb
+import moe.ouom.neriplayer.util.NPLogger
 
 /**
  * 统一管理倍速、音调和均衡器，避免这些逻辑散在 PlayerManager 里
  */
 class PlaybackEffectsController {
+    companion object {
+        private const val TAG = "PlaybackEffects"
+    }
+
     private var player: ExoPlayer? = null
     private var equalizer: Equalizer? = null
     private var equalizerSessionId: Int? = null
@@ -124,12 +129,27 @@ class PlaybackEffectsController {
         lastKnownBandLevelRangeMb = bandRange
         lastEqualizerAvailable = true
 
+        NPLogger.d(
+            TAG,
+            "applyEqualizer(): sessionId=$sessionId, enabled=${config.equalizerEnabled}, preset=${config.presetId}, bands=${centersHz.size}, range=${bandRange.first}..${bandRange.last}"
+        )
+
         if (!config.equalizerEnabled) {
-            runCatching {
-                if (eq.enabled) {
-                    eq.enabled = false
+            centersHz.forEachIndexed { index, _ ->
+                runCatching {
+                    eq.setBandLevel(index.toShort(), 0)
+                }.onFailure {
+                    NPLogger.w(TAG, "applyEqualizer(): failed to reset band[$index] to 0 while disabling: ${it.message}")
                 }
             }
+            runCatching {
+                if (!eq.enabled) {
+                    eq.enabled = true
+                }
+            }.onFailure {
+                NPLogger.w(TAG, "applyEqualizer(): failed to keep equalizer active in flat mode: ${it.message}")
+            }
+            NPLogger.d(TAG, "applyEqualizer(): flattened equalizer for sessionId=$sessionId instead of disabling effect")
             return
         }
 
@@ -139,18 +159,54 @@ class PlaybackEffectsController {
             bandCentersHz = centersHz,
             bandLevelRangeMb = bandRange
         )
+        val equalizerHeadroomMb = resolvedLevels.maxOrNull()?.coerceAtLeast(0) ?: 0
+        val appliedLevels = if (equalizerHeadroomMb > 0) {
+            resolvedLevels.map { it - equalizerHeadroomMb }
+        } else {
+            resolvedLevels
+        }
 
-        centersHz.forEachIndexed { index, _ ->
+        val shouldRestoreLoudnessEnhancer =
+            runCatching { loudnessEnhancer?.enabled == true }.getOrDefault(false)
+
+        if (shouldRestoreLoudnessEnhancer) {
             runCatching {
-                eq.setBandLevel(index.toShort(), resolvedLevels[index].toShort())
+                loudnessEnhancer?.enabled = false
+            }.onFailure {
+                NPLogger.w(TAG, "applyEqualizer(): failed to pause loudness enhancer: ${it.message}")
             }
         }
 
         runCatching {
-            if (!eq.enabled) {
-                eq.enabled = true
+            if (eq.enabled) {
+                eq.enabled = false
+            }
+        }.onFailure {
+            NPLogger.w(TAG, "applyEqualizer(): failed to disable equalizer before reconfigure: ${it.message}")
+        }
+
+        centersHz.forEachIndexed { index, _ ->
+            runCatching {
+                eq.setBandLevel(index.toShort(), appliedLevels[index].toShort())
+            }.onFailure {
+                NPLogger.w(TAG, "applyEqualizer(): failed to set band[$index]=${appliedLevels.getOrNull(index)}: ${it.message}")
             }
         }
+
+        runCatching {
+            eq.enabled = true
+        }.onFailure {
+            NPLogger.e(TAG, "applyEqualizer(): failed to enable equalizer", it)
+        }
+
+        if (shouldRestoreLoudnessEnhancer) {
+            applyLoudnessEnhancer()
+        }
+
+        NPLogger.d(
+            TAG,
+            "applyEqualizer(): applied preset=${config.presetId}, rawMin=${resolvedLevels.minOrNull()}, rawMax=${resolvedLevels.maxOrNull()}, headroomMb=$equalizerHeadroomMb, appliedMin=${appliedLevels.minOrNull()}, appliedMax=${appliedLevels.maxOrNull()}, loudnessGainMb=${config.loudnessGainMb}"
+        )
     }
 
     private fun applyLoudnessEnhancer() {
@@ -168,8 +224,13 @@ class PlaybackEffectsController {
             enhancer.setTargetGain(config.loudnessGainMb)
             enhancer.enabled = config.loudnessGainMb > 0
             lastLoudnessEnhancerAvailable = true
+            NPLogger.d(
+                TAG,
+                "applyLoudnessEnhancer(): sessionId=$sessionId, gainMb=${config.loudnessGainMb}, enabled=${config.loudnessGainMb > 0}"
+            )
         }.onFailure {
             lastLoudnessEnhancerAvailable = false
+            NPLogger.e(TAG, "applyLoudnessEnhancer(): failed", it)
         }
     }
 
@@ -184,6 +245,7 @@ class PlaybackEffectsController {
             Equalizer(0, sessionId).apply { enabled = false }
         }.getOrNull() ?: return null
 
+        NPLogger.d(TAG, "ensureEqualizer(): created equalizer for sessionId=$sessionId")
         equalizer = created
         equalizerSessionId = sessionId
         lastKnownBandLevelRangeMb = runCatching { created.bandLevelRange }
@@ -208,6 +270,7 @@ class PlaybackEffectsController {
         val created = runCatching {
             LoudnessEnhancer(sessionId).apply { enabled = false }
         }.getOrNull() ?: return null
+        NPLogger.d(TAG, "ensureLoudnessEnhancer(): created enhancer for sessionId=$sessionId")
         loudnessEnhancer = created
         loudnessEnhancerSessionId = sessionId
         return created
