@@ -132,6 +132,7 @@ internal fun SettingsStorageCacheSection(
         title = "晴天",
         artist = "周杰伦",
         album = "叶惠美",
+        source = "网易云",
         template = effectiveTemplate
     )
     val canApplyDownloadFileNameTemplate = effectiveTemplate != currentSavedTemplate
@@ -209,17 +210,6 @@ internal fun SettingsStorageCacheSection(
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
             }
-
-            val effectiveTemplate = normalizeDownloadFileNameTemplate(
-                pendingDownloadFileNameTemplate
-            ) ?: DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
-            val currentSavedTemplate = downloadFileNameTemplate ?: DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
-            val samplePreview = renderManagedDownloadBaseName(
-                title = "晴天",
-                artist = "周杰伦",
-                album = "叶惠美",
-                template = effectiveTemplate
-            )
 
             ListItem(
                 leadingContent = {
@@ -500,21 +490,7 @@ internal fun SettingsStorageCacheSection(
                     Text(
                         text = stringResource(
                             R.string.settings_download_file_name_format_preview,
-                            normalizeDownloadFileNameTemplate(pendingDownloadFileNameTemplate)?.let { template ->
-                                renderManagedDownloadBaseName(
-                                    title = "晴天",
-                                    artist = "周杰伦",
-                                    album = "叶惠美",
-                                    template = template
-                                )
-                            } ?: DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE.let { template ->
-                                renderManagedDownloadBaseName(
-                                    title = "晴天",
-                                    artist = "周杰伦",
-                                    album = "叶惠美",
-                                    template = template
-                                )
-                            }
+                            samplePreview
                         ),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
