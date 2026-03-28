@@ -1382,15 +1382,37 @@ private fun FavoritePlaylistList(
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     val scope = rememberCoroutineScope()
     var sortMode by rememberSaveable { mutableStateOf(false) }
+    var selectedKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var showDeleteSelectedConfirm by rememberSaveable { mutableStateOf(false) }
     val reorderableFavorites = remember { mutableStateListOf<moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylist>() }
 
-    BackHandler(enabled = sortMode) { sortMode = false }
+    fun favoriteKey(favorite: moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylist): String {
+        return "${favorite.source}:${favorite.id}"
+    }
+
+    fun exitEditMode() {
+        sortMode = false
+        selectedKeys = emptySet()
+        showDeleteSelectedConfirm = false
+    }
+
+    fun toggleSelection(key: String) {
+        selectedKeys = if (selectedKeys.contains(key)) {
+            selectedKeys - key
+        } else {
+            selectedKeys + key
+        }
+    }
+
+    BackHandler(enabled = sortMode) { exitEditMode() }
 
     LaunchedEffect(favorites) {
         reorderableFavorites.clear()
         reorderableFavorites.addAll(favorites)
+        val validKeys = favorites.map(::favoriteKey).toSet()
+        selectedKeys = selectedKeys.intersect(validKeys)
         if (sortMode && favorites.isEmpty()) {
-            sortMode = false
+            exitEditMode()
         }
     }
 
@@ -1400,8 +1422,8 @@ private fun FavoritePlaylistList(
             if (!sortMode) return@rememberReorderableLazyListState
             val fromKey = from.key as? String ?: return@rememberReorderableLazyListState
             val toKey = to.key as? String ?: return@rememberReorderableLazyListState
-            val fromIndex = reorderableFavorites.indexOfFirst { "${it.source}:${it.id}" == fromKey }
-            val toIndex = reorderableFavorites.indexOfFirst { "${it.source}:${it.id}" == toKey }
+            val fromIndex = reorderableFavorites.indexOfFirst { favoriteKey(it) == fromKey }
+            val toIndex = reorderableFavorites.indexOfFirst { favoriteKey(it) == toKey }
             if (fromIndex != -1 && toIndex != -1 && fromIndex != toIndex) {
                 reorderableFavorites.add(toIndex, reorderableFavorites.removeAt(fromIndex))
             }
@@ -1429,6 +1451,8 @@ private fun FavoritePlaylistList(
         val cardShape = RoundedCornerShape(12.dp)
         if (sortMode) {
             item(key = "favorite_sort_mode_header") {
+                val allSelected =
+                    selectedKeys.size == reorderableFavorites.size && reorderableFavorites.isNotEmpty()
                 Card(
                     shape = cardShape,
                     colors = CardDefaults.cardColors(
@@ -1440,20 +1464,52 @@ private fun FavoritePlaylistList(
                         .clip(cardShape)
                 ) {
                     ListItem(
-                        headlineContent = { Text(stringResource(R.string.library_favorite_sort_mode_title)) },
-                        supportingContent = {
+                        headlineContent = {
                             Text(
-                                stringResource(R.string.library_favorite_sort_mode_desc),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                pluralStringResource(
+                                    R.plurals.common_selected_count,
+                                    selectedKeys.size,
+                                    selectedKeys.size
+                                )
                             )
                         },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                         leadingContent = {
-                            HapticIconButton(onClick = { sortMode = false }) {
+                            HapticIconButton(onClick = { exitEditMode() }) {
                                 Icon(
                                     imageVector = Icons.Filled.Close,
-                                    contentDescription = stringResource(R.string.action_cancel)
+                                    contentDescription = stringResource(R.string.action_exit_multi_select)
                                 )
+                            }
+                        },
+                        trailingContent = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                HapticTextButton(
+                                    onClick = {
+                                        selectedKeys = if (allSelected) {
+                                            emptySet()
+                                        } else {
+                                            reorderableFavorites.map(::favoriteKey).toSet()
+                                        }
+                                    }
+                                ) {
+                                    Text(
+                                        if (allSelected) {
+                                            stringResource(R.string.action_deselect_all)
+                                        } else {
+                                            stringResource(R.string.action_select_all)
+                                        }
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.width(8.dp))
+
+                                HapticTextButton(
+                                    enabled = selectedKeys.isNotEmpty(),
+                                    onClick = { showDeleteSelectedConfirm = true }
+                                ) {
+                                    Text(stringResource(R.string.common_delete_selected))
+                                }
                             }
                         }
                     )
@@ -1497,13 +1553,17 @@ private fun FavoritePlaylistList(
         } else {
             items(
                 items = reorderableFavorites,
-                key = { "${it.source}:${it.id}" }
+                key = { favoriteKey(it) }
             ) { favorite ->
-                ReorderableItem(state = reorderState, key = "${favorite.source}:${favorite.id}") {
+                val itemKey = favoriteKey(favorite)
+                val isSelected = sortMode && selectedKeys.contains(itemKey)
+                ReorderableItem(state = reorderState, key = itemKey) {
                     Card(
                         shape = cardShape,
                         colors = CardDefaults.cardColors(
-                            containerColor = if (sortMode) {
+                            containerColor = if (isSelected) {
+                                MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.28f)
+                            } else if (sortMode) {
                                 MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.12f)
                             } else {
                                 Color.Transparent
@@ -1516,7 +1576,10 @@ private fun FavoritePlaylistList(
                             .clip(cardShape)
                             .combinedClickable(
                                 onClick = {
-                                    if (sortMode) return@combinedClickable
+                                    if (sortMode) {
+                                        toggleSelection(itemKey)
+                                        return@combinedClickable
+                                    }
                                     when (favorite.source) {
                                         "netease" -> {
                                             onNeteasePlaylistClick(
@@ -1569,9 +1632,8 @@ private fun FavoritePlaylistList(
                                     }
                                 },
                                 onLongClick = {
-                                    if (!sortMode) {
-                                        sortMode = true
-                                    }
+                                    if (!sortMode) sortMode = true
+                                    toggleSelection(itemKey)
                                 }
                             )
                     ) {
@@ -1582,7 +1644,7 @@ private fun FavoritePlaylistList(
                                     stringResource(
                                         R.string.library_favorite_source_format,
                                         favorite.trackCount,
-                                        favorite.source
+                                        favoriteSourceLabel(favorite.source)
                                     ),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -1611,16 +1673,22 @@ private fun FavoritePlaylistList(
                             },
                             trailingContent = {
                                 if (sortMode) {
-                                    Box(
-                                        modifier = Modifier
-                                            .detectReorder(reorderState)
-                                            .padding(8.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Filled.DragHandle,
-                                            contentDescription = stringResource(R.string.common_drag_handle),
-                                            modifier = Modifier.size(24.dp)
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Checkbox(
+                                            checked = isSelected,
+                                            onCheckedChange = { toggleSelection(itemKey) }
                                         )
+                                        Box(
+                                            modifier = Modifier
+                                                .detectReorder(reorderState)
+                                                .padding(8.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.DragHandle,
+                                                contentDescription = stringResource(R.string.common_drag_handle),
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -1629,6 +1697,47 @@ private fun FavoritePlaylistList(
                 }
             }
         }
+    }
+
+    if (showDeleteSelectedConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteSelectedConfirm = false },
+            title = { Text(stringResource(R.string.dialog_confirm_delete)) },
+            text = {
+                Text(
+                    pluralStringResource(
+                        R.plurals.library_delete_selected_confirm,
+                        selectedKeys.size,
+                        selectedKeys.size
+                    )
+                )
+            },
+            confirmButton = {
+                HapticTextButton(
+                    onClick = {
+                        val targets = reorderableFavorites.filter { favoriteKey(it) in selectedKeys }
+                        scope.launch {
+                            targets.forEach { favoriteRepo.removeFavorite(it.id, it.source) }
+                            exitEditMode()
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.action_delete))
+                }
+            },
+            dismissButton = {
+                HapticTextButton(onClick = { showDeleteSelectedConfirm = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
+}
+
+private fun favoriteSourceLabel(source: String): String {
+    return when (source) {
+        "youtubeMusic" -> "YouTube"
+        else -> source
     }
 }
 
