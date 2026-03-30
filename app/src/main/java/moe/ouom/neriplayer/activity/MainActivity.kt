@@ -776,12 +776,10 @@ class MainActivity : ComponentActivity() {
                     PlayerManager.initialize(application)
                     PlayerManager.playPlaylist(result.songs, startIndex = 0)
                     NPLogger.d("MainActivity", "Starting audio service after external audio import")
-                    ContextCompat.startForegroundService(
+                    AudioPlayerService.startSyncService(
                         this@MainActivity,
-                        AudioPlayerService.createSyncIntent(
-                            this@MainActivity,
-                            "external_audio_import"
-                        )
+                        "external_audio_import",
+                        forceForeground = true
                     )
                 }
             } catch (_: CancellationException) {

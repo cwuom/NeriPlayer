@@ -214,6 +214,24 @@ internal fun shouldForceStartupProtectionFadeOnManualResume(
         currentMediaUrlResolvedAtMs <= 0L
 }
 
+internal fun shouldRunPlaybackServiceInForeground(
+    hasCurrentSong: Boolean,
+    resumePlaybackRequested: Boolean,
+    playJobActive: Boolean,
+    pendingPauseJobActive: Boolean,
+    playWhenReady: Boolean,
+    isPlaying: Boolean,
+    playerPlaybackState: Int
+): Boolean {
+    if (!hasCurrentSong) return false
+    return resumePlaybackRequested ||
+        playJobActive ||
+        pendingPauseJobActive ||
+        playWhenReady ||
+        isPlaying ||
+        playerPlaybackState == Player.STATE_BUFFERING
+}
+
 object PlayerManager {
     const val BILI_SOURCE_TAG = "Bilibili"
     const val NETEASE_SOURCE_TAG = "Netease"
@@ -250,6 +268,9 @@ object PlayerManager {
     private var pendingPauseJob: Job? = null
     private var bluetoothDisconnectPauseJob: Job? = null
     private var playbackSoundPersistJob: Job? = null
+    private var neteaseQualityRefreshJob: Job? = null
+    private var youtubeQualityRefreshJob: Job? = null
+    private var biliQualityRefreshJob: Job? = null
 
     private val localRepo: LocalPlaylistRepository
         get() = LocalPlaylistRepository.getInstance(application)
@@ -289,6 +310,7 @@ object PlayerManager {
     private const val AUTO_TRANSITION_EXTERNAL_PAUSE_GUARD_MS = 2_000L
     private const val AUTO_TRANSITION_BUFFER_POSITION_GUARD_MS = 1_500L
     private const val PENDING_SEEK_POSITION_TOLERANCE_MS = 1_500L
+    private const val QUALITY_CHANGE_REFRESH_DEBOUNCE_MS = 300L
     private const val MIN_FADE_STEPS = 4
     private const val MAX_FADE_STEPS = 30
     @Volatile
@@ -404,6 +426,20 @@ object PlayerManager {
             pendingPauseJob?.isActive == true ||
             _playWhenReadyFlow.value ||
             _isPlayingFlow.value
+    }
+
+    fun shouldRunPlaybackServiceInForeground(): Boolean {
+        ensureInitialized()
+        if (!initialized || _currentSongFlow.value == null) return false
+        return shouldRunPlaybackServiceInForeground(
+            hasCurrentSong = _currentSongFlow.value != null,
+            resumePlaybackRequested = resumePlaybackRequested,
+            playJobActive = playJob?.isActive == true,
+            pendingPauseJobActive = pendingPauseJob?.isActive == true,
+            playWhenReady = _playWhenReadyFlow.value,
+            isPlaying = _isPlayingFlow.value,
+            playerPlaybackState = _playerPlaybackStateFlow.value
+        )
     }
 
     fun isTransportBuffering(): Boolean {
@@ -897,6 +933,25 @@ object PlayerManager {
         }
     }
 
+    private fun scheduleQualityRefresh(
+        source: PlaybackAudioSource,
+        reason: String
+    ) {
+        val targetJob = when (source) {
+            PlaybackAudioSource.NETEASE -> ::neteaseQualityRefreshJob
+            PlaybackAudioSource.YOUTUBE_MUSIC -> ::youtubeQualityRefreshJob
+            PlaybackAudioSource.BILIBILI -> ::biliQualityRefreshJob
+            PlaybackAudioSource.LOCAL -> return
+        }
+        targetJob.get()?.cancel()
+        targetJob.set(
+            ioScope.launch {
+                delay(QUALITY_CHANGE_REFRESH_DEBOUNCE_MS)
+                refreshCurrentSongForQualityChange(source = source, reason = reason)
+            }
+        )
+    }
+
     private suspend fun refreshCurrentSongForQualityChange(
         source: PlaybackAudioSource,
         reason: String
@@ -1294,7 +1349,7 @@ object PlayerManager {
                 val previousQuality = preferredQuality
                 preferredQuality = q
                 if (previousQuality != q) {
-                    refreshCurrentSongForQualityChange(
+                    scheduleQualityRefresh(
                         source = PlaybackAudioSource.NETEASE,
                         reason = "netease_quality_changed"
                     )
@@ -1306,7 +1361,7 @@ object PlayerManager {
                 val previousQuality = youtubePreferredQuality
                 youtubePreferredQuality = q
                 if (previousQuality != q) {
-                    refreshCurrentSongForQualityChange(
+                    scheduleQualityRefresh(
                         source = PlaybackAudioSource.YOUTUBE_MUSIC,
                         reason = "youtube_quality_changed"
                     )
@@ -1318,7 +1373,7 @@ object PlayerManager {
                 val previousQuality = biliPreferredQuality
                 biliPreferredQuality = q
                 if (previousQuality != q) {
-                    refreshCurrentSongForQualityChange(
+                    scheduleQualityRefresh(
                         source = PlaybackAudioSource.BILIBILI,
                         reason = "bili_quality_changed"
                     )

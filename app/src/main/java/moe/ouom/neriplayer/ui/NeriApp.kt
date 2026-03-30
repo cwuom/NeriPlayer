@@ -615,12 +615,9 @@ fun NeriApp(
             "NERI-App",
             "Player bootstrap state hasItems=${PlayerManager.hasItems()} transportActive=${PlayerManager.isTransportActive()} isPlaying=${PlayerManager.isPlayingFlow.value}"
         )
-        if (PlayerManager.hasItems() && PlayerManager.isTransportActive()) {
+        if (PlayerManager.hasItems() && PlayerManager.shouldRunPlaybackServiceInForeground()) {
             NPLogger.d("NERI-App", "Starting audio service from app bootstrap")
-            ContextCompat.startForegroundService(
-                context,
-                AudioPlayerService.createSyncIntent(context, "app_bootstrap")
-            )
+            AudioPlayerService.startSyncService(context, "app_bootstrap", forceForeground = true)
         } else {
             NPLogger.d("NERI-App", "Skip audio service bootstrap because transport is inactive")
         }
@@ -723,9 +720,10 @@ fun NeriApp(
         // 播放队列可能包含歌词等大字段，避免通过 Binder 传整份歌单导致崩溃
         PlayerManager.playPlaylist(songs, index)
         NPLogger.d("NERI-App", "Starting audio service after playSongsAndOpenNowPlaying")
-        ContextCompat.startForegroundService(
+        AudioPlayerService.startSyncService(
             context,
-            AudioPlayerService.createSyncIntent(context, "play_songs_and_open_now_playing")
+            "play_songs_and_open_now_playing",
+            forceForeground = true
         )
     }
 
@@ -734,10 +732,7 @@ fun NeriApp(
             "NERI-App",
             "ensureAudioServiceStarted hasItems=${PlayerManager.hasItems()} transportActive=${PlayerManager.isTransportActive()} isPlaying=${PlayerManager.isPlayingFlow.value}"
         )
-        ContextCompat.startForegroundService(
-            context,
-            AudioPlayerService.createSyncIntent(context, "ensure_audio_service_started")
-        )
+        AudioPlayerService.startSyncService(context, "ensure_audio_service_started")
     }
 
     fun playBiliAudioAndOpenNowPlaying(videos: List<BiliVideoItem>, index: Int) {

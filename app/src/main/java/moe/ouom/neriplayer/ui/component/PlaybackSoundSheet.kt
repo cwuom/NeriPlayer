@@ -24,6 +24,11 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
@@ -61,12 +66,12 @@ private const val EQUALIZER_SLIDER_STEP_MB = 50
 @Composable
 fun PlaybackSoundSheet(
     state: PlaybackSoundState,
-    onSpeedChange: (Float) -> Unit,
-    onPitchChange: (Float) -> Unit,
-    onLoudnessGainChange: (Int) -> Unit,
+    onSpeedChange: (Float, Boolean) -> Unit,
+    onPitchChange: (Float, Boolean) -> Unit,
+    onLoudnessGainChange: (Int, Boolean) -> Unit,
     onEqualizerEnabledChange: (Boolean) -> Unit,
     onPresetSelected: (String) -> Unit,
-    onBandLevelChange: (Int, Int) -> Unit,
+    onBandLevelChange: (Int, Int, Boolean) -> Unit,
     onReset: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -162,15 +167,22 @@ fun PlaybackSoundSheet(
                         style = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.Monospace)
                     )
                 }
+                var loudnessSliderValue by remember(state.loudnessGainMb) {
+                    mutableIntStateOf(state.loudnessGainMb)
+                }
                 Slider(
-                    value = state.loudnessGainMb.toFloat(),
+                    value = loudnessSliderValue.toFloat(),
                     onValueChange = { raw ->
                         val normalized = ((raw / LOUDNESS_SLIDER_STEP_MB).roundToInt() * LOUDNESS_SLIDER_STEP_MB)
                             .coerceIn(
                                 minimumValue = MIN_PLAYBACK_LOUDNESS_GAIN_MB,
                                 maximumValue = MAX_PLAYBACK_LOUDNESS_GAIN_MB
                             )
-                        onLoudnessGainChange(normalizePlaybackLoudnessGainMb(normalized))
+                        loudnessSliderValue = normalizePlaybackLoudnessGainMb(normalized)
+                        onLoudnessGainChange(loudnessSliderValue, false)
+                    },
+                    onValueChangeFinished = {
+                        onLoudnessGainChange(loudnessSliderValue, true)
                     },
                     valueRange = MIN_PLAYBACK_LOUDNESS_GAIN_MB.toFloat()..MAX_PLAYBACK_LOUDNESS_GAIN_MB.toFloat(),
                     steps = buildDiscreteSliderSteps(
@@ -184,8 +196,11 @@ fun PlaybackSoundSheet(
                 ) {
                     LOUDNESS_QUICK_PRESETS.forEach { preset ->
                         FilterChip(
-                            selected = state.loudnessGainMb == preset,
-                            onClick = { onLoudnessGainChange(preset) },
+                            selected = loudnessSliderValue == preset,
+                            onClick = {
+                                loudnessSliderValue = preset
+                                onLoudnessGainChange(loudnessSliderValue, true)
+                            },
                             label = { Text(formatPlaybackGainLabel(preset)) }
                         )
                     }
@@ -264,6 +279,9 @@ fun PlaybackSoundSheet(
                 )
 
                 state.bands.forEach { band ->
+                    var bandSliderValue by remember(band.index, band.levelMb) {
+                        mutableIntStateOf(band.levelMb)
+                    }
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -280,14 +298,18 @@ fun PlaybackSoundSheet(
                             )
                         }
                         Slider(
-                            value = band.levelMb.toFloat(),
+                            value = bandSliderValue.toFloat(),
                             onValueChange = { raw ->
                                 val normalized = ((raw / EQUALIZER_SLIDER_STEP_MB).roundToInt() * EQUALIZER_SLIDER_STEP_MB)
                                     .coerceIn(
                                         minimumValue = state.bandLevelRangeMb.first,
                                         maximumValue = state.bandLevelRangeMb.last
                                     )
-                                onBandLevelChange(band.index, normalized)
+                                bandSliderValue = normalized
+                                onBandLevelChange(band.index, bandSliderValue, false)
+                            },
+                            onValueChangeFinished = {
+                                onBandLevelChange(band.index, bandSliderValue, true)
                             },
                             valueRange = state.bandLevelRangeMb.first.toFloat()..state.bandLevelRangeMb.last.toFloat(),
                             steps = buildDiscreteSliderSteps(
@@ -328,8 +350,11 @@ private fun PlaybackControlCard(
     range: ClosedFloatingPointRange<Float>,
     steps: Int,
     normalize: (Float) -> Float,
-    onValueChange: (Float) -> Unit
+    onValueChange: (Float, Boolean) -> Unit
 ) {
+    var sliderValue by remember(currentValue) {
+        mutableFloatStateOf(currentValue)
+    }
     Card(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
@@ -356,8 +381,14 @@ private fun PlaybackControlCard(
                 )
             }
             Slider(
-                value = currentValue,
-                onValueChange = { onValueChange(normalize(it)) },
+                value = sliderValue,
+                onValueChange = {
+                    sliderValue = normalize(it)
+                    onValueChange(sliderValue, false)
+                },
+                onValueChangeFinished = {
+                    onValueChange(sliderValue, true)
+                },
                 valueRange = range,
                 steps = steps
             )
@@ -366,9 +397,13 @@ private fun PlaybackControlCard(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 quickPresets.forEach { preset ->
+                    val normalizedPreset = normalize(preset)
                     FilterChip(
-                        selected = abs(currentValue - preset) < 0.001f,
-                        onClick = { onValueChange(normalize(preset)) },
+                        selected = abs(sliderValue - normalizedPreset) < 0.001f,
+                        onClick = {
+                            sliderValue = normalizedPreset
+                            onValueChange(sliderValue, true)
+                        },
                         label = { Text(formatMultiplier(preset)) }
                     )
                 }

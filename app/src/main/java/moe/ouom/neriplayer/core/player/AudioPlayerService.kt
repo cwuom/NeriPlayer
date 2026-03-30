@@ -48,6 +48,7 @@ import android.util.TypedValue
 import androidx.annotation.DrawableRes
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.DrawableCompat
 import androidx.core.graphics.drawable.IconCompat
 import androidx.core.graphics.drawable.toBitmap
@@ -102,6 +103,16 @@ internal fun mediaSessionPlaybackActions(): Long {
         PlaybackStateCompat.ACTION_SEEK_TO
 }
 
+internal fun shouldUseForegroundServiceStart(
+    sdkInt: Int,
+    forceForeground: Boolean,
+    shouldRunPlaybackServiceInForeground: Boolean
+): Boolean {
+    return sdkInt >= Build.VERSION_CODES.O ||
+        forceForeground ||
+        shouldRunPlaybackServiceInForeground
+}
+
 @Suppress("unused")
 class AudioPlayerService : Service() {
 
@@ -124,6 +135,25 @@ class AudioPlayerService : Service() {
                 putExtra(EXTRA_START_SOURCE, source)
             }
         }
+
+        fun startSyncService(
+            context: Context,
+            source: String,
+            forceForeground: Boolean = false
+        ) {
+            val intent = createSyncIntent(context, source)
+            if (
+                shouldUseForegroundServiceStart(
+                    sdkInt = Build.VERSION.SDK_INT,
+                    forceForeground = forceForeground,
+                    shouldRunPlaybackServiceInForeground = PlayerManager.shouldRunPlaybackServiceInForeground()
+                )
+            ) {
+                ContextCompat.startForegroundService(context, intent)
+            } else {
+                context.startService(intent)
+            }
+        }
     }
 
     private lateinit var becomingNoisyReceiver: BroadcastReceiver
@@ -140,7 +170,7 @@ class AudioPlayerService : Service() {
     private var lastNotificationSnapshot: PlaybackNotificationSnapshot? = null
 
     private fun shouldKeepServiceSticky(): Boolean {
-        return PlayerManager.hasItems() && PlayerManager.isTransportActive()
+        return PlayerManager.hasItems() && PlayerManager.shouldRunPlaybackServiceInForeground()
     }
 
     private fun buildStateSummary(): String {
@@ -258,7 +288,7 @@ class AudioPlayerService : Service() {
         }
         serviceScope.launch {
             PlayerManager.playbackSoundStateFlow.collect {
-                updatePlaybackState(force = true)
+                updatePlaybackState()
             }
         }
 

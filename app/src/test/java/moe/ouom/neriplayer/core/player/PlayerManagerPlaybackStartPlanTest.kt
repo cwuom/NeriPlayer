@@ -103,4 +103,34 @@ class PlayerManagerPlaybackStartPlanTest {
 
         assertFalse(shouldProtect)
     }
+
+    @Test
+    fun `resume requested keeps playback service eligible for foreground`() {
+        val shouldRunInForeground = shouldRunPlaybackServiceInForeground(
+            hasCurrentSong = true,
+            resumePlaybackRequested = true,
+            playJobActive = false,
+            pendingPauseJobActive = false,
+            playWhenReady = false,
+            isPlaying = false,
+            playerPlaybackState = 0
+        )
+
+        assertTrue(shouldRunInForeground)
+    }
+
+    @Test
+    fun `foreground service policy requires current song`() {
+        val shouldRunInForeground = shouldRunPlaybackServiceInForeground(
+            hasCurrentSong = false,
+            resumePlaybackRequested = true,
+            playJobActive = true,
+            pendingPauseJobActive = true,
+            playWhenReady = true,
+            isPlaying = true,
+            playerPlaybackState = 0
+        )
+
+        assertFalse(shouldRunInForeground)
+    }
 }
