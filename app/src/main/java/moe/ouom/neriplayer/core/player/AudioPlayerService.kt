@@ -48,6 +48,7 @@ import android.util.TypedValue
 import androidx.annotation.DrawableRes
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.DrawableCompat
 import androidx.core.graphics.drawable.IconCompat
 import androidx.core.graphics.drawable.toBitmap
@@ -102,6 +103,16 @@ internal fun mediaSessionPlaybackActions(): Long {
         PlaybackStateCompat.ACTION_SEEK_TO
 }
 
+internal fun shouldUseForegroundServiceStart(
+    sdkInt: Int,
+    forceForeground: Boolean,
+    shouldRunPlaybackServiceInForeground: Boolean
+): Boolean {
+    return sdkInt >= Build.VERSION_CODES.O ||
+        forceForeground ||
+        shouldRunPlaybackServiceInForeground
+}
+
 @Suppress("unused")
 class AudioPlayerService : Service() {
 
@@ -113,9 +124,36 @@ class AudioPlayerService : Service() {
         const val ACTION_PREV = "moe.ouom.neriplayer.action.PREV"
         const val ACTION_SYNC = "moe.ouom.neriplayer.action.SYNC"
         const val ACTION_TOGGLE_FAV = "moe.ouom.neriplayer.action.TOGGLE_FAVORITE"
+        const val EXTRA_START_SOURCE = "audio_service_start_source"
 
         private const val NOTIFICATION_ID = 1
         private const val CHANNEL_ID = "neriplayer_playback_channel"
+
+        fun createSyncIntent(context: Context, source: String): Intent {
+            return Intent(context, AudioPlayerService::class.java).apply {
+                action = ACTION_SYNC
+                putExtra(EXTRA_START_SOURCE, source)
+            }
+        }
+
+        fun startSyncService(
+            context: Context,
+            source: String,
+            forceForeground: Boolean = false
+        ) {
+            val intent = createSyncIntent(context, source)
+            if (
+                shouldUseForegroundServiceStart(
+                    sdkInt = Build.VERSION.SDK_INT,
+                    forceForeground = forceForeground,
+                    shouldRunPlaybackServiceInForeground = PlayerManager.shouldRunPlaybackServiceInForeground()
+                )
+            ) {
+                ContextCompat.startForegroundService(context, intent)
+            } else {
+                context.startService(intent)
+            }
+        }
     }
 
     private lateinit var becomingNoisyReceiver: BroadcastReceiver
@@ -130,6 +168,16 @@ class AudioPlayerService : Service() {
     private var hasReceivedStartCommand = false
     private var isForegroundStarted = false
     private var lastNotificationSnapshot: PlaybackNotificationSnapshot? = null
+
+    private fun shouldKeepServiceSticky(): Boolean {
+        return PlayerManager.hasItems() && PlayerManager.shouldRunPlaybackServiceInForeground()
+    }
+
+    private fun buildStateSummary(): String {
+        return "hasItems=${PlayerManager.hasItems()} currentSong=${PlayerManager.currentSongFlow.value != null} " +
+            "isPlaying=${PlayerManager.isPlayingFlow.value} transportActive=${PlayerManager.isTransportActive()} " +
+            "foreground=$isForegroundStarted allowRestart=$allowServiceRestart"
+    }
 
     private val mediaSessionCallback = object : MediaSessionCompat.Callback() {
         override fun onPlay() { PlayerManager.play(); updateAll() }
@@ -173,13 +221,14 @@ class AudioPlayerService : Service() {
         }
         if (shouldStopService) {
             allowServiceRestart = false
-            stopForegroundIfStarted()
+            stopForegroundIfStarted("external_pause_command:$source")
             stopSelf()
         }
     }
 
     override fun onCreate() {
         super.onCreate()
+        NPLogger.d("NERI-APS", "onCreate begin ${buildStateSummary()}")
         val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         val channel = NotificationChannel(
             CHANNEL_ID,
@@ -192,7 +241,7 @@ class AudioPlayerService : Service() {
             setCallback(mediaSessionCallback)
             isActive = true
         }
-        startForegroundImmediately(buildBootstrapNotification())
+        startForegroundImmediately(buildBootstrapNotification(), "service_create")
 
         // 服务必须尽快进入前台，不能在这里阻塞前台通知启动
         PlayerManager.initialize(application as Application)
@@ -203,7 +252,8 @@ class AudioPlayerService : Service() {
                     if (!hasReceivedStartCommand) {
                         return@collect
                     }
-                    stopForegroundIfStarted()
+                    NPLogger.w("NERI-APS", "currentSongFlow requested self-stop because playlist is empty")
+                    stopForegroundIfStarted("playlist_became_empty")
                     stopSelf()
                     return@collect
                 }
@@ -238,7 +288,7 @@ class AudioPlayerService : Service() {
         }
         serviceScope.launch {
             PlayerManager.playbackSoundStateFlow.collect {
-                updatePlaybackState(force = true)
+                updatePlaybackState()
             }
         }
 
@@ -267,17 +317,22 @@ class AudioPlayerService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        NPLogger.d("NERI-APS", "onStartCommand action=${intent?.action}")
+        val action = intent?.action
+        val startSource = intent?.getStringExtra(EXTRA_START_SOURCE) ?: "unspecified"
+        NPLogger.d(
+            "NERI-APS",
+            "onStartCommand action=$action source=$startSource flags=$flags startId=$startId ${buildStateSummary()}"
+        )
         allowServiceRestart = true
         hasReceivedStartCommand = true
 
-        val action = intent?.action
         if (!isForegroundStarted && action != ACTION_STOP) {
-            startForegroundImmediately(buildBootstrapNotification())
+            startForegroundImmediately(buildBootstrapNotification(), "on_start_command:$action:$startSource")
         }
         if (action == null && !PlayerManager.hasItems()) {
             allowServiceRestart = false
-            stopForegroundIfStarted()
+            NPLogger.w("NERI-APS", "Stopping service because null action arrived without playlist")
+            stopForegroundIfStarted("null_action_without_items")
             stopSelf()
             return START_NOT_STICKY
         }
@@ -320,10 +375,12 @@ class AudioPlayerService : Service() {
             ACTION_SYNC -> {
                 if (!PlayerManager.hasItems()) {
                     allowServiceRestart = false
-                    stopForegroundIfStarted()
+                    NPLogger.w("NERI-APS", "Ignoring ACTION_SYNC because playlist is empty, source=$startSource")
+                    stopForegroundIfStarted("sync_without_items")
                     stopSelf()
                     return START_NOT_STICKY
                 }
+                NPLogger.d("NERI-APS", "Handling ACTION_SYNC source=$startSource ${buildStateSummary()}")
                 updateAll()
             }
 
@@ -355,12 +412,22 @@ class AudioPlayerService : Service() {
             }
         } else {
             allowServiceRestart = false
-            stopForegroundIfStarted()
+            NPLogger.w("NERI-APS", "Stopping service because playlist is empty after action handling")
+            stopForegroundIfStarted("no_items_after_action")
             stopSelf()
             return START_NOT_STICKY
         }
 
-        return if (allowServiceRestart) START_STICKY else START_NOT_STICKY
+        val startMode = if (allowServiceRestart && shouldKeepServiceSticky()) {
+            START_STICKY
+        } else {
+            START_NOT_STICKY
+        }
+        NPLogger.d(
+            "NERI-APS",
+            "onStartCommand complete action=$action source=$startSource startMode=$startMode ${buildStateSummary()}"
+        )
+        return startMode
     }
 
     private fun buildNotification(): Notification {
@@ -716,7 +783,7 @@ class AudioPlayerService : Service() {
     override fun onDestroy() {
         NPLogger.w(
             "NERI-APS",
-            "onDestroy allowServiceRestart=$allowServiceRestart hasItems=${PlayerManager.hasItems()} isPlaying=${PlayerManager.isPlayingFlow.value}"
+            "onDestroy ${buildStateSummary()}"
         )
         unregisterReceiver(becomingNoisyReceiver)
         serviceScope.cancel()
@@ -732,7 +799,7 @@ class AudioPlayerService : Service() {
         super.onTrimMemory(level)
         NPLogger.w(
             "NERI-APS",
-            "onTrimMemory level=$level foreground=$isForegroundStarted hasItems=${PlayerManager.hasItems()} isPlaying=${PlayerManager.isPlayingFlow.value}"
+            "onTrimMemory level=$level ${buildStateSummary()}"
         )
     }
 
@@ -740,7 +807,7 @@ class AudioPlayerService : Service() {
         super.onLowMemory()
         NPLogger.w(
             "NERI-APS",
-            "onLowMemory foreground=$isForegroundStarted hasItems=${PlayerManager.hasItems()} isPlaying=${PlayerManager.isPlayingFlow.value}"
+            "onLowMemory ${buildStateSummary()}"
         )
     }
 
@@ -751,11 +818,13 @@ class AudioPlayerService : Service() {
             return true
         }
         val notification = buildNotification()
-        return startForegroundImmediately(notification)
+        NPLogger.d("NERI-APS", "ensureForegroundStarted requested ${buildStateSummary()}")
+        return startForegroundImmediately(notification, "ensure_foreground")
     }
 
-    private fun startForegroundImmediately(notification: Notification): Boolean {
+    private fun startForegroundImmediately(notification: Notification, reason: String): Boolean {
         return try {
+            NPLogger.d("NERI-APS", "startForegroundImmediately reason=$reason ${buildStateSummary()}")
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 startForeground(
                     NOTIFICATION_ID,
@@ -766,13 +835,14 @@ class AudioPlayerService : Service() {
                 startForeground(NOTIFICATION_ID, notification)
             }
             isForegroundStarted = true
+            NPLogger.d("NERI-APS", "startForegroundImmediately success reason=$reason")
             true
         } catch (e: SecurityException) {
-            NPLogger.e("NERI-APS", "Failed to start foreground service", e)
+            NPLogger.e("NERI-APS", "Failed to start foreground service, reason=$reason", e)
             false
         } catch (e: RuntimeException) {
             if (isForegroundStartNotAllowed(e)) {
-                NPLogger.w("NERI-APS", "startForeground not allowed right now: ${e.message}")
+                NPLogger.w("NERI-APS", "startForeground not allowed right now, reason=$reason: ${e.message}")
                 false
             } else {
                 throw e
@@ -785,10 +855,11 @@ class AudioPlayerService : Service() {
             error.javaClass.name == "android.app.ForegroundServiceStartNotAllowedException"
     }
 
-    private fun stopForegroundIfStarted() {
+    private fun stopForegroundIfStarted(reason: String) {
         if (!isForegroundStarted) {
             return
         }
+        NPLogger.w("NERI-APS", "stopForegroundIfStarted reason=$reason ${buildStateSummary()}")
         stopForeground(STOP_FOREGROUND_REMOVE)
         isForegroundStarted = false
     }

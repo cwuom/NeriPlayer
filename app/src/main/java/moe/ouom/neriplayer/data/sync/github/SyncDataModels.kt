@@ -118,7 +118,11 @@ data class SyncSong(
     @ProtoNumber(19) val originalArtist: String? = null,
     @ProtoNumber(20) val originalCoverUrl: String? = null,
     @ProtoNumber(21) val originalLyric: String? = null,
-    @ProtoNumber(22) val originalTranslatedLyric: String? = null
+    @ProtoNumber(22) val originalTranslatedLyric: String? = null,
+    @ProtoNumber(23) val channelId: String? = null,
+    @ProtoNumber(24) val audioId: String? = null,
+    @ProtoNumber(25) val subAudioId: String? = null,
+    @ProtoNumber(26) val playlistContextId: String? = null
 ) {
     companion object {
         fun fromSongItemOrNull(song: SongItem, context: Context? = null): SyncSong? {
@@ -156,7 +160,11 @@ data class SyncSong(
                 originalArtist = song.originalArtist,
                 originalCoverUrl = syncOriginalCoverUrl,
                 originalLyric = song.originalLyric,
-                originalTranslatedLyric = song.originalTranslatedLyric
+                originalTranslatedLyric = song.originalTranslatedLyric,
+                channelId = song.channelId,
+                audioId = song.audioId,
+                subAudioId = song.subAudioId,
+                playlistContextId = song.playlistContextId
             )
         }
     }
@@ -185,7 +193,11 @@ data class SyncSong(
             originalArtist = originalArtist,
             originalCoverUrl = originalCoverUrl,
             originalLyric = originalLyric,
-            originalTranslatedLyric = originalTranslatedLyric
+            originalTranslatedLyric = originalTranslatedLyric,
+            channelId = channelId,
+            audioId = audioId,
+            subAudioId = subAudioId,
+            playlistContextId = playlistContextId
         )
     }
 }

@@ -220,7 +220,9 @@ object LocalAudioImportManager {
                         originalArtist = fallbackArtist,
                         originalCoverUrl = null,
                         localFileName = fileName,
-                        localFilePath = source
+                        localFilePath = source,
+                        channelId = "local",
+                        audioId = computeStableSongId(source).toString()
                     )
 
                     songs += runCatching {
@@ -290,7 +292,9 @@ object LocalAudioImportManager {
             originalName = baseSong.originalName?.takeIf { it.isNotBlank() } ?: safeTitle,
             originalArtist = baseSong.originalArtist?.takeIf { it.isNotBlank() } ?: safeArtist,
             localFileName = fileName,
-            localFilePath = source
+            localFilePath = source,
+            channelId = "local",
+            audioId = computeStableSongId(source).toString()
         )
     }
 

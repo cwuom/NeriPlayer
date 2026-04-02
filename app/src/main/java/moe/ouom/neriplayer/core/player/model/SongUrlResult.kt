@@ -33,6 +33,7 @@ internal sealed class SongUrlResult {
         val audioInfo: PlaybackAudioInfo? = null
     ) : SongUrlResult()
 
+    object WaitingForAuthoritativeStream : SongUrlResult()
     object RequiresLogin : SongUrlResult()
     object Failure : SongUrlResult()
 }

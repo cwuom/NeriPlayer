@@ -46,6 +46,7 @@ import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
@@ -276,11 +277,19 @@ object GlobalDownloadManager {
             audio = storedAudio,
             metadataEntry = effectiveSnapshot.metadataEntriesByAudioName[storedAudio.name]
         )
+        val localDetails = if (metadata == null) {
+            inspectDownloadedAudioDetails(context, storedAudio)
+        } else {
+            null
+        }
         val (parsedArtist, parsedTitle) = parseDownloadedFileName(storedAudio.name)
         val coverReference = metadata?.coverPath
             ?.takeIf { it in effectiveSnapshot.knownReferences || ManagedDownloadStorage.exists(context, it) }
+            ?: localDetails?.coverUri
             ?: findIndexedCoverReference(storedAudio, effectiveSnapshot)
-        val matchedLyric = metadata?.matchedLyric ?: if (resolveLyricFallbacks) {
+        val matchedLyric = metadata?.lyricPath?.let { ManagedDownloadStorage.readText(context, it) }
+            ?: localDetails?.lyricContent
+            ?: if (resolveLyricFallbacks) {
             findIndexedLyricText(
                 context = context,
                 audio = storedAudio,
@@ -291,7 +300,7 @@ object GlobalDownloadManager {
         } else {
             null
         }
-        val matchedTranslatedLyric = metadata?.matchedTranslatedLyric ?: if (resolveLyricFallbacks) {
+        val matchedTranslatedLyric = metadata?.translatedLyricPath?.let { ManagedDownloadStorage.readText(context, it) } ?: if (resolveLyricFallbacks) {
             findIndexedLyricText(
                 context = context,
                 audio = storedAudio,
@@ -305,9 +314,9 @@ object GlobalDownloadManager {
 
         return DownloadedSong(
             id = metadata?.songId ?: storedAudio.reference.hashCode().toLong(),
-            name = metadata?.name?.takeIf(String::isNotBlank) ?: parsedTitle,
-            artist = metadata?.artist?.takeIf(String::isNotBlank) ?: parsedArtist,
-            album = context.getString(R.string.local_files),
+            name = metadata?.name?.takeIf(String::isNotBlank) ?: localDetails?.title?.takeIf(String::isNotBlank) ?: parsedTitle,
+            artist = metadata?.artist?.takeIf(String::isNotBlank) ?: localDetails?.artist?.takeIf(String::isNotBlank) ?: parsedArtist,
+            album = localDetails?.album?.takeIf(String::isNotBlank) ?: context.getString(R.string.local_files),
             filePath = storedAudio.reference,
             fileSize = storedAudio.sizeBytes,
             downloadTime = existingDownloadTime ?: storedAudio.lastModifiedMs,
@@ -321,13 +330,13 @@ object GlobalDownloadManager {
             customCoverUrl = metadata?.customCoverUrl,
             customName = metadata?.customName,
             customArtist = metadata?.customArtist,
-            originalName = metadata?.originalName,
-            originalArtist = metadata?.originalArtist,
+            originalName = metadata?.originalName ?: localDetails?.originalTitle,
+            originalArtist = metadata?.originalArtist ?: localDetails?.originalArtist,
             originalCoverUrl = metadata?.originalCoverUrl,
             originalLyric = metadata?.originalLyric,
             originalTranslatedLyric = metadata?.originalTranslatedLyric,
             mediaUri = storedAudio.playbackUri,
-            durationMs = metadata?.durationMs ?: 0L
+            durationMs = metadata?.durationMs?.takeIf { it > 0L } ?: localDetails?.durationMs ?: 0L
         )
     }
 
@@ -346,9 +355,24 @@ object GlobalDownloadManager {
         audio: ManagedDownloadStorage.StoredEntry,
         song: SongItem
     ) {
+        val identity = song.identity()
         val coverReference = ManagedDownloadStorage.findCoverReference(context, audio)
+        val lyricPath = ManagedDownloadStorage.findLyricLocation(
+            context = context,
+            songId = song.id,
+            candidateBaseNames = candidateManagedDownloadBaseNames(audio.nameWithoutExtension),
+            translated = false
+        )
+        val translatedLyricPath = ManagedDownloadStorage.findLyricLocation(
+            context = context,
+            songId = song.id,
+            candidateBaseNames = candidateManagedDownloadBaseNames(audio.nameWithoutExtension),
+            translated = true
+        )
         val payload = JSONObject().apply {
+            put("stableKey", identity.stableKey())
             put("songId", song.id)
+            put("identityAlbum", identity.album)
             put("name", song.name)
             put("artist", song.artist)
             put("coverUrl", song.coverUrl)
@@ -365,13 +389,23 @@ object GlobalDownloadManager {
             put("originalCoverUrl", song.originalCoverUrl)
             put("originalLyric", song.originalLyric)
             put("originalTranslatedLyric", song.originalTranslatedLyric)
-            put("mediaUri", song.mediaUri)
+            put("mediaUri", identity.mediaUri ?: song.mediaUri)
+            put("channelId", song.channelId)
+            put("audioId", song.audioId)
+            put("subAudioId", song.subAudioId)
+            put("playlistContextId", song.playlistContextId)
             put("coverPath", coverReference)
+            put("lyricPath", lyricPath)
+            put("translatedLyricPath", translatedLyricPath)
             put("durationMs", song.durationMs)
         }
 
         runCatching {
             ManagedDownloadStorage.saveMetadata(context, audio, payload.toString())
+            NPLogger.d(
+                TAG,
+                "保存下载 metadata: file=${audio.name}, stableKey=${identity.stableKey()}, lyricPath=$lyricPath, translatedLyricPath=$translatedLyricPath, coverPath=$coverReference"
+            )
         }.onFailure { error ->
             NPLogger.w(TAG, "写入下载元数据失败: ${audio.name} - ${error.message}")
         }
@@ -390,7 +424,9 @@ object GlobalDownloadManager {
         return runCatching {
             val root = JSONObject(raw)
             DownloadedSongMetadata(
+                stableKey = root.optString("stableKey").takeIf(String::isNotBlank),
                 songId = root.optLong("songId").takeIf { it > 0L },
+                identityAlbum = root.optString("identityAlbum").takeIf(String::isNotBlank),
                 name = root.optString("name").takeIf(String::isNotBlank),
                 artist = root.optString("artist").takeIf(String::isNotBlank),
                 coverUrl = root.optString("coverUrl").takeIf(String::isNotBlank),
@@ -408,7 +444,12 @@ object GlobalDownloadManager {
                 originalLyric = null,
                 originalTranslatedLyric = null,
                 coverPath = root.optString("coverPath").takeIf(String::isNotBlank),
+                lyricPath = root.optString("lyricPath").takeIf(String::isNotBlank),
+                translatedLyricPath = root.optString("translatedLyricPath").takeIf(String::isNotBlank),
                 mediaUri = root.optString("mediaUri").takeIf(String::isNotBlank),
+                channelId = root.optString("channelId").takeIf(String::isNotBlank),
+                audioId = root.optString("audioId").takeIf(String::isNotBlank),
+                subAudioId = root.optString("subAudioId").takeIf(String::isNotBlank),
                 durationMs = root.optLong("durationMs")
             )
         }.getOrElse { error ->
@@ -455,34 +496,51 @@ object GlobalDownloadManager {
         scope.launch {
             try {
                 val storedAudio = resolveStoredAudio(appContext, song.filePath)
+                val snapshot = ManagedDownloadStorage.buildDownloadLibrarySnapshot(appContext)
                 val baseNames = candidateBaseNames(song, storedAudio?.nameWithoutExtension)
                 val metadataReference = storedAudio?.let {
                     ManagedDownloadStorage.findMetadataForAudio(appContext, it)?.reference
                 }
+                val metadata = storedAudio?.let {
+                    readDownloadedMetadata(appContext, it)
+                }
+                val currentAudioName = storedAudio?.name
                 val lyricReferences = buildList {
-                    ManagedDownloadStorage.findLyricLocation(
-                        context = appContext,
-                        songId = song.id,
-                        candidateBaseNames = baseNames,
-                        translated = false
-                    )?.let(::add)
-                    ManagedDownloadStorage.findLyricLocation(
-                        context = appContext,
-                        songId = song.id,
-                        candidateBaseNames = baseNames,
-                        translated = true
-                    )?.let(::add)
+                    metadata?.lyricPath?.let(::add)
+                    metadata?.translatedLyricPath?.let(::add)
+                    if (isEmpty()) {
+                        ManagedDownloadStorage.findLyricLocation(
+                            context = appContext,
+                            songId = metadata?.songId ?: song.id,
+                            candidateBaseNames = baseNames,
+                            translated = false
+                        )?.let(::add)
+                        ManagedDownloadStorage.findLyricLocation(
+                            context = appContext,
+                            songId = metadata?.songId ?: song.id,
+                            candidateBaseNames = baseNames,
+                            translated = true
+                        )?.let(::add)
+                    }
                 }
 
                 storedAudio?.let {
                     ManagedDownloadStorage.deleteReference(appContext, it.reference)
                 } ?: ManagedDownloadStorage.deleteReference(appContext, song.filePath)
 
-                listOfNotNull(song.coverPath, metadataReference)
+                listOfNotNull(metadata?.coverPath, song.coverPath, metadataReference)
                     .plus(lyricReferences)
                     .distinct()
                     .forEach { reference ->
-                        ManagedDownloadStorage.deleteReference(appContext, reference)
+                        if (metadataReference != null && reference == metadataReference) {
+                            NPLogger.d(TAG, "删除下载关联文件: song=${song.name}, reference=$reference")
+                            ManagedDownloadStorage.deleteReference(appContext, reference)
+                        } else if (isReferenceOwnedByOtherDownload(snapshot, currentAudioName, reference)) {
+                            NPLogger.w(TAG, "跳过删除共享关联文件: song=${song.name}, reference=$reference")
+                        } else {
+                            NPLogger.d(TAG, "删除下载关联文件: song=${song.name}, reference=$reference")
+                            ManagedDownloadStorage.deleteReference(appContext, reference)
+                        }
                     }
 
                 reloadDownloadedSongs(appContext)
@@ -778,10 +836,35 @@ object GlobalDownloadManager {
             else -> null
         }
     }
+
+    private fun inspectDownloadedAudioDetails(
+        context: Context,
+        storedAudio: ManagedDownloadStorage.StoredEntry
+    ) = runCatching {
+        LocalMediaSupport.inspect(context, storedAudio.playbackUri.toUri())
+    }.onFailure { error ->
+        NPLogger.w(TAG, "读取已下载音频标签失败: ${storedAudio.name} - ${error.message}")
+    }.getOrNull()
+
+    private fun isReferenceOwnedByOtherDownload(
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
+        currentAudioName: String?,
+        reference: String
+    ): Boolean {
+        return snapshot.metadataByAudioName.any { (audioName, metadata) ->
+            audioName != currentAudioName && listOfNotNull(
+                metadata.coverPath,
+                metadata.lyricPath,
+                metadata.translatedLyricPath
+            ).contains(reference)
+        }
+    }
 }
 
 private data class DownloadedSongMetadata(
+    val stableKey: String? = null,
     val songId: Long? = null,
+    val identityAlbum: String? = null,
     val name: String? = null,
     val artist: String? = null,
     val coverUrl: String? = null,
@@ -799,7 +882,12 @@ private data class DownloadedSongMetadata(
     val originalLyric: String? = null,
     val originalTranslatedLyric: String? = null,
     val coverPath: String? = null,
+    val lyricPath: String? = null,
+    val translatedLyricPath: String? = null,
     val mediaUri: String? = null,
+    val channelId: String? = null,
+    val audioId: String? = null,
+    val subAudioId: String? = null,
     val durationMs: Long = 0L
 )
 

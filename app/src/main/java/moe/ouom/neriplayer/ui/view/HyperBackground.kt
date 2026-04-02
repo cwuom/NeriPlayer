@@ -38,8 +38,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.graphics.drawable.toBitmap
+import coil.Coil
 import androidx.palette.graphics.Palette
-import coil.ImageLoader
 import coil.request.ImageRequest
 import coil.request.SuccessResult
 import kotlinx.coroutines.Dispatchers
@@ -57,7 +57,8 @@ import kotlin.math.max
 fun HyperBackground(
     modifier: Modifier = Modifier,
     isDark: Boolean,
-    coverUrl: String?
+    coverUrl: String?,
+    refreshKey: Int = 0
 ) {
     val context = LocalContext.current
     val currentIsDark by rememberUpdatedState(isDark)
@@ -100,7 +101,7 @@ fun HyperBackground(
     val level by PlayerManager.audioLevelFlow.collectAsState(0f)
     val beat  by PlayerManager.beatImpulseFlow.collectAsState(0f)
 
-    LaunchedEffect(painter, hostView, currentIsDark, coverUrl) {
+    LaunchedEffect(painter, hostView, currentIsDark, coverUrl, refreshKey) {
         if (painter == null || hostView == null) return@LaunchedEffect
         val v = hostView!!
 
@@ -113,7 +114,7 @@ fun HyperBackground(
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !coverUrl.isNullOrBlank()) {
             try {
-                val loader = ImageLoader(context)
+                val loader = Coil.imageLoader(context)
                 val req = ImageRequest.Builder(context)
                     .data(coverUrl)
                     .allowHardware(false) // Palette 需要 software bitmap

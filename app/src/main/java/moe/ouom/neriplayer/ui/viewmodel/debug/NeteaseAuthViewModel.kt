@@ -218,7 +218,10 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
                     } catch (_: Exception) {
                     }
 
-                    cookieRepo.saveCookies(cookieStore)
+                    if (!cookieRepo.saveCookies(cookieStore)) {
+                        emitSnack(getApplication<Application>().getString(R.string.auth_cookie_invalid))
+                        return@launch
+                    }
 
                     _uiState.value = _uiState.value.copy(isLoggedIn = true)
                     emitSnack("Login successful")
@@ -238,19 +241,24 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
 
     fun importCookiesFromMap(map: Map<String, String>) {
         viewModelScope.launch(Dispatchers.IO) {
-            val m = map.toMutableMap()
-            m.putIfAbsent("os", "pc")
-            m.putIfAbsent("appver", "8.10.35")
+            if (map.isEmpty()) {
+                emitSnack(getApplication<Application>().getString(R.string.auth_cookie_empty))
+                return@launch
+            }
 
-            if (m["MUSIC_U"].isNullOrBlank() && m["MUSIC_A"].isNullOrBlank()) {
+            val validation = cookieRepo.validateCookies(map)
+            if (!validation.isAccepted) {
                 emitSnack(getApplication<Application>().getString(R.string.auth_cookie_invalid))
                 return@launch
             }
 
             cookieStore.clear()
-            cookieStore.putAll(m)
+            cookieStore.putAll(validation.sanitizedCookies)
 
-            cookieRepo.saveCookies(cookieStore)
+            if (!cookieRepo.saveCookies(cookieStore)) {
+                emitSnack(getApplication<Application>().getString(R.string.auth_cookie_invalid))
+                return@launch
+            }
 
             _uiState.value = _uiState.value.copy(isLoggedIn = true)
             _events.tryEmit(NeteaseAuthEvent.ShowCookies(cookieStore.toMap()))

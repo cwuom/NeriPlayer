@@ -103,6 +103,7 @@ import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.FormatSize
+import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.LibraryMusic
@@ -234,6 +235,7 @@ import moe.ouom.neriplayer.ui.component.bottomSheetDragBlocker
 import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.component.parseNeteaseLrc
 import moe.ouom.neriplayer.ui.component.parseNeteaseYrc
+import moe.ouom.neriplayer.ui.screen.debug.ListenTogetherRoomPanel
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
@@ -1587,6 +1589,7 @@ fun MoreOptionsSheet(
     var showOffsetSheet by remember { mutableStateOf(false) }
     var showFontSizeSheet by remember { mutableStateOf(false) }
     var showEditInfoSheet by remember { mutableStateOf(false) }
+    var showListenTogetherSheet by remember { mutableStateOf(false) }
     var showPlaybackSoundSheet by remember { mutableStateOf(false) }
 
     val focusManager = LocalFocusManager.current
@@ -1634,18 +1637,33 @@ fun MoreOptionsSheet(
         containerColor = MaterialTheme.colorScheme.surface
     ) {
         // 处理子页面的返回键导航
-        BackHandler(enabled = showOffsetSheet || showFontSizeSheet || showSearchView || showEditInfoSheet || showPlaybackSoundSheet) {
+        BackHandler(
+            enabled = showOffsetSheet ||
+                showFontSizeSheet ||
+                showSearchView ||
+                showEditInfoSheet ||
+                showListenTogetherSheet ||
+                showPlaybackSoundSheet
+        ) {
             when {
                 showOffsetSheet -> showOffsetSheet = false
                 showFontSizeSheet -> showFontSizeSheet = false
                 showSearchView -> showSearchView = false
                 showEditInfoSheet -> showEditInfoSheet = false
+                showListenTogetherSheet -> showListenTogetherSheet = false
                 showPlaybackSoundSheet -> showPlaybackSoundSheet = false
             }
         }
 
         // 处理主页面的返回键
-        BackHandler(enabled = !showOffsetSheet && !showFontSizeSheet && !showSearchView && !showEditInfoSheet && !showPlaybackSoundSheet) {
+        BackHandler(
+            enabled = !showOffsetSheet &&
+                !showFontSizeSheet &&
+                !showSearchView &&
+                !showEditInfoSheet &&
+                !showListenTogetherSheet &&
+                !showPlaybackSoundSheet
+        ) {
             coroutineScope.launch {
                 sheetState.hide()
                 onDismiss()
@@ -1658,6 +1676,7 @@ fun MoreOptionsSheet(
                 showFontSizeSheet -> "FontSize"
                 showSearchView -> "Search"
                 showEditInfoSheet -> "EditInfo"
+                showListenTogetherSheet -> "ListenTogether"
                 showPlaybackSoundSheet -> "PlaybackSound"
                 else -> "Main"
             },
@@ -1849,6 +1868,27 @@ fun MoreOptionsSheet(
                                 }
                             }
                         )
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.listen_together_title)) },
+                            leadingContent = { Icon(Icons.Outlined.Headphones, null) },
+                            modifier = Modifier.clickable { showListenTogetherSheet = true }
+                        )
+                    }
+                }
+
+                "ListenTogether" -> {
+                    val listenTogetherScrollState = rememberScrollState()
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(listenTogetherScrollState)
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .windowInsetsPadding(WindowInsets.navigationBars)
+                    ) {
+                        ListenTogetherRoomPanel(
+                            modifier = Modifier.fillMaxWidth(),
+                            showBaseUrlEditor = false
+                        )
                     }
                 }
 
@@ -1984,12 +2024,14 @@ fun MoreOptionsSheet(
                 "PlaybackSound" -> {
                     PlaybackSoundSheet(
                         state = playbackSoundState,
-                        onSpeedChange = viewModel::setPlaybackSpeed,
-                        onPitchChange = viewModel::setPlaybackPitch,
-                        onLoudnessGainChange = viewModel::setPlaybackLoudnessGain,
+                        onSpeedChange = { value, persist -> viewModel.setPlaybackSpeed(value, persist) },
+                        onPitchChange = { value, persist -> viewModel.setPlaybackPitch(value, persist) },
+                        onLoudnessGainChange = { value, persist -> viewModel.setPlaybackLoudnessGain(value, persist) },
                         onEqualizerEnabledChange = viewModel::setPlaybackEqualizerEnabled,
                         onPresetSelected = viewModel::selectPlaybackEqualizerPreset,
-                        onBandLevelChange = viewModel::updatePlaybackEqualizerBandLevel,
+                        onBandLevelChange = { index, value, persist ->
+                            viewModel.updatePlaybackEqualizerBandLevel(index, value, persist)
+                        },
                         onReset = viewModel::resetPlaybackSoundSettings,
                         onDismiss = { showPlaybackSoundSheet = false }
                     )
@@ -2846,6 +2888,7 @@ fun LyricsEditorSheet(
     var translatedLyricsText by remember { mutableStateOf(initialTranslatedLyrics) }
     var isSaving by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableIntStateOf(0) }
+
 
     Column(
         modifier = Modifier

@@ -545,7 +545,9 @@ object LocalMediaSupport {
             originalArtist = details.originalArtist ?: details.artist,
             originalCoverUrl = details.coverUri,
             localFileName = details.displayName,
-            localFilePath = details.filePath
+            localFilePath = details.filePath,
+            channelId = "local",
+            audioId = stableId.toString()
         )
     }
 

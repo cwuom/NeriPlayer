@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import moe.ouom.neriplayer.core.download.normalizeDownloadFileNameTemplate
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_PITCH
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_SPEED
@@ -138,6 +139,11 @@ class SettingsRepository(private val context: Context) {
 
     val downloadDirectoryLabelFlow: Flow<String?> =
         context.dataStore.data.map { it[SettingsKeys.DOWNLOAD_DIRECTORY_LABEL] }
+
+    val downloadFileNameTemplateFlow: Flow<String?> =
+        context.dataStore.data.map {
+            normalizeDownloadFileNameTemplate(it[SettingsKeys.DOWNLOAD_FILE_NAME_TEMPLATE])
+        }
 
     val backgroundImageBlurFlow: Flow<Float> =
         context.dataStore.data.map { it[SettingsKeys.BACKGROUND_IMAGE_BLUR] ?: 0f }
@@ -460,6 +466,17 @@ class SettingsRepository(private val context: Context) {
                 } else {
                     it[SettingsKeys.DOWNLOAD_DIRECTORY_LABEL] = label
                 }
+            }
+        }
+    }
+
+    suspend fun setDownloadFileNameTemplate(template: String?) {
+        context.dataStore.edit {
+            val normalized = normalizeDownloadFileNameTemplate(template)
+            if (normalized == null) {
+                it.remove(SettingsKeys.DOWNLOAD_FILE_NAME_TEMPLATE)
+            } else {
+                it[SettingsKeys.DOWNLOAD_FILE_NAME_TEMPLATE] = normalized
             }
         }
     }

@@ -301,7 +301,9 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                 albumId = 0L,
                 album = albumObj?.optString("name").orEmpty(),
                 durationMs = obj.optLong("dt"),
-                coverUrl = albumObj?.optString("picUrl")?.replace("http://", "https://")
+                coverUrl = albumObj?.optString("picUrl")?.replace("http://", "https://"),
+                channelId = "netease",
+                audioId = obj.optLong("id").toString()
             ))
         }
         return list
@@ -399,7 +401,9 @@ private fun BiliClient.SearchVideoItem.toSongItem(): SongItem {
         album = PlayerManager.BILI_SOURCE_TAG, // 标记来源
         albumId = 0L,
         durationMs = this.durationSec * 1000L,
-        coverUrl = this.coverUrl
+        coverUrl = this.coverUrl,
+        channelId = "bilibili",
+        audioId = this.aid.toString()
     )
 }
 
@@ -422,6 +426,8 @@ private fun YouTubeMusicSearchResult.toSongItem(app: Application): SongItem {
         mediaUri = buildYouTubeMusicMediaUri(videoId),
         originalName = title,
         originalArtist = displayArtist,
-        originalCoverUrl = coverUrl.ifBlank { null }
+        originalCoverUrl = coverUrl.ifBlank { null },
+        channelId = "youtubeMusic",
+        audioId = videoId
     )
 }

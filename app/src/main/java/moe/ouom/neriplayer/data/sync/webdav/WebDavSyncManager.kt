@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.data.sync.github
+package moe.ouom.neriplayer.data.sync.webdav
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -41,27 +41,40 @@ import moe.ouom.neriplayer.data.history.PlayHistoryRepository
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.data.sync.github.ConflictResolution
+import moe.ouom.neriplayer.data.sync.github.ConflictType
+import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
+import moe.ouom.neriplayer.data.sync.github.SyncConflict
+import moe.ouom.neriplayer.data.sync.github.SyncData
+import moe.ouom.neriplayer.data.sync.github.SyncDataSerializer
+import moe.ouom.neriplayer.data.sync.github.SyncFavoritePlaylist
+import moe.ouom.neriplayer.data.sync.github.SyncPlaylist
+import moe.ouom.neriplayer.data.sync.github.SyncRecentPlay
+import moe.ouom.neriplayer.data.sync.github.SyncRecentPlayDeletion
+import moe.ouom.neriplayer.data.sync.github.SyncResult
+import moe.ouom.neriplayer.data.sync.github.SyncSong
 import moe.ouom.neriplayer.util.LanguageManager
 import moe.ouom.neriplayer.util.NPLogger
 import java.io.IOException
 
-class GitHubSyncManager private constructor(context: Context) {
+class WebDavSyncManager private constructor(context: Context) {
     private val appContext = context.applicationContext
     private val storage = SecureTokenStorage(appContext)
+    private val webDavStorage = WebDavStorage(appContext)
     private val playlistRepo = LocalPlaylistRepository.getInstance(appContext)
     private val favoriteRepo = FavoritePlaylistRepository.getInstance(appContext)
     private val playHistoryRepo = PlayHistoryRepository.getInstance(appContext)
     private val syncLock = Mutex()
 
     companion object {
-        private const val TAG = "GitHubSyncManager"
+        private const val TAG = "WebDavSyncManager"
 
         @Volatile
-        private var instance: GitHubSyncManager? = null
+        private var instance: WebDavSyncManager? = null
 
-        fun getInstance(context: Context): GitHubSyncManager {
+        fun getInstance(context: Context): WebDavSyncManager {
             return instance ?: synchronized(this) {
-                instance ?: GitHubSyncManager(context.applicationContext).also { instance = it }
+                instance ?: WebDavSyncManager(context.applicationContext).also { instance = it }
             }
         }
     }
@@ -71,23 +84,23 @@ class GitHubSyncManager private constructor(context: Context) {
 
         if (!syncLock.tryLock()) {
             return@withContext Result.failure(
-                GitHubSyncInProgressException(
-                    localizedContext.getString(R.string.github_sync_in_progress)
+                WebDavSyncInProgressException(
+                    localizedContext.getString(R.string.webdav_sync_in_progress)
                 )
             )
         }
 
         try {
-            val token = storage.getToken()
-            val owner = storage.getRepoOwner()
-            val repo = storage.getRepoName()
-            if (token == null || owner == null || repo == null) {
+            val remoteUrl = webDavStorage.getRemoteFileUrl()
+            val username = webDavStorage.getUsername()
+            val password = webDavStorage.getPassword()
+            if (remoteUrl == null || username == null || password == null) {
                 return@withContext Result.failure(
-                    IllegalStateException(localizedContext.getString(R.string.github_not_configured))
+                    IllegalStateException(localizedContext.getString(R.string.webdav_not_configured))
                 )
             }
 
-            val apiClient = GitHubApiClient(appContext, token)
+            val apiClient = WebDavApiClient(appContext, username, password)
             val startMutationVersion = storage.getSyncMutationVersion()
             val localData = sanitizeSyncData(buildLocalSyncData(localizedContext))
             val uploadedDeletedPlaylistIds = localData.playlists
@@ -95,104 +108,44 @@ class GitHubSyncManager private constructor(context: Context) {
                 .filter(SyncPlaylist::isDeleted)
                 .map(SyncPlaylist::id)
                 .toSet()
-            val useDataSaver = storage.isDataSaverMode()
-            val preferredFileName = SyncDataSerializer.getFileName(useDataSaver)
-
-            var remoteResult = apiClient.getFileContentStrict(owner, repo, preferredFileName)
-            var actualFileName = preferredFileName
-            if (remoteResult.exceptionOrNull() is GitHubFileNotFoundException) {
-                val alternativeFileName = SyncDataSerializer.getFileName(!useDataSaver)
-                val alternativeResult = apiClient.getFileContentStrict(owner, repo, alternativeFileName)
-                if (alternativeResult.isSuccess) {
-                    remoteResult = alternativeResult
-                    actualFileName = alternativeFileName
-                } else {
-                    val alternativeError = alternativeResult.exceptionOrNull()
-                    if (alternativeError !is GitHubFileNotFoundException) {
-                        if (alternativeError is TokenExpiredException) {
-                            storage.clearToken()
-                        }
-                        return@withContext Result.failure(
-                            alternativeError ?: IOException(localizedContext.getString(R.string.github_sync_failed_message))
-                        )
-                    }
-                }
-            }
+            val remoteResult = apiClient.getFileContentStrict(remoteUrl)
 
             if (remoteResult.isFailure) {
                 val error = remoteResult.exceptionOrNull()
-                if (error is TokenExpiredException) {
-                    storage.clearToken()
-                    return@withContext Result.failure(error)
-                }
-                if (error is GitHubFileNotFoundException) {
+                if (error is WebDavFileNotFoundException) {
                     return@withContext handleInitialUpload(
                         apiClient = apiClient,
-                        owner = owner,
-                        repo = repo,
+                        remoteUrl = remoteUrl,
                         localData = localData,
-                        fileName = preferredFileName,
                         localizedContext = localizedContext,
                         startMutationVersion = startMutationVersion,
                         uploadedDeletedPlaylistIds = uploadedDeletedPlaylistIds
                     )
                 }
                 return@withContext Result.failure(
-                    error ?: IOException(localizedContext.getString(R.string.github_sync_failed_message))
+                    error ?: IOException(localizedContext.getString(R.string.webdav_sync_failed_message))
                 )
             }
 
-            val (remoteContent, remoteSha) = remoteResult.getOrThrow()
-            var actualRemoteSha = remoteSha
+            val (remoteContent, remoteFingerprint) = remoteResult.getOrThrow()
             if (remoteContent.isEmpty()) {
                 return@withContext Result.failure(
-                    IOException(localizedContext.getString(R.string.github_backup_file_invalid))
+                    IOException(localizedContext.getString(R.string.webdav_backup_file_invalid))
                 )
             }
 
             val remoteData = try {
-                sanitizeSyncData(
-                    SyncDataSerializer.deserialize(
-                    remoteContent,
-                    SyncDataSerializer.isBinaryFileName(actualFileName)
-                    )
-                )
+                sanitizeSyncData(SyncDataSerializer.deserialize(remoteContent, false))
             } catch (e: Exception) {
-                // 解析失败时尝试另一种格式，再不行才报错
-                val alternativeFileName = SyncDataSerializer.getFileName(!useDataSaver)
-                val fallbackResult = if (alternativeFileName != actualFileName) {
-                    apiClient.getFileContentStrict(owner, repo, alternativeFileName).getOrNull()
-                } else null
-
-                val fallbackContent = fallbackResult?.first
-                val fallbackSha = fallbackResult?.second
-                val parsedFallback = if (!fallbackContent.isNullOrEmpty()) {
-                    runCatching {
-                        sanitizeSyncData(
-                            SyncDataSerializer.deserialize(
-                                fallbackContent,
-                                SyncDataSerializer.isBinaryFileName(alternativeFileName)
-                            )
-                        )
-                    }.getOrNull()
-                } else null
-
-                if (parsedFallback != null) {
-                    actualFileName = alternativeFileName
-                    if (!fallbackSha.isNullOrBlank()) {
-                        actualRemoteSha = fallbackSha
-                    }
-                    parsedFallback
-                } else {
-                    NPLogger.e(TAG, "Failed to parse remote data", e)
-                    return@withContext Result.failure(e)
-                }
+                NPLogger.e(TAG, "Failed to parse remote data", e)
+                return@withContext Result.failure(e)
             }
 
-            val lastRemoteSha = storage.getLastRemoteSha()
-            val isFirstSync = lastRemoteSha == null
-            val remoteHasChanged = lastRemoteSha != null && lastRemoteSha != actualRemoteSha
-            val lastSyncTime = storage.getLastSyncTime()
+            val lastRemoteFingerprint = webDavStorage.getLastRemoteFingerprint()
+            val isFirstSync = lastRemoteFingerprint == null
+            val remoteHasChanged =
+                lastRemoteFingerprint != null && lastRemoteFingerprint != remoteFingerprint
+            val lastSyncTime = webDavStorage.getLastSyncTime()
             val mergeResult = performThreeWayMerge(localData, remoteData, lastSyncTime)
             val localMutatedDuringSync =
                 storage.getSyncMutationVersion() != startMutationVersion
@@ -207,10 +160,10 @@ class GitHubSyncManager private constructor(context: Context) {
             }
 
             if (!hasDataChanged(remoteData, mergeResult.mergedData) && !remoteHasChanged) {
-                storage.saveLastRemoteSha(actualRemoteSha)
-                storage.saveLastSyncTime(System.currentTimeMillis())
+                webDavStorage.saveLastRemoteFingerprint(remoteFingerprint)
+                webDavStorage.saveLastSyncTime(System.currentTimeMillis())
                 if (localMutatedDuringSync) {
-                    GitHubSyncWorker.scheduleDelayedSync(
+                    WebDavSyncWorker.scheduleDelayedSync(
                         appContext,
                         triggerByUserAction = false,
                         markMutation = false
@@ -219,35 +172,29 @@ class GitHubSyncManager private constructor(context: Context) {
                 return@withContext Result.success(
                     SyncResult(
                         success = true,
-                        message = localizedContext.getString(R.string.github_sync_no_change)
+                        message = localizedContext.getString(R.string.webdav_sync_no_change)
                     )
                 )
             }
 
             val uploadResult = uploadLocalData(
                 apiClient = apiClient,
-                owner = owner,
-                repo = repo,
-                data = mergeResult.mergedData,
-                sha = actualRemoteSha,
-                fileName = actualFileName
+                remoteUrl = remoteUrl,
+                data = mergeResult.mergedData
             )
 
             if (uploadResult.isFailure) {
-                val error = uploadResult.exceptionOrNull()
-                if (error is TokenExpiredException) {
-                    storage.clearToken()
-                }
                 return@withContext Result.failure(
-                    error ?: Exception(localizedContext.getString(R.string.sync_upload_failed))
+                    uploadResult.exceptionOrNull()
+                        ?: Exception(localizedContext.getString(R.string.sync_upload_failed))
                 )
             }
 
-            uploadResult.getOrNull()?.let { storage.saveLastRemoteSha(it) }
-            storage.saveLastSyncTime(System.currentTimeMillis())
+            uploadResult.getOrNull()?.let(webDavStorage::saveLastRemoteFingerprint)
+            webDavStorage.saveLastSyncTime(System.currentTimeMillis())
             storage.removeDeletedPlaylistIds(uploadedDeletedPlaylistIds)
             if (localMutatedDuringSync) {
-                GitHubSyncWorker.scheduleDelayedSync(
+                WebDavSyncWorker.scheduleDelayedSync(
                     appContext,
                     triggerByUserAction = false,
                     markMutation = false
@@ -263,22 +210,24 @@ class GitHubSyncManager private constructor(context: Context) {
     }
 
     private suspend fun handleInitialUpload(
-        apiClient: GitHubApiClient,
-        owner: String,
-        repo: String,
+        apiClient: WebDavApiClient,
+        remoteUrl: String,
         localData: SyncData,
-        fileName: String,
         localizedContext: Context,
         startMutationVersion: Long,
         uploadedDeletedPlaylistIds: Set<Long>
     ): Result<SyncResult> {
-        val uploadResult = uploadLocalData(apiClient, owner, repo, localData, null, fileName)
+        val uploadResult = uploadLocalData(
+            apiClient = apiClient,
+            remoteUrl = remoteUrl,
+            data = localData
+        )
         if (uploadResult.isSuccess) {
-            uploadResult.getOrNull()?.let { storage.saveLastRemoteSha(it) }
-            storage.saveLastSyncTime(System.currentTimeMillis())
+            uploadResult.getOrNull()?.let(webDavStorage::saveLastRemoteFingerprint)
+            webDavStorage.saveLastSyncTime(System.currentTimeMillis())
             storage.removeDeletedPlaylistIds(uploadedDeletedPlaylistIds)
             if (storage.getSyncMutationVersion() != startMutationVersion) {
-                GitHubSyncWorker.scheduleDelayedSync(
+                WebDavSyncWorker.scheduleDelayedSync(
                     appContext,
                     triggerByUserAction = false,
                     markMutation = false
@@ -292,13 +241,9 @@ class GitHubSyncManager private constructor(context: Context) {
             )
         }
 
-        val error = uploadResult.exceptionOrNull()
-        if (error is TokenExpiredException) {
-            storage.clearToken()
-            return Result.failure(error)
-        }
         return Result.failure(
-            error ?: IOException(localizedContext.getString(R.string.sync_upload_failed))
+            uploadResult.exceptionOrNull()
+                ?: IOException(localizedContext.getString(R.string.sync_upload_failed))
         )
     }
 
@@ -470,7 +415,7 @@ class GitHubSyncManager private constructor(context: Context) {
             mergedData = mergedData,
             syncResult = SyncResult(
                 success = true,
-                message = localizedContext.getString(R.string.github_sync_success_detail),
+                message = localizedContext.getString(R.string.webdav_sync_success_detail),
                 playlistsAdded = playlistsAdded,
                 playlistsUpdated = playlistsUpdated,
                 playlistsDeleted = playlistsDeleted,
@@ -969,22 +914,18 @@ class GitHubSyncManager private constructor(context: Context) {
     }
 
     private suspend fun uploadLocalData(
-        apiClient: GitHubApiClient,
-        owner: String,
-        repo: String,
-        data: SyncData,
-        sha: String?,
-        fileName: String
+        apiClient: WebDavApiClient,
+        remoteUrl: String,
+        data: SyncData
     ): Result<String> {
         val localizedContext = LanguageManager.applyLanguage(appContext)
-        val useDataSaver = storage.isDataSaverMode()
-        val content = SyncDataSerializer.serialize(data, useDataSaver)
+        val content = SyncDataSerializer.serialize(data, false)
         NPLogger.d(
             TAG,
-            "Upload data size: ${SyncDataSerializer.getDataSize(data, useDataSaver)} bytes (DataSaver: $useDataSaver, File: $fileName)"
+            "Upload data size: ${SyncDataSerializer.getDataSize(data, false)} bytes (WebDAV)"
         )
 
-        val uploadResult = apiClient.updateFileContent(owner, repo, content, sha, fileName)
+        val uploadResult = apiClient.updateFileContent(remoteUrl, content)
         return if (uploadResult.isSuccess) {
             Result.success(uploadResult.getOrNull().orEmpty())
         } else {

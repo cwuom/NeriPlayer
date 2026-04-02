@@ -43,14 +43,18 @@ import moe.ouom.neriplayer.core.api.search.QQMusicSearchApi
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicClient
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicPlaybackRepository
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.data.ListenTogetherPreferences
 import moe.ouom.neriplayer.data.auth.bili.BiliCookieRepository
 import moe.ouom.neriplayer.data.auth.netease.NeteaseCookieRepository
-import moe.ouom.neriplayer.data.history.PlayHistoryRepository
-import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
-import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthAutoRefreshManager
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRepository
 import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
+import moe.ouom.neriplayer.data.history.PlayHistoryRepository
+import moe.ouom.neriplayer.listentogether.ListenTogetherApi
+import moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager
+import moe.ouom.neriplayer.listentogether.ListenTogetherWebSocketClient
+import moe.ouom.neriplayer.data.settings.SettingsRepository
+import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeInnertubeRequestHeaders
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubePageRequestHeaders
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeStreamRequestHeaders
@@ -68,22 +72,27 @@ internal fun resolveInitialBypassProxy(
 
 internal data class InitialManagedDownloadSettings(
     val directoryUri: String? = null,
-    val directoryLabel: String? = null
+    val directoryLabel: String? = null,
+    val fileNameTemplate: String? = null
 )
 
 internal fun resolveInitialManagedDownloadSettings(
     currentDirectoryUri: String? = null,
     currentDirectoryLabel: String? = null,
+    currentFileNameTemplate: String? = null,
     loadDirectoryUri: () -> String?,
-    loadDirectoryLabel: () -> String?
+    loadDirectoryLabel: () -> String?,
+    loadFileNameTemplate: () -> String?
 ): InitialManagedDownloadSettings {
     return InitialManagedDownloadSettings(
         directoryUri = runCatching(loadDirectoryUri).getOrDefault(currentDirectoryUri),
-        directoryLabel = runCatching(loadDirectoryLabel).getOrDefault(currentDirectoryLabel)
+        directoryLabel = runCatching(loadDirectoryLabel).getOrDefault(currentDirectoryLabel),
+        fileNameTemplate = runCatching(loadFileNameTemplate).getOrDefault(currentFileNameTemplate)
     ).let { resolved ->
         InitialManagedDownloadSettings(
             directoryUri = resolved.directoryUri?.takeIf(String::isNotBlank),
-            directoryLabel = resolved.directoryLabel?.takeIf(String::isNotBlank)
+            directoryLabel = resolved.directoryLabel?.takeIf(String::isNotBlank),
+            fileNameTemplate = resolved.fileNameTemplate?.takeIf(String::isNotBlank)
         )
     }
 }
@@ -116,6 +125,7 @@ object AppContainer {
 
     // 基础 Repo
     val settingsRepo by lazy { SettingsRepository(application) }
+    val listenTogetherPreferences by lazy { ListenTogetherPreferences(application) }
     val neteaseCookieRepo by lazy { NeteaseCookieRepository(application) }
     val biliCookieRepo by lazy { BiliCookieRepository(application) }
     val youtubeAuthRepo by lazy { YouTubeAuthRepository(application) }
@@ -225,6 +235,14 @@ object AppContainer {
     val cloudMusicSearchApi by lazy { CloudMusicSearchApi(neteaseClient) }
     val qqMusicSearchApi by lazy { QQMusicSearchApi() }
     val lrcLibClient by lazy { moe.ouom.neriplayer.core.api.lyrics.LrcLibClient(sharedOkHttpClient) }
+    val listenTogetherApi by lazy { ListenTogetherApi(sharedOkHttpClient) }
+    val listenTogetherWebSocketClient by lazy { ListenTogetherWebSocketClient(sharedOkHttpClient) }
+    val listenTogetherSessionManager by lazy {
+        ListenTogetherSessionManager(
+            api = listenTogetherApi,
+            webSocketClient = listenTogetherWebSocketClient
+        )
+    }
 
     fun launchBackgroundIo(block: suspend CoroutineScope.() -> Unit) = scope.launch(block = block)
 
@@ -260,11 +278,17 @@ object AppContainer {
                 runBlocking {
                     settingsRepo.downloadDirectoryLabelFlow.first()
                 }
+            },
+            loadFileNameTemplate = {
+                runBlocking {
+                    settingsRepo.downloadFileNameTemplateFlow.first()
+                }
             }
         )
         ManagedDownloadStorage.primeSettings(
             directoryUri = initialManagedDownloadSettings.directoryUri,
-            directoryLabel = initialManagedDownloadSettings.directoryLabel
+            directoryLabel = initialManagedDownloadSettings.directoryLabel,
+            fileNameTemplate = initialManagedDownloadSettings.fileNameTemplate
         )
     }
 
@@ -312,6 +336,12 @@ object AppContainer {
         settingsRepo.downloadDirectoryLabelFlow
             .onEach { label ->
                 ManagedDownloadStorage.updateCustomDirectoryLabel(label)
+            }
+            .launchIn(scope)
+
+        settingsRepo.downloadFileNameTemplateFlow
+            .onEach { template ->
+                ManagedDownloadStorage.updateDownloadFileNameTemplate(template)
             }
             .launchIn(scope)
     }

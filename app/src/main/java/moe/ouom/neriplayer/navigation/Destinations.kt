@@ -40,6 +40,7 @@ sealed class Destinations(val route: String, val labelResId: Int) {
 
     // DEBUG
     data object Debug : Destinations("debug", moe.ouom.neriplayer.R.string.debug_title)
+    data object DebugListenTogether : Destinations("debug/listen_together", moe.ouom.neriplayer.R.string.listen_together_title)
     data object DebugYouTube : Destinations("debug/youtube", moe.ouom.neriplayer.R.string.common_youtube)
     data object DebugBili : Destinations("debug/bili", moe.ouom.neriplayer.R.string.debug_bili_api)
     data object DebugNetease : Destinations("debug/netease", moe.ouom.neriplayer.R.string.debug_netease_api)

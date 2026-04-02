@@ -29,22 +29,26 @@ class AppContainerBootstrapTest {
     fun `resolveInitialManagedDownloadSettings prefers persisted values`() {
         val resolved = resolveInitialManagedDownloadSettings(
             loadDirectoryUri = { "content://downloads/tree/neri" },
-            loadDirectoryLabel = { "SD Card" }
+            loadDirectoryLabel = { "SD Card" },
+            loadFileNameTemplate = { "%title%" }
         )
 
         assertEquals("content://downloads/tree/neri", resolved.directoryUri)
         assertEquals("SD Card", resolved.directoryLabel)
+        assertEquals("%title%", resolved.fileNameTemplate)
     }
 
     @Test
     fun `resolveInitialManagedDownloadSettings normalizes blanks to null`() {
         val resolved = resolveInitialManagedDownloadSettings(
             loadDirectoryUri = { " " },
-            loadDirectoryLabel = { "" }
+            loadDirectoryLabel = { "" },
+            loadFileNameTemplate = { " " }
         )
 
         assertNull(resolved.directoryUri)
         assertNull(resolved.directoryLabel)
+        assertNull(resolved.fileNameTemplate)
     }
 
     @Test
@@ -52,12 +56,15 @@ class AppContainerBootstrapTest {
         val resolved = resolveInitialManagedDownloadSettings(
             currentDirectoryUri = "content://downloads/tree/current",
             currentDirectoryLabel = "Current",
+            currentFileNameTemplate = "%artist%",
             loadDirectoryUri = { error("boom-uri") },
-            loadDirectoryLabel = { error("boom-label") }
+            loadDirectoryLabel = { error("boom-label") },
+            loadFileNameTemplate = { error("boom-template") }
         )
 
         assertEquals("content://downloads/tree/current", resolved.directoryUri)
         assertEquals("Current", resolved.directoryLabel)
+        assertEquals("%artist%", resolved.fileNameTemplate)
     }
 
     @Test
@@ -65,12 +72,15 @@ class AppContainerBootstrapTest {
         val resolved = resolveInitialManagedDownloadSettings(
             currentDirectoryUri = "content://downloads/tree/current",
             currentDirectoryLabel = "Current",
+            currentFileNameTemplate = "%artist%",
             loadDirectoryUri = { error("boom-uri") },
-            loadDirectoryLabel = { "USB Music" }
+            loadDirectoryLabel = { "USB Music" },
+            loadFileNameTemplate = { "%album% - %title%" }
         )
 
         assertEquals("content://downloads/tree/current", resolved.directoryUri)
         assertEquals("USB Music", resolved.directoryLabel)
+        assertEquals("%album% - %title%", resolved.fileNameTemplate)
     }
 
     @Test

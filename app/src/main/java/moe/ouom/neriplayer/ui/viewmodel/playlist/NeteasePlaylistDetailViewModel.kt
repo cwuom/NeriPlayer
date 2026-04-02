@@ -80,7 +80,12 @@ data class SongItem(
     val originalLyric: String? = null,
     val originalTranslatedLyric: String? = null,
     val localFileName: String? = null,
-    val localFilePath: String? = null
+    val localFilePath: String? = null,
+    val channelId: String? = null,
+    val audioId: String? = null,
+    val subAudioId: String? = null,
+    val playlistContextId: String? = null,
+    val streamUrl: String? = null
 ) : Parcelable
 
 data class PlaylistDetailUiState(
@@ -358,7 +363,9 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
             album = "Netease$albumName",
             albumId = albumId,
             durationMs = duration,
-            coverUrl = cover
+            coverUrl = cover,
+            channelId = "netease",
+            audioId = id.toString()
         )
     }
 

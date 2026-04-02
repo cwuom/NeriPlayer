@@ -27,7 +27,6 @@ import android.app.Activity
 import android.app.Application
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -102,7 +101,6 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.createBitmap
-import androidx.core.graphics.ColorUtils
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -112,7 +110,6 @@ import androidx.navigation.navArgument
 import coil.Coil
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
-import coil.request.SuccessResult
 import com.google.gson.Gson
 import dev.chrisbanes.haze.HazeDefaults
 import dev.chrisbanes.haze.HazeState
@@ -148,6 +145,7 @@ import moe.ouom.neriplayer.ui.screen.debug.BiliApiProbeScreen
 import moe.ouom.neriplayer.ui.screen.debug.DebugHomeScreen
 import moe.ouom.neriplayer.ui.screen.debug.LogListScreen
 import moe.ouom.neriplayer.ui.screen.debug.CrashLogListScreen
+import moe.ouom.neriplayer.ui.screen.debug.ListenTogetherDebugScreen
 import moe.ouom.neriplayer.ui.screen.debug.NeteaseApiProbeScreen
 import moe.ouom.neriplayer.ui.screen.debug.SearchApiProbeScreen
 import moe.ouom.neriplayer.ui.screen.debug.YouTubeApiProbeScreen
@@ -170,8 +168,9 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.util.ExceptionHandler
 import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.util.CoverArtColorCache
+import moe.ouom.neriplayer.util.adjustedAccentColorArgb
 import moe.ouom.neriplayer.util.syncHapticFeedbackSetting
-import androidx.palette.graphics.Palette
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
@@ -184,37 +183,6 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlin.coroutines.resume
 import kotlin.math.abs
-
-private fun adjustAccent(base: Color, isDark: Boolean): Color {
-    val r = (base.red * 255).toInt().coerceIn(0, 255)
-    val g = (base.green * 255).toInt().coerceIn(0, 255)
-    val b = (base.blue * 255).toInt().coerceIn(0, 255)
-    val hsl = FloatArray(3)
-    ColorUtils.RGBToHSL(r, g, b, hsl)
-
-    val targetS = if (isDark) {
-        (hsl[1] * 0.38f).coerceAtMost(0.30f)
-    } else {
-        (hsl[1] * 0.32f).coerceAtMost(0.24f)
-    }
-
-    val targetL = if (isDark) {
-        hsl[2].coerceIn(0.18f, 0.26f)
-    } else {
-        0.90f
-    }
-
-    val outInt = ColorUtils.HSLToColor(floatArrayOf(hsl[0], targetS, targetL))
-
-    val neutralInt = if (isDark) 0xFF121212.toInt() else 0xFFFFFFFF.toInt()
-    val mixed = ColorUtils.blendARGB(
-        outInt,
-        neutralInt,
-        if (isDark) 0.22f else 0.28f
-    )
-
-    return Color(mixed)
-}
 
 private fun resolveMainStartDestination(
     preferredRoute: String,
@@ -235,6 +203,8 @@ private fun SongItem?.resolveUiCoverSource(context: android.content.Context): St
     return this?.displayCoverUrl(context)
 }
 
+private const val THEME_REVEAL_SNAPSHOT_MAX_DIMENSION_PX = 1440
+
 private suspend fun captureThemeRevealSnapshot(
     activity: Activity?,
     fallbackView: View
@@ -247,11 +217,16 @@ private suspend fun captureThemeRevealSnapshot(
                 return@suspendCancellableCoroutine
             }
 
-            val bitmap = createBitmap(
-                decorView.width,
-                decorView.height,
-                Bitmap.Config.ARGB_8888
-            )
+            val maxDimension = maxOf(decorView.width, decorView.height).coerceAtLeast(1)
+            val downsampleRatio = (maxDimension.toFloat() / THEME_REVEAL_SNAPSHOT_MAX_DIMENSION_PX)
+                .coerceAtLeast(1f)
+            val snapshotWidth = (decorView.width / downsampleRatio)
+                .toInt()
+                .coerceAtLeast(1)
+            val snapshotHeight = (decorView.height / downsampleRatio)
+                .toInt()
+                .coerceAtLeast(1)
+            val bitmap = createBitmap(snapshotWidth, snapshotHeight, Bitmap.Config.ARGB_8888)
 
             PixelCopy.request(
                 currentActivity.window,
@@ -333,6 +308,7 @@ private suspend fun awaitStableDraw(view: View) {
 private fun NowPlayingAccentBackdrop(
     coverUrl: String?,
     isDark: Boolean,
+    refreshKey: Int = 0,
     modifier: Modifier = Modifier,
     onAccentChanged: (String?) -> Unit = {}
 ) {
@@ -340,31 +316,24 @@ private fun NowPlayingAccentBackdrop(
     val fallback = if (isDark) Color(0xFF121212) else Color(0xFFF5F5F5)
     var target by remember { mutableStateOf<Color?>(null) }
 
-    LaunchedEffect(coverUrl, isDark) {
+    LaunchedEffect(coverUrl, isDark, refreshKey) {
         if (coverUrl.isNullOrEmpty()) {
             target = null
             onAccentChanged(null)
             return@LaunchedEffect
         }
-        val loader = Coil.imageLoader(context)
-        val req = ImageRequest.Builder(context)
-            .data(coverUrl)
-            .allowHardware(false)
-            .build()
-
-        val result = withContext(Dispatchers.IO) { loader.execute(req) }
-        val bmp = (result as? SuccessResult)?.drawable.let { it as? BitmapDrawable }?.bitmap
-        val nextTarget = bmp?.let {
-            val p = Palette.from(it).clearFilters().generate()
-            val rgb = p.getVibrantColor(
-                p.getMutedColor(
-                    p.getDominantColor(fallback.toArgb())
-                )
-            )
-            adjustAccent(Color(rgb), isDark)
+        val cached = CoverArtColorCache.peek(coverUrl)
+        if (cached != null) {
+            target = Color(adjustedAccentColorArgb(cached.baseColorArgb, isDark))
+            onAccentChanged(cached.seedHex)
         }
-        if (nextTarget != null) {
-            target = nextTarget
+        val sample = CoverArtColorCache.getOrLoad(context, coverUrl)
+        if (sample != null) {
+            target = Color(adjustedAccentColorArgb(sample.baseColorArgb, isDark))
+            onAccentChanged(sample.seedHex)
+        } else if (cached == null) {
+            target = null
+            onAccentChanged(null)
         }
     }
 
@@ -415,8 +384,8 @@ fun NeriApp(
 ) {
     val context = LocalContext.current
     val rootView = LocalView.current
-    val fallbackPrimary = MaterialTheme.colorScheme.primary.toArgb()
     val repo = remember { AppContainer.settingsRepo }
+    val coverArtImageLoader = remember(context) { Coil.imageLoader(context) }
 
     val storedFollowSystemDark by repo.followSystemDarkFlow.collectAsState(
         initial = initialThemeSnapshot.followSystemDark
@@ -446,6 +415,7 @@ fun NeriApp(
     val bypassProxy by repo.bypassProxyFlow.collectAsState(initial = true)
     val backgroundImageUri by repo.backgroundImageUriFlow.collectAsState(initial = null)
     val downloadDirectoryUri by repo.downloadDirectoryUriFlow.collectAsState(initial = null)
+    val downloadFileNameTemplate by repo.downloadFileNameTemplateFlow.collectAsState(initial = null)
     val backgroundImageBlur by repo.backgroundImageBlurFlow.collectAsState(initial = 0f)
     val backgroundImageAlpha by repo.backgroundImageAlphaFlow.collectAsState(initial = 0.3f)
     val hapticFeedbackEnabled by repo.hapticFeedbackEnabledFlow.collectAsState(initial = true)
@@ -484,6 +454,7 @@ fun NeriApp(
     var themeRevealCaptureJob by remember { mutableStateOf<Job?>(null) }
     var themeRevealCaptureToken by remember { mutableIntStateOf(0) }
     var pendingBackgroundImageAlpha by remember { mutableStateOf<Float?>(null) }
+    var coverArtRefreshToken by remember { mutableIntStateOf(0) }
     val lifecycleOwner = LocalLifecycleOwner.current
 
     val followSystemDark = pendingFollowSystemDark ?: storedFollowSystemDark
@@ -551,33 +522,51 @@ fun NeriApp(
         }
     }
 
-    LaunchedEffect(displayCoverUrl, fallbackPrimary) {
+    LaunchedEffect(displayCoverUrl, coverArtRefreshToken) {
         if (displayCoverUrl.isNullOrBlank()) {
             coverSeedHex = null
             return@LaunchedEffect
         }
+        coverSeedHex = CoverArtColorCache.peek(displayCoverUrl)?.seedHex
+        coverSeedHex = CoverArtColorCache.getOrLoad(context, displayCoverUrl)?.seedHex ?: coverSeedHex
+    }
 
-        val loader = Coil.imageLoader(context)
-        val req = ImageRequest.Builder(context).data(displayCoverUrl).allowHardware(false).build()
-        val result = withContext(Dispatchers.IO) { loader.execute(req) }
-        val bmp = (result as? SuccessResult)?.drawable.let { it as? BitmapDrawable }?.bitmap
+    LaunchedEffect(
+        displayCoverUrl,
+        nowPlayingCoverBlurBackgroundEnabled,
+        nowPlayingCoverBlurAmount,
+        effectiveAdvancedBlurEnabled
+    ) {
+        if (displayCoverUrl.isNullOrBlank()) return@LaunchedEffect
 
-        val extractedSeedHex = bmp?.let { bitmap ->
-            val p = Palette.from(bitmap).clearFilters().generate()
-            val base = p.getVibrantColor(
-                p.getMutedColor(
-                    p.getDominantColor(fallbackPrimary)
+        coverArtImageLoader.enqueue(
+            ImageRequest.Builder(context)
+                .data(displayCoverUrl)
+                .allowHardware(false)
+                .build()
+        )
+        CoverArtColorCache.preload(context, displayCoverUrl)
+
+        if (!effectiveAdvancedBlurEnabled || !nowPlayingCoverBlurBackgroundEnabled) {
+            return@LaunchedEffect
+        }
+
+        val blurStrength = nowPlayingCoverBlurAmount.coerceIn(0f, 500f)
+        coverArtImageLoader.enqueue(
+            ImageRequest.Builder(context)
+                .data(displayCoverUrl)
+                .allowHardware(false)
+                .memoryCacheKey("nowplaying-blur:$displayCoverUrl:$blurStrength")
+                .diskCacheKey("nowplaying-blur:$displayCoverUrl:$blurStrength")
+                .transformations(
+                    if (blurStrength > 0f) {
+                        listOf(BlurTransformation(context, blurStrength))
+                    } else {
+                        emptyList()
+                    }
                 )
-            )
-            val r = (base shr 16) and 0xFF
-            val g = (base shr 8) and 0xFF
-            val b = base and 0xFF
-            String.format("%02X%02X%02X", r, g, b)
-        }
-
-        if (extractedSeedHex != null) {
-            coverSeedHex = extractedSeedHex
-        }
+                .build()
+        )
     }
 
     // 同步触感反馈设置
@@ -609,14 +598,15 @@ fun NeriApp(
         val cacheSize = repo.maxCacheSizeBytesFlow.first()
         PlayerManager.initialize(context.applicationContext as Application, cacheSize)
         NPLogger.d("NERI-App", "PlayerManager.initialize called")
-        NPLogger.d("PlayerManager.hasItems()", PlayerManager.hasItems().toString())
-        if (PlayerManager.hasItems()) {
-            ContextCompat.startForegroundService(
-                context,
-                Intent(context, AudioPlayerService::class.java).apply {
-                    action = AudioPlayerService.ACTION_SYNC
-                }
-            )
+        NPLogger.d(
+            "NERI-App",
+            "Player bootstrap state hasItems=${PlayerManager.hasItems()} transportActive=${PlayerManager.isTransportActive()} isPlaying=${PlayerManager.isPlayingFlow.value}"
+        )
+        if (PlayerManager.hasItems() && PlayerManager.shouldRunPlaybackServiceInForeground()) {
+            NPLogger.d("NERI-App", "Starting audio service from app bootstrap")
+            AudioPlayerService.startSyncService(context, "app_bootstrap", forceForeground = true)
+        } else {
+            NPLogger.d("NERI-App", "Skip audio service bootstrap because transport is inactive")
         }
     }
 
@@ -694,12 +684,16 @@ fun NeriApp(
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (
-                event == Lifecycle.Event.ON_PAUSE ||
-                event == Lifecycle.Event.ON_STOP ||
-                event == Lifecycle.Event.ON_DESTROY
-            ) {
-                clearThemeRevealState()
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> {
+                    coverArtRefreshToken += 1
+                }
+                Lifecycle.Event.ON_PAUSE,
+                Lifecycle.Event.ON_STOP,
+                Lifecycle.Event.ON_DESTROY -> {
+                    clearThemeRevealState()
+                }
+                else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -716,21 +710,20 @@ fun NeriApp(
         showNowPlaying = true
         // 播放队列可能包含歌词等大字段，避免通过 Binder 传整份歌单导致崩溃
         PlayerManager.playPlaylist(songs, index)
-        ContextCompat.startForegroundService(
+        NPLogger.d("NERI-App", "Starting audio service after playSongsAndOpenNowPlaying")
+        AudioPlayerService.startSyncService(
             context,
-            Intent(context, AudioPlayerService::class.java).apply {
-                action = AudioPlayerService.ACTION_SYNC
-            }
+            "play_songs_and_open_now_playing",
+            forceForeground = true
         )
     }
 
     fun ensureAudioServiceStarted() {
-        ContextCompat.startForegroundService(
-            context,
-            Intent(context, AudioPlayerService::class.java).apply {
-                action = AudioPlayerService.ACTION_SYNC
-            }
+        NPLogger.d(
+            "NERI-App",
+            "ensureAudioServiceStarted hasItems=${PlayerManager.hasItems()} transportActive=${PlayerManager.isTransportActive()} isPlaying=${PlayerManager.isPlayingFlow.value}"
         )
+        AudioPlayerService.startSyncService(context, "ensure_audio_service_started")
     }
 
     fun playBiliAudioAndOpenNowPlaying(videos: List<BiliVideoItem>, index: Int) {
@@ -1286,6 +1279,7 @@ fun NeriApp(
                                             scope.launch { repo.setBackgroundImageUri(uri?.toString()) }
                                         },
                                         downloadDirectoryUri = downloadDirectoryUri,
+                                        downloadFileNameTemplate = downloadFileNameTemplate,
                                         onDownloadDirectoryUriChange = { uri ->
                                             val label = ManagedDownloadStorage.describeConfiguredDirectory(
                                                 context,
@@ -1296,6 +1290,9 @@ fun NeriApp(
                                                 ManagedDownloadStorage.updateConfiguredTreeUri(uri)
                                                 ManagedDownloadStorage.updateCustomDirectoryLabel(label)
                                             }
+                                        },
+                                        onDownloadFileNameTemplateChange = { template ->
+                                            scope.launch { repo.setDownloadFileNameTemplate(template) }
                                         },
                                         backgroundImageBlur = backgroundImageBlur,
                                         onBackgroundImageBlurChange = {},
@@ -1499,6 +1496,9 @@ fun NeriApp(
                                     }
                                 ) {
                                     DebugHomeScreen(
+                                        onOpenListenTogetherDebug = {
+                                            navController.navigate(Destinations.DebugListenTogether.route)
+                                        },
                                         onOpenYouTubeDebug = {
                                             navController.navigate(Destinations.DebugYouTube.route)
                                         },
@@ -1521,6 +1521,7 @@ fun NeriApp(
                                         }
                                     )
                                 }
+                                composable(Destinations.DebugListenTogether.route) { ListenTogetherDebugScreen() }
                                 composable(Destinations.DebugYouTube.route) { YouTubeApiProbeScreen() }
                                 composable(Destinations.DebugBili.route) { BiliApiProbeScreen() }
                                 composable(Destinations.DebugNetease.route) { NeteaseApiProbeScreen() }
@@ -1708,6 +1709,7 @@ fun NeriApp(
                                 NowPlayingAccentBackdrop(
                                     coverUrl = nowPlayingCoverUrl,
                                     isDark = true,
+                                    refreshKey = coverArtRefreshToken,
                                     modifier = Modifier.fillMaxSize()
                                 )
                             }
@@ -1717,6 +1719,7 @@ fun NeriApp(
                                 NowPlayingAccentBackdrop(
                                     coverUrl = blurBackdropCoverUrl,
                                     isDark = true,
+                                    refreshKey = coverArtRefreshToken,
                                     modifier = Modifier.fillMaxSize()
                                 )
                                 val shouldShowStable =
@@ -1787,7 +1790,8 @@ fun NeriApp(
                                         .fillMaxSize()
                                         .graphicsLayer { alpha = 0.80f },
                                     isDark = true,
-                                    coverUrl = nowPlayingCoverUrl
+                                    coverUrl = nowPlayingCoverUrl,
+                                    refreshKey = coverArtRefreshToken
                                 )
                             }
 

@@ -49,7 +49,10 @@ fun buildBiliPartSong(
         album = "${PlayerManager.BILI_SOURCE_TAG}|${page.cid}",
         albumId = 0L,
         durationMs = page.durationSec * 1000L,
-        coverUrl = coverUrl
+        coverUrl = coverUrl,
+        channelId = "bilibili",
+        audioId = basicInfo.aid.toString(),
+        subAudioId = page.cid.toString()
     )
 }
 

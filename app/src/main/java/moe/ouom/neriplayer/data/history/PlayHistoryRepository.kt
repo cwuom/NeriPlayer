@@ -38,6 +38,7 @@ import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.sync.github.SyncRecentPlayDeletion
+import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import java.io.File
@@ -121,9 +122,9 @@ class PlayHistoryRepository private constructor(private val app: Context) {
             storage.markSyncMutation()
             if (!storage.isAutoSyncEnabled()) {
                 NPLogger.d("PlayHistoryRepo", "Auto sync is disabled, skipping sync")
-                return
             }
             GitHubSyncWorker.scheduleDelayedSync(app, triggerByUserAction = false)
+            WebDavSyncWorker.scheduleDelayedSync(app, triggerByUserAction = false)
             NPLogger.d("PlayHistoryRepo", "Sync scheduled after play history change")
         } catch (e: Exception) {
             NPLogger.e("PlayHistoryRepo", "Failed to trigger sync", e)

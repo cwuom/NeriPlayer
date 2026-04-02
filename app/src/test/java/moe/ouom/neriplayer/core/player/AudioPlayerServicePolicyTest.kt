@@ -39,4 +39,26 @@ class AudioPlayerServicePolicyTest {
         assertTrue(actions and PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS != 0L)
         assertTrue(actions and PlaybackStateCompat.ACTION_SEEK_TO != 0L)
     }
+
+    @Test
+    fun `android o and above always use foreground service start`() {
+        assertTrue(
+            shouldUseForegroundServiceStart(
+                sdkInt = 26,
+                forceForeground = false,
+                shouldRunPlaybackServiceInForeground = false
+            )
+        )
+    }
+
+    @Test
+    fun `pre o can use background start when foreground is unnecessary`() {
+        assertFalse(
+            shouldUseForegroundServiceStart(
+                sdkInt = 25,
+                forceForeground = false,
+                shouldRunPlaybackServiceInForeground = false
+            )
+        )
+    }
 }
