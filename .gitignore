@@ -23,3 +23,5 @@ local.properties
 /.tmp/
 /tools/
 /.kotlin/
+demo
+.idea

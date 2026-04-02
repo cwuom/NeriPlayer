@@ -268,6 +268,8 @@ object PlayerManager {
     private var pendingPauseJob: Job? = null
     private var bluetoothDisconnectPauseJob: Job? = null
     private var playbackSoundPersistJob: Job? = null
+    private var playbackSoundApplyJob: Job? = null
+    private var pendingPlaybackSoundConfig: PlaybackSoundConfig? = null
     private var neteaseQualityRefreshJob: Job? = null
     private var youtubeQualityRefreshJob: Job? = null
     private var biliQualityRefreshJob: Job? = null
@@ -899,14 +901,42 @@ object PlayerManager {
         newConfig: PlaybackSoundConfig,
         persist: Boolean
     ) {
+        val previousConfig = playbackSoundConfig
         playbackSoundConfig = newConfig.copy(
             speed = normalizePlaybackSpeed(newConfig.speed),
             pitch = normalizePlaybackPitch(newConfig.pitch),
             loudnessGainMb = normalizePlaybackLoudnessGainMb(newConfig.loudnessGainMb)
         )
-        _playbackSoundState.value = playbackEffectsController.updateConfig(playbackSoundConfig)
+        schedulePlaybackSoundConfigApply(
+            previousConfig = previousConfig,
+            newConfig = playbackSoundConfig
+        )
         if (persist) {
             persistPlaybackSoundConfig(playbackSoundConfig)
+        }
+    }
+
+    private fun schedulePlaybackSoundConfigApply(
+        previousConfig: PlaybackSoundConfig,
+        newConfig: PlaybackSoundConfig
+    ) {
+        pendingPlaybackSoundConfig = newConfig
+        playbackSoundApplyJob?.cancel()
+
+        val debounceHeavyEffectUpdate =
+            previousConfig.equalizerEnabled != newConfig.equalizerEnabled ||
+                previousConfig.presetId != newConfig.presetId ||
+                previousConfig.customBandLevelsMb != newConfig.customBandLevelsMb ||
+                previousConfig.loudnessGainMb != newConfig.loudnessGainMb
+        val applyDelayMs = if (debounceHeavyEffectUpdate) 48L else 0L
+
+        playbackSoundApplyJob = mainScope.launch {
+            if (applyDelayMs > 0L) {
+                delay(applyDelayMs)
+            }
+            val latestConfig = pendingPlaybackSoundConfig ?: return@launch
+            pendingPlaybackSoundConfig = null
+            _playbackSoundState.value = playbackEffectsController.updateConfig(latestConfig)
         }
     }
 

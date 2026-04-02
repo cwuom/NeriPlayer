@@ -47,6 +47,8 @@ internal const val NETEASE_AUTH_STALE_AFTER_MS: Long = 30L * 24L * 60L * 60L * 1
 
 private const val NETEASE_AUTH_PREFS = "netease_auth_secure_prefs"
 private const val KEY_NETEASE_AUTH_BUNDLE = "netease_auth_bundle"
+private const val NETEASE_COOKIE_FALLBACK_OS = "pc"
+private const val NETEASE_COOKIE_FALLBACK_APPVER = "8.10.35"
 
 private val Context.cookieDataStore by preferencesDataStore("auth_store")
 
@@ -58,6 +60,51 @@ private val NETEASE_LOGIN_COOKIE_KEYS = listOf(
     "MUSIC_U",
     "MUSIC_A"
 )
+
+private val NETEASE_COOKIE_NAME_REGEX = Regex("^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
+
+data class NeteaseCookieValidationResult(
+    val sanitizedCookies: Map<String, String> = emptyMap(),
+    val rejectedKeys: List<String> = emptyList()
+) {
+    val hasLoginCookie: Boolean
+        get() = NETEASE_LOGIN_COOKIE_KEYS.any { key -> !sanitizedCookies[key].isNullOrBlank() }
+
+    val isAccepted: Boolean
+        get() = sanitizedCookies.isNotEmpty() && hasLoginCookie
+}
+
+internal fun validateAndSanitizeNeteaseCookies(
+    cookies: Map<String, String>,
+    includeFallbackCookies: Boolean = true
+): NeteaseCookieValidationResult {
+    val sanitized = linkedMapOf<String, String>()
+    val rejected = linkedSetOf<String>()
+
+    cookies.forEach { (rawKey, rawValue) ->
+        val key = rawKey.trim()
+        val value = rawValue.trim()
+        val rejectedKey = key.ifBlank { "<blank>" }
+        when {
+            key.isBlank() -> rejected += rejectedKey
+            !NETEASE_COOKIE_NAME_REGEX.matches(key) -> rejected += rejectedKey
+            value.isBlank() -> rejected += rejectedKey
+            value.any { it.isISOControl() } -> rejected += rejectedKey
+            ';' in value -> rejected += rejectedKey
+            else -> sanitized[key] = value
+        }
+    }
+
+    if (includeFallbackCookies && sanitized.isNotEmpty()) {
+        sanitized.putIfAbsent("os", NETEASE_COOKIE_FALLBACK_OS)
+        sanitized.putIfAbsent("appver", NETEASE_COOKIE_FALLBACK_APPVER)
+    }
+
+    return NeteaseCookieValidationResult(
+        sanitizedCookies = sanitized,
+        rejectedKeys = rejected.toList()
+    )
+}
 
 data class NeteaseAuthBundle(
     val cookies: Map<String, String> = emptyMap(),
@@ -149,7 +196,7 @@ internal fun evaluateNeteaseAuthHealth(
 }
 
 class NeteaseCookieRepository(private val context: Context) {
-    private val encryptedPrefs: SharedPreferences
+    private var encryptedPrefs: SharedPreferences
     private val _authFlow: MutableStateFlow<NeteaseAuthBundle>
     private val _cookieFlow: MutableStateFlow<Map<String, String>>
     private val _authHealthFlow: MutableStateFlow<SavedCookieAuthHealth>
@@ -161,16 +208,7 @@ class NeteaseCookieRepository(private val context: Context) {
         get() = _authHealthFlow.asStateFlow()
 
     init {
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        encryptedPrefs = EncryptedSharedPreferences.create(
-            context,
-            NETEASE_AUTH_PREFS,
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
+        encryptedPrefs = openEncryptedPrefsWithRecovery()
         val initialBundle = loadAuthBundle()
         _authFlow = MutableStateFlow(initialBundle)
         _cookieFlow = MutableStateFlow(initialBundle.cookies)
@@ -188,12 +226,24 @@ class NeteaseCookieRepository(private val context: Context) {
         staleAfterMs: Long = NETEASE_AUTH_STALE_AFTER_MS
     ): SavedCookieAuthHealth = evaluateNeteaseAuthHealth(_authFlow.value, now, staleAfterMs)
 
+    fun validateCookies(cookies: Map<String, String>): NeteaseCookieValidationResult {
+        return validateAndSanitizeNeteaseCookies(cookies)
+    }
+
     fun saveCookies(
         cookies: Map<String, String>,
         savedAt: Long = System.currentTimeMillis()
-    ) {
+    ): Boolean {
+        val validation = validateCookies(cookies)
+        if (!validation.isAccepted) {
+            NPLogger.w(
+                "NERI-CookieRepo",
+                "Rejected invalid NetEase cookies. rejectedKeys=${validation.rejectedKeys.joinToString()}"
+            )
+            return false
+        }
         val normalized = NeteaseAuthBundle(
-            cookies = cookies,
+            cookies = validation.sanitizedCookies,
             savedAt = savedAt
         ).normalized(savedAt = savedAt)
         encryptedPrefs.edit {
@@ -202,7 +252,11 @@ class NeteaseCookieRepository(private val context: Context) {
         _authFlow.value = normalized
         _cookieFlow.value = normalized.cookies
         _authHealthFlow.value = evaluateNeteaseAuthHealth(normalized)
-        NPLogger.d("NERI-CookieRepo", "Saved cookies to secure storage: keys=${cookies.keys.joinToString()}")
+        NPLogger.d(
+            "NERI-CookieRepo",
+            "Saved cookies to secure storage: keys=${normalized.cookies.keys.joinToString()}"
+        )
+        return true
     }
 
     fun clear() {
@@ -228,7 +282,17 @@ class NeteaseCookieRepository(private val context: Context) {
     }
 
     private fun loadAuthBundle(): NeteaseAuthBundle {
-        val raw = encryptedPrefs.getString(KEY_NETEASE_AUTH_BUNDLE, null).orEmpty()
+        val raw = runCatching {
+            encryptedPrefs.getString(KEY_NETEASE_AUTH_BUNDLE, null).orEmpty()
+        }.getOrElse { error ->
+            NPLogger.w(
+                "NERI-CookieRepo",
+                "Failed to read NetEase secure prefs, clearing corrupted storage and retrying.",
+                error
+            )
+            rebuildEncryptedStorage()
+            ""
+        }
         if (raw.isNotBlank()) {
             return NeteaseAuthBundle.fromJson(raw)
         }
@@ -245,7 +309,7 @@ class NeteaseCookieRepository(private val context: Context) {
     }
 
     private fun migrateLegacyCookies(): NeteaseAuthBundle? {
-        val legacyCookies = loadLegacyCookies()
+        val legacyCookies = validateAndSanitizeNeteaseCookies(loadLegacyCookies()).sanitizedCookies
         if (legacyCookies.isEmpty()) {
             return null
         }
@@ -274,5 +338,49 @@ class NeteaseCookieRepository(private val context: Context) {
             result[key] = obj.optString(key, "")
         }
         return result
+    }
+
+    private fun openEncryptedPrefsWithRecovery(): SharedPreferences {
+        return runCatching {
+            createEncryptedPrefs()
+        }.getOrElse { error ->
+            NPLogger.w(
+                "NERI-CookieRepo",
+                "Failed to open NetEase secure prefs, clearing storage and recreating.",
+                error
+            )
+            clearEncryptedStorage()
+            createEncryptedPrefs()
+        }
+    }
+
+    private fun rebuildEncryptedStorage() {
+        clearEncryptedStorage()
+        encryptedPrefs = openEncryptedPrefsWithRecovery()
+    }
+
+    private fun clearEncryptedStorage() {
+        runCatching {
+            context.deleteSharedPreferences(NETEASE_AUTH_PREFS)
+        }.onFailure { error ->
+            NPLogger.w(
+                "NERI-CookieRepo",
+                "Failed to delete corrupted NetEase secure prefs file.",
+                error
+            )
+        }
+    }
+
+    private fun createEncryptedPrefs(): SharedPreferences {
+        val masterKey = MasterKey.Builder(context)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+        return EncryptedSharedPreferences.create(
+            context,
+            NETEASE_AUTH_PREFS,
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
     }
 }
