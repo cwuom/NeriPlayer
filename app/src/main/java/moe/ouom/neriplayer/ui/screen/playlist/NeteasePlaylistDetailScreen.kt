@@ -185,7 +185,7 @@ fun NeteasePlaylistDetailScreen(
     )
 
     val ui by vm.uiState.collectAsState()
-    // 使用Unit作为key，确保每次进入都重新加载最新数�?
+    // 使用 Unit 作为 key，确保每次进入都重新加载最新数据
     LaunchedEffect(Unit) { vm.startPlaylist(playlist) }
 
     // 保存最新的header数据，用于在Screen销毁时更新使用记录
@@ -194,7 +194,7 @@ fun NeteasePlaylistDetailScreen(
         ui.header?.let { latestHeader = it }
     }
 
-    // 在Screen销毁时更新使用记录，确保返回主页时卡片显示最新信�?
+    // 在 Screen 销毁时更新使用记录，确保返回主页时卡片显示最新信息
     DisposableEffect(Unit) {
         onDispose {
             latestHeader?.let { header ->
@@ -237,7 +237,7 @@ fun NeteaseAlbumDetailScreen(
     )
 
     val ui by vm.uiState.collectAsState()
-    // 使用Unit作为key，确保每次进入都重新加载最新数�?
+    // 使用 Unit 作为 key，确保每次进入都重新加载最新数据
     LaunchedEffect(Unit) { vm.startAlbum(album) }
 
     // 保存最新的header数据，用于在Screen销毁时更新使用记录
@@ -246,7 +246,7 @@ fun NeteaseAlbumDetailScreen(
         ui.header?.let { latestHeader = it }
     }
 
-    // 在Screen销毁时更新使用记录，确保返回主页时卡片显示最新信�?
+    // 在 Screen 销毁时更新使用记录，确保返回主页时卡片显示最新信息
     DisposableEffect(Unit) {
         onDispose {
             latestHeader?.let { header ->
@@ -297,7 +297,7 @@ fun DetailScreen(
     var showSearch by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
 
-    // 多�?& 导出到本地歌�?
+    // 多选与导出到本地歌单
     val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
     val allPlaylists by repo.playlists.collectAsState()
     var selectionMode by remember { mutableStateOf(false) }
@@ -348,7 +348,7 @@ fun DetailScreen(
             ) {
                 val miniPlayerHeight = LocalMiniPlayerHeight.current
                 Column {
-                    // 顶部栏：普通模�?/ 多选模�?
+                    // 顶部栏：普通模式 / 多选模式
                     if (!selectionMode) {
                         TopAppBar(
                             title = {
@@ -775,7 +775,7 @@ fun DetailScreen(
                         }
                     }
                 }
-                // 允许返回键优先退出多�?
+                // 允许返回键优先退出多选
                 BackHandler(enabled = selectionMode) { exitSelection() }
 
                 // Snackbar
@@ -790,7 +790,7 @@ fun DetailScreen(
         }
     }
 
-    // 下载管理�?
+    // 下载管理器
     if (showDownloadManager) {
         ModalBottomSheet(
             onDismissRequest = { showDownloadManager = false },
@@ -926,7 +926,7 @@ fun DetailScreen(
     }
 }
 
-/* 小组�?*/
+/* 小组件 */
 @Composable
 private fun RetryChip(onClick: () -> Unit) {
     Card(
