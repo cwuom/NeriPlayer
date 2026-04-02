@@ -322,8 +322,9 @@ class ListenTogetherSessionManager(
         reconnectEnabled = false
         reconnectAttempt = 0
         pendingStateRefreshAfterReconnect = false
-        reconnectJob?.cancel()
+        cancelListenTogetherBackgroundJobs(reconnectJob, membershipRecoveryJob)
         reconnectJob = null
+        membershipRecoveryJob = null
         stopHeartbeat()
         lastOutboundSyncAtMs = 0L
         lastRequestedLinkStableKey = null
@@ -344,8 +345,9 @@ class ListenTogetherSessionManager(
         reconnectEnabled = false
         reconnectAttempt = 0
         pendingStateRefreshAfterReconnect = false
-        reconnectJob?.cancel()
+        cancelListenTogetherBackgroundJobs(reconnectJob, membershipRecoveryJob)
         reconnectJob = null
+        membershipRecoveryJob = null
         stopHeartbeat()
         lastOutboundSyncAtMs = 0L
         lastRequestedLinkStableKey = null
@@ -1380,8 +1382,10 @@ class ListenTogetherSessionManager(
     private fun closeRoomLocally(reason: String?) {
         reconnectEnabled = false
         reconnectAttempt = 0
-        reconnectJob?.cancel()
+        pendingStateRefreshAfterReconnect = false
+        cancelListenTogetherBackgroundJobs(reconnectJob, membershipRecoveryJob)
         reconnectJob = null
+        membershipRecoveryJob = null
         stopHeartbeat()
         lastOutboundSyncAtMs = 0L
         lastRequestedLinkStableKey = null
@@ -1719,4 +1723,8 @@ private fun normalizedDirectStreamUrl(value: String?): String? {
     } else {
         null
     }
+}
+
+internal fun cancelListenTogetherBackgroundJobs(vararg jobs: Job?) {
+    jobs.forEach { it?.cancel() }
 }

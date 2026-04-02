@@ -232,6 +232,21 @@ internal fun shouldRunPlaybackServiceInForeground(
         playerPlaybackState == Player.STATE_BUFFERING
 }
 
+internal fun resolvePlaybackSoundConfigForEngine(
+    baseConfig: PlaybackSoundConfig,
+    listenTogetherSyncPlaybackRate: Float
+): PlaybackSoundConfig {
+    val normalizedBaseConfig = baseConfig.copy(
+        speed = normalizePlaybackSpeed(baseConfig.speed),
+        pitch = normalizePlaybackPitch(baseConfig.pitch),
+        loudnessGainMb = normalizePlaybackLoudnessGainMb(baseConfig.loudnessGainMb)
+    )
+    val resolvedSyncRate = listenTogetherSyncPlaybackRate.coerceIn(0.95f, 1.05f)
+    return normalizedBaseConfig.copy(
+        speed = normalizePlaybackSpeed(normalizedBaseConfig.speed * resolvedSyncRate)
+    )
+}
+
 object PlayerManager {
     const val BILI_SOURCE_TAG = "Bilibili"
     const val NETEASE_SOURCE_TAG = "Netease"
@@ -519,15 +534,13 @@ object PlayerManager {
 
     fun setListenTogetherSyncPlaybackRate(rate: Float) {
         ensureInitialized()
-        if (!initialized || !::player.isInitialized) return
         val resolvedRate = rate.coerceIn(0.95f, 1.05f)
         if (kotlin.math.abs(listenTogetherSyncPlaybackRate - resolvedRate) < 0.001f) return
         listenTogetherSyncPlaybackRate = resolvedRate
-        mainScope.launch {
-            if (::player.isInitialized) {
-                player.setPlaybackSpeed(resolvedRate)
-            }
-        }
+        schedulePlaybackSoundConfigApply(
+            previousConfig = playbackSoundConfig,
+            newConfig = playbackSoundConfig
+        )
     }
 
     fun resetListenTogetherSyncPlaybackRate() {
@@ -920,7 +933,10 @@ object PlayerManager {
         previousConfig: PlaybackSoundConfig,
         newConfig: PlaybackSoundConfig
     ) {
-        pendingPlaybackSoundConfig = newConfig
+        pendingPlaybackSoundConfig = resolvePlaybackSoundConfigForEngine(
+            baseConfig = newConfig,
+            listenTogetherSyncPlaybackRate = listenTogetherSyncPlaybackRate
+        )
         playbackSoundApplyJob?.cancel()
 
         val debounceHeavyEffectUpdate =
