@@ -33,8 +33,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONObject
 
 const val YOUTUBE_MUSIC_ORIGIN: String = "https://music.youtube.com"
-internal const val YOUTUBE_AUTH_STALE_AFTER_MS: Long = 30L * 24L * 60L * 60L * 1000L
-
 private const val YOUTUBE_AUTH_PREFS = "youtube_auth_secure_prefs"
 private const val KEY_YOUTUBE_AUTH_BUNDLE = "youtube_auth_bundle"
 
@@ -128,9 +126,7 @@ data class YouTubeAuthBundle(
 
 enum class YouTubeAuthState {
     Missing,
-    Expired,
-    Valid,
-    Stale
+    Valid
 }
 
 data class YouTubeAuthHealth(
@@ -143,13 +139,12 @@ data class YouTubeAuthHealth(
 ) {
     @Suppress("unused")
     val shouldPromptRelogin: Boolean
-        get() = state == YouTubeAuthState.Expired || state == YouTubeAuthState.Stale
+        get() = false
 }
 
 fun evaluateYouTubeAuthHealth(
     bundle: YouTubeAuthBundle,
-    now: Long = System.currentTimeMillis(),
-    staleAfterMs: Long = YOUTUBE_AUTH_STALE_AFTER_MS
+    now: Long = System.currentTimeMillis()
 ): YouTubeAuthHealth {
     val normalized = bundle.normalized(savedAt = bundle.savedAt)
     val cookies = normalized.cookies.ifEmpty { parseCookieHeader(normalized.cookieHeader) }
@@ -162,47 +157,20 @@ fun evaluateYouTubeAuthHealth(
             checkedAt = now
         )
     }
-
-    if (activeCookieKeys.isEmpty()) {
-        return YouTubeAuthHealth(
-            state = YouTubeAuthState.Expired,
-            savedAt = normalized.savedAt,
-            checkedAt = now,
-            loginCookieKeys = loginCookieKeys
-        )
-    }
-
     val savedAt = normalized.savedAt
-    if (savedAt <= 0L) {
-        return YouTubeAuthHealth(
-            state = YouTubeAuthState.Stale,
-            savedAt = savedAt,
-            checkedAt = now,
-            loginCookieKeys = loginCookieKeys,
-            activeCookieKeys = activeCookieKeys
-        )
-    }
-
-    val ageMs = (now - savedAt).coerceAtLeast(0L)
-    return if (ageMs >= staleAfterMs) {
-        YouTubeAuthHealth(
-            state = YouTubeAuthState.Stale,
-            savedAt = savedAt,
-            checkedAt = now,
-            ageMs = ageMs,
-            loginCookieKeys = loginCookieKeys,
-            activeCookieKeys = activeCookieKeys
-        )
+    val ageMs = if (savedAt > 0L) {
+        (now - savedAt).coerceAtLeast(0L)
     } else {
-        YouTubeAuthHealth(
-            state = YouTubeAuthState.Valid,
-            savedAt = savedAt,
-            checkedAt = now,
-            ageMs = ageMs,
-            loginCookieKeys = loginCookieKeys,
-            activeCookieKeys = activeCookieKeys
-        )
+        Long.MAX_VALUE
     }
+    return YouTubeAuthHealth(
+        state = YouTubeAuthState.Valid,
+        savedAt = savedAt,
+        checkedAt = now,
+        ageMs = ageMs,
+        loginCookieKeys = loginCookieKeys,
+        activeCookieKeys = activeCookieKeys
+    )
 }
 
 internal fun parseCookieHeader(raw: String): LinkedHashMap<String, String> {
@@ -258,9 +226,8 @@ class YouTubeAuthRepository(context: Context) {
     fun getAuthHealthOnce(): YouTubeAuthHealth = _authHealthFlow.value
 
     fun getAuthHealth(
-        now: Long = System.currentTimeMillis(),
-        staleAfterMs: Long = YOUTUBE_AUTH_STALE_AFTER_MS
-    ): YouTubeAuthHealth = evaluateYouTubeAuthHealth(_authFlow.value, now, staleAfterMs)
+        now: Long = System.currentTimeMillis()
+    ): YouTubeAuthHealth = evaluateYouTubeAuthHealth(_authFlow.value, now)
 
     fun saveAuth(bundle: YouTubeAuthBundle) {
         val normalized = bundle.normalized(
@@ -291,14 +258,10 @@ class YouTubeAuthRepository(context: Context) {
         _authHealthFlow.value = evaluateYouTubeAuthHealth(cleared)
     }
 
-    fun refreshHealth(
-        now: Long = System.currentTimeMillis(),
-        staleAfterMs: Long = YOUTUBE_AUTH_STALE_AFTER_MS
-    ) {
+    fun refreshHealth(now: Long = System.currentTimeMillis()) {
         _authHealthFlow.value = evaluateYouTubeAuthHealth(
             bundle = _authFlow.value,
-            now = now,
-            staleAfterMs = staleAfterMs
+            now = now
         )
     }
 

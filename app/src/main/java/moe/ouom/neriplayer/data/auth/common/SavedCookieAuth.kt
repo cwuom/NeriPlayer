@@ -23,8 +23,6 @@ package moe.ouom.neriplayer.data.auth.common
 enum class SavedCookieAuthState {
     Missing,
     Checking,
-    Expired,
-    Stale,
     Valid
 }
 
@@ -36,5 +34,5 @@ data class SavedCookieAuthHealth(
     val loginCookieKeys: List<String> = emptyList()
 ) {
     val shouldPromptRelogin: Boolean
-        get() = state == SavedCookieAuthState.Expired || state == SavedCookieAuthState.Stale
+        get() = false
 }

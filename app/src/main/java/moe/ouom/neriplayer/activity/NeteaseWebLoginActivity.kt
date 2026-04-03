@@ -33,6 +33,7 @@ import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -49,6 +50,8 @@ import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.snackbar.Snackbar
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.data.auth.web.normalizeNeteaseWebLoginCookies
+import moe.ouom.neriplayer.data.auth.web.shouldAutoCompleteNeteaseWebLogin
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.hostMatchesAnyDomain
 import moe.ouom.neriplayer.util.isAllowedMainFrameRequest
@@ -72,6 +75,9 @@ class NeteaseWebLoginActivity : ComponentActivity() {
 
     private lateinit var webView: WebView
     private lateinit var toolbar: MaterialToolbar
+    private var hasReturned = false
+    private var initialCookies: Map<String, String> = emptyMap()
+    private val loginCompletionWatcher = WebLoginCompletionWatcher(::maybeReturnIfLoggedIn)
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -164,7 +170,18 @@ class NeteaseWebLoginActivity : ComponentActivity() {
             }
         )
 
+        initialCookies = readCookieMap()
+        loginCompletionWatcher.start()
         webView.loadUrl(TARGET_URL)
+    }
+
+    override fun onDestroy() {
+        loginCompletionWatcher.stop()
+        if (this::webView.isInitialized) {
+            (webView.parent as? ViewGroup)?.removeView(webView)
+            webView.destroy()
+        }
+        super.onDestroy()
     }
 
     private fun onToolbarMenu(item: MenuItem): Boolean {
@@ -183,17 +200,11 @@ class NeteaseWebLoginActivity : ComponentActivity() {
 
     private fun readAndReturnCookies() {
         try {
-            val cm = CookieManager.getInstance()
-            val main = cm.getCookie("https://music.163.com") ?: ""
-            val api = cm.getCookie("https://interface.music.163.com") ?: ""
-            val merged = listOf(main, api).filter { it.isNotBlank() }.joinToString("; ")
-            if (merged.isBlank()) {
+            val map = readCookieMap()
+            if (map.isEmpty()) {
                 Snackbar.make(webView, getString(R.string.snackbar_cookie_empty), Snackbar.LENGTH_SHORT).show()
                 return
             }
-            val map = cookieStringToMap(merged)
-            if (!map.containsKey("os")) map["os"] = "pc"
-            if (!map.containsKey("appver")) map["appver"] = "8.10.35"
 
             val json = org.json.JSONObject(map as Map<*, *>).toString()
             setResult(RESULT_OK, Intent().putExtra(RESULT_COOKIE, json))
@@ -221,6 +232,18 @@ class NeteaseWebLoginActivity : ComponentActivity() {
         return map
     }
 
+    private fun readCookieMap(): Map<String, String> {
+        val cm = CookieManager.getInstance()
+        val main = cm.getCookie("https://music.163.com").orEmpty()
+        val api = cm.getCookie("https://interface.music.163.com").orEmpty()
+        val api3 = cm.getCookie("https://interface3.music.163.com").orEmpty()
+        val merged = listOf(main, api, api3).filter { it.isNotBlank() }.joinToString("; ")
+        if (merged.isBlank()) {
+            return emptyMap()
+        }
+        return normalizeNeteaseWebLoginCookies(cookieStringToMap(merged))
+    }
+
     private inner class InnerClient : WebViewClient() {
         override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
             val currentRequest = request ?: return false
@@ -229,8 +252,54 @@ class NeteaseWebLoginActivity : ComponentActivity() {
                 NPLogger.w("NERI-NeteaseLogin", "Blocked unexpected navigation: $uri")
                 return true
             }
+            if (currentRequest.isForMainFrame) {
+                loginCompletionWatcher.scheduleCheck()
+            }
             return false
         }
+
+        override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+            super.onPageStarted(view, url, favicon)
+            val host = runCatching { url?.let(Uri::parse)?.host }.getOrNull()
+            if (hostMatchesAnyDomain(host, ALLOWED_LOGIN_DOMAINS)) {
+                loginCompletionWatcher.scheduleCheck()
+            }
+        }
+
+        override fun shouldInterceptRequest(
+            view: WebView?,
+            request: WebResourceRequest?
+        ): WebResourceResponse? {
+            view?.post { loginCompletionWatcher.scheduleCheck() }
+            return super.shouldInterceptRequest(view, request)
+        }
+
+        override fun onPageFinished(view: WebView?, url: String?) {
+            super.onPageFinished(view, url)
+            val host = runCatching { url?.let(Uri::parse)?.host }.getOrNull()
+            if (hostMatchesAnyDomain(host, ALLOWED_LOGIN_DOMAINS)) {
+                loginCompletionWatcher.scheduleCheck()
+            }
+        }
+    }
+
+    private fun maybeReturnIfLoggedIn(): Boolean {
+        if (hasReturned) {
+            return true
+        }
+        CookieManager.getInstance().flush()
+        val currentCookies = readCookieMap()
+        if (!shouldAutoCompleteNeteaseWebLogin(initialCookies, currentCookies)) {
+            NPLogger.d("NERI-NeteaseLogin", "Waiting for stable NetEase login cookies.")
+            return false
+        }
+
+        hasReturned = true
+        val json = org.json.JSONObject(currentCookies as Map<*, *>).toString()
+        setResult(RESULT_OK, Intent().putExtra(RESULT_COOKIE, json))
+        NPLogger.d("NERI-NeteaseLogin", "Login OK, cookie keys=${currentCookies.keys}")
+        finish()
+        return true
     }
 
     private fun isAllowedLoginUri(uri: Uri?): Boolean {

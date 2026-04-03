@@ -524,9 +524,7 @@
     <string name="debug_youtube_probe_auth_anonymous">Not signed in. Requests will use anonymous mode</string>
     <string name="debug_youtube_probe_auth_logged_in">User Cookie detected | State: %1$s | Cookie keys: %2$d</string>
     <string name="debug_youtube_probe_auth_state_missing">Missing</string>
-    <string name="debug_youtube_probe_auth_state_expired">Expired</string>
     <string name="debug_youtube_probe_auth_state_valid">Valid</string>
-    <string name="debug_youtube_probe_auth_state_stale">Stale</string>
     <string name="debug_youtube_probe_home_preview_empty">Home Feed returned no sections</string>
     <string name="debug_youtube_probe_home_preview_item">%1$d. %2$s | items=%3$d | songs=%4$d | collections=%5$d</string>
     <string name="debug_youtube_probe_library_preview_count">Library playlist count: %1$d</string>
@@ -840,48 +838,14 @@
     <string name="settings_bili_login_success">Bilibili login successful</string>
     <string name="settings_netease_login_success">NetEase login successful</string>
     <string name="settings_youtube_login_success">YouTube login successful</string>
-    <string name="settings_auth_checking">Checking sign-in status…</string>
     <string name="settings_bili_status_valid">Saved and last refreshed %1$s</string>
-    <string name="settings_bili_status_expired">Critical Cookie is no longer usable. Sign in again or import a new one</string>
-    <string name="settings_bili_status_stale">Cookie may be expired, last refreshed %1$s</string>
-    <string name="settings_bili_status_stale_no_time">Cookie may be expired, please sign in again or import a new one</string>
     <string name="settings_bili_status_missing">No usable Cookie detected. Tap to sign in again or import one</string>
     <string name="settings_netease_status_valid">Saved and last refreshed %1$s</string>
-    <string name="settings_netease_status_expired">Critical Cookie is no longer usable. Sign in again or import a new one</string>
-    <string name="settings_netease_status_stale">Cookie may be expired, last refreshed %1$s</string>
-    <string name="settings_netease_status_stale_no_time">Cookie may be expired, please sign in again or import a new one</string>
     <string name="settings_netease_status_missing">No usable Cookie detected. Tap to sign in again or import one</string>
-    <string name="settings_bili_reauth_required_title">Bilibili sign-in is required</string>
-    <string name="settings_bili_reauth_required_message">No usable Bilibili session Cookie was found. Please sign in again or import a fresh Cookie.</string>
-    <string name="settings_bili_reauth_expired_title">Bilibili Cookie is no longer usable</string>
-    <string name="settings_bili_reauth_expired_message">The saved Bilibili Cookie is missing critical session entries, so it will likely fail when reused. Please sign in again or import a fresh Cookie.</string>
-    <string name="settings_bili_reauth_stale_title">Bilibili Cookie may be expired</string>
-    <string name="settings_bili_reauth_unknown_time">Unknown</string>
-    <string name="settings_bili_reauth_action_login">Sign in again</string>
-    <string name="settings_bili_reauth_action_import">Import Cookie</string>
-    <string name="settings_netease_reauth_required_title">NetEase sign-in is required</string>
-    <string name="settings_netease_reauth_required_message">No usable NetEase session Cookie was found. Please sign in again or import a fresh Cookie.</string>
-    <string name="settings_netease_reauth_expired_title">NetEase Cookie is no longer usable</string>
-    <string name="settings_netease_reauth_expired_message">The saved NetEase Cookie is missing critical session entries, so it will likely fail when reused. Please sign in again or import a fresh Cookie.</string>
-    <string name="settings_netease_reauth_stale_title">NetEase Cookie may be expired</string>
-    <string name="settings_netease_reauth_unknown_time">Unknown</string>
-    <string name="settings_netease_reauth_action_login">Sign in again</string>
-    <string name="settings_netease_reauth_action_import">Import Cookie</string>
     <string name="settings_youtube_login_methods">Browser/Cookie Import</string>
     <string name="settings_youtube_auth_missing">No usable YouTube / YouTube Music auth information was captured</string>
     <string name="settings_youtube_status_valid">Saved and last refreshed %1$s</string>
-    <string name="settings_youtube_status_expired">Critical Cookie is no longer usable. Sign in again or import a new one</string>
-    <string name="settings_youtube_status_stale">Cookie may be expired, last refreshed %1$s</string>
-    <string name="settings_youtube_status_stale_no_time">Cookie may be expired, please sign in again or import a new one</string>
     <string name="settings_youtube_status_missing">No usable Cookie detected. Tap to sign in again or import one</string>
-    <string name="settings_youtube_reauth_required_title">YouTube sign-in is required</string>
-    <string name="settings_youtube_reauth_required_message">No usable YouTube / YouTube Music session Cookie was found. Please sign in again or import a fresh Cookie.</string>
-    <string name="settings_youtube_reauth_expired_title">YouTube Cookie is no longer usable</string>
-    <string name="settings_youtube_reauth_expired_message">The saved YouTube Cookie is missing critical session entries, so it will likely fail when reused. Please sign in again or import a fresh Cookie.</string>
-    <string name="settings_youtube_reauth_stale_title">YouTube Cookie may be expired</string>
-    <string name="settings_youtube_reauth_unknown_time">Unknown</string>
-    <string name="settings_youtube_reauth_action_login">Sign in again</string>
-    <string name="settings_youtube_reauth_action_import">Import Cookie</string>
     <string name="settings_haptic_feedback">Haptic Feedback</string>
     <string name="settings_login_platforms">Third-party Sign-in</string>
     <string name="settings_login_platforms_expand">Select platform</string>
@@ -1182,7 +1146,6 @@
     <string name="onboarding_platform_action_logout">Sign out</string>
     <string name="onboarding_platform_status_not_connected">Not connected</string>
     <string name="onboarding_platform_status_connected">Connected</string>
-    <string name="onboarding_platform_status_attention">Sign in again</string>
 
     <!-- Time / Format -->
     <string name="time_zero_minutes">0 minutes</string>

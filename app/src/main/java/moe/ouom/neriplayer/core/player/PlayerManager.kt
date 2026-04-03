@@ -166,6 +166,7 @@ internal data class PlaybackStartPlan(
 )
 
 internal const val RESTORED_PLAYBACK_PROTECTION_FADE_DURATION_MS = 1000L
+private const val PLAYBACK_PROGRESS_UPDATE_INTERVAL_MS = 80L
 
 internal fun resolvePlaybackStartPlan(
     shouldFadeIn: Boolean,
@@ -227,6 +228,22 @@ internal fun shouldRunPlaybackServiceInForeground(
     if (!hasCurrentSong) return false
     return resumePlaybackRequested ||
         playJobActive ||
+        pendingPauseJobActive ||
+        playWhenReady ||
+        isPlaying ||
+        playerPlaybackState == Player.STATE_BUFFERING
+}
+
+internal fun shouldBootstrapPlaybackServiceOnAppLaunch(
+    hasCurrentSong: Boolean,
+    playJobActive: Boolean,
+    pendingPauseJobActive: Boolean,
+    playWhenReady: Boolean,
+    isPlaying: Boolean,
+    playerPlaybackState: Int
+): Boolean {
+    if (!hasCurrentSong) return false
+    return playJobActive ||
         pendingPauseJobActive ||
         playWhenReady ||
         isPlaying ||
@@ -452,6 +469,19 @@ object PlayerManager {
         return shouldRunPlaybackServiceInForeground(
             hasCurrentSong = _currentSongFlow.value != null,
             resumePlaybackRequested = resumePlaybackRequested,
+            playJobActive = playJob?.isActive == true,
+            pendingPauseJobActive = pendingPauseJob?.isActive == true,
+            playWhenReady = _playWhenReadyFlow.value,
+            isPlaying = _isPlayingFlow.value,
+            playerPlaybackState = _playerPlaybackStateFlow.value
+        )
+    }
+
+    fun shouldBootstrapPlaybackServiceOnAppLaunch(): Boolean {
+        ensureInitialized()
+        if (!initialized || _currentSongFlow.value == null) return false
+        return shouldBootstrapPlaybackServiceOnAppLaunch(
+            hasCurrentSong = _currentSongFlow.value != null,
             playJobActive = playJob?.isActive == true,
             pendingPauseJobActive = pendingPauseJob?.isActive == true,
             playWhenReady = _playWhenReadyFlow.value,
@@ -3378,7 +3408,8 @@ object PlayerManager {
                 )
                 _playbackPositionMs.value = positionMs
                 maybePersistPlaybackProgress(positionMs)
-                delay(40)
+                // 进度条不需要 25fps 级别刷新；适当降频能明显减少 UI/服务侧联动开销
+                delay(PLAYBACK_PROGRESS_UPDATE_INTERVAL_MS)
             }
         }
     }
@@ -3767,7 +3798,8 @@ object PlayerManager {
                 0L
             }
             restoredShouldResumePlayback = data.shouldResumePlayback && currentIndex != -1
-            resumePlaybackRequested = restoredShouldResumePlayback
+            // 已恢复的播放快照只代表可继续播放，不是当前已有活跃传输
+            resumePlaybackRequested = false
             _playbackPositionMs.value = restoredResumePositionMs
             currentMediaUrlResolvedAtMs = 0L
         } catch (e: Exception) {

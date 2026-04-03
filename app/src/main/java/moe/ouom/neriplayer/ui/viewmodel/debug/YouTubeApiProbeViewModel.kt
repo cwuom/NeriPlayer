@@ -223,7 +223,7 @@ class YouTubeApiProbeViewModel(app: Application) : AndroidViewModel(app) {
     private fun buildAuthSummary(): String {
         val health = authRepo.getAuthHealthOnce()
         val cookies = authRepo.getAuthOnce().normalized().cookies
-        if (health.activeCookieKeys.isEmpty()) {
+        if (health.state == YouTubeAuthState.Missing) {
             return string(R.string.debug_youtube_probe_auth_anonymous)
         }
         return string(
@@ -278,9 +278,7 @@ class YouTubeApiProbeViewModel(app: Application) : AndroidViewModel(app) {
     private fun resolveAuthStateLabel(state: YouTubeAuthState): String {
         return when (state) {
             YouTubeAuthState.Missing -> string(R.string.debug_youtube_probe_auth_state_missing)
-            YouTubeAuthState.Expired -> string(R.string.debug_youtube_probe_auth_state_expired)
             YouTubeAuthState.Valid -> string(R.string.debug_youtube_probe_auth_state_valid)
-            YouTubeAuthState.Stale -> string(R.string.debug_youtube_probe_auth_state_stale)
         }
     }
 

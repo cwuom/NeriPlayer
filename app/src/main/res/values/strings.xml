@@ -524,9 +524,7 @@
     <string name="debug_youtube_probe_auth_anonymous">当前未登录，将以匿名模式请求</string>
     <string name="debug_youtube_probe_auth_logged_in">当前已读取用户 Cookie | 状态：%1$s | Cookie Key 数：%2$d</string>
     <string name="debug_youtube_probe_auth_state_missing">缺失</string>
-    <string name="debug_youtube_probe_auth_state_expired">已过期</string>
     <string name="debug_youtube_probe_auth_state_valid">有效</string>
-    <string name="debug_youtube_probe_auth_state_stale">可能过期</string>
     <string name="debug_youtube_probe_home_preview_empty">Home Feed 返回为空</string>
     <string name="debug_youtube_probe_home_preview_item">%1$d. %2$s | 条目=%3$d | 歌曲=%4$d | 集合=%5$d</string>
     <string name="debug_youtube_probe_library_preview_count">媒体库歌单数量：%1$d</string>
@@ -840,48 +838,14 @@
     <string name="settings_bili_login_success">B 站登录成功</string>
     <string name="settings_netease_login_success">网易云登录成功</string>
     <string name="settings_youtube_login_success">YouTube 登录成功</string>
-    <string name="settings_auth_checking">正在检查登录状态…</string>
     <string name="settings_bili_status_valid">已保存，最近更新于 %1$s</string>
-    <string name="settings_bili_status_expired">关键 Cookie 已失效，请重新登录或导入</string>
-    <string name="settings_bili_status_stale">Cookie 可能已过期，最近更新于 %1$s</string>
-    <string name="settings_bili_status_stale_no_time">Cookie 可能已过期，建议重新登录或导入</string>
     <string name="settings_bili_status_missing">未检测到可用 Cookie，点击重新登录或导入</string>
     <string name="settings_netease_status_valid">已保存，最近更新于 %1$s</string>
-    <string name="settings_netease_status_expired">关键 Cookie 已失效，请重新登录或导入</string>
-    <string name="settings_netease_status_stale">Cookie 可能已过期，最近更新于 %1$s</string>
-    <string name="settings_netease_status_stale_no_time">Cookie 可能已过期，建议重新登录或导入</string>
     <string name="settings_netease_status_missing">未检测到可用 Cookie，点击重新登录或导入</string>
-    <string name="settings_bili_reauth_required_title">B 站登录已失效</string>
-    <string name="settings_bili_reauth_required_message">未检测到可用的 B 站关键 Cookie。请重新登录，或导入新的 Cookie。</string>
-    <string name="settings_bili_reauth_expired_title">B 站 Cookie 已失效</string>
-    <string name="settings_bili_reauth_expired_message">当前保存的 B 站 Cookie 已缺少关键会话项，继续使用大概率会失败。请重新登录，或导入新的 Cookie。</string>
-    <string name="settings_bili_reauth_stale_title">B 站 Cookie 可能已过期</string>
-    <string name="settings_bili_reauth_unknown_time">未知</string>
-    <string name="settings_bili_reauth_action_login">重新登录</string>
-    <string name="settings_bili_reauth_action_import">导入 Cookie</string>
-    <string name="settings_netease_reauth_required_title">网易云登录已失效</string>
-    <string name="settings_netease_reauth_required_message">未检测到可用的网易云关键 Cookie。请重新登录，或导入新的 Cookie。</string>
-    <string name="settings_netease_reauth_expired_title">网易云 Cookie 已失效</string>
-    <string name="settings_netease_reauth_expired_message">当前保存的网易云 Cookie 已缺少关键会话项，继续使用大概率会失败。请重新登录，或导入新的 Cookie。</string>
-    <string name="settings_netease_reauth_stale_title">网易云 Cookie 可能已过期</string>
-    <string name="settings_netease_reauth_unknown_time">未知</string>
-    <string name="settings_netease_reauth_action_login">重新登录</string>
-    <string name="settings_netease_reauth_action_import">导入 Cookie</string>
     <string name="settings_youtube_login_methods">浏览器/Cookie 导入</string>
     <string name="settings_youtube_auth_missing">未读取到可用的 YouTube / YouTube Music 鉴权信息</string>
     <string name="settings_youtube_status_valid">已保存，最近更新于 %1$s</string>
-    <string name="settings_youtube_status_expired">关键 Cookie 已失效，请重新登录或导入</string>
-    <string name="settings_youtube_status_stale">Cookie 可能已过期，最近更新于 %1$s</string>
-    <string name="settings_youtube_status_stale_no_time">Cookie 可能已过期，建议重新登录或导入</string>
     <string name="settings_youtube_status_missing">未检测到可用 Cookie，点击重新登录或导入</string>
-    <string name="settings_youtube_reauth_required_title">YouTube 登录已失效</string>
-    <string name="settings_youtube_reauth_required_message">未检测到可用的 YouTube / YouTube Music 关键 Cookie。请重新登录，或导入新的 Cookie。</string>
-    <string name="settings_youtube_reauth_expired_title">YouTube Cookie 已失效</string>
-    <string name="settings_youtube_reauth_expired_message">当前保存的 YouTube Cookie 已缺少关键会话项，继续使用大概率会失败。请重新登录，或导入新的 Cookie。</string>
-    <string name="settings_youtube_reauth_stale_title">YouTube Cookie 可能已过期</string>
-    <string name="settings_youtube_reauth_unknown_time">未知</string>
-    <string name="settings_youtube_reauth_action_login">重新登录</string>
-    <string name="settings_youtube_reauth_action_import">导入 Cookie</string>
     <string name="settings_haptic_feedback">触感反馈</string>
     <string name="settings_login_platforms">第三方平台登录</string>
     <string name="settings_login_platforms_expand">展开以选择登录平台</string>
@@ -1192,7 +1156,6 @@
     <string name="onboarding_platform_action_logout">退登</string>
     <string name="onboarding_platform_status_not_connected">未连接</string>
     <string name="onboarding_platform_status_connected">已连接</string>
-    <string name="onboarding_platform_status_attention">需重新登录</string>
 
     <!-- Time / Format -->
     <string name="time_zero_minutes">0分钟</string>

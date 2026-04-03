@@ -1,6 +1,5 @@
 package moe.ouom.neriplayer.data
 
-import moe.ouom.neriplayer.data.auth.bili.BILI_AUTH_STALE_AFTER_MS
 import moe.ouom.neriplayer.data.auth.bili.BiliAuthBundle
 import moe.ouom.neriplayer.data.auth.bili.evaluateBiliAuthHealth
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
@@ -58,17 +57,17 @@ class BiliAuthRepositoryTest {
     }
 
     @Test
-    fun evaluateBiliAuthHealth_returnsStaleForOldCookie() {
+    fun evaluateBiliAuthHealth_keepsSavedCookieValidWithoutExpiryCheck() {
         val now = 50L * 24L * 60L * 60L * 1000L
         val snapshot = BiliAuthBundle(
             cookies = mapOf("SESSDATA" to "cookie"),
-            savedAt = now - BILI_AUTH_STALE_AFTER_MS - 1L
+            savedAt = now - (90L * 24L * 60L * 60L * 1000L)
         )
 
         val health = evaluateBiliAuthHealth(snapshot, now = now)
 
-        assertEquals(SavedCookieAuthState.Stale, health.state)
-        assertTrue(health.shouldPromptRelogin)
+        assertEquals(SavedCookieAuthState.Valid, health.state)
+        assertFalse(health.shouldPromptRelogin)
     }
 
     @Test

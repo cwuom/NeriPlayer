@@ -122,7 +122,7 @@ object ExceptionHandler {
             appendLine("Build Type: ${moe.ouom.neriplayer.BuildConfig.BUILD_TYPE}")
         }
         
-        // 使用NPLogger记录异常
+        // 使用 NPLogger 记录异常
         NPLogger.e("ExceptionHandler", "Exception occurred in $source", throwable)
         NPLogger.e("ExceptionHandler", exceptionInfo)
 

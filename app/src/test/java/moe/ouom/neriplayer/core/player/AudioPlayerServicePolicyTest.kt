@@ -46,7 +46,8 @@ class AudioPlayerServicePolicyTest {
             shouldUseForegroundServiceStart(
                 sdkInt = 26,
                 forceForeground = false,
-                shouldRunPlaybackServiceInForeground = false
+                shouldRunPlaybackServiceInForeground = false,
+                callerHasVisibleUi = false
             )
         )
     }
@@ -57,7 +58,20 @@ class AudioPlayerServicePolicyTest {
             shouldUseForegroundServiceStart(
                 sdkInt = 25,
                 forceForeground = false,
-                shouldRunPlaybackServiceInForeground = false
+                shouldRunPlaybackServiceInForeground = false,
+                callerHasVisibleUi = false
+            )
+        )
+    }
+
+    @Test
+    fun `visible activity caller avoids foreground service timer`() {
+        assertFalse(
+            shouldUseForegroundServiceStart(
+                sdkInt = 36,
+                forceForeground = true,
+                shouldRunPlaybackServiceInForeground = true,
+                callerHasVisibleUi = true
             )
         )
     }

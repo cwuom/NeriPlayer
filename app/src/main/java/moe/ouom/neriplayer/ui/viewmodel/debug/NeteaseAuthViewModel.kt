@@ -54,7 +54,6 @@ sealed interface NeteaseAuthEvent {
     data class AskConfirmSend(val masked: String) : NeteaseAuthEvent
     data class ShowCookies(val cookies: Map<String, String>) : NeteaseAuthEvent
     data object LoginSuccess : NeteaseAuthEvent
-    data class PromptReauth(val health: SavedCookieAuthHealth) : NeteaseAuthEvent
 }
 
 class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
@@ -74,8 +73,6 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
     private val _events = MutableSharedFlow<NeteaseAuthEvent>(extraBufferCapacity = 8)
     val events: MutableSharedFlow<NeteaseAuthEvent> = _events
 
-    private var lastPromptSignature: String? = null
-
     init {
         viewModelScope.launch(Dispatchers.IO) {
             cookieRepo.cookieFlow.collect { saved ->
@@ -87,43 +84,20 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
             cookieRepo.authHealthFlow.collect { health ->
                 _uiState.value = _uiState.value.copy(
                     health = health,
-                    isLoggedIn = health.state != SavedCookieAuthState.Missing &&
-                        health.state != SavedCookieAuthState.Expired
+                    isLoggedIn = health.state != SavedCookieAuthState.Missing
                 )
-                if (!health.shouldPromptRelogin) {
-                    lastPromptSignature = null
-                }
             }
         }
     }
 
-    fun refreshAuthHealth(
-        promptIfNeeded: Boolean = false,
-        forcePrompt: Boolean = false
-    ) {
+    fun refreshAuthHealth() {
         viewModelScope.launch(Dispatchers.IO) {
             cookieRepo.refreshHealth()
-            var health = cookieRepo.getAuthHealthOnce()
-            if (health.state != SavedCookieAuthState.Missing) {
-                health = health.copy(
-                    state = SavedCookieAuthState.Checking,
-                    checkedAt = System.currentTimeMillis()
-                )
-                _uiState.value = _uiState.value.copy(
-                    health = health,
-                    isLoggedIn = true
-                )
-                health = validateCurrentAuth(cookieRepo.getAuthHealthOnce())
-            }
-
+            val health = cookieRepo.getAuthHealthOnce()
             _uiState.value = _uiState.value.copy(
                 health = health,
-                isLoggedIn = health.state != SavedCookieAuthState.Missing &&
-                    health.state != SavedCookieAuthState.Expired
+                isLoggedIn = health.state != SavedCookieAuthState.Missing
             )
-            if (promptIfNeeded) {
-                emitPromptIfNeeded(health, forcePrompt)
-            }
         }
     }
 
@@ -287,29 +261,6 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
         importCookiesFromMap(parsed)
     }
 
-    private fun validateCurrentAuth(localHealth: SavedCookieAuthHealth): SavedCookieAuthHealth {
-        val checkedAt = System.currentTimeMillis()
-        return runCatching {
-            val raw = api.getCurrentUserAccount()
-            val root = JSONObject(raw)
-            val code = root.optInt("code", -1)
-            val userId = root.optJSONObject("profile")?.optLong("userId", 0L) ?: 0L
-            if (code == 200 && userId > 0L) {
-                localHealth.copy(
-                    state = SavedCookieAuthState.Valid,
-                    checkedAt = checkedAt
-                )
-            } else {
-                localHealth.copy(
-                    state = SavedCookieAuthState.Expired,
-                    checkedAt = checkedAt
-                )
-            }
-        }.getOrElse {
-            localHealth.copy(checkedAt = checkedAt)
-        }
-    }
-
     private fun startCountdown() {
         viewModelScope.launch {
             var left = 60
@@ -319,28 +270,6 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
                 left--
             }
         }
-    }
-
-    private fun emitPromptIfNeeded(
-        health: SavedCookieAuthHealth,
-        forcePrompt: Boolean
-    ) {
-        if (!health.shouldPromptRelogin) {
-            lastPromptSignature = null
-            return
-        }
-
-        val promptSignature = buildString {
-            append(health.state.name)
-            append(':')
-            append(health.savedAt)
-        }
-        if (!forcePrompt && promptSignature == lastPromptSignature) {
-            return
-        }
-
-        lastPromptSignature = promptSignature
-        _events.tryEmit(NeteaseAuthEvent.PromptReauth(health))
     }
 
     private fun isValidPhone(p: String): Boolean = p.length == 11 && p.all { it.isDigit() }

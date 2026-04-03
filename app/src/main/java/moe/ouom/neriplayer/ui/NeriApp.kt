@@ -602,10 +602,10 @@ fun NeriApp(
             "NERI-App",
             "Player bootstrap state hasItems=${PlayerManager.hasItems()} transportActive=${PlayerManager.isTransportActive()} isPlaying=${PlayerManager.isPlayingFlow.value}"
         )
-        if (PlayerManager.hasItems() && PlayerManager.shouldRunPlaybackServiceInForeground()) {
-            NPLogger.d("NERI-App", "Starting audio service from app bootstrap")
-            AudioPlayerService.startSyncService(context, "app_bootstrap", forceForeground = true)
-        } else {
+            if (PlayerManager.hasItems() && PlayerManager.shouldBootstrapPlaybackServiceOnAppLaunch()) {
+                NPLogger.d("NERI-App", "Starting audio service from app bootstrap")
+                AudioPlayerService.startSyncService(context, "app_bootstrap", forceForeground = true)
+            } else {
             NPLogger.d("NERI-App", "Skip audio service bootstrap because transport is inactive")
         }
     }

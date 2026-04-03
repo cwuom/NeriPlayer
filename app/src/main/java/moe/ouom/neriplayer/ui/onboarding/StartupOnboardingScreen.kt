@@ -282,7 +282,6 @@ fun StartupOnboardingScreen() {
                     showNeteaseSheet = false
                     neteaseVm.refreshAuthHealth()
                 }
-                is NeteaseAuthEvent.PromptReauth -> Unit
             }
         }
     }
@@ -302,7 +301,6 @@ fun StartupOnboardingScreen() {
                     showBiliSheet = false
                     biliVm.refreshAuthHealth()
                 }
-                is BiliAuthEvent.PromptReauth -> Unit
             }
         }
     }
@@ -656,13 +654,7 @@ fun StartupOnboardingScreen() {
                 showCookieDialog = showNeteaseCookieDialog,
                 cookieText = neteaseCookieText,
                 onDismissCookieDialog = { showNeteaseCookieDialog = false },
-                showReauthDialog = false,
-                reauthHealth = null,
-                onDismissReauthDialog = {},
-                onOpenSheetAtTab = {
-                    neteaseSheetTab = it
-                    showNeteaseSheet = true
-                }
+                onBrowserLogin = null
             )
             SettingsBiliAuthDialogs(
                 showSheet = showBiliSheet,
@@ -674,13 +666,7 @@ fun StartupOnboardingScreen() {
                 showCookieDialog = showBiliCookieDialog,
                 cookieText = biliCookieText,
                 onDismissCookieDialog = { showBiliCookieDialog = false },
-                showReauthDialog = false,
-                reauthHealth = null,
-                onDismissReauthDialog = {},
-                onOpenSheetAtTab = {
-                    biliSheetTab = it
-                    showBiliSheet = true
-                }
+                onBrowserLogin = null
             )
             SettingsYouTubeAuthDialogs(
                 showSheet = showYouTubeSheet,
@@ -1444,9 +1430,7 @@ private fun Blob(modifier: Modifier = Modifier, color: Color, size: Dp) {
 private fun statusTextForSavedCookie(state: SavedCookieAuthState): String {
     return when (state) {
         SavedCookieAuthState.Valid -> stringResource(R.string.onboarding_platform_status_connected)
-        SavedCookieAuthState.Checking -> stringResource(R.string.settings_auth_checking)
-        SavedCookieAuthState.Expired,
-        SavedCookieAuthState.Stale -> stringResource(R.string.onboarding_platform_status_attention)
+        SavedCookieAuthState.Checking -> stringResource(R.string.onboarding_platform_status_not_connected)
         SavedCookieAuthState.Missing -> stringResource(R.string.onboarding_platform_status_not_connected)
     }
 }
@@ -1455,8 +1439,6 @@ private fun statusTextForSavedCookie(state: SavedCookieAuthState): String {
 private fun statusTextForYouTube(state: YouTubeAuthState): String {
     return when (state) {
         YouTubeAuthState.Valid -> stringResource(R.string.onboarding_platform_status_connected)
-        YouTubeAuthState.Expired,
-        YouTubeAuthState.Stale -> stringResource(R.string.onboarding_platform_status_attention)
         YouTubeAuthState.Missing -> stringResource(R.string.onboarding_platform_status_not_connected)
     }
 }

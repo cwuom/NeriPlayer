@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.core.player
  * Updated: 2026/3/23
  */
 
+import android.app.Activity
 import android.app.Application
 import android.app.Notification
 import android.app.NotificationChannel
@@ -31,6 +32,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Bitmap
@@ -106,11 +108,28 @@ internal fun mediaSessionPlaybackActions(): Long {
 internal fun shouldUseForegroundServiceStart(
     sdkInt: Int,
     forceForeground: Boolean,
-    shouldRunPlaybackServiceInForeground: Boolean
+    shouldRunPlaybackServiceInForeground: Boolean,
+    callerHasVisibleUi: Boolean
 ): Boolean {
+    if (callerHasVisibleUi) {
+        return false
+    }
     return sdkInt >= Build.VERSION_CODES.O ||
         forceForeground ||
         shouldRunPlaybackServiceInForeground
+}
+
+private fun Context.findVisibleActivity(): Activity? {
+    var current: Context? = this
+    while (current is ContextWrapper) {
+        if (current is Activity) {
+            val isDestroyed = Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 &&
+                current.isDestroyed
+            return current.takeUnless { it.isFinishing || isDestroyed }
+        }
+        current = current.baseContext
+    }
+    return null
 }
 
 @Suppress("unused")
@@ -142,11 +161,13 @@ class AudioPlayerService : Service() {
             forceForeground: Boolean = false
         ) {
             val intent = createSyncIntent(context, source)
+            val callerHasVisibleUi = context.findVisibleActivity() != null
             if (
                 shouldUseForegroundServiceStart(
                     sdkInt = Build.VERSION.SDK_INT,
                     forceForeground = forceForeground,
-                    shouldRunPlaybackServiceInForeground = PlayerManager.shouldRunPlaybackServiceInForeground()
+                    shouldRunPlaybackServiceInForeground = PlayerManager.shouldRunPlaybackServiceInForeground(),
+                    callerHasVisibleUi = callerHasVisibleUi
                 )
             ) {
                 ContextCompat.startForegroundService(context, intent)

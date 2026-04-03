@@ -1,6 +1,5 @@
 package moe.ouom.neriplayer.data
 
-import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_AUTH_STALE_AFTER_MS
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
 import moe.ouom.neriplayer.data.auth.youtube.evaluateYouTubeAuthHealth
@@ -62,7 +61,7 @@ class YouTubeAuthBundleTest {
     }
 
     @Test
-    fun evaluateYouTubeAuthHealth_shouldReturnExpiredWithoutActiveSessionCookie() {
+    fun evaluateYouTubeAuthHealth_shouldKeepLoginStateWithoutExpiryClassification() {
         val health = evaluateYouTubeAuthHealth(
             YouTubeAuthBundle(
                 cookies = mapOf("LOGIN_INFO" to "token"),
@@ -71,8 +70,9 @@ class YouTubeAuthBundleTest {
             now = 2_000L
         )
 
-        assertEquals(YouTubeAuthState.Expired, health.state)
-        assertTrue(health.shouldPromptRelogin)
+        assertEquals(YouTubeAuthState.Valid, health.state)
+        assertTrue(health.activeCookieKeys.isEmpty())
+        assertFalse(health.shouldPromptRelogin)
     }
 
     @Test
@@ -94,17 +94,17 @@ class YouTubeAuthBundleTest {
     }
 
     @Test
-    fun evaluateYouTubeAuthHealth_shouldReturnStaleForOldCookies() {
+    fun evaluateYouTubeAuthHealth_shouldKeepOldCookiesValidWithoutExpiryCheck() {
         val now = 40L * 24L * 60L * 60L * 1000L
         val bundle = YouTubeAuthBundle(
             cookies = mapOf("SAPISID" to "cookie-value"),
-            savedAt = now - YOUTUBE_AUTH_STALE_AFTER_MS - 1L
+            savedAt = now - (90L * 24L * 60L * 60L * 1000L)
         )
 
         val health = evaluateYouTubeAuthHealth(bundle, now = now)
 
-        assertEquals(YouTubeAuthState.Stale, health.state)
-        assertTrue(health.shouldPromptRelogin)
+        assertEquals(YouTubeAuthState.Valid, health.state)
+        assertFalse(health.shouldPromptRelogin)
     }
 
     @Test

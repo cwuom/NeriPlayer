@@ -99,6 +99,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
@@ -106,6 +107,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.AudioPlayerService
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
@@ -132,6 +134,13 @@ import moe.ouom.neriplayer.util.lockPortraitIfPhone
 import androidx.core.view.WindowInsetsControllerCompat
 
 private enum class AppStage { Loading, Disclaimer, Onboarding, Main }
+
+private data class GitHubSyncWarningState(
+    val hasRepoInfo: Boolean,
+    val hasSyncHistory: Boolean,
+    val isConfigured: Boolean,
+    val isDismissed: Boolean
+)
 
 class MainActivity : ComponentActivity() {
     private val settingsRepository by lazy { SettingsRepository(applicationContext) }
@@ -166,10 +175,11 @@ class MainActivity : ComponentActivity() {
         )
 
         setContent {
-            // 初始化日志：在 Application 期也会被调用，重复调用是幂等的
-            val repo = SettingsRepository(this)
-            val devModeEnabled by repo.devModeEnabledFlow.collectAsState(initial = false)
-            NPLogger.init(context = this, enableFileLogging = devModeEnabled)
+            val devModeEnabled by settingsRepository.devModeEnabledFlow.collectAsState(initial = false)
+            LaunchedEffect(devModeEnabled) {
+                // 日志初始化只在配置变更时更新，避免每次根组合重组都触发
+                NPLogger.init(context = this@MainActivity, enableFileLogging = devModeEnabled)
+            }
 
             val dynamicColor by settingsRepository.dynamicColorFlow.collectAsState(
                 initial = startupThemeSnapshot.dynamicColor
@@ -199,25 +209,6 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(Unit) {
                     launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
                 }
-            }
-
-            // GitHub自动同步 - 应用启动时拉取最新数据(异步,不阻塞UI)
-            LaunchedEffect(Unit) {
-                    delay(1000) // 延迟1秒,避免阻塞启动
-                    val storage = moe.ouom.neriplayer.data.sync.github.SecureTokenStorage(this@MainActivity)
-                    if (storage.isConfigured()) {
-                        moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker.scheduleDelayedSync(
-                            this@MainActivity,
-                            markMutation = false
-                        )
-                    }
-                    val webDavStorage = WebDavStorage(this@MainActivity)
-                    if (webDavStorage.isConfigured()) {
-                        WebDavSyncWorker.scheduleDelayedSync(
-                            this@MainActivity,
-                            markMutation = false
-                        )
-                    }
             }
 
             NeriTheme(useDark = useDark, useDynamic = dynamicColor) {
@@ -326,26 +317,26 @@ class MainActivity : ComponentActivity() {
                             LaunchedEffect(lifecycleOwner.lifecycle) {
                                 lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
                                     while (true) {
-                                        val storage = moe.ouom.neriplayer.data.sync.github.SecureTokenStorage(this@MainActivity)
-                                        // 如果有仓库信息但token缺失，或者曾经同步过但现在未配置，显示警告
-                                        val hasRepoInfo = !storage.getRepoOwner().isNullOrEmpty() || !storage.getRepoName().isNullOrEmpty()
-                                        val hasSyncHistory = storage.getLastSyncTime() > 0
-                                        val isConfigured = storage.isConfigured()
-                                        val isDismissed = storage.isTokenWarningDismissed()
+                                        val warningState = loadGitHubSyncWarningState()
+                                        val shouldWarn = (warningState.hasRepoInfo || warningState.hasSyncHistory) &&
+                                            !warningState.isConfigured &&
+                                            !hasShownTokenWarning &&
+                                            !warningState.isDismissed
 
-                                        if ((hasRepoInfo || hasSyncHistory) && !isConfigured && !hasShownTokenWarning && !isDismissed) {
-                                            // 曾经配置过但现在token缺失，显示警告
+                                        if (shouldWarn) {
                                             NPLogger.d("MainActivity", "显示 GitHub 配置警告")
                                             showTokenWarningDialog = true
                                             hasShownTokenWarning = true
-                                        } else if (isConfigured) {
-                                            // 如果重新配置了，重置警告标志和忽略标志
+                                        } else if (warningState.isConfigured) {
                                             hasShownTokenWarning = false
-                                            storage.setTokenWarningDismissed(false)
+                                            if (warningState.isDismissed) {
+                                                withContext(Dispatchers.IO) {
+                                                    moe.ouom.neriplayer.data.sync.github.SecureTokenStorage(this@MainActivity)
+                                                        .setTokenWarningDismissed(false)
+                                                }
+                                            }
                                         }
-
-                                        // 每3秒检查一次
-                                        delay(3000)
+                                        delay(3_000L)
                                     }
                                 }
                             }
@@ -588,6 +579,8 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+
+        scheduleStartupSyncIfNeeded()
     }
 
     @Suppress("DEPRECATION")
@@ -691,6 +684,37 @@ class MainActivity : ComponentActivity() {
                 setGravity(Gravity.TOP or Gravity.CENTER_HORIZONTAL, 0, 180)
             }
         }.show()
+    }
+
+    private fun scheduleStartupSyncIfNeeded() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            delay(1000)
+            val storage = moe.ouom.neriplayer.data.sync.github.SecureTokenStorage(this@MainActivity)
+            if (storage.isConfigured()) {
+                moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker.scheduleDelayedSync(
+                    this@MainActivity,
+                    markMutation = false
+                )
+            }
+
+            val webDavStorage = WebDavStorage(this@MainActivity)
+            if (webDavStorage.isConfigured()) {
+                WebDavSyncWorker.scheduleDelayedSync(
+                    this@MainActivity,
+                    markMutation = false
+                )
+            }
+        }
+    }
+
+    private suspend fun loadGitHubSyncWarningState(): GitHubSyncWarningState = withContext(Dispatchers.IO) {
+        val storage = moe.ouom.neriplayer.data.sync.github.SecureTokenStorage(this@MainActivity)
+        GitHubSyncWarningState(
+            hasRepoInfo = !storage.getRepoOwner().isNullOrEmpty() || !storage.getRepoName().isNullOrEmpty(),
+            hasSyncHistory = storage.getLastSyncTime() > 0,
+            isConfigured = storage.isConfigured(),
+            isDismissed = storage.isTokenWarningDismissed()
+        )
     }
 
     private fun shouldOfferListenTogetherLeaveAction(message: String): Boolean {

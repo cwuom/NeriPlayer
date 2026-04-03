@@ -133,4 +133,32 @@ class PlayerManagerPlaybackStartPlanTest {
 
         assertFalse(shouldRunInForeground)
     }
+
+    @Test
+    fun `app bootstrap ignores restored queue without live transport`() {
+        val shouldBootstrap = shouldBootstrapPlaybackServiceOnAppLaunch(
+            hasCurrentSong = true,
+            playJobActive = false,
+            pendingPauseJobActive = false,
+            playWhenReady = false,
+            isPlaying = false,
+            playerPlaybackState = 0
+        )
+
+        assertFalse(shouldBootstrap)
+    }
+
+    @Test
+    fun `app bootstrap still resumes live buffering session`() {
+        val shouldBootstrap = shouldBootstrapPlaybackServiceOnAppLaunch(
+            hasCurrentSong = true,
+            playJobActive = false,
+            pendingPauseJobActive = false,
+            playWhenReady = false,
+            isPlaying = false,
+            playerPlaybackState = androidx.media3.common.Player.STATE_BUFFERING
+        )
+
+        assertTrue(shouldBootstrap)
+    }
 }

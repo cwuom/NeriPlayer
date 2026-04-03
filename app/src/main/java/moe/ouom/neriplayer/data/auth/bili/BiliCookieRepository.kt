@@ -43,8 +43,6 @@ import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
 
-internal const val BILI_AUTH_STALE_AFTER_MS: Long = 30L * 24L * 60L * 60L * 1000L
-
 private const val BILI_AUTH_PREFS = "bili_auth_secure_prefs"
 private const val KEY_BILI_AUTH_BUNDLE = "bili_auth_bundle"
 
@@ -110,8 +108,7 @@ data class BiliAuthBundle(
 
 internal fun evaluateBiliAuthHealth(
     bundle: BiliAuthBundle,
-    now: Long = System.currentTimeMillis(),
-    staleAfterMs: Long = BILI_AUTH_STALE_AFTER_MS
+    now: Long = System.currentTimeMillis()
 ): SavedCookieAuthHealth {
     val normalized = bundle.normalized(savedAt = bundle.savedAt)
     val loginCookieKeys = BILI_LOGIN_COOKIE_KEYS.filter { key ->
@@ -127,22 +124,13 @@ internal fun evaluateBiliAuthHealth(
     }
 
     val savedAt = normalized.savedAt
-    if (savedAt <= 0L) {
-        return SavedCookieAuthHealth(
-            state = SavedCookieAuthState.Stale,
-            savedAt = savedAt,
-            checkedAt = now,
-            loginCookieKeys = loginCookieKeys
-        )
+    val ageMs = if (savedAt > 0L) {
+        (now - savedAt).coerceAtLeast(0L)
+    } else {
+        Long.MAX_VALUE
     }
-
-    val ageMs = (now - savedAt).coerceAtLeast(0L)
     return SavedCookieAuthHealth(
-        state = if (ageMs >= staleAfterMs) {
-            SavedCookieAuthState.Stale
-        } else {
-            SavedCookieAuthState.Valid
-        },
+        state = SavedCookieAuthState.Valid,
         savedAt = savedAt,
         checkedAt = now,
         ageMs = ageMs,
@@ -186,9 +174,8 @@ class BiliCookieRepository(private val context: Context) {
     fun getAuthHealthOnce(): SavedCookieAuthHealth = _authHealthFlow.value
 
     fun getAuthHealth(
-        now: Long = System.currentTimeMillis(),
-        staleAfterMs: Long = BILI_AUTH_STALE_AFTER_MS
-    ): SavedCookieAuthHealth = evaluateBiliAuthHealth(_authFlow.value, now, staleAfterMs)
+        now: Long = System.currentTimeMillis()
+    ): SavedCookieAuthHealth = evaluateBiliAuthHealth(_authFlow.value, now)
 
     fun saveCookies(
         cookies: Map<String, String>,
@@ -218,14 +205,10 @@ class BiliCookieRepository(private val context: Context) {
         NPLogger.d("NERI-BiliCookieRepo", "Cleared Bili cookies")
     }
 
-    fun refreshHealth(
-        now: Long = System.currentTimeMillis(),
-        staleAfterMs: Long = BILI_AUTH_STALE_AFTER_MS
-    ) {
+    fun refreshHealth(now: Long = System.currentTimeMillis()) {
         _authHealthFlow.value = evaluateBiliAuthHealth(
             bundle = _authFlow.value,
-            now = now,
-            staleAfterMs = staleAfterMs
+            now = now
         )
     }
 

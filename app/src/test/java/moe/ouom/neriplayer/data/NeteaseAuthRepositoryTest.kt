@@ -1,7 +1,6 @@
 package moe.ouom.neriplayer.data
 
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
-import moe.ouom.neriplayer.data.auth.netease.NETEASE_AUTH_STALE_AFTER_MS
 import moe.ouom.neriplayer.data.auth.netease.NeteaseAuthBundle
 import moe.ouom.neriplayer.data.auth.netease.evaluateNeteaseAuthHealth
 import moe.ouom.neriplayer.data.auth.netease.validateAndSanitizeNeteaseCookies
@@ -40,17 +39,17 @@ class NeteaseAuthRepositoryTest {
     }
 
     @Test
-    fun evaluateNeteaseAuthHealth_returnsStaleForOldCookie() {
+    fun evaluateNeteaseAuthHealth_keepsSavedCookieValidWithoutExpiryCheck() {
         val now = 50L * 24L * 60L * 60L * 1000L
         val snapshot = NeteaseAuthBundle(
             cookies = mapOf("MUSIC_U" to "cookie"),
-            savedAt = now - NETEASE_AUTH_STALE_AFTER_MS - 1L
+            savedAt = now - (90L * 24L * 60L * 60L * 1000L)
         )
 
         val health = evaluateNeteaseAuthHealth(snapshot, now = now)
 
-        assertEquals(SavedCookieAuthState.Stale, health.state)
-        assertTrue(health.shouldPromptRelogin)
+        assertEquals(SavedCookieAuthState.Valid, health.state)
+        assertFalse(health.shouldPromptRelogin)
     }
 
     @Test

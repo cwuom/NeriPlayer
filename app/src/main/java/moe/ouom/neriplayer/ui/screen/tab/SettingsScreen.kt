@@ -114,7 +114,6 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthHealth
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
@@ -384,11 +383,9 @@ fun SettingsScreen(
     var showCookieDialog by remember { mutableStateOf(false) }
     var showBiliSheet by remember { mutableStateOf(false) }
     var showBiliCookieDialog by remember { mutableStateOf(false) }
-    var showBiliReauthDialog by remember { mutableStateOf(false) }
     var showYouTubeSheet by remember { mutableStateOf(false) }
     var showYouTubeCookieDialog by remember { mutableStateOf(false) }
 
-    var showNeteaseReauthDialog by remember { mutableStateOf(false) }
     var showColorPickerDialog by remember { mutableStateOf(false) }
     var showDpiDialog by remember { mutableStateOf(false) }
     var showGitHubConfigDialog by remember { mutableStateOf(false) }
@@ -411,9 +408,7 @@ fun SettingsScreen(
     var versionTapCount by remember { mutableIntStateOf(0) }
     var biliCookieText by remember { mutableStateOf("") }
     val biliVm: BiliAuthViewModel = viewModel()
-    var biliReauthHealth by remember { mutableStateOf<SavedCookieAuthHealth?>(null) }
     var biliSheetInitialTab by rememberSaveable { mutableIntStateOf(0) }
-    var neteaseReauthHealth by remember { mutableStateOf<SavedCookieAuthHealth?>(null) }
     var neteaseSheetInitialTab by rememberSaveable { mutableIntStateOf(0) }
     var youtubeCookieText by remember { mutableStateOf("") }
     val youtubeVm: YouTubeAuthViewModel = viewModel()
@@ -694,18 +689,12 @@ fun SettingsScreen(
                 NeteaseAuthEvent.LoginSuccess -> {
                     inlineMsg = null
                     showNeteaseSheet = false
-                    showNeteaseReauthDialog = false
-                    neteaseReauthHealth = null
                     inlineMsg = context.getString(R.string.settings_netease_login_success)
-                    neteaseVm.refreshAuthHealth(promptIfNeeded = true, forcePrompt = true)
+                    neteaseVm.refreshAuthHealth()
                 }
                 is NeteaseAuthEvent.ShowCookies -> {
                     cookieText = e.cookies.entries.joinToString("\n") { (k, v) -> "$k=${maskCookieValue(v)}" }
                     showCookieDialog = true
-                }
-                is NeteaseAuthEvent.PromptReauth -> {
-                    neteaseReauthHealth = e.health
-                    showNeteaseReauthDialog = true
                 }
             }
         }
@@ -721,14 +710,8 @@ fun SettingsScreen(
                 }
                 BiliAuthEvent.LoginSuccess -> {
                     showBiliSheet = false
-                    showBiliReauthDialog = false
-                    biliReauthHealth = null
                     inlineMsg = context.getString(R.string.settings_bili_login_success)
-                    biliVm.refreshAuthHealth(promptIfNeeded = true, forcePrompt = true)
-                }
-                is BiliAuthEvent.PromptReauth -> {
-                    biliReauthHealth = e.health
-                    showBiliReauthDialog = true
+                    biliVm.refreshAuthHealth()
                 }
             }
         }
@@ -1693,16 +1676,7 @@ fun SettingsScreen(
         showCookieDialog = showCookieDialog,
         cookieText = cookieText,
         onDismissCookieDialog = { showCookieDialog = false },
-        showReauthDialog = showNeteaseReauthDialog,
-        reauthHealth = neteaseReauthHealth,
-        onDismissReauthDialog = {
-            showNeteaseReauthDialog = false
-            neteaseReauthHealth = null
-        },
-        onOpenSheetAtTab = { tab ->
-            neteaseSheetInitialTab = tab
-            showNeteaseSheet = true
-        }
+        onBrowserLogin = null
     )
 
     SettingsBiliAuthDialogs(
@@ -1715,16 +1689,7 @@ fun SettingsScreen(
         showCookieDialog = showBiliCookieDialog,
         cookieText = biliCookieText,
         onDismissCookieDialog = { showBiliCookieDialog = false },
-        showReauthDialog = showBiliReauthDialog,
-        reauthHealth = biliReauthHealth,
-        onDismissReauthDialog = {
-            showBiliReauthDialog = false
-            biliReauthHealth = null
-        },
-        onOpenSheetAtTab = { tab ->
-            biliSheetInitialTab = tab
-            showBiliSheet = true
-        }
+        onBrowserLogin = null
     )
 
     SettingsYouTubeAuthDialogs(
@@ -2153,8 +2118,8 @@ private fun SettingsLoginExpandedContent(
     val neteaseAuthUiState by neteaseVm.uiState.collectAsStateWithLifecycleCompat()
 
     LaunchedEffect(biliVm, youtubeVm, neteaseVm) {
-        biliVm.refreshAuthHealth(promptIfNeeded = true)
-        neteaseVm.refreshAuthHealth(promptIfNeeded = true)
+        biliVm.refreshAuthHealth()
+        neteaseVm.refreshAuthHealth()
         youtubeVm.refreshAuthHealth()
     }
 
@@ -2166,14 +2131,7 @@ private fun SettingsLoginExpandedContent(
                 ?: stringResource(R.string.time_just_now)
             stringResource(R.string.settings_bili_status_valid, relativeTime)
         }
-        SavedCookieAuthState.Checking -> stringResource(R.string.settings_auth_checking)
-        SavedCookieAuthState.Expired -> stringResource(R.string.settings_bili_status_expired)
-        SavedCookieAuthState.Stale -> {
-            biliAuthUiState.health.savedAt
-                .takeIf { it > 0L }
-                ?.let { stringResource(R.string.settings_bili_status_stale, formatSyncTime(it)) }
-                ?: stringResource(R.string.settings_bili_status_stale_no_time)
-        }
+        SavedCookieAuthState.Checking -> stringResource(R.string.settings_bili_status_missing)
         SavedCookieAuthState.Missing -> stringResource(R.string.settings_bili_status_missing)
     }
     val neteaseStatusText = when (neteaseAuthUiState.health.state) {
@@ -2184,14 +2142,7 @@ private fun SettingsLoginExpandedContent(
                 ?: stringResource(R.string.time_just_now)
             stringResource(R.string.settings_netease_status_valid, relativeTime)
         }
-        SavedCookieAuthState.Checking -> stringResource(R.string.settings_auth_checking)
-        SavedCookieAuthState.Expired -> stringResource(R.string.settings_netease_status_expired)
-        SavedCookieAuthState.Stale -> {
-            neteaseAuthUiState.health.savedAt
-                .takeIf { it > 0L }
-                ?.let { stringResource(R.string.settings_netease_status_stale, formatSyncTime(it)) }
-                ?: stringResource(R.string.settings_netease_status_stale_no_time)
-        }
+        SavedCookieAuthState.Checking -> stringResource(R.string.settings_netease_status_missing)
         SavedCookieAuthState.Missing -> stringResource(R.string.settings_netease_status_missing)
     }
     val youtubeStatusText = when (youtubeAuthUiState.health.state) {
@@ -2201,13 +2152,6 @@ private fun SettingsLoginExpandedContent(
                 ?.let { formatSyncTime(it) }
                 ?: stringResource(R.string.time_just_now)
             stringResource(R.string.settings_youtube_status_valid, relativeTime)
-        }
-        YouTubeAuthState.Expired -> stringResource(R.string.settings_youtube_status_expired)
-        YouTubeAuthState.Stale -> {
-            youtubeAuthUiState.health.savedAt
-                .takeIf { it > 0L }
-                ?.let { stringResource(R.string.settings_youtube_status_stale, formatSyncTime(it)) }
-                ?: stringResource(R.string.settings_youtube_status_stale_no_time)
         }
         YouTubeAuthState.Missing -> stringResource(R.string.settings_youtube_status_missing)
     }

@@ -345,7 +345,7 @@ class YouTubeAuthAutoRefreshManager(
         if (!auth.hasLoginCookies()) {
             return RefreshGateDecision(allowed = false, reason = "no_login_cookies")
         }
-        if (!force && health.state == YouTubeAuthState.Valid) {
+        if (!force && health.state == YouTubeAuthState.Valid && health.activeCookieKeys.isNotEmpty()) {
             return RefreshGateDecision(allowed = false, reason = "auth_valid")
         }
         if (health.state == YouTubeAuthState.Missing) {

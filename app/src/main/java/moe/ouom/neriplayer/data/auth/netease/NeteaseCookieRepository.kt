@@ -43,8 +43,6 @@ import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
 
-internal const val NETEASE_AUTH_STALE_AFTER_MS: Long = 30L * 24L * 60L * 60L * 1000L
-
 private const val NETEASE_AUTH_PREFS = "netease_auth_secure_prefs"
 private const val KEY_NETEASE_AUTH_BUNDLE = "netease_auth_bundle"
 private const val NETEASE_COOKIE_FALLBACK_OS = "pc"
@@ -57,8 +55,7 @@ object CookieKeys {
 }
 
 private val NETEASE_LOGIN_COOKIE_KEYS = listOf(
-    "MUSIC_U",
-    "MUSIC_A"
+    "MUSIC_U"
 )
 
 private val NETEASE_COOKIE_NAME_REGEX = Regex("^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
@@ -156,8 +153,7 @@ data class NeteaseAuthBundle(
 
 internal fun evaluateNeteaseAuthHealth(
     bundle: NeteaseAuthBundle,
-    now: Long = System.currentTimeMillis(),
-    staleAfterMs: Long = NETEASE_AUTH_STALE_AFTER_MS
+    now: Long = System.currentTimeMillis()
 ): SavedCookieAuthHealth {
     val normalized = bundle.normalized(savedAt = bundle.savedAt)
     val loginCookieKeys = NETEASE_LOGIN_COOKIE_KEYS.filter { key ->
@@ -172,22 +168,13 @@ internal fun evaluateNeteaseAuthHealth(
     }
 
     val savedAt = normalized.savedAt
-    if (savedAt <= 0L) {
-        return SavedCookieAuthHealth(
-            state = SavedCookieAuthState.Stale,
-            savedAt = savedAt,
-            checkedAt = now,
-            loginCookieKeys = loginCookieKeys
-        )
+    val ageMs = if (savedAt > 0L) {
+        (now - savedAt).coerceAtLeast(0L)
+    } else {
+        Long.MAX_VALUE
     }
-
-    val ageMs = (now - savedAt).coerceAtLeast(0L)
     return SavedCookieAuthHealth(
-        state = if (ageMs >= staleAfterMs) {
-            SavedCookieAuthState.Stale
-        } else {
-            SavedCookieAuthState.Valid
-        },
+        state = SavedCookieAuthState.Valid,
         savedAt = savedAt,
         checkedAt = now,
         ageMs = ageMs,
@@ -222,9 +209,8 @@ class NeteaseCookieRepository(private val context: Context) {
     fun getAuthHealthOnce(): SavedCookieAuthHealth = _authHealthFlow.value
 
     fun getAuthHealth(
-        now: Long = System.currentTimeMillis(),
-        staleAfterMs: Long = NETEASE_AUTH_STALE_AFTER_MS
-    ): SavedCookieAuthHealth = evaluateNeteaseAuthHealth(_authFlow.value, now, staleAfterMs)
+        now: Long = System.currentTimeMillis()
+    ): SavedCookieAuthHealth = evaluateNeteaseAuthHealth(_authFlow.value, now)
 
     fun validateCookies(cookies: Map<String, String>): NeteaseCookieValidationResult {
         return validateAndSanitizeNeteaseCookies(cookies)
@@ -270,14 +256,10 @@ class NeteaseCookieRepository(private val context: Context) {
         NPLogger.d("NERI-CookieRepo", "Cleared all saved cookies.")
     }
 
-    fun refreshHealth(
-        now: Long = System.currentTimeMillis(),
-        staleAfterMs: Long = NETEASE_AUTH_STALE_AFTER_MS
-    ) {
+    fun refreshHealth(now: Long = System.currentTimeMillis()) {
         _authHealthFlow.value = evaluateNeteaseAuthHealth(
             bundle = _authFlow.value,
-            now = now,
-            staleAfterMs = staleAfterMs
+            now = now
         )
     }
 
