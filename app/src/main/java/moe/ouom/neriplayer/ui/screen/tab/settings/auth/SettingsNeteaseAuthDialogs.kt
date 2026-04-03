@@ -89,7 +89,8 @@ internal fun SettingsNeteaseAuthDialogs(
     showReauthDialog: Boolean,
     reauthHealth: SavedCookieAuthHealth?,
     onDismissReauthDialog: () -> Unit,
-    onOpenSheetAtTab: (Int) -> Unit
+    onOpenSheetAtTab: (Int) -> Unit,
+    onBrowserLogin: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
 
@@ -125,15 +126,27 @@ internal fun SettingsNeteaseAuthDialogs(
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         var selectedTab by remember(initialTab) { mutableIntStateOf(initialTab) }
         var rawCookie by remember { mutableStateOf("") }
-        val webLoginLauncher = rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.StartActivityForResult()
-        ) { result ->
-            if (result.resultCode == android.app.Activity.RESULT_OK) {
-                val json = result.data?.getStringExtra(NeteaseWebLoginActivity.RESULT_COOKIE) ?: "{}"
-                vm.importCookiesFromMap(parseCookieMap(json))
-            } else {
-                onInlineMsgChange(context.getString(R.string.settings_cookie_cancelled))
+        val launchBrowserLogin: () -> Unit = onBrowserLogin?.let { injectedBrowserLogin ->
+            {
+                onInlineMsgChange(null)
+                injectedBrowserLogin()
             }
+        } ?: run {
+            val webLoginLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.StartActivityForResult()
+            ) { result ->
+                if (result.resultCode == android.app.Activity.RESULT_OK) {
+                    val json = result.data?.getStringExtra(NeteaseWebLoginActivity.RESULT_COOKIE) ?: "{}"
+                    vm.importCookiesFromMap(parseCookieMap(json))
+                } else {
+                    onInlineMsgChange(context.getString(R.string.settings_cookie_cancelled))
+                }
+            }
+            val defaultBrowserLogin: () -> Unit = {
+                onInlineMsgChange(null)
+                webLoginLauncher.launch(Intent(context, NeteaseWebLoginActivity::class.java))
+            }
+            defaultBrowserLogin
         }
 
         ModalBottomSheet(
@@ -193,12 +206,7 @@ internal fun SettingsNeteaseAuthDialogs(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(Modifier.height(12.dp))
-                            HapticButton(
-                                onClick = {
-                                    onInlineMsgChange(null)
-                                    webLoginLauncher.launch(Intent(context, NeteaseWebLoginActivity::class.java))
-                                }
-                            ) {
+                            HapticButton(onClick = launchBrowserLogin) {
                                 Text(stringResource(R.string.login_start_browser))
                             }
                         }

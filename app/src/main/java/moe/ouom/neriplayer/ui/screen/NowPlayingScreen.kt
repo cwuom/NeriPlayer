@@ -2117,7 +2117,7 @@ private fun NowPlayingProgressInfoRow(
 }
 
 @Composable
-private fun NowPlayingQualityOptionsDialog(
+fun NowPlayingQualityOptionsDialog(
     title: String,
     selectedKey: String?,
     options: List<PlaybackQualityOption>,

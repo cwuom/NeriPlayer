@@ -309,7 +309,17 @@ class AudioPlayerService : Service() {
                 }
             }
         }
-        registerReceiver(becomingNoisyReceiver, IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY))
+        val noisyIntentFilter = IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(
+                becomingNoisyReceiver,
+                noisyIntentFilter,
+                Context.RECEIVER_NOT_EXPORTED
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            registerReceiver(becomingNoisyReceiver, noisyIntentFilter)
+        }
 
         updateMetadata()
         updatePlaybackState(force = true)

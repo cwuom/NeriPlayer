@@ -12,6 +12,25 @@ import org.junit.Test
 class BiliAuthRepositoryTest {
 
     @Test
+    fun biliAuthBundle_jsonRoundTripDropsBlankKeysAndKeepsSavedAt() {
+        val original = BiliAuthBundle(
+            cookies = linkedMapOf(
+                "SESSDATA" to "sess-cookie",
+                "" to "ignored",
+                "bili_jct" to "csrf-token"
+            ),
+            savedAt = 123L
+        )
+
+        val restored = BiliAuthBundle.fromJson(original.toJson())
+
+        assertEquals("sess-cookie", restored.cookies["SESSDATA"])
+        assertEquals("csrf-token", restored.cookies["bili_jct"])
+        assertFalse(restored.cookies.containsKey(""))
+        assertEquals(123L, restored.savedAt)
+    }
+
+    @Test
     fun evaluateBiliAuthHealth_returnsMissingWithoutKnownCookies() {
         val health = evaluateBiliAuthHealth(
             BiliAuthBundle(

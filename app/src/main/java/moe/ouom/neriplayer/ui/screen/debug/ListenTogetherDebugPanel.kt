@@ -178,12 +178,12 @@ fun ListenTogetherRoomPanel(
     }
     LaunchedEffect(savedUserUuid, isInRoom) {
         if (!isInRoom) {
-            userUuid = if (savedUserUuid.isBlank()) preferences.getOrCreateUserUuid() else savedUserUuid
+            userUuid = savedUserUuid.ifBlank { preferences.getOrCreateUserUuid() }
         }
     }
     LaunchedEffect(savedNickname) {
         if (nickname.isBlank()) {
-            nickname = if (savedNickname.isBlank()) preferences.getOrCreateNickname() else savedNickname
+            nickname = savedNickname.ifBlank { preferences.getOrCreateNickname() }
         }
     }
     LaunchedEffect(sessionState.roomId) { sessionState.roomId?.let { roomIdInput = it } }

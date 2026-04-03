@@ -1020,15 +1020,10 @@ class ListenTogetherSessionManager(
     ): Boolean {
         if (state.version <= lastAppliedRoomVersion) return true
         val currentUserId = _sessionState.value.userUuid
-        if (
-            currentUserId == (state.controllerUserUuid ?: state.controllerUserId) &&
-            cause?.userUuid == currentUserId &&
-            SystemClock.elapsedRealtime() - lastControllerLocalControlAtElapsedMs < CONTROLLER_LOCAL_CONTROL_COOLDOWN_MS &&
-            state.version <= lastAppliedRoomVersion + 1
-        ) {
-            return true
-        }
-        return false
+        return currentUserId == (state.controllerUserUuid ?: state.controllerUserId) &&
+                cause?.userUuid == currentUserId &&
+                SystemClock.elapsedRealtime() - lastControllerLocalControlAtElapsedMs < CONTROLLER_LOCAL_CONTROL_COOLDOWN_MS &&
+                state.version <= lastAppliedRoomVersion + 1
     }
 
     private fun startHeartbeat() {

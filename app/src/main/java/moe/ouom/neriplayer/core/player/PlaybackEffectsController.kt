@@ -2,8 +2,10 @@ package moe.ouom.neriplayer.core.player
 
 import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
+import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.PlaybackParameters
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import moe.ouom.neriplayer.core.player.model.DEFAULT_EQUALIZER_BAND_LEVEL_RANGE_MB
 import moe.ouom.neriplayer.core.player.model.PlaybackEqualizerBand
@@ -38,6 +40,7 @@ class PlaybackEffectsController {
     private var lastAppliedEqualizerLevels: List<Int> = emptyList()
     private var lastAppliedEqualizerEnabled = false
 
+    @OptIn(UnstableApi::class)
     fun attachPlayer(player: ExoPlayer?): PlaybackSoundState {
         this.player = player
         applyPlaybackParameters()
@@ -71,6 +74,7 @@ class PlaybackEffectsController {
         return buildState()
     }
 
+    @OptIn(UnstableApi::class)
     fun onAudioSessionIdChanged(audioSessionId: Int?): PlaybackSoundState {
         val normalizedSessionId = audioSessionId
             ?.takeIf { it != C.AUDIO_SESSION_ID_UNSET && it > 0 }

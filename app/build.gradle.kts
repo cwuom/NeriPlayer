@@ -116,6 +116,11 @@ android {
             // minSdk 28 后 AGP 默认会把 dex 直接存储，恢复 legacy packaging 可显著降低 APK 体积
             useLegacyPackaging = true
         }
+        resources {
+            // Compose instrumentation 依赖 kotlinx.coroutines 的 ServiceLoader，
+            // androidTest APK 需要合并同名 service 文件，避免只保留单个实现
+            merges += "META-INF/services/*"
+        }
     }
 
     splits {
@@ -203,6 +208,7 @@ dependencies {
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.androidx.foundation.layout)
     debugImplementation(libs.compose.ui.tooling)
+    debugImplementation(libs.compose.ui.test.manifest)
     implementation(libs.compose.material3)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
@@ -213,8 +219,13 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.org.json)
     testImplementation(libs.mockito.core)
+    testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+    androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation(libs.compose.ui.test.junit4)
+    androidTestImplementation(libs.kotlinx.coroutines.android)
+    androidTestImplementation(libs.kotlinx.coroutines.test)
     implementation(libs.androidx.animation)
     implementation(libs.accompanist.navigation.animation)
     implementation(libs.androidx.datastore.preferences)
@@ -225,6 +236,7 @@ dependencies {
 
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.serialization.protobuf)
+    implementation(libs.kotlinx.coroutines.android)
     implementation(libs.coil.compose)
 
     // Media3
