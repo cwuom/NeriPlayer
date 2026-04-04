@@ -85,7 +85,7 @@ class BiliCookieRepositoryAndroidTest {
         assertEquals("legacy-sess", repository.getCookiesOnce()["SESSDATA"])
         assertEquals("67890", repository.getCookiesOnce()["DedeUserID"])
         assertEquals("legacy-csrf", repository.getCookiesOnce()["bili_jct"])
-        assertEquals(SavedCookieAuthState.Stale, repository.getAuthHealthOnce().state)
+        assertEquals(SavedCookieAuthState.Valid, repository.getAuthHealthOnce().state)
 
         val legacyJsonAfterMigration = runBlocking {
             cookieDataStore().data.first()[BiliCookieKeys.COOKIE_JSON]

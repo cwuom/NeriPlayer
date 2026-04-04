@@ -3,9 +3,6 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.auth
 import android.app.Application
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
@@ -13,8 +10,6 @@ import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthHealth
-import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthViewModel
 import moe.ouom.neriplayer.ui.viewmodel.auth.YouTubeAuthViewModel
@@ -63,10 +58,6 @@ class AuthDialogsTest {
                         showCookieDialog = false,
                         cookieText = "",
                         onDismissCookieDialog = { },
-                        showReauthDialog = false,
-                        reauthHealth = null,
-                        onDismissReauthDialog = { },
-                        onOpenSheetAtTab = { },
                         onBrowserLogin = { }
                     )
                 }
@@ -90,78 +81,7 @@ class AuthDialogsTest {
     }
 
     @Test
-    fun neteaseReauthDialog_actionsOpenExpectedTabs() {
-        val context = targetContext
-        val vm = NeteaseAuthViewModel(application)
-        val openedTabs = mutableListOf<Int>()
-        var dismissedCount = 0
-        var reauthHealth by mutableStateOf<SavedCookieAuthHealth?>(
-            SavedCookieAuthHealth(
-                state = SavedCookieAuthState.Stale,
-                savedAt = 1_700_000_000_000L
-            )
-        )
-        var showReauthDialog by mutableStateOf(true)
-
-        composeRule.setContent {
-            MaterialTheme {
-                Box {
-                    SettingsNeteaseAuthDialogs(
-                        showSheet = false,
-                        initialTab = 0,
-                        onDismissSheet = { },
-                        inlineMsg = null,
-                        onInlineMsgChange = { },
-                        showConfirmDialog = false,
-                        confirmPhoneMasked = null,
-                        onDismissConfirmDialog = { },
-                        vm = vm,
-                        showCookieDialog = false,
-                        cookieText = "",
-                        onDismissCookieDialog = { },
-                        showReauthDialog = showReauthDialog,
-                        reauthHealth = reauthHealth,
-                        onDismissReauthDialog = {
-                            dismissedCount++
-                            showReauthDialog = false
-                        },
-                        onOpenSheetAtTab = { openedTabs += it },
-                        onBrowserLogin = { }
-                    )
-                }
-            }
-        }
-
-        waitForText(context.getString(R.string.settings_netease_reauth_action_import))
-        composeRule.onNodeWithText(
-            context.getString(R.string.settings_netease_reauth_action_import)
-        ).performClick()
-
-        composeRule.runOnIdle {
-            assertEquals(listOf(1), openedTabs)
-            assertEquals(1, dismissedCount)
-            reauthHealth = SavedCookieAuthHealth(
-                state = SavedCookieAuthState.Missing
-            )
-            showReauthDialog = true
-        }
-
-        openedTabs.clear()
-        dismissedCount = 0
-
-        waitForText(context.getString(R.string.settings_netease_reauth_action_login))
-        composeRule.onNodeWithText(
-            context.getString(R.string.settings_netease_reauth_action_login)
-        ).performClick()
-
-        composeRule.runOnIdle {
-            assertEquals(listOf(0), openedTabs)
-            assertEquals(1, dismissedCount)
-        }
-    }
-
-    @Test
-    fun biliReauthDialog_importActionRoutesToCookieTab() {
+    fun biliSavedCookieDialog_continueActionOpensBrowserTab() {
         val context = targetContext
         val vm = BiliAuthViewModel(application)
         val openedTabs = mutableListOf<Int>()
@@ -180,26 +100,148 @@ class AuthDialogsTest {
                         showCookieDialog = false,
                         cookieText = "",
                         onDismissCookieDialog = { },
-                        showReauthDialog = true,
-                        reauthHealth = SavedCookieAuthHealth(
-                            state = SavedCookieAuthState.Expired,
-                            savedAt = 1_700_000_000_000L
-                        ),
-                        onDismissReauthDialog = { dismissedCount++ },
+                        showSavedCookieDialog = true,
+                        onDismissSavedCookieDialog = { dismissedCount++ },
                         onOpenSheetAtTab = { openedTabs += it },
+                        onLogout = { },
                         onBrowserLogin = { }
                     )
                 }
             }
         }
 
-        waitForText(context.getString(R.string.settings_bili_reauth_action_import))
+        waitForText(context.getString(R.string.settings_saved_cookie_continue))
         composeRule.onNodeWithText(
-            context.getString(R.string.settings_bili_reauth_action_import)
+            context.getString(R.string.settings_saved_cookie_continue)
         ).performClick()
 
         composeRule.runOnIdle {
-            assertEquals(listOf(1), openedTabs)
+            assertEquals(listOf(0), openedTabs)
+            assertEquals(1, dismissedCount)
+        }
+    }
+
+    @Test
+    fun biliSavedCookieDialog_logoutActionInvokesCallback() {
+        val context = targetContext
+        val vm = BiliAuthViewModel(application)
+        var dismissedCount = 0
+        var logoutCount = 0
+
+        composeRule.setContent {
+            MaterialTheme {
+                Box {
+                    SettingsBiliAuthDialogs(
+                        showSheet = false,
+                        initialTab = 0,
+                        onDismissSheet = { },
+                        inlineMsg = null,
+                        onInlineMsgChange = { },
+                        vm = vm,
+                        showCookieDialog = false,
+                        cookieText = "",
+                        onDismissCookieDialog = { },
+                        showSavedCookieDialog = true,
+                        onDismissSavedCookieDialog = { dismissedCount++ },
+                        onOpenSheetAtTab = { },
+                        onLogout = { logoutCount++ },
+                        onBrowserLogin = { }
+                    )
+                }
+            }
+        }
+
+        waitForText(context.getString(R.string.settings_saved_cookie_logout))
+        composeRule.onNodeWithText(
+            context.getString(R.string.settings_saved_cookie_logout)
+        ).performClick()
+
+        composeRule.runOnIdle {
+            assertEquals(1, logoutCount)
+            assertEquals(1, dismissedCount)
+        }
+    }
+
+    @Test
+    fun neteaseSavedCookieDialog_continueAndLogoutActionsWork() {
+        val context = targetContext
+        val vm = NeteaseAuthViewModel(application)
+        val openedTabs = mutableListOf<Int>()
+        var dismissedCount = 0
+        var logoutCount = 0
+
+        composeRule.setContent {
+            MaterialTheme {
+                Box {
+                    SettingsNeteaseAuthDialogs(
+                        showSheet = false,
+                        initialTab = 0,
+                        onDismissSheet = { },
+                        inlineMsg = null,
+                        onInlineMsgChange = { },
+                        showConfirmDialog = false,
+                        confirmPhoneMasked = null,
+                        onDismissConfirmDialog = { },
+                        vm = vm,
+                        showCookieDialog = false,
+                        cookieText = "",
+                        onDismissCookieDialog = { },
+                        showSavedCookieDialog = true,
+                        onDismissSavedCookieDialog = { dismissedCount++ },
+                        onOpenSheetAtTab = { openedTabs += it },
+                        onLogout = { logoutCount++ },
+                        onBrowserLogin = { }
+                    )
+                }
+            }
+        }
+
+        waitForText(context.getString(R.string.settings_saved_cookie_continue))
+        composeRule.onNodeWithText(
+            context.getString(R.string.settings_saved_cookie_continue)
+        ).performClick()
+
+        composeRule.runOnIdle {
+            assertEquals(listOf(0), openedTabs)
+            assertEquals(1, dismissedCount)
+        }
+
+        dismissedCount = 0
+        openedTabs.clear()
+
+        composeRule.setContent {
+            MaterialTheme {
+                Box {
+                    SettingsNeteaseAuthDialogs(
+                        showSheet = false,
+                        initialTab = 0,
+                        onDismissSheet = { },
+                        inlineMsg = null,
+                        onInlineMsgChange = { },
+                        showConfirmDialog = false,
+                        confirmPhoneMasked = null,
+                        onDismissConfirmDialog = { },
+                        vm = vm,
+                        showCookieDialog = false,
+                        cookieText = "",
+                        onDismissCookieDialog = { },
+                        showSavedCookieDialog = true,
+                        onDismissSavedCookieDialog = { dismissedCount++ },
+                        onOpenSheetAtTab = { },
+                        onLogout = { logoutCount++ },
+                        onBrowserLogin = { }
+                    )
+                }
+            }
+        }
+
+        waitForText(context.getString(R.string.settings_saved_cookie_logout))
+        composeRule.onNodeWithText(
+            context.getString(R.string.settings_saved_cookie_logout)
+        ).performClick()
+
+        composeRule.runOnIdle {
+            assertEquals(1, logoutCount)
             assertEquals(1, dismissedCount)
         }
     }
@@ -235,6 +277,84 @@ class AuthDialogsTest {
     }
 
     @Test
+    fun youtubeSavedCookieDialog_continueAndLogoutActionsWork() {
+        val context = targetContext
+        val vm = YouTubeAuthViewModel(application)
+        val openedTabs = mutableListOf<Int>()
+        var dismissedCount = 0
+        var logoutCount = 0
+
+        composeRule.setContent {
+            MaterialTheme {
+                Box {
+                    SettingsYouTubeAuthDialogs(
+                        showSheet = false,
+                        initialTab = 0,
+                        onDismissSheet = { },
+                        inlineMsg = null,
+                        onInlineMsgChange = { },
+                        vm = vm,
+                        showCookieDialog = false,
+                        cookieText = "",
+                        onDismissCookieDialog = { },
+                        showSavedCookieDialog = true,
+                        onDismissSavedCookieDialog = { dismissedCount++ },
+                        onOpenSheetAtTab = { openedTabs += it },
+                        onLogout = { logoutCount++ },
+                        onBrowserLogin = { }
+                    )
+                }
+            }
+        }
+
+        waitForText(context.getString(R.string.settings_saved_cookie_continue))
+        composeRule.onNodeWithText(
+            context.getString(R.string.settings_saved_cookie_continue)
+        ).performClick()
+
+        composeRule.runOnIdle {
+            assertEquals(listOf(0), openedTabs)
+            assertEquals(1, dismissedCount)
+        }
+
+        dismissedCount = 0
+        openedTabs.clear()
+
+        composeRule.setContent {
+            MaterialTheme {
+                Box {
+                    SettingsYouTubeAuthDialogs(
+                        showSheet = false,
+                        initialTab = 0,
+                        onDismissSheet = { },
+                        inlineMsg = null,
+                        onInlineMsgChange = { },
+                        vm = vm,
+                        showCookieDialog = false,
+                        cookieText = "",
+                        onDismissCookieDialog = { },
+                        showSavedCookieDialog = true,
+                        onDismissSavedCookieDialog = { dismissedCount++ },
+                        onOpenSheetAtTab = { },
+                        onLogout = { logoutCount++ },
+                        onBrowserLogin = { }
+                    )
+                }
+            }
+        }
+
+        waitForText(context.getString(R.string.settings_saved_cookie_logout))
+        composeRule.onNodeWithText(
+            context.getString(R.string.settings_saved_cookie_logout)
+        ).performClick()
+
+        composeRule.runOnIdle {
+            assertEquals(1, logoutCount)
+            assertEquals(1, dismissedCount)
+        }
+    }
+
+    @Test
     fun biliSheet_switchesToCookieImportTabAndShowsInput() {
         val context = targetContext
         val vm = BiliAuthViewModel(application)
@@ -252,10 +372,6 @@ class AuthDialogsTest {
                         showCookieDialog = false,
                         cookieText = "",
                         onDismissCookieDialog = { },
-                        showReauthDialog = false,
-                        reauthHealth = null,
-                        onDismissReauthDialog = { },
-                        onOpenSheetAtTab = { },
                         onBrowserLogin = { }
                     )
                 }

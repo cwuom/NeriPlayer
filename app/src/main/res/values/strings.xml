@@ -839,12 +839,15 @@
     <string name="settings_netease_login_success">网易云登录成功</string>
     <string name="settings_youtube_login_success">YouTube 登录成功</string>
     <string name="settings_bili_status_valid">已保存，最近更新于 %1$s</string>
+    <string name="settings_bili_status_saved_invalid">检测到已保存的 Cookie，但当前可能无效，点击可刷新或退出登录</string>
     <string name="settings_bili_status_missing">未检测到可用 Cookie，点击重新登录或导入</string>
     <string name="settings_netease_status_valid">已保存，最近更新于 %1$s</string>
+    <string name="settings_netease_status_saved_invalid">检测到已保存的 Cookie，但当前可能无效，点击可刷新或退出登录</string>
     <string name="settings_netease_status_missing">未检测到可用 Cookie，点击重新登录或导入</string>
     <string name="settings_youtube_login_methods">浏览器/Cookie 导入</string>
     <string name="settings_youtube_auth_missing">未读取到可用的 YouTube / YouTube Music 鉴权信息</string>
     <string name="settings_youtube_status_valid">已保存，最近更新于 %1$s</string>
+    <string name="settings_youtube_status_saved_invalid">检测到已保存的 Cookie，但当前可能无效，点击可刷新或退出登录</string>
     <string name="settings_youtube_status_missing">未检测到可用 Cookie，点击重新登录或导入</string>
     <string name="settings_haptic_feedback">触感反馈</string>
     <string name="settings_login_platforms">第三方平台登录</string>
@@ -869,6 +872,7 @@
     <string name="auth_login_failed_msg">登录失败：%s</string>
     <string name="auth_login_success">登录成功</string>
     <string name="auth_cookie_saved">Cookie 已保存</string>
+    <string name="auth_cookie_cleared">Cookie 已清除</string>
     <string name="auth_cookie_invalid">未解析到合法 Cookie 项</string>
     <string name="auth_cookie_empty">Cookie 为空</string>
     <string name="action_later">稍后</string>
@@ -1208,7 +1212,15 @@
     <string name="settings_empty_placeholder">(空)</string>
     <string name="settings_netease_login_browser_hint">将打开内置浏览器(桌面UA)访问 music.163.com，登录成功后点击右上角 \"完成\"。</string>
     <string name="settings_bili_login_browser_hint">将打开内置网页访问 passport.bilibili.com，登录成功后自动读取 Cookie。</string>
+    <string name="settings_bili_saved_cookie_title">检测到已保存的 B 站 Cookie</string>
+    <string name="settings_bili_saved_cookie_message">检测到本地已保存 B 站 Cookie。你可以退出登录清空旧 Cookie，或继续登录以刷新 Cookie。</string>
+    <string name="settings_netease_saved_cookie_title">检测到已保存的网易云 Cookie</string>
+    <string name="settings_netease_saved_cookie_message">检测到本地已保存网易云 Cookie。你可以退出登录清空旧 Cookie，或继续登录以刷新 Cookie。</string>
+    <string name="settings_saved_cookie_continue">继续登录并刷新</string>
+    <string name="settings_saved_cookie_logout">退出登录</string>
     <string name="settings_youtube_login_browser_hint">将尝试通过内置网页打开 music.youtube.com，并在登录后自动读取 Cookie。</string>
+    <string name="settings_youtube_saved_cookie_title">检测到已保存的 YouTube Cookie</string>
+    <string name="settings_youtube_saved_cookie_message">检测到本地已保存 YouTube Cookie。你可以退出登录清空旧 Cookie，或继续登录以刷新 Cookie。</string>
     <string name="settings_youtube_login_browser_warning">Google 可能提示“此浏览器可能不安全”或直接拦截登录；若失败，请切换到上方的“Cookie 导入”标签。</string>
     <string name="login_paste_bili_cookie_hint">粘贴 Cookie（例如：SESSDATA=…; bili_jct=…）</string>
     <string name="login_paste_youtube_cookie_hint">粘贴 Cookie（例如：SAPISID=…; __Secure-1PSID=…）</string>

@@ -381,10 +381,13 @@ fun SettingsScreen(
     var showDefaultStartDestinationDialog by remember { mutableStateOf(false) }
     var showConfirmDialog by remember { mutableStateOf(false) }
     var showCookieDialog by remember { mutableStateOf(false) }
+    var showNeteaseSavedCookieDialog by remember { mutableStateOf(false) }
     var showBiliSheet by remember { mutableStateOf(false) }
     var showBiliCookieDialog by remember { mutableStateOf(false) }
+    var showBiliSavedCookieDialog by remember { mutableStateOf(false) }
     var showYouTubeSheet by remember { mutableStateOf(false) }
     var showYouTubeCookieDialog by remember { mutableStateOf(false) }
+    var showYouTubeSavedCookieDialog by remember { mutableStateOf(false) }
 
     var showColorPickerDialog by remember { mutableStateOf(false) }
     var showDpiDialog by remember { mutableStateOf(false) }
@@ -687,6 +690,7 @@ fun SettingsScreen(
                     showConfirmDialog = true
                 }
                 NeteaseAuthEvent.LoginSuccess -> {
+                    showNeteaseSavedCookieDialog = false
                     inlineMsg = null
                     showNeteaseSheet = false
                     inlineMsg = context.getString(R.string.settings_netease_login_success)
@@ -709,6 +713,7 @@ fun SettingsScreen(
                     showBiliCookieDialog = true
                 }
                 BiliAuthEvent.LoginSuccess -> {
+                    showBiliSavedCookieDialog = false
                     showBiliSheet = false
                     inlineMsg = context.getString(R.string.settings_bili_login_success)
                     biliVm.refreshAuthHealth()
@@ -728,8 +733,10 @@ fun SettingsScreen(
                     showYouTubeCookieDialog = true
                 }
                 YouTubeAuthEvent.LoginSuccess -> {
+                    showYouTubeSavedCookieDialog = false
                     showYouTubeSheet = false
                     inlineMsg = context.getString(R.string.settings_youtube_login_success)
+                    youtubeVm.refreshAuthHealth()
                 }
 
             }
@@ -913,10 +920,22 @@ fun SettingsScreen(
                         biliVm = biliVm,
                         youtubeVm = youtubeVm,
                         neteaseVm = neteaseVm,
-                        onOpenBiliSheet = {
+                        onOpenBiliSheet = { tab ->
                             inlineMsg = null
-                            biliSheetInitialTab = 0
+                            biliSheetInitialTab = tab
                             showBiliSheet = true
+                        },
+                        onOpenBiliSavedCookieDialog = {
+                            inlineMsg = null
+                            showBiliSavedCookieDialog = true
+                        },
+                        onOpenYouTubeSavedCookieDialog = {
+                            inlineMsg = null
+                            showYouTubeSavedCookieDialog = true
+                        },
+                        onOpenNeteaseSavedCookieDialog = {
+                            inlineMsg = null
+                            showNeteaseSavedCookieDialog = true
                         },
                         onOpenYouTubeSheet = {
                             inlineMsg = null
@@ -1676,6 +1695,17 @@ fun SettingsScreen(
         showCookieDialog = showCookieDialog,
         cookieText = cookieText,
         onDismissCookieDialog = { showCookieDialog = false },
+        showSavedCookieDialog = showNeteaseSavedCookieDialog,
+        onDismissSavedCookieDialog = { showNeteaseSavedCookieDialog = false },
+        onOpenSheetAtTab = { tab ->
+            inlineMsg = null
+            neteaseSheetInitialTab = tab
+            showNeteaseSheet = true
+        },
+        onLogout = {
+            showNeteaseSavedCookieDialog = false
+            neteaseVm.clearCookies()
+        },
         onBrowserLogin = null
     )
 
@@ -1689,6 +1719,17 @@ fun SettingsScreen(
         showCookieDialog = showBiliCookieDialog,
         cookieText = biliCookieText,
         onDismissCookieDialog = { showBiliCookieDialog = false },
+        showSavedCookieDialog = showBiliSavedCookieDialog,
+        onDismissSavedCookieDialog = { showBiliSavedCookieDialog = false },
+        onOpenSheetAtTab = { tab ->
+            inlineMsg = null
+            biliSheetInitialTab = tab
+            showBiliSheet = true
+        },
+        onLogout = {
+            showBiliSavedCookieDialog = false
+            biliVm.clearCookies()
+        },
         onBrowserLogin = null
     )
 
@@ -1701,7 +1742,18 @@ fun SettingsScreen(
         vm = youtubeVm,
         showCookieDialog = showYouTubeCookieDialog,
         cookieText = youtubeCookieText,
-        onDismissCookieDialog = { showYouTubeCookieDialog = false }
+        onDismissCookieDialog = { showYouTubeCookieDialog = false },
+        showSavedCookieDialog = showYouTubeSavedCookieDialog,
+        onDismissSavedCookieDialog = { showYouTubeSavedCookieDialog = false },
+        onOpenSheetAtTab = { tab ->
+            inlineMsg = null
+            youtubeSheetInitialTab = tab
+            showYouTubeSheet = true
+        },
+        onLogout = {
+            showYouTubeSavedCookieDialog = false
+            youtubeVm.clearAuth()
+        }
     )
     SettingsPreferenceDialogs(
         showDefaultStartDestinationDialog = showDefaultStartDestinationDialog,
@@ -2109,7 +2161,10 @@ private fun SettingsLoginExpandedContent(
     biliVm: BiliAuthViewModel,
     youtubeVm: YouTubeAuthViewModel,
     neteaseVm: NeteaseAuthViewModel,
-    onOpenBiliSheet: () -> Unit,
+    onOpenBiliSheet: (Int) -> Unit,
+    onOpenBiliSavedCookieDialog: () -> Unit,
+    onOpenYouTubeSavedCookieDialog: () -> Unit,
+    onOpenNeteaseSavedCookieDialog: () -> Unit,
     onOpenYouTubeSheet: () -> Unit,
     onOpenNeteaseSheet: () -> Unit,
 ) {
@@ -2131,8 +2186,20 @@ private fun SettingsLoginExpandedContent(
                 ?: stringResource(R.string.time_just_now)
             stringResource(R.string.settings_bili_status_valid, relativeTime)
         }
-        SavedCookieAuthState.Checking -> stringResource(R.string.settings_bili_status_missing)
-        SavedCookieAuthState.Missing -> stringResource(R.string.settings_bili_status_missing)
+        SavedCookieAuthState.Checking -> {
+            if (biliAuthUiState.hasSavedCookies) {
+                stringResource(R.string.settings_bili_status_saved_invalid)
+            } else {
+                stringResource(R.string.settings_bili_status_missing)
+            }
+        }
+        SavedCookieAuthState.Missing -> {
+            if (biliAuthUiState.hasSavedCookies) {
+                stringResource(R.string.settings_bili_status_saved_invalid)
+            } else {
+                stringResource(R.string.settings_bili_status_missing)
+            }
+        }
     }
     val neteaseStatusText = when (neteaseAuthUiState.health.state) {
         SavedCookieAuthState.Valid -> {
@@ -2142,8 +2209,20 @@ private fun SettingsLoginExpandedContent(
                 ?: stringResource(R.string.time_just_now)
             stringResource(R.string.settings_netease_status_valid, relativeTime)
         }
-        SavedCookieAuthState.Checking -> stringResource(R.string.settings_netease_status_missing)
-        SavedCookieAuthState.Missing -> stringResource(R.string.settings_netease_status_missing)
+        SavedCookieAuthState.Checking -> {
+            if (neteaseAuthUiState.hasSavedCookies) {
+                stringResource(R.string.settings_netease_status_saved_invalid)
+            } else {
+                stringResource(R.string.settings_netease_status_missing)
+            }
+        }
+        SavedCookieAuthState.Missing -> {
+            if (neteaseAuthUiState.hasSavedCookies) {
+                stringResource(R.string.settings_netease_status_saved_invalid)
+            } else {
+                stringResource(R.string.settings_netease_status_missing)
+            }
+        }
     }
     val youtubeStatusText = when (youtubeAuthUiState.health.state) {
         YouTubeAuthState.Valid -> {
@@ -2153,7 +2232,13 @@ private fun SettingsLoginExpandedContent(
                 ?: stringResource(R.string.time_just_now)
             stringResource(R.string.settings_youtube_status_valid, relativeTime)
         }
-        YouTubeAuthState.Missing -> stringResource(R.string.settings_youtube_status_missing)
+        YouTubeAuthState.Missing -> {
+            if (youtubeAuthUiState.hasSavedAuth) {
+                stringResource(R.string.settings_youtube_status_saved_invalid)
+            } else {
+                stringResource(R.string.settings_youtube_status_missing)
+            }
+        }
     }
 
     Column(
@@ -2173,7 +2258,15 @@ private fun SettingsLoginExpandedContent(
             },
             headlineContent = { Text(stringResource(R.string.platform_bilibili)) },
             supportingContent = { Text(biliStatusText) },
-            modifier = Modifier.settingsItemClickable(onClick = onOpenBiliSheet),
+            modifier = Modifier.settingsItemClickable(
+                onClick = {
+                    if (biliAuthUiState.hasSavedCookies) {
+                        onOpenBiliSavedCookieDialog()
+                    } else {
+                        onOpenBiliSheet(0)
+                    }
+                }
+            ),
             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
         )
 
@@ -2188,7 +2281,15 @@ private fun SettingsLoginExpandedContent(
             },
             headlineContent = { Text(stringResource(R.string.common_youtube)) },
             supportingContent = { Text(youtubeStatusText) },
-            modifier = Modifier.settingsItemClickable(onClick = onOpenYouTubeSheet),
+            modifier = Modifier.settingsItemClickable(
+                onClick = {
+                    if (youtubeAuthUiState.hasSavedAuth) {
+                        onOpenYouTubeSavedCookieDialog()
+                    } else {
+                        onOpenYouTubeSheet()
+                    }
+                }
+            ),
             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
         )
 
@@ -2203,7 +2304,15 @@ private fun SettingsLoginExpandedContent(
             },
             headlineContent = { Text(stringResource(R.string.platform_netease)) },
             supportingContent = { Text(neteaseStatusText) },
-            modifier = Modifier.settingsItemClickable(onClick = onOpenNeteaseSheet),
+            modifier = Modifier.settingsItemClickable(
+                onClick = {
+                    if (neteaseAuthUiState.hasSavedCookies) {
+                        onOpenNeteaseSavedCookieDialog()
+                    } else {
+                        onOpenNeteaseSheet()
+                    }
+                }
+            ),
             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
         )
 

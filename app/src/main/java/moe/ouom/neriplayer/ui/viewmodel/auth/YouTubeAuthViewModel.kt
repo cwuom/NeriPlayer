@@ -32,6 +32,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -40,7 +41,8 @@ import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthHealth
 import moe.ouom.neriplayer.data.auth.youtube.evaluateYouTubeAuthHealth
 
 data class YouTubeAuthUiState(
-    val health: YouTubeAuthHealth = evaluateYouTubeAuthHealth(YouTubeAuthBundle())
+    val health: YouTubeAuthHealth = evaluateYouTubeAuthHealth(YouTubeAuthBundle()),
+    val hasSavedAuth: Boolean = false
 )
 
 sealed interface YouTubeAuthEvent {
@@ -54,7 +56,8 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _uiState = MutableStateFlow(
         YouTubeAuthUiState(
-            health = repo.getAuthHealth()
+            health = repo.getAuthHealth(),
+            hasSavedAuth = repo.getAuthOnce().hasPersistedAuth()
         )
     )
     val uiState: StateFlow<YouTubeAuthUiState>
@@ -65,7 +68,16 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
     init {
         viewModelScope.launch {
             repo.authHealthFlow.collect { health ->
-                _uiState.value = YouTubeAuthUiState(health = health)
+                _uiState.update { current ->
+                    current.copy(health = health)
+                }
+            }
+        }
+        viewModelScope.launch {
+            repo.authFlow.collect { bundle ->
+                _uiState.update { current ->
+                    current.copy(hasSavedAuth = bundle.hasPersistedAuth())
+                }
             }
         }
     }
@@ -74,7 +86,20 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) {
             repo.refreshHealth()
             val health = repo.getAuthHealthOnce()
-            _uiState.value = YouTubeAuthUiState(health = health)
+            _uiState.update { current ->
+                current.copy(health = health)
+            }
+        }
+    }
+
+    fun clearAuth() {
+        viewModelScope.launch(Dispatchers.IO) {
+            repo.clear()
+            _events.send(
+                YouTubeAuthEvent.ShowSnack(
+                    getApplication<Application>().getString(R.string.auth_cookie_cleared)
+                )
+            )
         }
     }
 
@@ -157,5 +182,9 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
                 }
         }
         return result
+    }
+
+    private fun YouTubeAuthBundle.hasPersistedAuth(): Boolean {
+        return cookies.isNotEmpty() || cookieHeader.isNotBlank() || authorization.isNotBlank()
     }
 }

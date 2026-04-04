@@ -80,9 +80,29 @@ internal fun SettingsNeteaseAuthDialogs(
     showCookieDialog: Boolean,
     cookieText: String,
     onDismissCookieDialog: () -> Unit,
+    showSavedCookieDialog: Boolean = false,
+    onDismissSavedCookieDialog: () -> Unit = {},
+    onOpenSheetAtTab: (Int) -> Unit = {},
+    onLogout: (() -> Unit)? = null,
     onBrowserLogin: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
+
+    if (showSavedCookieDialog) {
+        SavedCookieActionDialog(
+            title = stringResource(R.string.settings_netease_saved_cookie_title),
+            message = stringResource(R.string.settings_netease_saved_cookie_message),
+            onDismiss = onDismissSavedCookieDialog,
+            onContinueLogin = {
+                onDismissSavedCookieDialog()
+                onOpenSheetAtTab(0)
+            },
+            onLogout = {
+                onDismissSavedCookieDialog()
+                onLogout?.invoke()
+            }
+        )
+    }
 
     if (showConfirmDialog) {
         AlertDialog(

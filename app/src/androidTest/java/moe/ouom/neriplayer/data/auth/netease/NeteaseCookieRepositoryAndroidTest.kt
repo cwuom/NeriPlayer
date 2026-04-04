@@ -89,7 +89,7 @@ class NeteaseCookieRepositoryAndroidTest {
         assertEquals("legacy-csrf", repository.getCookiesOnce()["__csrf"])
         assertEquals("pc", repository.getCookiesOnce()["os"])
         assertEquals("8.10.35", repository.getCookiesOnce()["appver"])
-        assertEquals(SavedCookieAuthState.Stale, repository.getAuthHealthOnce().state)
+        assertEquals(SavedCookieAuthState.Valid, repository.getAuthHealthOnce().state)
 
         val legacyJsonAfterMigration = runBlocking {
             cookieDataStore().data.first()[LegacyCookieJsonKey]

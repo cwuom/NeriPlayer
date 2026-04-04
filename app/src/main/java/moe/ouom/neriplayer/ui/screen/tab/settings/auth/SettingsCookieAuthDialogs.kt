@@ -76,9 +76,29 @@ internal fun SettingsBiliAuthDialogs(
     showCookieDialog: Boolean,
     cookieText: String,
     onDismissCookieDialog: () -> Unit,
+    showSavedCookieDialog: Boolean = false,
+    onDismissSavedCookieDialog: () -> Unit = {},
+    onOpenSheetAtTab: (Int) -> Unit = {},
+    onLogout: (() -> Unit)? = null,
     onBrowserLogin: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
+
+    if (showSavedCookieDialog) {
+        SavedCookieActionDialog(
+            title = stringResource(R.string.settings_bili_saved_cookie_title),
+            message = stringResource(R.string.settings_bili_saved_cookie_message),
+            onDismiss = onDismissSavedCookieDialog,
+            onContinueLogin = {
+                onDismissSavedCookieDialog()
+                onOpenSheetAtTab(0)
+            },
+            onLogout = {
+                onDismissSavedCookieDialog()
+                onLogout?.invoke()
+            }
+        )
+    }
 
     if (showSheet) {
         val launchBrowserLogin: () -> Unit = onBrowserLogin?.let { injectedBrowserLogin ->
@@ -150,9 +170,29 @@ internal fun SettingsYouTubeAuthDialogs(
     showCookieDialog: Boolean,
     cookieText: String,
     onDismissCookieDialog: () -> Unit,
+    showSavedCookieDialog: Boolean = false,
+    onDismissSavedCookieDialog: () -> Unit = {},
+    onOpenSheetAtTab: (Int) -> Unit = {},
+    onLogout: (() -> Unit)? = null,
     onBrowserLogin: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
+
+    if (showSavedCookieDialog) {
+        SavedCookieActionDialog(
+            title = stringResource(R.string.settings_youtube_saved_cookie_title),
+            message = stringResource(R.string.settings_youtube_saved_cookie_message),
+            onDismiss = onDismissSavedCookieDialog,
+            onContinueLogin = {
+                onDismissSavedCookieDialog()
+                onOpenSheetAtTab(0)
+            },
+            onLogout = {
+                onDismissSavedCookieDialog()
+                onLogout?.invoke()
+            }
+        )
+    }
 
     if (showSheet) {
         val launchBrowserLogin: () -> Unit = onBrowserLogin?.let { injectedBrowserLogin ->
@@ -298,4 +338,29 @@ private fun TwoTabCookieLoginSheet(
             }
         }
     }
+}
+
+@Composable
+internal fun SavedCookieActionDialog(
+    title: String,
+    message: String,
+    onDismiss: () -> Unit,
+    onContinueLogin: () -> Unit,
+    onLogout: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { Text(message) },
+        confirmButton = {
+            HapticTextButton(onClick = onContinueLogin) {
+                Text(stringResource(R.string.settings_saved_cookie_continue))
+            }
+        },
+        dismissButton = {
+            HapticTextButton(onClick = onLogout) {
+                Text(stringResource(R.string.settings_saved_cookie_logout))
+            }
+        }
+    )
 }

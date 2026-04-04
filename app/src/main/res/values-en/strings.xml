@@ -839,12 +839,15 @@
     <string name="settings_netease_login_success">NetEase login successful</string>
     <string name="settings_youtube_login_success">YouTube login successful</string>
     <string name="settings_bili_status_valid">Saved and last refreshed %1$s</string>
+    <string name="settings_bili_status_saved_invalid">A saved Cookie was found, but it may be invalid. Tap to refresh it or sign out</string>
     <string name="settings_bili_status_missing">No usable Cookie detected. Tap to sign in again or import one</string>
     <string name="settings_netease_status_valid">Saved and last refreshed %1$s</string>
+    <string name="settings_netease_status_saved_invalid">A saved Cookie was found, but it may be invalid. Tap to refresh it or sign out</string>
     <string name="settings_netease_status_missing">No usable Cookie detected. Tap to sign in again or import one</string>
     <string name="settings_youtube_login_methods">Browser/Cookie Import</string>
     <string name="settings_youtube_auth_missing">No usable YouTube / YouTube Music auth information was captured</string>
     <string name="settings_youtube_status_valid">Saved and last refreshed %1$s</string>
+    <string name="settings_youtube_status_saved_invalid">A saved Cookie was found, but it may be invalid. Tap to refresh it or sign out</string>
     <string name="settings_youtube_status_missing">No usable Cookie detected. Tap to sign in again or import one</string>
     <string name="settings_haptic_feedback">Haptic Feedback</string>
     <string name="settings_login_platforms">Third-party Sign-in</string>
@@ -869,6 +872,7 @@
     <string name="auth_login_failed_msg">Login failed: %s</string>
     <string name="auth_login_success">Login successful</string>
     <string name="auth_cookie_saved">Cookie saved</string>
+    <string name="auth_cookie_cleared">Cookie cleared</string>
     <string name="auth_cookie_invalid">No valid Cookie found</string>
     <string name="auth_cookie_empty">Cookie is empty</string>
     <string name="action_later">Later</string>
@@ -1191,7 +1195,15 @@
     <string name="settings_empty_placeholder">(Empty)</string>
     <string name="settings_netease_login_browser_hint">Will open built-in browser (desktop UA) to visit music.163.com. After successful login, tap \"Done\" in the upper right corner.</string>
     <string name="settings_bili_login_browser_hint">Opens the built-in web view for passport.bilibili.com and automatically reads cookies after sign-in.</string>
+    <string name="settings_bili_saved_cookie_title">Saved Bilibili Cookie detected</string>
+    <string name="settings_bili_saved_cookie_message">A local Bilibili Cookie is already saved. You can sign out to clear it, or continue signing in to refresh the Cookie.</string>
+    <string name="settings_netease_saved_cookie_title">Saved NetEase Cookie detected</string>
+    <string name="settings_netease_saved_cookie_message">A local NetEase Cookie is already saved. You can sign out to clear it, or continue signing in to refresh the Cookie.</string>
+    <string name="settings_saved_cookie_continue">Continue and refresh</string>
+    <string name="settings_saved_cookie_logout">Sign out</string>
     <string name="settings_youtube_login_browser_hint">Tries to open music.youtube.com in the built-in web view and automatically reads cookies after sign-in.</string>
+    <string name="settings_youtube_saved_cookie_title">Saved YouTube Cookie detected</string>
+    <string name="settings_youtube_saved_cookie_message">A local YouTube Cookie is already saved. You can sign out to clear it, or continue signing in to refresh the Cookie.</string>
     <string name="settings_youtube_login_browser_warning">Google may show \"This browser may not be secure\" or block sign-in entirely. If that happens, switch to the \"Cookie Import\" tab above.</string>
     <string name="login_paste_bili_cookie_hint">Paste Cookie (e.g.: SESSDATA=…; bili_jct=…)</string>
     <string name="login_paste_youtube_cookie_hint">Paste Cookie (e.g.: SAPISID=…; __Secure-1PSID=…)</string>

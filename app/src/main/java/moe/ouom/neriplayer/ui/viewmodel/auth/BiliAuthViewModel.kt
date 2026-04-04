@@ -32,6 +32,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -39,7 +40,8 @@ import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthHealth
 import org.json.JSONObject
 
 data class BiliAuthUiState(
-    val health: SavedCookieAuthHealth = SavedCookieAuthHealth()
+    val health: SavedCookieAuthHealth = SavedCookieAuthHealth(),
+    val hasSavedCookies: Boolean = false
 )
 
 sealed interface BiliAuthEvent {
@@ -53,7 +55,8 @@ class BiliAuthViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _uiState = MutableStateFlow(
         BiliAuthUiState(
-            health = repo.getAuthHealth()
+            health = repo.getAuthHealth(),
+            hasSavedCookies = repo.getCookiesOnce().isNotEmpty()
         )
     )
     val uiState: StateFlow<BiliAuthUiState> = _uiState.asStateFlow()
@@ -64,7 +67,16 @@ class BiliAuthViewModel(app: Application) : AndroidViewModel(app) {
     init {
         viewModelScope.launch {
             repo.authHealthFlow.collect { health ->
-                _uiState.value = BiliAuthUiState(health = health)
+                _uiState.update { current ->
+                    current.copy(health = health)
+                }
+            }
+        }
+        viewModelScope.launch {
+            repo.cookieFlow.collect { cookies ->
+                _uiState.update { current ->
+                    current.copy(hasSavedCookies = cookies.isNotEmpty())
+                }
             }
         }
     }
@@ -72,7 +84,20 @@ class BiliAuthViewModel(app: Application) : AndroidViewModel(app) {
     fun refreshAuthHealth() {
         viewModelScope.launch(Dispatchers.IO) {
             repo.refreshHealth()
-            _uiState.value = BiliAuthUiState(health = repo.getAuthHealthOnce())
+            _uiState.update { current ->
+                current.copy(health = repo.getAuthHealthOnce())
+            }
+        }
+    }
+
+    fun clearCookies() {
+        viewModelScope.launch(Dispatchers.IO) {
+            repo.clear()
+            _events.send(
+                BiliAuthEvent.ShowSnack(
+                    getApplication<Application>().getString(R.string.auth_cookie_cleared)
+                )
+            )
         }
     }
 
@@ -132,5 +157,4 @@ class BiliAuthViewModel(app: Application) : AndroidViewModel(app) {
             out
         }.getOrElse { emptyMap() }
     }
-
 }

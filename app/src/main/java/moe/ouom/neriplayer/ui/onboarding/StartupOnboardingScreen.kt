@@ -205,17 +205,20 @@ fun StartupOnboardingScreen() {
     var showNeteaseSheet by remember { mutableStateOf(false) }
     var showNeteaseConfirm by remember { mutableStateOf(false) }
     var showNeteaseCookieDialog by remember { mutableStateOf(false) }
+    var showNeteaseSavedCookieDialog by remember { mutableStateOf(false) }
     var neteaseMaskedPhone by remember { mutableStateOf<String?>(null) }
     var neteaseCookieText by remember { mutableStateOf("") }
     var neteaseSheetTab by rememberSaveable { mutableIntStateOf(0) }
 
     var showBiliSheet by remember { mutableStateOf(false) }
     var showBiliCookieDialog by remember { mutableStateOf(false) }
+    var showBiliSavedCookieDialog by remember { mutableStateOf(false) }
     var biliCookieText by remember { mutableStateOf("") }
     var biliSheetTab by rememberSaveable { mutableIntStateOf(0) }
 
     var showYouTubeSheet by remember { mutableStateOf(false) }
     var showYouTubeCookieDialog by remember { mutableStateOf(false) }
+    var showYouTubeSavedCookieDialog by remember { mutableStateOf(false) }
     var youTubeCookieText by remember { mutableStateOf("") }
     var youTubeSheetTab by rememberSaveable { mutableIntStateOf(0) }
     var showGitHubConfigDialog by remember { mutableStateOf(false) }
@@ -278,6 +281,7 @@ fun StartupOnboardingScreen() {
                     showNeteaseCookieDialog = true
                 }
                 NeteaseAuthEvent.LoginSuccess -> {
+                    showNeteaseSavedCookieDialog = false
                     inlineMessage = context.getString(R.string.settings_netease_login_success)
                     showNeteaseSheet = false
                     neteaseVm.refreshAuthHealth()
@@ -297,6 +301,7 @@ fun StartupOnboardingScreen() {
                     showBiliCookieDialog = true
                 }
                 BiliAuthEvent.LoginSuccess -> {
+                    showBiliSavedCookieDialog = false
                     inlineMessage = context.getString(R.string.settings_bili_login_success)
                     showBiliSheet = false
                     biliVm.refreshAuthHealth()
@@ -316,6 +321,7 @@ fun StartupOnboardingScreen() {
                     showYouTubeCookieDialog = true
                 }
                 YouTubeAuthEvent.LoginSuccess -> {
+                    showYouTubeSavedCookieDialog = false
                     inlineMessage = context.getString(R.string.settings_youtube_login_success)
                     showYouTubeSheet = false
                     youTubeVm.refreshAuthHealth()
@@ -517,38 +523,37 @@ fun StartupOnboardingScreen() {
                                     inlineMessage = inlineMessage,
                                     onInlineMessageChange = { inlineMessage = it },
                                     biliState = biliState.health.state,
+                                    hasSavedBiliCookies = biliState.hasSavedCookies,
                                     neteaseState = neteaseState.health.state,
+                                    hasSavedNeteaseCookies = neteaseState.hasSavedCookies,
                                     youTubeState = youTubeState.health.state,
+                                    hasSavedYouTubeAuth = youTubeState.hasSavedAuth,
                                     onOpenBili = {
                                         inlineMessage = null
                                         biliSheetTab = 0
                                         showBiliSheet = true
                                     },
-                                    onLogoutBili = {
-                                        AppContainer.biliCookieRepo.clear()
-                                        biliVm.refreshAuthHealth()
+                                    onManageBili = {
                                         inlineMessage = null
+                                        showBiliSavedCookieDialog = true
                                     },
                                     onOpenNetease = {
                                         inlineMessage = null
                                         neteaseSheetTab = 0
                                         showNeteaseSheet = true
                                     },
-                                    onLogoutNetease = {
-                                        AppContainer.neteaseClient.logout()
-                                        AppContainer.neteaseCookieRepo.clear()
-                                        neteaseVm.refreshAuthHealth()
+                                    onManageNetease = {
                                         inlineMessage = null
+                                        showNeteaseSavedCookieDialog = true
                                     },
                                     onOpenYouTube = {
                                         inlineMessage = null
                                         youTubeSheetTab = 0
                                         showYouTubeSheet = true
                                     },
-                                    onLogoutYouTube = {
-                                        AppContainer.youtubeAuthRepo.clear()
-                                        youTubeVm.refreshAuthHealth()
+                                    onManageYouTube = {
                                         inlineMessage = null
+                                        showYouTubeSavedCookieDialog = true
                                     }
                                 )
                                 StartupStep.GitHubSync -> GitHubSyncContent(
@@ -654,6 +659,17 @@ fun StartupOnboardingScreen() {
                 showCookieDialog = showNeteaseCookieDialog,
                 cookieText = neteaseCookieText,
                 onDismissCookieDialog = { showNeteaseCookieDialog = false },
+                showSavedCookieDialog = showNeteaseSavedCookieDialog,
+                onDismissSavedCookieDialog = { showNeteaseSavedCookieDialog = false },
+                onOpenSheetAtTab = { tab ->
+                    inlineMessage = null
+                    neteaseSheetTab = tab
+                    showNeteaseSheet = true
+                },
+                onLogout = {
+                    showNeteaseSavedCookieDialog = false
+                    neteaseVm.clearCookies()
+                },
                 onBrowserLogin = null
             )
             SettingsBiliAuthDialogs(
@@ -666,6 +682,17 @@ fun StartupOnboardingScreen() {
                 showCookieDialog = showBiliCookieDialog,
                 cookieText = biliCookieText,
                 onDismissCookieDialog = { showBiliCookieDialog = false },
+                showSavedCookieDialog = showBiliSavedCookieDialog,
+                onDismissSavedCookieDialog = { showBiliSavedCookieDialog = false },
+                onOpenSheetAtTab = { tab ->
+                    inlineMessage = null
+                    biliSheetTab = tab
+                    showBiliSheet = true
+                },
+                onLogout = {
+                    showBiliSavedCookieDialog = false
+                    biliVm.clearCookies()
+                },
                 onBrowserLogin = null
             )
             SettingsYouTubeAuthDialogs(
@@ -677,7 +704,18 @@ fun StartupOnboardingScreen() {
                 vm = youTubeVm,
                 showCookieDialog = showYouTubeCookieDialog,
                 cookieText = youTubeCookieText,
-                onDismissCookieDialog = { showYouTubeCookieDialog = false }
+                onDismissCookieDialog = { showYouTubeCookieDialog = false },
+                showSavedCookieDialog = showYouTubeSavedCookieDialog,
+                onDismissSavedCookieDialog = { showYouTubeSavedCookieDialog = false },
+                onOpenSheetAtTab = { tab ->
+                    inlineMessage = null
+                    youTubeSheetTab = tab
+                    showYouTubeSheet = true
+                },
+                onLogout = {
+                    showYouTubeSavedCookieDialog = false
+                    youTubeVm.clearAuth()
+                }
             )
             SettingsGitHubDialogs(
                 showGitHubConfigDialog = showGitHubConfigDialog,
@@ -768,14 +806,17 @@ private fun PlatformContent(
     inlineMessage: String?,
     onInlineMessageChange: (String?) -> Unit,
     biliState: SavedCookieAuthState,
+    hasSavedBiliCookies: Boolean,
     neteaseState: SavedCookieAuthState,
+    hasSavedNeteaseCookies: Boolean,
     youTubeState: YouTubeAuthState,
+    hasSavedYouTubeAuth: Boolean,
     onOpenBili: () -> Unit,
-    onLogoutBili: () -> Unit,
+    onManageBili: () -> Unit,
     onOpenNetease: () -> Unit,
-    onLogoutNetease: () -> Unit,
+    onManageNetease: () -> Unit,
     onOpenYouTube: () -> Unit,
-    onLogoutYouTube: () -> Unit
+    onManageYouTube: () -> Unit
 ) {
     StepHeader(
         icon = Icons.Outlined.Tune,
@@ -792,7 +833,14 @@ private fun PlatformContent(
         title = stringResource(R.string.platform_bilibili),
         status = statusTextForSavedCookie(biliState),
         connected = biliState == SavedCookieAuthState.Valid,
-        onClick = if (biliState == SavedCookieAuthState.Valid) onLogoutBili else onOpenBili
+        actionText = if (hasSavedBiliCookies) {
+            stringResource(R.string.onboarding_platform_action_manage)
+        } else if (biliState == SavedCookieAuthState.Valid) {
+            stringResource(R.string.onboarding_platform_action_logout)
+        } else {
+            stringResource(R.string.onboarding_platform_action_connect)
+        },
+        onClick = if (hasSavedBiliCookies) onManageBili else onOpenBili
     )
     Spacer(Modifier.height(12.dp))
     PlatformCard(
@@ -800,7 +848,14 @@ private fun PlatformContent(
         title = stringResource(R.string.platform_netease),
         status = statusTextForSavedCookie(neteaseState),
         connected = neteaseState == SavedCookieAuthState.Valid,
-        onClick = if (neteaseState == SavedCookieAuthState.Valid) onLogoutNetease else onOpenNetease
+        actionText = if (hasSavedNeteaseCookies) {
+            stringResource(R.string.onboarding_platform_action_manage)
+        } else if (neteaseState == SavedCookieAuthState.Valid) {
+            stringResource(R.string.onboarding_platform_action_logout)
+        } else {
+            stringResource(R.string.onboarding_platform_action_connect)
+        },
+        onClick = if (hasSavedNeteaseCookies) onManageNetease else onOpenNetease
     )
     Spacer(Modifier.height(12.dp))
     PlatformCard(
@@ -808,7 +863,14 @@ private fun PlatformContent(
         title = stringResource(R.string.common_youtube),
         status = statusTextForYouTube(youTubeState),
         connected = youTubeState == YouTubeAuthState.Valid,
-        onClick = if (youTubeState == YouTubeAuthState.Valid) onLogoutYouTube else onOpenYouTube
+        actionText = if (hasSavedYouTubeAuth) {
+            stringResource(R.string.onboarding_platform_action_manage)
+        } else if (youTubeState == YouTubeAuthState.Valid) {
+            stringResource(R.string.onboarding_platform_action_logout)
+        } else {
+            stringResource(R.string.onboarding_platform_action_connect)
+        },
+        onClick = if (hasSavedYouTubeAuth) onManageYouTube else onOpenYouTube
     )
     Spacer(Modifier.height(18.dp))
     HintCard(body = stringResource(R.string.onboarding_platforms_hint))
@@ -1024,7 +1086,14 @@ private fun OptionCard(title: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun PlatformCard(icon: Painter, title: String, status: String, connected: Boolean, onClick: () -> Unit) {
+private fun PlatformCard(
+    icon: Painter,
+    title: String,
+    status: String,
+    connected: Boolean,
+    actionText: String,
+    onClick: () -> Unit
+) {
     val colors = MaterialTheme.colorScheme
     Surface(
         modifier = Modifier
@@ -1056,11 +1125,7 @@ private fun PlatformCard(icon: Painter, title: String, status: String, connected
                 StatusPill(status, connected)
             }
             OnboardingActionButton(
-                text = if (connected) {
-                    stringResource(R.string.onboarding_platform_action_logout)
-                } else {
-                    stringResource(R.string.onboarding_platform_action_connect)
-                },
+                text = actionText,
                 onClick = onClick
             )
         }
