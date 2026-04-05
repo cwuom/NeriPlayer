@@ -286,6 +286,7 @@ fun NowPlayingScreen(
     onLyricFontScaleChange: (Float) -> Unit,
     showCoverSourceBadge: Boolean = true,
     showLyricTranslation: Boolean = true,
+    showNowPlayingTitle: Boolean = true,
 ) {
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
     val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
@@ -668,11 +669,13 @@ fun NowPlayingScreen(
                         }
 
                         // 标题 - 居中
-                        Text(
-                            text = stringResource(R.string.player_now_playing),
-                            style = MaterialTheme.typography.titleLarge,
-                            modifier = Modifier.align(Alignment.Center)
-                        )
+                        if (showNowPlayingTitle) {
+                            Text(
+                                text = stringResource(R.string.player_now_playing),
+                                style = MaterialTheme.typography.titleLarge,
+                                modifier = Modifier.align(Alignment.Center)
+                            )
+                        }
 
                         // 收藏和更多按钮 - 右侧
                         Row(

@@ -151,6 +151,8 @@
     <string name="settings_force_dark_desc">Manually specify when not following system</string>
     <string name="settings_cover_source_badge">Show song source on cover</string>
     <string name="settings_cover_source_badge_desc">Display the platform badge for the current song on the cover area</string>
+    <string name="settings_nowplaying_title">Show &quot;Now Playing&quot; title</string>
+    <string name="settings_nowplaying_title_desc">Controls whether the &quot;Now Playing&quot; title appears at the top of the player page</string>
     <string name="settings_nowplaying_progress_quality_switch">Show current quality above progress bar</string>
     <string name="settings_nowplaying_progress_quality_switch_desc">Shown above the progress bar; quality switching is available in More Options</string>
     <string name="settings_nowplaying_toolbar_dock">Use dock-style bottom toolbar</string>

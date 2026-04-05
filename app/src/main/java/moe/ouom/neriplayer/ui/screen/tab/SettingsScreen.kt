@@ -230,6 +230,8 @@ fun SettingsScreen(
     onShowCoverSourceBadgeChange: (Boolean) -> Unit,
     nowPlayingToolbarDockEnabled: Boolean,
     onNowPlayingToolbarDockEnabledChange: (Boolean) -> Unit,
+    showNowPlayingTitle: Boolean,
+    onShowNowPlayingTitleChange: (Boolean) -> Unit,
     showNowPlayingProgressQualitySwitch: Boolean,
     onShowNowPlayingProgressQualitySwitchChange: (Boolean) -> Unit,
     showNowPlayingProgressAudioCodec: Boolean,
@@ -1188,6 +1190,26 @@ fun SettingsScreen(
                                 Switch(
                                     checked = showCoverSourceBadge,
                                     onCheckedChange = onShowCoverSourceBadgeChange
+                                )
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+
+                        ListItem(
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Outlined.LibraryMusic,
+                                    contentDescription = stringResource(R.string.settings_nowplaying_title),
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = { Text(stringResource(R.string.settings_nowplaying_title)) },
+                            supportingContent = { Text(stringResource(R.string.settings_nowplaying_title_desc)) },
+                            trailingContent = {
+                                Switch(
+                                    checked = showNowPlayingTitle,
+                                    onCheckedChange = onShowNowPlayingTitleChange
                                 )
                             },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)

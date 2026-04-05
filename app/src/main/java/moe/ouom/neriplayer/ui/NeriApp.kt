@@ -485,6 +485,7 @@ fun NeriApp(
     val hapticFeedbackEnabled by repo.hapticFeedbackEnabledFlow.collectAsState(initial = true)
     val showCoverSourceBadge by repo.showCoverSourceBadgeFlow.collectAsState(initial = true)
     val nowPlayingToolbarDockEnabled by repo.nowPlayingToolbarDockEnabledFlow.collectAsState(initial = true)
+    val showNowPlayingTitle by repo.nowPlayingShowTitleFlow.collectAsState(initial = true)
     val showNowPlayingProgressQualitySwitch by repo.nowPlayingProgressShowQualitySwitchFlow.collectAsState(initial = true)
     val showNowPlayingProgressAudioCodec by repo.nowPlayingProgressShowAudioCodecFlow.collectAsState(initial = true)
     val showNowPlayingProgressAudioSpec by repo.nowPlayingProgressShowAudioSpecFlow.collectAsState(initial = true)
@@ -1368,6 +1369,10 @@ fun NeriApp(
                                         onNowPlayingToolbarDockEnabledChange = { enabled ->
                                             scope.launch { repo.setNowPlayingToolbarDockEnabled(enabled) }
                                         },
+                                        showNowPlayingTitle = showNowPlayingTitle,
+                                        onShowNowPlayingTitleChange = { enabled ->
+                                            scope.launch { repo.setNowPlayingShowTitle(enabled) }
+                                        },
                                         showNowPlayingProgressQualitySwitch = showNowPlayingProgressQualitySwitch,
                                         onShowNowPlayingProgressQualitySwitchChange = { enabled ->
                                             scope.launch {
@@ -1844,7 +1849,8 @@ fun NeriApp(
                                         scope.launch { repo.setLyricFontScale(scale) }
                                     },
                                     showCoverSourceBadge = showCoverSourceBadge,
-                                    showLyricTranslation = showLyricTranslation
+                                    showLyricTranslation = showLyricTranslation,
+                                    showNowPlayingTitle = showNowPlayingTitle
                                 )
                             }
                         }

@@ -58,6 +58,9 @@ class SettingsRepository(private val context: Context) {
     val nowPlayingToolbarDockEnabledFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.NOWPLAYING_TOOLBAR_DOCK_ENABLED] ?: true }
 
+    val nowPlayingShowTitleFlow: Flow<Boolean> =
+        context.dataStore.data.map { it[SettingsKeys.NOWPLAYING_SHOW_TITLE] ?: true }
+
     val nowPlayingProgressShowQualitySwitchFlow: Flow<Boolean> =
         context.dataStore.data.map {
             it[SettingsKeys.NOWPLAYING_PROGRESS_SHOW_QUALITY_SWITCH] ?: true
@@ -286,6 +289,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setNowPlayingToolbarDockEnabled(enabled: Boolean) {
         context.dataStore.edit { it[SettingsKeys.NOWPLAYING_TOOLBAR_DOCK_ENABLED] = enabled }
+    }
+
+    suspend fun setNowPlayingShowTitle(enabled: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.NOWPLAYING_SHOW_TITLE] = enabled }
     }
 
     suspend fun setNowPlayingProgressShowQualitySwitch(enabled: Boolean) {

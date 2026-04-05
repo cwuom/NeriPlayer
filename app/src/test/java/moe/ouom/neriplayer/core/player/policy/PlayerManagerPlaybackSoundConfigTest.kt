@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.core.player
+package moe.ouom.neriplayer.core.player.policy
 
 import moe.ouom.neriplayer.core.player.model.PlaybackEqualizerPresetId
 import moe.ouom.neriplayer.core.player.model.PlaybackSoundConfig

@@ -151,6 +151,8 @@
     <string name="settings_force_dark_desc">不跟随系统时可手动指定</string>
     <string name="settings_cover_source_badge">封面显示歌曲来源</string>
     <string name="settings_cover_source_badge_desc">在封面区域显示当前歌曲的平台来源</string>
+    <string name="settings_nowplaying_title">显示“正在播放”标题</string>
+    <string name="settings_nowplaying_title_desc">控制播放页顶部是否显示“正在播放”四个字</string>
     <string name="settings_nowplaying_progress_quality_switch">进度条上方显示当前音质</string>
     <string name="settings_nowplaying_progress_quality_switch_desc">显示在进度条上方；音质切换入口位于更多选项</string>
     <string name="settings_nowplaying_toolbar_dock">底部工具栏使用 Dock 样式</string>
