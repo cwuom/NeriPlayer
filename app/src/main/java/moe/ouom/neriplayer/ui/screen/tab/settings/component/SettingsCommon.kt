@@ -58,10 +58,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -137,8 +139,15 @@ internal fun LazyAnimatedVisibility(
     exit: ExitTransition = fadeOut() + shrinkVertically(),
     content: @Composable () -> Unit
 ) {
-    val visibilityState = remember { MutableTransitionState(false) }
-    visibilityState.targetState = visible
+    var restoredVisibleState by rememberSaveable { mutableStateOf(visible) }
+    val visibilityState = remember {
+        MutableTransitionState(restoredVisibleState)
+    }
+
+    LaunchedEffect(visible) {
+        visibilityState.targetState = visible
+        restoredVisibleState = visible
+    }
 
     if (visibilityState.currentState || visibilityState.targetState) {
         androidx.compose.animation.AnimatedVisibility(

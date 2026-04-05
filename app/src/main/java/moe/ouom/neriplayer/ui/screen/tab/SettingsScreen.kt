@@ -835,7 +835,7 @@ fun SettingsScreen(
             }
 
             item {
-                AnimatedVisibility(visible = !dynamicColor) { // 仅在关闭系统动态取色时显示
+                LazyAnimatedVisibility(visible = !dynamicColor) { // 仅在关闭系统动态取色时显示
                     ThemeSeedListItem(
                         seedColorHex = seedColorHex,
                         onClick = { showColorPickerDialog = true }
@@ -1175,7 +1175,7 @@ fun SettingsScreen(
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
 
-                        AnimatedVisibility(visible = !homeStartAvailable) {
+                        LazyAnimatedVisibility(visible = !homeStartAvailable) {
                             Text(
                                 text = stringResource(R.string.settings_home_hidden_notice),
                                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
@@ -1414,7 +1414,7 @@ fun SettingsScreen(
                         )
 
                         // 展开区域
-                        AnimatedVisibility(visible = backgroundImageUri != null) {
+                        LazyAnimatedVisibility(visible = backgroundImageUri != null) {
                                 Column {
                                     // 清除背景图按钮
                                 TextButton(onClick = {
@@ -1673,7 +1673,7 @@ fun SettingsScreen(
             }
 
             item {
-                AnimatedVisibility(
+                LazyAnimatedVisibility(
                     visible = listenTogetherExpanded,
                     enter = fadeIn() + expandVertically(),
                     exit = fadeOut() + shrinkVertically()

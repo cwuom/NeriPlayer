@@ -38,9 +38,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -49,11 +49,13 @@ import moe.ouom.neriplayer.ui.screen.DownloadManagerScreen
 import moe.ouom.neriplayer.ui.screen.DownloadProgressScreen
 import moe.ouom.neriplayer.ui.screen.tab.SettingsScreen
 
-private sealed class SettingsScreenState {
-    data object Settings : SettingsScreenState()
-    data object DownloadManager : SettingsScreenState()
-    data object DownloadProgress : SettingsScreenState()
+private enum class SettingsScreenState {
+    Settings,
+    DownloadManager,
+    DownloadProgress
 }
+
+private fun SettingsScreenState.saveableKey(): String = "settings_host:${name}"
 
 @Composable
 fun SettingsHostScreen(
@@ -164,7 +166,8 @@ fun SettingsHostScreen(
     onClearCacheClick: (clearAudio: Boolean, clearImage: Boolean) -> Unit,
     onBeforeLanguageRestart: () -> Unit = {},
 ) {
-    var screenState by remember { mutableStateOf<SettingsScreenState>(SettingsScreenState.Settings) }
+    var screenState by rememberSaveable { mutableStateOf(SettingsScreenState.Settings) }
+    val saveableStateHolder = rememberSaveableStateHolder()
 
     // 保存设置页面的滚动状态，使用正确的Saver
     val settingsListSaver: Saver<LazyListState, *> = LazyListState.Saver
@@ -205,129 +208,133 @@ fun SettingsHostScreen(
                 }.using(SizeTransform(clip = false))
             }
         ) { state ->
-            when (state) {
-                SettingsScreenState.Settings -> {
-                SettingsScreen(
-                    listState = settingsListState,
-                    dynamicColor = dynamicColor,
-                    onDynamicColorChange = onDynamicColorChange,
-                    isDarkTheme = isDarkTheme,
-                    onThemeToggleRequest = onThemeToggleRequest,
-                    preferredQuality = preferredQuality,
-                    onQualityChange = onQualityChange,
-                    youtubePreferredQuality = youtubePreferredQuality,
-                    onYouTubeQualityChange = onYouTubeQualityChange,
-                    biliPreferredQuality = biliPreferredQuality,
-                    onBiliQualityChange = onBiliQualityChange,
-                    seedColorHex = seedColorHex,
-                    onSeedColorChange = onSeedColorChange,
-                    themeColorPalette = themeColorPalette,
-                    onAddColorToPalette = onAddColorToPalette,
-                    onRemoveColorFromPalette = onRemoveColorFromPalette,
-                    devModeEnabled = devModeEnabled,
-                    onDevModeChange = onDevModeChange,
-                    lyricBlurEnabled = lyricBlurEnabled,
-                    onLyricBlurEnabledChange = onLyricBlurEnabledChange,
-                    lyricBlurAmount = lyricBlurAmount,
-                    onLyricBlurAmountChange = onLyricBlurAmountChange,
-                    advancedBlurEnabled = advancedBlurEnabled,
-                    onAdvancedBlurEnabledChange = onAdvancedBlurEnabledChange,
-                    nowPlayingAudioReactiveEnabled = nowPlayingAudioReactiveEnabled,
-                    onNowPlayingAudioReactiveEnabledChange = onNowPlayingAudioReactiveEnabledChange,
-                    nowPlayingDynamicBackgroundEnabled = nowPlayingDynamicBackgroundEnabled,
-                    onNowPlayingDynamicBackgroundEnabledChange = onNowPlayingDynamicBackgroundEnabledChange,
-                    nowPlayingCoverBlurBackgroundEnabled = nowPlayingCoverBlurBackgroundEnabled,
-                    onNowPlayingCoverBlurBackgroundEnabledChange = onNowPlayingCoverBlurBackgroundEnabledChange,
-                    nowPlayingCoverBlurAmount = nowPlayingCoverBlurAmount,
-                    onNowPlayingCoverBlurAmountChange = onNowPlayingCoverBlurAmountChange,
-                    nowPlayingCoverBlurDarken = nowPlayingCoverBlurDarken,
-                    onNowPlayingCoverBlurDarkenChange = onNowPlayingCoverBlurDarkenChange,
-                    lyricFontScale = lyricFontScale,
-                    onLyricFontScaleChange = onLyricFontScaleChange,
-                    uiDensityScale = uiDensityScale,
-                    onUiDensityScaleChange = onUiDensityScaleChange,
-                    bypassProxy = bypassProxy,
-                    onBypassProxyChange = onBypassProxyChange,
-                    backgroundImageUri = backgroundImageUri,
-                    onBackgroundImageChange = onBackgroundImageChange,
-                    downloadDirectoryUri = downloadDirectoryUri,
-                    downloadFileNameTemplate = downloadFileNameTemplate,
-                    onDownloadDirectoryUriChange = onDownloadDirectoryUriChange,
-                    onDownloadFileNameTemplateChange = onDownloadFileNameTemplateChange,
-                    backgroundImageBlur = backgroundImageBlur,
-                    onBackgroundImageBlurChange = onBackgroundImageBlurChange,
-                    onBackgroundImageBlurChangeFinished = onBackgroundImageBlurChangeFinished,
-                    backgroundImageAlpha = backgroundImageAlpha,
-                    onBackgroundImageAlphaChange = onBackgroundImageAlphaChange,
-                    onBackgroundImageAlphaChangeFinished = onBackgroundImageAlphaChangeFinished,
-                    hapticFeedbackEnabled = hapticFeedbackEnabled,
-                    onHapticFeedbackEnabledChange = onHapticFeedbackEnabledChange,
-                    showCoverSourceBadge = showCoverSourceBadge,
-                    onShowCoverSourceBadgeChange = onShowCoverSourceBadgeChange,
-                    nowPlayingToolbarDockEnabled = nowPlayingToolbarDockEnabled,
-                    onNowPlayingToolbarDockEnabledChange = onNowPlayingToolbarDockEnabledChange,
-                    showNowPlayingTitle = showNowPlayingTitle,
-                    onShowNowPlayingTitleChange = onShowNowPlayingTitleChange,
-                    showNowPlayingProgressQualitySwitch = showNowPlayingProgressQualitySwitch,
-                    onShowNowPlayingProgressQualitySwitchChange = onShowNowPlayingProgressQualitySwitchChange,
-                    showNowPlayingProgressAudioCodec = showNowPlayingProgressAudioCodec,
-                    onShowNowPlayingProgressAudioCodecChange = onShowNowPlayingProgressAudioCodecChange,
-                    showNowPlayingProgressAudioSpec = showNowPlayingProgressAudioSpec,
-                    onShowNowPlayingProgressAudioSpecChange = onShowNowPlayingProgressAudioSpecChange,
-                    silentGitHubSyncFailure = silentGitHubSyncFailure,
-                     onSilentGitHubSyncFailureChange = onSilentGitHubSyncFailureChange,
-                     showLyricTranslation = showLyricTranslation,
-                     onShowLyricTranslationChange = onShowLyricTranslationChange,
-                     defaultStartDestination = defaultStartDestination,
-                     onDefaultStartDestinationChange = onDefaultStartDestinationChange,
-                     autoShowKeyboard = autoShowKeyboard,
-                     onAutoShowKeyboardChange = onAutoShowKeyboardChange,
-                     showHomeContinueCard = showHomeContinueCard,
-                     onShowHomeContinueCardChange = onShowHomeContinueCardChange,
-                     showHomeTrendingCard = showHomeTrendingCard,
-                     onShowHomeTrendingCardChange = onShowHomeTrendingCardChange,
-                    showHomeRadarCard = showHomeRadarCard,
-                    onShowHomeRadarCardChange = onShowHomeRadarCardChange,
-                    showHomeRecommendedCard = showHomeRecommendedCard,
-                    onShowHomeRecommendedCardChange = onShowHomeRecommendedCardChange,
-                    homeHasRecentUsage = homeHasRecentUsage,
-                     playbackFadeIn = playbackFadeIn,
-                    onPlaybackFadeInChange = onPlaybackFadeInChange,
-                    playbackCrossfadeNext = playbackCrossfadeNext,
-                    onPlaybackCrossfadeNextChange = onPlaybackCrossfadeNextChange,
-                    playbackFadeInDurationMs = playbackFadeInDurationMs,
-                    onPlaybackFadeInDurationMsChange = onPlaybackFadeInDurationMsChange,
-                    playbackFadeOutDurationMs = playbackFadeOutDurationMs,
-                    onPlaybackFadeOutDurationMsChange = onPlaybackFadeOutDurationMsChange,
-                    playbackCrossfadeInDurationMs = playbackCrossfadeInDurationMs,
-                    onPlaybackCrossfadeInDurationMsChange = onPlaybackCrossfadeInDurationMsChange,
-                    playbackCrossfadeOutDurationMs = playbackCrossfadeOutDurationMs,
-                    onPlaybackCrossfadeOutDurationMsChange = onPlaybackCrossfadeOutDurationMsChange,
-                    keepLastPlaybackProgress = keepLastPlaybackProgress,
-                    onKeepLastPlaybackProgressChange = onKeepLastPlaybackProgressChange,
-                    keepPlaybackModeState = keepPlaybackModeState,
-                    onKeepPlaybackModeStateChange = onKeepPlaybackModeStateChange,
-                    stopOnBluetoothDisconnect = stopOnBluetoothDisconnect,
-                    onStopOnBluetoothDisconnectChange = onStopOnBluetoothDisconnectChange,
-                    allowMixedPlayback = allowMixedPlayback,
-                    onAllowMixedPlaybackChange = onAllowMixedPlaybackChange,
-                     onNavigateToDownloadManager = { screenState = SettingsScreenState.DownloadManager },
-                     maxCacheSizeBytes = maxCacheSizeBytes,
-                     onMaxCacheSizeBytesChange = onMaxCacheSizeBytesChange,
-                     onClearCacheClick = onClearCacheClick,
-                    onBeforeLanguageRestart = onBeforeLanguageRestart
-                )
-                }
-                SettingsScreenState.DownloadManager -> {
-                    DownloadManagerScreen(
-                        onBack = { screenState = SettingsScreenState.Settings },
-                        onOpenDownloadProgress = { screenState = SettingsScreenState.DownloadProgress }
-                    )
-                }
-                SettingsScreenState.DownloadProgress -> {
-                    DownloadProgressScreen(
-                        onBack = { screenState = SettingsScreenState.DownloadManager }
-                    )
+            saveableStateHolder.SaveableStateProvider(state.saveableKey()) {
+                when (state) {
+                    SettingsScreenState.Settings -> {
+                        SettingsScreen(
+                            listState = settingsListState,
+                            dynamicColor = dynamicColor,
+                            onDynamicColorChange = onDynamicColorChange,
+                            isDarkTheme = isDarkTheme,
+                            onThemeToggleRequest = onThemeToggleRequest,
+                            preferredQuality = preferredQuality,
+                            onQualityChange = onQualityChange,
+                            youtubePreferredQuality = youtubePreferredQuality,
+                            onYouTubeQualityChange = onYouTubeQualityChange,
+                            biliPreferredQuality = biliPreferredQuality,
+                            onBiliQualityChange = onBiliQualityChange,
+                            seedColorHex = seedColorHex,
+                            onSeedColorChange = onSeedColorChange,
+                            themeColorPalette = themeColorPalette,
+                            onAddColorToPalette = onAddColorToPalette,
+                            onRemoveColorFromPalette = onRemoveColorFromPalette,
+                            devModeEnabled = devModeEnabled,
+                            onDevModeChange = onDevModeChange,
+                            lyricBlurEnabled = lyricBlurEnabled,
+                            onLyricBlurEnabledChange = onLyricBlurEnabledChange,
+                            lyricBlurAmount = lyricBlurAmount,
+                            onLyricBlurAmountChange = onLyricBlurAmountChange,
+                            advancedBlurEnabled = advancedBlurEnabled,
+                            onAdvancedBlurEnabledChange = onAdvancedBlurEnabledChange,
+                            nowPlayingAudioReactiveEnabled = nowPlayingAudioReactiveEnabled,
+                            onNowPlayingAudioReactiveEnabledChange = onNowPlayingAudioReactiveEnabledChange,
+                            nowPlayingDynamicBackgroundEnabled = nowPlayingDynamicBackgroundEnabled,
+                            onNowPlayingDynamicBackgroundEnabledChange = onNowPlayingDynamicBackgroundEnabledChange,
+                            nowPlayingCoverBlurBackgroundEnabled = nowPlayingCoverBlurBackgroundEnabled,
+                            onNowPlayingCoverBlurBackgroundEnabledChange = onNowPlayingCoverBlurBackgroundEnabledChange,
+                            nowPlayingCoverBlurAmount = nowPlayingCoverBlurAmount,
+                            onNowPlayingCoverBlurAmountChange = onNowPlayingCoverBlurAmountChange,
+                            nowPlayingCoverBlurDarken = nowPlayingCoverBlurDarken,
+                            onNowPlayingCoverBlurDarkenChange = onNowPlayingCoverBlurDarkenChange,
+                            lyricFontScale = lyricFontScale,
+                            onLyricFontScaleChange = onLyricFontScaleChange,
+                            uiDensityScale = uiDensityScale,
+                            onUiDensityScaleChange = onUiDensityScaleChange,
+                            bypassProxy = bypassProxy,
+                            onBypassProxyChange = onBypassProxyChange,
+                            backgroundImageUri = backgroundImageUri,
+                            onBackgroundImageChange = onBackgroundImageChange,
+                            downloadDirectoryUri = downloadDirectoryUri,
+                            downloadFileNameTemplate = downloadFileNameTemplate,
+                            onDownloadDirectoryUriChange = onDownloadDirectoryUriChange,
+                            onDownloadFileNameTemplateChange = onDownloadFileNameTemplateChange,
+                            backgroundImageBlur = backgroundImageBlur,
+                            onBackgroundImageBlurChange = onBackgroundImageBlurChange,
+                            onBackgroundImageBlurChangeFinished = onBackgroundImageBlurChangeFinished,
+                            backgroundImageAlpha = backgroundImageAlpha,
+                            onBackgroundImageAlphaChange = onBackgroundImageAlphaChange,
+                            onBackgroundImageAlphaChangeFinished = onBackgroundImageAlphaChangeFinished,
+                            hapticFeedbackEnabled = hapticFeedbackEnabled,
+                            onHapticFeedbackEnabledChange = onHapticFeedbackEnabledChange,
+                            showCoverSourceBadge = showCoverSourceBadge,
+                            onShowCoverSourceBadgeChange = onShowCoverSourceBadgeChange,
+                            nowPlayingToolbarDockEnabled = nowPlayingToolbarDockEnabled,
+                            onNowPlayingToolbarDockEnabledChange = onNowPlayingToolbarDockEnabledChange,
+                            showNowPlayingTitle = showNowPlayingTitle,
+                            onShowNowPlayingTitleChange = onShowNowPlayingTitleChange,
+                            showNowPlayingProgressQualitySwitch = showNowPlayingProgressQualitySwitch,
+                            onShowNowPlayingProgressQualitySwitchChange = onShowNowPlayingProgressQualitySwitchChange,
+                            showNowPlayingProgressAudioCodec = showNowPlayingProgressAudioCodec,
+                            onShowNowPlayingProgressAudioCodecChange = onShowNowPlayingProgressAudioCodecChange,
+                            showNowPlayingProgressAudioSpec = showNowPlayingProgressAudioSpec,
+                            onShowNowPlayingProgressAudioSpecChange = onShowNowPlayingProgressAudioSpecChange,
+                            silentGitHubSyncFailure = silentGitHubSyncFailure,
+                            onSilentGitHubSyncFailureChange = onSilentGitHubSyncFailureChange,
+                            showLyricTranslation = showLyricTranslation,
+                            onShowLyricTranslationChange = onShowLyricTranslationChange,
+                            defaultStartDestination = defaultStartDestination,
+                            onDefaultStartDestinationChange = onDefaultStartDestinationChange,
+                            autoShowKeyboard = autoShowKeyboard,
+                            onAutoShowKeyboardChange = onAutoShowKeyboardChange,
+                            showHomeContinueCard = showHomeContinueCard,
+                            onShowHomeContinueCardChange = onShowHomeContinueCardChange,
+                            showHomeTrendingCard = showHomeTrendingCard,
+                            onShowHomeTrendingCardChange = onShowHomeTrendingCardChange,
+                            showHomeRadarCard = showHomeRadarCard,
+                            onShowHomeRadarCardChange = onShowHomeRadarCardChange,
+                            showHomeRecommendedCard = showHomeRecommendedCard,
+                            onShowHomeRecommendedCardChange = onShowHomeRecommendedCardChange,
+                            homeHasRecentUsage = homeHasRecentUsage,
+                            playbackFadeIn = playbackFadeIn,
+                            onPlaybackFadeInChange = onPlaybackFadeInChange,
+                            playbackCrossfadeNext = playbackCrossfadeNext,
+                            onPlaybackCrossfadeNextChange = onPlaybackCrossfadeNextChange,
+                            playbackFadeInDurationMs = playbackFadeInDurationMs,
+                            onPlaybackFadeInDurationMsChange = onPlaybackFadeInDurationMsChange,
+                            playbackFadeOutDurationMs = playbackFadeOutDurationMs,
+                            onPlaybackFadeOutDurationMsChange = onPlaybackFadeOutDurationMsChange,
+                            playbackCrossfadeInDurationMs = playbackCrossfadeInDurationMs,
+                            onPlaybackCrossfadeInDurationMsChange = onPlaybackCrossfadeInDurationMsChange,
+                            playbackCrossfadeOutDurationMs = playbackCrossfadeOutDurationMs,
+                            onPlaybackCrossfadeOutDurationMsChange = onPlaybackCrossfadeOutDurationMsChange,
+                            keepLastPlaybackProgress = keepLastPlaybackProgress,
+                            onKeepLastPlaybackProgressChange = onKeepLastPlaybackProgressChange,
+                            keepPlaybackModeState = keepPlaybackModeState,
+                            onKeepPlaybackModeStateChange = onKeepPlaybackModeStateChange,
+                            stopOnBluetoothDisconnect = stopOnBluetoothDisconnect,
+                            onStopOnBluetoothDisconnectChange = onStopOnBluetoothDisconnectChange,
+                            allowMixedPlayback = allowMixedPlayback,
+                            onAllowMixedPlaybackChange = onAllowMixedPlaybackChange,
+                            onNavigateToDownloadManager = { screenState = SettingsScreenState.DownloadManager },
+                            maxCacheSizeBytes = maxCacheSizeBytes,
+                            onMaxCacheSizeBytesChange = onMaxCacheSizeBytesChange,
+                            onClearCacheClick = onClearCacheClick,
+                            onBeforeLanguageRestart = onBeforeLanguageRestart
+                        )
+                    }
+
+                    SettingsScreenState.DownloadManager -> {
+                        DownloadManagerScreen(
+                            onBack = { screenState = SettingsScreenState.Settings },
+                            onOpenDownloadProgress = { screenState = SettingsScreenState.DownloadProgress }
+                        )
+                    }
+
+                    SettingsScreenState.DownloadProgress -> {
+                        DownloadProgressScreen(
+                            onBack = { screenState = SettingsScreenState.DownloadManager }
+                        )
+                    }
                 }
             }
         }
