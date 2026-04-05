@@ -23,6 +23,8 @@ import java.nio.charset.StandardCharsets
 internal object ManagedDownloadStorage {
     private const val TAG = "ManagedDownloadStorage"
     private const val ROOT_DIR_NAME = "NeriPlayer"
+    private const val COVER_SUBDIRECTORY = "Covers"
+    private const val NO_MEDIA_FILE_NAME = ".nomedia"
     @Suppress("SpellCheckingInspection")
     private const val METADATA_SUFFIX = ".npmeta.json"
     private val audioExtensions = setOf("mp3", "m4a", "aac", "flac", "wav", "ogg", "webm", "eac3")
@@ -364,7 +366,7 @@ internal object ManagedDownloadStorage {
                 entry.name.removeSuffix(METADATA_SUFFIX) to metadata
             }
         }.toMap()
-        val coverEntries = listSubdirectoryEntries(root, "Covers")
+        val coverEntries = listSubdirectoryEntries(root, COVER_SUBDIRECTORY)
         val lyricEntries = listSubdirectoryEntries(root, "Lyrics")
         val audioEntriesByStableKey = mutableMapOf<String, MutableList<StoredEntry>>()
         val audioEntriesBySongId = mutableMapOf<Long, MutableList<StoredEntry>>()
@@ -504,7 +506,7 @@ internal object ManagedDownloadStorage {
         val bytes = tempFile.takeIf(File::exists)?.readBytes() ?: return null
         return writeSubdirectoryBytesBlocking(
             context = context,
-            subdirectory = "Covers",
+            subdirectory = COVER_SUBDIRECTORY,
             displayName = fileName,
             bytes = bytes,
             mimeType = mimeTypeFromName(fileName, mimeType)
@@ -595,20 +597,26 @@ internal object ManagedDownloadStorage {
 
     private fun resolveRootBlocking(context: Context): RootHandle {
         val configuredUri = normalizeDirectoryUri(customDirectoryUri)
-        resolveTreeRootBlocking(context, configuredUri)?.let { return it }
+        resolveTreeRootBlocking(context, configuredUri)?.also {
+            ensureManagedMediaScanIsolation(it)
+        }?.let { return it }
         if (configuredUri != null) {
             NPLogger.w(TAG, "自定义下载目录不可用，回退默认目录: $configuredUri")
         }
-        return createDefaultRoot(context)
+        return createDefaultRoot(context).also {
+            ensureManagedMediaScanIsolation(it)
+        }
     }
 
     private fun resolveRootBlocking(context: Context, directoryUriString: String?): RootHandle? {
         val normalizedUri = normalizeDirectoryUri(directoryUriString)
-        return if (normalizedUri == null) {
+        val root = if (normalizedUri == null) {
             createDefaultRoot(context)
         } else {
             resolveTreeRootBlocking(context, normalizedUri)
         }
+        root?.let { ensureManagedMediaScanIsolation(it) }
+        return root
     }
 
     private fun findAudioEntry(
@@ -716,7 +724,7 @@ internal object ManagedDownloadStorage {
 
         return (rootEntries +
             collectManagedMigrationEntries(root, "Lyrics") +
-            collectManagedMigrationEntries(root, "Covers"))
+            collectManagedMigrationEntries(root, COVER_SUBDIRECTORY))
             .sortedWith(compareBy({ it.subdirectory ?: "" }, { it.entry.name }))
     }
 
@@ -879,6 +887,7 @@ internal object ManagedDownloadStorage {
         val storedEntry = when (val root = resolveRootBlocking(context)) {
             is RootHandle.FileRoot -> {
                 val dir = File(root.dir, subdirectory).apply { mkdirs() }
+                ensureManagedMediaScanIsolation(subdirectory, dir)
                 val target = File(dir, displayName)
                 target.outputStream().use { it.write(bytes) }
                 target.toStoredEntry()
@@ -886,6 +895,7 @@ internal object ManagedDownloadStorage {
 
             is RootHandle.TreeRoot -> {
                 val directory = findOrCreateDirectory(root.tree, subdirectory) ?: return null
+                ensureManagedMediaScanIsolation(subdirectory, directory)
                 val target = createRootFile(directory, displayName, mimeType, replace = true)
                 context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
                     output.write(bytes)
@@ -908,6 +918,7 @@ internal object ManagedDownloadStorage {
         val storedEntry = when (root) {
             is RootHandle.FileRoot -> {
                 val dir = File(root.dir, subdirectory).apply { mkdirs() }
+                ensureManagedMediaScanIsolation(subdirectory, dir)
                 val target = File(dir, displayName)
                 target.outputStream().use { output -> input.copyTo(output) }
                 target.toStoredEntry()
@@ -916,6 +927,7 @@ internal object ManagedDownloadStorage {
             is RootHandle.TreeRoot -> {
                 val directory = findOrCreateDirectory(root.tree, subdirectory)
                     ?: throw IOException("无法创建目录: $subdirectory")
+                ensureManagedMediaScanIsolation(subdirectory, directory)
                 val target = createRootFile(directory, displayName, mimeType, replace = true)
                 context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
                     input.copyTo(output)
@@ -960,6 +972,64 @@ internal object ManagedDownloadStorage {
     private fun findOrCreateDirectory(parent: DocumentFile, displayName: String): DocumentFile? {
         parent.findFile(displayName)?.takeIf(DocumentFile::isDirectory)?.let { return it }
         return parent.createDirectory(displayName)
+    }
+
+    private fun ensureManagedMediaScanIsolation(root: RootHandle) {
+        runCatching {
+            when (root) {
+                is RootHandle.FileRoot -> {
+                    val directory = File(root.dir, COVER_SUBDIRECTORY)
+                    if (directory.isDirectory) {
+                        ensureNoMediaMarker(directory)
+                    }
+                }
+
+                is RootHandle.TreeRoot -> {
+                    root.tree.findFile(COVER_SUBDIRECTORY)
+                        ?.takeIf(DocumentFile::isDirectory)
+                        ?.let { ensureNoMediaMarker(it) }
+                }
+            }
+        }.onFailure {
+            NPLogger.w(TAG, "补写封面目录 .nomedia 失败: ${it.message}")
+        }
+    }
+
+    // 只给封面目录补 .nomedia，避免把用户手选的整个下载根目录从媒体库里隐藏
+    internal fun shouldCreateNoMediaMarker(subdirectory: String): Boolean {
+        return subdirectory == COVER_SUBDIRECTORY
+    }
+
+    private fun ensureManagedMediaScanIsolation(subdirectory: String, directory: File) {
+        if (!shouldCreateNoMediaMarker(subdirectory)) return
+        runCatching {
+            ensureNoMediaMarker(directory)
+        }.onFailure {
+            NPLogger.w(TAG, "创建封面目录 .nomedia 失败: ${it.message}")
+        }
+    }
+
+    private fun ensureManagedMediaScanIsolation(subdirectory: String, directory: DocumentFile) {
+        if (!shouldCreateNoMediaMarker(subdirectory)) return
+        runCatching {
+            ensureNoMediaMarker(directory)
+        }.onFailure {
+            NPLogger.w(TAG, "创建封面目录 .nomedia 失败: ${it.message}")
+        }
+    }
+
+    private fun ensureNoMediaMarker(directory: File) {
+        val marker = File(directory, NO_MEDIA_FILE_NAME)
+        if (marker.exists()) return
+        if (!marker.createNewFile()) {
+            throw IOException("无法创建 $NO_MEDIA_FILE_NAME")
+        }
+    }
+
+    private fun ensureNoMediaMarker(directory: DocumentFile) {
+        if (directory.findFile(NO_MEDIA_FILE_NAME) != null) return
+        directory.createFile("application/octet-stream", NO_MEDIA_FILE_NAME)
+            ?: throw IOException("无法创建 $NO_MEDIA_FILE_NAME")
     }
 
     private fun openStoredEntryInputStream(context: Context, entry: StoredEntry): InputStream? {
