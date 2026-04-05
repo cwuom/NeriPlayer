@@ -959,10 +959,11 @@ internal fun PlayerManager.cycleRepeatModeImpl() {
         else -> Player.REPEAT_MODE_OFF
     }
     repeatModeSetting = newMode
+    syncExoRepeatMode()
     _repeatModeFlow.value = newMode
     NPLogger.d(
         "NERI-PlayerManager",
-        "cycleRepeatMode: previousMode=$previousMode, newMode=$newMode"
+        "cycleRepeatMode: previousMode=$previousMode, newMode=$newMode, exoRepeatMode=${player.repeatMode}"
     )
     ioScope.launch {
         persistState()
@@ -1025,12 +1026,20 @@ private fun PlayerManager.maybePersistPlaybackProgress(positionMs: Long) {
     val now = SystemClock.elapsedRealtime()
     if (now - lastStatePersistAtMs < STATE_PERSIST_INTERVAL_MS) return
     lastStatePersistAtMs = now
+    NPLogger.d(
+        "NERI-PlayerManager",
+        "maybePersistPlaybackProgress(): positionMs=$positionMs, queueSize=${currentPlaylist.size}, currentIndex=$currentIndex, song=${_currentSongFlow.value?.name}"
+    )
     ioScope.launch {
         persistState(positionMs = positionMs, shouldResumePlayback = true)
     }
 }
 
 internal fun PlayerManager.stopPlaybackPreservingQueueImpl(clearMediaUrl: Boolean = false) {
+    NPLogger.d(
+        "NERI-PlayerManager",
+        "stopPlaybackPreservingQueue(): clearMediaUrl=$clearMediaUrl, queueSize=${currentPlaylist.size}, currentIndex=$currentIndex, currentSong=${_currentSongFlow.value?.name}, mediaUrlPresent=${!_currentMediaUrl.value.isNullOrBlank()}, stack=[${debugStackHint()}]"
+    )
     cancelPendingPauseRequest(resetVolumeToFull = true)
     playbackRequestToken += 1
     playJob?.cancel()
@@ -1063,6 +1072,10 @@ internal fun PlayerManager.stopPlaybackPreservingQueueImpl(clearMediaUrl: Boolea
         }
     }
     consecutivePlayFailures = 0
+    NPLogger.d(
+        "NERI-PlayerManager",
+        "stopPlaybackPreservingQueue(): completed, queueSize=${currentPlaylist.size}, currentIndex=$currentIndex, retainedSong=${_currentSongFlow.value?.name}, mediaUrlPresent=${!_currentMediaUrl.value.isNullOrBlank()}"
+    )
     ioScope.launch {
         persistState()
     }

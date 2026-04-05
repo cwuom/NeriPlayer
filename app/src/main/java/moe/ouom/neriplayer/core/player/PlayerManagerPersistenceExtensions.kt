@@ -120,7 +120,13 @@ internal suspend fun PlayerManager.persistStateImpl(
             if (playlistSnapshot.isEmpty()) {
                 restoredResumePositionMs = 0L
                 restoredShouldResumePlayback = false
-                if (stateFile.exists()) stateFile.delete()
+                if (stateFile.exists()) {
+                    stateFile.delete()
+                    NPLogger.d(
+                        "NERI-PlayerManager",
+                        "persistState: deleted state file because queue is empty, path=${stateFile.absolutePath}"
+                    )
+                }
             } else {
                 val data = PersistedState(
                     playlist = playlistSnapshot.map { song ->
@@ -136,6 +142,10 @@ internal suspend fun PlayerManager.persistStateImpl(
                     shuffleEnabled = persistedShuffleEnabled
                 )
                 stateFile.writeText(gson.toJson(data))
+                NPLogger.d(
+                    "NERI-PlayerManager",
+                    "persistState: wrote state file, path=${stateFile.absolutePath}, queueSize=${playlistSnapshot.size}, index=$currentIndexSnapshot"
+                )
             }
         } catch (e: Exception) {
             NPLogger.e("PlayerManager", "Failed to persist state", e)
@@ -352,6 +362,10 @@ internal fun PlayerManager.restoreState() {
             data.playlist.map { persistedSong -> persistedSong.toSongItem() }
         )
         if (currentPlaylist.isEmpty()) {
+            NPLogger.w(
+                "NERI-PlayerManager",
+                "restoreState: sanitized playlist became empty, originalSize=${data.playlist.size}, persistedIndex=${data.index}"
+            )
             currentIndex = -1
             _currentQueueFlow.value = emptyList()
             _currentSongFlow.value = null
@@ -413,7 +427,7 @@ internal fun PlayerManager.restoreState() {
         currentMediaUrlResolvedAtMs = 0L
         NPLogger.d(
             "NERI-PlayerManager",
-            "restoreState completed: queueSize=${currentPlaylist.size}, currentIndex=$currentIndex, restoredResumePositionMs=$restoredResumePositionMs, restoredShouldResumePlayback=$restoredShouldResumePlayback, shuffle=${_shuffleModeFlow.value}, repeatMode=$repeatModeSetting"
+            "restoreState completed: queueSize=${currentPlaylist.size}, currentIndex=$currentIndex, restoredResumePositionMs=$restoredResumePositionMs, restoredShouldResumePlayback=$restoredShouldResumePlayback, shuffle=${_shuffleModeFlow.value}, repeatMode=$repeatModeSetting, currentSong=${_currentSongFlow.value?.name}, mediaUrlPresent=${!_currentMediaUrl.value.isNullOrBlank()}"
         )
     } catch (e: Exception) {
         NPLogger.w("NERI-PlayerManager", "Failed to restore state: ${e.message}")
