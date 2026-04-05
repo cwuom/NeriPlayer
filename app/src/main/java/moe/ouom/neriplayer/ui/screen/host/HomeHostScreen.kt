@@ -53,20 +53,20 @@ import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.YouTubeMusicPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.tab.HomeScreen
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
-import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
-import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.util.restoreBiliPlaylist
-import moe.ouom.neriplayer.ui.util.restoreNeteaseAlbum
-import moe.ouom.neriplayer.ui.util.restoreNeteasePlaylist
+import moe.ouom.neriplayer.ui.util.restoreAlbumSummary
+import moe.ouom.neriplayer.ui.util.restorePlaylistSummary
 import moe.ouom.neriplayer.ui.util.restoreYouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.util.toSaveMap
 
 // 用密封类承载四种目标
 private sealed class HomeSelectedItem {
-    data class Netease(val playlist: NeteasePlaylist) : HomeSelectedItem()
-    data class NeteaseAlbumList(val album: NeteaseAlbum) : HomeSelectedItem()
+    data class Netease(val playlist: PlaylistSummary) : HomeSelectedItem()
+    data class NeteaseAlbumList(val album: AlbumSummary) : HomeSelectedItem()
     data class Local(val playlistId: Long) : HomeSelectedItem()
     data class Bili(val playlist: BiliPlaylist) : HomeSelectedItem()
     data class YouTubeMusic(val playlist: YouTubeMusicPlaylist) : HomeSelectedItem()
@@ -219,8 +219,8 @@ private val homeSelectedItemSaver = mapSaver<HomeSelectedItem?>(
         when (saved["type"] as? String) {
             null -> null
             "local" -> (saved["playlistId"] as? Number)?.toLong()?.let { HomeSelectedItem.Local(it) }
-            "neteaseAlbum" -> restoreNeteaseAlbum(saved["album"] as? Map<*, *>)?.let { HomeSelectedItem.NeteaseAlbumList(it) }
-            "netease" -> restoreNeteasePlaylist(saved["playlist"] as? Map<*, *>)?.let { HomeSelectedItem.Netease(it) }
+            "neteaseAlbum" -> restoreAlbumSummary(saved["album"] as? Map<*, *>)?.let { HomeSelectedItem.NeteaseAlbumList(it) }
+            "netease" -> restorePlaylistSummary(saved["playlist"] as? Map<*, *>)?.let { HomeSelectedItem.Netease(it) }
             "bili" -> restoreBiliPlaylist(saved["playlist"] as? Map<*, *>)?.let { HomeSelectedItem.Bili(it) }
             "ytmusic" -> restoreYouTubeMusicPlaylist(saved["playlist"] as? Map<*, *>)?.let { HomeSelectedItem.YouTubeMusic(it) }
             else -> null
@@ -237,7 +237,7 @@ private fun openRecent(
         "netease" -> {
             onSelected(
                 HomeSelectedItem.Netease(
-                    NeteasePlaylist(
+                    PlaylistSummary(
                         id = entry.id,
                         name = entry.name,
                         picUrl = entry.picUrl ?: "",
@@ -250,7 +250,7 @@ private fun openRecent(
         "neteasealbum" -> {
             onSelected(
                 HomeSelectedItem.NeteaseAlbumList(
-                    NeteaseAlbum(
+                    AlbumSummary(
                         id = entry.id,
                         name = entry.name,
                         picUrl = entry.picUrl ?: "",

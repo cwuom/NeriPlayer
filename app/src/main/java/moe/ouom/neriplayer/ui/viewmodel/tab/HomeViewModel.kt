@@ -24,7 +24,6 @@ package moe.ouom.neriplayer.ui.viewmodel.tab
  */
 
 import android.app.Application
-import android.os.Parcelable
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
@@ -34,7 +33,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.parcelize.Parcelize
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeShelf
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -60,7 +58,7 @@ data class HomeSectionState<T>(
 )
 
 data class HomeUiState(
-    val playlists: HomeSectionState<NeteasePlaylist> = HomeSectionState(),
+    val playlists: HomeSectionState<PlaylistSummary> = HomeSectionState(),
     val hotSongs: HomeSectionState<SongItem> = HomeSectionState(),
     val radarSongs: HomeSectionState<SongItem> = HomeSectionState(),
     val ytMusicPlaylists: HomeSectionState<YouTubeMusicPlaylist> = HomeSectionState(),
@@ -68,24 +66,6 @@ data class HomeUiState(
     val hasLogin: Boolean = false,
     val internationalizationEnabled: Boolean = false
 )
-
-/** UI 使用的精简数据模型 */
-@Parcelize
-data class NeteasePlaylist(
-    val id: Long,
-    val name: String,
-    val picUrl: String,
-    val playCount: Long,
-    val trackCount: Int
-) : Parcelable
-
-@Parcelize
-data class NeteaseAlbum(
-    val id: Long,
-    val name: String,
-    val picUrl: String,
-    val size: Int
-) : Parcelable
 
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -380,8 +360,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun parseRecommend(raw: String): List<NeteasePlaylist> {
-        val result = mutableListOf<NeteasePlaylist>()
+    private fun parseRecommend(raw: String): List<PlaylistSummary> {
+        val result = mutableListOf<PlaylistSummary>()
         val root = JSONObject(raw)
 
         val code = root.optInt("code", -1)
@@ -401,7 +381,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
             if (id != 0L && name.isNotBlank() && picUrl.isNotBlank()) {
                 result.add(
-                    NeteasePlaylist(
+                    PlaylistSummary(
                         id = id,
                         name = name,
                         picUrl = picUrl,

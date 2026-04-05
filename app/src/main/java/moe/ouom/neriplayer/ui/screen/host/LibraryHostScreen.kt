@@ -54,8 +54,8 @@ import moe.ouom.neriplayer.ui.screen.playlist.BiliPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.YouTubeMusicPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.tab.LibraryTab
 import moe.ouom.neriplayer.ui.screen.tab.LibraryScreen
-import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
-import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
+import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
@@ -66,8 +66,8 @@ import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.ui.util.toSaveMap
 import moe.ouom.neriplayer.ui.util.restoreBiliPlaylist
-import moe.ouom.neriplayer.ui.util.restoreNeteaseAlbum
-import moe.ouom.neriplayer.ui.util.restoreNeteasePlaylist
+import moe.ouom.neriplayer.ui.util.restoreAlbumSummary
+import moe.ouom.neriplayer.ui.util.restorePlaylistSummary
 import moe.ouom.neriplayer.ui.util.restoreYouTubeMusicPlaylist
 
 @Parcelize
@@ -75,9 +75,9 @@ sealed class LibrarySelectedItem : Parcelable {
     @Parcelize
     data class Local(val playlistId: Long) : LibrarySelectedItem()
     @Parcelize
-    data class Netease(val playlist: NeteasePlaylist) : LibrarySelectedItem()
+    data class Netease(val playlist: PlaylistSummary) : LibrarySelectedItem()
     @Parcelize
-    data class NeteaseAlbumlist(val album: NeteaseAlbum) : LibrarySelectedItem()
+    data class NeteaseAlbum(val album: AlbumSummary) : LibrarySelectedItem()
     @Parcelize
     data class Bili(val playlist: BiliPlaylist) : LibrarySelectedItem()
     @Parcelize
@@ -183,7 +183,7 @@ fun LibraryHostScreen(
                             )
                         },
                         onNeteaseAlbumClick = { album ->
-                            selected = LibrarySelectedItem.NeteaseAlbumlist(album)
+                            selected = LibrarySelectedItem.NeteaseAlbum(album)
                             AppContainer.playlistUsageRepo.recordOpen(
                                 id = album.id,
                                 name = album.name,
@@ -229,7 +229,7 @@ fun LibraryHostScreen(
                             onSongClick = onSongClick
                         )
                     }
-                    is LibrarySelectedItem.NeteaseAlbumlist -> {
+                    is LibrarySelectedItem.NeteaseAlbum -> {
                         NeteaseAlbumDetailScreen(
                             onBack = { selected = null },
                             onSongClick = onSongClick,
@@ -274,7 +274,7 @@ private val librarySelectedItemSaver = mapSaver<LibrarySelectedItem?>(
                 "type" to "local",
                 "playlistId" to item.playlistId
             )
-            is LibrarySelectedItem.NeteaseAlbumlist -> hashMapOf(
+            is LibrarySelectedItem.NeteaseAlbum -> hashMapOf(
                 "type" to "neteaseAlbum",
                 "album" to item.album.toSaveMap()
             )
@@ -296,8 +296,8 @@ private val librarySelectedItemSaver = mapSaver<LibrarySelectedItem?>(
         when (saved["type"] as? String) {
             null -> null
             "local" -> (saved["playlistId"] as? Number)?.toLong()?.let { LibrarySelectedItem.Local(it) }
-            "neteaseAlbum" -> restoreNeteaseAlbum(saved["album"] as? Map<*, *>)?.let { LibrarySelectedItem.NeteaseAlbumlist(it) }
-            "netease" -> restoreNeteasePlaylist(saved["playlist"] as? Map<*, *>)?.let { LibrarySelectedItem.Netease(it) }
+            "neteaseAlbum" -> restoreAlbumSummary(saved["album"] as? Map<*, *>)?.let { LibrarySelectedItem.NeteaseAlbum(it) }
+            "netease" -> restorePlaylistSummary(saved["playlist"] as? Map<*, *>)?.let { LibrarySelectedItem.Netease(it) }
             "bili" -> restoreBiliPlaylist(saved["playlist"] as? Map<*, *>)?.let { LibrarySelectedItem.Bili(it) }
             "ytmusic" -> restoreYouTubeMusicPlaylist(saved["playlist"] as? Map<*, *>)?.let { LibrarySelectedItem.YouTubeMusic(it) }
             else -> null

@@ -49,13 +49,13 @@ import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
 import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.YouTubeMusicPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.tab.ExploreScreen
-import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 
 // 探索页选中项
 private sealed class ExploreSelectedItem {
-    data class Netease(val playlist: NeteasePlaylist) : ExploreSelectedItem()
+    data class Netease(val playlist: PlaylistSummary) : ExploreSelectedItem()
     data class YouTubeMusic(val playlist: YouTubeMusicPlaylist) : ExploreSelectedItem()
 }
 

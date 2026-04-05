@@ -137,7 +137,6 @@ data class YouTubeAuthHealth(
     val loginCookieKeys: List<String> = emptyList(),
     val activeCookieKeys: List<String> = emptyList()
 ) {
-    @Suppress("unused")
     val shouldPromptRelogin: Boolean
         get() = false
 }

@@ -1,10 +1,9 @@
 package moe.ouom.neriplayer.listentogether
 
+import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.encodeToString
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -158,7 +157,7 @@ internal fun String.normalizeBaseUrl(): String {
 
 internal fun String.normalizedHttpBaseUrlOrNull(): String? {
     val candidate = trim().trimEnd('/').takeIf { it.isNotBlank() } ?: return null
-    val scheme = runCatching { android.net.Uri.parse(candidate).scheme }
+    val scheme = runCatching { candidate.toUri().scheme }
         .getOrNull()
         ?.lowercase(Locale.ROOT)
         ?: return null

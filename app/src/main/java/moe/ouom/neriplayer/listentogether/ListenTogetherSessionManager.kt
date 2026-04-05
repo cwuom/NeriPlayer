@@ -386,7 +386,7 @@ class ListenTogetherSessionManager(
         return webSocketClient.sendEvent(event)
     }
 
-    suspend fun updateRoomSettings(settings: ListenTogetherRoomSettings): ListenTogetherControlResponse {
+    fun updateRoomSettings(settings: ListenTogetherRoomSettings): ListenTogetherControlResponse {
         val event = ListenTogetherEvent(
             type = "UPDATE_SETTINGS",
             eventId = nextEventId(),
@@ -763,7 +763,7 @@ class ListenTogetherSessionManager(
         val snapshot = _sessionState.value
         if (!isCurrentUserController(snapshot)) return
         val requestSequence = message.requestSequence ?: 0L
-        if (requestSequence > 0L && requestSequence <= lastHandledForwardedRequestSequence) {
+        if (requestSequence in 1 downTo lastHandledForwardedRequestSequence) {
             NPLogger.d(
                 TAG,
                 "handleMemberControlRequested(): ignore duplicate/outdated requestSequence=$requestSequence, lastHandled=$lastHandledForwardedRequestSequence"
@@ -1439,7 +1439,7 @@ class ListenTogetherSessionManager(
             PlayerManager.resetListenTogetherSyncPlaybackRate()
             return
         }
-        if (driftMs < SOFT_SYNC_MIN_DRIFT_MS || driftMs >= PLAYING_DRIFT_FORCE_SYNC_MS) {
+        if (driftMs !in SOFT_SYNC_MIN_DRIFT_MS..<PLAYING_DRIFT_FORCE_SYNC_MS) {
             PlayerManager.resetListenTogetherSyncPlaybackRate()
             return
         }

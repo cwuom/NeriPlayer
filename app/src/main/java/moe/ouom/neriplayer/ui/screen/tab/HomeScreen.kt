@@ -123,7 +123,7 @@ import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.HomeSectionState
 import moe.ouom.neriplayer.ui.viewmodel.tab.HomeViewModel
-import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.favoriteId
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeShelf
@@ -143,7 +143,7 @@ fun HomeScreen(
     showTrendingCard: Boolean = true,
     showRadarCard: Boolean = true,
     showRecommendedCard: Boolean = true,
-    onItemClick: (NeteasePlaylist) -> Unit = {},
+    onItemClick: (PlaylistSummary) -> Unit = {},
     onYouTubeMusicPlaylistClick: (YouTubeMusicPlaylist) -> Unit = {},
     gridState: LazyGridState,
     onOpenRecent: (UsageEntry) -> Unit = {},
@@ -671,7 +671,7 @@ private fun SongRowMini(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun PlaylistCard(
-    playlist: NeteasePlaylist,
+    playlist: PlaylistSummary,
     isFavorite: Boolean,
     onClick: () -> Unit,
     onShowSnackbar: (String) -> Unit = {}

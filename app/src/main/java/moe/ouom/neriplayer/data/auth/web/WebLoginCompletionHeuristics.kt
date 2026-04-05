@@ -73,8 +73,5 @@ internal fun shouldAutoCompleteYouTubeWebLogin(
         bundle = normalizedCurrent,
         now = SYNTHETIC_CHECKED_AT
     )
-    if (currentHealth.state == YouTubeAuthState.Missing || currentHealth.activeCookieKeys.isEmpty()) {
-        return false
-    }
-    return true
+    return !(currentHealth.state == YouTubeAuthState.Missing || currentHealth.activeCookieKeys.isEmpty())
 }

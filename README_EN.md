@@ -231,7 +231,7 @@ NeriPlayer supports syncing local metadata to **your own GitHub private reposito
   ```bash
   adb logcat | findstr NeriPlayer
   ```
-- MacOS / Linux iteration:
+- macOS / Linux iteration:
   ```bash
   adb logcat | grep NeriPlayer
   ```

@@ -94,7 +94,7 @@ data class ExploreUiState(
     val expanded: Boolean = false,
     val loading: Boolean = false,
     val error: String? = null,
-    val playlists: List<NeteasePlaylist> = emptyList(),
+    val playlists: List<PlaylistSummary> = emptyList(),
     val selectedTag: String = "tag_all",  // String resource key
     val searching: Boolean = false,
     val searchError: String? = null,
@@ -229,14 +229,14 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    private fun parsePlaylists(raw: String): List<NeteasePlaylist> {
-        val result = mutableListOf<NeteasePlaylist>()
+    private fun parsePlaylists(raw: String): List<PlaylistSummary> {
+        val result = mutableListOf<PlaylistSummary>()
         val root = JSONObject(raw)
         if (root.optInt("code") != 200) return emptyList()
         val arr = root.optJSONArray("playlists") ?: return emptyList()
         for (i in 0 until arr.length()) {
             val obj = arr.optJSONObject(i) ?: continue
-            result.add(NeteasePlaylist(
+            result.add(PlaylistSummary(
                 id = obj.optLong("id"),
                 name = obj.optString("name"),
                 picUrl = obj.optString("coverImgUrl").replace("http://", "https://"),

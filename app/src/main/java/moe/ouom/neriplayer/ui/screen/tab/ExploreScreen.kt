@@ -127,7 +127,7 @@ import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.ExploreUiState
 import moe.ouom.neriplayer.ui.viewmodel.tab.ExploreViewModel
-import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.SearchSource
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.util.HapticIconButton
@@ -144,7 +144,7 @@ private const val SEARCH_INPUT_DEBOUNCE_MS = 300L
 @Suppress("AssignedValueIsNeverRead")
 fun ExploreScreen(
     gridState: LazyGridState,
-    onPlay: (NeteasePlaylist) -> Unit,
+    onPlay: (PlaylistSummary) -> Unit,
     onYouTubeMusicPlaylistClick: (YouTubeMusicPlaylist) -> Unit = {},
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
     onPlayParts: (BiliClient.VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> }
@@ -692,7 +692,7 @@ private fun NeteaseDefaultContent(
     tagLabels: List<String>,
     favoriteKeys: Set<String>,
     vm: ExploreViewModel,
-    onPlay: (NeteasePlaylist) -> Unit,
+    onPlay: (PlaylistSummary) -> Unit,
     tagChipSelectedAlpha: Float,
     tagChipUnselectedAlpha: Float,
     tagChipBorderAlpha: Float

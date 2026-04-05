@@ -164,10 +164,7 @@ internal fun shouldSkipRedundantSyncServiceStart(
         return false
     }
     val elapsed = nowElapsedRealtime - lastSuccessfulStartElapsedRealtime
-    if (elapsed !in 0L..dedupeWindowMs) {
-        return false
-    }
-    return true
+    return elapsed in 0L..dedupeWindowMs
 }
 
 private fun Context.findActivityReadyForDirectServiceStart(): Activity? {
@@ -429,7 +426,7 @@ class AudioPlayerService : Service() {
             registerReceiver(
                 becomingNoisyReceiver,
                 noisyIntentFilter,
-                Context.RECEIVER_NOT_EXPORTED
+                RECEIVER_NOT_EXPORTED
             )
         } else {
             @Suppress("DEPRECATION")

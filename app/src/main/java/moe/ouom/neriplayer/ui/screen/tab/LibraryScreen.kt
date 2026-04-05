@@ -111,10 +111,10 @@ import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.LibraryViewModel
-import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
-import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.favoriteId
 import moe.ouom.neriplayer.util.HapticIconButton
@@ -174,8 +174,8 @@ fun LibraryScreen(
     biliListState: LazyListState,
     qqMusicListState: LazyListState,
     onLocalPlaylistClick: (LocalPlaylist) -> Unit = {},
-    onNeteasePlaylistClick: (NeteasePlaylist) -> Unit = {},
-    onNeteaseAlbumClick: (NeteaseAlbum) -> Unit = {},
+    onNeteasePlaylistClick: (PlaylistSummary) -> Unit = {},
+    onNeteaseAlbumClick: (AlbumSummary) -> Unit = {},
     onYouTubeMusicPlaylistClick: (YouTubeMusicPlaylist) -> Unit = {},
     onBiliPlaylistClick: (BiliPlaylist) -> Unit = {},
     onOpenRecent: () -> Unit = {}
@@ -1250,9 +1250,9 @@ private fun LocalPlaylistList(
 
 @Composable
 private fun NeteasePlaylistList(
-    playlists: List<NeteasePlaylist>,
+    playlists: List<PlaylistSummary>,
     listState: LazyListState,
-    onClick: (NeteasePlaylist) -> Unit
+    onClick: (PlaylistSummary) -> Unit
 ) {
     val context = LocalContext.current
     val miniPlayerHeight = LocalMiniPlayerHeight.current
@@ -1313,9 +1313,9 @@ private fun NeteasePlaylistList(
 
 @Composable
 private fun NeteaseAlbumList(
-    playlists: List<NeteaseAlbum>,
+    playlists: List<AlbumSummary>,
     listState: LazyListState,
-    onClick: (NeteaseAlbum) -> Unit
+    onClick: (AlbumSummary) -> Unit
 ) {
     val miniPlayerHeight = LocalMiniPlayerHeight.current
 
@@ -1372,7 +1372,7 @@ private fun NeteaseAlbumList(
 @Composable
 private fun FavoritePlaylistList(
     listState: LazyListState,
-    onNeteasePlaylistClick: (NeteasePlaylist) -> Unit,
+    onNeteasePlaylistClick: (PlaylistSummary) -> Unit,
     onBiliPlaylistClick: (BiliPlaylist) -> Unit,
     onYouTubeMusicPlaylistClick: (YouTubeMusicPlaylist) -> Unit
 ) {
@@ -1583,7 +1583,7 @@ private fun FavoritePlaylistList(
                                     when (favorite.source) {
                                         "netease" -> {
                                             onNeteasePlaylistClick(
-                                                NeteasePlaylist(
+                                                PlaylistSummary(
                                                     id = favorite.id,
                                                     name = favorite.name,
                                                     picUrl = favorite.coverUrl ?: "",

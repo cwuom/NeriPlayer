@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.listentogether
 
 import android.net.Uri
 import java.util.UUID
+import androidx.core.net.toUri
 
 const val DEFAULT_LISTEN_TOGETHER_BASE_URL =
     "https://neriplayer.hancat.work/"
@@ -89,7 +90,7 @@ fun parseListenTogetherInvite(uri: Uri?): ListenTogetherInvite? {
 fun parseListenTogetherInvite(rawText: String?): ListenTogetherInvite? {
     val text = rawText?.trim().orEmpty()
     if (text.isBlank()) return null
-    parseListenTogetherInvite(Uri.parse(text))?.let { return it }
+    parseListenTogetherInvite(text.toUri())?.let { return it }
     val match = LISTEN_TOGETHER_INVITE_REGEX.find(text)?.value ?: return null
-    return parseListenTogetherInvite(Uri.parse(match))
+    return parseListenTogetherInvite(match.toUri())
 }

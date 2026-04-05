@@ -5,7 +5,6 @@ import moe.ouom.neriplayer.data.auth.bili.evaluateBiliAuthHealth
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BiliAuthRepositoryTest {

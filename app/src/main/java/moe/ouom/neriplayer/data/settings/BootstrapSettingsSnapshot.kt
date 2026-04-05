@@ -24,10 +24,10 @@ package moe.ouom.neriplayer.data.settings
  */
 
 import android.content.Context
+import androidx.core.content.edit
 import androidx.datastore.preferences.core.Preferences
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
-import moe.ouom.neriplayer.core.download.normalizeDownloadFileNameTemplate
 import moe.ouom.neriplayer.core.download.normalizeDownloadFileNameTemplate
 
 private const val BOOTSTRAP_SNAPSHOT_PREFS = "bootstrap_settings_snapshot"
@@ -77,16 +77,22 @@ internal fun persistBootstrapSettingsSnapshot(
 ) {
     val normalizedSnapshot = snapshot.sanitized()
     context.getSharedPreferences(BOOTSTRAP_SNAPSHOT_PREFS, Context.MODE_PRIVATE)
-        .edit()
-        .putBoolean(BOOTSTRAP_SNAPSHOT_READY_KEY, true)
-        .putBoolean(BOOTSTRAP_BYPASS_PROXY_KEY, normalizedSnapshot.bypassProxy)
-        .putString(BOOTSTRAP_DOWNLOAD_DIRECTORY_URI_KEY, normalizedSnapshot.downloadDirectoryUri)
-        .putString(BOOTSTRAP_DOWNLOAD_DIRECTORY_LABEL_KEY, normalizedSnapshot.downloadDirectoryLabel)
-        .putString(
-            BOOTSTRAP_DOWNLOAD_FILE_NAME_TEMPLATE_KEY,
-            normalizedSnapshot.downloadFileNameTemplate
-        )
-        .apply()
+        .edit {
+            putBoolean(BOOTSTRAP_SNAPSHOT_READY_KEY, true)
+                .putBoolean(BOOTSTRAP_BYPASS_PROXY_KEY, normalizedSnapshot.bypassProxy)
+                .putString(
+                    BOOTSTRAP_DOWNLOAD_DIRECTORY_URI_KEY,
+                    normalizedSnapshot.downloadDirectoryUri
+                )
+                .putString(
+                    BOOTSTRAP_DOWNLOAD_DIRECTORY_LABEL_KEY,
+                    normalizedSnapshot.downloadDirectoryLabel
+                )
+                .putString(
+                    BOOTSTRAP_DOWNLOAD_FILE_NAME_TEMPLATE_KEY,
+                    normalizedSnapshot.downloadFileNameTemplate
+                )
+        }
 }
 
 internal fun Preferences.toBootstrapSettingsSnapshot(): BootstrapSettingsSnapshot {

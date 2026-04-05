@@ -19,7 +19,7 @@ package moe.ouom.neriplayer.ui.screen.playlist
  * along with this software.
  * If not, see <https://www.gnu.org/licenses/>.
  *
- * File: moe.ouom.neriplayer.ui.screen.playlist/NeteasePlaylistDetailScreen
+ * File: moe.ouom.neriplayer.ui.screen.playlist/NeteaseCollectionDetailScreen
  * Created: 2025/8/10
  */
 
@@ -30,10 +30,13 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -52,10 +55,12 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -67,15 +72,23 @@ import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DividerDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -100,8 +113,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
@@ -122,64 +137,47 @@ import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
-import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
-import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
-import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
-import moe.ouom.neriplayer.ui.viewmodel.playlist.PlaylistDetailViewModel
-import moe.ouom.neriplayer.ui.viewmodel.playlist.PlaylistDetailUiState
-import moe.ouom.neriplayer.ui.viewmodel.playlist.PlaylistHeader
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
-import moe.ouom.neriplayer.core.player.AudioDownloadManager
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.outlined.FavoriteBorder
-import androidx.compose.material.icons.outlined.Download
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Shadow
+import moe.ouom.neriplayer.data.model.sameIdentityAs
+import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.bottomSheetDragBlocker
 import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
-import moe.ouom.neriplayer.util.NPLogger
-import moe.ouom.neriplayer.util.formatDuration
-import moe.ouom.neriplayer.util.formatPlayCount
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
-import moe.ouom.neriplayer.data.model.sameIdentityAs
-import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.ui.component.bottomSheetDragBlocker
-import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
+import moe.ouom.neriplayer.ui.viewmodel.playlist.NeteaseCollectionDetailUiState
+import moe.ouom.neriplayer.ui.viewmodel.playlist.NeteaseCollectionDetailViewModel
+import moe.ouom.neriplayer.ui.viewmodel.playlist.NeteaseCollectionHeader
+import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
+import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.util.HapticFloatingActionButton
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
+import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.util.formatDuration
+import moe.ouom.neriplayer.util.formatPlayCount
 import moe.ouom.neriplayer.util.offlineCachedImageRequest
 import moe.ouom.neriplayer.util.performHapticFeedback
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun NeteasePlaylistDetailScreen(
-    playlist: NeteasePlaylist,
+    playlist: PlaylistSummary,
     onBack: () -> Unit = {},
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
-    val vm: PlaylistDetailViewModel = viewModel(
+    val vm: NeteaseCollectionDetailViewModel = viewModel(
         factory = viewModelFactory {
             initializer {
                 val app = context.applicationContext as Application
-                PlaylistDetailViewModel(app)
+                NeteaseCollectionDetailViewModel(app)
             }
         }
     )
@@ -189,7 +187,7 @@ fun NeteasePlaylistDetailScreen(
     LaunchedEffect(Unit) { vm.startPlaylist(playlist) }
 
     // 保存最新的header数据，用于在Screen销毁时更新使用记录
-    var latestHeader by remember { mutableStateOf<PlaylistHeader?>(null) }
+    var latestHeader by remember { mutableStateOf<NeteaseCollectionHeader?>(null) }
     LaunchedEffect(ui.header) {
         ui.header?.let { latestHeader = it }
     }
@@ -222,16 +220,16 @@ fun NeteasePlaylistDetailScreen(
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun NeteaseAlbumDetailScreen(
-    album: NeteaseAlbum,
+    album: AlbumSummary,
     onBack: () -> Unit = {},
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
-    val vm: PlaylistDetailViewModel = viewModel(
+    val vm: NeteaseCollectionDetailViewModel = viewModel(
         factory = viewModelFactory {
             initializer {
                 val app = context.applicationContext as Application
-                PlaylistDetailViewModel(app)
+                NeteaseCollectionDetailViewModel(app)
             }
         }
     )
@@ -241,7 +239,7 @@ fun NeteaseAlbumDetailScreen(
     LaunchedEffect(Unit) { vm.startAlbum(album) }
 
     // 保存最新的header数据，用于在Screen销毁时更新使用记录
-    var latestHeader by remember { mutableStateOf<PlaylistHeader?>(null) }
+    var latestHeader by remember { mutableStateOf<NeteaseCollectionHeader?>(null) }
     LaunchedEffect(ui.header) {
         ui.header?.let { latestHeader = it }
     }
@@ -275,7 +273,7 @@ fun NeteaseAlbumDetailScreen(
 @Composable
 @Suppress("AssignedValueIsNeverRead")
 fun DetailScreen(
-    ui: PlaylistDetailUiState,
+    ui: NeteaseCollectionDetailUiState,
     playlistId: Long,
     playlistSource: String,
     onRetry: () -> Unit,

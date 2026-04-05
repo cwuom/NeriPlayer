@@ -24,10 +24,8 @@ package moe.ouom.neriplayer.ui.viewmodel.tab
  */
 
 import android.app.Application
-import android.os.Parcelable
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.parcelize.Parcelize
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -45,22 +43,11 @@ import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
 import java.io.IOException
 
-/** Bilibili 收藏夹数据模型 */
-@Parcelize
-data class BiliPlaylist(
-    val mediaId: Long,
-    val fid: Long,
-    val mid: Long,
-    val title: String,
-    val count: Int,
-    val coverUrl: String
-) : Parcelable
-
 /** 媒体库页面 UI 状态 */
 data class LibraryUiState(
     val localPlaylists: List<LocalPlaylist> = emptyList(),
-    val neteasePlaylists: List<NeteasePlaylist> = emptyList(),
-    val neteaseAlbums: List<NeteaseAlbum> = emptyList(),
+    val neteasePlaylists: List<PlaylistSummary> = emptyList(),
+    val neteaseAlbums: List<AlbumSummary> = emptyList(),
     val neteaseError: String? = null,
     val youtubeMusicPlaylists: List<YouTubeMusicPlaylist> = emptyList(),
     val youtubeMusicError: String? = null,
@@ -286,8 +273,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch { localRepo.reorderPlaylists(order) }
     }
 
-    private fun parseNeteasePlaylists(raw: String): List<NeteasePlaylist> {
-        val result = mutableListOf<NeteasePlaylist>()
+    private fun parseNeteasePlaylists(raw: String): List<PlaylistSummary> {
+        val result = mutableListOf<PlaylistSummary>()
         val root = JSONObject(raw)
         if (root.optInt("code", -1) != 200) return emptyList()
         val arr = root.optJSONArray("playlist") ?: return emptyList()
@@ -300,14 +287,14 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             val playCount = obj.optLong("playCount", 0L)
             val trackCount = obj.optInt("trackCount", 0)
             if (id != 0L && name.isNotBlank()) {
-                result.add(NeteasePlaylist(id, name, cover, playCount, trackCount))
+                result.add(PlaylistSummary(id, name, cover, playCount, trackCount))
             }
         }
         return result
     }
     
-    private fun parseNeteaseAlbums(raw: String): List<NeteaseAlbum> {
-        val result = mutableListOf<NeteaseAlbum>()
+    private fun parseNeteaseAlbums(raw: String): List<AlbumSummary> {
+        val result = mutableListOf<AlbumSummary>()
         val root = JSONObject(raw)
         if (root.optInt("code", -1) != 200) return emptyList()
         val arr = root.optJSONArray("playlist") ?: return emptyList()
@@ -319,7 +306,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             val cover = arr.optJSONObject(i)?.optJSONObject("dataInfo")?.optString("picUrl", "")?.replaceFirst("http://", "https://") ?: continue
             val songSize = obj.optInt("size", 0)
             if (id != 0L && name.isNotBlank()) {
-                result.add(NeteaseAlbum(id, name, cover, songSize))
+                result.add(AlbumSummary(id, name, cover, songSize))
             }
         }
         return result

@@ -30,8 +30,8 @@ class DebugCookieImportReceiver : BroadcastReceiver() {
             resolveCookiePayload(intent)
         )
         if (cookies.isEmpty()) {
-            setResultCode(Activity.RESULT_CANCELED)
-            setResultData("empty cookie payload")
+            resultCode = Activity.RESULT_CANCELED
+            resultData = "empty cookie payload"
             return
         }
 
@@ -94,18 +94,18 @@ class DebugCookieImportReceiver : BroadcastReceiver() {
                 return
             }
         }
-        setResultCode(Activity.RESULT_OK)
-        setResultData("cleared")
+        resultCode = Activity.RESULT_OK
+        resultData = "cleared"
     }
 
     private fun succeed(platform: String, keys: Iterable<String>) {
-        setResultCode(Activity.RESULT_OK)
-        setResultData("imported $platform cookies: ${keys.joinToString(",")}")
+        resultCode = Activity.RESULT_OK
+        resultData = "imported $platform cookies: ${keys.joinToString(",")}"
     }
 
     private fun fail(message: String) {
-        setResultCode(Activity.RESULT_CANCELED)
-        setResultData(message)
+        resultCode = Activity.RESULT_CANCELED
+        resultData = message
     }
 
     private fun resolveCookiePayload(intent: Intent): String {

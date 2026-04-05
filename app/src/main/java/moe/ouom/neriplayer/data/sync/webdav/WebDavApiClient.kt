@@ -26,8 +26,8 @@ class WebDavApiException(
 
 class WebDavApiClient(
     private val context: Context,
-    private val username: String,
-    private val password: String
+    username: String,
+    password: String
 ) {
     private val client: OkHttpClient = AppContainer.sharedOkHttpClient
     private val authorizationHeader = Credentials.basic(username, password)
@@ -57,7 +57,7 @@ class WebDavApiClient(
         }
     }
 
-    suspend fun validateConnection(serverUrl: String, basePath: String): Result<Unit> {
+    fun validateConnection(serverUrl: String, basePath: String): Result<Unit> {
         return runCatching {
             val remoteUrl = buildRemoteFileUrl(serverUrl, basePath)
             val request = Request.Builder()
@@ -89,7 +89,7 @@ class WebDavApiClient(
         }
     }
 
-    suspend fun getFileContentStrict(remoteUrl: String): Result<Pair<String, String>> {
+    fun getFileContentStrict(remoteUrl: String): Result<Pair<String, String>> {
         return runCatching {
             val request = Request.Builder()
                 .url(remoteUrl)
@@ -129,7 +129,7 @@ class WebDavApiClient(
         }
     }
 
-    suspend fun updateFileContent(
+    fun updateFileContent(
         remoteUrl: String,
         content: String
     ): Result<String> {

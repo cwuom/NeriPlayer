@@ -2170,7 +2170,7 @@ object PlayerManager {
             return
         }
 
-        // 预热会同步触达鉴权和缓存状态，放到后台避免和切歌首帧抢主线程。
+        // 预热会同步触达鉴权和缓存状态，放到后台避免和切歌首帧抢主线程
         ioScope.launch {
             runCatching {
                 youtubeMusicPlaybackRepository.warmBootstrapAsync()

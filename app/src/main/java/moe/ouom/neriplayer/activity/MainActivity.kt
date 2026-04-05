@@ -25,6 +25,7 @@ package moe.ouom.neriplayer.activity
 
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
@@ -90,29 +91,29 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.R
-import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toDrawable
 import androidx.core.graphics.toColorInt
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.AudioPlayerService
-import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.canUseDirectPlaybackServiceStart
+import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.settings.SettingsRepository
@@ -130,10 +131,9 @@ import moe.ouom.neriplayer.util.ExceptionHandler
 import moe.ouom.neriplayer.util.HapticButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.LanguageManager
-import moe.ouom.neriplayer.util.NightModeHelper
 import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.util.NightModeHelper
 import moe.ouom.neriplayer.util.lockPortraitIfPhone
-import androidx.core.view.WindowInsetsControllerCompat
 
 private enum class AppStage { Loading, Disclaimer, Onboarding, Main }
 
@@ -681,6 +681,7 @@ class MainActivity : ComponentActivity() {
         clearPendingListenTogetherInvite()
     }
 
+    @SuppressLint("ObsoleteSdkInt")
     private fun startPendingExternalAudioServiceIfNeeded() {
         val pendingStart = pendingExternalAudioServiceStart ?: return
         val isDestroyed = Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && isDestroyed

@@ -37,6 +37,7 @@ import moe.ouom.neriplayer.core.player.model.encodePlaybackEqualizerBandLevels
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackLoudnessGainMb
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackPitch
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
+import androidx.core.content.edit
 
 private const val PLAYBACK_SNAPSHOT_PREFS = "playback_snapshot_cache"
 private const val PLAYBACK_SNAPSHOT_READY_KEY = "ready"
@@ -143,41 +144,50 @@ internal fun persistPlaybackPreferenceSnapshot(
         normalizedSnapshot.playbackEqualizerCustomBandLevels
     )
     context.getSharedPreferences(PLAYBACK_SNAPSHOT_PREFS, Context.MODE_PRIVATE)
-        .edit()
-        .putBoolean(PLAYBACK_SNAPSHOT_READY_KEY, true)
-        .putString(PLAYBACK_AUDIO_QUALITY_KEY, normalizedSnapshot.audioQuality)
-        .putString(PLAYBACK_YOUTUBE_AUDIO_QUALITY_KEY, normalizedSnapshot.youtubeAudioQuality)
-        .putString(PLAYBACK_BILI_AUDIO_QUALITY_KEY, normalizedSnapshot.biliAudioQuality)
-        .putBoolean(PLAYBACK_KEEP_PROGRESS_KEY, normalizedSnapshot.keepLastPlaybackProgress)
-        .putBoolean(PLAYBACK_KEEP_MODE_STATE_KEY, normalizedSnapshot.keepPlaybackModeState)
-        .putBoolean(PLAYBACK_FADE_IN_KEY, normalizedSnapshot.playbackFadeIn)
-        .putBoolean(PLAYBACK_CROSSFADE_NEXT_KEY, normalizedSnapshot.playbackCrossfadeNext)
-        .putLong(PLAYBACK_FADE_IN_DURATION_KEY, normalizedSnapshot.playbackFadeInDurationMs)
-        .putLong(PLAYBACK_FADE_OUT_DURATION_KEY, normalizedSnapshot.playbackFadeOutDurationMs)
-        .putLong(
-            PLAYBACK_CROSSFADE_IN_DURATION_KEY,
-            normalizedSnapshot.playbackCrossfadeInDurationMs
-        )
-        .putLong(
-            PLAYBACK_CROSSFADE_OUT_DURATION_KEY,
-            normalizedSnapshot.playbackCrossfadeOutDurationMs
-        )
-        .putFloat(PLAYBACK_SPEED_KEY, normalizedSnapshot.playbackSpeed)
-        .putFloat(PLAYBACK_PITCH_KEY, normalizedSnapshot.playbackPitch)
-        .putInt(PLAYBACK_LOUDNESS_KEY, normalizedSnapshot.playbackLoudnessGainMb)
-        .putBoolean(
-            PLAYBACK_EQUALIZER_ENABLED_KEY,
-            normalizedSnapshot.playbackEqualizerEnabled
-        )
-        .putString(PLAYBACK_EQUALIZER_PRESET_KEY, normalizedSnapshot.playbackEqualizerPreset)
-        .putString(PLAYBACK_EQUALIZER_LEVELS_KEY, encodedBandLevels)
-        .putBoolean(
-            PLAYBACK_STOP_ON_BLUETOOTH_KEY,
-            normalizedSnapshot.stopOnBluetoothDisconnect
-        )
-        .putBoolean(PLAYBACK_ALLOW_MIXED_KEY, normalizedSnapshot.allowMixedPlayback)
-        .putLong(PLAYBACK_MAX_CACHE_SIZE_BYTES_KEY, normalizedSnapshot.maxCacheSizeBytes)
-        .apply()
+        .edit {
+            putBoolean(PLAYBACK_SNAPSHOT_READY_KEY, true)
+                .putString(PLAYBACK_AUDIO_QUALITY_KEY, normalizedSnapshot.audioQuality)
+                .putString(
+                    PLAYBACK_YOUTUBE_AUDIO_QUALITY_KEY,
+                    normalizedSnapshot.youtubeAudioQuality
+                )
+                .putString(PLAYBACK_BILI_AUDIO_QUALITY_KEY, normalizedSnapshot.biliAudioQuality)
+                .putBoolean(PLAYBACK_KEEP_PROGRESS_KEY, normalizedSnapshot.keepLastPlaybackProgress)
+                .putBoolean(PLAYBACK_KEEP_MODE_STATE_KEY, normalizedSnapshot.keepPlaybackModeState)
+                .putBoolean(PLAYBACK_FADE_IN_KEY, normalizedSnapshot.playbackFadeIn)
+                .putBoolean(PLAYBACK_CROSSFADE_NEXT_KEY, normalizedSnapshot.playbackCrossfadeNext)
+                .putLong(PLAYBACK_FADE_IN_DURATION_KEY, normalizedSnapshot.playbackFadeInDurationMs)
+                .putLong(
+                    PLAYBACK_FADE_OUT_DURATION_KEY,
+                    normalizedSnapshot.playbackFadeOutDurationMs
+                )
+                .putLong(
+                    PLAYBACK_CROSSFADE_IN_DURATION_KEY,
+                    normalizedSnapshot.playbackCrossfadeInDurationMs
+                )
+                .putLong(
+                    PLAYBACK_CROSSFADE_OUT_DURATION_KEY,
+                    normalizedSnapshot.playbackCrossfadeOutDurationMs
+                )
+                .putFloat(PLAYBACK_SPEED_KEY, normalizedSnapshot.playbackSpeed)
+                .putFloat(PLAYBACK_PITCH_KEY, normalizedSnapshot.playbackPitch)
+                .putInt(PLAYBACK_LOUDNESS_KEY, normalizedSnapshot.playbackLoudnessGainMb)
+                .putBoolean(
+                    PLAYBACK_EQUALIZER_ENABLED_KEY,
+                    normalizedSnapshot.playbackEqualizerEnabled
+                )
+                .putString(
+                    PLAYBACK_EQUALIZER_PRESET_KEY,
+                    normalizedSnapshot.playbackEqualizerPreset
+                )
+                .putString(PLAYBACK_EQUALIZER_LEVELS_KEY, encodedBandLevels)
+                .putBoolean(
+                    PLAYBACK_STOP_ON_BLUETOOTH_KEY,
+                    normalizedSnapshot.stopOnBluetoothDisconnect
+                )
+                .putBoolean(PLAYBACK_ALLOW_MIXED_KEY, normalizedSnapshot.allowMixedPlayback)
+                .putLong(PLAYBACK_MAX_CACHE_SIZE_BYTES_KEY, normalizedSnapshot.maxCacheSizeBytes)
+        }
 }
 
 internal fun Preferences.toPlaybackPreferenceSnapshot(): PlaybackPreferenceSnapshot {

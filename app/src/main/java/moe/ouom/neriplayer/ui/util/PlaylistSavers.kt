@@ -25,9 +25,9 @@ package moe.ouom.neriplayer.ui.util
 
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.mapSaver
+import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
-import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
-import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 
 private const val KEY_ID = "id"
@@ -46,7 +46,7 @@ private const val KEY_PLAYLIST_ID = "playlistId"
 private const val KEY_BROWSE_ID = "browseId"
 private const val KEY_SUBTITLE = "subtitle"
 
-val neteasePlaylistSaver: Saver<NeteasePlaylist?, Any> = mapSaver(
+val playlistSummarySaver: Saver<PlaylistSummary?, Any> = mapSaver(
     save = { playlist ->
         playlist?.toSaveMap() ?: emptyMap()
     },
@@ -54,7 +54,7 @@ val neteasePlaylistSaver: Saver<NeteasePlaylist?, Any> = mapSaver(
         if (saved.isEmpty()) {
             null
         } else {
-            restoreNeteasePlaylist(saved)
+            restorePlaylistSummary(saved)
         }
     }
 )
@@ -72,13 +72,13 @@ val biliPlaylistSaver: Saver<BiliPlaylist?, Any> = mapSaver(
     }
 )
 
-fun restoreNeteaseAlbum(map: Map<*, *>?): NeteaseAlbum? {
+fun restoreAlbumSummary(map: Map<*, *>?): AlbumSummary? {
     if (map.isNullOrEmpty()) return null
     val id = (map[KEY_ID] as? Number)?.toLong() ?: return null
     val name = map[KEY_NAME] as? String ?: return null
     val picUrl = map[KEY_PIC_URL] as? String ?: ""
     val size = (map[KEY_TRACK_COUNT] as? Number)?.toInt() ?: 0
-    return NeteaseAlbum(
+    return AlbumSummary(
         id = id,
         name = name,
         picUrl = picUrl,
@@ -86,14 +86,14 @@ fun restoreNeteaseAlbum(map: Map<*, *>?): NeteaseAlbum? {
     )
 }
 
-fun restoreNeteasePlaylist(map: Map<*, *>?): NeteasePlaylist? {
+fun restorePlaylistSummary(map: Map<*, *>?): PlaylistSummary? {
     if (map.isNullOrEmpty()) return null
     val id = (map[KEY_ID] as? Number)?.toLong() ?: return null
     val name = map[KEY_NAME] as? String ?: return null
     val picUrl = map[KEY_PIC_URL] as? String ?: ""
     val playCount = (map[KEY_PLAY_COUNT] as? Number)?.toLong() ?: 0L
     val trackCount = (map[KEY_TRACK_COUNT] as? Number)?.toInt() ?: 0
-    return NeteasePlaylist(
+    return PlaylistSummary(
         id = id,
         name = name,
         picUrl = picUrl,
@@ -140,14 +140,14 @@ fun restoreYouTubeMusicPlaylist(map: Map<*, *>?): YouTubeMusicPlaylist? {
     )
 }
 
-fun NeteaseAlbum.toSaveMap(): HashMap<String, Any?> = hashMapOf(
+fun AlbumSummary.toSaveMap(): HashMap<String, Any?> = hashMapOf(
     KEY_ID to id,
     KEY_NAME to name,
     KEY_PIC_URL to picUrl,
     KEY_TRACK_COUNT to size
 )
 
-fun NeteasePlaylist.toSaveMap(): HashMap<String, Any?> = hashMapOf(
+fun PlaylistSummary.toSaveMap(): HashMap<String, Any?> = hashMapOf(
     KEY_ID to id,
     KEY_NAME to name,
     KEY_PIC_URL to picUrl,

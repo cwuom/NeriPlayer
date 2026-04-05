@@ -8,6 +8,7 @@ import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
+import androidx.core.net.toUri
 
 fun SongItem.toListenTogetherTrackOrNull(includeLocal: Boolean = false): ListenTogetherTrack? {
     val channel = resolvedChannelId() ?: return null
@@ -135,7 +136,7 @@ private fun trustedListenTogetherStreamUrl(
 ): String? {
     val candidate = streamUrl?.trim().orEmpty()
     if (candidate.isBlank()) return null
-    val uri = runCatching { Uri.parse(candidate) }.getOrNull() ?: return null
+    val uri = runCatching { candidate.toUri() }.getOrNull() ?: return null
     val scheme = uri.scheme?.lowercase().orEmpty()
     if (scheme != "https" && scheme != "http") return null
     val host = uri.host?.lowercase().orEmpty()

@@ -19,7 +19,7 @@ package moe.ouom.neriplayer.ui.viewmodel.playlist
  * along with this software.
  * If not, see <https://www.gnu.org/licenses/>.
  *
- * File: moe.ouom.neriplayer.ui.viewmodel.playlist/NeteasePlaylistDetailViewModel
+ * File: moe.ouom.neriplayer.ui.viewmodel.playlist/NeteaseCollectionDetailViewModel
  * Created: 2025/8/10
  */
 
@@ -39,15 +39,15 @@ import kotlinx.parcelize.Parcelize
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
-import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
+import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
 import java.io.IOException
 
 private const val TAG_PD = "NERI-PlaylistVM"
 
-data class PlaylistHeader(
+data class NeteaseCollectionHeader(
     val id: Long,
     val isAlbum: Boolean,//以兼容形式
     val name: String,
@@ -88,19 +88,19 @@ data class SongItem(
     val streamUrl: String? = null
 ) : Parcelable
 
-data class PlaylistDetailUiState(
+data class NeteaseCollectionDetailUiState(
     val loading: Boolean = true,
     val error: String? = null,
-    val header: PlaylistHeader? = null,
+    val header: NeteaseCollectionHeader? = null,
     val tracks: List<SongItem> = emptyList()
 )
 
-class PlaylistDetailViewModel(application: Application) : AndroidViewModel(application) {
+class NeteaseCollectionDetailViewModel(application: Application) : AndroidViewModel(application) {
     private val client = AppContainer.neteaseClient
     private val cookieRepo = AppContainer.neteaseCookieRepo
 
-    private val _uiState = MutableStateFlow(PlaylistDetailUiState())
-    val uiState: StateFlow<PlaylistDetailUiState> = _uiState
+    private val _uiState = MutableStateFlow(NeteaseCollectionDetailUiState())
+    val uiState: StateFlow<NeteaseCollectionDetailUiState> = _uiState
 
     private var playlistId: Long = 0L
 
@@ -126,14 +126,14 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
-    fun startPlaylist(playlist: NeteasePlaylist) {
+    fun startPlaylist(playlist: PlaylistSummary) {
         // 移除缓存检查，确保每次进入都能获取最新数据
         playlistId = playlist.id
 
         // 用入口数据把 header 预填
-        _uiState.value = PlaylistDetailUiState(
+        _uiState.value = NeteaseCollectionDetailUiState(
             loading = true,
-            header = PlaylistHeader(
+            header = NeteaseCollectionHeader(
                 id = playlist.id,
                 isAlbum = false,
                 name = playlist.name,
@@ -163,7 +163,7 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
                     parsed.tracks
                 }
 
-                _uiState.value = PlaylistDetailUiState(
+                _uiState.value = NeteaseCollectionDetailUiState(
                     loading = false,
                     error = null,
                     header = parsed.header,
@@ -185,14 +185,14 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
         }
     }
     
-    fun startAlbum(album: NeteaseAlbum) {
+    fun startAlbum(album: AlbumSummary) {
         // 移除缓存检查，确保每次进入都能获取最新数据
         playlistId = album.id
 
         // 用入口数据把 header 预填
-        _uiState.value = PlaylistDetailUiState(
+        _uiState.value = NeteaseCollectionDetailUiState(
             loading = true,
-            header = PlaylistHeader(
+            header = NeteaseCollectionHeader(
                 id = album.id,
                 isAlbum = true,
                 name = album.name,
@@ -214,7 +214,7 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
 
                 val (header, tracks) = parseDetailFromAlbum(raw)
 
-                _uiState.value = PlaylistDetailUiState(
+                _uiState.value = NeteaseCollectionDetailUiState(
                     loading = false,
                     error = null,
                     header = header,
@@ -240,7 +240,7 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
         val h = _uiState.value.header ?: return
         if (h.isAlbum) {
             startAlbum(
-                NeteaseAlbum(
+                AlbumSummary(
                     id = h.id,
                     name = h.name,
                     picUrl = h.coverUrl,
@@ -249,7 +249,7 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
             )
         } else {
             startPlaylist(
-                NeteasePlaylist(
+                PlaylistSummary(
                     id = h.id,
                     name = h.name,
                     picUrl = h.coverUrl,
@@ -270,7 +270,7 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
 
         val pl = root.optJSONObject("playlist") ?: error(getApplication<Application>().getString(R.string.error_missing_node, "playlist"))
 
-        val header = PlaylistHeader(
+        val header = NeteaseCollectionHeader(
             id = pl.optLong("id"),
             name = pl.optString("name"),
             coverUrl = toHttps(pl.optString("coverImgUrl", "")) ?: "",
@@ -306,7 +306,7 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
         val al = root.optJSONObject("album") ?: error(getApplication<Application>().getString(R.string.error_missing_node, "album"))
         val cover = toHttps(al.optString("picUrl", "")) ?: ""
 
-        val header = PlaylistHeader(
+        val header = NeteaseCollectionHeader(
             id = al.optLong("id"),
             name = al.optString("name"),
             coverUrl = cover,
@@ -327,7 +327,7 @@ class PlaylistDetailViewModel(application: Application) : AndroidViewModel(appli
     }
     
     private data class ParsedDetail(
-        val header: PlaylistHeader,
+        val header: NeteaseCollectionHeader,
         val tracks: List<SongItem>,
         val trackIds: List<Long> = emptyList()
     )

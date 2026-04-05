@@ -122,7 +122,7 @@ import moe.ouom.neriplayer.ui.component.LocalSongSyncConfirmDialog
 import moe.ouom.neriplayer.ui.component.LyricVisualSpec
 import moe.ouom.neriplayer.ui.component.WaveformSlider
 import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
-import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
+import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.HapticFilledIconButton
 import moe.ouom.neriplayer.util.HapticIconButton
@@ -137,7 +137,7 @@ fun LyricsScreen(
     lyricBlurAmount: Float,
     lyricFontScale: Float,
     onLyricFontScaleChange: (Float) -> Unit,
-    onEnterAlbum: (NeteaseAlbum) -> Unit,
+    onEnterAlbum: (AlbumSummary) -> Unit,
     onNavigateBack: () -> Unit,
     onSeekTo: (Long) -> Unit,
     translatedLyrics: List<LyricEntry>? = null,

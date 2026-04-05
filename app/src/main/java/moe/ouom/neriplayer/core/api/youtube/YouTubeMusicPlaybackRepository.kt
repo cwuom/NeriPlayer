@@ -744,7 +744,7 @@ class YouTubeMusicPlaybackRepository(
 ) {
     private val downloader = NewPipeOkHttpDownloader(okHttpClient, authProvider)
     private val playableAudioCache = linkedMapOf<String, CachedPlayableAudio>()
-    private val inFlightPlayableAudio = linkedMapOf<InFlightPlayableAudioRequest, kotlinx.coroutines.Deferred<YouTubePlayableAudio?>>()
+    private val inFlightPlayableAudio = linkedMapOf<InFlightPlayableAudioRequest, Deferred<YouTubePlayableAudio?>>()
     private val inFlightPlayableAudioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val ejsChallengeSolver = applicationContext?.let {
         YouTubeEjsChallengeSolver(it, okHttpClient)
@@ -1039,8 +1039,7 @@ class YouTubeMusicPlaybackRepository(
         )
         val deferred = synchronized(inFlightPlayableAudio) {
             inFlightPlayableAudio[request] ?: run {
-                lateinit var created: Deferred<YouTubePlayableAudio?>
-                created = inFlightPlayableAudioScope.async(start = CoroutineStart.LAZY) {
+                val created: Deferred<YouTubePlayableAudio?> = inFlightPlayableAudioScope.async(start = CoroutineStart.LAZY) {
                     resolvePlayableAudio(
                         videoId = videoId,
                         preferredQualityKey = preferredQualityKey,
