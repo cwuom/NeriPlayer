@@ -1,0 +1,3 @@
+[submodule "np-submodule/NeriPlayer-LTW"]
+	path = np-submodule/NeriPlayer-LTW
+	url = https://github.com/TheSmallHanCat/NeriPlayer-LTW
