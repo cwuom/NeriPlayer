@@ -116,4 +116,40 @@ class AudioPlayerServicePolicyTest {
             isServiceStartNotAllowedFailure(IllegalStateException("different failure"))
         )
     }
+
+    @Test
+    fun `recent explicit sync start suppresses redundant app bootstrap start`() {
+        assertTrue(
+            shouldSkipRedundantSyncServiceStart(
+                source = "app_bootstrap",
+                lastSuccessfulSource = "external_audio_import",
+                lastSuccessfulStartElapsedRealtime = 10_000L,
+                nowElapsedRealtime = 10_800L
+            )
+        )
+    }
+
+    @Test
+    fun `stale sync start does not suppress app bootstrap`() {
+        assertFalse(
+            shouldSkipRedundantSyncServiceStart(
+                source = "app_bootstrap",
+                lastSuccessfulSource = "external_audio_import",
+                lastSuccessfulStartElapsedRealtime = 10_000L,
+                nowElapsedRealtime = 12_000L
+            )
+        )
+    }
+
+    @Test
+    fun `non bootstrap sources are never deduped by bootstrap policy`() {
+        assertFalse(
+            shouldSkipRedundantSyncServiceStart(
+                source = "play_songs_and_open_now_playing",
+                lastSuccessfulSource = "external_audio_import",
+                lastSuccessfulStartElapsedRealtime = 10_000L,
+                nowElapsedRealtime = 10_200L
+            )
+        )
+    }
 }

@@ -9,6 +9,7 @@ import androidx.palette.graphics.Palette
 import coil.Coil
 import coil.request.ImageRequest
 import coil.request.SuccessResult
+import coil.size.Precision
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -19,6 +20,7 @@ data class CoverArtColorSample(
 
 object CoverArtColorCache {
     private const val CACHE_SIZE = 64
+    private const val COVER_ART_COLOR_SAMPLE_SIZE_PX = 96
     private val cache = LruCache<String, CoverArtColorSample>(CACHE_SIZE)
     private val cacheLock = Any()
 
@@ -41,6 +43,8 @@ object CoverArtColorCache {
         val request = ImageRequest.Builder(context)
             .data(coverUrl)
             .allowHardware(false)
+            .size(COVER_ART_COLOR_SAMPLE_SIZE_PX)
+            .precision(Precision.INEXACT)
             .build()
         val result = withContext(Dispatchers.IO) { loader.execute(request) }
         val bitmap = ((result as? SuccessResult)?.drawable as? BitmapDrawable)?.bitmap ?: return null

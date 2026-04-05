@@ -24,6 +24,7 @@ package moe.ouom.neriplayer.util
  */
 
 import android.content.Context
+import coil.size.Precision
 import coil.request.ImageRequest
 import coil.request.CachePolicy
 
@@ -33,6 +34,22 @@ import coil.request.CachePolicy
 fun offlineCachedImageRequest(context: Context, data: Any?): ImageRequest {
     return ImageRequest.Builder(context)
         .data(data)
+        .diskCachePolicy(CachePolicy.ENABLED)
+        .memoryCachePolicy(CachePolicy.ENABLED)
+        .networkCachePolicy(CachePolicy.ENABLED)
+        .build()
+}
+
+fun fastScrollableImageRequest(
+    context: Context,
+    data: Any?,
+    sizePx: Int = 512
+): ImageRequest {
+    return ImageRequest.Builder(context)
+        .data(data)
+        .size(sizePx)
+        .precision(Precision.INEXACT)
+        .crossfade(true)
         .diskCachePolicy(CachePolicy.ENABLED)
         .memoryCachePolicy(CachePolicy.ENABLED)
         .networkCachePolicy(CachePolicy.ENABLED)

@@ -147,6 +147,29 @@ internal fun isServiceStartNotAllowedFailure(error: Throwable): Boolean {
     return error.message?.contains("Not allowed to start service") == true
 }
 
+internal fun shouldSkipRedundantSyncServiceStart(
+    source: String,
+    lastSuccessfulSource: String?,
+    lastSuccessfulStartElapsedRealtime: Long,
+    nowElapsedRealtime: Long,
+    dedupeWindowMs: Long = 1500L
+): Boolean {
+    if (source != "app_bootstrap") {
+        return false
+    }
+    if (lastSuccessfulStartElapsedRealtime <= 0L) {
+        return false
+    }
+    if (lastSuccessfulSource == null) {
+        return false
+    }
+    val elapsed = nowElapsedRealtime - lastSuccessfulStartElapsedRealtime
+    if (elapsed !in 0L..dedupeWindowMs) {
+        return false
+    }
+    return true
+}
+
 private fun Context.findActivityReadyForDirectServiceStart(): Activity? {
     var current: Context? = this
     while (current is ContextWrapper) {
@@ -183,6 +206,11 @@ class AudioPlayerService : Service() {
 
         private const val NOTIFICATION_ID = 1
         private const val CHANNEL_ID = "neriplayer_playback_channel"
+        private const val SYNC_START_DEDUPE_WINDOW_MS = 1500L
+        @Volatile
+        private var lastSuccessfulSyncStartElapsedRealtime: Long = 0L
+        @Volatile
+        private var lastSuccessfulSyncStartSource: String? = null
 
         fun createSyncIntent(context: Context, source: String): Intent {
             return Intent(context, AudioPlayerService::class.java).apply {
@@ -196,6 +224,22 @@ class AudioPlayerService : Service() {
             source: String,
             forceForeground: Boolean = false
         ): Boolean {
+            val nowElapsedRealtime = SystemClock.elapsedRealtime()
+            if (
+                shouldSkipRedundantSyncServiceStart(
+                    source = source,
+                    lastSuccessfulSource = lastSuccessfulSyncStartSource,
+                    lastSuccessfulStartElapsedRealtime = lastSuccessfulSyncStartElapsedRealtime,
+                    nowElapsedRealtime = nowElapsedRealtime,
+                    dedupeWindowMs = SYNC_START_DEDUPE_WINDOW_MS
+                )
+            ) {
+                NPLogger.d(
+                    "NERI-APS",
+                    "Skip redundant sync start: source=$source lastSource=$lastSuccessfulSyncStartSource"
+                )
+                return true
+            }
             val intent = createSyncIntent(context, source)
             val callerHasResumedUi = context.findActivityReadyForDirectServiceStart() != null
             val shouldStartInForeground = shouldUseForegroundServiceStart(
@@ -210,6 +254,8 @@ class AudioPlayerService : Service() {
                 } else {
                     context.startService(intent)
                 }
+                lastSuccessfulSyncStartElapsedRealtime = nowElapsedRealtime
+                lastSuccessfulSyncStartSource = source
                 true
             } catch (error: IllegalStateException) {
                 if (!isServiceStartNotAllowedFailure(error)) {

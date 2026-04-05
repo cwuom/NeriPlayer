@@ -25,3 +25,4 @@ local.properties
 /.kotlin/
 demo
 .idea
+/.gradle-alt-build/

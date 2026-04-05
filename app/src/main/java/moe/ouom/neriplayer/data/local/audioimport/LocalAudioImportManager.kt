@@ -36,6 +36,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.media.normalizeLocalAlbumIdentity
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
@@ -51,6 +52,25 @@ data class LocalAudioImportResult(
 internal data class SidecarCopyPlan(
     val source: File,
     val target: File
+)
+
+internal data class QuickImportedSongSeed(
+    val sourceRef: String,
+    val displayName: String,
+    val title: String?,
+    val artist: String?,
+    val album: String?,
+    val durationMs: Long?,
+    val localFile: File? = null,
+    val nearbyCoverUri: String? = null
+)
+
+private data class QuickImportedAudioInfo(
+    val displayName: String? = null,
+    val title: String? = null,
+    val artist: String? = null,
+    val album: String? = null,
+    val durationMs: Long? = null
 )
 
 internal fun buildNearbySidecarCopyPlans(
@@ -124,7 +144,7 @@ object LocalAudioImportManager {
             }
 
             val song = runCatching {
-                LocalMediaSupport.toSongItem(LocalMediaSupport.inspect(context, stableUri))
+                buildQuickImportedSong(context, stableUri)
             }.onFailure {
                 NPLogger.e(TAG, "Failed to import stabilized external audio: $stableUri", it)
             }.getOrNull()
@@ -298,7 +318,88 @@ object LocalAudioImportManager {
         )
     }
 
+    internal fun buildQuickImportedSong(
+        seed: QuickImportedSongSeed,
+        unknownArtistLabel: String
+    ): SongItem {
+        val resolvedSource = seed.localFile?.absolutePath ?: seed.sourceRef
+        val resolvedDisplayName = seed.localFile?.name ?: seed.displayName
+        val fallbackTitle = resolvedDisplayName.substringBeforeLast('.').ifBlank {
+            resolvedDisplayName.ifBlank {
+                resolvedSource.substringAfterLast(File.separatorChar, resolvedSource)
+            }
+        }
+        val resolvedTitle = seed.title
+            ?.trim()
+            ?.takeIf(::isReadableQuickImportedTitle)
+            ?: fallbackTitle
+        val resolvedArtist = seed.artist
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: unknownArtistLabel
+        val resolvedAlbum = normalizeLocalAlbumIdentity(
+            album = seed.album,
+            usesFallbackAlbum = seed.album.isNullOrBlank()
+        )
+        val stableId = computeStableSongId(resolvedSource)
+
+        return SongItem(
+            id = stableId,
+            name = resolvedTitle,
+            artist = resolvedArtist,
+            album = resolvedAlbum,
+            albumId = 0L,
+            durationMs = seed.durationMs?.takeIf { it > 0L } ?: 0L,
+            coverUrl = seed.nearbyCoverUri,
+            mediaUri = resolvedSource,
+            originalName = resolvedTitle,
+            originalArtist = resolvedArtist,
+            originalCoverUrl = seed.nearbyCoverUri,
+            localFileName = resolvedDisplayName.ifBlank { null },
+            localFilePath = seed.localFile?.absolutePath,
+            channelId = "local",
+            audioId = stableId.toString()
+        )
+    }
+
+    internal fun mergeImportedSongMetadata(
+        quickSong: SongItem,
+        detailedSong: SongItem
+    ): SongItem {
+        val resolvedName = detailedSong.name
+            .takeIf(::isReadableQuickImportedTitle)
+            ?: quickSong.name
+        val resolvedArtist = detailedSong.artist.takeIf { it.isNotBlank() } ?: quickSong.artist
+        val resolvedAlbum = detailedSong.album.takeIf { it.isNotBlank() } ?: quickSong.album
+        val resolvedCoverUrl = detailedSong.coverUrl ?: quickSong.coverUrl
+
+        return quickSong.copy(
+            name = resolvedName,
+            artist = resolvedArtist,
+            album = resolvedAlbum,
+            durationMs = detailedSong.durationMs.takeIf { it > 0L } ?: quickSong.durationMs,
+            coverUrl = resolvedCoverUrl,
+            matchedLyric = detailedSong.matchedLyric ?: quickSong.matchedLyric,
+            matchedTranslatedLyric = detailedSong.matchedTranslatedLyric ?: quickSong.matchedTranslatedLyric,
+            originalName = detailedSong.originalName?.takeIf { it.isNotBlank() } ?: resolvedName,
+            originalArtist = detailedSong.originalArtist?.takeIf { it.isNotBlank() } ?: resolvedArtist,
+            originalCoverUrl = detailedSong.originalCoverUrl ?: quickSong.originalCoverUrl ?: resolvedCoverUrl,
+            originalLyric = detailedSong.originalLyric ?: quickSong.originalLyric,
+            originalTranslatedLyric = detailedSong.originalTranslatedLyric
+                ?: quickSong.originalTranslatedLyric
+        )
+    }
+
     private fun isReadableScannedTitle(title: String?): Boolean {
+        val trimmed = title?.trim().orEmpty()
+        if (trimmed.isBlank()) return false
+        if (trimmed.all(Char::isDigit)) return false
+        if (trimmed.startsWith("content://", ignoreCase = true)) return false
+        if (trimmed.startsWith("file://", ignoreCase = true)) return false
+        return true
+    }
+
+    private fun isReadableQuickImportedTitle(title: String?): Boolean {
         val trimmed = title?.trim().orEmpty()
         if (trimmed.isBlank()) return false
         if (trimmed.all(Char::isDigit)) return false
@@ -309,6 +410,76 @@ object LocalAudioImportManager {
 
     private fun computeStableSongId(source: String): Long {
         return stableKey(source).take(16).toULong(16).toLong()
+    }
+
+    private fun buildQuickImportedSong(context: Context, uri: Uri): SongItem {
+        val resolvedFile = resolveSourceFile(context, uri)
+        val queryInfo = queryQuickImportedAudioInfo(context, uri)
+        val displayName = resolvedFile?.name
+            ?: queryInfo.displayName
+            ?: uri.lastPathSegment
+            ?: uri.toString()
+        val nearbyCoverUri = LocalMediaSupport.findNearbyCover(resolvedFile)?.toURI()?.toString()
+
+        return buildQuickImportedSong(
+            seed = QuickImportedSongSeed(
+                sourceRef = resolvedFile?.absolutePath ?: uri.toString(),
+                displayName = displayName,
+                title = queryInfo.title,
+                artist = queryInfo.artist,
+                album = queryInfo.album,
+                durationMs = queryInfo.durationMs,
+                localFile = resolvedFile,
+                nearbyCoverUri = nearbyCoverUri
+            ),
+            unknownArtistLabel = context.getString(R.string.music_unknown_artist)
+        )
+    }
+
+    private fun queryQuickImportedAudioInfo(context: Context, uri: Uri): QuickImportedAudioInfo {
+        if (!uri.scheme.equals("content", ignoreCase = true)) {
+            return QuickImportedAudioInfo()
+        }
+
+        return runCatching {
+            context.contentResolver.query(
+                uri,
+                arrayOf(
+                    MediaStore.Audio.Media.TITLE,
+                    MediaStore.Audio.Media.ARTIST,
+                    MediaStore.Audio.Media.ALBUM,
+                    MediaStore.Audio.Media.DURATION,
+                    MediaStore.MediaColumns.DISPLAY_NAME
+                ),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (!cursor.moveToFirst()) {
+                    return@use QuickImportedAudioInfo()
+                }
+                QuickImportedAudioInfo(
+                    title = cursor.getColumnIndex(MediaStore.Audio.Media.TITLE)
+                        .takeIf { it >= 0 && !cursor.isNull(it) }
+                        ?.let(cursor::getString),
+                    artist = cursor.getColumnIndex(MediaStore.Audio.Media.ARTIST)
+                        .takeIf { it >= 0 && !cursor.isNull(it) }
+                        ?.let(cursor::getString),
+                    album = cursor.getColumnIndex(MediaStore.Audio.Media.ALBUM)
+                        .takeIf { it >= 0 && !cursor.isNull(it) }
+                        ?.let(cursor::getString),
+                    durationMs = cursor.getColumnIndex(MediaStore.Audio.Media.DURATION)
+                        .takeIf { it >= 0 && !cursor.isNull(it) }
+                        ?.let(cursor::getLong),
+                    displayName = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                        .takeIf { it >= 0 && !cursor.isNull(it) }
+                        ?.let(cursor::getString)
+                )
+            } ?: QuickImportedAudioInfo()
+        }.getOrElse {
+            NPLogger.w(TAG, "Quick metadata query failed for $uri: ${it.message}")
+            QuickImportedAudioInfo()
+        }
     }
 
     private fun stabilizeExternalUri(context: Context, uri: Uri): Uri {

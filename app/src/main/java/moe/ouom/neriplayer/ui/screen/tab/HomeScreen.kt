@@ -130,8 +130,8 @@ import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeShelf
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeItem
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicParser
 import moe.ouom.neriplayer.util.HapticIconButton
+import moe.ouom.neriplayer.util.fastScrollableImageRequest
 import moe.ouom.neriplayer.util.formatPlayCount
-import moe.ouom.neriplayer.util.offlineCachedImageRequest
 import kotlin.math.ceil
 import kotlin.math.min
 import java.util.Locale
@@ -162,6 +162,11 @@ fun HomeScreen(
     val usage by AppContainer.playlistUsageRepo.frequentPlaylistsFlow.collectAsState(initial = emptyList())
     val localPlaylistRepo = remember(context) { LocalPlaylistRepository.getInstance(context) }
     val localPlaylists by localPlaylistRepo.playlists.collectAsState()
+    val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
+    val favorites by favoriteRepo.favorites.collectAsState()
+    val favoriteKeys = remember(favorites) {
+        favorites.mapTo(mutableSetOf()) { "${it.source}:${it.id}" }
+    }
 
     val hasLocalUsage = remember(usage) {
         usage.any { it.source == PlaylistUsageRepository.SOURCE_LOCAL }
@@ -328,6 +333,7 @@ fun HomeScreen(
                                     ) { playlist ->
                                         YtMusicPlaylistCard(
                                             playlist = playlist,
+                                            isFavorite = favoriteKeys.contains("youtubeMusic:${playlist.favoriteId()}"),
                                             onClick = { onYouTubeMusicPlaylistClick(playlist) },
                                             onShowSnackbar = { message ->
                                                 scope.launch {
@@ -378,6 +384,9 @@ fun HomeScreen(
                                             ) { homeItem ->
                                                 YtMusicHomeItemCard(
                                                     item = homeItem,
+                                                    isFavorite = homeItem.toPlaylist()
+                                                        ?.favoriteId()
+                                                        ?.let { favoriteKeys.contains("youtubeMusic:$it") } == true,
                                                     onClick = {
                                                         val playlist = homeItem.toPlaylist()
                                                         if (playlist != null) {
@@ -483,6 +492,7 @@ fun HomeScreen(
                                     items(items = ui.playlists.items, key = { it.id }) { item ->
                                         PlaylistCard(
                                             playlist = item,
+                                            isFavorite = favoriteKeys.contains("netease:${item.id}"),
                                             onClick = { onItemClick(item) },
                                             onShowSnackbar = { message ->
                                                 scope.launch {
@@ -623,7 +633,7 @@ private fun SongRowMini(
 
         if (!coverUrl.isNullOrBlank()) {
             AsyncImage(
-                model = offlineCachedImageRequest(context, coverUrl),
+                model = fastScrollableImageRequest(context, coverUrl, sizePx = 128),
                 contentDescription = song.displayName(),
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
@@ -662,16 +672,13 @@ private fun SongRowMini(
 @Composable
 fun PlaylistCard(
     playlist: NeteasePlaylist,
+    isFavorite: Boolean,
     onClick: () -> Unit,
     onShowSnackbar: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
-    val favorites by favoriteRepo.favorites.collectAsState()
-    val isFavorite = remember(favorites, playlist.id) {
-        favoriteRepo.isFavorite(playlist.id, "netease")
-    }
     var showMenu by remember { mutableStateOf(false) }
 
     val unfavoritedText = stringResource(R.string.home_unfavorited)
@@ -686,7 +693,7 @@ fun PlaylistCard(
             )
     ) {
         AsyncImage(
-            model = ImageRequest.Builder(LocalContext.current).data(playlist.picUrl).crossfade(true).build(),
+            model = fastScrollableImageRequest(context, playlist.picUrl, sizePx = 384),
             contentDescription = playlist.name,
             contentScale = ContentScale.Crop,
             modifier = Modifier
@@ -755,18 +762,15 @@ fun PlaylistCard(
 @Composable
 private fun YtMusicPlaylistCard(
     playlist: YouTubeMusicPlaylist,
+    isFavorite: Boolean,
     onClick: () -> Unit,
     onShowSnackbar: (String) -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
-    val favorites by favoriteRepo.favorites.collectAsState()
     val playlistFavoriteId = remember(playlist.playlistId, playlist.browseId) {
         playlist.favoriteId()
-    }
-    val isFavorite = remember(favorites, playlistFavoriteId) {
-        favoriteRepo.isFavorite(playlistFavoriteId, "youtubeMusic")
     }
     var showMenu by remember { mutableStateOf(false) }
     val unfavoritedText = stringResource(R.string.home_unfavorited)
@@ -781,10 +785,7 @@ private fun YtMusicPlaylistCard(
             )
     ) {
         AsyncImage(
-            model = ImageRequest.Builder(context)
-                .data(playlist.coverUrl)
-                .crossfade(true)
-                .build(),
+            model = fastScrollableImageRequest(context, playlist.coverUrl, sizePx = 384),
             contentDescription = playlist.title,
             contentScale = ContentScale.Crop,
             modifier = Modifier
@@ -854,6 +855,7 @@ private fun YtMusicPlaylistCard(
 @Composable
 private fun YtMusicHomeItemCard(
     item: YouTubeMusicHomeItem,
+    isFavorite: Boolean,
     onClick: () -> Unit,
     onShowSnackbar: (String) -> Unit
 ) {
@@ -861,12 +863,8 @@ private fun YtMusicHomeItemCard(
     val scope = rememberCoroutineScope()
     val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
     val playlist = remember(item) { item.toPlaylist() }
-    val favorites by favoriteRepo.favorites.collectAsState()
     val playlistFavoriteId = remember(playlist?.playlistId, playlist?.browseId) {
         playlist?.favoriteId()
-    }
-    val isFavorite = remember(favorites, playlistFavoriteId) {
-        playlistFavoriteId?.let { favoriteRepo.isFavorite(it, "youtubeMusic") } == true
     }
     var showMenu by remember { mutableStateOf(false) }
     val unfavoritedText = stringResource(R.string.home_unfavorited)
@@ -885,10 +883,7 @@ private fun YtMusicHomeItemCard(
             )
     ) {
         AsyncImage(
-            model = ImageRequest.Builder(context)
-                .data(item.coverUrl)
-                .crossfade(true)
-                .build(),
+            model = fastScrollableImageRequest(context, item.coverUrl, sizePx = 384),
             contentDescription = item.title,
             contentScale = ContentScale.Crop,
             modifier = Modifier

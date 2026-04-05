@@ -121,6 +121,7 @@ import moe.ouom.neriplayer.data.local.media.displayAlbum
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
@@ -132,8 +133,8 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.util.fastScrollableImageRequest
 import moe.ouom.neriplayer.util.formatDuration
-import moe.ouom.neriplayer.util.offlineCachedImageRequest
 import moe.ouom.neriplayer.util.performHapticFeedback
 
 private const val SEARCH_INPUT_DEBOUNCE_MS = 300L
@@ -162,6 +163,11 @@ fun ExploreScreen(
 
     val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
     val allLocalPlaylists by repo.playlists.collectAsState(initial = emptyList())
+    val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
+    val favorites by favoriteRepo.favorites.collectAsState()
+    val favoriteKeys = remember(favorites) {
+        favorites.mapTo(mutableSetOf()) { "${it.source}:${it.id}" }
+    }
 
     var showPartsSheet by remember { mutableStateOf(false) }
     var partsInfo by remember { mutableStateOf<BiliClient.VideoBasicInfo?>(null) }
@@ -422,6 +428,7 @@ fun ExploreScreen(
                                 ui = ui,
                                 tagKeys = tagKeys,
                                 tagLabels = tagLabels,
+                                favoriteKeys = favoriteKeys,
                                 vm = vm,
                                 onPlay = onPlay,
                                 tagChipSelectedAlpha = tagChipSelectedAlpha,
@@ -683,6 +690,7 @@ private fun NeteaseDefaultContent(
     ui: ExploreUiState,
     tagKeys: List<String>,
     tagLabels: List<String>,
+    favoriteKeys: Set<String>,
     vm: ExploreViewModel,
     onPlay: (NeteasePlaylist) -> Unit,
     tagChipSelectedAlpha: Float,
@@ -745,6 +753,7 @@ private fun NeteaseDefaultContent(
             items(items = ui.playlists, key = { it.id }) { playlist ->
                 PlaylistCard(
                     playlist = playlist,
+                    isFavorite = favoriteKeys.contains("netease:${playlist.id}"),
                     onClick = { onPlay(playlist) }
                 )
             }
@@ -846,7 +855,7 @@ private fun SongRow(
 
         if (!coverUrl.isNullOrBlank()) {
             AsyncImage(
-                model = offlineCachedImageRequest(context, coverUrl),
+                model = fastScrollableImageRequest(context, coverUrl, sizePx = 128),
                 contentDescription = song.displayName(),
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
@@ -964,16 +973,14 @@ private fun YtMusicExploreCard(
     playlist: YouTubeMusicPlaylist,
     onClick: () -> Unit
 ) {
+    val context = LocalContext.current
     Column(
         modifier = Modifier
             .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
     ) {
         AsyncImage(
-            model = coil.request.ImageRequest.Builder(LocalContext.current)
-                .data(playlist.coverUrl)
-                .crossfade(true)
-                .build(),
+            model = fastScrollableImageRequest(context, playlist.coverUrl, sizePx = 384),
             contentDescription = playlist.title,
             contentScale = ContentScale.Crop,
             modifier = Modifier

@@ -27,6 +27,7 @@ import android.app.Activity
 import android.app.Application
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -178,12 +179,12 @@ import kotlinx.coroutines.flow.filterNotNull
 import moe.ouom.neriplayer.ui.screen.RecentScreen
 import moe.ouom.neriplayer.R
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.core.view.drawToBitmap
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlin.coroutines.resume
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 private fun resolveMainStartDestination(
     preferredRoute: String,
@@ -204,7 +205,55 @@ private fun SongItem?.resolveUiCoverSource(context: android.content.Context): St
     return this?.displayCoverUrl(context)
 }
 
-private const val THEME_REVEAL_SNAPSHOT_MAX_DIMENSION_PX = 1440
+private const val THEME_REVEAL_SNAPSHOT_MAX_DIMENSION_PX = 1080
+private const val THEME_REVEAL_STABLE_DRAW_PASSES = 1
+private val THEME_REVEAL_SNAPSHOT_CONFIG = Bitmap.Config.RGB_565
+private val ROOT_HAZE_BLUR_RADIUS = 24.dp
+
+internal data class ThemeRevealSnapshotDimensions(
+    val width: Int,
+    val height: Int
+)
+
+internal fun resolveThemeRevealSnapshotDimensions(
+    width: Int,
+    height: Int,
+    maxDimensionPx: Int = THEME_REVEAL_SNAPSHOT_MAX_DIMENSION_PX
+): ThemeRevealSnapshotDimensions {
+    val safeWidth = width.coerceAtLeast(1)
+    val safeHeight = height.coerceAtLeast(1)
+    val maxDimension = maxOf(safeWidth, safeHeight)
+    val downsampleRatio = (maxDimension.toFloat() / maxDimensionPx)
+        .coerceAtLeast(1f)
+    return ThemeRevealSnapshotDimensions(
+        width = (safeWidth / downsampleRatio).roundToInt().coerceAtLeast(1),
+        height = (safeHeight / downsampleRatio).roundToInt().coerceAtLeast(1)
+    )
+}
+
+private fun View.drawScaledThemeRevealBitmap(): Bitmap? {
+    if (width <= 0 || height <= 0) {
+        return null
+    }
+    val snapshotDimensions = resolveThemeRevealSnapshotDimensions(
+        width = width,
+        height = height
+    )
+    return runCatching {
+        createBitmap(
+            snapshotDimensions.width,
+            snapshotDimensions.height,
+            THEME_REVEAL_SNAPSHOT_CONFIG
+        ).also { bitmap ->
+            val canvas = Canvas(bitmap)
+            canvas.scale(
+                snapshotDimensions.width.toFloat() / width.toFloat(),
+                snapshotDimensions.height.toFloat() / height.toFloat()
+            )
+            draw(canvas)
+        }
+    }.getOrNull()
+}
 
 private suspend fun captureThemeRevealSnapshot(
     activity: Activity?,
@@ -218,16 +267,15 @@ private suspend fun captureThemeRevealSnapshot(
                 return@suspendCancellableCoroutine
             }
 
-            val maxDimension = maxOf(decorView.width, decorView.height).coerceAtLeast(1)
-            val downsampleRatio = (maxDimension.toFloat() / THEME_REVEAL_SNAPSHOT_MAX_DIMENSION_PX)
-                .coerceAtLeast(1f)
-            val snapshotWidth = (decorView.width / downsampleRatio)
-                .toInt()
-                .coerceAtLeast(1)
-            val snapshotHeight = (decorView.height / downsampleRatio)
-                .toInt()
-                .coerceAtLeast(1)
-            val bitmap = createBitmap(snapshotWidth, snapshotHeight, Bitmap.Config.ARGB_8888)
+            val snapshotDimensions = resolveThemeRevealSnapshotDimensions(
+                width = decorView.width,
+                height = decorView.height
+            )
+            val bitmap = createBitmap(
+                snapshotDimensions.width,
+                snapshotDimensions.height,
+                THEME_REVEAL_SNAPSHOT_CONFIG
+            )
 
             PixelCopy.request(
                 currentActivity.window,
@@ -247,7 +295,7 @@ private suspend fun captureThemeRevealFallbackSnapshot(view: View): ImageBitmap?
     return withContext(Dispatchers.Main.immediate) {
         runCatching {
             if (view.width > 0 && view.height > 0) {
-                view.drawToBitmap().asImageBitmap()
+                view.drawScaledThemeRevealBitmap()?.asImageBitmap()
             } else {
                 null
             }
@@ -297,7 +345,7 @@ private suspend fun awaitNextDraw(view: View) {
 }
 
 private suspend fun awaitStableDraw(view: View) {
-    repeat(2) {
+    repeat(THEME_REVEAL_STABLE_DRAW_PASSES) {
         awaitNextDraw(view)
     }
 }
@@ -549,40 +597,23 @@ fun NeriApp(
 
     LaunchedEffect(
         displayCoverUrl,
-        nowPlayingCoverBlurBackgroundEnabled,
-        nowPlayingCoverBlurAmount,
-        effectiveAdvancedBlurEnabled
+        showNowPlaying,
+        dynamicColorEnabled
     ) {
         if (displayCoverUrl.isNullOrBlank()) return@LaunchedEffect
 
-        coverArtImageLoader.enqueue(
-            ImageRequest.Builder(context)
-                .data(displayCoverUrl)
-                .allowHardware(false)
-                .build()
-        )
-        CoverArtColorCache.preload(context, displayCoverUrl)
-
-        if (!effectiveAdvancedBlurEnabled || !nowPlayingCoverBlurBackgroundEnabled) {
-            return@LaunchedEffect
+        if (showNowPlaying) {
+            coverArtImageLoader.enqueue(
+                ImageRequest.Builder(context)
+                    .data(displayCoverUrl)
+                    .allowHardware(false)
+                    .size(256)
+                    .build()
+            )
         }
-
-        val blurStrength = nowPlayingCoverBlurAmount.coerceIn(0f, 500f)
-        coverArtImageLoader.enqueue(
-            ImageRequest.Builder(context)
-                .data(displayCoverUrl)
-                .allowHardware(false)
-                .memoryCacheKey("nowplaying-blur:$displayCoverUrl:$blurStrength")
-                .diskCacheKey("nowplaying-blur:$displayCoverUrl:$blurStrength")
-                .transformations(
-                    if (blurStrength > 0f) {
-                        listOf(BlurTransformation(context, blurStrength))
-                    } else {
-                        emptyList()
-                    }
-                )
-                .build()
-        )
+        if (showNowPlaying || dynamicColorEnabled) {
+            CoverArtColorCache.preload(context, displayCoverUrl)
+        }
     }
 
     // 同步触感反馈设置
@@ -933,7 +964,7 @@ fun NeriApp(
                                                 hazeState,
                                                 HazeStyle(
                                                     tint = MaterialTheme.colorScheme.onSurface.copy(.0f),
-                                                    blurRadius = 30.dp,
+                                                    blurRadius = ROOT_HAZE_BLUR_RADIUS,
                                                     noiseFactor = HazeDefaults.noiseFactor
                                                 )
                                             )

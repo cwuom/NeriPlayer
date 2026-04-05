@@ -211,6 +211,16 @@ object LocalMediaSupport {
         val channelCount: Int?
     )
 
+    private data class ResolvedInspectableLocalMedia(
+        val queried: QueriedContentInfo,
+        val resolvedPath: String?,
+        val file: File?,
+        val playableUri: Uri,
+        val displayName: String,
+        val fallbackTitle: String,
+        val fileExtension: String?
+    )
+
     internal data class ContainerMetadata(
         val title: String? = null,
         val artist: String? = null,
@@ -278,6 +288,39 @@ object LocalMediaSupport {
         }
     }
 
+    internal data class QuickLocalMetadataSelection(
+        val title: String,
+        val artist: String,
+        val album: String,
+        val usesFallbackAlbum: Boolean,
+        val durationMs: Long
+    )
+
+    internal fun selectQuickLocalMetadata(
+        title: String,
+        queriedArtist: String?,
+        queriedAlbum: String?,
+        queriedDurationMs: Long?,
+        unknownArtistLabel: String,
+        defaultAlbumLabel: String
+    ): QuickLocalMetadataSelection {
+        val artist = queriedArtist
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: unknownArtistLabel
+        val album = queriedAlbum
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+        val resolvedAlbum = album ?: defaultAlbumLabel
+        return QuickLocalMetadataSelection(
+            title = title,
+            artist = artist,
+            album = resolvedAlbum,
+            usesFallbackAlbum = album == null,
+            durationMs = queriedDurationMs?.coerceAtLeast(0L) ?: 0L
+        )
+    }
+
     fun inspect(context: Context, song: SongItem): LocalMediaDetails? {
         val uri = song.localMediaUri()?.takeIf { it.isSupportedLocalMediaUri() } ?: return null
         return inspect(context, uri)
@@ -291,22 +334,38 @@ object LocalMediaSupport {
         return resolvedPath?.let(::File)?.takeIf(File::exists)
     }
 
-    fun inspect(context: Context, uri: Uri): LocalMediaDetails {
-        require(uri.isSupportedLocalMediaUri()) { "Unsupported local media uri: $uri" }
-        val queried = queryContentInfo(context, uri)
-        val resolvedPath = directFilePath(uri) ?: queried.filePath ?: resolvePathFromDescriptor(context, uri)
-        val file = resolvedPath?.let(::File)?.takeIf(File::exists)
-        val playableUri = file?.let(Uri::fromFile) ?: uri
-        val displayName = file?.name
-            ?: queried.displayName
-            ?: resolvedPath?.substringAfterLast(File.separatorChar)
-            ?: playableUri.lastPathSegment
-            ?: uri.toString()
-        val fallbackTitle = displayName.substringBeforeLast('.').ifBlank {
-            context.getString(R.string.local_files)
+    fun inspectQuick(
+        context: Context,
+        uri: Uri,
+        includeAudioTrackInfo: Boolean = false
+    ): LocalMediaDetails {
+        val resolved = resolveInspectableLocalMedia(
+            context = context,
+            uri = uri,
+            allowDescriptorFallback = false
+        )
+        val audioTrackTechInfo = if (includeAudioTrackInfo) {
+            inspectAudioTrackInfo(context, resolved.playableUri)
+        } else {
+            null
         }
-        val fileExtension = file?.extension?.takeIf { it.isNotBlank() }
-            ?: displayName.substringAfterLast('.', "").takeIf { it.isNotBlank() }
+        return buildQuickLocalMediaDetails(
+            context = context,
+            sourceUri = uri,
+            resolved = resolved,
+            audioTrackTechInfo = audioTrackTechInfo
+        )
+    }
+
+    fun inspect(context: Context, uri: Uri): LocalMediaDetails {
+        val resolved = resolveInspectableLocalMedia(context, uri)
+        val queried = resolved.queried
+        val resolvedPath = resolved.resolvedPath
+        val file = resolved.file
+        val playableUri = resolved.playableUri
+        val displayName = resolved.displayName
+        val fallbackTitle = resolved.fallbackTitle
+        val fileExtension = resolved.fileExtension
         val containerMetadata = file?.let(::parseContainerMetadata)
         val tagLibMetadata = inspectTagLibMetadata(
             context = context,
@@ -526,6 +585,92 @@ object LocalMediaSupport {
         } finally {
             runCatching { retriever.release() }
         }
+    }
+
+    private fun resolveInspectableLocalMedia(
+        context: Context,
+        uri: Uri,
+        allowDescriptorFallback: Boolean = true
+    ): ResolvedInspectableLocalMedia {
+        require(uri.isSupportedLocalMediaUri()) { "Unsupported local media uri: $uri" }
+        val queried = queryContentInfo(context, uri)
+        val resolvedPath = directFilePath(uri)
+            ?: queried.filePath
+            ?: if (allowDescriptorFallback) resolvePathFromDescriptor(context, uri) else null
+        val file = resolvedPath?.let(::File)?.takeIf(File::exists)
+        val playableUri = file?.let(Uri::fromFile) ?: uri
+        val displayName = file?.name
+            ?: queried.displayName
+            ?: resolvedPath?.substringAfterLast(File.separatorChar)
+            ?: playableUri.lastPathSegment
+            ?: uri.toString()
+        val fallbackTitle = displayName.substringBeforeLast('.').ifBlank {
+            context.getString(R.string.local_files)
+        }
+        val fileExtension = file?.extension?.takeIf { it.isNotBlank() }
+            ?: displayName.substringAfterLast('.', "").takeIf { it.isNotBlank() }
+        return ResolvedInspectableLocalMedia(
+            queried = queried,
+            resolvedPath = resolvedPath,
+            file = file,
+            playableUri = playableUri,
+            displayName = displayName,
+            fallbackTitle = fallbackTitle,
+            fileExtension = fileExtension
+        )
+    }
+
+    private fun buildQuickLocalMediaDetails(
+        context: Context,
+        sourceUri: Uri,
+        resolved: ResolvedInspectableLocalMedia,
+        audioTrackTechInfo: AudioTrackTechInfo?
+    ): LocalMediaDetails {
+        val selectedMetadata = selectQuickLocalMetadata(
+            title = pickReadableLocalTitle(
+                sourceUri = sourceUri,
+                fallbackTitle = resolved.fallbackTitle,
+                resolved.queried.title
+            ) ?: resolved.fallbackTitle,
+            queriedArtist = resolved.queried.artist,
+            queriedAlbum = resolved.queried.album,
+            queriedDurationMs = resolved.queried.durationMs,
+            unknownArtistLabel = context.getString(R.string.music_unknown_artist),
+            defaultAlbumLabel = context.getString(R.string.local_files)
+        )
+        return LocalMediaDetails(
+            sourceUri = sourceUri,
+            displayName = resolved.displayName,
+            title = selectedMetadata.title,
+            artist = selectedMetadata.artist,
+            album = selectedMetadata.album,
+            usesFallbackAlbum = selectedMetadata.usesFallbackAlbum,
+            albumArtist = null,
+            composer = null,
+            genre = null,
+            year = null,
+            trackNumber = null,
+            discNumber = null,
+            durationMs = selectedMetadata.durationMs,
+            fileExtension = resolved.fileExtension,
+            mimeType = resolved.queried.mimeType,
+            audioMimeType = audioTrackTechInfo?.audioMimeType,
+            bitrateKbps = audioTrackTechInfo?.bitrateKbps,
+            sampleRateHz = audioTrackTechInfo?.sampleRateHz,
+            channelCount = audioTrackTechInfo?.channelCount,
+            bitsPerSample = null,
+            sizeBytes = resolved.queried.sizeBytes ?: resolved.file?.length(),
+            lastModifiedMs = resolved.queried.lastModifiedMs ?: resolved.file?.lastModified(),
+            filePath = resolved.file?.absolutePath,
+            coverUri = null,
+            coverSource = null,
+            lyricContent = null,
+            lyricPath = null,
+            lyricSource = null,
+            originalTitle = selectedMetadata.title,
+            originalArtist = selectedMetadata.artist,
+            embeddedCover = false
+        )
     }
 
     fun toSongItem(details: LocalMediaDetails): SongItem {

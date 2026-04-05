@@ -107,4 +107,39 @@ class LocalMediaSupportTest {
 
         assertNull(fallbackUri)
     }
+
+    @Test
+    fun `selectQuickLocalMetadata falls back to defaults when query metadata is sparse`() {
+        val selection = LocalMediaSupport.selectQuickLocalMetadata(
+            title = "Track Name",
+            queriedArtist = "   ",
+            queriedAlbum = null,
+            queriedDurationMs = null,
+            unknownArtistLabel = "Unknown Artist",
+            defaultAlbumLabel = "Local Files"
+        )
+
+        assertEquals("Track Name", selection.title)
+        assertEquals("Unknown Artist", selection.artist)
+        assertEquals("Local Files", selection.album)
+        assertEquals(true, selection.usesFallbackAlbum)
+        assertEquals(0L, selection.durationMs)
+    }
+
+    @Test
+    fun `selectQuickLocalMetadata keeps explicit metadata and clamps negative duration`() {
+        val selection = LocalMediaSupport.selectQuickLocalMetadata(
+            title = "Track Name",
+            queriedArtist = "Artist",
+            queriedAlbum = "Album",
+            queriedDurationMs = -42L,
+            unknownArtistLabel = "Unknown Artist",
+            defaultAlbumLabel = "Local Files"
+        )
+
+        assertEquals("Artist", selection.artist)
+        assertEquals("Album", selection.album)
+        assertEquals(false, selection.usesFallbackAlbum)
+        assertEquals(0L, selection.durationMs)
+    }
 }

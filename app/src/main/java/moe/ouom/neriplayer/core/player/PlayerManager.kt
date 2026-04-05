@@ -114,6 +114,7 @@ import moe.ouom.neriplayer.core.player.source.toSongItem
 import moe.ouom.neriplayer.core.player.state.blockingIo
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.media.localMediaUri
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.model.sameIdentityAs
@@ -2566,24 +2567,17 @@ object PlayerManager {
     }
 
     private fun buildLocalPlaybackAudioInfo(song: SongItem): PlaybackAudioInfo? {
-        return runCatching {
-            LocalMediaSupport.inspect(application, song)
-        }.getOrNull()?.let { details ->
-            PlaybackAudioInfo(
-                source = PlaybackAudioSource.LOCAL,
-                codecLabel = deriveCodecLabel(details.audioMimeType ?: details.mimeType),
-                mimeType = details.audioMimeType ?: details.mimeType,
-                bitrateKbps = details.bitrateKbps,
-                sampleRateHz = details.sampleRateHz,
-                bitDepth = details.bitsPerSample,
-                channelCount = details.channelCount
-            )
-        }
+        val localUri = song.localMediaUri() ?: return null
+        return buildLocalPlaybackAudioInfo(localUri)
     }
 
     private fun buildLocalPlaybackAudioInfo(localUri: Uri): PlaybackAudioInfo? {
         return runCatching {
-            LocalMediaSupport.inspect(application, localUri)
+            LocalMediaSupport.inspectQuick(
+                context = application,
+                uri = localUri,
+                includeAudioTrackInfo = true
+            )
         }.getOrNull()?.let { details ->
             PlaybackAudioInfo(
                 source = PlaybackAudioSource.LOCAL,
@@ -3943,6 +3937,12 @@ object PlayerManager {
                 originalCoverUrl = originalCoverUrl
             )
 
+            updateSongInAllPlaces(originalSong, updatedSong)
+        }
+    }
+
+    fun hydrateSongMetadata(originalSong: SongItem, updatedSong: SongItem) {
+        ioScope.launch {
             updateSongInAllPlaces(originalSong, updatedSong)
         }
     }

@@ -114,6 +114,7 @@ import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.canUseDirectPlaybackServiceStart
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
+import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.settings.readThemePreferenceSnapshotSync
 import moe.ouom.neriplayer.data.sync.webdav.WebDavStorage
@@ -152,6 +153,7 @@ private data class PendingAudioServiceStart(
 class MainActivity : ComponentActivity() {
     private val settingsRepository by lazy { SettingsRepository(applicationContext) }
     private var externalAudioImportJob: Job? = null
+    private var externalAudioMetadataHydrationJob: Job? = null
     private var externalAudioRequestToken = 0L
     private var pendingExternalAudioServiceStart: PendingAudioServiceStart? = null
     private val pendingListenTogetherInvite = MutableStateFlow<ListenTogetherInvite?>(null)
@@ -710,6 +712,41 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun scheduleExternalAudioMetadataHydration(
+        requestToken: Long,
+        quickSong: moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+    ) {
+        externalAudioMetadataHydrationJob?.cancel()
+        externalAudioMetadataHydrationJob = lifecycleScope.launch {
+            delay(1200L)
+            if (requestToken != externalAudioRequestToken) {
+                return@launch
+            }
+            val detailedSong = withContext(Dispatchers.IO) {
+                runCatching {
+                    LocalMediaSupport.inspect(this@MainActivity, quickSong)
+                        ?.let(LocalMediaSupport::toSongItem)
+                }.getOrElse {
+                    NPLogger.w(
+                        "MainActivity",
+                        "External audio metadata hydration skipped: ${it.message}"
+                    )
+                    null
+                }
+            } ?: return@launch
+            if (requestToken != externalAudioRequestToken) {
+                return@launch
+            }
+            PlayerManager.hydrateSongMetadata(
+                originalSong = quickSong,
+                updatedSong = LocalAudioImportManager.mergeImportedSongMetadata(
+                    quickSong = quickSong,
+                    detailedSong = detailedSong
+                )
+            )
+        }
+    }
+
     private fun updateListenTogetherStatus(message: String?) {
         listenTogetherStatusMessage.value = message
     }
@@ -828,6 +865,7 @@ class MainActivity : ComponentActivity() {
         if (uriList.isEmpty()) return
 
         externalAudioImportJob?.cancel()
+        externalAudioMetadataHydrationJob?.cancel()
         val requestToken = ++externalAudioRequestToken
         pendingExternalAudioServiceStart = null
         setIntent(Intent(this, MainActivity::class.java))
@@ -841,6 +879,9 @@ class MainActivity : ComponentActivity() {
                 if (result.songs.isNotEmpty()) {
                     PlayerManager.initialize(application)
                     PlayerManager.playPlaylist(result.songs, startIndex = 0)
+                    result.songs.firstOrNull()?.let { firstSong ->
+                        scheduleExternalAudioMetadataHydration(requestToken, firstSong)
+                    }
                     NPLogger.d("MainActivity", "Starting audio service after external audio import")
                     val serviceStarted = AudioPlayerService.startSyncService(
                         this@MainActivity,
@@ -868,6 +909,7 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         clipboardInviteInspectJob?.cancel()
         externalAudioImportJob?.cancel()
+        externalAudioMetadataHydrationJob?.cancel()
         super.onDestroy()
         ExceptionHandler.cleanup()
     }

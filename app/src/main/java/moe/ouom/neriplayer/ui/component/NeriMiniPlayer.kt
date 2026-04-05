@@ -65,8 +65,8 @@ import coil.compose.AsyncImage
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeChild
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.util.fastScrollableImageRequest
 import moe.ouom.neriplayer.util.HapticIconButton
-import moe.ouom.neriplayer.util.offlineCachedImageRequest
 
 @Composable
 fun NeriMiniPlayer(
@@ -120,7 +120,7 @@ fun NeriMiniPlayer(
                 if (coverUrl != null) {
                     val context = LocalContext.current
                     AsyncImage(
-                        model = offlineCachedImageRequest(context, coverUrl),
+                        model = fastScrollableImageRequest(context, coverUrl, sizePx = 128),
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
