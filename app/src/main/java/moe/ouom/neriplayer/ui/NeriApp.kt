@@ -83,6 +83,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -350,6 +351,19 @@ private suspend fun awaitStableDraw(view: View) {
     }
 }
 
+private const val COVER_SEED_WARMUP_DELAY_MS = 180L
+
+internal fun resolveCoverSeedWarmupDelayMillis(
+    showNowPlaying: Boolean,
+    dynamicColorEnabled: Boolean,
+    hasCachedSample: Boolean
+): Long {
+    if (!dynamicColorEnabled || showNowPlaying || hasCachedSample) {
+        return 0L
+    }
+    return COVER_SEED_WARMUP_DELAY_MS
+}
+
 /**
  * 根据封面提取播放界面强调色
  */
@@ -562,7 +576,10 @@ fun NeriApp(
                     return@collect
                 }
                 lastRecordedSongKey = songKey
-                AppContainer.playHistoryRepo.record(song)
+                // 最近播放记录会触发本地文件和同步配置读写，避免阻塞首帧动画
+                withContext(Dispatchers.IO) {
+                    AppContainer.playHistoryRepo.record(song)
+                }
             }
     }
 
@@ -586,21 +603,13 @@ fun NeriApp(
         }
     }
 
-    LaunchedEffect(displayCoverUrl, coverArtRefreshToken) {
-        if (displayCoverUrl.isNullOrBlank()) {
+    LaunchedEffect(displayCoverUrl, coverArtRefreshToken, showNowPlaying, dynamicColorEnabled) {
+        if (displayCoverUrl.isNullOrBlank() || !dynamicColorEnabled) {
             coverSeedHex = null
             return@LaunchedEffect
         }
-        coverSeedHex = CoverArtColorCache.peek(displayCoverUrl)?.seedHex
-        coverSeedHex = CoverArtColorCache.getOrLoad(context, displayCoverUrl)?.seedHex ?: coverSeedHex
-    }
-
-    LaunchedEffect(
-        displayCoverUrl,
-        showNowPlaying,
-        dynamicColorEnabled
-    ) {
-        if (displayCoverUrl.isNullOrBlank()) return@LaunchedEffect
+        val cachedSample = CoverArtColorCache.peek(displayCoverUrl)
+        coverSeedHex = cachedSample?.seedHex
 
         if (showNowPlaying) {
             coverArtImageLoader.enqueue(
@@ -611,9 +620,17 @@ fun NeriApp(
                     .build()
             )
         }
-        if (showNowPlaying || dynamicColorEnabled) {
-            CoverArtColorCache.preload(context, displayCoverUrl)
+
+        val warmupDelayMillis = resolveCoverSeedWarmupDelayMillis(
+            showNowPlaying = showNowPlaying,
+            dynamicColorEnabled = dynamicColorEnabled,
+            hasCachedSample = cachedSample != null
+        )
+        if (warmupDelayMillis > 0L) {
+            kotlinx.coroutines.delay(warmupDelayMillis)
         }
+
+        coverSeedHex = CoverArtColorCache.preload(context, displayCoverUrl)?.seedHex ?: coverSeedHex
     }
 
     // 同步触感反馈设置
@@ -622,7 +639,6 @@ fun NeriApp(
     }
 
     val defaultDensity = LocalDensity.current
-    var miniPlayerHeightPx by remember { mutableIntStateOf(0) }
     var bottomBarHeightPx by remember { mutableIntStateOf(0) }
 
     val finalDensity = remember(defaultDensity, uiDensityScale) {
@@ -735,31 +751,45 @@ fun NeriApp(
         clearThemeRevealState()
     }
 
+    fun scheduleAudioServiceStart(
+        source: String,
+        forceForeground: Boolean = false
+    ) {
+        scope.launch {
+            // 让 currentSong/mini player 先过一帧，避免和服务启动抢主线程
+            withFrameNanos { }
+            NPLogger.d("NERI-App", "Starting audio service: source=$source")
+            AudioPlayerService.startSyncService(
+                context,
+                source,
+                forceForeground = forceForeground
+            )
+        }
+    }
+
     fun playSongsAndOpenNowPlaying(songs: List<SongItem>, index: Int) {
         showNowPlaying = true
         // 播放队列可能包含歌词等大字段，避免通过 Binder 传整份歌单导致崩溃
         PlayerManager.playPlaylist(songs, index)
-        NPLogger.d("NERI-App", "Starting audio service after playSongsAndOpenNowPlaying")
-        AudioPlayerService.startSyncService(
-            context,
-            "play_songs_and_open_now_playing",
+        scheduleAudioServiceStart(
+            source = "play_songs_and_open_now_playing",
             forceForeground = true
         )
     }
 
-    fun ensureAudioServiceStarted() {
+    fun ensureAudioServiceStarted(source: String = "ensure_audio_service_started") {
         NPLogger.d(
             "NERI-App",
             "ensureAudioServiceStarted hasItems=${PlayerManager.hasItems()} transportActive=${PlayerManager.isTransportActive()} isPlaying=${PlayerManager.isPlayingFlow.value}"
         )
-        AudioPlayerService.startSyncService(context, "ensure_audio_service_started")
+        scheduleAudioServiceStart(source = source)
     }
 
     fun playBiliAudioAndOpenNowPlaying(videos: List<BiliVideoItem>, index: Int) {
         showNowPlaying = true
         NPLogger.d("NERI-App", "Playing audio from Bili video: ${videos[index].title}")
         PlayerManager.playBiliVideoAsAudio(videos, index)
-        ensureAudioServiceStarted()
+        ensureAudioServiceStarted(source = "play_bili_audio_and_open_now_playing")
     }
 
     fun playBiliPartsAndOpenNowPlaying(
@@ -770,7 +800,7 @@ fun NeriApp(
         showNowPlaying = true
         NPLogger.d("NERI-App", "Playing parts from Bili video: ${videoInfo.title}")
         PlayerManager.playBiliVideoParts(videoInfo, index, coverUrl)
-        ensureAudioServiceStarted()
+        ensureAudioServiceStarted(source = "play_bili_parts_and_open_now_playing")
     }
 
     CompositionLocalProvider(LocalDensity provides finalDensity) {
@@ -857,22 +887,11 @@ fun NeriApp(
                 val currentSong by PlayerManager.currentSongFlow.collectAsState()
                 val isMiniPlayerVisible = currentSong != null && !showNowPlaying
                 val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
-                val measuredMiniPlayerHeightDp = if (miniPlayerHeightPx > 0) {
-                    with(finalDensity) { miniPlayerHeightPx.toDp() }
-                } else {
+                val reservedMiniPlayerHeightDp = if (currentSong == null) {
                     0.dp
-                }
-                val reservedMiniPlayerHeightDp = when {
-                    currentSong == null -> 0.dp
-                    measuredMiniPlayerHeightDp > 0.dp -> measuredMiniPlayerHeightDp
-                    else -> 56.dp
-                }
-                val visibleMiniPlayerHeightDp = if (isMiniPlayerVisible) {
-                    measuredMiniPlayerHeightDp
                 } else {
-                    0.dp
+                    moe.ouom.neriplayer.ui.component.NeriMiniPlayerDefaults.Height
                 }
-                isMiniPlayerVisible && visibleMiniPlayerHeightDp > 0.dp
 
                 LaunchedEffect(currentRoute, showHomeTab, effectiveStartDestination) {
                     if (!showHomeTab && currentRoute == Destinations.Home.route) {
@@ -1593,19 +1612,13 @@ fun NeriApp(
                                 visible = currentSong != null && !showNowPlaying,
                                 modifier = Modifier.align(Alignment.BottomStart),
                                 enter = slideInVertically(
-                                    animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
-                                    initialOffsetY = { it }
-                                ) + fadeIn(animationSpec = tween(durationMillis = 200)) + scaleIn(
-                                    animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
-                                    initialScale = 0.8f
-                                ),
+                                    animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+                                    initialOffsetY = { it / 2 }
+                                ) + fadeIn(animationSpec = tween(durationMillis = 180)),
                                 exit = slideOutVertically(
-                                    animationSpec = tween(durationMillis = 250, easing = FastOutSlowInEasing),
-                                    targetOffsetY = { it }
-                                ) + fadeOut(animationSpec = tween(durationMillis = 150)) + scaleOut(
-                                    animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
-                                    targetScale = 0.8f
-                                )
+                                    animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+                                    targetOffsetY = { it / 2 }
+                                ) + fadeOut(animationSpec = tween(durationMillis = 120))
                             ) {
                                 NeriMiniPlayer(
                                     title = currentSong?.displayName()
@@ -1616,11 +1629,6 @@ fun NeriApp(
                                     modifier = Modifier,
                                     onPlayPause = { PlayerManager.togglePlayPause() },
                                     onExpand = { showNowPlaying = true },
-                                    onHeightChanged = { heightInPixels ->
-                                        if (heightInPixels > 0) {
-                                            miniPlayerHeightPx = heightInPixels
-                                        }
-                                    },
                                     hazeState = hazeState,
                                     enableHaze = effectiveAdvancedBlurEnabled
                                 )

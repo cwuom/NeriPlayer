@@ -882,6 +882,11 @@ class MainActivity : ComponentActivity() {
                     result.songs.firstOrNull()?.let { firstSong ->
                         scheduleExternalAudioMetadataHydration(requestToken, firstSong)
                     }
+                    // 让播放状态和 mini player 先稳定一帧，再拉起前台服务
+                    delay(16L)
+                    if (requestToken != externalAudioRequestToken) {
+                        return@launch
+                    }
                     NPLogger.d("MainActivity", "Starting audio service after external audio import")
                     val serviceStarted = AudioPlayerService.startSyncService(
                         this@MainActivity,

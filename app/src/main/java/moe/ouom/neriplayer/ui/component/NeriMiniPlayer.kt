@@ -38,6 +38,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -56,7 +57,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -68,6 +68,10 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.util.fastScrollableImageRequest
 import moe.ouom.neriplayer.util.HapticIconButton
 
+object NeriMiniPlayerDefaults {
+    val Height = 56.dp
+}
+
 @Composable
 fun NeriMiniPlayer(
     title: String,
@@ -77,7 +81,6 @@ fun NeriMiniPlayer(
     modifier: Modifier = Modifier,
     onPlayPause: () -> Unit,
     onExpand: () -> Unit,
-    onHeightChanged: (height: Int) -> Unit,
     hazeState: HazeState,
     enableHaze: Boolean = true
 ) {
@@ -93,12 +96,10 @@ fun NeriMiniPlayer(
         ),
         shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
         modifier = modifier
+            .height(NeriMiniPlayerDefaults.Height)
             .padding(start = 16.dp, end = 8.dp)
             .clip(shape)
             .clickable { onExpand() }
-            .onSizeChanged { size ->
-                onHeightChanged(size.height)
-            }
             .then(
                 if (supportsBlur && enableHaze) Modifier.hazeChild(state = hazeState, shape = shape)
                 else Modifier
@@ -120,7 +121,12 @@ fun NeriMiniPlayer(
                 if (coverUrl != null) {
                     val context = LocalContext.current
                     AsyncImage(
-                        model = fastScrollableImageRequest(context, coverUrl, sizePx = 128),
+                        model = fastScrollableImageRequest(
+                            context = context,
+                            data = coverUrl,
+                            sizePx = 128,
+                            crossfade = false
+                        ),
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier

@@ -33,6 +33,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
@@ -42,7 +44,6 @@ import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import java.io.File
-import java.util.concurrent.atomic.AtomicBoolean
 
 data class PlayedEntry(
     val id: Long,
@@ -76,7 +77,7 @@ class PlayHistoryRepository private constructor(private val app: Context) {
     val historyFlow: StateFlow<List<PlayedEntry>> = _history
     private val storage by lazy { SecureTokenStorage(app) }
     private var lastBatchSyncTime = 0L
-    private val writing = AtomicBoolean(false)
+    private val historyMutex = Mutex()
 
     private fun loadFromDisk(): List<PlayedEntry> {
         return try {
@@ -92,11 +93,11 @@ class PlayHistoryRepository private constructor(private val app: Context) {
         }
     }
 
-    private fun persistAsync(list: List<PlayedEntry>) {
-        scope.launch {
-            runCatching {
-                file.writeText(gson.toJson(list))
-            }
+    private fun persistToDisk(list: List<PlayedEntry>) {
+        runCatching {
+            file.writeText(gson.toJson(list))
+        }.onFailure { error ->
+            NPLogger.e("PlayHistoryRepo", "Failed to persist play history", error)
         }
     }
 
@@ -132,104 +133,96 @@ class PlayHistoryRepository private constructor(private val app: Context) {
     }
 
     fun record(song: SongItem, now: Long = System.currentTimeMillis()) {
-        NPLogger.d("PlayHistoryRepo", "record() called: songId=${song.id}, name=${song.name}, writing=${writing.get()}")
-        if (writing.get()) {
-            NPLogger.w("PlayHistoryRepo", "record() blocked by writing lock, skipping")
-            return
-        }
+        scope.launch {
+            historyMutex.withLock {
+                NPLogger.d("PlayHistoryRepo", "record() called: songId=${song.id}, name=${song.name}")
+                val current = _history.value
+                NPLogger.d("PlayHistoryRepo", "Current history size: ${current.size}")
 
-        writing.set(true)
-        try {
-            val current = _history.value
-            NPLogger.d("PlayHistoryRepo", "Current history size: ${current.size}")
+                val songIdentityKey = song.identityKey()
+                val existingIndex = current.indexOfFirst { it.identityKey() == songIdentityKey }
+                val latestEntry = if (existingIndex >= 0) {
+                    NPLogger.d("PlayHistoryRepo", "Updating existing entry at index $existingIndex")
+                    current[existingIndex].mergeSongMetadata(song, playedAt = now)
+                } else {
+                    NPLogger.d("PlayHistoryRepo", "Creating new entry")
+                    song.toPlayedEntry(now)
+                }
 
-            val songIdentityKey = song.identityKey()
-            val existingIndex = current.indexOfFirst { it.identityKey() == songIdentityKey }
-            val latestEntry = if (existingIndex >= 0) {
-                NPLogger.d("PlayHistoryRepo", "Updating existing entry at index $existingIndex")
-                current[existingIndex].mergeSongMetadata(song, playedAt = now)
-            } else {
-                NPLogger.d("PlayHistoryRepo", "Creating new entry")
-                song.toPlayedEntry(now)
-            }
-
-            val updated = buildList {
-                add(latestEntry)
-                current.forEachIndexed { index, entry ->
-                    if (index != existingIndex) {
-                        add(entry)
+                val updated = buildList {
+                    add(latestEntry)
+                    current.forEachIndexed { index, entry ->
+                        if (index != existingIndex) {
+                            add(entry)
+                        }
                     }
                 }
-            }
-                .sortedByDescending { it.playedAt }
-                .distinctBy { it.identityKey() }
-                .take(1000)
+                    .sortedByDescending { it.playedAt }
+                    .distinctBy { it.identityKey() }
+                    .take(1000)
 
-            NPLogger.d("PlayHistoryRepo", "Updated history size: ${updated.size}, latest: ${updated.firstOrNull()?.name}")
-            _history.value = updated
-            persistAsync(updated)
+                NPLogger.d("PlayHistoryRepo", "Updated history size: ${updated.size}, latest: ${updated.firstOrNull()?.name}")
+                _history.value = updated
+                persistToDisk(updated)
 
-            if (!LocalSongSupport.isLocalSong(song.album, song.mediaUri, song.albumId, app)) {
-                storage.removeRecentPlayDeletion(song.identityKey())
+                if (!LocalSongSupport.isLocalSong(song.album, song.mediaUri, song.albumId, app)) {
+                    storage.removeRecentPlayDeletion(song.identityKey())
+                }
+                triggerSyncIfNeeded()
             }
-            triggerSyncIfNeeded()
-        } finally {
-            writing.set(false)
         }
     }
 
     fun updateSongMetadata(originalSong: SongItem, updatedSong: SongItem) {
-        NPLogger.d(
-            "PlayHistoryRepo",
-            "updateSongMetadata() called: songId=${originalSong.id}, writing=${writing.get()}"
-        )
-        if (writing.get()) {
-            NPLogger.w("PlayHistoryRepo", "updateSongMetadata() blocked by writing lock, skipping")
-            return
-        }
+        scope.launch {
+            historyMutex.withLock {
+                NPLogger.d(
+                    "PlayHistoryRepo",
+                    "updateSongMetadata() called: songId=${originalSong.id}"
+                )
+                val current = _history.value
+                val existingIndex = current.indexOfFirst { it.identityKey() == originalSong.identityKey() }
+                if (existingIndex == -1) {
+                    return@withLock
+                }
 
-        writing.set(true)
-        try {
-            val current = _history.value
-            val existingIndex = current.indexOfFirst { it.identityKey() == originalSong.identityKey() }
-            if (existingIndex == -1) {
-                return
+                val updatedEntry = current[existingIndex].mergeSongMetadata(updatedSong)
+                val updated = current.toMutableList().apply {
+                    this[existingIndex] = updatedEntry
+                }
+                    .sortedByDescending { it.playedAt }
+                    .distinctBy { it.identityKey() }
+                    .take(1000)
+
+                _history.value = updated
+                persistToDisk(updated)
+                triggerSyncIfNeeded()
             }
-
-            val updatedEntry = current[existingIndex].mergeSongMetadata(updatedSong)
-            val updated = current.toMutableList().apply {
-                this[existingIndex] = updatedEntry
-            }
-                .sortedByDescending { it.playedAt }
-                .distinctBy { it.identityKey() }
-                .take(1000)
-
-            _history.value = updated
-            persistAsync(updated)
-            triggerSyncIfNeeded()
-        } finally {
-            writing.set(false)
         }
     }
 
     fun clear() {
-        val current = _history.value
-        if (current.isEmpty()) {
-            return
-        }
+        scope.launch {
+            historyMutex.withLock {
+                val current = _history.value
+                if (current.isEmpty()) {
+                    return@withLock
+                }
 
-        val deletedAt = System.currentTimeMillis()
-        val deviceId = storage.getOrCreateDeviceId()
-        val deletions = current
-            .filterNot { LocalSongSupport.isLocalSong(it.album, it.mediaUri, it.albumId, app) }
-            .map { it.toRecentPlayDeletion(deletedAt, deviceId) }
-        if (deletions.isNotEmpty()) {
-            storage.addRecentPlayDeletions(deletions)
-        }
+                val deletedAt = System.currentTimeMillis()
+                val deviceId = storage.getOrCreateDeviceId()
+                val deletions = current
+                    .filterNot { LocalSongSupport.isLocalSong(it.album, it.mediaUri, it.albumId, app) }
+                    .map { it.toRecentPlayDeletion(deletedAt, deviceId) }
+                if (deletions.isNotEmpty()) {
+                    storage.addRecentPlayDeletions(deletions)
+                }
 
-        _history.value = emptyList()
-        persistAsync(emptyList())
-        triggerSyncIfNeeded()
+                _history.value = emptyList()
+                persistToDisk(emptyList())
+                triggerSyncIfNeeded()
+            }
+        }
     }
 
     fun removeSongs(songs: List<SongItem>) {
@@ -237,46 +230,44 @@ class PlayHistoryRepository private constructor(private val app: Context) {
             return
         }
 
-        val current = _history.value
-        val removalKeys = songs.map { it.identityKey() }.toSet()
-        val removedEntries = current.filter { it.identityKey() in removalKeys }
-        if (removedEntries.isEmpty()) {
-            return
-        }
+        scope.launch {
+            historyMutex.withLock {
+                val current = _history.value
+                val removalKeys = songs.map { it.identityKey() }.toSet()
+                val removedEntries = current.filter { it.identityKey() in removalKeys }
+                if (removedEntries.isEmpty()) {
+                    return@withLock
+                }
 
-        val deletedAt = System.currentTimeMillis()
-        val deviceId = storage.getOrCreateDeviceId()
-        val deletions = removedEntries
-            .filterNot { LocalSongSupport.isLocalSong(it.album, it.mediaUri, it.albumId, app) }
-            .map { it.toRecentPlayDeletion(deletedAt, deviceId) }
-        if (deletions.isNotEmpty()) {
-            storage.addRecentPlayDeletions(deletions)
-        }
+                val deletedAt = System.currentTimeMillis()
+                val deviceId = storage.getOrCreateDeviceId()
+                val deletions = removedEntries
+                    .filterNot { LocalSongSupport.isLocalSong(it.album, it.mediaUri, it.albumId, app) }
+                    .map { it.toRecentPlayDeletion(deletedAt, deviceId) }
+                if (deletions.isNotEmpty()) {
+                    storage.addRecentPlayDeletions(deletions)
+                }
 
-        val updated = current.filterNot { it.identityKey() in removalKeys }
-        _history.value = updated
-        persistAsync(updated)
-        triggerSyncIfNeeded()
+                val updated = current.filterNot { it.identityKey() in removalKeys }
+                _history.value = updated
+                persistToDisk(updated)
+                triggerSyncIfNeeded()
+            }
+        }
     }
 
     fun updateHistory(entries: List<PlayedEntry>) {
-        NPLogger.d("PlayHistoryRepo", "updateHistory() called: entries=${entries.size}, writing=${writing.get()}")
-        if (writing.get()) {
-            NPLogger.w("PlayHistoryRepo", "updateHistory() blocked by writing lock, skipping")
-            return
-        }
-
-        writing.set(true)
-        try {
-            val clipped = entries
-                .sortedByDescending { it.playedAt }
-                .distinctBy { it.identityKey() }
-                .take(1000)
-            NPLogger.d("PlayHistoryRepo", "updateHistory() setting history to ${clipped.size} entries, latest: ${clipped.firstOrNull()?.name}")
-            _history.value = clipped
-            persistAsync(clipped)
-        } finally {
-            writing.set(false)
+        scope.launch {
+            historyMutex.withLock {
+                NPLogger.d("PlayHistoryRepo", "updateHistory() called: entries=${entries.size}")
+                val clipped = entries
+                    .sortedByDescending { it.playedAt }
+                    .distinctBy { it.identityKey() }
+                    .take(1000)
+                NPLogger.d("PlayHistoryRepo", "updateHistory() setting history to ${clipped.size} entries, latest: ${clipped.firstOrNull()?.name}")
+                _history.value = clipped
+                persistToDisk(clipped)
+            }
         }
     }
 

@@ -166,6 +166,15 @@ internal data class PlaybackStartPlan(
     val initialVolume: Float
 )
 
+internal data class YouTubeWarmupTargets(
+    val currentVideoId: String?,
+    val nextVideoId: String?,
+    val preferredQuality: String
+) {
+    val hasWork: Boolean
+        get() = currentVideoId != null || nextVideoId != null
+}
+
 internal const val RESTORED_PLAYBACK_PROTECTION_FADE_DURATION_MS = 1000L
 private const val PLAYBACK_PROGRESS_UPDATE_INTERVAL_MS = 80L
 
@@ -249,6 +258,22 @@ internal fun shouldBootstrapPlaybackServiceOnAppLaunch(
         playWhenReady ||
         isPlaying ||
         playerPlaybackState == Player.STATE_BUFFERING
+}
+
+internal fun resolveYouTubeWarmupTargets(
+    playlist: List<SongItem>,
+    currentSongIndex: Int,
+    preferredQuality: String
+): YouTubeWarmupTargets {
+    val currentVideoId = playlist.getOrNull(currentSongIndex)
+        ?.let { extractYouTubeMusicVideoId(it.mediaUri) }
+    val nextVideoId = playlist.getOrNull(currentSongIndex + 1)
+        ?.let { extractYouTubeMusicVideoId(it.mediaUri) }
+    return YouTubeWarmupTargets(
+        currentVideoId = currentVideoId,
+        nextVideoId = nextVideoId,
+        preferredQuality = preferredQuality
+    )
 }
 
 internal fun resolvePlaybackSoundConfigForEngine(
@@ -1934,7 +1959,6 @@ object PlayerManager {
             shuffleBag.clear()
         }
 
-        maybeWarmCurrentAndUpcomingYouTubeMusic(currentIndex)
         playAtIndex(currentIndex, commandSource = commandSource)
         emitPlaybackCommand(
             type = "PLAY_PLAYLIST",
@@ -2083,7 +2107,6 @@ object PlayerManager {
                         startPlayerPlaybackWithFade(startPlan)
                     }
                     maybeAutoMatchBiliMetadata(song, requestToken)
-                    maybeWarmCurrentAndUpcomingYouTubeMusic(index)
                 }
                 SongUrlResult.WaitingForAuthoritativeStream -> {
                     NPLogger.d(
@@ -2138,49 +2161,56 @@ object PlayerManager {
     }
 
     private fun maybeWarmCurrentAndUpcomingYouTubeMusic(currentSongIndex: Int) {
-        val currentVideoId = currentPlaylist.getOrNull(currentSongIndex)
-            ?.let { extractYouTubeMusicVideoId(it.mediaUri) }
-        val nextVideoId = currentPlaylist.getOrNull(currentSongIndex + 1)
-            ?.let { extractYouTubeMusicVideoId(it.mediaUri) }
-        if (currentVideoId == null && nextVideoId == null) {
+        val targets = resolveYouTubeWarmupTargets(
+            playlist = currentPlaylist,
+            currentSongIndex = currentSongIndex,
+            preferredQuality = youtubePreferredQuality
+        )
+        if (!targets.hasWork) {
             return
         }
-        runCatching {
-            youtubeMusicPlaybackRepository.warmBootstrapAsync()
-        }.onFailure { error ->
-            NPLogger.w(
-                "NERI-PlayerManager",
-                "Warm YouTube Music bootstrap failed: ${error.message}"
-            )
-        }
-        currentVideoId?.let { videoId ->
+
+        // 预热会同步触达鉴权和缓存状态，放到后台避免和切歌首帧抢主线程。
+        ioScope.launch {
             runCatching {
-                youtubeMusicPlaybackRepository.kickoffPlayableAudioPrefetch(
-                    videoId = videoId,
-                    preferredQualityOverride = youtubePreferredQuality,
-                    requireDirect = true,
-                    preferM4a = true
-                )
+                youtubeMusicPlaybackRepository.warmBootstrapAsync()
             }.onFailure { error ->
                 NPLogger.w(
                     "NERI-PlayerManager",
-                    "Warm current YouTube Music stream failed for $videoId: ${error.message}"
+                    "Warm YouTube Music bootstrap failed: ${error.message}"
                 )
             }
-        }
-        nextVideoId?.let { videoId ->
-            runCatching {
-                youtubeMusicPlaybackRepository.kickoffPlayableAudioPrefetch(
-                    videoId = videoId,
-                    preferredQualityOverride = youtubePreferredQuality,
-                    requireDirect = true,
-                    preferM4a = true
-                )
-            }.onFailure { error ->
-                NPLogger.w(
-                    "NERI-PlayerManager",
-                    "Prefetch next YouTube Music stream failed for $videoId: ${error.message}"
-                )
+
+            targets.currentVideoId?.let { videoId ->
+                runCatching {
+                    youtubeMusicPlaybackRepository.kickoffPlayableAudioPrefetch(
+                        videoId = videoId,
+                        preferredQualityOverride = targets.preferredQuality,
+                        requireDirect = true,
+                        preferM4a = true
+                    )
+                }.onFailure { error ->
+                    NPLogger.w(
+                        "NERI-PlayerManager",
+                        "Warm current YouTube Music stream failed for $videoId: ${error.message}"
+                    )
+                }
+            }
+
+            targets.nextVideoId?.let { videoId ->
+                runCatching {
+                    youtubeMusicPlaybackRepository.kickoffPlayableAudioPrefetch(
+                        videoId = videoId,
+                        preferredQualityOverride = targets.preferredQuality,
+                        requireDirect = true,
+                        preferM4a = true
+                    )
+                }.onFailure { error ->
+                    NPLogger.w(
+                        "NERI-PlayerManager",
+                        "Prefetch next YouTube Music stream failed for $videoId: ${error.message}"
+                    )
+                }
             }
         }
     }

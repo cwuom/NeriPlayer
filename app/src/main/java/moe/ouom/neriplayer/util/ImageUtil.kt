@@ -43,13 +43,14 @@ fun offlineCachedImageRequest(context: Context, data: Any?): ImageRequest {
 fun fastScrollableImageRequest(
     context: Context,
     data: Any?,
-    sizePx: Int = 512
+    sizePx: Int = 512,
+    crossfade: Boolean = true
 ): ImageRequest {
     return ImageRequest.Builder(context)
         .data(data)
         .size(sizePx)
         .precision(Precision.INEXACT)
-        .crossfade(true)
+        .crossfade(crossfade)
         .diskCachePolicy(CachePolicy.ENABLED)
         .memoryCachePolicy(CachePolicy.ENABLED)
         .networkCachePolicy(CachePolicy.ENABLED)
