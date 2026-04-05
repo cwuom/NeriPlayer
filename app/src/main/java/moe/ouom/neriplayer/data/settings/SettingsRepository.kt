@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.normalizeDownloadFileNameTemplate
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_PITCH
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB
@@ -444,14 +445,15 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setDownloadDirectoryUri(uri: String?) {
+        val normalizedUri = ManagedDownloadStorage.canonicalizeDirectoryUri(uri)
         context.dataStore.edit {
-            if (uri == null) {
+            if (normalizedUri == null) {
                 it.remove(SettingsKeys.DOWNLOAD_DIRECTORY_URI)
             } else {
-                it[SettingsKeys.DOWNLOAD_DIRECTORY_URI] = uri
+                it[SettingsKeys.DOWNLOAD_DIRECTORY_URI] = normalizedUri
             }
         }
-        updateBootstrapSettingsSnapshot(context) { it.copy(downloadDirectoryUri = uri) }
+        updateBootstrapSettingsSnapshot(context) { it.copy(downloadDirectoryUri = normalizedUri) }
     }
 
     suspend fun setBackgroundImageBlur(blur: Float) {
@@ -469,12 +471,13 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setDownloadDirectory(uri: String?, label: String?) {
+        val normalizedUri = ManagedDownloadStorage.canonicalizeDirectoryUri(uri)
         context.dataStore.edit {
-            if (uri.isNullOrBlank()) {
+            if (normalizedUri.isNullOrBlank()) {
                 it.remove(SettingsKeys.DOWNLOAD_DIRECTORY_URI)
                 it.remove(SettingsKeys.DOWNLOAD_DIRECTORY_LABEL)
             } else {
-                it[SettingsKeys.DOWNLOAD_DIRECTORY_URI] = uri
+                it[SettingsKeys.DOWNLOAD_DIRECTORY_URI] = normalizedUri
                 if (label.isNullOrBlank()) {
                     it.remove(SettingsKeys.DOWNLOAD_DIRECTORY_LABEL)
                 } else {
@@ -484,7 +487,7 @@ class SettingsRepository(private val context: Context) {
         }
         updateBootstrapSettingsSnapshot(context) {
             it.copy(
-                downloadDirectoryUri = uri,
+                downloadDirectoryUri = normalizedUri,
                 downloadDirectoryLabel = label
             )
         }

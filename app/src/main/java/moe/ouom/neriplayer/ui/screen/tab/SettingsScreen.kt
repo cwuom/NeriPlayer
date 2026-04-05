@@ -165,7 +165,8 @@ private data class PendingDownloadDirectoryChange(
     val releaseTargetPermissionOnCancel: Boolean
 ) {
     val shouldReleasePreviousPermission: Boolean
-        get() = !previousUri.isNullOrBlank() && previousUri != targetUri
+        get() = !previousUri.isNullOrBlank() &&
+            !ManagedDownloadStorage.areEquivalentDirectoryUris(previousUri, targetUri)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -473,6 +474,26 @@ fun SettingsScreen(
                 context.getString(R.string.settings_download_directory_reset_done)
             } else {
                 context.getString(R.string.settings_download_directory_selected)
+            }
+            return
+        }
+
+        if (ManagedDownloadStorage.areEquivalentDirectoryUris(previousUri, targetUri)) {
+            runCatching {
+                applyDownloadDirectoryChange(
+                    targetUri = targetUri,
+                    targetSummary = targetSummary,
+                    previousUri = previousUri,
+                    shouldReleasePreviousPermission = false
+                )
+            }.onFailure {
+                if (releaseTargetPermissionOnCancel) {
+                    ManagedDownloadStorage.releasePersistedDirectoryPermission(context, targetUri)
+                }
+                inlineMsg = context.getString(
+                    R.string.settings_download_directory_pick_failed,
+                    it.message ?: ""
+                )
             }
             return
         }

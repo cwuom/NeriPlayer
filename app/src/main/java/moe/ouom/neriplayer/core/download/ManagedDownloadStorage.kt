@@ -17,6 +17,8 @@ import org.json.JSONObject
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
 
 internal object ManagedDownloadStorage {
     private const val TAG = "ManagedDownloadStorage"
@@ -140,6 +142,32 @@ internal object ManagedDownloadStorage {
         downloadFileNameTemplate = normalizeDownloadFileNameTemplate(template)
     }
 
+    internal fun directoryIdentity(uriString: String?): String? {
+        val normalized = normalizeConfiguredDirectoryUri(uriString) ?: return null
+        extractDirectoryDocumentId(normalized, "/tree/")
+            ?.let { documentId ->
+                return "tree:${extractDirectoryAuthority(normalized)}:$documentId"
+            }
+        extractDirectoryDocumentId(normalized, "/document/")
+            ?.let { documentId ->
+                return "document:${extractDirectoryAuthority(normalized)}:$documentId"
+            }
+        return normalized
+    }
+
+    internal fun areEquivalentDirectoryUris(first: String?, second: String?): Boolean {
+        val firstIdentity = directoryIdentity(first)
+        val secondIdentity = directoryIdentity(second)
+        return when {
+            firstIdentity == null && secondIdentity == null -> true
+            else -> firstIdentity != null && firstIdentity == secondIdentity
+        }
+    }
+
+    internal fun canonicalizeDirectoryUri(uriString: String?): String? {
+        return normalizeConfiguredDirectoryUri(uriString)
+    }
+
     fun describeConfiguredDirectory(context: Context, uriString: String? = customDirectoryUri): String {
         val resolvedUri = uriString?.takeIf { it.isNotBlank() }
         if (resolvedUri.isNullOrBlank()) {
@@ -164,7 +192,7 @@ internal object ManagedDownloadStorage {
         fromDirectoryUri: String?,
         toDirectoryUri: String?
     ): MigrationResult = withContext(Dispatchers.IO) {
-        if (normalizeDirectoryUri(fromDirectoryUri) == normalizeDirectoryUri(toDirectoryUri)) {
+        if (areEquivalentDirectoryUris(fromDirectoryUri, toDirectoryUri)) {
             return@withContext MigrationResult(movedFiles = 0, skippedFiles = 0)
         }
 
@@ -777,9 +805,9 @@ internal object ManagedDownloadStorage {
     }
 
     private fun buildSnapshotCacheKey(context: Context): String {
-        val configuredUri = normalizeDirectoryUri(customDirectoryUri)
-        return if (configuredUri != null) {
-            "tree:$configuredUri"
+        val configuredIdentity = directoryIdentity(customDirectoryUri)
+        return if (configuredIdentity != null) {
+            "tree:$configuredIdentity"
         } else {
             "file:${createDefaultRoot(context).dir.absolutePath}"
         }
@@ -960,11 +988,57 @@ internal object ManagedDownloadStorage {
     }
 
     private fun normalizeDirectoryUri(uriString: String?): String? {
-        return uriString?.takeIf { it.isNotBlank() }
+        return uriString?.trim()?.takeIf(String::isNotBlank)
+    }
+
+    private fun normalizeConfiguredDirectoryUri(uriString: String?): String? {
+        val normalized = normalizeDirectoryUri(uriString)
+            ?.substringBefore('#')
+            ?.substringBefore('?')
+            ?.trimEnd('/')
+            ?.takeIf { it.isNotBlank() }
+            ?: return null
+        val authority = extractDirectoryAuthority(normalized).takeIf(String::isNotBlank) ?: return normalized
+        extractEncodedDirectoryDocumentId(normalized, "/tree/")
+            ?.let { encodedDocumentId ->
+                return "content://$authority/tree/$encodedDocumentId"
+            }
+        extractEncodedDirectoryDocumentId(normalized, "/document/")
+            ?.let { encodedDocumentId ->
+                return "content://$authority/tree/$encodedDocumentId"
+            }
+        return normalized
+    }
+
+    private fun extractDirectoryDocumentId(uriString: String, marker: String): String? {
+        val encodedId = extractEncodedDirectoryDocumentId(uriString, marker) ?: return null
+        return runCatching {
+            URLDecoder.decode(encodedId, StandardCharsets.UTF_8.name())
+        }.getOrDefault(encodedId)
+    }
+
+    private fun extractEncodedDirectoryDocumentId(uriString: String, marker: String): String? {
+        val markerIndex = uriString.indexOf(marker)
+        if (markerIndex < 0) return null
+        val startIndex = markerIndex + marker.length
+        val endIndex = uriString.indexOfAny(charArrayOf('/', '?', '#'), startIndex)
+            .takeIf { it >= 0 }
+            ?: uriString.length
+        return uriString.substring(startIndex, endIndex).takeIf { it.isNotBlank() }
+    }
+
+    private fun extractDirectoryAuthority(uriString: String): String {
+        val schemeSeparatorIndex = uriString.indexOf("://")
+        if (schemeSeparatorIndex < 0) return ""
+        val authorityStartIndex = schemeSeparatorIndex + 3
+        val authorityEndIndex = uriString.indexOfAny(charArrayOf('/', '?', '#'), authorityStartIndex)
+            .takeIf { it >= 0 }
+            ?: uriString.length
+        return uriString.substring(authorityStartIndex, authorityEndIndex)
     }
 
     private fun resolveTreeRootBlocking(context: Context, directoryUriString: String?): RootHandle.TreeRoot? {
-        val uriString = normalizeDirectoryUri(directoryUriString) ?: return null
+        val uriString = normalizeConfiguredDirectoryUri(directoryUriString) ?: return null
         val treeUri = runCatching { uriString.toUri() }.getOrNull() ?: return null
         val tree = DocumentFile.fromTreeUri(context, treeUri) ?: return null
         return tree.takeIf { it.exists() && it.isDirectory }?.let(RootHandle::TreeRoot)
