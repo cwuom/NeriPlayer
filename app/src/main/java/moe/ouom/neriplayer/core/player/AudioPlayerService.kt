@@ -55,6 +55,8 @@ import androidx.core.graphics.drawable.DrawableCompat
 import androidx.core.graphics.drawable.IconCompat
 import androidx.core.graphics.drawable.toBitmap
 import androidx.media.session.MediaButtonReceiver
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
 import coil.request.ImageRequest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -109,9 +111,9 @@ internal fun shouldUseForegroundServiceStart(
     sdkInt: Int,
     forceForeground: Boolean,
     shouldRunPlaybackServiceInForeground: Boolean,
-    callerHasVisibleUi: Boolean
+    callerHasResumedUi: Boolean
 ): Boolean {
-    if (callerHasVisibleUi) {
+    if (callerHasResumedUi) {
         return false
     }
     return sdkInt >= Build.VERSION_CODES.O ||
@@ -119,13 +121,47 @@ internal fun shouldUseForegroundServiceStart(
         shouldRunPlaybackServiceInForeground
 }
 
-private fun Context.findVisibleActivity(): Activity? {
+internal fun canUseDirectPlaybackServiceStart(
+    isFinishing: Boolean,
+    isDestroyed: Boolean,
+    lifecycleState: Lifecycle.State?,
+    hasWindowFocus: Boolean
+): Boolean {
+    if (isFinishing || isDestroyed) {
+        return false
+    }
+    return lifecycleState?.isAtLeast(Lifecycle.State.RESUMED) == true && hasWindowFocus
+}
+
+internal fun isServiceStartNotAllowedFailure(error: Throwable): Boolean {
+    if (error !is IllegalStateException) {
+        return false
+    }
+    val simpleName = error::class.java.simpleName
+    if (
+        simpleName == "BackgroundServiceStartNotAllowedException" ||
+        simpleName == "ForegroundServiceStartNotAllowedException"
+    ) {
+        return true
+    }
+    return error.message?.contains("Not allowed to start service") == true
+}
+
+private fun Context.findActivityReadyForDirectServiceStart(): Activity? {
     var current: Context? = this
     while (current is ContextWrapper) {
         if (current is Activity) {
             val isDestroyed = Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 &&
                 current.isDestroyed
-            return current.takeUnless { it.isFinishing || isDestroyed }
+            val lifecycleState = (current as? LifecycleOwner)?.lifecycle?.currentState
+            return current.takeIf {
+                canUseDirectPlaybackServiceStart(
+                    isFinishing = it.isFinishing,
+                    isDestroyed = isDestroyed,
+                    lifecycleState = lifecycleState,
+                    hasWindowFocus = it.hasWindowFocus()
+                )
+            }
         }
         current = current.baseContext
     }
@@ -159,20 +195,32 @@ class AudioPlayerService : Service() {
             context: Context,
             source: String,
             forceForeground: Boolean = false
-        ) {
+        ): Boolean {
             val intent = createSyncIntent(context, source)
-            val callerHasVisibleUi = context.findVisibleActivity() != null
-            if (
-                shouldUseForegroundServiceStart(
-                    sdkInt = Build.VERSION.SDK_INT,
-                    forceForeground = forceForeground,
-                    shouldRunPlaybackServiceInForeground = PlayerManager.shouldRunPlaybackServiceInForeground(),
-                    callerHasVisibleUi = callerHasVisibleUi
+            val callerHasResumedUi = context.findActivityReadyForDirectServiceStart() != null
+            val shouldStartInForeground = shouldUseForegroundServiceStart(
+                sdkInt = Build.VERSION.SDK_INT,
+                forceForeground = forceForeground,
+                shouldRunPlaybackServiceInForeground = PlayerManager.shouldRunPlaybackServiceInForeground(),
+                callerHasResumedUi = callerHasResumedUi
+            )
+            return try {
+                if (shouldStartInForeground) {
+                    ContextCompat.startForegroundService(context, intent)
+                } else {
+                    context.startService(intent)
+                }
+                true
+            } catch (error: IllegalStateException) {
+                if (!isServiceStartNotAllowedFailure(error)) {
+                    throw error
+                }
+                NPLogger.w(
+                    "NERI-APS",
+                    "Deferred audio service start: source=$source foreground=$shouldStartInForeground resumedUi=$callerHasResumedUi",
+                    error
                 )
-            ) {
-                ContextCompat.startForegroundService(context, intent)
-            } else {
-                context.startService(intent)
+                false
             }
         }
     }
@@ -756,7 +804,7 @@ class AudioPlayerService : Service() {
                 val request = ImageRequest.Builder(appCtx)
                     .data(url)
                     .allowHardware(false)
-                    .size(320)
+                    .size(256)
                     .build()
                 val result = loader.execute(request)
                 val drawable = result.drawable ?: return@launch

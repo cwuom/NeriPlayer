@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.player
 
 import android.support.v4.media.session.PlaybackStateCompat
+import androidx.lifecycle.Lifecycle
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -47,7 +48,7 @@ class AudioPlayerServicePolicyTest {
                 sdkInt = 26,
                 forceForeground = false,
                 shouldRunPlaybackServiceInForeground = false,
-                callerHasVisibleUi = false
+                callerHasResumedUi = false
             )
         )
     }
@@ -59,20 +60,60 @@ class AudioPlayerServicePolicyTest {
                 sdkInt = 25,
                 forceForeground = false,
                 shouldRunPlaybackServiceInForeground = false,
-                callerHasVisibleUi = false
+                callerHasResumedUi = false
             )
         )
     }
 
     @Test
-    fun `visible activity caller avoids foreground service timer`() {
+    fun `resumed activity caller avoids foreground service timer`() {
         assertFalse(
             shouldUseForegroundServiceStart(
                 sdkInt = 36,
                 forceForeground = true,
                 shouldRunPlaybackServiceInForeground = true,
-                callerHasVisibleUi = true
+                callerHasResumedUi = true
             )
+        )
+    }
+
+    @Test
+    fun `only resumed activity can use direct playback service start`() {
+        assertTrue(
+            canUseDirectPlaybackServiceStart(
+                isFinishing = false,
+                isDestroyed = false,
+                lifecycleState = Lifecycle.State.RESUMED,
+                hasWindowFocus = true
+            )
+        )
+        assertFalse(
+            canUseDirectPlaybackServiceStart(
+                isFinishing = false,
+                isDestroyed = false,
+                lifecycleState = Lifecycle.State.STARTED,
+                hasWindowFocus = true
+            )
+        )
+        assertFalse(
+            canUseDirectPlaybackServiceStart(
+                isFinishing = false,
+                isDestroyed = false,
+                lifecycleState = Lifecycle.State.RESUMED,
+                hasWindowFocus = false
+            )
+        )
+    }
+
+    @Test
+    fun `service start not allowed failure is downgraded`() {
+        assertTrue(
+            isServiceStartNotAllowedFailure(
+                IllegalStateException("Not allowed to start service Intent { act=test }")
+            )
+        )
+        assertFalse(
+            isServiceStartNotAllowedFailure(IllegalStateException("different failure"))
         )
     }
 }

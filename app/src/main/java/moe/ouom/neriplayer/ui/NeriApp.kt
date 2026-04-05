@@ -109,6 +109,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import coil.Coil
 import coil.compose.AsyncImage
+import coil.request.CachePolicy
 import coil.request.ImageRequest
 import com.google.gson.Gson
 import dev.chrisbanes.haze.HazeDefaults
@@ -129,6 +130,7 @@ import moe.ouom.neriplayer.core.player.AudioReactive
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.settings.ThemeDefaults
 import moe.ouom.neriplayer.data.settings.ThemePreferenceSnapshot
+import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshotSync
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
@@ -173,7 +175,6 @@ import moe.ouom.neriplayer.util.adjustedAccentColorArgb
 import moe.ouom.neriplayer.util.syncHapticFeedbackSetting
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filterNotNull
-import kotlinx.coroutines.flow.first
 import moe.ouom.neriplayer.ui.screen.RecentScreen
 import moe.ouom.neriplayer.R
 import androidx.compose.ui.graphics.asImageBitmap
@@ -385,6 +386,9 @@ fun NeriApp(
     val context = LocalContext.current
     val rootView = LocalView.current
     val repo = remember { AppContainer.settingsRepo }
+    val startupPlaybackPreferences = remember(context) {
+        readPlaybackPreferenceSnapshotSync(context)
+    }
     val coverArtImageLoader = remember(context) { Coil.imageLoader(context) }
 
     val storedFollowSystemDark by repo.followSystemDarkFlow.collectAsState(
@@ -442,7 +446,9 @@ fun NeriApp(
     val keepPlaybackModeState by repo.keepPlaybackModeStateFlow.collectAsState(initial = true)
     val stopOnBluetoothDisconnect by repo.stopOnBluetoothDisconnectFlow.collectAsState(initial = true)
     val allowMixedPlayback by repo.allowMixedPlaybackFlow.collectAsState(initial = false)
-    val maxCacheSizeBytes by repo.maxCacheSizeBytesFlow.collectAsState(initial = 1024L * 1024 * 1024)
+    val maxCacheSizeBytes by repo.maxCacheSizeBytesFlow.collectAsState(
+        initial = startupPlaybackPreferences.maxCacheSizeBytes
+    )
     val homeUsageEntries by AppContainer.playlistUsageRepo.frequentPlaylistsFlow.collectAsState(initial = emptyList())
     var pendingFollowSystemDark by remember { mutableStateOf<Boolean?>(null) }
     var pendingForceDark by remember { mutableStateOf<Boolean?>(null) }
@@ -481,11 +487,21 @@ fun NeriApp(
     var coverSeedHex by remember { mutableStateOf<String?>(null) }
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
     val displayCoverUrl = currentSong.resolveUiCoverSource(context)
+    val application = remember(context) { context.applicationContext as Application }
 
-    LaunchedEffect(Unit) {
-        val initialCacheSize = repo.maxCacheSizeBytesFlow.first()
-        PlayerManager.initialize(context.applicationContext as Application, initialCacheSize)
-
+    LaunchedEffect(application) {
+        PlayerManager.initialize(application, startupPlaybackPreferences.maxCacheSizeBytes)
+        NPLogger.d("NERI-App", "PlayerManager.initialize called")
+        NPLogger.d(
+            "NERI-App",
+            "Player bootstrap state hasItems=${PlayerManager.hasItems()} transportActive=${PlayerManager.isTransportActive()} isPlaying=${PlayerManager.isPlayingFlow.value}"
+        )
+        if (PlayerManager.hasItems() && PlayerManager.shouldBootstrapPlaybackServiceOnAppLaunch()) {
+            NPLogger.d("NERI-App", "Starting audio service from app bootstrap")
+            AudioPlayerService.startSyncService(context, "app_bootstrap", forceForeground = true)
+        } else {
+            NPLogger.d("NERI-App", "Skip audio service bootstrap because transport is inactive")
+        }
 
         // 跳过初始值，订阅之后的变更，每次切曲写入最近播放
         var lastRecordedSongKey: String? = null
@@ -591,24 +607,6 @@ fun NeriApp(
         else -> false
     }
     val hazeState = remember { HazeState() }
-
-    LaunchedEffect(Unit) {
-        // 确保 PlayerManager 使用正确的缓存大小初始化
-        // 由于 initialize() 是幂等的，如果已经初始化过，这个调用不会改变设置
-        val cacheSize = repo.maxCacheSizeBytesFlow.first()
-        PlayerManager.initialize(context.applicationContext as Application, cacheSize)
-        NPLogger.d("NERI-App", "PlayerManager.initialize called")
-        NPLogger.d(
-            "NERI-App",
-            "Player bootstrap state hasItems=${PlayerManager.hasItems()} transportActive=${PlayerManager.isTransportActive()} isPlaying=${PlayerManager.isPlayingFlow.value}"
-        )
-            if (PlayerManager.hasItems() && PlayerManager.shouldBootstrapPlaybackServiceOnAppLaunch()) {
-                NPLogger.d("NERI-App", "Starting audio service from app bootstrap")
-                AudioPlayerService.startSyncService(context, "app_bootstrap", forceForeground = true)
-            } else {
-            NPLogger.d("NERI-App", "Skip audio service bootstrap because transport is inactive")
-        }
-    }
 
     val scope = rememberCoroutineScope()
     val preferredQuality by repo.audioQualityFlow.collectAsState(initial = "exhigh")
@@ -1677,8 +1675,8 @@ fun NeriApp(
                                         ImageRequest.Builder(context)
                                             .data(url)
                                             .allowHardware(false)
-                                            .memoryCacheKey("nowplaying-blur:$url:$blurStrength")
                                             .diskCacheKey("nowplaying-blur:$url:$blurStrength")
+                                            .memoryCachePolicy(CachePolicy.DISABLED)
                                             .transformations(
                                                 if (blurStrength > 0f) {
                                                     listOf(BlurTransformation(context, blurStrength))

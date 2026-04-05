@@ -112,6 +112,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.AudioPlayerService
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.canUseDirectPlaybackServiceStart
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.settings.readThemePreferenceSnapshotSync
@@ -142,10 +143,17 @@ private data class GitHubSyncWarningState(
     val isDismissed: Boolean
 )
 
+private data class PendingAudioServiceStart(
+    val requestToken: Long,
+    val source: String,
+    val forceForeground: Boolean
+)
+
 class MainActivity : ComponentActivity() {
     private val settingsRepository by lazy { SettingsRepository(applicationContext) }
     private var externalAudioImportJob: Job? = null
     private var externalAudioRequestToken = 0L
+    private var pendingExternalAudioServiceStart: PendingAudioServiceStart? = null
     private val pendingListenTogetherInvite = MutableStateFlow<ListenTogetherInvite?>(null)
     private val listenTogetherInviteFlow = pendingListenTogetherInvite.asStateFlow()
     private var lastObservedClipboardInviteSignature: String? = null
@@ -603,6 +611,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        startPendingExternalAudioServiceIfNeeded()
         if (hasWindowFocusForClipboardInspection) {
             scheduleClipboardInviteInspection()
         }
@@ -617,6 +626,7 @@ class MainActivity : ComponentActivity() {
         super.onWindowFocusChanged(hasFocus)
         hasWindowFocusForClipboardInspection = hasFocus
         if (hasFocus) {
+            startPendingExternalAudioServiceIfNeeded()
             scheduleClipboardInviteInspection()
         }
     }
@@ -667,6 +677,37 @@ class MainActivity : ComponentActivity() {
     private fun clearListenTogetherInviteCache() {
         lastObservedClipboardInviteSignature = null
         clearPendingListenTogetherInvite()
+    }
+
+    private fun startPendingExternalAudioServiceIfNeeded() {
+        val pendingStart = pendingExternalAudioServiceStart ?: return
+        val isDestroyed = Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && isDestroyed
+        if (
+            !canUseDirectPlaybackServiceStart(
+                isFinishing = isFinishing,
+                isDestroyed = isDestroyed,
+                lifecycleState = lifecycle.currentState,
+                hasWindowFocus = hasWindowFocus()
+            )
+        ) {
+            return
+        }
+        if (pendingStart.requestToken != externalAudioRequestToken) {
+            pendingExternalAudioServiceStart = null
+            return
+        }
+        val started = AudioPlayerService.startSyncService(
+            this,
+            pendingStart.source,
+            forceForeground = pendingStart.forceForeground
+        )
+        if (started) {
+            NPLogger.d(
+                "MainActivity",
+                "Retried audio service start after activity resumed: source=${pendingStart.source}"
+            )
+            pendingExternalAudioServiceStart = null
+        }
     }
 
     private fun updateListenTogetherStatus(message: String?) {
@@ -788,6 +829,7 @@ class MainActivity : ComponentActivity() {
 
         externalAudioImportJob?.cancel()
         val requestToken = ++externalAudioRequestToken
+        pendingExternalAudioServiceStart = null
         setIntent(Intent(this, MainActivity::class.java))
 
         externalAudioImportJob = lifecycleScope.launch {
@@ -800,11 +842,22 @@ class MainActivity : ComponentActivity() {
                     PlayerManager.initialize(application)
                     PlayerManager.playPlaylist(result.songs, startIndex = 0)
                     NPLogger.d("MainActivity", "Starting audio service after external audio import")
-                    AudioPlayerService.startSyncService(
+                    val serviceStarted = AudioPlayerService.startSyncService(
                         this@MainActivity,
                         "external_audio_import",
                         forceForeground = true
                     )
+                    if (!serviceStarted) {
+                        pendingExternalAudioServiceStart = PendingAudioServiceStart(
+                            requestToken = requestToken,
+                            source = "external_audio_import",
+                            forceForeground = true
+                        )
+                        NPLogger.w(
+                            "MainActivity",
+                            "Deferred audio service start until activity is resumed"
+                        )
+                    }
                 }
             } catch (_: CancellationException) {
                 // 只保留最新一次外部唤起请求

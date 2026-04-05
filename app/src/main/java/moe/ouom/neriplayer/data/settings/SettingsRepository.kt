@@ -314,14 +314,17 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setAudioQuality(value: String) {
         context.dataStore.edit { it[SettingsKeys.AUDIO_QUALITY] = value }
+        updatePlaybackPreferenceSnapshot(context) { it.copy(audioQuality = value) }
     }
 
     suspend fun setYouTubeAudioQuality(value: String) {
         context.dataStore.edit { it[SettingsKeys.YOUTUBE_AUDIO_QUALITY] = value }
+        updatePlaybackPreferenceSnapshot(context) { it.copy(youtubeAudioQuality = value) }
     }
 
     suspend fun setBiliAudioQuality(value: String) {
         context.dataStore.edit { it[SettingsKeys.BILI_AUDIO_QUALITY] = value }
+        updatePlaybackPreferenceSnapshot(context) { it.copy(biliAudioQuality = value) }
     }
 
     suspend fun setDevModeEnabled(enabled: Boolean) {
@@ -416,6 +419,7 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setBypassProxy(enabled: Boolean) {
         context.dataStore.edit { it[SettingsKeys.BYPASS_PROXY] = enabled }
+        updateBootstrapSettingsSnapshot(context) { it.copy(bypassProxy = enabled) }
     }
 
     suspend fun setHapticFeedbackEnabled(enabled: Boolean) {
@@ -440,6 +444,7 @@ class SettingsRepository(private val context: Context) {
                 it[SettingsKeys.DOWNLOAD_DIRECTORY_URI] = uri
             }
         }
+        updateBootstrapSettingsSnapshot(context) { it.copy(downloadDirectoryUri = uri) }
     }
 
     suspend fun setBackgroundImageBlur(blur: Float) {
@@ -451,7 +456,9 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setMaxCacheSizeBytes(bytes: Long) {
-        context.dataStore.edit { it[SettingsKeys.MAX_CACHE_SIZE_BYTES] = bytes }
+        val normalized = bytes.coerceAtLeast(0L)
+        context.dataStore.edit { it[SettingsKeys.MAX_CACHE_SIZE_BYTES] = normalized }
+        updatePlaybackPreferenceSnapshot(context) { it.copy(maxCacheSizeBytes = normalized) }
     }
 
     suspend fun setDownloadDirectory(uri: String?, label: String?) {
@@ -468,16 +475,25 @@ class SettingsRepository(private val context: Context) {
                 }
             }
         }
+        updateBootstrapSettingsSnapshot(context) {
+            it.copy(
+                downloadDirectoryUri = uri,
+                downloadDirectoryLabel = label
+            )
+        }
     }
 
     suspend fun setDownloadFileNameTemplate(template: String?) {
+        val normalized = normalizeDownloadFileNameTemplate(template)
         context.dataStore.edit {
-            val normalized = normalizeDownloadFileNameTemplate(template)
             if (normalized == null) {
                 it.remove(SettingsKeys.DOWNLOAD_FILE_NAME_TEMPLATE)
             } else {
                 it[SettingsKeys.DOWNLOAD_FILE_NAME_TEMPLATE] = normalized
             }
+        }
+        updateBootstrapSettingsSnapshot(context) {
+            it.copy(downloadFileNameTemplate = normalized)
         }
     }
 
@@ -511,43 +527,68 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setPlaybackFadeIn(enabled: Boolean) {
         context.dataStore.edit { it[SettingsKeys.PLAYBACK_FADE_IN] = enabled }
+        updatePlaybackPreferenceSnapshot(context) { it.copy(playbackFadeIn = enabled) }
     }
 
     suspend fun setPlaybackCrossfadeNext(enabled: Boolean) {
         context.dataStore.edit { it[SettingsKeys.PLAYBACK_CROSSFADE_NEXT] = enabled }
+        updatePlaybackPreferenceSnapshot(context) { it.copy(playbackCrossfadeNext = enabled) }
     }
 
     suspend fun setPlaybackFadeInDurationMs(durationMs: Long) {
-        context.dataStore.edit { it[SettingsKeys.PLAYBACK_FADE_IN_DURATION_MS] = durationMs }
+        val normalized = durationMs.coerceAtLeast(0L)
+        context.dataStore.edit { it[SettingsKeys.PLAYBACK_FADE_IN_DURATION_MS] = normalized }
+        updatePlaybackPreferenceSnapshot(context) {
+            it.copy(playbackFadeInDurationMs = normalized)
+        }
     }
 
     suspend fun setPlaybackFadeOutDurationMs(durationMs: Long) {
-        context.dataStore.edit { it[SettingsKeys.PLAYBACK_FADE_OUT_DURATION_MS] = durationMs }
+        val normalized = durationMs.coerceAtLeast(0L)
+        context.dataStore.edit { it[SettingsKeys.PLAYBACK_FADE_OUT_DURATION_MS] = normalized }
+        updatePlaybackPreferenceSnapshot(context) {
+            it.copy(playbackFadeOutDurationMs = normalized)
+        }
     }
 
     suspend fun setPlaybackCrossfadeInDurationMs(durationMs: Long) {
-        context.dataStore.edit { it[SettingsKeys.PLAYBACK_CROSSFADE_IN_DURATION_MS] = durationMs }
+        val normalized = durationMs.coerceAtLeast(0L)
+        context.dataStore.edit { it[SettingsKeys.PLAYBACK_CROSSFADE_IN_DURATION_MS] = normalized }
+        updatePlaybackPreferenceSnapshot(context) {
+            it.copy(playbackCrossfadeInDurationMs = normalized)
+        }
     }
 
     suspend fun setPlaybackCrossfadeOutDurationMs(durationMs: Long) {
-        context.dataStore.edit { it[SettingsKeys.PLAYBACK_CROSSFADE_OUT_DURATION_MS] = durationMs }
+        val normalized = durationMs.coerceAtLeast(0L)
+        context.dataStore.edit { it[SettingsKeys.PLAYBACK_CROSSFADE_OUT_DURATION_MS] = normalized }
+        updatePlaybackPreferenceSnapshot(context) {
+            it.copy(playbackCrossfadeOutDurationMs = normalized)
+        }
     }
 
     suspend fun setPlaybackSpeed(speed: Float) {
+        val normalized = normalizePlaybackSpeed(speed)
         context.dataStore.edit {
-            it[SettingsKeys.PLAYBACK_SPEED] = normalizePlaybackSpeed(speed)
+            it[SettingsKeys.PLAYBACK_SPEED] = normalized
         }
+        updatePlaybackPreferenceSnapshot(context) { it.copy(playbackSpeed = normalized) }
     }
 
     suspend fun setPlaybackPitch(pitch: Float) {
+        val normalized = normalizePlaybackPitch(pitch)
         context.dataStore.edit {
-            it[SettingsKeys.PLAYBACK_PITCH] = normalizePlaybackPitch(pitch)
+            it[SettingsKeys.PLAYBACK_PITCH] = normalized
         }
+        updatePlaybackPreferenceSnapshot(context) { it.copy(playbackPitch = normalized) }
     }
 
     suspend fun setPlaybackEqualizerEnabled(enabled: Boolean) {
         context.dataStore.edit {
             it[SettingsKeys.PLAYBACK_EQUALIZER_ENABLED] = enabled
+        }
+        updatePlaybackPreferenceSnapshot(context) {
+            it.copy(playbackEqualizerEnabled = enabled)
         }
     }
 
@@ -555,40 +596,62 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit {
             it[SettingsKeys.PLAYBACK_EQUALIZER_PRESET] = presetId
         }
+        updatePlaybackPreferenceSnapshot(context) {
+            it.copy(playbackEqualizerPreset = presetId)
+        }
     }
 
     suspend fun setPlaybackEqualizerCustomBandLevels(levelsMb: List<Int>) {
+        val normalizedLevels = levelsMb.toList()
         context.dataStore.edit { prefs ->
-            val encoded = encodePlaybackEqualizerBandLevels(levelsMb)
+            val encoded = encodePlaybackEqualizerBandLevels(normalizedLevels)
             if (encoded.isNullOrBlank()) {
                 prefs.remove(SettingsKeys.PLAYBACK_EQUALIZER_CUSTOM_BAND_LEVELS)
             } else {
                 prefs[SettingsKeys.PLAYBACK_EQUALIZER_CUSTOM_BAND_LEVELS] = encoded
             }
         }
+        updatePlaybackPreferenceSnapshot(context) {
+            it.copy(playbackEqualizerCustomBandLevels = normalizedLevels)
+        }
     }
 
     suspend fun setPlaybackLoudnessGainMb(levelMb: Int) {
+        val normalized = normalizePlaybackLoudnessGainMb(levelMb)
         context.dataStore.edit {
-            it[SettingsKeys.PLAYBACK_LOUDNESS_GAIN_MB] =
-                normalizePlaybackLoudnessGainMb(levelMb)
+            it[SettingsKeys.PLAYBACK_LOUDNESS_GAIN_MB] = normalized
+        }
+        updatePlaybackPreferenceSnapshot(context) {
+            it.copy(playbackLoudnessGainMb = normalized)
         }
     }
 
     suspend fun setKeepLastPlaybackProgress(enabled: Boolean) {
         context.dataStore.edit { it[SettingsKeys.KEEP_LAST_PLAYBACK_PROGRESS] = enabled }
+        updatePlaybackPreferenceSnapshot(context) {
+            it.copy(keepLastPlaybackProgress = enabled)
+        }
     }
 
     suspend fun setKeepPlaybackModeState(enabled: Boolean) {
         context.dataStore.edit { it[SettingsKeys.KEEP_PLAYBACK_MODE_STATE] = enabled }
+        updatePlaybackPreferenceSnapshot(context) {
+            it.copy(keepPlaybackModeState = enabled)
+        }
     }
 
     suspend fun setStopOnBluetoothDisconnect(enabled: Boolean) {
         context.dataStore.edit { it[SettingsKeys.STOP_ON_BLUETOOTH_DISCONNECT] = enabled }
+        updatePlaybackPreferenceSnapshot(context) {
+            it.copy(stopOnBluetoothDisconnect = enabled)
+        }
     }
 
     suspend fun setAllowMixedPlayback(enabled: Boolean) {
         context.dataStore.edit { it[SettingsKeys.ALLOW_MIXED_PLAYBACK] = enabled }
+        updatePlaybackPreferenceSnapshot(context) {
+            it.copy(allowMixedPlayback = enabled)
+        }
     }
 
     suspend fun setInternationalizationEnabled(enabled: Boolean) {

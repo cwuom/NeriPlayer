@@ -109,6 +109,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
@@ -134,6 +135,8 @@ import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.formatDuration
 import moe.ouom.neriplayer.util.offlineCachedImageRequest
 import moe.ouom.neriplayer.util.performHapticFeedback
+
+private const val SEARCH_INPUT_DEBOUNCE_MS = 300L
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
@@ -223,7 +226,6 @@ fun ExploreScreen(
             ?: return@LaunchedEffect
         if (ui.selectedSearchSource != currentSource) {
             vm.setSearchSource(currentSource)
-            if (searchQuery.isNotEmpty()) vm.search(searchQuery)
         }
         if (currentSource == SearchSource.YOUTUBE_MUSIC && ui.ytMusicPlaylists.isEmpty()) {
             vm.loadYtMusicPlaylists()
@@ -261,6 +263,15 @@ fun ExploreScreen(
         }
     }
 
+    LaunchedEffect(searchQuery, ui.selectedSearchSource) {
+        if (searchQuery.isBlank()) {
+            vm.search("")
+            return@LaunchedEffect
+        }
+        delay(SEARCH_INPUT_DEBOUNCE_MS)
+        vm.search(searchQuery)
+    }
+
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     Scaffold(
@@ -289,7 +300,6 @@ fun ExploreScreen(
                         value = searchQuery,
                         onValueChange = {
                             searchQuery = it
-                            vm.search(searchQuery)
                         },
                         label = { Text(stringResource(R.string.search_keyword)) },
                         leadingIcon = { Icon(Icons.Default.Search, "Search") },
@@ -368,7 +378,18 @@ fun ExploreScreen(
                                     bottom = 16.dp + miniPlayerHeight
                                 )
                             ) {
-                                itemsIndexed(ui.searchResults) { index, song ->
+                                itemsIndexed(
+                                    items = ui.searchResults,
+                                    key = { _, song ->
+                                        listOfNotNull(
+                                            song.channelId,
+                                            song.audioId,
+                                            song.subAudioId,
+                                            song.mediaUri,
+                                            song.id.toString()
+                                        ).joinToString("|")
+                                    }
+                                ) { index, song ->
                                     SongRow(index + 1, song) {
                                         if (song.album == PlayerManager.BILI_SOURCE_TAG) {
                                             scope.launch {

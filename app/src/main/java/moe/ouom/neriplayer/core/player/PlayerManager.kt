@@ -72,7 +72,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -121,6 +120,7 @@ import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
+import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshotSync
 import moe.ouom.neriplayer.ui.component.LyricEntry
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
@@ -1195,31 +1195,30 @@ object PlayerManager {
 
         runCatching {
             stateFile = File(app.filesDir, "last_playlist.json")
-            blockingIo {
-                keepLastPlaybackProgressEnabled = settingsRepo.keepLastPlaybackProgressFlow.first()
-                keepPlaybackModeStateEnabled = settingsRepo.keepPlaybackModeStateFlow.first()
-                playbackFadeInEnabled = settingsRepo.playbackFadeInFlow.first()
-                playbackCrossfadeNextEnabled = settingsRepo.playbackCrossfadeNextFlow.first()
-                playbackFadeInDurationMs =
-                    settingsRepo.playbackFadeInDurationMsFlow.first().coerceAtLeast(0L)
-                playbackFadeOutDurationMs =
-                    settingsRepo.playbackFadeOutDurationMsFlow.first().coerceAtLeast(0L)
-                playbackCrossfadeInDurationMs =
-                    settingsRepo.playbackCrossfadeInDurationMsFlow.first().coerceAtLeast(0L)
-                playbackCrossfadeOutDurationMs =
-                    settingsRepo.playbackCrossfadeOutDurationMsFlow.first().coerceAtLeast(0L)
-                stopOnBluetoothDisconnectEnabled =
-                    settingsRepo.stopOnBluetoothDisconnectFlow.first()
-                allowMixedPlaybackEnabled = settingsRepo.allowMixedPlaybackFlow.first()
-                playbackSoundConfig = PlaybackSoundConfig(
-                    speed = settingsRepo.playbackSpeedFlow.first(),
-                    pitch = settingsRepo.playbackPitchFlow.first(),
-                    loudnessGainMb = settingsRepo.playbackLoudnessGainMbFlow.first(),
-                    equalizerEnabled = settingsRepo.playbackEqualizerEnabledFlow.first(),
-                    presetId = settingsRepo.playbackEqualizerPresetFlow.first(),
-                    customBandLevelsMb = settingsRepo.playbackEqualizerCustomBandLevelsFlow.first()
-                )
-            }
+            val initialPlaybackPreferences = readPlaybackPreferenceSnapshotSync(app)
+            preferredQuality = initialPlaybackPreferences.audioQuality
+            youtubePreferredQuality = initialPlaybackPreferences.youtubeAudioQuality
+            biliPreferredQuality = initialPlaybackPreferences.biliAudioQuality
+            keepLastPlaybackProgressEnabled =
+                initialPlaybackPreferences.keepLastPlaybackProgress
+            keepPlaybackModeStateEnabled =
+                initialPlaybackPreferences.keepPlaybackModeState
+            playbackFadeInEnabled = initialPlaybackPreferences.playbackFadeIn
+            playbackCrossfadeNextEnabled =
+                initialPlaybackPreferences.playbackCrossfadeNext
+            playbackFadeInDurationMs =
+                initialPlaybackPreferences.playbackFadeInDurationMs
+            playbackFadeOutDurationMs =
+                initialPlaybackPreferences.playbackFadeOutDurationMs
+            playbackCrossfadeInDurationMs =
+                initialPlaybackPreferences.playbackCrossfadeInDurationMs
+            playbackCrossfadeOutDurationMs =
+                initialPlaybackPreferences.playbackCrossfadeOutDurationMs
+            stopOnBluetoothDisconnectEnabled =
+                initialPlaybackPreferences.stopOnBluetoothDisconnect
+            allowMixedPlaybackEnabled =
+                initialPlaybackPreferences.allowMixedPlayback
+            playbackSoundConfig = initialPlaybackPreferences.toPlaybackSoundConfig()
             // Base HTTP client shared by playback data sources.
             val okHttpClient = AppContainer.sharedOkHttpClient
             val upstreamFactory: HttpDataSource.Factory = OkHttpDataSource.Factory(okHttpClient)
@@ -1282,8 +1281,6 @@ object PlayerManager {
                 .build()
 
             player.repeatMode = Player.REPEAT_MODE_OFF
-
-            youtubeMusicPlaybackRepository.warmBootstrapAsync()
 
             player.addListener(object : Player.Listener {
                 override fun onPlayerError(error: PlaybackException) {

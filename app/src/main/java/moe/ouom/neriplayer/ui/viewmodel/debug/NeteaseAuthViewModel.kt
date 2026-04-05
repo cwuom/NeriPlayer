@@ -37,6 +37,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthHealth
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
+import moe.ouom.neriplayer.data.auth.common.parseRawCookieText
 import org.json.JSONObject
 
 data class NeteaseAuthUiState(
@@ -260,18 +261,7 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun importCookiesFromRaw(raw: String) {
-        val parsed = linkedMapOf<String, String>()
-        raw.split(';')
-            .map { it.trim() }
-            .filter { it.isNotBlank() && it.contains('=') }
-            .forEach { s ->
-                val idx = s.indexOf('=')
-                if (idx > 0) {
-                    val key = s.substring(0, idx).trim()
-                    val value = s.substring(idx + 1).trim()
-                    if (key.isNotEmpty()) parsed[key] = value
-                }
-            }
+        val parsed = parseRawCookieText(raw)
         if (parsed.isEmpty()) {
             emitSnack(getApplication<Application>().getString(R.string.auth_cookie_invalid))
             return

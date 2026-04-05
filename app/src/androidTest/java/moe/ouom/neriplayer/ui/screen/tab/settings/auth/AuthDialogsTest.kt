@@ -163,12 +163,11 @@ class AuthDialogsTest {
     }
 
     @Test
-    fun neteaseSavedCookieDialog_continueAndLogoutActionsWork() {
+    fun neteaseSavedCookieDialog_continueActionOpensBrowserTab() {
         val context = targetContext
         val vm = NeteaseAuthViewModel(application)
         val openedTabs = mutableListOf<Int>()
         var dismissedCount = 0
-        var logoutCount = 0
 
         composeRule.setContent {
             MaterialTheme {
@@ -189,7 +188,7 @@ class AuthDialogsTest {
                         showSavedCookieDialog = true,
                         onDismissSavedCookieDialog = { dismissedCount++ },
                         onOpenSheetAtTab = { openedTabs += it },
-                        onLogout = { logoutCount++ },
+                        onLogout = { },
                         onBrowserLogin = { }
                     )
                 }
@@ -205,9 +204,14 @@ class AuthDialogsTest {
             assertEquals(listOf(0), openedTabs)
             assertEquals(1, dismissedCount)
         }
+    }
 
-        dismissedCount = 0
-        openedTabs.clear()
+    @Test
+    fun neteaseSavedCookieDialog_logoutActionInvokesCallback() {
+        val context = targetContext
+        val vm = NeteaseAuthViewModel(application)
+        var dismissedCount = 0
+        var logoutCount = 0
 
         composeRule.setContent {
             MaterialTheme {
@@ -277,12 +281,11 @@ class AuthDialogsTest {
     }
 
     @Test
-    fun youtubeSavedCookieDialog_continueAndLogoutActionsWork() {
+    fun youtubeSavedCookieDialog_continueActionOpensBrowserTab() {
         val context = targetContext
         val vm = YouTubeAuthViewModel(application)
         val openedTabs = mutableListOf<Int>()
         var dismissedCount = 0
-        var logoutCount = 0
 
         composeRule.setContent {
             MaterialTheme {
@@ -300,7 +303,7 @@ class AuthDialogsTest {
                         showSavedCookieDialog = true,
                         onDismissSavedCookieDialog = { dismissedCount++ },
                         onOpenSheetAtTab = { openedTabs += it },
-                        onLogout = { logoutCount++ },
+                        onLogout = { },
                         onBrowserLogin = { }
                     )
                 }
@@ -316,9 +319,14 @@ class AuthDialogsTest {
             assertEquals(listOf(0), openedTabs)
             assertEquals(1, dismissedCount)
         }
+    }
 
-        dismissedCount = 0
-        openedTabs.clear()
+    @Test
+    fun youtubeSavedCookieDialog_logoutActionInvokesCallback() {
+        val context = targetContext
+        val vm = YouTubeAuthViewModel(application)
+        var dismissedCount = 0
+        var logoutCount = 0
 
         composeRule.setContent {
             MaterialTheme {

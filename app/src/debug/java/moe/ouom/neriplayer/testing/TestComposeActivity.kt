@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.testing
 
+import android.annotation.SuppressLint
 import android.app.KeyguardManager
 import android.os.Build
 import android.os.Bundle
@@ -8,6 +9,7 @@ import androidx.activity.ComponentActivity
 
 class TestComposeActivity : ComponentActivity() {
 
+    @SuppressLint("ObsoleteSdkInt")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 

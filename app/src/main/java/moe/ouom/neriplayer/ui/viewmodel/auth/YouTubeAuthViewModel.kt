@@ -36,6 +36,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.data.auth.common.parseRawCookieText
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthHealth
 import moe.ouom.neriplayer.data.auth.youtube.evaluateYouTubeAuthHealth
@@ -113,7 +114,7 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
 
-        val parsed = parseCookieString(raw)
+        val parsed = parseRawCookieText(raw)
         if (parsed.isEmpty()) {
             emitSnack(getApplication<Application>().getString(R.string.auth_cookie_invalid))
             return
@@ -146,7 +147,7 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
             _uiState.value = YouTubeAuthUiState(health = repo.getAuthHealthOnce())
             _events.send(
                 YouTubeAuthEvent.ShowCookies(
-                    normalized.cookies.ifEmpty { parseCookieString(normalized.cookieHeader) }
+                    normalized.cookies.ifEmpty { parseRawCookieText(normalized.cookieHeader) }
                 )
             )
             _events.send(
@@ -162,26 +163,6 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _events.send(YouTubeAuthEvent.ShowSnack(message))
         }
-    }
-
-
-    private fun parseCookieString(raw: String): LinkedHashMap<String, String> {
-        val result = linkedMapOf<String, String>()
-        raw.split(';')
-            .map(String::trim)
-            .filter { it.isNotBlank() && it.contains('=') }
-            .forEach { segment ->
-                val delimiterIndex = segment.indexOf('=')
-                if (delimiterIndex <= 0) {
-                    return@forEach
-                }
-                val key = segment.substring(0, delimiterIndex).trim()
-                val value = segment.substring(delimiterIndex + 1).trim()
-                if (key.isNotEmpty()) {
-                    result[key] = value
-                }
-        }
-        return result
     }
 
     private fun YouTubeAuthBundle.hasPersistedAuth(): Boolean {

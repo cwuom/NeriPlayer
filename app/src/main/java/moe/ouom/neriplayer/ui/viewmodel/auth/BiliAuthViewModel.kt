@@ -36,6 +36,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.data.auth.common.parseRawCookieText
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthHealth
 import org.json.JSONObject
 
@@ -102,17 +103,7 @@ class BiliAuthViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun importCookiesFromRaw(raw: String) {
-        val map = linkedMapOf<String, String>()
-        raw.split(';')
-            .map { it.trim() }
-            .filter { it.contains('=') }
-            .forEach {
-                val idx = it.indexOf('=')
-                val key = it.substring(0, idx).trim()
-                val value = it.substring(idx + 1).trim()
-                if (key.isNotBlank()) map[key] = value
-            }
-        importCookiesFromMap(map)
+        importCookiesFromMap(parseRawCookieText(raw))
     }
 
     fun importCookiesFromMap(map: Map<String, String>) {

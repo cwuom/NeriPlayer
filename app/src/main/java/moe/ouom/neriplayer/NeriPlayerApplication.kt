@@ -103,7 +103,7 @@ class NeriPlayerApplication : Application() {
             }
             .memoryCache {
                 MemoryCache.Builder(this)
-                    .maxSizePercent(0.25)
+                    .maxSizePercent(0.12)
                     .build()
             }
             .build()
