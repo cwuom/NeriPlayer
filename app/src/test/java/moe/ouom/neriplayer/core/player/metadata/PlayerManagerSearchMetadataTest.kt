@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.core.player
+package moe.ouom.neriplayer.core.player.metadata
 
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem

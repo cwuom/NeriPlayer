@@ -13,8 +13,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.core.player.PlaybackCommand
-import moe.ouom.neriplayer.core.player.PlaybackCommandSource
+import moe.ouom.neriplayer.core.player.policy.PlaybackCommand
+import moe.ouom.neriplayer.core.player.policy.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
@@ -424,7 +424,13 @@ class ListenTogetherSessionManager(
             state.track != null -> listOf(state.track.toSongItem())
             else -> emptyList()
         }
-        if (queue.isEmpty()) return
+        if (queue.isEmpty()) {
+            NPLogger.w(
+                TAG,
+                "applyRoomStateToPlayer(): skip empty queue, roomId=${state.roomId}, version=${state.version}, causeType=$causeType"
+            )
+            return
+        }
         NPLogger.d(
             TAG,
             "applyRoomStateToPlayer(): roomId=${state.roomId}, version=${state.version}, queueSize=${queue.size}, currentIndex=${state.currentIndex}, playback=${state.playback.state}"
@@ -573,16 +579,41 @@ class ListenTogetherSessionManager(
         positionMs: Long
     ): ListenTogetherEvent? {
         val queue = PlayerManager.currentQueueFlow.value
-        val currentSong = PlayerManager.currentSongFlow.value ?: return null
+        val currentSong = PlayerManager.currentSongFlow.value ?: run {
+            NPLogger.w(TAG, "buildLinkReadyEvent(): currentSong missing, stableKey=$stableKey")
+            return null
+        }
         val rawIndex = queue.indexOfFirst { song -> song.sameTrackAs(currentSong) }
         val (shareableQueue, resolvedCurrentIndex) = queue.toShareableQueueSnapshot(
             currentIndex = rawIndex.takeIf { it >= 0 } ?: 0,
             roomSettings = _roomState.value?.settings,
             includeResolvedStreamUrl = true
         )
-        val shareableTrack = shareableQueue.getOrNull(resolvedCurrentIndex) ?: return null
-        if (shareableTrack.stableKey != stableKey) return null
-        val resolvedStreamUrl = normalizedDirectStreamUrl(shareableTrack.streamUrl) ?: return null
+        val shareableTrack = shareableQueue.getOrNull(resolvedCurrentIndex) ?: run {
+            NPLogger.w(
+                TAG,
+                "buildLinkReadyEvent(): shareableTrack missing, stableKey=$stableKey, resolvedCurrentIndex=$resolvedCurrentIndex, queueSize=${shareableQueue.size}"
+            )
+            return null
+        }
+        if (shareableTrack.stableKey != stableKey) {
+            NPLogger.d(
+                TAG,
+                "buildLinkReadyEvent(): stableKey mismatch, expected=$stableKey, actual=${shareableTrack.stableKey}, resolvedCurrentIndex=$resolvedCurrentIndex"
+            )
+            return null
+        }
+        val resolvedStreamUrl = normalizedDirectStreamUrl(shareableTrack.streamUrl) ?: run {
+            NPLogger.w(
+                TAG,
+                "buildLinkReadyEvent(): direct stream url missing, stableKey=$stableKey, track=${shareableTrack.name}"
+            )
+            return null
+        }
+        NPLogger.d(
+            TAG,
+            "buildLinkReadyEvent(): stableKey=$stableKey, resolvedCurrentIndex=$resolvedCurrentIndex, queueSize=${shareableQueue.size}, positionMs=$positionMs"
+        )
         return ListenTogetherEvent(
             type = "LINK_READY",
             eventId = nextEventId(),
@@ -752,10 +783,26 @@ class ListenTogetherSessionManager(
 
     private fun handleLinkRequested(message: ListenTogetherSocketEnvelope) {
         val snapshot = _sessionState.value
-        if (!isCurrentUserController(snapshot)) return
+        if (!isCurrentUserController(snapshot)) {
+            NPLogger.d(
+                TAG,
+                "handleLinkRequested(): ignore because current user is not controller, requester=${message.causedBy?.userUuid}, role=${currentRole(snapshot)}"
+            )
+            return
+        }
         val stableKey = message.requestTrackStableKey
             ?: message.track?.stableKey
-            ?: return
+            ?: run {
+                NPLogger.w(
+                    TAG,
+                    "handleLinkRequested(): missing stableKey, requester=${message.causedBy?.userUuid}, messageType=${message.type}"
+                )
+                return
+            }
+        NPLogger.d(
+            TAG,
+            "handleLinkRequested(): stableKey=$stableKey, requester=${message.causedBy?.userUuid}"
+        )
         publishControllerLinkReadyIfPossible(stableKey = stableKey, reason = "request:${message.causedBy?.userUuid}")
     }
 
@@ -857,7 +904,13 @@ class ListenTogetherSessionManager(
             return
         }
 
-        val event = buildEventForPlaybackCommand(command) ?: return
+        val event = buildEventForPlaybackCommand(command) ?: run {
+            NPLogger.w(
+                TAG,
+                "handleLocalPlaybackCommand(): unsupported command type=${command.type}, source=${command.source}"
+            )
+            return
+        }
         noteControllerLocalControl(command)
         markOutboundEvent(event.eventId)
         noteOutboundSync()

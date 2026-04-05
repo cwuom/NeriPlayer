@@ -89,7 +89,7 @@ class NeriPlayerApplication : Application() {
         // 初始化全局下载管理器
         GlobalDownloadManager.initialize(this)
 
-        // set a global Coil ImageLoader that uses the shared OkHttpClient honoring proxy bypass
+        // 设置一个全局 Coil ImageLoader，它使用共享的 OkHttpClient 支持代理绕过
         val imageLoader = ImageLoader.Builder(this)
             .okHttpClient { AppContainer.sharedOkHttpClient }
             .respectCacheHeaders(false)

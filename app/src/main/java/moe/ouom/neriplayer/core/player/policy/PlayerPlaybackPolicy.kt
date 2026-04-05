@@ -8,6 +8,12 @@ import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 
+internal const val PLAYBACK_PROGRESS_UPDATE_INTERVAL_MS = 80L
+internal const val MAX_CONSECUTIVE_PLAYBACK_FAILURES = 10
+internal const val MEDIA_URL_STALE_INTERVAL_MS = 10 * 60 * 1000L
+internal const val URL_REFRESH_COOLDOWN_MS = 10 * 1000L
+internal const val STATE_PERSIST_INTERVAL_MS = 15 * 1000L
+
 enum class PlaybackCommandSource {
     LOCAL,
     REMOTE_SYNC

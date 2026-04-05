@@ -1,4 +1,4 @@
-package moe.ouom.neriplayer.core.player
+package moe.ouom.neriplayer.core.player.metadata
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
