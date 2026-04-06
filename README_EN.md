@@ -273,11 +273,11 @@ NeriPlayer supports syncing local metadata to **your own GitHub private reposito
   <td>External JavaScript for yt-dlp supporting many runtimes</td>
 </tr>
 <tr>
-  <td><a href="https://github.com/6xingyv/accompanist-lyrics-core">accompanist-lyrics-core</a></td>
+  <td><a href="https://github.com/cwuom/accompanist-lyrics-core">accompanist-lyrics-core</a></td>
   <td>A lyrics parsing, converting, exporting library for Kotlin</td>
 </tr>
 <tr>
-  <td><a href="https://github.com/6xingyv/accompanist-lyrics-ui">accompanist-lyrics-ui</a></td>
+  <td><a href="https://github.com/cwuom/accompanist-lyrics-ui">accompanist-lyrics-ui</a></td>
   <td>The state-of-the-art karaoke lyrics composable</td>
 </tr>
 <tr>
