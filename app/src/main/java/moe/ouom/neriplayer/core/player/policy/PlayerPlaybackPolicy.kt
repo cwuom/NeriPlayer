@@ -29,6 +29,11 @@ internal data class PlaybackStartPlan(
     val initialVolume: Float
 )
 
+internal data class ManualResumePlaybackDecision(
+    val resumePositionMs: Long,
+    val forceStartupProtectionFade: Boolean
+)
+
 internal data class YouTubeWarmupTargets(
     val currentVideoId: String?,
     val nextVideoId: String?,
@@ -88,6 +93,28 @@ internal fun shouldForceStartupProtectionFadeOnManualResume(
         currentMediaUrlResolvedAtMs <= 0L
 }
 
+internal fun resolveManualResumePlaybackDecision(
+    keepLastPlaybackProgressEnabled: Boolean,
+    restoredResumePositionMs: Long,
+    persistedPlaybackPositionMs: Long,
+    isPlayerPrepared: Boolean,
+    currentMediaUrlResolvedAtMs: Long
+): ManualResumePlaybackDecision {
+    val resumePositionMs = if (keepLastPlaybackProgressEnabled) {
+        maxOf(restoredResumePositionMs, persistedPlaybackPositionMs).coerceAtLeast(0L)
+    } else {
+        0L
+    }
+    return ManualResumePlaybackDecision(
+        resumePositionMs = resumePositionMs,
+        forceStartupProtectionFade = shouldForceStartupProtectionFadeOnManualResume(
+            isPlayerPrepared = isPlayerPrepared,
+            resumePositionMs = resumePositionMs,
+            currentMediaUrlResolvedAtMs = currentMediaUrlResolvedAtMs
+        )
+    )
+}
+
 internal fun shouldRunPlaybackServiceInForeground(
     hasCurrentSong: Boolean,
     resumePlaybackRequested: Boolean,
@@ -115,11 +142,9 @@ internal fun shouldBootstrapPlaybackServiceOnAppLaunch(
     playerPlaybackState: Int
 ): Boolean {
     if (!hasCurrentSong) return false
-    return playJobActive ||
-        pendingPauseJobActive ||
-        playWhenReady ||
-        isPlaying ||
-        playerPlaybackState == Player.STATE_BUFFERING
+    // 只要恢复出了当前歌曲，就应该尽快恢复服务里的 MediaSession，
+    // 这样暂停中的旧队列在进程重建后也还能继续出现在系统媒体控制里。
+    return true
 }
 
 internal fun shouldSyncPlaybackServiceForLocalPlaybackCommand(type: String): Boolean {

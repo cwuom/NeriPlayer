@@ -94,6 +94,34 @@ class PlayerManagerPlaybackStartPlanTest {
     }
 
     @Test
+    fun `manual resume decision keeps saved progress and enables startup protection on cold resume`() {
+        val decision = resolveManualResumePlaybackDecision(
+            keepLastPlaybackProgressEnabled = true,
+            restoredResumePositionMs = 48_000L,
+            persistedPlaybackPositionMs = 7_925L,
+            isPlayerPrepared = false,
+            currentMediaUrlResolvedAtMs = 0L
+        )
+
+        assertEquals(48_000L, decision.resumePositionMs)
+        assertTrue(decision.forceStartupProtectionFade)
+    }
+
+    @Test
+    fun `manual resume decision disables startup protection when progress restore is off`() {
+        val decision = resolveManualResumePlaybackDecision(
+            keepLastPlaybackProgressEnabled = false,
+            restoredResumePositionMs = 48_000L,
+            persistedPlaybackPositionMs = 7_925L,
+            isPlayerPrepared = false,
+            currentMediaUrlResolvedAtMs = 0L
+        )
+
+        assertEquals(0L, decision.resumePositionMs)
+        assertFalse(decision.forceStartupProtectionFade)
+    }
+
+    @Test
     fun `freshly resolved media skips manual startup protection fade`() {
         val shouldProtect = shouldForceStartupProtectionFadeOnManualResume(
             isPlayerPrepared = false,
@@ -135,7 +163,7 @@ class PlayerManagerPlaybackStartPlanTest {
     }
 
     @Test
-    fun `app bootstrap ignores restored queue without live transport`() {
+    fun `app bootstrap restores paused queue for external controls`() {
         val shouldBootstrap = shouldBootstrapPlaybackServiceOnAppLaunch(
             hasCurrentSong = true,
             playJobActive = false,
@@ -145,7 +173,7 @@ class PlayerManagerPlaybackStartPlanTest {
             playerPlaybackState = 0
         )
 
-        assertFalse(shouldBootstrap)
+        assertTrue(shouldBootstrap)
     }
 
     @Test

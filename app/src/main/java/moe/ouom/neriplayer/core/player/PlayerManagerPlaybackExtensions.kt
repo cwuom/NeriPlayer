@@ -20,6 +20,7 @@ import moe.ouom.neriplayer.core.player.model.SongUrlResult
 import moe.ouom.neriplayer.core.player.policy.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.policy.PlaybackStartPlan
 import moe.ouom.neriplayer.core.player.policy.resolveManagedPlaybackStartPlan
+import moe.ouom.neriplayer.core.player.policy.resolveManualResumePlaybackDecision
 import moe.ouom.neriplayer.core.player.policy.resolveYouTubeWarmupTargets
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
@@ -612,20 +613,23 @@ internal fun PlayerManager.playImpl(
             )
         }
         currentPlaylist.isNotEmpty() && currentIndex != -1 -> {
-            val resumePositionMs = if (keepLastPlaybackProgressEnabled) {
-                maxOf(restoredResumePositionMs, _playbackPositionMs.value).coerceAtLeast(0L)
-            } else {
-                0L
-            }
+            val manualResumeDecision = resolveManualResumePlaybackDecision(
+                keepLastPlaybackProgressEnabled = keepLastPlaybackProgressEnabled,
+                restoredResumePositionMs = restoredResumePositionMs,
+                persistedPlaybackPositionMs = _playbackPositionMs.value,
+                isPlayerPrepared = preparedInPlayer,
+                currentMediaUrlResolvedAtMs = currentMediaUrlResolvedAtMs
+            )
             playAtIndex(
                 currentIndex,
-                resumePositionMs = resumePositionMs,
-                commandSource = commandSource
+                resumePositionMs = manualResumeDecision.resumePositionMs,
+                commandSource = commandSource,
+                forceStartupProtectionFade = manualResumeDecision.forceStartupProtectionFade
             )
             emitPlaybackCommand(
                 type = "PLAY",
                 source = commandSource,
-                positionMs = resumePositionMs,
+                positionMs = manualResumeDecision.resumePositionMs,
                 currentIndex = currentIndex
             )
         }
