@@ -375,7 +375,7 @@ internal fun PlayerManager.restoreState() {
             currentMediaUrlResolvedAtMs = 0L
             restoredResumePositionMs = 0L
             restoredShouldResumePlayback = false
-            resumePlaybackRequested = false
+            updateResumePlaybackRequested(false)
             return
         }
         val preferredSong = data.playlist.getOrNull(data.index)?.toSongItem()
@@ -422,7 +422,7 @@ internal fun PlayerManager.restoreState() {
             0L
         }
         restoredShouldResumePlayback = data.shouldResumePlayback && currentIndex != -1
-        resumePlaybackRequested = false
+        updateResumePlaybackRequested(false)
         _playbackPositionMs.value = restoredResumePositionMs
         currentMediaUrlResolvedAtMs = 0L
         NPLogger.d(

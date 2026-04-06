@@ -912,7 +912,7 @@ fun NeriApp(
 
                 val currentSong by PlayerManager.currentSongFlow.collectAsState()
                 val isMiniPlayerVisible = currentSong != null && !showNowPlaying
-                val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
+                val isPlaybackControlPlaying by PlayerManager.playbackControlPlayingFlow.collectAsState()
                 val reservedMiniPlayerHeightDp = if (currentSong == null) {
                     0.dp
                 } else {
@@ -1694,7 +1694,7 @@ fun NeriApp(
                                         ?: context.getString(R.string.nowplaying_no_playback),
                                     artist = currentSong?.displayArtist() ?: "",
                                     coverUrl = currentSong.resolveUiCoverSource(context),
-                                    isPlaying = isPlaying,
+                                    isPlaying = isPlaybackControlPlaying,
                                     modifier = Modifier,
                                     onPlayPause = { PlayerManager.togglePlayPause() },
                                     onExpand = { showNowPlaying = true },

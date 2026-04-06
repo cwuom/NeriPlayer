@@ -72,6 +72,38 @@ class PlayerManagerPlaybackStartPlanTest {
     }
 
     @Test
+    fun `continuation plan resumes fade in from current volume during fade out cancel`() {
+        val plan = resolvePlaybackContinuationStartPlan(
+            plan = PlaybackStartPlan(
+                useFadeIn = true,
+                fadeDurationMs = 1000L,
+                initialVolume = 0f
+            ),
+            currentVolume = 0.4f
+        )
+
+        assertTrue(plan.useFadeIn)
+        assertEquals(600L, plan.fadeDurationMs)
+        assertEquals(0.4f, plan.initialVolume, 0.0001f)
+    }
+
+    @Test
+    fun `continuation plan skips extra fade when volume already recovered`() {
+        val plan = resolvePlaybackContinuationStartPlan(
+            plan = PlaybackStartPlan(
+                useFadeIn = true,
+                fadeDurationMs = 1000L,
+                initialVolume = 0f
+            ),
+            currentVolume = 1f
+        )
+
+        assertTrue(plan.useFadeIn)
+        assertEquals(0L, plan.fadeDurationMs)
+        assertEquals(1f, plan.initialVolume, 0.0001f)
+    }
+
+    @Test
     fun `manual cold resume forces startup protection fade`() {
         val shouldProtect = shouldForceStartupProtectionFadeOnManualResume(
             isPlayerPrepared = false,

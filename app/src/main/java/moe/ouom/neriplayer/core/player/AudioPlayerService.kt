@@ -82,6 +82,7 @@ private data class PlaybackNotificationSnapshot(
     val title: String,
     val text: String,
     val isTransportActive: Boolean,
+    val isPlaybackControlPlaying: Boolean,
     val isFavorite: Boolean,
     val requiresInteractiveFavoriteConfirmation: Boolean,
     val largeIconReady: Boolean,
@@ -382,6 +383,11 @@ class AudioPlayerService : Service() {
             }
         }
         serviceScope.launch {
+            PlayerManager.playbackControlPlayingFlow.collect {
+                updateNotification()
+            }
+        }
+        serviceScope.launch {
             PlayerManager.playWhenReadyFlow.collect {
                 updatePlaybackState()
                 updateNotification()
@@ -553,7 +559,7 @@ class AudioPlayerService : Service() {
     }
 
     private fun buildNotification(): Notification {
-        val isTransportActive = PlayerManager.isTransportActive()
+        val isPlaybackControlPlaying = PlayerManager.playbackControlPlayingFlow.value
         val song = PlayerManager.currentSongFlow.value
 
         val contentIntent = PendingIntent.getActivity(
@@ -603,9 +609,9 @@ class AudioPlayerService : Service() {
 
         builder.addAction(R.drawable.round_skip_previous_24, getString(R.string.player_previous), prevIntent)
         builder.addAction(
-            if (isTransportActive) R.drawable.round_pause_24 else R.drawable.round_play_arrow_24,
-            if (isTransportActive) getString(R.string.player_pause) else getString(R.string.player_play),
-            if (isTransportActive) pauseIntent else playIntent
+            if (isPlaybackControlPlaying) R.drawable.round_pause_24 else R.drawable.round_play_arrow_24,
+            if (isPlaybackControlPlaying) getString(R.string.player_pause) else getString(R.string.player_play),
+            if (isPlaybackControlPlaying) pauseIntent else playIntent
         )
         builder.addAction(favAction)
         builder.addAction(R.drawable.round_skip_next_24, getString(R.string.player_next), nextIntent)
@@ -727,6 +733,7 @@ class AudioPlayerService : Service() {
             title = song?.displayName() ?: "NeriPlayer",
             text = text,
             isTransportActive = PlayerManager.isTransportActive(),
+            isPlaybackControlPlaying = PlayerManager.playbackControlPlayingFlow.value,
             isFavorite = isFavoriteSong(song),
             requiresInteractiveFavoriteConfirmation = requiresInteractiveFavoriteConfirmation(song),
             largeIconReady = currentLargeIcon != null,

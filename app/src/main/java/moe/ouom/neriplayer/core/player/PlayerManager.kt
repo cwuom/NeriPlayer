@@ -73,6 +73,7 @@ import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
 import moe.ouom.neriplayer.core.player.policy.PlaybackCommand
 import moe.ouom.neriplayer.core.player.policy.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.policy.resolvePlaybackSoundConfigForEngine
+import moe.ouom.neriplayer.core.player.policy.shouldShowPauseButtonForPlaybackControls
 import moe.ouom.neriplayer.core.player.policy.shouldBootstrapPlaybackServiceOnAppLaunch
 import moe.ouom.neriplayer.core.player.policy.shouldRunPlaybackServiceInForeground
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
@@ -133,6 +134,10 @@ object PlayerManager {
     internal var progressJob: Job? = null
     internal var volumeFadeJob: Job? = null
     internal var pendingPauseJob: Job? = null
+        set(value) {
+            field = value
+            syncPlaybackControlPlayingState()
+        }
     internal var bluetoothDisconnectPauseJob: Job? = null
     internal var playbackSoundPersistJob: Job? = null
     internal var playbackSoundApplyJob: Job? = null
@@ -195,6 +200,10 @@ object PlayerManager {
     internal var lastAutoTrackAdvanceAtMs: Long = 0L
     @Volatile
     internal var resumePlaybackRequested = false
+        set(value) {
+            field = value
+            syncPlaybackControlPlayingState()
+        }
     @Volatile
     internal var suppressAutoResumeForCurrentSession = false
     @Volatile
@@ -208,6 +217,13 @@ object PlayerManager {
 
     internal val _isPlayingFlow = MutableStateFlow(false)
     val isPlayingFlow: StateFlow<Boolean> = _isPlayingFlow
+
+    /**
+     * 播放/暂停按钮使用的视觉状态。
+     * 它跟随用户最近一次播放控制意图，避免淡入/淡出期间图标滞后。
+     */
+    internal val _playbackControlPlayingFlow = MutableStateFlow(false)
+    val playbackControlPlayingFlow: StateFlow<Boolean> = _playbackControlPlayingFlow
 
     internal val _playWhenReadyFlow = MutableStateFlow(false)
     val playWhenReadyFlow: StateFlow<Boolean> = _playWhenReadyFlow
@@ -293,6 +309,17 @@ object PlayerManager {
     internal fun isPlayerInitialized(): Boolean = this::player.isInitialized
 
     internal fun isCacheInitialized(): Boolean = this::cache.isInitialized
+
+    internal fun syncPlaybackControlPlayingState() {
+        _playbackControlPlayingFlow.value = shouldShowPauseButtonForPlaybackControls(
+            resumePlaybackRequested = resumePlaybackRequested,
+            pendingPauseJobActive = pendingPauseJob?.isActive == true
+        )
+    }
+
+    internal fun updateResumePlaybackRequested(requested: Boolean) {
+        resumePlaybackRequested = requested
+    }
 
     fun isTransportActive(): Boolean {
         ensureInitialized()
@@ -435,7 +462,7 @@ object PlayerManager {
         playbackRequestToken += 1
         playJob?.cancel()
         playJob = null
-        resumePlaybackRequested = false
+        updateResumePlaybackRequested(false)
         restoredShouldResumePlayback = false
         restoredResumePositionMs = 0L
         stopProgressUpdates()

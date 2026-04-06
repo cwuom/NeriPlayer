@@ -310,6 +310,7 @@ fun NowPlayingScreen(
 ) {
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
     val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
+    val isPlaybackControlPlaying by PlayerManager.playbackControlPlayingFlow.collectAsState()
     val shuffleEnabled by PlayerManager.shuffleModeFlow.collectAsState()
     val repeatMode by PlayerManager.repeatModeFlow.collectAsState()
     val currentPosition by PlayerManager.playbackPositionFlow.collectAsState()
@@ -1091,7 +1092,7 @@ fun NowPlayingScreen(
                                 .size(primaryControlButtonSize)
                         ) {
                             AnimatedContent(
-                                targetState = isPlaying,
+                                targetState = isPlaybackControlPlaying,
                                 label = "play_pause_icon",
                                 transitionSpec = { (scaleIn() + fadeIn()) togetherWith (scaleOut() + fadeOut()) }
                             ) { currentlyPlaying ->

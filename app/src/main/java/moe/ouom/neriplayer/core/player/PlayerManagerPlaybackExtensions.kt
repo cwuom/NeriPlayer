@@ -19,9 +19,11 @@ import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
 import moe.ouom.neriplayer.core.player.policy.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.policy.PlaybackStartPlan
+import moe.ouom.neriplayer.core.player.policy.resolvePlaybackContinuationStartPlan
 import moe.ouom.neriplayer.core.player.policy.resolveManagedPlaybackStartPlan
 import moe.ouom.neriplayer.core.player.policy.resolveManualResumePlaybackDecision
 import moe.ouom.neriplayer.core.player.policy.resolveYouTubeWarmupTargets
+import moe.ouom.neriplayer.core.player.policy.shouldPausePlaybackWhenToggling
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
@@ -323,7 +325,7 @@ internal fun PlayerManager.playAtIndex(
     if (shouldAwaitAuthoritativeStream) {
         stopCurrentPlaybackForListenTogetherAwaitingStream()
     }
-    resumePlaybackRequested = true
+    updateResumePlaybackRequested(true)
     restoredShouldResumePlayback = false
     restoredResumePositionMs = 0L
     ioScope.launch {
@@ -428,7 +430,7 @@ internal fun PlayerManager.playAtIndex(
                     "NERI-PlayerManager",
                     "Waiting for authoritative listen-together stream: song=${song.name}, stableKey=${song.listenTogetherStableKeyOrNull()}"
                 )
-                resumePlaybackRequested = false
+                updateResumePlaybackRequested(false)
                 ioScope.launch {
                     persistState(
                         positionMs = resumePositionMs.coerceAtLeast(0L),
@@ -561,9 +563,17 @@ internal fun PlayerManager.playImpl(
     ensureInitialized()
     if (!initialized) return
     if (shouldBlockLocalRoomControl(commandSource)) return
-    cancelPendingPauseRequest(resetVolumeToFull = true)
+    val resumeVolumeFromPendingPause = if (
+        pendingPauseJob?.isActive == true &&
+        isPlayerInitialized()
+    ) {
+        runCatching { player.volume.coerceIn(0f, 1f) }.getOrNull()
+    } else {
+        null
+    }
+    cancelPendingPauseRequest(resetVolumeToFull = resumeVolumeFromPendingPause == null)
     suppressAutoResumeForCurrentSession = false
-    resumePlaybackRequested = true
+    updateResumePlaybackRequested(true)
     val song = _currentSongFlow.value
     val preparedInPlayer = isPreparedInPlayer()
     NPLogger.d(
@@ -596,7 +606,12 @@ internal fun PlayerManager.playImpl(
     when {
         preparedInPlayer -> {
             syncExoRepeatMode()
-            startPlayerPlaybackWithFade(resolveCurrentPlaybackStartPlan())
+            startPlayerPlaybackWithFade(
+                resolvePlaybackContinuationStartPlan(
+                    plan = resolveCurrentPlaybackStartPlan(),
+                    currentVolume = resumeVolumeFromPendingPause
+                )
+            )
             val resumePositionMs = player.currentPosition.coerceAtLeast(0L)
             _playbackPositionMs.value = resumePositionMs
             ioScope.launch {
@@ -687,7 +702,7 @@ internal fun PlayerManager.pauseImpl(
         "pause requested: forcePersist=$forcePersist, source=$commandSource, currentSong=${_currentSongFlow.value?.name}, isPlaying=${player.isPlaying}, playWhenReady=${player.playWhenReady}, stack=[${debugStackHint()}]"
     )
     cancelPendingPauseRequest()
-    resumePlaybackRequested = false
+    updateResumePlaybackRequested(false)
     playbackRequestToken += 1
     playJob?.cancel()
     playJob = null
@@ -730,7 +745,7 @@ internal fun PlayerManager.pauseImpl(
 
 private fun PlayerManager.pauseInternal(forcePersist: Boolean, resetVolumeToFull: Boolean) {
     pendingPauseJob = null
-    resumePlaybackRequested = false
+    updateResumePlaybackRequested(false)
     val currentSong = _currentSongFlow.value
     val currentPosition = player.currentPosition.coerceAtLeast(0L)
     val expectedDuration = currentSong?.durationMs?.takeIf { it > 0L } ?: player.duration
@@ -776,7 +791,14 @@ private fun PlayerManager.pauseInternal(forcePersist: Boolean, resetVolumeToFull
 internal fun PlayerManager.togglePlayPauseImpl() {
     ensureInitialized()
     if (!initialized) return
-    if (player.isPlaying || player.playWhenReady || playJob?.isActive == true) {
+    if (shouldPausePlaybackWhenToggling(
+            resumePlaybackRequested = resumePlaybackRequested,
+            pendingPauseJobActive = pendingPauseJob?.isActive == true,
+            playerIsPlaying = player.isPlaying,
+            playerPlayWhenReady = player.playWhenReady,
+            playJobActive = playJob?.isActive == true
+        )
+    ) {
         pause()
     } else {
         play()
@@ -1049,7 +1071,7 @@ internal fun PlayerManager.stopPlaybackPreservingQueueImpl(clearMediaUrl: Boolea
     playJob?.cancel()
     playJob = null
     lastHandledTrackEndKey = null
-    resumePlaybackRequested = false
+    updateResumePlaybackRequested(false)
     lastAutoTrackAdvanceAtMs = 0L
     stopProgressUpdates()
     cancelVolumeFade(resetToFull = true)

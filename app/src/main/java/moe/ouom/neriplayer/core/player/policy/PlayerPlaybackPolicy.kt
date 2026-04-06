@@ -83,6 +83,29 @@ internal fun resolveManagedPlaybackStartPlan(
     )
 }
 
+internal fun resolvePlaybackContinuationStartPlan(
+    plan: PlaybackStartPlan,
+    currentVolume: Float?
+): PlaybackStartPlan {
+    if (!plan.useFadeIn) return plan
+    val resumedVolume = currentVolume?.coerceIn(0f, 1f) ?: return plan
+    if (resumedVolume <= plan.initialVolume) return plan
+
+    val remainingFraction = (1f - resumedVolume).coerceIn(0f, 1f)
+    val adjustedDurationMs = when {
+        remainingFraction <= 0f -> 0L
+        plan.fadeDurationMs <= 0L -> 0L
+        else -> maxOf(
+            1L,
+            (plan.fadeDurationMs * remainingFraction).toLong()
+        )
+    }
+    return plan.copy(
+        initialVolume = resumedVolume,
+        fadeDurationMs = adjustedDurationMs
+    )
+}
+
 internal fun shouldForceStartupProtectionFadeOnManualResume(
     isPlayerPrepared: Boolean,
     resumePositionMs: Long,
@@ -145,6 +168,27 @@ internal fun shouldBootstrapPlaybackServiceOnAppLaunch(
     // 只要恢复出了当前歌曲，就应该尽快恢复服务里的 MediaSession，
     // 这样暂停中的旧队列在进程重建后也还能继续出现在系统媒体控制里。
     return true
+}
+
+internal fun shouldShowPauseButtonForPlaybackControls(
+    resumePlaybackRequested: Boolean,
+    pendingPauseJobActive: Boolean
+): Boolean {
+    return resumePlaybackRequested && !pendingPauseJobActive
+}
+
+internal fun shouldPausePlaybackWhenToggling(
+    resumePlaybackRequested: Boolean,
+    pendingPauseJobActive: Boolean,
+    playerIsPlaying: Boolean,
+    playerPlayWhenReady: Boolean,
+    playJobActive: Boolean
+): Boolean {
+    if (pendingPauseJobActive) return false
+    return resumePlaybackRequested ||
+        playerIsPlaying ||
+        playerPlayWhenReady ||
+        playJobActive
 }
 
 internal fun shouldSyncPlaybackServiceForLocalPlaybackCommand(type: String): Boolean {

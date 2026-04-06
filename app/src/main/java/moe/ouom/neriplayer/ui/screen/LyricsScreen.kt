@@ -154,6 +154,7 @@ fun LyricsScreen(
 
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
     val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
+    val isPlaybackControlPlaying by PlayerManager.playbackControlPlayingFlow.collectAsState()
     val currentPosition by PlayerManager.playbackPositionFlow.collectAsState()
     val lyricsPlaybackSoundState by PlayerManager.playbackSoundStateFlow.collectAsState()
     val plainLyrics = remember(lyrics) { lyrics.flattenWordTimedEntries() }
@@ -642,7 +643,7 @@ fun LyricsScreen(
                         .size(42.dp)
                 ) {
                     AnimatedContent(
-                        targetState = isPlaying,
+                        targetState = isPlaybackControlPlaying,
                         label = "play_pause_icon",
                         transitionSpec = { (scaleIn() + fadeIn()) togetherWith (scaleOut() + fadeOut()) }
                     ) { currentlyPlaying ->

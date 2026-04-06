@@ -767,7 +767,7 @@ internal fun PlayerManager.releaseImpl() {
         "NERI-PlayerManager",
         "release(): begin, currentSong=${_currentSongFlow.value?.name}, queueSize=${currentPlaylist.size}, currentIndex=$currentIndex, isPlaying=${_isPlayingFlow.value}, mediaUrl=${_currentMediaUrl.value}, stack=[${debugStackHint()}]"
     )
-    resumePlaybackRequested = false
+    updateResumePlaybackRequested(false)
     lastAutoTrackAdvanceAtMs = 0L
 
     try {
