@@ -29,4 +29,20 @@ class AppleMusicLyricTimingTest {
         assertTrue(shouldSnapLyricTimeSmoothing(displayedTimeMs = 1_000L, targetTimeMs = 1_400L))
         assertTrue(shouldSnapLyricTimeSmoothing(displayedTimeMs = 1_000L, targetTimeMs = 900L))
     }
+
+    @Test
+    fun `findBestMatchingTranslation keeps shared boundary aligned to current line`() {
+        val translations = listOf(
+            LyricEntry(text = "我们有一整个周末", startTimeMs = 18_090L, endTimeMs = 22_620L),
+            LyricEntry(text = "撕碎它", startTimeMs = 22_620L, endTimeMs = 24_630L)
+        )
+
+        val matched = findBestMatchingTranslation(
+            translations = translations,
+            lineStartMs = 18_090L,
+            lineEndMs = 22_620L
+        )
+
+        assertEquals("我们有一整个周末", matched?.text)
+    }
 }

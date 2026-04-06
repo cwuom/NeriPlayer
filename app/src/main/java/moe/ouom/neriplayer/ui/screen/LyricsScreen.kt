@@ -216,6 +216,33 @@ fun LyricsScreen(
     var sliderPosition by remember(currentSong?.id) {
         mutableFloatStateOf(PlayerManager.playbackPositionFlow.value.toFloat())
     }
+    var pendingSeekPreviewPositionMs by remember(currentSong?.id) { mutableStateOf<Long?>(null) }
+    val effectiveLyricTimeMs = resolveLyricPreviewTimeMs(
+        isDraggingSlider = isUserDraggingSlider,
+        sliderPreviewPositionMs = sliderPosition.toLong(),
+        pendingSeekPreviewPositionMs = pendingSeekPreviewPositionMs,
+        playbackPositionMs = currentPosition
+    )
+    val shouldAnimateFromPlayback = shouldAnimateAdvancedLyricsFromPlayback(
+        isPlaying = isPlaying,
+        isDraggingSlider = isUserDraggingSlider,
+        pendingSeekPreviewPositionMs = pendingSeekPreviewPositionMs
+    )
+
+    LaunchedEffect(currentPosition, isUserDraggingSlider, pendingSeekPreviewPositionMs) {
+        if (!isUserDraggingSlider && pendingSeekPreviewPositionMs == null) {
+            sliderPosition = currentPosition.toFloat()
+        }
+        val pendingPreview = pendingSeekPreviewPositionMs
+        if (!isUserDraggingSlider && pendingPreview != null &&
+            shouldReleaseLyricSeekPreview(
+                playbackPositionMs = currentPosition,
+                pendingSeekPreviewPositionMs = pendingPreview
+            )
+        ) {
+            pendingSeekPreviewPositionMs = null
+        }
+    }
 
     // 使用填充整个屏幕，不创建新背景，复用现有背景
     Column(
@@ -460,7 +487,7 @@ fun LyricsScreen(
                 if (advancedLyricsEnabled) {
                     AdvancedLyricsView(
                         lyrics = lyrics,
-                        currentTimeMs = currentPosition,
+                        currentTimeMs = effectiveLyricTimeMs,
                         modifier = Modifier.fillMaxSize(),
                         textColor = MaterialTheme.colorScheme.onBackground,
                         lyricFontScale = lyricFontScale,
@@ -472,14 +499,16 @@ fun LyricsScreen(
                         showLyricTranslation = showLyricTranslation,
                         rawLyrics = currentSong?.matchedLyric,
                         rawTranslatedLyrics = currentSong?.matchedTranslatedLyric,
-                        isPlaying = isPlaying,
+                        isPlaying = shouldAnimateFromPlayback,
+                        animateViewportScroll = isUserDraggingSlider ||
+                            pendingSeekPreviewPositionMs != null,
                         playbackSpeed = lyricsPlaybackSoundState.speed,
                         onSeekTo = onSeekTo
                     )
                 } else {
                     AppleMusicLyric(
                         lyrics = plainLyrics,
-                        currentTimeMs = currentPosition,
+                        currentTimeMs = effectiveLyricTimeMs,
                         modifier = Modifier.fillMaxSize(),
                         textColor = MaterialTheme.colorScheme.onBackground,
                         // 放大歌词与行距，增强可读性
@@ -538,9 +567,7 @@ fun LyricsScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    text = formatDuration(
-                        if (isUserDraggingSlider) sliderPosition.toLong() else currentPosition
-                    ),
+                    text = formatDuration(effectiveLyricTimeMs),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -548,14 +575,16 @@ fun LyricsScreen(
                 WaveformSlider(
                     modifier = Modifier.weight(1f),
                     value = if (durationMs > 0) {
-                        if (isUserDraggingSlider) sliderPosition / durationMs else currentPosition.toFloat() / durationMs
+                        effectiveLyricTimeMs.toFloat() / durationMs
                     } else 0f,
                     onValueChange = { newValue ->
                         isUserDraggingSlider = true
                         sliderPosition = newValue * durationMs.toFloat()
                     },
                     onValueChangeFinished = {
-                        PlayerManager.seekTo(sliderPosition.toLong())
+                        val previewTarget = sliderPosition.toLong()
+                        pendingSeekPreviewPositionMs = previewTarget
+                        PlayerManager.seekTo(previewTarget)
                         isUserDraggingSlider = false
                     },
                     isPlaying = isPlaying

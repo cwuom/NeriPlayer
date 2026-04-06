@@ -472,17 +472,12 @@ fun AppleMusicLyric(
                     }
 
                     val transText = translatedLyrics?.let { list ->
-                        if (list.isEmpty()) return@let null
-
-                        val targetTime = if (isActive) smoothedLyricTimeMs else line.startTimeMs
-                        val matchedLine = list.lastOrNull { targetTime >= it.startTimeMs && targetTime < it.endTimeMs }
-                            ?: list.lastOrNull { targetTime >= it.startTimeMs }
-
-                        val tolerance = 1_500L
-                        val isTimeAligned = matchedLine != null &&
-                            matchedLine.startTimeMs >= line.startTimeMs - tolerance
-
-                        if (isTimeAligned) matchedLine?.text else null
+                        // 普通歌词与高级歌词共用同一套配对逻辑，避免边界时间命中下一句翻译
+                        findBestMatchingTranslation(
+                            translations = list,
+                            lineStartMs = line.startTimeMs,
+                            lineEndMs = line.endTimeMs
+                        )?.text
                     }
                     val shouldShowTranslation = (shouldUseClearText || isActive) && !transText.isNullOrBlank()
 

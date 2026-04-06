@@ -522,9 +522,29 @@ fun NowPlayingScreen(
     }
     val plainLyrics = remember(lyrics) { lyrics.flattenWordTimedEntries() }
     val plainTranslatedLyrics = remember(translatedLyrics) { translatedLyrics.flattenWordTimedEntries() }
+    var pendingSeekPreviewPositionMs by remember(currentSong?.id) { mutableStateOf<Long?>(null) }
+    val effectivePreviewPositionMs = resolveLyricPreviewTimeMs(
+        isDraggingSlider = isUserDraggingSlider,
+        sliderPreviewPositionMs = sliderPosition.toLong(),
+        pendingSeekPreviewPositionMs = pendingSeekPreviewPositionMs,
+        playbackPositionMs = currentPosition
+    )
 
     LaunchedEffect(Unit) { contentVisible = true }
-    LaunchedEffect(currentPosition) { if (!isUserDraggingSlider) sliderPosition = currentPosition.toFloat() }
+    LaunchedEffect(currentPosition, isUserDraggingSlider, pendingSeekPreviewPositionMs) {
+        if (!isUserDraggingSlider && pendingSeekPreviewPositionMs == null) {
+            sliderPosition = currentPosition.toFloat()
+        }
+        val pendingPreview = pendingSeekPreviewPositionMs
+        if (!isUserDraggingSlider && pendingPreview != null &&
+            shouldReleaseLyricSeekPreview(
+                playbackPositionMs = currentPosition,
+                pendingSeekPreviewPositionMs = pendingPreview
+            )
+        ) {
+            pendingSeekPreviewPositionMs = null
+        }
+    }
     LaunchedEffect(currentSong?.id) { showQualitySwitchDialog = false }
     LaunchedEffect(showLyricsScreen, showCoverSourceBadge) {
         val returningFromLyrics = previousLyricsScreenState && !showLyricsScreen
@@ -993,20 +1013,22 @@ fun NowPlayingScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            text = formatDuration(sliderPosition.toLong()),
+                            text = formatDuration(effectivePreviewPositionMs),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
 
                         WaveformSlider(
                             modifier = Modifier.weight(1f),
-                            value = if (durationMs > 0) sliderPosition / durationMs else 0f,
+                            value = if (durationMs > 0) effectivePreviewPositionMs.toFloat() / durationMs else 0f,
                             onValueChange = { newPercentage ->
                                 isUserDraggingSlider = true
                                 sliderPosition = (newPercentage * durationMs)
                             },
                             onValueChangeFinished = {
-                                PlayerManager.seekTo(sliderPosition.toLong())
+                                val previewTarget = sliderPosition.toLong()
+                                pendingSeekPreviewPositionMs = previewTarget
+                                PlayerManager.seekTo(previewTarget)
                                 isUserDraggingSlider = false
                             },
                             isPlaying = isPlaying
@@ -1107,7 +1129,7 @@ fun NowPlayingScreen(
 
                         AppleMusicLyric(
                             lyrics = plainLyrics,
-                            currentTimeMs = currentPosition,
+                            currentTimeMs = effectivePreviewPositionMs,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .weight(8f),
@@ -1311,7 +1333,7 @@ fun NowPlayingScreen(
                             if (lyrics.isNotEmpty()) {
                                 AppleMusicLyric(
                                     lyrics = plainLyrics,
-                                    currentTimeMs = currentPosition,
+                                    currentTimeMs = effectivePreviewPositionMs,
                                     modifier = Modifier.fillMaxSize(),
                                     textColor = MaterialTheme.colorScheme.onBackground,
                                     fontSize = scaledLyricFontSize(18f, lyricFontScale).sp,

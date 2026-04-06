@@ -6,6 +6,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import androidx.compose.ui.unit.dp
 
 class AdvancedLyricsViewTest {
 
@@ -51,6 +52,66 @@ class AdvancedLyricsViewTest {
             LyricEntry(
                 text = "星光",
                 startTimeMs = 1_100L,
+                endTimeMs = 1_900L
+            )
+        )
+
+        val result = buildAdvancedSyncedLyrics(
+            rawLyrics = null,
+            rawTranslatedLyrics = null,
+            lyrics = lyrics,
+            translatedLyrics = translations
+        )
+
+        val line = result.lines.single()
+        assertTrue(line is SyncedLine)
+        assertEquals("星光", (line as SyncedLine).translation)
+    }
+
+    @Test
+    fun `buildAdvancedSyncedLyrics keeps raw translated lrc aligned on shared boundary`() {
+        val lyrics = listOf(
+            LyricEntry(
+                text = "We've got all weekend",
+                startTimeMs = 18_090L,
+                endTimeMs = 22_620L
+            ),
+            LyricEntry(
+                text = "Tear it up, tear it down",
+                startTimeMs = 22_620L,
+                endTimeMs = 24_630L
+            )
+        )
+
+        val result = buildAdvancedSyncedLyrics(
+            rawLyrics = null,
+            rawTranslatedLyrics = """
+                [00:18.09]我们有一整个周末
+                [00:22.62]撕碎它
+            """.trimIndent(),
+            lyrics = lyrics,
+            translatedLyrics = emptyList()
+        )
+
+        val firstLine = result.lines[0] as SyncedLine
+        val secondLine = result.lines[1] as SyncedLine
+        assertEquals("我们有一整个周末", firstLine.translation)
+        assertEquals("撕碎它", secondLine.translation)
+    }
+
+    @Test
+    fun `buildAdvancedSyncedLyrics falls back to nearest translation within tolerance`() {
+        val lyrics = listOf(
+            LyricEntry(
+                text = "Starlight",
+                startTimeMs = 1_000L,
+                endTimeMs = 1_500L
+            )
+        )
+        val translations = listOf(
+            LyricEntry(
+                text = "星光",
+                startTimeMs = 1_550L,
                 endTimeMs = 1_900L
             )
         )
@@ -186,5 +247,33 @@ class AdvancedLyricsViewTest {
         )
 
         assertEquals(5_600L, predicted)
+    }
+
+    @Test
+    fun `resolvePlayedLyricViewportOffset supports roughly thirty percent played space`() {
+        val offset = resolvePlayedLyricViewportOffset(
+            viewportHeight = 1_000.dp,
+            keepAliveZone = 108.dp,
+            minimumOffset = 48.dp,
+            playedLyricViewportFraction = 0.30f,
+            focusedLineVisualCompensation = 18.dp,
+            topFadeLength = 112.dp
+        )
+
+        assertEquals(210.dp, offset)
+    }
+
+    @Test
+    fun `resolvePlayedLyricViewportOffset keeps focused line below top fade on short viewports`() {
+        val offset = resolvePlayedLyricViewportOffset(
+            viewportHeight = 500.dp,
+            keepAliveZone = 108.dp,
+            minimumOffset = 48.dp,
+            playedLyricViewportFraction = 0.30f,
+            focusedLineVisualCompensation = 18.dp,
+            topFadeLength = 112.dp
+        )
+
+        assertEquals(60.dp, offset)
     }
 }

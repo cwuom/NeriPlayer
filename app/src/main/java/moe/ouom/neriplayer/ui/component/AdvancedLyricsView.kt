@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.ui.component
 
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
@@ -10,6 +12,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextMotion
@@ -32,6 +35,8 @@ import kotlin.math.max
 private const val TranslationAlignmentToleranceMs = 1_500L
 private const val InterpolatedPlaybackResyncThresholdMs = 220L
 private const val InterpolatedPlaybackBackwardToleranceMs = 24L
+private const val FocusedLyricVisualCompensationRatio = 0.42f
+private val FocusedLyricMaskSafePadding = 24.dp
 
 @Composable
 fun AdvancedLyricsView(
@@ -49,9 +54,13 @@ fun AdvancedLyricsView(
     lyricBlurEnabled: Boolean = true,
     lyricBlurAmount: Float = 2.5f,
     isPlaying: Boolean = false,
+    animateViewportScroll: Boolean = false,
     playbackSpeed: Float = 1f,
     offset: Dp = 48.dp,
     keepAliveZone: Dp = 108.dp,
+    playedLyricViewportFraction: Float = 0.30f,
+    topFadeLength: Dp = 112.dp,
+    bottomFadeLength: Dp = 196.dp,
     bottomContentInset: Dp = 0.dp,
     onSeekTo: (Long) -> Unit = {}
 ) {
@@ -97,25 +106,64 @@ fun AdvancedLyricsView(
         playbackSpeed = playbackSpeed
     )
 
-    ModernKaraokeLyricsView(
-        listState = listState,
-        lyrics = syncedLyrics,
-        currentPosition = { safeCurrentPosition.toInt() },
-        renderCurrentPosition = renderPositionProvider,
-        onLineClicked = { line -> onSeekTo(line.start.toLong()) },
-        onLinePressed = { line -> onSeekTo(line.start.toLong()) },
-        modifier = modifier,
-        normalLineTextStyle = normalTextStyle,
-        accompanimentLineTextStyle = accompanimentTextStyle,
-        textColor = textColor,
-        showTranslation = showLyricTranslation,
-        showPhonetic = false,
-        useBlurEffect = lyricBlurEnabled,
-        offset = offset,
-        keepAliveZone = keepAliveZone,
-        bottomContentInset = bottomContentInset,
-        blurDelta = blurDelta
-    )
+    BoxWithConstraints(modifier = modifier) {
+        val density = LocalDensity.current
+        val focusedLineVisualCompensation = with(density) {
+            normalTextStyle.lineHeight.toDp() * FocusedLyricVisualCompensationRatio
+        }
+        val effectiveOffset = resolvePlayedLyricViewportOffset(
+            viewportHeight = maxHeight,
+            keepAliveZone = keepAliveZone,
+            minimumOffset = offset,
+            playedLyricViewportFraction = playedLyricViewportFraction,
+            focusedLineVisualCompensation = focusedLineVisualCompensation,
+            topFadeLength = topFadeLength
+        )
+
+        ModernKaraokeLyricsView(
+            listState = listState,
+            lyrics = syncedLyrics,
+            currentPosition = { safeCurrentPosition.toInt() },
+            renderCurrentPosition = renderPositionProvider,
+            onLineClicked = { line -> onSeekTo(line.start.toLong()) },
+            onLinePressed = { line -> onSeekTo(line.start.toLong()) },
+            modifier = Modifier.fillMaxSize(),
+            normalLineTextStyle = normalTextStyle,
+            accompanimentLineTextStyle = accompanimentTextStyle,
+            textColor = textColor,
+            showTranslation = showLyricTranslation,
+            showPhonetic = false,
+            useBlurEffect = lyricBlurEnabled,
+            animateViewportScroll = animateViewportScroll,
+            offset = effectiveOffset,
+            keepAliveZone = keepAliveZone,
+            bottomContentInset = bottomContentInset,
+            blurDelta = blurDelta,
+            topFadeLength = topFadeLength,
+            bottomFadeLength = bottomFadeLength
+        )
+    }
+}
+
+internal fun resolvePlayedLyricViewportOffset(
+    viewportHeight: Dp,
+    keepAliveZone: Dp,
+    minimumOffset: Dp,
+    playedLyricViewportFraction: Float,
+    focusedLineVisualCompensation: Dp,
+    topFadeLength: Dp
+): Dp {
+    val effectivePlayedLyricViewportFraction = playedLyricViewportFraction.coerceIn(0.18f, 0.46f)
+    val desiredPlayedLyricSpace = viewportHeight * effectivePlayedLyricViewportFraction
+    val minimumVisiblePlayedLyricSpace = topFadeLength + FocusedLyricMaskSafePadding
+    val resolvedPlayedLyricSpace = if (desiredPlayedLyricSpace > minimumVisiblePlayedLyricSpace) {
+        desiredPlayedLyricSpace
+    } else {
+        minimumVisiblePlayedLyricSpace
+    }
+    return (
+        resolvedPlayedLyricSpace + focusedLineVisualCompensation - keepAliveZone
+        ).coerceAtLeast(minimumOffset)
 }
 
 @Composable
@@ -297,16 +345,12 @@ private fun SyncedLyrics.attachTranslations(translations: List<LyricEntry>): Syn
     }
 
     val updatedLines = lines.map { line ->
-        val overlappingTranslation = translations.lastOrNull { candidate ->
-            candidate.endTimeMs >= line.start.toLong() &&
-                candidate.startTimeMs <= line.end.toLong()
-        }?.text
-        val nearestTranslation = translations.minByOrNull { candidate ->
-            abs(candidate.startTimeMs - line.start.toLong())
-        }?.takeIf { candidate ->
-            abs(candidate.startTimeMs - line.start.toLong()) <= TranslationAlignmentToleranceMs
-        }?.text
-        val matchedTranslation = overlappingTranslation ?: nearestTranslation
+        val matchedTranslation = findBestMatchingTranslation(
+            translations = translations,
+            lineStartMs = line.start.toLong(),
+            lineEndMs = line.end.toLong(),
+            toleranceMs = TranslationAlignmentToleranceMs
+        )?.text
 
         when {
             matchedTranslation.isNullOrBlank() -> line
