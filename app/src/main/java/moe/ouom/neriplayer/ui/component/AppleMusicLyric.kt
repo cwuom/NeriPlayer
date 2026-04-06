@@ -135,6 +135,18 @@ data class LyricEntry(
     val words: List<WordTiming>? = null
 )
 
+private val NeteaseYrcLineRegex = Regex("""\[\d+,\s*\d+]\(\d+,""")
+
+fun isNeteaseYrc(content: String): Boolean = content.contains(NeteaseYrcLineRegex)
+
+fun parseNeteaseLyricsAuto(content: String): List<LyricEntry> {
+    return if (isNeteaseYrc(content)) {
+        parseNeteaseYrc(content)
+    } else {
+        parseNeteaseLrc(content)
+    }
+}
+
 /**
  * 根据当前时间计算该行的高亮进度（0f..1f），基于字符数进行精确计算
  */

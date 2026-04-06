@@ -58,6 +58,7 @@ object SettingsKeys {
     val THEME_COLOR_PALETTE = stringPreferencesKey("theme_color_palette_v2")
     val LYRIC_BLUR_ENABLED = booleanPreferencesKey("lyric_blur_enabled")
     val LYRIC_BLUR_AMOUNT = floatPreferencesKey("lyric_blur_amount")
+    val ADVANCED_LYRICS_ENABLED = booleanPreferencesKey("advanced_lyrics_enabled")
     val ADVANCED_BLUR_ENABLED = booleanPreferencesKey("advanced_blur_enabled")
     val NOWPLAYING_AUDIO_REACTIVE_ENABLED = booleanPreferencesKey("nowplaying_audio_reactive_enabled")
     val NOWPLAYING_DYNAMIC_BACKGROUND_ENABLED = booleanPreferencesKey("nowplaying_dynamic_background_enabled")

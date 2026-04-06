@@ -225,6 +225,8 @@
     <string name="lyrics_blur_low_cost_hint">Below Android 12 uses a low-cost effect and looks weaker</string>
     <string name="lyrics_blur_amount">Blur Intensity</string>
     <string name="lyrics_blur_current">Current Blur: %.2f</string>
+    <string name="settings_advanced_lyrics">Advanced Lyrics</string>
+    <string name="settings_advanced_lyrics_desc">Enable a more modern lyrics layout and motion, and prefer word-level lyrics when available</string>
     <string name="settings_advanced_blur">Advanced Blur Effects</string>
     <string name="settings_advanced_blur_desc">Enable Haze blur for the mini player and bottom bar</string>
     <string name="settings_nowplaying_cover_blur_background">Now Playing Cover Blur</string>

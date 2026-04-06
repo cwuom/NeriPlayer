@@ -195,6 +195,8 @@ fun SettingsScreen(
     onLyricBlurEnabledChange: (Boolean) -> Unit,
     lyricBlurAmount: Float,
     onLyricBlurAmountChange: (Float) -> Unit,
+    advancedLyricsEnabled: Boolean,
+    onAdvancedLyricsEnabledChange: (Boolean) -> Unit,
     advancedBlurEnabled: Boolean,
     onAdvancedBlurEnabledChange: (Boolean) -> Unit,
     nowPlayingAudioReactiveEnabled: Boolean,
@@ -1474,13 +1476,15 @@ fun SettingsScreen(
                   }
               }
 
-              item {
-                  SettingsMotionSection(
-                      expanded = motionExpanded,
-                      arrowRotation = motionArrowRotation,
-                      onExpandedChange = { motionExpanded = it },
-                      advancedBlurEnabled = advancedBlurEnabled,
-                      onAdvancedBlurEnabledChange = onAdvancedBlurEnabledChange,
+                item {
+                    SettingsMotionSection(
+                        expanded = motionExpanded,
+                        arrowRotation = motionArrowRotation,
+                        onExpandedChange = { motionExpanded = it },
+                        advancedLyricsEnabled = advancedLyricsEnabled,
+                        onAdvancedLyricsEnabledChange = onAdvancedLyricsEnabledChange,
+                        advancedBlurEnabled = advancedBlurEnabled,
+                        onAdvancedBlurEnabledChange = onAdvancedBlurEnabledChange,
                       nowPlayingAudioReactiveEnabled = nowPlayingAudioReactiveEnabled,
                       onNowPlayingAudioReactiveEnabledChange = onNowPlayingAudioReactiveEnabledChange,
                       nowPlayingDynamicBackgroundEnabled = nowPlayingDynamicBackgroundEnabled,

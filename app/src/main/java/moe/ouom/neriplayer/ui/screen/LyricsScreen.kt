@@ -115,7 +115,9 @@ import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.sameIdentityAs
+import moe.ouom.neriplayer.ui.component.AdvancedLyricsView
 import moe.ouom.neriplayer.ui.component.AppleMusicLyric
+import moe.ouom.neriplayer.ui.component.flattenWordTimedEntries
 import moe.ouom.neriplayer.ui.component.LyricEntry
 import moe.ouom.neriplayer.ui.component.LocalSongDetailsDialog
 import moe.ouom.neriplayer.ui.component.LocalSongSyncConfirmDialog
@@ -140,6 +142,7 @@ fun LyricsScreen(
     onEnterAlbum: (AlbumSummary) -> Unit,
     onNavigateBack: () -> Unit,
     onSeekTo: (Long) -> Unit,
+    advancedLyricsEnabled: Boolean = true,
     translatedLyrics: List<LyricEntry>? = null,
     lyricOffsetMs: Long,
     showLyricTranslation: Boolean = true,
@@ -152,6 +155,11 @@ fun LyricsScreen(
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
     val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
     val currentPosition by PlayerManager.playbackPositionFlow.collectAsState()
+    val lyricsPlaybackSoundState by PlayerManager.playbackSoundStateFlow.collectAsState()
+    val plainLyrics = remember(lyrics) { lyrics.flattenWordTimedEntries() }
+    val plainTranslatedLyrics = remember(translatedLyrics) {
+        translatedLyrics.orEmpty().flattenWordTimedEntries()
+    }
     val durationMs = currentSong?.durationMs ?: 0L
     val favoriteActionLabel = stringResource(R.string.favorite_add)
     val playlistAddActionLabel = stringResource(R.string.playlist_add_to)
@@ -429,6 +437,8 @@ fun LyricsScreen(
                     viewModel = nowPlayingViewModel,
                     originalSong = currentSong!!,
                     queue = displayedQueue,
+                    displayedLyrics = lyrics,
+                    displayedTranslatedLyrics = translatedLyrics.orEmpty(),
                     onDismiss = { showMoreOptions = false },
                     onShowSongDetails = { detailSong = it },
                     onEnterAlbum = onEnterAlbum,
@@ -447,31 +457,52 @@ fun LyricsScreen(
             modifier = Modifier.weight(1f)
         ) {
             if (lyrics.isNotEmpty()) {
-                AppleMusicLyric(
-                    lyrics = lyrics,
-                    currentTimeMs = currentPosition,
-                    modifier = Modifier.fillMaxSize(),
-                    textColor = MaterialTheme.colorScheme.onBackground,
-                    // 放大歌词与行距，增强可读性
-                    fontSize = scaledLyricFontSize(20f, lyricFontScale).sp,
-                    centerPadding = 24.dp,
-                    visualSpec = LyricVisualSpec(
-                        // 控制缩放范围，避免超界
-                        activeScale = 1.06f,
-                        nearScale = 0.95f,
-                        farScale = 0.88f,
-                        inactiveBlurNear = 0.dp,
-                        inactiveBlurFar = 0.dp
-                    ),
-                    lyricOffsetMs = lyricOffsetMs,
-                    lyricBlurEnabled = lyricBlurEnabled,
-                    lyricBlurAmount = lyricBlurAmount,
-                    onLyricClick = { lyricEntry ->
-                        onSeekTo(lyricEntry.startTimeMs)
-                    },
-                    translatedLyrics = if (showLyricTranslation) translatedLyrics else null,
-                    translationFontSize = scaledLyricFontSize(16f, lyricFontScale).sp,
-                )
+                if (advancedLyricsEnabled) {
+                    AdvancedLyricsView(
+                        lyrics = lyrics,
+                        currentTimeMs = currentPosition,
+                        modifier = Modifier.fillMaxSize(),
+                        textColor = MaterialTheme.colorScheme.onBackground,
+                        lyricFontScale = lyricFontScale,
+                        baseFontSizeSp = 20f,
+                        lyricOffsetMs = lyricOffsetMs,
+                        lyricBlurEnabled = lyricBlurEnabled,
+                        lyricBlurAmount = lyricBlurAmount,
+                        translatedLyrics = translatedLyrics.orEmpty(),
+                        showLyricTranslation = showLyricTranslation,
+                        rawLyrics = currentSong?.matchedLyric,
+                        rawTranslatedLyrics = currentSong?.matchedTranslatedLyric,
+                        isPlaying = isPlaying,
+                        playbackSpeed = lyricsPlaybackSoundState.speed,
+                        onSeekTo = onSeekTo
+                    )
+                } else {
+                    AppleMusicLyric(
+                        lyrics = plainLyrics,
+                        currentTimeMs = currentPosition,
+                        modifier = Modifier.fillMaxSize(),
+                        textColor = MaterialTheme.colorScheme.onBackground,
+                        // 放大歌词与行距，增强可读性
+                        fontSize = scaledLyricFontSize(20f, lyricFontScale).sp,
+                        centerPadding = 24.dp,
+                        visualSpec = LyricVisualSpec(
+                            // 控制缩放范围，避免超界
+                            activeScale = 1.06f,
+                            nearScale = 0.95f,
+                            farScale = 0.88f,
+                            inactiveBlurNear = 0.dp,
+                            inactiveBlurFar = 0.dp
+                        ),
+                        lyricOffsetMs = lyricOffsetMs,
+                        lyricBlurEnabled = lyricBlurEnabled,
+                        lyricBlurAmount = lyricBlurAmount,
+                        onLyricClick = { lyricEntry ->
+                            onSeekTo(lyricEntry.startTimeMs)
+                        },
+                        translatedLyrics = if (showLyricTranslation) plainTranslatedLyrics else null,
+                        translationFontSize = scaledLyricFontSize(16f, lyricFontScale).sp,
+                    )
+                }
             } else {
                 Box(
                     modifier = Modifier.fillMaxSize(),

@@ -70,6 +70,8 @@ internal fun SettingsMotionSection(
     expanded: Boolean,
     arrowRotation: Float,
     onExpandedChange: (Boolean) -> Unit,
+    advancedLyricsEnabled: Boolean,
+    onAdvancedLyricsEnabledChange: (Boolean) -> Unit,
     advancedBlurEnabled: Boolean,
     onAdvancedBlurEnabledChange: (Boolean) -> Unit,
     nowPlayingAudioReactiveEnabled: Boolean,
@@ -161,6 +163,25 @@ internal fun SettingsMotionSection(
                     }
                 }
             }
+
+            MotionSwitchItem(
+                title = stringResource(R.string.settings_advanced_lyrics),
+                description = stringResource(R.string.settings_advanced_lyrics_desc),
+                disabledSuffix = null,
+                checked = advancedLyricsEnabled,
+                enabled = true,
+                alpha = 1f,
+                icon = {
+                    Icon(
+                        imageVector = Icons.Outlined.AutoAwesome,
+                        contentDescription = stringResource(R.string.settings_advanced_lyrics),
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                },
+                onToggle = { onAdvancedLyricsEnabledChange(!advancedLyricsEnabled) },
+                onCheckedChange = onAdvancedLyricsEnabledChange
+            )
 
             MotionSwitchItem(
                 title = stringResource(R.string.settings_advanced_blur),

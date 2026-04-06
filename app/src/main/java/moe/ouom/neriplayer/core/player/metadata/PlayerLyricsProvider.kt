@@ -35,12 +35,25 @@ import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
 import moe.ouom.neriplayer.ui.component.LyricEntry
-import moe.ouom.neriplayer.ui.component.parseNeteaseLrc
+import moe.ouom.neriplayer.ui.component.parseNeteaseLyricsAuto
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
 
+internal fun extractPreferredNeteaseLyricContent(rawResponse: String): String {
+    val payload = JSONObject(rawResponse)
+    val yrc = payload.optJSONObject("yrc")?.optString("lyric").orEmpty()
+    if (yrc.isNotBlank()) {
+        return yrc
+    }
+    return payload.optJSONObject("lrc")?.optString("lyric").orEmpty()
+}
+
 internal object PlayerLyricsProvider {
+
+    private fun parseBestLyricEntries(rawLyric: String): List<LyricEntry> {
+        return parseNeteaseLyricsAuto(rawLyric)
+    }
 
     suspend fun getNeteaseLyrics(
         songId: Long,
@@ -49,8 +62,8 @@ internal object PlayerLyricsProvider {
         return withContext(Dispatchers.IO) {
             try {
                 val raw = neteaseClient.getLyricNew(songId)
-                val lrc = JSONObject(raw).optJSONObject("lrc")?.optString("lyric") ?: ""
-                parseNeteaseLrc(lrc)
+                val preferredLyric = extractPreferredNeteaseLyricContent(raw)
+                if (preferredLyric.isBlank()) emptyList() else parseBestLyricEntries(preferredLyric)
             } catch (error: Exception) {
                 NPLogger.e("NERI-PlayerManager", "getNeteaseLyrics failed: ${error.message}", error)
                 emptyList()
@@ -65,11 +78,14 @@ internal object PlayerLyricsProvider {
         return withContext(Dispatchers.IO) {
             try {
                 val raw = neteaseClient.getLyricNew(songId)
-                val translated = JSONObject(raw).optJSONObject("tlyric")?.optString("lyric") ?: ""
+                val payload = JSONObject(raw)
+                val translated = payload.optJSONObject("ytlrc")?.optString("lyric")
+                    ?: payload.optJSONObject("tlyric")?.optString("lyric")
+                    ?: ""
                 if (translated.isBlank()) {
                     emptyList()
                 } else {
-                    parseNeteaseLrc(translated)
+                    parseBestLyricEntries(translated)
                 }
             } catch (error: Exception) {
                 NPLogger.e(
@@ -91,7 +107,7 @@ internal object PlayerLyricsProvider {
         val localTranslatedLyrics = AudioDownloadManager.getTranslatedLyricContent(application, song)
         if (!localTranslatedLyrics.isNullOrBlank()) {
             try {
-                return parseNeteaseLrc(localTranslatedLyrics)
+                return parseBestLyricEntries(localTranslatedLyrics)
             } catch (error: Exception) {
                 NPLogger.w("NERI-PlayerManager", "本地翻译歌词读取失败: ${error.message}")
             }
@@ -137,7 +153,7 @@ internal object PlayerLyricsProvider {
 
         if (!song.matchedLyric.isNullOrBlank()) {
             try {
-                return parseNeteaseLrc(song.matchedLyric)
+                return parseBestLyricEntries(song.matchedLyric)
             } catch (error: Exception) {
                 NPLogger.w("NERI-PlayerManager", "匹配歌词解析失败: ${error.message}")
             }
@@ -146,7 +162,7 @@ internal object PlayerLyricsProvider {
         val localLyricContent = AudioDownloadManager.getLyricContent(application, song)
         if (!localLyricContent.isNullOrBlank()) {
             try {
-                return parseNeteaseLrc(localLyricContent)
+                return parseBestLyricEntries(localLyricContent)
             } catch (error: Exception) {
                 NPLogger.w("NERI-PlayerManager", "本地歌词读取失败: ${error.message}")
             }
@@ -187,7 +203,7 @@ internal object PlayerLyricsProvider {
 
                 if (!lrcLibResult?.syncedLyrics.isNullOrBlank()) {
                     NPLogger.d("NERI-PlayerManager", "Using LRCLIB synced lyrics for '${song.name}'")
-                    val entries = parseNeteaseLrc(lrcLibResult!!.syncedLyrics!!)
+                    val entries = parseNeteaseLyricsAuto(lrcLibResult!!.syncedLyrics!!)
                     if (entries.isNotEmpty()) {
                         ytMusicLyricsCache.put(cacheKey, entries)
                     }
@@ -219,7 +235,7 @@ internal object PlayerLyricsProvider {
 
                 NPLogger.d("NERI-PlayerManager", "Using YouTube Music API lyrics for '${song.name}'")
                 val entries = if (lyricsText.contains(Regex("\\[\\d{2}:\\d{2}"))) {
-                    parseNeteaseLrc(lyricsText)
+                    parseNeteaseLyricsAuto(lyricsText)
                 } else {
                     convertPlainLyricsToEntries(lyricsText, song.durationMs)
                 }

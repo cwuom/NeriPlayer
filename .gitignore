@@ -26,3 +26,7 @@ local.properties
 demo
 .idea
 /.gradle-alt-build/
+/build-logic/convention/build/
+/build-logic/.kotlin/
+/buildSrc/build/
+/buildSrc/.kotlin/

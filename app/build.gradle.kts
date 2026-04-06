@@ -1,26 +1,18 @@
 @file:Suppress("UnstableApiUsage")
 
 import com.android.build.api.variant.FilterConfiguration
-import org.gradle.api.Project
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import java.util.TimeZone
+import org.gradle.api.tasks.testing.Test
 import java.util.UUID
 
 plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.kotlin.compose)
+    id("build-logic.android.application")
+    id("build-logic.android.compose")
     alias(libs.plugins.kotlin.serialization)
     id("kotlin-parcelize")
 }
 
 android {
     namespace = "moe.ouom.neriplayer"
-    compileSdk = 36
-
     val buildUUID = UUID.randomUUID()
     val buildAllReleaseAbis = (project.findProperty("buildAllReleaseAbis") as String?)?.toBoolean() == true
     val defaultReleaseAbiFilters = listOf("arm64-v8a")
@@ -55,10 +47,6 @@ android {
 
     defaultConfig {
         applicationId = "moe.ouom.neriplayer"
-        minSdk = 28
-        targetSdk = 36
-        versionCode = getBuildVersionCode()
-        versionName = getBuildVersionName(project)
 
         buildConfigField("String", "BUILD_UUID", "\"${buildUUID}\"")
         buildConfigField("String", "TAG", "\"[NeriPlayer]\"")
@@ -95,20 +83,12 @@ android {
             )
         }
     }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlin {
-        compilerOptions {
-            jvmTarget.set(JvmTarget.JVM_17)
-        }
-    }
-
     buildFeatures {
-        compose = true
         buildConfig = true
+    }
+
+    testOptions {
+        unitTests.isReturnDefaultValues = true
     }
 
     packaging {
@@ -140,36 +120,17 @@ android {
 
 }
 
-fun getBuildVersionName(project: Project): String {
-    return "${getShortGitRevision()}.${getCurrentDate(project)}"
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    exclude("**/com/mocharealm/accompanist/lyrics/ui/utils/String.kt")
 }
 
-private fun getCurrentDate(project: Project): String {
-    val override = project.findProperty("buildVersionTimestamp") as String?
-    if (!override.isNullOrBlank()) {
-        return override
-    }
-
-    val sdf = SimpleDateFormat("MMddHHmm", Locale.ENGLISH)
-    sdf.timeZone = TimeZone.getTimeZone("Asia/Taipei")
-    return sdf.format(Date())
+tasks.withType<Test>().configureEach {
+    systemProperty(
+        "runNeteaseSmoke",
+        System.getProperty("runNeteaseSmoke") ?: "false"
+    )
 }
 
-
-private fun getShortGitRevision(): String {
-    val command = "git rev-parse --short HEAD"
-    val processBuilder = ProcessBuilder(*command.split(" ").toTypedArray())
-    val process = processBuilder.start()
-
-    val output = process.inputStream.bufferedReader().use { it.readText() }
-    val exitCode = process.waitFor()
-
-    return if (exitCode == 0) {
-        output.trim()
-    } else {
-        "no_commit"
-    }
-}
 
 android.applicationVariants.all {
     outputs.all {
@@ -184,15 +145,6 @@ android.applicationVariants.all {
             outputFileName = "NeriPlayer-${versionName}${abiSuffix}.apk"
         }
     }
-}
-
-fun getBuildVersionCode(): Int {
-    val appVerCode: Int by lazy {
-        val versionCode = SimpleDateFormat("yyMMddHH", Locale.ENGLISH).format(Date())
-        println("versionCode: $versionCode")
-        versionCode.toInt()
-    }
-    return appVerCode
 }
 
 dependencies {
@@ -233,6 +185,9 @@ dependencies {
     implementation(libs.dec)
     implementation(libs.newpipe.extractor)
     implementation(libs.okhttp)
+
+    implementation(project(":accompanist-lyrics-core"))
+    implementation(project(":accompanist-lyrics-ui"))
 
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.serialization.protobuf)

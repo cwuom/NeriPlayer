@@ -106,6 +106,9 @@ class SettingsRepository(private val context: Context) {
     val lyricBlurAmountFlow: Flow<Float> =
         context.dataStore.data.map { it[SettingsKeys.LYRIC_BLUR_AMOUNT] ?: 1.5f }
 
+    val advancedLyricsEnabledFlow: Flow<Boolean> =
+        context.dataStore.data.map { it[SettingsKeys.ADVANCED_LYRICS_ENABLED] ?: true }
+
     val advancedBlurEnabledFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.ADVANCED_BLUR_ENABLED] ?: true }
 
@@ -391,6 +394,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setLyricBlurAmount(amount: Float) {
         context.dataStore.edit { it[SettingsKeys.LYRIC_BLUR_AMOUNT] = amount }
+    }
+
+    suspend fun setAdvancedLyricsEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.ADVANCED_LYRICS_ENABLED] = enabled }
     }
 
     suspend fun setAdvancedBlurEnabled(enabled: Boolean) {

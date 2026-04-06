@@ -586,8 +586,13 @@ object AudioDownloadManager {
             val root = JSONObject(lyrics)
             if (root.optInt("code") != 200) return DownloadedLyrics()
 
+            val yrc = root.optJSONObject("yrc")?.optString("lyric") ?: ""
             val lrc = root.optJSONObject("lrc")?.optString("lyric") ?: ""
             val translated = root.optJSONObject("tlyric")?.optString("lyric") ?: ""
+            val preferredLyric = yrc.takeIf { it.isNotBlank() } ?: lrc.takeIf { it.isNotBlank() }
+            if (yrc.isNotBlank()) {
+                NPLogger.d(TAG, "从API获取逐字歌词保存: ${song.name}")
+            }
             if (lrc.isNotBlank()) {
                 NPLogger.d(TAG, "从API获取歌词保存: ${song.name}")
             }
@@ -595,7 +600,7 @@ object AudioDownloadManager {
                 NPLogger.d(TAG, "从API获取翻译歌词保存: ${song.name}")
             }
             return DownloadedLyrics(
-                lyricText = lrc.takeIf { it.isNotBlank() },
+                lyricText = preferredLyric,
                 translatedText = translated.takeIf { it.isNotBlank() }
             )
         } catch (e: Exception) {

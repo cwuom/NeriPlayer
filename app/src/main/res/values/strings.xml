@@ -225,6 +225,8 @@
     <string name="lyrics_blur_low_cost_hint">低于 Android 12 使用低开销方案，效果较弱</string>
     <string name="lyrics_blur_amount">模糊强度</string>
     <string name="lyrics_blur_current">当前模糊度: %.2f</string>
+    <string name="settings_advanced_lyrics">高级歌词</string>
+    <string name="settings_advanced_lyrics_desc">启用更现代的歌词排版与动效，并优先使用逐字歌词</string>
     <string name="settings_advanced_blur">高级模糊效果</string>
     <string name="settings_advanced_blur_desc">启用作用于小播放器和底部栏的 Haze 动态模糊</string>
     <string name="settings_nowplaying_cover_blur_background">正在播放模糊封面背景</string>

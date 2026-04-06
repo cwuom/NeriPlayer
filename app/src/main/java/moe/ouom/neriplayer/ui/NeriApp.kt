@@ -466,6 +466,7 @@ fun NeriApp(
     val themeColorPalette by repo.themeColorPaletteFlow.collectAsState(initial = ThemeDefaults.PRESET_COLORS)
     val lyricBlurEnabled by repo.lyricBlurEnabledFlow.collectAsState(initial = true)
     val lyricBlurAmount by repo.lyricBlurAmountFlow.collectAsState(initial = 1.5f)
+    val advancedLyricsEnabled by repo.advancedLyricsEnabledFlow.collectAsState(initial = true)
     val advancedBlurEnabled by repo.advancedBlurEnabledFlow.collectAsState(initial = true)
     val advancedBlurAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val effectiveAdvancedBlurEnabled = advancedBlurAvailable && advancedBlurEnabled
@@ -1285,6 +1286,10 @@ fun NeriApp(
                                         onLyricBlurAmountChange = { amount ->
                                             scope.launch { repo.setLyricBlurAmount(amount) }
                                         },
+                                        advancedLyricsEnabled = advancedLyricsEnabled,
+                                        onAdvancedLyricsEnabledChange = { enabled ->
+                                            scope.launch { repo.setAdvancedLyricsEnabled(enabled) }
+                                        },
                                         advancedBlurEnabled = advancedBlurEnabled,
                                         onAdvancedBlurEnabledChange = { enabled ->
                                             scope.launch { repo.setAdvancedBlurEnabled(enabled) }
@@ -1848,6 +1853,7 @@ fun NeriApp(
                                     onLyricFontScaleChange = { scale ->
                                         scope.launch { repo.setLyricFontScale(scale) }
                                     },
+                                    advancedLyricsEnabled = advancedLyricsEnabled,
                                     showCoverSourceBadge = showCoverSourceBadge,
                                     showLyricTranslation = showLyricTranslation,
                                     showNowPlayingTitle = showNowPlayingTitle
