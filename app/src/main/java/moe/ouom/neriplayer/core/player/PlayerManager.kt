@@ -219,8 +219,8 @@ object PlayerManager {
     val isPlayingFlow: StateFlow<Boolean> = _isPlayingFlow
 
     /**
-     * 播放/暂停按钮使用的视觉状态。
-     * 它跟随用户最近一次播放控制意图，避免淡入/淡出期间图标滞后。
+     * 播放/暂停按钮使用的视觉状态
+     * 它跟随用户最近一次播放控制意图，避免淡入/淡出期间图标滞后
      */
     internal val _playbackControlPlayingFlow = MutableStateFlow(false)
     val playbackControlPlayingFlow: StateFlow<Boolean> = _playbackControlPlayingFlow

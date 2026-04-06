@@ -628,6 +628,7 @@ object AudioDownloadManager {
     fun getLocalPlaybackUri(context: Context, song: SongItem): String? {
         ManagedDownloadStorage.peekDownloadedAudio(song)?.let { return it.playbackUri }
         if (!canBlockStorageLookup()) return null
+        if (!ManagedDownloadStorage.ensureSnapshotCacheReady(context)) return null
         return ManagedDownloadStorage.findAudio(context, song)?.playbackUri
     }
 
@@ -638,6 +639,9 @@ object AudioDownloadManager {
         if (!canBlockStorageLookup()) {
             return false
         }
+        if (!ManagedDownloadStorage.ensureSnapshotCacheReady(context)) {
+            return false
+        }
         return ManagedDownloadStorage.hasDownloadedAudio(context, song)
     }
 
@@ -645,10 +649,14 @@ object AudioDownloadManager {
     fun getLocalCoverUri(context: Context, song: SongItem): String? {
         val allowBlockingLookup = canBlockStorageLookup()
         val localAudio = ManagedDownloadStorage.peekDownloadedAudio(song)
-            ?: if (allowBlockingLookup) ManagedDownloadStorage.findAudio(context, song) else null
+            ?: if (allowBlockingLookup && ManagedDownloadStorage.ensureSnapshotCacheReady(context)) {
+                ManagedDownloadStorage.findAudio(context, song)
+            } else {
+                null
+            }
         val coverReference = localAudio?.let {
             ManagedDownloadStorage.peekCoverReference(it)
-                ?: if (allowBlockingLookup) {
+                ?: if (allowBlockingLookup && ManagedDownloadStorage.ensureSnapshotCacheReady(context)) {
                     runBlocking(Dispatchers.IO) {
                         ManagedDownloadStorage.findCoverReference(context, it)
                     }

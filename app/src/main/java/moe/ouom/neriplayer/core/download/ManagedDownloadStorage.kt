@@ -13,6 +13,7 @@ import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
@@ -25,6 +26,7 @@ internal object ManagedDownloadStorage {
     private const val ROOT_DIR_NAME = "NeriPlayer"
     private const val COVER_SUBDIRECTORY = "Covers"
     private const val NO_MEDIA_FILE_NAME = ".nomedia"
+    private const val SNAPSHOT_CACHE_FILE_NAME = "managed_download_snapshot_v1.json"
     @Suppress("SpellCheckingInspection")
     private const val METADATA_SUFFIX = ".npmeta.json"
     private val audioExtensions = setOf("mp3", "m4a", "aac", "flac", "wav", "ogg", "webm", "eac3")
@@ -42,9 +44,13 @@ internal object ManagedDownloadStorage {
     @Volatile
     private var snapshotCache: SnapshotCache? = null
 
+    private val snapshotBuildLock = Any()
+
     fun initialize(context: Context) {
-        createDefaultRoot(context.applicationContext)
+        val appContext = context.applicationContext
+        createDefaultRoot(appContext)
         invalidateSnapshotCache()
+        restoreSnapshotCacheFromDisk(appContext)
     }
 
     data class StoredEntry(
@@ -83,6 +89,11 @@ internal object ManagedDownloadStorage {
         val entry: StoredEntry
     )
 
+    private data class CopiedMigrationEntry(
+        val original: ManagedMigrationEntry,
+        val copiedEntry: StoredEntry
+    )
+
     data class DownloadLibrarySnapshot(
         val audioEntries: List<StoredEntry>,
         val audioEntriesByLookupKey: Map<String, StoredEntry>,
@@ -106,13 +117,27 @@ internal object ManagedDownloadStorage {
     data class DownloadedAudioMetadata(
         val stableKey: String? = null,
         val songId: Long? = null,
+        val identityAlbum: String? = null,
+        val name: String? = null,
+        val artist: String? = null,
+        val coverUrl: String? = null,
+        val matchedLyricSource: String? = null,
+        val matchedSongId: String? = null,
+        val userLyricOffsetMs: Long = 0L,
+        val customCoverUrl: String? = null,
+        val customName: String? = null,
+        val customArtist: String? = null,
+        val originalName: String? = null,
+        val originalArtist: String? = null,
+        val originalCoverUrl: String? = null,
         val mediaUri: String? = null,
         val channelId: String? = null,
         val audioId: String? = null,
         val subAudioId: String? = null,
         val coverPath: String? = null,
         val lyricPath: String? = null,
-        val translatedLyricPath: String? = null
+        val translatedLyricPath: String? = null,
+        val durationMs: Long = 0L
     )
 
     private sealed interface RootHandle {
@@ -142,6 +167,19 @@ internal object ManagedDownloadStorage {
 
     fun updateDownloadFileNameTemplate(template: String?) {
         downloadFileNameTemplate = normalizeDownloadFileNameTemplate(template)
+    }
+
+    internal fun currentSnapshotCacheKey(context: Context): String {
+        return buildSnapshotCacheKey(context.applicationContext)
+    }
+
+    internal fun ensureSnapshotCacheReady(context: Context): Boolean {
+        val cacheKey = buildSnapshotCacheKey(context.applicationContext)
+        val currentCache = snapshotCache
+        if (currentCache?.key == cacheKey) {
+            return true
+        }
+        return restoreSnapshotCacheFromDisk(context.applicationContext, expectedKey = cacheKey) != null
     }
 
     internal fun directoryIdentity(uriString: String?): String? {
@@ -210,11 +248,11 @@ internal object ManagedDownloadStorage {
             return@withContext MigrationResult(movedFiles = 0, skippedFiles = 0)
         }
 
-        val copiedEntries = mutableListOf<ManagedMigrationEntry>()
+        val copiedEntries = mutableListOf<CopiedMigrationEntry>()
         var skippedFiles = 0
 
         entries.forEach { migrationEntry ->
-            val copySucceeded = runCatching {
+            val copiedEntry = runCatching {
                 openStoredEntryInputStream(context, migrationEntry.entry)?.use { input ->
                     if (migrationEntry.subdirectory == null) {
                         writeRootStream(
@@ -237,10 +275,13 @@ internal object ManagedDownloadStorage {
                 } ?: throw IOException("无法读取源下载文件: ${migrationEntry.entry.name}")
             }.onFailure {
                 NPLogger.w(TAG, "迁移下载文件失败: ${migrationEntry.entry.reference}, ${it.message}")
-            }.isSuccess
+            }.getOrNull()
 
-            if (copySucceeded) {
-                copiedEntries += migrationEntry
+            if (copiedEntry != null) {
+                copiedEntries += CopiedMigrationEntry(
+                    original = migrationEntry,
+                    copiedEntry = copiedEntry
+                )
             } else {
                 skippedFiles++
             }
@@ -253,12 +294,24 @@ internal object ManagedDownloadStorage {
             )
         }
 
+        val rewriteFailedFiles = rewriteMigratedMetadataReferences(
+            context = context,
+            targetRoot = targetRoot,
+            copiedEntries = copiedEntries
+        )
+        if (rewriteFailedFiles > 0) {
+            return@withContext MigrationResult(
+                movedFiles = copiedEntries.size,
+                skippedFiles = rewriteFailedFiles
+            )
+        }
+
         var cleanupFailedFiles = 0
         copiedEntries.forEach { migrationEntry ->
             val deleted = runCatching {
-                deleteInternal(context, migrationEntry.entry.reference)
+                deleteInternal(context, migrationEntry.original.entry.reference)
             }.onFailure {
-                NPLogger.w(TAG, "迁移后删除旧下载文件失败: ${migrationEntry.entry.reference}, ${it.message}")
+                NPLogger.w(TAG, "迁移后删除旧下载文件失败: ${migrationEntry.original.entry.reference}, ${it.message}")
             }.getOrDefault(false)
 
             if (!deleted) {
@@ -349,18 +402,23 @@ internal object ManagedDownloadStorage {
     private fun buildDownloadLibrarySnapshotBlocking(
         context: Context,
         forceRefresh: Boolean = false
-    ): DownloadLibrarySnapshot {
+    ): DownloadLibrarySnapshot = synchronized(snapshotBuildLock) {
         val cacheKey = buildSnapshotCacheKey(context)
         if (!forceRefresh) {
             snapshotCache
                 ?.takeIf { it.key == cacheKey }
-                ?.let { return it.snapshot }
+                ?.let { return@synchronized it.snapshot }
+            restoreSnapshotCacheFromDisk(context, expectedKey = cacheKey)
+                ?.let { return@synchronized it }
         }
 
         val root = resolveRootBlocking(context)
         val rootEntries = listChildren(root).filterNot(StoredEntry::isDirectory)
         val audioEntries = rootEntries.filter { it.extension in audioExtensions }
         val metadataEntries = rootEntries.filter { it.name.endsWith(METADATA_SUFFIX) }
+        val metadataEntriesByAudioName = metadataEntries.associateBy { entry ->
+            entry.name.removeSuffix(METADATA_SUFFIX)
+        }
         val metadataByAudioName = metadataEntries.mapNotNull { entry ->
             parseDownloadedAudioMetadata(context, entry)?.let { metadata ->
                 entry.name.removeSuffix(METADATA_SUFFIX) to metadata
@@ -368,6 +426,49 @@ internal object ManagedDownloadStorage {
         }.toMap()
         val coverEntries = listSubdirectoryEntries(root, COVER_SUBDIRECTORY)
         val lyricEntries = listSubdirectoryEntries(root, "Lyrics")
+        val coverEntriesByName = coverEntries.associateBy(StoredEntry::name)
+        val lyricEntriesByName = lyricEntries.associateBy(StoredEntry::name)
+        val allowMetadataLessAudio = shouldIndexMetadataLessAudio()
+        val managedAudioEntries = audioEntries.filter { entry ->
+            shouldTreatAudioAsManaged(
+                audioName = entry.name,
+                metadataAudioNames = metadataEntriesByAudioName.keys,
+                coverEntryNames = coverEntriesByName.keys,
+                lyricEntryNames = lyricEntriesByName.keys,
+                allowMetadataLessAudio = allowMetadataLessAudio
+            )
+        }
+        val skippedForeignAudioCount = audioEntries.size - managedAudioEntries.size
+        if (skippedForeignAudioCount > 0) {
+            NPLogger.d(
+                TAG,
+                "跳过非托管音频扫描: total=${audioEntries.size}, managed=${managedAudioEntries.size}, skipped=$skippedForeignAudioCount"
+            )
+        }
+        return@synchronized composeSnapshot(
+            audioEntries = managedAudioEntries,
+            metadataEntries = metadataEntriesByAudioName.values.toList(),
+            metadataByAudioName = metadataByAudioName,
+            coverEntries = coverEntries,
+            lyricEntries = lyricEntries
+        ).also { snapshot ->
+            snapshotCache = SnapshotCache(key = cacheKey, snapshot = snapshot)
+            persistSnapshotCache(context, cacheKey, snapshot)
+        }
+    }
+
+    private fun composeSnapshot(
+        audioEntries: List<StoredEntry>,
+        metadataEntries: List<StoredEntry>,
+        metadataByAudioName: Map<String, DownloadedAudioMetadata>,
+        coverEntries: List<StoredEntry>,
+        lyricEntries: List<StoredEntry>
+    ): DownloadLibrarySnapshot {
+        val metadataEntriesByAudioName = metadataEntries.associateBy { entry ->
+            entry.name.removeSuffix(METADATA_SUFFIX)
+        }
+        val coverEntriesByName = coverEntries.associateBy(StoredEntry::name)
+        val lyricEntriesByName = lyricEntries.associateBy(StoredEntry::name)
         val audioEntriesByStableKey = mutableMapOf<String, MutableList<StoredEntry>>()
         val audioEntriesBySongId = mutableMapOf<Long, MutableList<StoredEntry>>()
         val audioEntriesByMediaUri = mutableMapOf<String, MutableList<StoredEntry>>()
@@ -408,25 +509,119 @@ internal object ManagedDownloadStorage {
                     entry.localFilePath?.let { put(it, entry) }
                 }
             },
-            metadataEntriesByAudioName = metadataEntries.associateBy { entry ->
-                entry.name.removeSuffix(METADATA_SUFFIX)
-            },
+            metadataEntriesByAudioName = metadataEntriesByAudioName,
             metadataByAudioName = metadataByAudioName,
             audioEntriesWithoutMetadata = audioEntriesWithoutMetadata,
             audioEntriesByStableKey = audioEntriesByStableKey,
             audioEntriesBySongId = audioEntriesBySongId,
             audioEntriesByMediaUri = audioEntriesByMediaUri,
             audioEntriesByRemoteTrackKey = audioEntriesByRemoteTrackKey,
-            coverEntriesByName = coverEntries.associateBy(StoredEntry::name),
-            lyricEntriesByName = lyricEntries.associateBy(StoredEntry::name),
+            coverEntriesByName = coverEntriesByName,
+            lyricEntriesByName = lyricEntriesByName,
             knownReferences = buildSet {
-                rootEntries.forEach { add(it.reference) }
+                audioEntries.forEach { add(it.reference) }
+                metadataEntries.forEach { add(it.reference) }
                 coverEntries.forEach { add(it.reference) }
                 lyricEntries.forEach { add(it.reference) }
             }
-        ).also { snapshot ->
-            snapshotCache = SnapshotCache(key = cacheKey, snapshot = snapshot)
+        )
+    }
+
+    private fun rewriteMigratedMetadataReferences(
+        context: Context,
+        targetRoot: RootHandle,
+        copiedEntries: List<CopiedMigrationEntry>
+    ): Int {
+        if (copiedEntries.isEmpty()) return 0
+        val referenceMap = copiedEntries.associate { copied ->
+            copied.original.entry.reference to copied.copiedEntry.reference
         }
+        var failedFiles = 0
+        copiedEntries
+            .filter { it.original.entry.name.endsWith(METADATA_SUFFIX) }
+            .forEach { copied ->
+                val raw = readTextInternal(context, copied.copiedEntry.reference)
+                val rewritten = runCatching {
+                    val metadataText = raw
+                        ?: throw IOException("无法读取已迁移 metadata: ${copied.copiedEntry.name}")
+                    rewriteManagedMetadataReferences(metadataText, referenceMap)
+                }.onFailure {
+                    NPLogger.w(TAG, "迁移后重写 metadata 引用失败: ${copied.copiedEntry.reference}, ${it.message}")
+                }.getOrNull()
+                if (rewritten == null) {
+                    failedFiles++
+                    return@forEach
+                }
+                if (rewritten != raw) {
+                    runCatching {
+                        writeRootText(
+                            context = context,
+                            root = targetRoot,
+                            displayName = copied.copiedEntry.name,
+                            content = rewritten
+                        )
+                    }.onFailure {
+                        NPLogger.w(TAG, "回写迁移后的 metadata 失败: ${copied.copiedEntry.reference}, ${it.message}")
+                    }.getOrElse {
+                        failedFiles++
+                        Unit
+                    }
+                }
+            }
+        return failedFiles
+    }
+
+    internal fun rewriteManagedMetadataReferences(
+        rawJson: String,
+        referenceMap: Map<String, String>
+    ): String {
+        if (referenceMap.isEmpty()) return rawJson
+        val root = JSONObject(rawJson)
+        rewriteMetadataReferenceField(root, "coverPath", referenceMap)
+        rewriteMetadataReferenceField(root, "lyricPath", referenceMap)
+        rewriteMetadataReferenceField(root, "translatedLyricPath", referenceMap)
+        return root.toString()
+    }
+
+    internal fun shouldTreatAudioAsManaged(
+        audioName: String,
+        metadataAudioNames: Set<String>,
+        coverEntryNames: Set<String>,
+        lyricEntryNames: Set<String>,
+        allowMetadataLessAudio: Boolean
+    ): Boolean {
+        if (audioName in metadataAudioNames) {
+            return true
+        }
+        if (allowMetadataLessAudio) {
+            return true
+        }
+        val candidateBaseNames = candidateManagedDownloadBaseNames(
+            audioName.substringBeforeLast('.', audioName)
+        )
+        val hasManagedCover = buildSidecarCandidateNames(candidateBaseNames)
+            .any(coverEntryNames::contains)
+        if (hasManagedCover) {
+            return true
+        }
+        return candidateBaseNames.any { baseName ->
+            lyricEntryNames.contains("$baseName.lrc") ||
+                lyricEntryNames.contains("${baseName}_trans.lrc")
+        }
+    }
+
+    private fun shouldIndexMetadataLessAudio(): Boolean {
+        return normalizeDirectoryUri(customDirectoryUri) == null
+    }
+
+    private fun rewriteMetadataReferenceField(
+        root: JSONObject,
+        fieldName: String,
+        referenceMap: Map<String, String>
+    ) {
+        val current = root.optString(fieldName).takeIf(String::isNotBlank) ?: return
+        val updated = referenceMap[current] ?: return
+        root.put(fieldName, updated)
     }
 
     suspend fun findMetadataForAudio(context: Context, audio: StoredEntry): StoredEntry? = withContext(Dispatchers.IO) {
@@ -785,17 +980,119 @@ internal object ManagedDownloadStorage {
             DownloadedAudioMetadata(
                 stableKey = root.optString("stableKey").takeIf(String::isNotBlank),
                 songId = root.optLong("songId").takeIf { it > 0L },
+                identityAlbum = root.optString("identityAlbum").takeIf(String::isNotBlank),
+                name = root.optString("name").takeIf(String::isNotBlank),
+                artist = root.optString("artist").takeIf(String::isNotBlank),
+                coverUrl = root.optString("coverUrl").takeIf(String::isNotBlank),
+                matchedLyricSource = root.optString("matchedLyricSource").takeIf(String::isNotBlank),
+                matchedSongId = root.optString("matchedSongId").takeIf(String::isNotBlank),
+                userLyricOffsetMs = root.optLong("userLyricOffsetMs"),
+                customCoverUrl = root.optString("customCoverUrl").takeIf(String::isNotBlank),
+                customName = root.optString("customName").takeIf(String::isNotBlank),
+                customArtist = root.optString("customArtist").takeIf(String::isNotBlank),
+                originalName = root.optString("originalName").takeIf(String::isNotBlank),
+                originalArtist = root.optString("originalArtist").takeIf(String::isNotBlank),
+                originalCoverUrl = root.optString("originalCoverUrl").takeIf(String::isNotBlank),
                 mediaUri = root.optString("mediaUri").takeIf(String::isNotBlank),
                 channelId = root.optString("channelId").takeIf(String::isNotBlank),
                 audioId = root.optString("audioId").takeIf(String::isNotBlank),
                 subAudioId = root.optString("subAudioId").takeIf(String::isNotBlank),
                 coverPath = root.optString("coverPath").takeIf(String::isNotBlank),
                 lyricPath = root.optString("lyricPath").takeIf(String::isNotBlank),
-                translatedLyricPath = root.optString("translatedLyricPath").takeIf(String::isNotBlank)
+                translatedLyricPath = root.optString("translatedLyricPath").takeIf(String::isNotBlank),
+                durationMs = root.optLong("durationMs")
             )
         }.onFailure { error ->
             NPLogger.w(TAG, "解析下载 metadata 失败: ${entry.name} - ${error.message}")
         }.getOrNull()
+    }
+
+    private fun snapshotCacheFile(context: Context): File {
+        return File(context.filesDir, SNAPSHOT_CACHE_FILE_NAME)
+    }
+
+    private fun persistSnapshotCache(
+        context: Context,
+        cacheKey: String,
+        snapshot: DownloadLibrarySnapshot
+    ) {
+        runCatching {
+            snapshotCacheFile(context).writeText(
+                serializeSnapshotCachePayload(cacheKey, snapshot),
+                Charsets.UTF_8
+            )
+        }.onFailure {
+            NPLogger.w(TAG, "写入下载索引缓存失败: ${it.message}")
+        }
+    }
+
+    private fun restoreSnapshotCacheFromDisk(
+        context: Context,
+        expectedKey: String? = null
+    ): DownloadLibrarySnapshot? {
+        val rawPayload = runCatching {
+            snapshotCacheFile(context).takeIf(File::exists)?.readText(Charsets.UTF_8)
+        }.onFailure {
+            NPLogger.w(TAG, "读取下载索引缓存失败: ${it.message}")
+        }.getOrNull() ?: return null
+
+        val restored = runCatching {
+            deserializeSnapshotCachePayload(rawPayload, expectedKey)
+        }.onFailure {
+            NPLogger.w(TAG, "解析下载索引缓存失败: ${it.message}")
+        }.getOrNull() ?: return null
+
+        snapshotCache = SnapshotCache(key = restored.first, snapshot = restored.second)
+        return restored.second
+    }
+
+    internal fun serializeSnapshotCachePayload(
+        cacheKey: String,
+        snapshot: DownloadLibrarySnapshot
+    ): String {
+        return JSONObject().apply {
+            put("cacheKey", cacheKey)
+            put("audioEntries", snapshot.audioEntries.toJsonArray())
+            put("metadataEntries", snapshot.metadataEntriesByAudioName.values.toList().toJsonArray())
+            put("metadataByAudioName", JSONObject().apply {
+                snapshot.metadataByAudioName.forEach { (audioName, metadata) ->
+                    put(audioName, metadata.toJson())
+                }
+            })
+            put("coverEntries", snapshot.coverEntriesByName.values.toList().toJsonArray())
+            put("lyricEntries", snapshot.lyricEntriesByName.values.toList().toJsonArray())
+        }.toString()
+    }
+
+    internal fun deserializeSnapshotCachePayload(
+        raw: String,
+        expectedKey: String? = null
+    ): Pair<String, DownloadLibrarySnapshot>? {
+        val root = JSONObject(raw)
+        val cacheKey = root.optString("cacheKey").takeIf(String::isNotBlank) ?: return null
+        if (expectedKey != null && expectedKey != cacheKey) {
+            return null
+        }
+
+        val audioEntries = root.optJSONArray("audioEntries").toStoredEntries()
+        val metadataEntries = root.optJSONArray("metadataEntries").toStoredEntries()
+        val metadataRoot = root.optJSONObject("metadataByAudioName") ?: JSONObject()
+        val metadataByAudioName = buildMap {
+            metadataRoot.keys().forEach { audioName ->
+                metadataRoot.optJSONObject(audioName)
+                    ?.toDownloadedAudioMetadata()
+                    ?.let { put(audioName, it) }
+            }
+        }
+        val coverEntries = root.optJSONArray("coverEntries").toStoredEntries()
+        val lyricEntries = root.optJSONArray("lyricEntries").toStoredEntries()
+        return cacheKey to composeSnapshot(
+            audioEntries = audioEntries,
+            metadataEntries = metadataEntries,
+            metadataByAudioName = metadataByAudioName,
+            coverEntries = coverEntries,
+            lyricEntries = lyricEntries
+        )
     }
 
     private fun buildRemoteTrackKey(
@@ -1196,6 +1493,104 @@ internal object ManagedDownloadStorage {
             "lrc", "txt", "json" -> "text/plain"
             else -> "application/octet-stream"
         }
+    }
+
+    private fun List<StoredEntry>.toJsonArray(): JSONArray {
+        return JSONArray().also { jsonArray ->
+            forEach { entry -> jsonArray.put(entry.toJson()) }
+        }
+    }
+
+    private fun StoredEntry.toJson(): JSONObject {
+        return JSONObject().apply {
+            put("name", name)
+            put("reference", reference)
+            put("mediaUri", mediaUri)
+            put("localFilePath", localFilePath)
+            put("sizeBytes", sizeBytes)
+            put("lastModifiedMs", lastModifiedMs)
+            put("isDirectory", isDirectory)
+        }
+    }
+
+    private fun JSONArray?.toStoredEntries(): List<StoredEntry> {
+        if (this == null) return emptyList()
+        return buildList(length()) {
+            for (index in 0 until length()) {
+                optJSONObject(index)?.toStoredEntry()?.let(::add)
+            }
+        }
+    }
+
+    private fun JSONObject.toStoredEntry(): StoredEntry? {
+        val name = optString("name").takeIf(String::isNotBlank) ?: return null
+        val reference = optString("reference").takeIf(String::isNotBlank) ?: return null
+        val mediaUri = optString("mediaUri").takeIf(String::isNotBlank) ?: reference
+        return StoredEntry(
+            name = name,
+            reference = reference,
+            mediaUri = mediaUri,
+            localFilePath = optString("localFilePath").takeIf(String::isNotBlank),
+            sizeBytes = optLong("sizeBytes"),
+            lastModifiedMs = optLong("lastModifiedMs"),
+            isDirectory = optBoolean("isDirectory")
+        )
+    }
+
+    private fun DownloadedAudioMetadata.toJson(): JSONObject {
+        return JSONObject().apply {
+            put("stableKey", stableKey)
+            put("songId", songId)
+            put("identityAlbum", identityAlbum)
+            put("name", name)
+            put("artist", artist)
+            put("coverUrl", coverUrl)
+            put("matchedLyricSource", matchedLyricSource)
+            put("matchedSongId", matchedSongId)
+            put("userLyricOffsetMs", userLyricOffsetMs)
+            put("customCoverUrl", customCoverUrl)
+            put("customName", customName)
+            put("customArtist", customArtist)
+            put("originalName", originalName)
+            put("originalArtist", originalArtist)
+            put("originalCoverUrl", originalCoverUrl)
+            put("mediaUri", mediaUri)
+            put("channelId", channelId)
+            put("audioId", audioId)
+            put("subAudioId", subAudioId)
+            put("coverPath", coverPath)
+            put("lyricPath", lyricPath)
+            put("translatedLyricPath", translatedLyricPath)
+            put("durationMs", durationMs)
+        }
+    }
+
+    private fun JSONObject.toDownloadedAudioMetadata(): DownloadedAudioMetadata {
+        return DownloadedAudioMetadata(
+            stableKey = optString("stableKey").takeIf(String::isNotBlank),
+            songId = optLong("songId").takeIf { it > 0L },
+            identityAlbum = optString("identityAlbum").takeIf(String::isNotBlank),
+            name = optString("name").takeIf(String::isNotBlank),
+            artist = optString("artist").takeIf(String::isNotBlank),
+            coverUrl = optString("coverUrl").takeIf(String::isNotBlank),
+            matchedLyricSource = optString("matchedLyricSource").takeIf(String::isNotBlank),
+            matchedSongId = optString("matchedSongId").takeIf(String::isNotBlank),
+            userLyricOffsetMs = optLong("userLyricOffsetMs"),
+            customCoverUrl = optString("customCoverUrl").takeIf(String::isNotBlank),
+            customName = optString("customName").takeIf(String::isNotBlank),
+            customArtist = optString("customArtist").takeIf(String::isNotBlank),
+            originalName = optString("originalName").takeIf(String::isNotBlank),
+            originalArtist = optString("originalArtist").takeIf(String::isNotBlank),
+            originalCoverUrl = optString("originalCoverUrl").takeIf(String::isNotBlank),
+            mediaUri = optString("mediaUri").takeIf(String::isNotBlank),
+            channelId = optString("channelId").takeIf(String::isNotBlank),
+            audioId = optString("audioId").takeIf(String::isNotBlank),
+            subAudioId = optString("subAudioId").takeIf(String::isNotBlank),
+            coverPath = optString("coverPath").takeIf(String::isNotBlank),
+            lyricPath = optString("lyricPath").takeIf(String::isNotBlank),
+            translatedLyricPath = optString("translatedLyricPath").takeIf(String::isNotBlank),
+            durationMs = optLong("durationMs")
+        )
     }
 
     private fun File.toStoredEntry(): StoredEntry {
