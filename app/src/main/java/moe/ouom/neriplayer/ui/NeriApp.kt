@@ -136,6 +136,8 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.AudioPlayerService
 import moe.ouom.neriplayer.core.player.AudioReactive
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.policy.PlaybackCommandSource
+import moe.ouom.neriplayer.core.player.policy.shouldSyncPlaybackServiceForLocalPlaybackCommand
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
@@ -550,6 +552,20 @@ fun NeriApp(
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
     val displayCoverUrl = currentSong.resolveUiCoverSource(context)
     val application = remember(context) { context.applicationContext as Application }
+    val scope = rememberCoroutineScope()
+
+    val scheduleAudioServiceStart: (String, Boolean) -> Unit = { source, forceForeground ->
+        scope.launch {
+            // 让 currentSong/mini player 先过一帧，避免和服务启动抢主线程
+            withFrameNanos { }
+            NPLogger.d("NERI-App", "Starting audio service: source=$source")
+            AudioPlayerService.startSyncService(
+                context,
+                source,
+                forceForeground = forceForeground
+            )
+        }
+    }
 
     LaunchedEffect(application) {
         PlayerManager.initialize(application, startupPlaybackPreferences.maxCacheSizeBytes)
@@ -565,20 +581,41 @@ fun NeriApp(
             NPLogger.d("NERI-App", "Skip audio service bootstrap because transport is inactive")
         }
 
-        // 跳过初始值，订阅之后的变更，每次切曲写入最近播放
-        var lastRecordedSongKey: String? = null
-        PlayerManager.currentSongFlow
-            .drop(1)
-            .filterNotNull()
-            .collect { song ->
-                val songKey = song.stableKey()
-                if (songKey == lastRecordedSongKey) {
+        launch {
+            PlayerManager.playbackCommandFlow.collect { command ->
+                if (command.source != PlaybackCommandSource.LOCAL) {
                     return@collect
                 }
-                lastRecordedSongKey = songKey
-                // 最近播放记录会触发本地文件和同步配置读写，避免阻塞首帧动画
-                withContext(Dispatchers.IO) {
-                    AppContainer.playHistoryRepo.record(song)
+                if (!shouldSyncPlaybackServiceForLocalPlaybackCommand(command.type)) {
+                    return@collect
+                }
+                if (!PlayerManager.hasItems()) {
+                    return@collect
+                }
+                // 恢复旧队列后点继续播放，也要像切新歌一样补一次系统媒体会话同步。
+                scheduleAudioServiceStart(
+                    "local_playback_command_${command.type.lowercase()}",
+                    PlayerManager.shouldRunPlaybackServiceInForeground()
+                )
+            }
+        }
+
+        launch {
+            // 跳过初始值，订阅之后的变更，每次切曲写入最近播放
+            var lastRecordedSongKey: String? = null
+            PlayerManager.currentSongFlow
+                .drop(1)
+                .filterNotNull()
+                .collect { song ->
+                    val songKey = song.stableKey()
+                    if (songKey == lastRecordedSongKey) {
+                        return@collect
+                    }
+                    lastRecordedSongKey = songKey
+                    // 最近播放记录会触发本地文件和同步配置读写，避免阻塞首帧动画
+                    withContext(Dispatchers.IO) {
+                        AppContainer.playHistoryRepo.record(song)
+                    }
                 }
             }
     }
@@ -654,8 +691,6 @@ fun NeriApp(
         else -> false
     }
     val hazeState = remember { HazeState() }
-
-    val scope = rememberCoroutineScope()
     val preferredQuality by repo.audioQualityFlow.collectAsState(initial = "exhigh")
     val youtubePreferredQuality by repo.youtubeAudioQualityFlow.collectAsState(initial = "very_high")
     val biliPreferredQuality by repo.biliAudioQualityFlow.collectAsState(initial = "high")
@@ -751,29 +786,13 @@ fun NeriApp(
         clearThemeRevealState()
     }
 
-    fun scheduleAudioServiceStart(
-        source: String,
-        forceForeground: Boolean = false
-    ) {
-        scope.launch {
-            // 让 currentSong/mini player 先过一帧，避免和服务启动抢主线程
-            withFrameNanos { }
-            NPLogger.d("NERI-App", "Starting audio service: source=$source")
-            AudioPlayerService.startSyncService(
-                context,
-                source,
-                forceForeground = forceForeground
-            )
-        }
-    }
-
     fun playSongsAndOpenNowPlaying(songs: List<SongItem>, index: Int) {
         showNowPlaying = true
         // 播放队列可能包含歌词等大字段，避免通过 Binder 传整份歌单导致崩溃
         PlayerManager.playPlaylist(songs, index)
         scheduleAudioServiceStart(
-            source = "play_songs_and_open_now_playing",
-            forceForeground = true
+            "play_songs_and_open_now_playing",
+            true
         )
     }
 
@@ -782,7 +801,7 @@ fun NeriApp(
             "NERI-App",
             "ensureAudioServiceStarted hasItems=${PlayerManager.hasItems()} transportActive=${PlayerManager.isTransportActive()} isPlaying=${PlayerManager.isPlayingFlow.value}"
         )
-        scheduleAudioServiceStart(source = source)
+        scheduleAudioServiceStart(source, false)
     }
 
     fun playBiliAudioAndOpenNowPlaying(videos: List<BiliVideoItem>, index: Int) {

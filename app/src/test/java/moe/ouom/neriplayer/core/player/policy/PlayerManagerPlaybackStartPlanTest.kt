@@ -161,4 +161,20 @@ class PlayerManagerPlaybackStartPlanTest {
 
         assertTrue(shouldBootstrap)
     }
+
+    @Test
+    fun `local playback commands sync playback service after resume sensitive actions`() {
+        assertTrue(shouldSyncPlaybackServiceForLocalPlaybackCommand("PLAY"))
+        assertTrue(shouldSyncPlaybackServiceForLocalPlaybackCommand("PLAY_PLAYLIST"))
+        assertTrue(shouldSyncPlaybackServiceForLocalPlaybackCommand("PLAY_FROM_QUEUE"))
+        assertTrue(shouldSyncPlaybackServiceForLocalPlaybackCommand("NEXT"))
+        assertTrue(shouldSyncPlaybackServiceForLocalPlaybackCommand("PREVIOUS"))
+    }
+
+    @Test
+    fun `non resume commands do not eagerly sync playback service`() {
+        assertFalse(shouldSyncPlaybackServiceForLocalPlaybackCommand("PAUSE"))
+        assertFalse(shouldSyncPlaybackServiceForLocalPlaybackCommand("SEEK"))
+        assertFalse(shouldSyncPlaybackServiceForLocalPlaybackCommand("UNKNOWN"))
+    }
 }
