@@ -50,6 +50,7 @@ import kotlin.system.exitProcess
  * 使用NPLogger记录异常信息，并在主线程显示错误弹窗
  */
 object ExceptionHandler {
+    private const val CRASH_DIR_NAME = "crashes"
 
     private var applicationRef: WeakReference<Application>? = null
     private var previousHandler: Thread.UncaughtExceptionHandler? = null
@@ -73,6 +74,7 @@ object ExceptionHandler {
 
         // 设置崩溃日志文件
         setupCrashLogFile(app)
+        NativeCrashHandler.init(app)
 
         // 设置全局未捕获异常处理器
         previousHandler = Thread.getDefaultUncaughtExceptionHandler()
@@ -101,6 +103,9 @@ object ExceptionHandler {
     fun handleException(source: String, throwable: Throwable, isUncaught: Boolean = false) {
         val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(Date())
         val stackTrace = getStackTraceString(throwable)
+        val app = applicationRef?.get()
+        val currentThread = Thread.currentThread()
+        val supportedAbis = android.os.Build.SUPPORTED_ABIS.joinToString()
         
         // 构建异常信息
         val exceptionInfo = buildString {
@@ -108,6 +113,12 @@ object ExceptionHandler {
             appendLine("Time: $timestamp")
             appendLine("Source: $source")
             appendLine("Type: ${if (isUncaught) "Uncaught Exception" else "Handled Exception"}")
+            appendLine("Process: ${app?.applicationInfo?.processName ?: "unknown"}")
+            appendLine("Package: ${app?.packageName ?: "unknown"}")
+            appendLine("PID: ${Process.myPid()}")
+            appendLine("Thread: ${currentThread.name}")
+            appendLine("Thread State: ${currentThread.state}")
+            appendLine("Main Thread: ${currentThread == Looper.getMainLooper().thread}")
             appendLine("Exception: ${throwable.javaClass.simpleName}")
             appendLine("Message: ${throwable.message ?: "No message"}")
             appendLine("Stack Trace:")
@@ -118,8 +129,13 @@ object ExceptionHandler {
             appendLine("Android Version: ${android.os.Build.VERSION.RELEASE}")
             appendLine("SDK Level: ${android.os.Build.VERSION.SDK_INT}")
             appendLine("Device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
+            appendLine("Brand: ${android.os.Build.BRAND}")
+            appendLine("Device Code: ${android.os.Build.DEVICE}")
+            appendLine("Product: ${android.os.Build.PRODUCT}")
+            appendLine("Supported ABIs: $supportedAbis")
             appendLine("App Version: ${moe.ouom.neriplayer.BuildConfig.VERSION_NAME}")
             appendLine("Build Type: ${moe.ouom.neriplayer.BuildConfig.BUILD_TYPE}")
+            appendLine("Build UUID: ${moe.ouom.neriplayer.BuildConfig.BUILD_UUID}")
         }
         
         // 使用 NPLogger 记录异常
@@ -245,17 +261,23 @@ object ExceptionHandler {
      */
     private fun setupCrashLogFile(context: Context) {
         try {
-            val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
-            val crashDir = File(baseDir, "crashes")
-            if (!crashDir.exists() && !crashDir.mkdirs()) {
-                NPLogger.e("ExceptionHandler", "Failed to create crash log directory")
-                return
-            }
-            val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-            crashLogFile = File(crashDir, "crash_$timestamp.txt")
+            crashLogFile = CrashLogFiles.createCrashLogFile(context, prefix = "crash")
         } catch (e: Exception) {
             NPLogger.e("ExceptionHandler", "Failed to setup crash log file", e)
         }
+    }
+
+    /**
+     * 统一解析崩溃目录，供 JVM 与 native 崩溃处理共用
+     */
+    fun resolveCrashDirectory(context: Context): File? {
+        val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
+        val crashDir = File(baseDir, CRASH_DIR_NAME)
+        if (!crashDir.exists() && !crashDir.mkdirs()) {
+            NPLogger.e("ExceptionHandler", "Failed to create crash log directory")
+            return null
+        }
+        return crashDir
     }
 
     /**
@@ -288,6 +310,14 @@ object ExceptionHandler {
             FileOutputStream(logFile, true).use { fos ->
                 fos.write(exceptionInfo.toByteArray())
                 fos.write("\n\n".toByteArray())
+                fos.fd.sync()
+            }
+            applicationRef?.get()?.let { app ->
+                CrashReportStore.markPendingCrash(
+                    context = app,
+                    logFile = logFile,
+                    origin = CrashReportStore.CrashOrigin.Jvm
+                )
             }
         } catch (e: Exception) {
             NPLogger.e("ExceptionHandler", "Failed to write crash log to file (sync)", e)

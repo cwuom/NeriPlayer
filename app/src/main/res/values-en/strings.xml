@@ -535,7 +535,20 @@
     <string name="debug_view_logs">View App Logs</string>
     <string name="debug_view_logs_desc">View, copy and export runtime logs</string>
     <string name="debug_test_exception">Test Exception Handler</string>
-    <string name="debug_test_exception_desc">Test exception capture, logging and dialog display</string>
+    <string name="debug_test_exception_desc">Open the JVM and native crash test menu</string>
+    <string name="debug_test_exception_picker_title">Choose crash test type</string>
+    <string name="debug_test_exception_picker_desc">These options include both recoverable exceptions and real crashes that will terminate the app.</string>
+    <string name="debug_test_exception_jvm_handled">Handled JVM exception</string>
+    <string name="debug_test_exception_jvm_handled_desc">Uses the existing exception dialog flow and does not intentionally kill the process.</string>
+    <string name="debug_test_exception_jvm_uncaught_main">Uncaught JVM main-thread crash</string>
+    <string name="debug_test_exception_jvm_uncaught_main_desc">Throws an uncaught exception on the main thread and exits the app immediately.</string>
+    <string name="debug_test_exception_jvm_uncaught_worker">Uncaught JVM worker-thread crash</string>
+    <string name="debug_test_exception_jvm_uncaught_worker_desc">Throws an uncaught exception on a background thread to test the global crash chain.</string>
+    <string name="debug_test_exception_native_sigsegv">Native SIGSEGV crash</string>
+    <string name="debug_test_exception_native_sigsegv_desc">Triggers a segmentation fault to verify native crash interception and file logging.</string>
+    <string name="debug_test_exception_native_sigabrt">Native SIGABRT crash</string>
+    <string name="debug_test_exception_native_sigabrt_desc">Calls abort to verify the native crash interceptor and system termination chain.</string>
+    <string name="debug_native_crash_unavailable">Native crash testing is currently unavailable. Please make sure the native crash interceptor initialized successfully.</string>
     <string name="debug_hide_hint">After hiding, \"Debug\" will be removed from bottom bar. Tap version 7 times in settings to re-enable</string>
     <string name="debug_search_keyword">Search Keyword</string>
     <string name="debug_search_copy_json">Search (Copy JSON)</string>
@@ -603,6 +616,11 @@
     <string name="crash_log_no_file">No crash logs</string>
     <string name="crash_log_hint">Crash logs are automatically recorded when app crashes</string>
     <string name="crash_log_clear_confirm">Clear all crash logs?</string>
+    <string name="startup_crash_report_title">Detected previous abnormal exit</string>
+    <string name="startup_crash_report_title_jvm">Detected previous JVM crash</string>
+    <string name="startup_crash_report_title_native">Detected previous native crash</string>
+    <string name="startup_crash_report_desc">The app crashed during the previous launch. A preview of the crash log is shown below.\nLog file: %1$s</string>
+    <string name="startup_crash_report_truncated">The log is long, so only the first 64 KB is shown here. You can copy the full content or export the original file.</string>
 
     <!-- Errors -->
     <string name="error_network">Network Error</string>

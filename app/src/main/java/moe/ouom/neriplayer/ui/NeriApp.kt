@@ -156,6 +156,7 @@ import moe.ouom.neriplayer.ui.screen.NowPlayingScreen
 import moe.ouom.neriplayer.ui.screen.RecentScreen
 import moe.ouom.neriplayer.ui.screen.debug.BiliApiProbeScreen
 import moe.ouom.neriplayer.ui.screen.debug.CrashLogListScreen
+import moe.ouom.neriplayer.ui.screen.debug.DebugCrashTestType
 import moe.ouom.neriplayer.ui.screen.debug.DebugHomeScreen
 import moe.ouom.neriplayer.ui.screen.debug.ListenTogetherDebugScreen
 import moe.ouom.neriplayer.ui.screen.debug.LogListScreen
@@ -180,6 +181,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.util.CoverArtColorCache
 import moe.ouom.neriplayer.util.ExceptionHandler
+import moe.ouom.neriplayer.util.NativeCrashHandler
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.adjustedAccentColorArgb
 import moe.ouom.neriplayer.util.syncHapticFeedbackSetting
@@ -592,7 +594,7 @@ fun NeriApp(
                 if (!PlayerManager.hasItems()) {
                     return@collect
                 }
-                // 恢复旧队列后点继续播放，也要像切新歌一样补一次系统媒体会话同步。
+                // 恢复旧队列后点继续播放，也要像切新歌一样补一次系统媒体会话同步
                 scheduleAudioServiceStart(
                     "local_playback_command_${command.type.lowercase()}",
                     PlayerManager.shouldRunPlaybackServiceInForeground()
@@ -1582,9 +1584,44 @@ fun NeriApp(
                                         onOpenSearchDebug = { navController.navigate(Destinations.DebugSearch.route) },
                                         onOpenLogs = { navController.navigate(Destinations.DebugLogsList.route) },
                                         onOpenCrashLogs = { navController.navigate(Destinations.DebugCrashLogsList.route) },
-                                        onTestExceptionHandler = {
-                                            ExceptionHandler.safeExecute("DebugTest") {
-                                                throw RuntimeException(context.getString(R.string.test_exception_message))
+                                        onTestExceptionHandler = { crashType ->
+                                            val crashMessage = context.getString(R.string.test_exception_message)
+                                            when (crashType) {
+                                                DebugCrashTestType.JvmHandled -> {
+                                                    ExceptionHandler.safeExecute("DebugTestHandled") {
+                                                        throw RuntimeException(crashMessage)
+                                                    }
+                                                }
+
+                                                DebugCrashTestType.JvmUncaughtMain -> {
+                                                    Handler(Looper.getMainLooper()).post {
+                                                        throw RuntimeException(crashMessage)
+                                                    }
+                                                }
+
+                                                DebugCrashTestType.JvmUncaughtWorker -> {
+                                                    Thread {
+                                                        throw RuntimeException(crashMessage)
+                                                    }.start()
+                                                }
+
+                                                DebugCrashTestType.NativeSigSegv -> {
+                                                    Handler(Looper.getMainLooper()).post {
+                                                        NativeCrashHandler.triggerTestCrash(
+                                                            context = context,
+                                                            crashType = NativeCrashHandler.TestCrashType.SigSegv
+                                                        )
+                                                    }
+                                                }
+
+                                                DebugCrashTestType.NativeSigAbrt -> {
+                                                    Handler(Looper.getMainLooper()).post {
+                                                        NativeCrashHandler.triggerTestCrash(
+                                                            context = context,
+                                                            crashType = NativeCrashHandler.TestCrashType.SigAbrt
+                                                        )
+                                                    }
+                                                }
                                             }
                                         },
                                         onHideDebugMode = {

@@ -535,7 +535,20 @@
     <string name="debug_view_logs">查看应用日志</string>
     <string name="debug_view_logs_desc">查看、复制和导出本次运行的日志</string>
     <string name="debug_test_exception">测试异常处理器</string>
-    <string name="debug_test_exception_desc">测试异常捕获、日志记录和弹窗显示</string>
+    <string name="debug_test_exception_desc">弹出 JVM 与 Native 异常测试菜单</string>
+    <string name="debug_test_exception_picker_title">选择异常测试类型</string>
+    <string name="debug_test_exception_picker_desc">下面的选项里既有可恢复异常，也有会直接让应用退出的真实崩溃。</string>
+    <string name="debug_test_exception_jvm_handled">JVM 可恢复异常</string>
+    <string name="debug_test_exception_jvm_handled_desc">走现有异常处理器弹窗，不会主动杀进程。</string>
+    <string name="debug_test_exception_jvm_uncaught_main">JVM 主线程未捕获崩溃</string>
+    <string name="debug_test_exception_jvm_uncaught_main_desc">在主线程抛出未捕获异常，应用会直接退出。</string>
+    <string name="debug_test_exception_jvm_uncaught_worker">JVM 子线程未捕获崩溃</string>
+    <string name="debug_test_exception_jvm_uncaught_worker_desc">在后台线程抛出未捕获异常，同样会触发全局崩溃链路。</string>
+    <string name="debug_test_exception_native_sigsegv">Native SIGSEGV 崩溃</string>
+    <string name="debug_test_exception_native_sigsegv_desc">主动触发段错误，验证 native 崩溃拦截与日志落盘。</string>
+    <string name="debug_test_exception_native_sigabrt">Native SIGABRT 崩溃</string>
+    <string name="debug_test_exception_native_sigabrt_desc">主动调用 abort，验证 native 崩溃拦截与系统终止链路。</string>
+    <string name="debug_native_crash_unavailable">Native 崩溃测试暂不可用，请先确认 native 崩溃拦截器已成功初始化。</string>
     <string name="debug_hide_hint">隐藏后底部栏将移除"调试",可在设置页点击版本号 7 次再次开启</string>
     <string name="debug_search_keyword">搜索关键字</string>
     <string name="debug_search_copy_json">搜索(复制 JSON)</string>
@@ -603,6 +616,11 @@
     <string name="crash_log_no_file">暂无崩溃日志</string>
     <string name="crash_log_hint">应用崩溃时会自动记录日志</string>
     <string name="crash_log_clear_confirm">确认清空所有崩溃日志？</string>
+    <string name="startup_crash_report_title">检测到上次异常退出</string>
+    <string name="startup_crash_report_title_jvm">检测到上次 JVM 崩溃</string>
+    <string name="startup_crash_report_title_native">检测到上次 Native 崩溃</string>
+    <string name="startup_crash_report_desc">应用上次启动时发生崩溃，下面是日志预览。\n日志文件：%1$s</string>
+    <string name="startup_crash_report_truncated">日志内容较长，这里只显示前 64 KB。你可以复制完整内容或导出原始文件。</string>
 
     <!-- Errors -->
     <string name="error_network">网络错误</string>

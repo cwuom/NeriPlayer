@@ -26,6 +26,7 @@ package moe.ouom.neriplayer.activity
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
@@ -127,6 +128,7 @@ import moe.ouom.neriplayer.listentogether.parseListenTogetherInvite
 import moe.ouom.neriplayer.listentogether.resolveListenTogetherBaseUrl
 import moe.ouom.neriplayer.ui.NeriApp
 import moe.ouom.neriplayer.ui.onboarding.StartupOnboardingScreen
+import moe.ouom.neriplayer.util.CrashReportStore
 import moe.ouom.neriplayer.util.ExceptionHandler
 import moe.ouom.neriplayer.util.HapticButton
 import moe.ouom.neriplayer.util.HapticTextButton
@@ -222,6 +224,49 @@ class MainActivity : ComponentActivity() {
             }
 
             NeriTheme(useDark = useDark, useDynamic = dynamicColor) {
+                        val startupScope = rememberCoroutineScope()
+                        val clipboardManager = remember {
+                            getSystemService(ClipboardManager::class.java)
+                        }
+                        var pendingStartupCrashReport by remember {
+                            mutableStateOf<CrashReportStore.PendingCrashReport?>(null)
+                        }
+                        val exportCrashReportLauncher = rememberLauncherForActivityResult(
+                            contract = ActivityResultContracts.CreateDocument("text/plain")
+                        ) { uri: Uri? ->
+                            val report = pendingStartupCrashReport ?: return@rememberLauncherForActivityResult
+                            uri ?: return@rememberLauncherForActivityResult
+                            startupScope.launch(Dispatchers.IO) {
+                                runCatching {
+                                    CrashReportStore.exportCrashReport(
+                                        context = this@MainActivity,
+                                        reportFile = report.file,
+                                        destination = uri
+                                    )
+                                }.onSuccess {
+                                    withContext(Dispatchers.Main) {
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            getString(R.string.log_exported),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                }.onFailure { error ->
+                                    withContext(Dispatchers.Main) {
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            getString(R.string.log_export_failed, error.message),
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                }
+                            }
+                        }
+                        LaunchedEffect(Unit) {
+                            pendingStartupCrashReport = withContext(Dispatchers.IO) {
+                                CrashReportStore.readPendingCrashReport(this@MainActivity)
+                            }
+                        }
                         LaunchedEffect(Unit) {
                             handleIncomingIntent(intent)
                             inspectClipboardForListenTogetherInvite()
@@ -586,6 +631,43 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     }
+                }
+
+                pendingStartupCrashReport?.let { report ->
+                    StartupCrashReportDialog(
+                        report = report,
+                        onCopy = {
+                            startupScope.launch(Dispatchers.IO) {
+                                val fullContent = CrashReportStore.readFullCrashReport(report.file)
+                                    ?: report.previewContent
+                                withContext(Dispatchers.Main) {
+                                    if (fullContent.isNotBlank()) {
+                                        clipboardManager?.setPrimaryClip(
+                                            ClipData.newPlainText("crash_report", fullContent)
+                                        )
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            getString(R.string.log_copied),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    } else {
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            getString(R.string.log_cannot_read),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                }
+                            }
+                        },
+                        onExport = {
+                            exportCrashReportLauncher.launch(report.file.name)
+                        },
+                        onClose = {
+                            CrashReportStore.clearPendingCrashReport(this@MainActivity)
+                            pendingStartupCrashReport = null
+                        }
+                    )
                 }
             }
         }
@@ -960,6 +1042,75 @@ fun NeriTheme(
         colorScheme = colorScheme,
         typography = Typography(),
         content = content
+    )
+}
+
+@Composable
+private fun StartupCrashReportDialog(
+    report: CrashReportStore.PendingCrashReport,
+    onCopy: () -> Unit,
+    onExport: () -> Unit,
+    onClose: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = { },
+        title = {
+            Text(
+                text = when (report.origin) {
+                    CrashReportStore.CrashOrigin.Jvm ->
+                        stringResource(R.string.startup_crash_report_title_jvm)
+                    CrashReportStore.CrashOrigin.Native ->
+                        stringResource(R.string.startup_crash_report_title_native)
+                    CrashReportStore.CrashOrigin.Unknown ->
+                        stringResource(R.string.startup_crash_report_title)
+                }
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(320.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = stringResource(
+                        R.string.startup_crash_report_desc,
+                        report.file.name
+                    )
+                )
+                if (report.previewTruncated) {
+                    Text(
+                        text = stringResource(R.string.startup_crash_report_truncated),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                Text(
+                    text = if (report.previewContent.isBlank()) {
+                        stringResource(R.string.log_cannot_read)
+                    } else {
+                        report.previewContent
+                    },
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        },
+        confirmButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                HapticTextButton(onClick = onCopy) {
+                    Text(stringResource(R.string.debug_copy_all))
+                }
+                HapticTextButton(onClick = onExport) {
+                    Text(stringResource(R.string.log_export))
+                }
+                HapticTextButton(onClick = onClose) {
+                    Text(stringResource(R.string.action_close))
+                }
+            }
+        },
+        dismissButton = null
     )
 }
 

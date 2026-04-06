@@ -57,6 +57,19 @@ android {
 
         renderscriptTargetApi = 31
         renderscriptSupportModeEnabled = true
+
+        externalNativeBuild {
+            cmake {
+                cppFlags += listOf(
+                    "-fexceptions",
+                    "-frtti"
+                )
+                arguments += listOf(
+                    "-DANDROID_STL=c++_shared",
+                    "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384"
+                )
+            }
+        }
     }
 
     buildTypes {
@@ -85,6 +98,13 @@ android {
     }
     buildFeatures {
         buildConfig = true
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     testOptions {
