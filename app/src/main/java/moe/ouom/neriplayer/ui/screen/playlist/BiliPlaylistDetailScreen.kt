@@ -84,6 +84,7 @@ import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.component.ActiveDownloadTaskList
 import moe.ouom.neriplayer.ui.component.bottomSheetDragBlocker
 import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
@@ -156,6 +157,8 @@ fun BiliPlaylistDetailScreen(
     // 下载进度
     var showDownloadManager by remember { mutableStateOf(false) }
     val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
+    val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsState()
+    val hasDownloadManagerEntry = remember(downloadTasks) { downloadTasks.isNotEmpty() }
 
     val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
     val allLocalPlaylists by repo.playlists.collectAsState(initial = emptyList())
@@ -277,7 +280,7 @@ fun BiliPlaylistDetailScreen(
                                 )
                             }
 
-                            if (batchDownloadProgress != null) {
+                            if (hasDownloadManagerEntry) {
                                 HapticIconButton(onClick = { showDownloadManager = true }) {
                                     Icon(
                                         Icons.Outlined.Download,
@@ -596,12 +599,12 @@ fun BiliPlaylistDetailScreen(
                     onDismissRequest = { showDownloadManager = false },
                     sheetGesturesEnabled = false
                 ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .bottomSheetDragBlocker()
-                                .padding(20.dp)
-                        ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .bottomSheetDragBlocker()
+                            .padding(20.dp)
+                    ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -618,7 +621,8 @@ fun BiliPlaylistDetailScreen(
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        batchDownloadProgress?.let { progress ->
+                        if (batchDownloadProgress != null || downloadTasks.isNotEmpty()) {
+                            val progress = batchDownloadProgress
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 colors = CardDefaults.cardColors(
@@ -626,74 +630,69 @@ fun BiliPlaylistDetailScreen(
                                 )
                             ) {
                                 Column(modifier = Modifier.padding(16.dp)) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            stringResource(R.string.bili_download_progress_format, progress.completedSongs, progress.totalSongs),
-                                            style = MaterialTheme.typography.titleMedium
-                                        )
-                                        HapticTextButton(onClick = { AudioDownloadManager.cancelDownload() }) {
-                                            Text(stringResource(R.string.action_cancel), color = MaterialTheme.colorScheme.error)
+                                    if (progress != null) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                stringResource(R.string.bili_download_progress_format, progress.completedSongs, progress.totalSongs),
+                                                style = MaterialTheme.typography.titleMedium
+                                            )
+                                            HapticTextButton(onClick = { AudioDownloadManager.cancelDownload() }) {
+                                                Text(stringResource(R.string.action_cancel), color = MaterialTheme.colorScheme.error)
+                                            }
                                         }
-                                    }
 
-                                    if (progress.currentSong.isNotBlank()) {
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                        Text(
-                                            stringResource(R.string.bili_downloading_current, progress.currentSong),
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
+                                        if (progress.currentSong.isNotBlank()) {
+                                            Text(
+                                                stringResource(R.string.bili_downloading_current, progress.currentSong),
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
 
-                                    Spacer(modifier = Modifier.height(12.dp))
-
-                                    Text(
-                                        stringResource(R.string.download_overall_progress, progress.percentage),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    val animatedOverallProgress by animateFloatAsState(
-                                        targetValue = (progress.percentage / 100f).coerceIn(0f, 1f),
-                                        animationSpec = spring(
-                                            dampingRatio = Spring.DampingRatioNoBouncy,
-                                            stiffness = Spring.StiffnessMedium
-                                        ),
-                                        label = "overallProgress"
-                                    )
-                                    LinearProgressIndicator(
-                                        progress = { animatedOverallProgress },
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-
-                                    progress.currentProgress?.let { currentProgress ->
                                         Spacer(modifier = Modifier.height(12.dp))
+
                                         Text(
-                                            stringResource(R.string.download_current_file_progress, currentProgress.percentage, currentProgress.speedBytesPerSec / 1024),
+                                            stringResource(R.string.download_overall_progress, progress.percentage),
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
-                                        val animatedCurrentProgress by animateFloatAsState(
-                                            targetValue = if (currentProgress.totalBytes > 0) {
-                                                (currentProgress.bytesRead.toFloat() / currentProgress.totalBytes).coerceIn(0f, 1f)
-                                            } else 0f,
+                                        val animatedOverallProgress by animateFloatAsState(
+                                            targetValue = (progress.percentage / 100f).coerceIn(0f, 1f),
                                             animationSpec = spring(
                                                 dampingRatio = Spring.DampingRatioNoBouncy,
                                                 stiffness = Spring.StiffnessMedium
                                             ),
-                                            label = "currentProgress"
+                                            label = "overallProgress"
                                         )
                                         LinearProgressIndicator(
-                                            progress = { animatedCurrentProgress },
+                                            progress = { animatedOverallProgress },
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    } else {
+                                        Text(
+                                            text = pluralStringResource(
+                                                R.plurals.download_tasks_count,
+                                                downloadTasks.size,
+                                                downloadTasks.size
+                                            ),
+                                            style = MaterialTheme.typography.titleMedium
+                                        )
+                                    }
+
+                                    if (downloadTasks.isNotEmpty()) {
+                                        Spacer(modifier = Modifier.height(12.dp))
+                                        ActiveDownloadTaskList(
+                                            tasks = downloadTasks,
                                             modifier = Modifier.fillMaxWidth()
                                         )
                                     }
                                 }
                             }
-                        } ?: run {
+                        } else {
                             Column(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalAlignment = Alignment.CenterHorizontally

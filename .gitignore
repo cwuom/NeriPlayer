@@ -31,3 +31,4 @@ demo
 /buildSrc/build/
 /buildSrc/.kotlin/
 /build-logic/convention/bin/
+/.cpu-perfetto/

@@ -1817,20 +1817,34 @@ fun MoreOptionsSheet(
                                         currentDownloadTask?.progress != null -> {
                                             val progress = currentDownloadTask.progress
                                             Column {
-                                                Text(
-                                                    stringResource(
-                                                        R.string.download_progress_file_label,
-                                                        progress.percentage,
-                                                        progress.fileName
+                                                if (progress.stage == AudioDownloadManager.DownloadStage.FINALIZING) {
+                                                    Text(stringResource(R.string.download_finalizing))
+                                                    LinearProgressIndicator(
+                                                        modifier = Modifier.fillMaxWidth()
                                                     )
-                                                )
-                                                LinearProgressIndicator(
-                                                    progress = {
-                                                        progress.bytesRead.toFloat() /
-                                                            progress.totalBytes.toFloat()
-                                                    },
-                                                    modifier = Modifier.fillMaxWidth()
-                                                )
+                                                } else {
+                                                    Text(
+                                                        stringResource(
+                                                            R.string.download_progress_file_label,
+                                                            progress.percentage,
+                                                            progress.fileName
+                                                        )
+                                                    )
+                                                    if (progress.totalBytes > 0L) {
+                                                        LinearProgressIndicator(
+                                                            progress = {
+                                                                (progress.bytesRead.toFloat() /
+                                                                    progress.totalBytes.toFloat())
+                                                                    .coerceIn(0f, 1f)
+                                                            },
+                                                            modifier = Modifier.fillMaxWidth()
+                                                        )
+                                                    } else {
+                                                        LinearProgressIndicator(
+                                                            modifier = Modifier.fillMaxWidth()
+                                                        )
+                                                    }
+                                                }
                                             }
                                         }
 

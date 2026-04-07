@@ -188,42 +188,9 @@ object GlobalDownloadManager {
     }
 
     private fun observeDownloadProgress(context: Context) {
-        var lastProgressSongKey: String? = null
-
         scope.launch {
             AudioDownloadManager.progressFlow.collect { progress ->
-                if (progress != null) {
-                    lastProgressSongKey = progress.songKey
-                    updateDownloadProgress(progress)
-                    return@collect
-                }
-
-                val songKey = lastProgressSongKey
-                lastProgressSongKey = null
-                if (songKey.isNullOrBlank()) {
-                    return@collect
-                }
-
-                val task = _downloadTasks.value.find { it.song.stableKey() == songKey }
-                    ?: return@collect
-                if (task.status != DownloadStatus.DOWNLOADING) {
-                    return@collect
-                }
-
-                val storedAudio = resolveStoredAudio(context, task.song)
-                if (storedAudio == null) {
-                    NPLogger.w(TAG, "任务完成但未找到已下载文件: ${task.song.name}")
-                    scanLocalFiles(context, forceRefresh = true)
-                    return@collect
-                }
-
-                persistDownloadedMetadata(
-                    context = context,
-                    audio = storedAudio,
-                    song = task.song
-                )
-                updateTaskStatus(songKey, DownloadStatus.COMPLETED)
-                scanLocalFiles(context, forceRefresh = true)
+                progress?.let(::updateDownloadProgress)
             }
         }
 
@@ -260,13 +227,35 @@ object GlobalDownloadManager {
         context: Context,
         batchProgress: AudioDownloadManager.BatchDownloadProgress
     ) {
-        batchProgress.currentProgress?.let(::updateDownloadProgress)
-
         if (batchProgress.completedSongs >= batchProgress.totalSongs) {
             scope.launch {
                 delay(600)
                 scanLocalFiles(context, forceRefresh = true)
             }
+        }
+    }
+
+    private suspend fun finalizeCompletedDownload(
+        context: Context,
+        song: SongItem,
+        refreshCatalog: Boolean
+    ) {
+        val storedAudio = resolveStoredAudio(context, song)
+        if (storedAudio == null) {
+            NPLogger.w(TAG, "下载完成但未找到已下载文件: ${song.name}")
+            updateTaskStatus(song.stableKey(), DownloadStatus.COMPLETED)
+            scanLocalFiles(context, forceRefresh = true)
+            return
+        }
+
+        persistDownloadedMetadata(
+            context = context,
+            audio = storedAudio,
+            song = song
+        )
+        updateTaskStatus(song.stableKey(), DownloadStatus.COMPLETED)
+        if (refreshCatalog) {
+            scanLocalFiles(context, forceRefresh = true)
         }
     }
 
@@ -986,8 +975,11 @@ object GlobalDownloadManager {
                 _isSingleDownloading.value = true
                 try {
                     AudioDownloadManager.downloadSong(appContext, song)
-                    updateTaskStatus(songKey, DownloadStatus.COMPLETED)
-                    scanLocalFiles(appContext, forceRefresh = true)
+                    finalizeCompletedDownload(
+                        context = appContext,
+                        song = song,
+                        refreshCatalog = true
+                    )
                 } finally {
                     _isSingleDownloading.value = false
                 }
@@ -1018,7 +1010,24 @@ object GlobalDownloadManager {
                     return@launch
                 }
 
-                AudioDownloadManager.downloadPlaylist(appContext, pendingSongs)
+                AudioDownloadManager.downloadPlaylist(
+                    context = appContext,
+                    songs = pendingSongs,
+                    onSongCompleted = { completedSong ->
+                        finalizeCompletedDownload(
+                            context = appContext,
+                            song = completedSong,
+                            refreshCatalog = false
+                        )
+                    },
+                    onSongFailed = { failedSong, _ ->
+                        updateTaskStatus(failedSong.stableKey(), DownloadStatus.FAILED)
+                    },
+                    onSongCancelled = { cancelledSong ->
+                        clearSongCancelled(cancelledSong.stableKey())
+                        updateTaskStatus(cancelledSong.stableKey(), DownloadStatus.CANCELLED)
+                    }
+                )
             } catch (_: CancellationException) {
                 val cancelledKeys = songs.map { it.stableKey() }.toSet()
                 _downloadTasks.value = _downloadTasks.value.filterNot { task ->

@@ -40,7 +40,10 @@ internal object ManagedDownloadStorage {
     private const val SNAPSHOT_CACHE_PERSIST_DEBOUNCE_MS = 1_200L
     @Suppress("SpellCheckingInspection")
     private const val METADATA_SUFFIX = ".npmeta.json"
-    private const val MIGRATION_COPY_PARALLELISM = 4
+    private const val MIGRATION_COPY_PARALLELISM = 8
+    private const val MIGRATION_REWRITE_PARALLELISM = 4
+    private const val MIGRATION_DELETE_PARALLELISM = 8
+    private const val STREAM_COPY_BUFFER_SIZE_BYTES = 1 * 1024 * 1024
     private val audioExtensions = setOf("mp3", "m4a", "aac", "flac", "wav", "ogg", "webm", "eac3")
     private val imageExtensions = setOf("jpg", "jpeg", "png", "webp")
 
@@ -251,6 +254,13 @@ internal object ManagedDownloadStorage {
         collectManagedMigrationEntries(root).isNotEmpty()
     }
 
+    suspend fun mayHaveMigratableDownloads(context: Context, directoryUri: String?): Boolean = withContext(Dispatchers.IO) {
+        val root = resolveRoot(context, directoryUri) ?: return@withContext false
+        hasManagedMigrationCandidates(root) ||
+            subdirectoryHasFiles(root, "Lyrics") ||
+            subdirectoryHasFiles(root, COVER_SUBDIRECTORY)
+    }
+
     suspend fun migrateManagedDownloads(
         context: Context,
         fromDirectoryUri: String?,
@@ -308,18 +318,12 @@ internal object ManagedDownloadStorage {
             )
         }
 
-        var cleanupFailedFiles = 0
-        copiedEntries.forEach { migrationEntry ->
-            val deleted = runCatching {
-                deleteInternal(context, migrationEntry.original.entry.reference)
-            }.onFailure {
-                NPLogger.w(TAG, "迁移后删除旧下载文件失败: ${migrationEntry.original.entry.reference}, ${it.message}")
-            }.getOrDefault(false)
+        val cleanupFailedFiles = cleanupMigratedEntries(
+            context = context,
+            copiedEntries = copiedEntries
+        )
 
-            if (!deleted) {
-                cleanupFailedFiles++
-            }
-        }
+        invalidateSnapshotCache(context)
 
         MigrationResult(
             movedFiles = copiedEntries.size,
@@ -345,7 +349,8 @@ internal object ManagedDownloadStorage {
                         root = targetRoot,
                         displayName = migrationEntry.entry.name,
                         mimeType = migrationMimeTypeFor(migrationEntry),
-                        input = input
+                        input = input,
+                        invalidateSnapshot = false
                     )
                 } else {
                     writeSubdirectoryStream(
@@ -354,7 +359,8 @@ internal object ManagedDownloadStorage {
                         subdirectory = migrationEntry.subdirectory,
                         displayName = migrationEntry.entry.name,
                         mimeType = migrationMimeTypeFor(migrationEntry),
-                        input = input
+                        input = input,
+                        invalidateSnapshot = false
                     )
                 }
             } ?: throw IOException("无法读取源下载文件: ${migrationEntry.entry.name}")
@@ -572,48 +578,78 @@ internal object ManagedDownloadStorage {
         )
     }
 
-    private fun rewriteMigratedMetadataReferences(
+    private suspend fun rewriteMigratedMetadataReferences(
         context: Context,
         targetRoot: RootHandle,
         copiedEntries: List<CopiedMigrationEntry>
-    ): Int {
-        if (copiedEntries.isEmpty()) return 0
+    ): Int = coroutineScope {
+        if (copiedEntries.isEmpty()) return@coroutineScope 0
         val referenceMap = copiedEntries.associate { copied ->
             copied.original.entry.reference to copied.copiedEntry.reference
         }
-        var failedFiles = 0
+        val rewriteLimiter = Semaphore(MIGRATION_REWRITE_PARALLELISM)
         copiedEntries
             .filter { it.original.entry.name.endsWith(METADATA_SUFFIX) }
-            .forEach { copied ->
-                val raw = readTextInternal(context, copied.copiedEntry.reference)
-                val rewritten = runCatching {
-                    val metadataText = raw
-                        ?: throw IOException("无法读取已迁移 metadata: ${copied.copiedEntry.name}")
-                    rewriteManagedMetadataReferences(metadataText, referenceMap)
-                }.onFailure {
-                    NPLogger.w(TAG, "迁移后重写 metadata 引用失败: ${copied.copiedEntry.reference}, ${it.message}")
-                }.getOrNull()
-                if (rewritten == null) {
-                    failedFiles++
-                    return@forEach
-                }
-                if (rewritten != raw) {
-                    runCatching {
-                        writeRootText(
-                            context = context,
-                            root = targetRoot,
-                            displayName = copied.copiedEntry.name,
-                            content = rewritten
-                        )
-                    }.onFailure {
-                        NPLogger.w(TAG, "回写迁移后的 metadata 失败: ${copied.copiedEntry.reference}, ${it.message}")
-                    }.getOrElse {
-                        failedFiles++
-                        Unit
+            .map { copied ->
+                async(Dispatchers.IO) {
+                    rewriteLimiter.withPermit {
+                        val raw = readTextInternal(context, copied.copiedEntry.reference)
+                        val rewritten = runCatching {
+                            val metadataText = raw
+                                ?: throw IOException("无法读取已迁移 metadata: ${copied.copiedEntry.name}")
+                            rewriteManagedMetadataReferences(metadataText, referenceMap)
+                        }.onFailure {
+                            NPLogger.w(TAG, "迁移后重写 metadata 引用失败: ${copied.copiedEntry.reference}, ${it.message}")
+                        }.getOrNull()
+                        if (rewritten == null) {
+                            return@withPermit 1
+                        }
+                        if (rewritten == raw) {
+                            return@withPermit 0
+                        }
+                        runCatching {
+                            writeRootText(
+                                context = context,
+                                root = targetRoot,
+                                displayName = copied.copiedEntry.name,
+                                content = rewritten,
+                                invalidateSnapshot = false
+                            )
+                        }.onFailure {
+                            NPLogger.w(TAG, "回写迁移后的 metadata 失败: ${copied.copiedEntry.reference}, ${it.message}")
+                        }.getOrElse {
+                            return@withPermit 1
+                        }
+                        0
                     }
                 }
             }
-        return failedFiles
+            .awaitAll()
+            .sum()
+    }
+
+    private suspend fun cleanupMigratedEntries(
+        context: Context,
+        copiedEntries: List<CopiedMigrationEntry>
+    ): Int = coroutineScope {
+        if (copiedEntries.isEmpty()) return@coroutineScope 0
+        val cleanupLimiter = Semaphore(MIGRATION_DELETE_PARALLELISM)
+        copiedEntries.map { migrationEntry ->
+            async(Dispatchers.IO) {
+                cleanupLimiter.withPermit {
+                    val deleted = runCatching {
+                        deleteInternal(
+                            context = context,
+                            reference = migrationEntry.original.entry.reference,
+                            invalidateSnapshot = false
+                        )
+                    }.onFailure {
+                        NPLogger.w(TAG, "迁移后删除旧下载文件失败: ${migrationEntry.original.entry.reference}, ${it.message}")
+                    }.getOrDefault(false)
+                    if (deleted) 0 else 1
+                }
+            }
+        }.awaitAll().sum()
     }
 
     internal fun rewriteManagedMetadataReferences(
@@ -768,7 +804,9 @@ internal object ManagedDownloadStorage {
                     replace = false
                 )
                 context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
-                    tempFile.inputStream().use { input -> input.copyTo(output) }
+                    tempFile.inputStream().use { input ->
+                        input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
+                    }
                 } ?: throw IOException("无法打开下载目录输出流")
                 tempFile.delete()
                 target.toStoredEntry()
@@ -996,12 +1034,37 @@ internal object ManagedDownloadStorage {
         }
     }
 
+    private fun hasManagedMigrationCandidates(root: RootHandle): Boolean {
+        return when (root) {
+            is RootHandle.FileRoot -> (
+                root.dir.listFiles()?.any { file ->
+                    file.isFile && isManagedMigrationCandidate(file.name)
+                } == true
+                )
+
+            is RootHandle.TreeRoot -> root.tree.listFiles().any { file ->
+                file.isFile && file.name?.let(::isManagedMigrationCandidate) == true
+            }
+        }
+    }
+
+    private fun subdirectoryHasFiles(root: RootHandle, subdirectory: String): Boolean {
+        val directory = findSubdirectory(root, subdirectory) ?: return false
+        return when (directory) {
+            is RootHandle.FileRoot -> directory.dir.listFiles()?.any(File::isFile) == true
+            is RootHandle.TreeRoot -> directory.tree.listFiles().any(DocumentFile::isFile)
+        }
+    }
+
+    private fun isManagedMigrationCandidate(fileName: String): Boolean {
+        return fileName.substringAfterLast('.', "").lowercase() in audioExtensions ||
+            fileName.endsWith(METADATA_SUFFIX)
+    }
+
     private fun collectManagedMigrationEntries(root: RootHandle): List<ManagedMigrationEntry> {
         val rootEntries = listChildren(root)
             .filterNot(StoredEntry::isDirectory)
-            .filter { entry ->
-                entry.extension in audioExtensions || entry.name.endsWith(METADATA_SUFFIX)
-            }
+            .filter { entry -> isManagedMigrationCandidate(entry.name) }
             .map { entry -> ManagedMigrationEntry(subdirectory = null, entry = entry) }
 
         return (rootEntries +
@@ -1325,25 +1388,30 @@ internal object ManagedDownloadStorage {
         root: RootHandle,
         displayName: String,
         mimeType: String,
-        input: InputStream
+        input: InputStream,
+        invalidateSnapshot: Boolean = true
     ): StoredEntry {
         val storedEntry = when (root) {
             is RootHandle.FileRoot -> {
                 val target = File(root.dir, displayName)
-                target.outputStream().use { output -> input.copyTo(output) }
+                target.outputStream().use { output ->
+                    input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
+                }
                 target.toStoredEntry()
             }
 
             is RootHandle.TreeRoot -> {
                 val target = createRootFile(root.tree, displayName, mimeType, replace = true)
                 context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
-                    input.copyTo(output)
+                    input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
                 } ?: throw IOException("无法写入根目录文件: $displayName")
                 target.toStoredEntry()
                     ?: throw IOException("无法读取已写入的目录文件: $displayName")
             }
         }
-        invalidateSnapshotCache(context)
+        if (invalidateSnapshot) {
+            invalidateSnapshotCache(context)
+        }
         return storedEntry
     }
 
@@ -1383,14 +1451,17 @@ internal object ManagedDownloadStorage {
         subdirectory: String,
         displayName: String,
         mimeType: String,
-        input: InputStream
+        input: InputStream,
+        invalidateSnapshot: Boolean = true
     ): StoredEntry {
         val storedEntry = when (root) {
             is RootHandle.FileRoot -> {
                 val dir = File(root.dir, subdirectory).apply { mkdirs() }
                 ensureManagedMediaScanIsolation(subdirectory, dir)
                 val target = File(dir, displayName)
-                target.outputStream().use { output -> input.copyTo(output) }
+                target.outputStream().use { output ->
+                    input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
+                }
                 target.toStoredEntry()
             }
 
@@ -1400,13 +1471,15 @@ internal object ManagedDownloadStorage {
                 ensureManagedMediaScanIsolation(subdirectory, directory)
                 val target = createRootFile(directory, displayName, mimeType, replace = true)
                 context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
-                    input.copyTo(output)
+                    input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
                 } ?: throw IOException("无法写入目录文件: $displayName")
                 target.toStoredEntry()
                     ?: throw IOException("无法读取已写入的目录文件: $displayName")
             }
         }
-        invalidateSnapshotCache(context)
+        if (invalidateSnapshot) {
+            invalidateSnapshotCache(context)
+        }
         return storedEntry
     }
 
@@ -1641,7 +1714,11 @@ internal object ManagedDownloadStorage {
         }
     }
 
-    private fun deleteInternal(context: Context, reference: String?): Boolean {
+    private fun deleteInternal(
+        context: Context,
+        reference: String?,
+        invalidateSnapshot: Boolean = true
+    ): Boolean {
         if (reference.isNullOrBlank()) return false
         val deleted = when {
             reference.startsWith("/") -> {
@@ -1655,7 +1732,7 @@ internal object ManagedDownloadStorage {
                     ?: false
             }
         }
-        if (deleted) {
+        if (deleted && invalidateSnapshot) {
             invalidateSnapshotCache(context)
         }
         return deleted

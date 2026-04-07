@@ -500,7 +500,11 @@ fun SettingsScreen(
             return
         }
 
-        val hasMigratableDownloads = ManagedDownloadStorage.hasMigratableDownloads(context, previousUri)
+        val hasMigratableDownloads = if (GlobalDownloadManager.downloadedSongs.value.isNotEmpty()) {
+            true
+        } else {
+            ManagedDownloadStorage.mayHaveMigratableDownloads(context, previousUri)
+        }
         if (hasMigratableDownloads) {
             pendingDownloadDirectoryChange = PendingDownloadDirectoryChange(
                 previousUri = previousUri,

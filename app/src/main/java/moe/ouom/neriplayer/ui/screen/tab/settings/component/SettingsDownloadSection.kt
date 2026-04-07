@@ -46,10 +46,13 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
+import moe.ouom.neriplayer.ui.component.ActiveDownloadTaskList
 import moe.ouom.neriplayer.util.HapticTextButton
 
 @Composable
@@ -85,6 +88,7 @@ private fun SettingsDownloadExpandedContent(
     onNavigateToDownloadManager: () -> Unit
 ) {
     val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
+    val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsState()
 
     Column(
         modifier = Modifier
@@ -92,7 +96,8 @@ private fun SettingsDownloadExpandedContent(
             .background(Color.Transparent)
             .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
     ) {
-        batchDownloadProgress?.let { progress ->
+        if (batchDownloadProgress != null || downloadTasks.isNotEmpty()) {
+            val progress = batchDownloadProgress
             ListItem(
                 leadingContent = {
                     Icon(
@@ -103,34 +108,48 @@ private fun SettingsDownloadExpandedContent(
                 },
                 headlineContent = { Text(stringResource(R.string.download_progress)) },
                 supportingContent = {
-                    Text(
-                        stringResource(
-                            R.string.settings_download_songs_count,
-                            progress.completedSongs,
-                            progress.totalSongs
+                    if (progress != null) {
+                        Text(
+                            stringResource(
+                                R.string.settings_download_songs_count,
+                                progress.completedSongs,
+                                progress.totalSongs
+                            )
                         )
-                    )
+                    } else {
+                        Text(
+                            pluralStringResource(
+                                R.plurals.download_tasks_count,
+                                downloadTasks.size,
+                                downloadTasks.size
+                            )
+                        )
+                    }
                 },
                 trailingContent = {
-                    HapticTextButton(onClick = { AudioDownloadManager.cancelDownload() }) {
-                        Text(
-                            stringResource(R.string.action_cancel),
-                            color = MaterialTheme.colorScheme.error
-                        )
+                    if (progress != null) {
+                        HapticTextButton(onClick = { AudioDownloadManager.cancelDownload() }) {
+                            Text(
+                                stringResource(R.string.action_cancel),
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
                     }
                 },
                 modifier = Modifier.settingsItemClickable(onClick = onNavigateToDownloadManager),
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent)
             )
 
-            LinearProgressIndicator(
-                progress = { (progress.percentage / 100f).coerceIn(0f, 1f) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 16.dp, end = 16.dp)
-            )
+            if (progress != null) {
+                LinearProgressIndicator(
+                    progress = { (progress.percentage / 100f).coerceIn(0f, 1f) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 16.dp)
+                )
+            }
 
-            if (progress.currentSong.isNotBlank()) {
+            if (progress?.currentSong?.isNotBlank() == true) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = stringResource(R.string.settings_downloading, progress.currentSong),
@@ -139,9 +158,17 @@ private fun SettingsDownloadExpandedContent(
                     modifier = Modifier.padding(start = 16.dp)
                 )
             }
-        }
 
-        if (batchDownloadProgress == null) {
+            if (downloadTasks.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(12.dp))
+                ActiveDownloadTaskList(
+                    tasks = downloadTasks,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 16.dp)
+                )
+            }
+        } else {
             ListItem(
                 leadingContent = {
                     Icon(
