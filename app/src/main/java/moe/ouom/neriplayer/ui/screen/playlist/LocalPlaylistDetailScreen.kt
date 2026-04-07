@@ -154,7 +154,10 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import kotlinx.coroutines.DelicateCoroutinesApi
+import moe.ouom.neriplayer.core.download.countPendingDownloadTasks
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.hasPendingDownloadTasks
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
@@ -191,6 +194,11 @@ import org.burnoutcrew.reorderable.detectReorder
 import org.burnoutcrew.reorderable.rememberReorderableLazyListState
 import org.burnoutcrew.reorderable.reorderable
 import java.io.File
+
+private fun hasCachedLocalDownload(song: SongItem): Boolean {
+    return GlobalDownloadManager.hasDownloadedSongCached(song) ||
+        ManagedDownloadStorage.peekDownloadedAudio(song) != null
+}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class,
     DelicateCoroutinesApi::class
@@ -324,11 +332,11 @@ fun LocalPlaylistDetailScreen(
             // 下载进度
             val hasDownloadManagerEntryFlow = remember {
                 GlobalDownloadManager.downloadTasks
-                    .map { tasks -> tasks.isNotEmpty() }
+                    .map(::hasPendingDownloadTasks)
                     .distinctUntilChanged()
             }
             val hasDownloadManagerEntry by hasDownloadManagerEntryFlow.collectAsState(
-                initial = GlobalDownloadManager.downloadTasks.value.isNotEmpty()
+                initial = hasPendingDownloadTasks(GlobalDownloadManager.downloadTasks.value)
             )
             val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsState()
 
@@ -655,9 +663,28 @@ fun LocalPlaylistDetailScreen(
             var savedListOffset by rememberSaveable(playlistId) { mutableIntStateOf(0) }
             val hasRestoredScroll = rememberSaveable(playlistId) { mutableStateOf(false) }
             val listState = reorderState.listState
+            val baseQueue by remember {
+                derivedStateOf { localSongs.asReversed() }
+            }
+            val queueIndexBySongKey by remember {
+                derivedStateOf {
+                    buildMap(baseQueue.size) {
+                        baseQueue.forEachIndexed { index, song ->
+                            put(song.stableKey(), index)
+                        }
+                    }
+                }
+            }
+            val headerCover by remember(context) {
+                derivedStateOf {
+                    baseQueue.firstNotNullOfOrNull { song ->
+                        song.displayCoverUrl(context)?.takeIf(String::isNotBlank)
+                    }
+                }
+            }
             val displayedSongs by remember {
                 derivedStateOf {
-                    val base = localSongs.asReversed()
+                    val base = baseQueue
                     if (searchQuery.isBlank()) base
                     else base.filter { song ->
                         listOfNotNull(
@@ -717,7 +744,9 @@ fun LocalPlaylistDetailScreen(
 
             // 当前播放 & FAB
             val currentSong by PlayerManager.currentSongFlow.collectAsState()
-            val currentIndexInSource = localSongs.indexOfFirst { it.sameIdentityAs(currentSong) }
+            val currentIndexInSource = remember(localSongs, currentSong) {
+                localSongs.indexOfFirst { it.sameIdentityAs(currentSong) }
+            }
             val selectedSongsForAction by remember(localSongs, selectedKeysState.value) {
                 derivedStateOf {
                     localSongs.filter { it.stableKey() in selectedKeysState.value }
@@ -994,14 +1023,9 @@ fun LocalPlaylistDetailScreen(
                                         .height(headerHeight)
                                 ) {
                                     // 头图取"展示顺序"的第一张有封面的
-                                    val headerContext = LocalContext.current
-                                    val baseQueue = localSongs.asReversed()
-                                    val headerCover =
-                                        baseQueue.firstOrNull { !it.displayCoverUrl(headerContext).isNullOrBlank() }
-                                            ?.displayCoverUrl(headerContext)
                                     AsyncImage(
                                         model = offlineCachedImageRequest(
-                                            context = headerContext,
+                                            context = context,
                                             data = headerCover,
                                             sizePx = 768,
                                             allowHardware = false
@@ -1093,9 +1117,7 @@ fun LocalPlaylistDetailScreen(
                                                     if (selectionMode) {
                                                         toggleSelect(song)
                                                     } else {
-                                                        val baseQueue = localSongs.asReversed()
-                                                        val pos =
-                                                            baseQueue.indexOfFirst { it.sameIdentityAs(song) }
+                                                        val pos = queueIndexBySongKey[song.stableKey()] ?: -1
                                                         if (pos >= 0) onSongClick(baseQueue, pos)
                                                     }
                                                 },
@@ -1171,11 +1193,8 @@ fun LocalPlaylistDetailScreen(
                                                         style = MaterialTheme.typography.titleMedium
                                                     )
                                                     // 下载完成标志
-                                                    if (remember(downloadPresenceVersion, song, itemContext) {
-                                                            AudioDownloadManager.hasLocalDownload(
-                                                                itemContext,
-                                                                song
-                                                            )
+                                                    if (remember(downloadPresenceVersion, song) {
+                                                            hasCachedLocalDownload(song)
                                                         }) {
                                                         Icon(
                                                             imageVector = Icons.Outlined.DownloadDone,
@@ -1545,7 +1564,10 @@ fun LocalPlaylistDetailScreen(
                             
                             Spacer(modifier = Modifier.height(16.dp))
                             
-                            if (batchDownloadProgress != null || downloadTasks.isNotEmpty()) {
+                            val pendingTaskCount = remember(downloadTasks) {
+                                countPendingDownloadTasks(downloadTasks)
+                            }
+                            if (batchDownloadProgress != null || pendingTaskCount > 0) {
                                 val progress = batchDownloadProgress
                                 // 下载进度显示
                                 Card(
@@ -1608,14 +1630,14 @@ fun LocalPlaylistDetailScreen(
                                             Text(
                                                 text = pluralStringResource(
                                                     R.plurals.download_tasks_count,
-                                                    downloadTasks.size,
-                                                    downloadTasks.size
+                                                    pendingTaskCount,
+                                                    pendingTaskCount
                                                 ),
                                                 style = MaterialTheme.typography.titleMedium
                                             )
                                         }
 
-                                        if (downloadTasks.isNotEmpty()) {
+                                        if (pendingTaskCount > 0) {
                                             Spacer(modifier = Modifier.height(12.dp))
                                             ActiveDownloadTaskList(
                                                 tasks = downloadTasks,

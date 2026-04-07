@@ -50,6 +50,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.download.countPendingDownloadTasks
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.ui.component.ActiveDownloadTaskList
@@ -89,6 +90,7 @@ private fun SettingsDownloadExpandedContent(
 ) {
     val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
     val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsState()
+    val pendingTaskCount = countPendingDownloadTasks(downloadTasks)
 
     Column(
         modifier = Modifier
@@ -96,7 +98,7 @@ private fun SettingsDownloadExpandedContent(
             .background(Color.Transparent)
             .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
     ) {
-        if (batchDownloadProgress != null || downloadTasks.isNotEmpty()) {
+        if (batchDownloadProgress != null || pendingTaskCount > 0) {
             val progress = batchDownloadProgress
             ListItem(
                 leadingContent = {
@@ -120,8 +122,8 @@ private fun SettingsDownloadExpandedContent(
                         Text(
                             pluralStringResource(
                                 R.plurals.download_tasks_count,
-                                downloadTasks.size,
-                                downloadTasks.size
+                                pendingTaskCount,
+                                pendingTaskCount
                             )
                         )
                     }
@@ -159,7 +161,7 @@ private fun SettingsDownloadExpandedContent(
                 )
             }
 
-            if (downloadTasks.isNotEmpty()) {
+            if (pendingTaskCount > 0) {
                 Spacer(modifier = Modifier.height(12.dp))
                 ActiveDownloadTaskList(
                     tasks = downloadTasks,

@@ -63,6 +63,8 @@ object GlobalDownloadManager {
     private const val INITIAL_SCAN_DELAY_MS = 1_500L
     private const val DOWNLOAD_CATALOG_CACHE_FILE_NAME = "downloaded_song_catalog_v2.json"
     private const val DOWNLOAD_CATALOG_PERSIST_DEBOUNCE_MS = 1_200L
+    private const val DOWNLOAD_TASK_COMPLETED_RETENTION_MS = 800L
+    private const val DOWNLOAD_CATALOG_RECONCILE_DELAY_MS = 1_200L
     internal const val PLAYBACK_METADATA_HYDRATION_DELAY_MS = 1_500L
     internal const val LOCAL_PLAYBACK_METADATA_HYDRATION_DELAY_MS = 4_000L
 
@@ -84,6 +86,7 @@ object GlobalDownloadManager {
     private val catalogPersistenceLock = Any()
     private var refreshJob: Job? = null
     private var catalogPersistJob: Job? = null
+    private var catalogReconcileJob: Job? = null
 
     @Volatile
     private var downloadedSongPresenceIndex = DownloadedSongPresenceIndex.EMPTY
@@ -94,6 +97,9 @@ object GlobalDownloadManager {
     @Volatile
     private var pendingForceRefresh = false
 
+    @Volatile
+    private var observedBatchProgress = false
+
     private var initialized = false
 
     fun initialize(context: Context) {
@@ -101,7 +107,7 @@ object GlobalDownloadManager {
         initialized = true
 
         val appContext = context.applicationContext
-        observeDownloadProgress(appContext)
+        observeDownloadProgress()
         scope.launch {
             val restoredCatalog = restorePersistedDownloadedSongs(appContext)
             val snapshotReady = ManagedDownloadStorage.ensureSnapshotCacheReady(appContext)
@@ -187,7 +193,7 @@ object GlobalDownloadManager {
         return "$id|$name|$artist"
     }
 
-    private fun observeDownloadProgress(context: Context) {
+    private fun observeDownloadProgress() {
         scope.launch {
             AudioDownloadManager.progressFlow.collect { progress ->
                 progress?.let(::updateDownloadProgress)
@@ -197,9 +203,9 @@ object GlobalDownloadManager {
         scope.launch {
             AudioDownloadManager.batchProgressFlow.collect { batchProgress ->
                 if (batchProgress != null) {
-                    updateBatchProgress(context, batchProgress)
-                } else {
-                    scanLocalFiles(context, forceRefresh = true)
+                    observedBatchProgress = true
+                } else if (observedBatchProgress) {
+                    observedBatchProgress = false
                 }
             }
         }
@@ -214,25 +220,22 @@ object GlobalDownloadManager {
     }
 
     private fun updateDownloadProgress(progress: AudioDownloadManager.DownloadProgress) {
-        _downloadTasks.value = _downloadTasks.value.map { task ->
-            if (task.song.stableKey() == progress.songKey && task.status == DownloadStatus.DOWNLOADING) {
-                task.copy(progress = progress)
-            } else {
-                task
-            }
+        val tasks = _downloadTasks.value
+        val taskIndex = tasks.indexOfFirst { task ->
+            task.song.stableKey() == progress.songKey && task.status == DownloadStatus.DOWNLOADING
         }
-    }
+        if (taskIndex < 0) {
+            return
+        }
 
-    private fun updateBatchProgress(
-        context: Context,
-        batchProgress: AudioDownloadManager.BatchDownloadProgress
-    ) {
-        if (batchProgress.completedSongs >= batchProgress.totalSongs) {
-            scope.launch {
-                delay(600)
-                scanLocalFiles(context, forceRefresh = true)
-            }
+        val currentTask = tasks[taskIndex]
+        if (currentTask.progress == progress) {
+            return
         }
+
+        val updatedTasks = tasks.toMutableList()
+        updatedTasks[taskIndex] = currentTask.copy(progress = progress)
+        _downloadTasks.value = updatedTasks
     }
 
     private suspend fun finalizeCompletedDownload(
@@ -240,22 +243,32 @@ object GlobalDownloadManager {
         song: SongItem,
         refreshCatalog: Boolean
     ) {
+        val sidecarReferences = AudioDownloadManager.consumeCompletedSidecarReferences(song.stableKey())
         val storedAudio = resolveStoredAudio(context, song)
         if (storedAudio == null) {
             NPLogger.w(TAG, "下载完成但未找到已下载文件: ${song.name}")
             updateTaskStatus(song.stableKey(), DownloadStatus.COMPLETED)
-            scanLocalFiles(context, forceRefresh = true)
+            scheduleCompletedTaskRemoval(song.stableKey())
+            scheduleCatalogReconcile(context, forceRefresh = true)
             return
         }
 
         persistDownloadedMetadata(
             context = context,
             audio = storedAudio,
-            song = song
+            song = song,
+            sidecarReferences = sidecarReferences
+        )
+        publishCompletedDownloadOptimistically(
+            context = context,
+            song = song,
+            storedAudio = storedAudio,
+            sidecarReferences = sidecarReferences
         )
         updateTaskStatus(song.stableKey(), DownloadStatus.COMPLETED)
+        scheduleCompletedTaskRemoval(song.stableKey())
         if (refreshCatalog) {
-            scanLocalFiles(context, forceRefresh = true)
+            scheduleCatalogReconcile(context, forceRefresh = true)
         }
     }
 
@@ -569,22 +582,27 @@ object GlobalDownloadManager {
     private suspend fun persistDownloadedMetadata(
         context: Context,
         audio: ManagedDownloadStorage.StoredEntry,
-        song: SongItem
+        song: SongItem,
+        sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences? = null
     ) {
         val identity = song.identity()
-        val coverReference = ManagedDownloadStorage.findCoverReference(context, audio)
-        val lyricPath = ManagedDownloadStorage.findLyricLocation(
-            context = context,
-            songId = song.id,
-            candidateBaseNames = candidateManagedDownloadBaseNames(audio.nameWithoutExtension),
-            translated = false
-        )
-        val translatedLyricPath = ManagedDownloadStorage.findLyricLocation(
-            context = context,
-            songId = song.id,
-            candidateBaseNames = candidateManagedDownloadBaseNames(audio.nameWithoutExtension),
-            translated = true
-        )
+        val candidateBaseNames = candidateManagedDownloadBaseNames(audio.nameWithoutExtension)
+        val coverReference = sidecarReferences?.coverReference
+            ?: ManagedDownloadStorage.findCoverReference(context, audio)
+        val lyricPath = sidecarReferences?.lyricReference
+            ?: ManagedDownloadStorage.findLyricLocation(
+                context = context,
+                songId = song.id,
+                candidateBaseNames = candidateBaseNames,
+                translated = false
+            )
+        val translatedLyricPath = sidecarReferences?.translatedLyricReference
+            ?: ManagedDownloadStorage.findLyricLocation(
+                context = context,
+                songId = song.id,
+                candidateBaseNames = candidateBaseNames,
+                translated = true
+            )
         val payload = JSONObject().apply {
             put("stableKey", identity.stableKey())
             put("songId", song.id)
@@ -950,14 +968,22 @@ object GlobalDownloadManager {
         scope.launch {
             val songKey = song.stableKey()
             try {
-                if (shouldSkipDownload(appContext, song) || !addDownloadTask(appContext, song)) {
+                if (shouldSkipDownload(appContext, song)) {
                     return@launch
                 }
 
-                val existingAudio = ManagedDownloadStorage.findDownloadedAudio(appContext, song)
+                val existingAudio = findExistingDownloadedAudio(appContext, song)
                 if (existingAudio != null) {
-                    updateTaskStatus(songKey, DownloadStatus.COMPLETED)
-                    scanLocalFiles(appContext, forceRefresh = true)
+                    publishCompletedDownloadOptimistically(
+                        context = appContext,
+                        song = song,
+                        storedAudio = existingAudio
+                    )
+                    scheduleCatalogReconcile(appContext, forceRefresh = false)
+                    return@launch
+                }
+
+                if (!prepareDownloadTask(song, activate = true)) {
                     return@launch
                 }
 
@@ -1001,9 +1027,29 @@ object GlobalDownloadManager {
         val appContext = context.applicationContext
         scope.launch {
             try {
-                val pendingSongs = songs
-                    .filterNot { shouldSkipDownload(appContext, it) }
-                    .filter { addDownloadTask(appContext, it) }
+                val optimisticCompletedSongs = mutableListOf<DownloadedSong>()
+                val pendingSongs = buildList {
+                    songs.forEach { song ->
+                        if (shouldSkipDownload(appContext, song)) {
+                            return@forEach
+                        }
+
+                        val existingAudio = findExistingDownloadedAudio(appContext, song)
+                        if (existingAudio != null) {
+                            optimisticCompletedSongs += buildOptimisticDownloadedSong(song, existingAudio)
+                            return@forEach
+                        }
+
+                        if (prepareDownloadTask(song, activate = false)) {
+                            add(song)
+                        }
+                    }
+                }
+
+                publishOptimisticDownloadedSongs(appContext, optimisticCompletedSongs)
+                if (optimisticCompletedSongs.isNotEmpty()) {
+                    scheduleCatalogReconcile(appContext, forceRefresh = false)
+                }
 
                 if (pendingSongs.isEmpty()) {
                     NPLogger.d(TAG, "没有新的批量下载任务")
@@ -1013,6 +1059,9 @@ object GlobalDownloadManager {
                 AudioDownloadManager.downloadPlaylist(
                     context = appContext,
                     songs = pendingSongs,
+                    onSongStarted = { startedSong ->
+                        registerActiveDownloadTask(startedSong)
+                    },
                     onSongCompleted = { completedSong ->
                         finalizeCompletedDownload(
                             context = appContext,
@@ -1043,11 +1092,7 @@ object GlobalDownloadManager {
         }
     }
 
-    private fun addDownloadTask(context: Context, song: SongItem): Boolean {
-        if (shouldSkipDownload(context, song)) {
-            return false
-        }
-
+    private fun prepareDownloadTask(song: SongItem, activate: Boolean): Boolean {
         val songKey = song.stableKey()
         clearSongCancelled(songKey)
         val existingTask = _downloadTasks.value.find { it.song.stableKey() == songKey }
@@ -1057,18 +1102,53 @@ object GlobalDownloadManager {
                 DownloadStatus.CANCELLED,
                 DownloadStatus.FAILED -> {
                     removeDownloadTask(songKey)
+                    if (activate) {
+                        registerActiveDownloadTask(song)
+                    }
                     true
                 }
                 DownloadStatus.DOWNLOADING -> false
             }
         }
 
-        _downloadTasks.value += DownloadTask(
+        if (activate) {
+            registerActiveDownloadTask(song)
+        }
+        return true
+    }
+
+    private fun registerActiveDownloadTask(song: SongItem) {
+        val songKey = song.stableKey()
+        val tasks = _downloadTasks.value
+        val existingIndex = tasks.indexOfFirst { it.song.stableKey() == songKey }
+        if (existingIndex >= 0) {
+            val existingTask = tasks[existingIndex]
+            if (existingTask.status == DownloadStatus.DOWNLOADING && existingTask.progress == null) {
+                return
+            }
+            val updatedTasks = tasks.toMutableList()
+            updatedTasks[existingIndex] = DownloadTask(
+                song = song,
+                progress = null,
+                status = DownloadStatus.DOWNLOADING
+            )
+            _downloadTasks.value = updatedTasks
+            return
+        }
+
+        _downloadTasks.value = tasks + DownloadTask(
             song = song,
             progress = null,
             status = DownloadStatus.DOWNLOADING
         )
-        return true
+    }
+
+    private suspend fun findExistingDownloadedAudio(
+        context: Context,
+        song: SongItem
+    ): ManagedDownloadStorage.StoredEntry? {
+        ManagedDownloadStorage.peekDownloadedAudio(song)?.let { return it }
+        return ManagedDownloadStorage.findDownloadedAudio(context, song)
     }
 
     private fun shouldSkipDownload(context: Context, song: SongItem): Boolean {
@@ -1080,17 +1160,40 @@ object GlobalDownloadManager {
     }
 
     fun updateTaskStatus(songKey: String, status: DownloadStatus) {
-        _downloadTasks.value = _downloadTasks.value.map { task ->
-            if (task.song.stableKey() == songKey) {
-                task.copy(status = status, progress = null)
-            } else {
-                task
-            }
+        val tasks = _downloadTasks.value
+        val taskIndex = tasks.indexOfFirst { it.song.stableKey() == songKey }
+        if (taskIndex < 0) {
+            return
         }
+
+        val updatedTasks = tasks.toMutableList()
+        updatedTasks[taskIndex] = updatedTasks[taskIndex].copy(status = status, progress = null)
+        _downloadTasks.value = updatedTasks
     }
 
     fun removeDownloadTask(songKey: String) {
         _downloadTasks.value = _downloadTasks.value.filter { it.song.stableKey() != songKey }
+    }
+
+    private fun scheduleCompletedTaskRemoval(songKey: String) {
+        scope.launch {
+            delay(DOWNLOAD_TASK_COMPLETED_RETENTION_MS)
+            val task = _downloadTasks.value.firstOrNull { it.song.stableKey() == songKey } ?: return@launch
+            if (task.status == DownloadStatus.COMPLETED) {
+                removeDownloadTask(songKey)
+            }
+        }
+    }
+
+    private fun scheduleCatalogReconcile(context: Context, forceRefresh: Boolean) {
+        val appContext = context.applicationContext
+        synchronized(catalogPersistenceLock) {
+            catalogReconcileJob?.cancel()
+            catalogReconcileJob = scope.launch {
+                delay(DOWNLOAD_CATALOG_RECONCILE_DELAY_MS)
+                scanLocalFiles(appContext, forceRefresh = forceRefresh)
+            }
+        }
     }
 
     private fun markSongCancelled(songKey: String) {
@@ -1174,6 +1277,81 @@ object GlobalDownloadManager {
     ): ManagedDownloadStorage.StoredEntry? {
         val normalized = reference?.takeIf { it.isNotBlank() } ?: return null
         return ManagedDownloadStorage.queryStoredEntry(context, normalized)
+    }
+
+    private fun publishCompletedDownloadOptimistically(
+        context: Context,
+        song: SongItem,
+        storedAudio: ManagedDownloadStorage.StoredEntry,
+        sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences? = null
+    ) {
+        publishOptimisticDownloadedSongs(
+            context = context,
+            songs = listOf(
+                buildOptimisticDownloadedSong(
+                    song = song,
+                    storedAudio = storedAudio,
+                    sidecarReferences = sidecarReferences
+                )
+            )
+        )
+    }
+
+    private fun publishOptimisticDownloadedSongs(
+        context: Context,
+        songs: List<DownloadedSong>
+    ) {
+        if (songs.isEmpty()) {
+            return
+        }
+
+        var mergedSongs = _downloadedSongs.value
+        songs.forEach { song ->
+            mergedSongs = upsertDownloadedSongCatalog(mergedSongs, song)
+        }
+        if (mergedSongs != _downloadedSongs.value) {
+            publishDownloadedSongs(context, mergedSongs, persistCatalog = true)
+        }
+    }
+
+    private fun buildOptimisticDownloadedSong(
+        song: SongItem,
+        storedAudio: ManagedDownloadStorage.StoredEntry,
+        sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences? = null
+    ): DownloadedSong {
+        val previousSong = _downloadedSongs.value.firstOrNull { downloadedSong ->
+            downloadedSong.filePath == storedAudio.reference || matchesDownloadedSong(song, downloadedSong)
+        }
+        val resolvedDownloadTime = previousSong?.downloadTime
+            ?: storedAudio.lastModifiedMs.takeIf { it > 0L }
+            ?: System.currentTimeMillis()
+
+        return DownloadedSong(
+            id = song.id,
+            name = song.name,
+            artist = song.artist,
+            album = song.album,
+            filePath = storedAudio.reference,
+            fileSize = storedAudio.sizeBytes.coerceAtLeast(0L),
+            downloadTime = resolvedDownloadTime,
+            coverPath = sidecarReferences?.coverReference ?: previousSong?.coverPath,
+            coverUrl = song.coverUrl,
+            matchedLyric = song.matchedLyric,
+            matchedTranslatedLyric = song.matchedTranslatedLyric,
+            matchedLyricSource = song.matchedLyricSource?.name,
+            matchedSongId = song.matchedSongId,
+            userLyricOffsetMs = song.userLyricOffsetMs,
+            customCoverUrl = song.customCoverUrl,
+            customName = song.customName,
+            customArtist = song.customArtist,
+            originalName = song.originalName,
+            originalArtist = song.originalArtist,
+            originalCoverUrl = song.originalCoverUrl,
+            originalLyric = song.originalLyric,
+            originalTranslatedLyric = song.originalTranslatedLyric,
+            mediaUri = storedAudio.mediaUri,
+            durationMs = song.durationMs.coerceAtLeast(0L)
+        )
     }
 
     private suspend fun resolveAccessibleManagedReference(
@@ -1478,4 +1656,12 @@ enum class DownloadStatus {
     COMPLETED,
     FAILED,
     CANCELLED
+}
+
+fun countPendingDownloadTasks(tasks: List<DownloadTask>): Int {
+    return tasks.count { it.status != DownloadStatus.COMPLETED }
+}
+
+fun hasPendingDownloadTasks(tasks: List<DownloadTask>): Boolean {
+    return tasks.any { it.status != DownloadStatus.COMPLETED }
 }

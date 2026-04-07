@@ -158,15 +158,20 @@ internal fun shouldRunPlaybackServiceInForeground(
 
 internal fun shouldBootstrapPlaybackServiceOnAppLaunch(
     hasCurrentSong: Boolean,
+    resumePlaybackRequested: Boolean,
     playJobActive: Boolean,
     pendingPauseJobActive: Boolean,
     playWhenReady: Boolean,
     isPlaying: Boolean,
     playerPlaybackState: Int
 ): Boolean {
-    return hasCurrentSong
-    // 只要恢复出了当前歌曲，就应该尽快恢复服务里的 MediaSession，
-    // 这样暂停中的旧队列在进程重建后也还能继续出现在系统媒体控制里
+    if (!hasCurrentSong) return false
+    return resumePlaybackRequested ||
+        playJobActive ||
+        pendingPauseJobActive ||
+        playWhenReady ||
+        isPlaying ||
+        playerPlaybackState == Player.STATE_BUFFERING
 }
 
 internal fun shouldShowPauseButtonForPlaybackControls(

@@ -186,6 +186,41 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
+    fun `pending download task helpers ignore completed items`() {
+        val downloadingTask = DownloadTask(
+            song = SongItem(
+                id = 1L,
+                name = "Downloading",
+                artist = "Artist",
+                album = "Album",
+                albumId = 1L,
+                durationMs = 1_000L,
+                coverUrl = null,
+                mediaUri = "https://example.com/downloading"
+            ),
+            progress = null,
+            status = DownloadStatus.DOWNLOADING
+        )
+        val completedTask = downloadingTask.copy(
+            song = downloadingTask.song.copy(id = 2L, name = "Completed"),
+            status = DownloadStatus.COMPLETED
+        )
+        val failedTask = downloadingTask.copy(
+            song = downloadingTask.song.copy(id = 3L, name = "Failed"),
+            status = DownloadStatus.FAILED
+        )
+
+        assertEquals(
+            2,
+            countPendingDownloadTasks(listOf(downloadingTask, completedTask, failedTask))
+        )
+        assertTrue(
+            hasPendingDownloadTasks(listOf(downloadingTask, completedTask, failedTask))
+        )
+        assertFalse(hasPendingDownloadTasks(listOf(completedTask)))
+    }
+
+    @Test
     fun `detailed inspection stays disabled when slow local inspection is turned off`() {
         assertEquals(
             false,

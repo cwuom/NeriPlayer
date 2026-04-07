@@ -138,6 +138,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.AudioPlayerService
 import moe.ouom.neriplayer.core.player.AudioReactive
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.preloadRestoredStateSnapshot
 import moe.ouom.neriplayer.core.player.shouldSkipLocalPlaybackSyncServiceStart
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.core.player.policy.PlaybackCommandSource
@@ -147,9 +148,11 @@ import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.data.settings.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.ThemeDefaults
 import moe.ouom.neriplayer.data.settings.ThemePreferenceSnapshot
-import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshotSync
+import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshot
+import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshotCached
 import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.ui.component.NeriBottomBar
 import moe.ouom.neriplayer.ui.component.NeriMiniPlayer
@@ -507,8 +510,9 @@ private fun NeriAppContent(
     val context = LocalContext.current
     val rootView = LocalView.current
     val repo = remember { AppContainer.settingsRepo }
-    val startupPlaybackPreferences = remember(context) {
-        readPlaybackPreferenceSnapshotSync(context)
+    val application = remember(context) { context.applicationContext as Application }
+    val startupPlaybackPreferences = remember(application) {
+        readPlaybackPreferenceSnapshotCached(application) ?: PlaybackPreferenceSnapshot()
     }
     val coverArtImageLoader = remember(context) { Coil.imageLoader(context) }
 
@@ -612,7 +616,6 @@ private fun NeriAppContent(
     val displayCoverUrl = remember(currentSong, context) {
         currentSong.resolveUiCoverSource(context)
     }
-    val application = remember(context) { context.applicationContext as Application }
     val scope = rememberCoroutineScope()
 
     val scheduleAudioServiceStart: (String, Boolean) -> Unit = { source, forceForeground ->
@@ -649,8 +652,22 @@ private fun NeriAppContent(
     }
 
     LaunchedEffect(application) {
+        val exactStartupPlaybackPreferences = withContext(Dispatchers.IO) {
+            readPlaybackPreferenceSnapshot(application)
+        }
+        val startupRestoreSnapshot = PlayerManager.preloadRestoredStateSnapshot(
+            app = application,
+            keepLastPlaybackProgressEnabled =
+                exactStartupPlaybackPreferences.keepLastPlaybackProgress,
+            keepPlaybackModeStateEnabled =
+                exactStartupPlaybackPreferences.keepPlaybackModeState
+        )
         withFrameNanos { }
-        PlayerManager.initialize(application, startupPlaybackPreferences.maxCacheSizeBytes)
+        PlayerManager.initializePreloaded(
+            app = application,
+            startupPlaybackPreferences = exactStartupPlaybackPreferences,
+            restoredStateSnapshot = startupRestoreSnapshot
+        )
         NPLogger.d("NERI-App", "PlayerManager.initialize called")
         NPLogger.d(
             "NERI-App",
@@ -660,7 +677,7 @@ private fun NeriAppContent(
             PlayerManager.hasItems() && PlayerManager.shouldBootstrapPlaybackServiceOnAppLaunch()
         if (shouldBootstrapPlaybackService) {
             NPLogger.d("NERI-App", "Starting audio service from app bootstrap")
-            AudioPlayerService.startSyncService(context, "app_bootstrap", forceForeground = true)
+            scheduleAudioServiceStart("app_bootstrap", true)
         } else {
             NPLogger.d(
                 "NERI-App",

@@ -103,7 +103,9 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.runtime.saveable.rememberSaveable
+import moe.ouom.neriplayer.core.download.countPendingDownloadTasks
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.hasPendingDownloadTasks
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -158,7 +160,8 @@ fun BiliPlaylistDetailScreen(
     var showDownloadManager by remember { mutableStateOf(false) }
     val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
     val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsState()
-    val hasDownloadManagerEntry = remember(downloadTasks) { downloadTasks.isNotEmpty() }
+    val pendingTaskCount = remember(downloadTasks) { countPendingDownloadTasks(downloadTasks) }
+    val hasDownloadManagerEntry = remember(downloadTasks) { hasPendingDownloadTasks(downloadTasks) }
 
     val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
     val allLocalPlaylists by repo.playlists.collectAsState(initial = emptyList())
@@ -621,7 +624,7 @@ fun BiliPlaylistDetailScreen(
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        if (batchDownloadProgress != null || downloadTasks.isNotEmpty()) {
+                        if (batchDownloadProgress != null || pendingTaskCount > 0) {
                             val progress = batchDownloadProgress
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
@@ -676,14 +679,14 @@ fun BiliPlaylistDetailScreen(
                                         Text(
                                             text = pluralStringResource(
                                                 R.plurals.download_tasks_count,
-                                                downloadTasks.size,
-                                                downloadTasks.size
+                                                pendingTaskCount,
+                                                pendingTaskCount
                                             ),
                                             style = MaterialTheme.typography.titleMedium
                                         )
                                     }
 
-                                    if (downloadTasks.isNotEmpty()) {
+                                    if (pendingTaskCount > 0) {
                                         Spacer(modifier = Modifier.height(12.dp))
                                         ActiveDownloadTaskList(
                                             tasks = downloadTasks,

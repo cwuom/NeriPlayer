@@ -33,6 +33,7 @@ import java.nio.charset.StandardCharsets
 
 internal object ManagedDownloadStorage {
     private const val TAG = "ManagedDownloadStorage"
+    private const val LOG_HOT_AUDIO_HITS = false
     private const val ROOT_DIR_NAME = "NeriPlayer"
     private const val COVER_SUBDIRECTORY = "Covers"
     private const val NO_MEDIA_FILE_NAME = ".nomedia"
@@ -136,6 +137,12 @@ internal object ManagedDownloadStorage {
         val key: String,
         val snapshot: DownloadLibrarySnapshot
     )
+
+    internal enum class SnapshotEntryBucket {
+        AUDIO,
+        COVER,
+        LYRIC
+    }
 
     data class DownloadedAudioMetadata(
         val stableKey: String? = null,
@@ -813,7 +820,9 @@ internal object ManagedDownloadStorage {
                     ?: throw IOException("无法读取已写入的下载文件")
             }
         }
-        invalidateSnapshotCache(context)
+        if (!updateSnapshotCacheAfterStoredEntryWrite(context, storedEntry, SnapshotEntryBucket.AUDIO)) {
+            invalidateSnapshotCache(context)
+        }
         return storedEntry
     }
 
@@ -878,10 +887,10 @@ internal object ManagedDownloadStorage {
         baseName: String,
         content: String,
         translated: Boolean
-    ) {
+    ): String? {
         val fileNameByName = if (translated) "${baseName}_trans.lrc" else "$baseName.lrc"
         NPLogger.d(TAG, "写入歌词文件: fileName=$fileNameByName, translated=$translated, songId=$songId")
-        overwriteLyric(context, fileNameByName, content)
+        return overwriteLyric(context, fileNameByName, content)
     }
 
     fun readLyrics(context: Context, song: SongItem, translated: Boolean): String? {
@@ -950,7 +959,9 @@ internal object ManagedDownloadStorage {
         snapshot.audioEntriesByStableKey[stableKey]
             ?.let { matches ->
                 return pickBestAudioEntry(matches, song)?.also { entry ->
-                    NPLogger.d(TAG, "命中已下载音频(stableKey): song=${song.displayName()}, file=${entry.name}")
+                    if (LOG_HOT_AUDIO_HITS) {
+                        NPLogger.d(TAG, "命中已下载音频(stableKey): song=${song.displayName()}, file=${entry.name}")
+                    }
                 }
             }
 
@@ -958,7 +969,9 @@ internal object ManagedDownloadStorage {
             snapshot.audioEntriesByRemoteTrackKey[key]
                 ?.let { matches ->
                     return pickBestAudioEntry(matches, song)?.also { entry ->
-                        NPLogger.d(TAG, "命中已下载音频(remoteTrackKey): song=${song.displayName()}, file=${entry.name}")
+                        if (LOG_HOT_AUDIO_HITS) {
+                            NPLogger.d(TAG, "命中已下载音频(remoteTrackKey): song=${song.displayName()}, file=${entry.name}")
+                        }
                     }
                 }
         }
@@ -967,7 +980,9 @@ internal object ManagedDownloadStorage {
             snapshot.audioEntriesByMediaUri[mediaUri]
                 ?.let { matches ->
                     return pickBestAudioEntry(matches, song)?.also { entry ->
-                        NPLogger.d(TAG, "命中已下载音频(mediaUri): song=${song.displayName()}, file=${entry.name}")
+                        if (LOG_HOT_AUDIO_HITS) {
+                            NPLogger.d(TAG, "命中已下载音频(mediaUri): song=${song.displayName()}, file=${entry.name}")
+                        }
                     }
                 }
         }
@@ -976,7 +991,9 @@ internal object ManagedDownloadStorage {
             snapshot.audioEntriesBySongId[songId]
                 ?.let { matches ->
                     return pickBestAudioEntry(matches, song)?.also { entry ->
-                        NPLogger.d(TAG, "命中已下载音频(songId): song=${song.displayName()}, file=${entry.name}")
+                        if (LOG_HOT_AUDIO_HITS) {
+                            NPLogger.d(TAG, "命中已下载音频(songId): song=${song.displayName()}, file=${entry.name}")
+                        }
                     }
                 }
         }
@@ -985,7 +1002,9 @@ internal object ManagedDownloadStorage {
             audioEntries = snapshot.audioEntriesWithoutMetadata,
             baseNames = candidateManagedDownloadBaseNames(song, downloadFileNameTemplate)
         )?.also { entry ->
-            NPLogger.d(TAG, "命中已下载音频(legacyNameFallback): song=${song.displayName()}, file=${entry.name}")
+            if (LOG_HOT_AUDIO_HITS) {
+                NPLogger.d(TAG, "命中已下载音频(legacyNameFallback): song=${song.displayName()}, file=${entry.name}")
+            }
         }
     }
 
@@ -1309,6 +1328,48 @@ internal object ManagedDownloadStorage {
         )
     }
 
+    internal fun applyStoredEntryWriteToSnapshot(
+        snapshot: DownloadLibrarySnapshot,
+        storedEntry: StoredEntry,
+        bucket: SnapshotEntryBucket
+    ): DownloadLibrarySnapshot {
+        return when (bucket) {
+            SnapshotEntryBucket.AUDIO -> composeSnapshot(
+                audioEntries = replaceStoredEntry(snapshot.audioEntries, storedEntry),
+                metadataEntries = snapshot.metadataEntriesByAudioName.values.toList(),
+                metadataByAudioName = snapshot.metadataByAudioName,
+                coverEntries = snapshot.coverEntriesByName.values.toList(),
+                lyricEntries = snapshot.lyricEntriesByName.values.toList()
+            )
+
+            SnapshotEntryBucket.COVER -> composeSnapshot(
+                audioEntries = snapshot.audioEntries,
+                metadataEntries = snapshot.metadataEntriesByAudioName.values.toList(),
+                metadataByAudioName = snapshot.metadataByAudioName,
+                coverEntries = replaceStoredEntry(snapshot.coverEntriesByName.values, storedEntry),
+                lyricEntries = snapshot.lyricEntriesByName.values.toList()
+            )
+
+            SnapshotEntryBucket.LYRIC -> composeSnapshot(
+                audioEntries = snapshot.audioEntries,
+                metadataEntries = snapshot.metadataEntriesByAudioName.values.toList(),
+                metadataByAudioName = snapshot.metadataByAudioName,
+                coverEntries = snapshot.coverEntriesByName.values.toList(),
+                lyricEntries = replaceStoredEntry(snapshot.lyricEntriesByName.values, storedEntry)
+            )
+        }
+    }
+
+    private fun replaceStoredEntry(
+        entries: Collection<StoredEntry>,
+        storedEntry: StoredEntry
+    ): List<StoredEntry> {
+        return entries
+            .filterNot { entry ->
+                entry.reference == storedEntry.reference || entry.name == storedEntry.name
+            } + storedEntry
+    }
+
     private fun buildRemoteTrackKey(
         channelId: String?,
         audioId: String?,
@@ -1441,7 +1502,16 @@ internal object ManagedDownloadStorage {
                 target.toStoredEntry()
             }
         }
-        storedEntry?.let { invalidateSnapshotCache(context) }
+        storedEntry?.let { entry ->
+            val bucket = when (subdirectory) {
+                COVER_SUBDIRECTORY -> SnapshotEntryBucket.COVER
+                "Lyrics" -> SnapshotEntryBucket.LYRIC
+                else -> null
+            }
+            if (bucket == null || !updateSnapshotCacheAfterStoredEntryWrite(context, entry, bucket)) {
+                invalidateSnapshotCache(context)
+            }
+        }
         return storedEntry
     }
 
@@ -1889,6 +1959,28 @@ internal object ManagedDownloadStorage {
             snapshot = currentSnapshot,
             metadataEntry = metadataEntry,
             metadata = metadata
+        )
+        snapshotCache = SnapshotCache(key = cacheKey, snapshot = updatedSnapshot)
+        scheduleSnapshotCachePersist(appContext, cacheKey)
+        return true
+    }
+
+    private fun updateSnapshotCacheAfterStoredEntryWrite(
+        context: Context,
+        storedEntry: StoredEntry,
+        bucket: SnapshotEntryBucket
+    ): Boolean {
+        val appContext = context.applicationContext
+        val cacheKey = buildSnapshotCacheKey(appContext)
+        val currentSnapshot = snapshotCache
+            ?.takeIf { it.key == cacheKey }
+            ?.snapshot
+            ?: restoreSnapshotCacheFromDisk(appContext, expectedKey = cacheKey)
+            ?: return false
+        val updatedSnapshot = applyStoredEntryWriteToSnapshot(
+            snapshot = currentSnapshot,
+            storedEntry = storedEntry,
+            bucket = bucket
         )
         snapshotCache = SnapshotCache(key = cacheKey, snapshot = updatedSnapshot)
         scheduleSnapshotCachePersist(appContext, cacheKey)

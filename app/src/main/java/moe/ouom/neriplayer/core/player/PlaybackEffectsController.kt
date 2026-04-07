@@ -115,6 +115,12 @@ class PlaybackEffectsController {
             releaseEqualizer()
             return
         }
+        if (!config.equalizerEnabled && equalizer == null) {
+            lastEqualizerAvailable = false
+            lastAppliedEqualizerLevels = emptyList()
+            lastAppliedEqualizerEnabled = false
+            return
+        }
 
         val eq = ensureEqualizer(sessionId) ?: run {
             lastEqualizerAvailable = false
@@ -209,6 +215,10 @@ class PlaybackEffectsController {
     private fun applyLoudnessEnhancer() {
         val sessionId = currentAudioSessionId ?: run {
             releaseLoudnessEnhancer()
+            return
+        }
+        if (config.loudnessGainMb <= 0 && loudnessEnhancer == null) {
+            lastLoudnessEnhancerAvailable = false
             return
         }
 

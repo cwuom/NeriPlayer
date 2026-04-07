@@ -151,6 +151,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -183,14 +184,18 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.Player
 import coil.compose.AsyncImage
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.search.SongSearchInfo
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.DownloadStatus
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.metadata.extractPreferredNeteaseLyricContent
@@ -249,6 +254,11 @@ private const val CoverSourceBadgeRevealDelayMs =
     LyricsPageTransitionDurationMs + CoverSourceBadgeRevealBufferMs
 
 internal fun shouldHideDownloadActionForSong(hasLocalDownload: Boolean): Boolean = hasLocalDownload
+
+private fun hasCachedLocalDownload(song: SongItem): Boolean {
+    return GlobalDownloadManager.hasDownloadedSongCached(song) ||
+        ManagedDownloadStorage.peekDownloadedAudio(song) != null
+}
 
 private fun buildRemoteSongShareUrl(originalSong: SongItem, queue: List<SongItem>): String {
     extractYouTubeMusicVideoId(originalSong.mediaUri)?.let { videoId ->
@@ -313,7 +323,6 @@ fun NowPlayingScreen(
     val isPlaybackControlPlaying by PlayerManager.playbackControlPlayingFlow.collectAsState()
     val shuffleEnabled by PlayerManager.shuffleModeFlow.collectAsState()
     val repeatMode by PlayerManager.repeatModeFlow.collectAsState()
-    val currentPosition by PlayerManager.playbackPositionFlow.collectAsState()
     val durationMs = currentSong?.durationMs ?: 0L
     val sleepTimerState by PlayerManager.sleepTimerManager.timerState.collectAsState()
     val currentPlaybackAudioInfo by PlayerManager.currentPlaybackAudioInfoFlow.collectAsState()
@@ -373,8 +382,10 @@ fun NowPlayingScreen(
 
     val queue by PlayerManager.currentQueueFlow.collectAsState()
     val displayedQueue = remember(queue) { queue }
-    val currentIndexInDisplay = displayedQueue.indexOfFirst {
-        it.sameIdentityAs(currentSong)
+    val currentIndexInDisplay = remember(displayedQueue, currentSong) {
+        displayedQueue.indexOfFirst {
+            it.sameIdentityAs(currentSong)
+        }
     }
 
     var showAddSheet by remember { mutableStateOf(false) }
@@ -460,12 +471,6 @@ fun NowPlayingScreen(
         }
     }
 
-    // 是否拖拽进度条
-    var isUserDraggingSlider by remember(currentSong?.id) { mutableStateOf(false) }
-    var sliderPosition by remember(currentSong?.id) {
-        mutableFloatStateOf(PlayerManager.playbackPositionFlow.value.toFloat())
-    }
-
     // 内容的进入动画
     var contentVisible by remember { mutableStateOf(false) }
 
@@ -479,75 +484,59 @@ fun NowPlayingScreen(
 
     LaunchedEffect(currentSong?.id, currentSong?.matchedLyric, currentSong?.matchedTranslatedLyric, isFromNetease) {
         val song = currentSong
-        val preferredNeteaseLyric = runCatching {
-            val shouldUpgradeMatchedLyric = song?.matchedLyric?.let(::isNeteaseYrc) != true
-            val preferredSongId = resolvePreferredNeteaseLyricSongId(song)
-            if (shouldUpgradeMatchedLyric && preferredSongId != null) {
-                extractPreferredNeteaseLyricContent(
-                    AppContainer.neteaseClient.getLyricNew(preferredSongId)
-                )
-            } else {
-                ""
+        val (loadedLyrics, loadedTranslatedLyrics) = withContext(Dispatchers.IO) {
+            val preferredNeteaseLyric = runCatching {
+                val shouldUpgradeMatchedLyric = song?.matchedLyric?.let(::isNeteaseYrc) != true
+                val preferredSongId = resolvePreferredNeteaseLyricSongId(song)
+                if (shouldUpgradeMatchedLyric && preferredSongId != null) {
+                    extractPreferredNeteaseLyricContent(
+                        AppContainer.neteaseClient.getLyricNew(preferredSongId)
+                    )
+                } else {
+                    ""
+                }
+            }.getOrNull().orEmpty()
+            val effectiveRawLyrics = resolvePreferredLyricContent(
+                matchedLyric = song?.matchedLyric,
+                preferredNeteaseLyric = preferredNeteaseLyric
+            )
+            val resolvedLyrics = when {
+                !effectiveRawLyrics.isNullOrBlank() -> {
+                    parseNeteaseLyricsAuto(effectiveRawLyrics)
+                }
+                song != null -> {
+                    // 在线拉取歌词
+                    PlayerManager.getLyrics(song)
+                }
+                else -> {
+                    emptyList()
+                }
             }
-        }.getOrNull().orEmpty()
-        val effectiveRawLyrics = resolvePreferredLyricContent(
-            matchedLyric = song?.matchedLyric,
-            preferredNeteaseLyric = preferredNeteaseLyric
-        )
-        lyrics = when {
-            !effectiveRawLyrics.isNullOrBlank() -> {
-                parseNeteaseLyricsAuto(effectiveRawLyrics)
-            }
-            song != null -> {
-                // 在线拉取歌词
-                PlayerManager.getLyrics(song)
-            }
-            else -> {
-                emptyList()
-            }
-        }
 
-        // 同步尝试拉取翻译（仅云音乐有）
-        translatedLyrics = try {
+            val resolvedTranslatedLyrics = try {
                 when {
                     // 优先使用存储的翻译歌词
                     !song?.matchedTranslatedLyric.isNullOrBlank() -> {
                         parseNeteaseLyricsAuto(song!!.matchedTranslatedLyric!!)
                     }
-                song != null -> {
-                    PlayerManager.getTranslatedLyrics(song)
+                    song != null -> {
+                        PlayerManager.getTranslatedLyrics(song)
+                    }
+                    else -> emptyList()
                 }
-                else -> emptyList()
+            } catch (_: Exception) {
+                emptyList()
             }
-        } catch (_: Exception) {
-            emptyList()
+            resolvedLyrics to resolvedTranslatedLyrics
         }
+        lyrics = loadedLyrics
+        translatedLyrics = loadedTranslatedLyrics
     }
     val plainLyrics = remember(lyrics) { lyrics.flattenWordTimedEntries() }
     val plainTranslatedLyrics = remember(translatedLyrics) { translatedLyrics.flattenWordTimedEntries() }
-    var pendingSeekPreviewPositionMs by remember(currentSong?.id) { mutableStateOf<Long?>(null) }
-    val effectivePreviewPositionMs = resolveLyricPreviewTimeMs(
-        isDraggingSlider = isUserDraggingSlider,
-        sliderPreviewPositionMs = sliderPosition.toLong(),
-        pendingSeekPreviewPositionMs = pendingSeekPreviewPositionMs,
-        playbackPositionMs = currentPosition
-    )
+    var previewPositionOverrideMs by remember(currentSong?.id) { mutableStateOf<Long?>(null) }
 
     LaunchedEffect(Unit) { contentVisible = true }
-    LaunchedEffect(currentPosition, isUserDraggingSlider, pendingSeekPreviewPositionMs) {
-        if (!isUserDraggingSlider && pendingSeekPreviewPositionMs == null) {
-            sliderPosition = currentPosition.toFloat()
-        }
-        val pendingPreview = pendingSeekPreviewPositionMs
-        if (!isUserDraggingSlider && pendingPreview != null &&
-            shouldReleaseLyricSeekPreview(
-                playbackPositionMs = currentPosition,
-                pendingSeekPreviewPositionMs = pendingPreview
-            )
-        ) {
-            pendingSeekPreviewPositionMs = null
-        }
-    }
     LaunchedEffect(currentSong?.id) { showQualitySwitchDialog = false }
     LaunchedEffect(showLyricsScreen, showCoverSourceBadge) {
         val returningFromLyrics = previousLyricsScreenState && !showLyricsScreen
@@ -1014,55 +1003,20 @@ fun NowPlayingScreen(
 
                     Spacer(Modifier.height(12.dp))
 
-                    // 进度条
-                    Row(
+                    NowPlayingProgressSection(
+                        songKey = currentSong?.stableKey(),
+                        durationMs = durationMs,
+                        isPlaying = isPlaying,
+                        progressInfoSegments = progressInfoSegments,
+                        useWideLandscapeLayout = useWideLandscapeLayout,
+                        onPreviewPositionChange = { previewPositionOverrideMs = it },
                         modifier = Modifier
                             .fillMaxWidth(if (useWideLandscapeLayout) 0.88f else 1f)
                             .sharedBounds(
                                 rememberSharedContentState(key = "progress_bar"),
                                 animatedVisibilityScope = this@AnimatedContent
-                            ),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = formatDuration(effectivePreviewPositionMs),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-
-                        WaveformSlider(
-                            modifier = Modifier.weight(1f),
-                            value = if (durationMs > 0) effectivePreviewPositionMs.toFloat() / durationMs else 0f,
-                            onValueChange = { newPercentage ->
-                                isUserDraggingSlider = true
-                                sliderPosition = (newPercentage * durationMs)
-                            },
-                            onValueChangeFinished = {
-                                val previewTarget = sliderPosition.toLong()
-                                pendingSeekPreviewPositionMs = previewTarget
-                                PlayerManager.seekTo(previewTarget)
-                                isUserDraggingSlider = false
-                            },
-                            isPlaying = isPlaying
-                        )
-
-                        Text(
-                            text = formatDuration(durationMs),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    if (progressInfoSegments.isNotEmpty()) {
-                        Spacer(Modifier.height(0.dp))
-                        NowPlayingProgressInfoRow(
-                            segments = progressInfoSegments,
-                            modifier = Modifier
-                                .fillMaxWidth(if (useWideLandscapeLayout) 0.88f else 1f)
-                                .offset(y = if (useWideLandscapeLayout) (-5).dp else (-6).dp)
-                        )
-                    }
+                            )
+                    )
 
                     Spacer(Modifier.height(if (useWideLandscapeLayout) 14.dp else 10.dp))
 
@@ -1140,9 +1094,9 @@ fun NowPlayingScreen(
                     if (!useWideLandscapeLayout && lyrics.isNotEmpty()) {
                         Spacer(Modifier.weight(1f))
 
-                        AppleMusicLyric(
+                        NowPlayingLyricsPane(
                             lyrics = plainLyrics,
-                            currentTimeMs = effectivePreviewPositionMs,
+                            previewPositionOverrideMs = previewPositionOverrideMs,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .weight(8f),
@@ -1344,9 +1298,9 @@ fun NowPlayingScreen(
                                 .fillMaxHeight()
                         ) {
                             if (lyrics.isNotEmpty()) {
-                                AppleMusicLyric(
+                                NowPlayingLyricsPane(
                                     lyrics = plainLyrics,
-                                    currentTimeMs = effectivePreviewPositionMs,
+                                    previewPositionOverrideMs = previewPositionOverrideMs,
                                     modifier = Modifier.fillMaxSize(),
                                     textColor = MaterialTheme.colorScheme.onBackground,
                                     fontSize = scaledLyricFontSize(18f, lyricFontScale).sp,
@@ -1676,8 +1630,8 @@ fun MoreOptionsSheet(
     val playbackSoundState by PlayerManager.playbackSoundStateFlow.collectAsState()
     val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsState()
     val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsState()
-    val hasLocalDownload = remember(downloadPresenceVersion, originalSong, context) {
-        AudioDownloadManager.hasLocalDownload(context, originalSong)
+    val hasLocalDownload = remember(downloadPresenceVersion, originalSong) {
+        hasCachedLocalDownload(originalSong)
     }
     val downloadSongKey = remember(originalSong) { originalSong.stableKey() }
     val currentDownloadTask = remember(downloadTasks, downloadSongKey) {
@@ -2630,59 +2584,67 @@ fun EditSongInfoSheet(
             HapticTextButton(
                 onClick = {
                     // 在打开编辑器前先获取歌词
+                    val displayedLyricsSnapshot = displayedLyrics.toList()
+                    val displayedTranslatedLyricsSnapshot = displayedTranslatedLyrics.toList()
                     coroutineScope.launch {
                         try {
-                            val rawNeteaseLyric = runCatching {
-                                val preferredSongId = resolvePreferredNeteaseLyricSongId(actualSong)
-                                if (preferredSongId != null) {
-                                    extractPreferredNeteaseLyricContent(
-                                        AppContainer.neteaseClient.getLyricNew(preferredSongId)
-                                    )
-                                } else {
-                                    null
-                                }
-                            }.getOrNull().orEmpty()
-                            val displayedLyricsText = displayedLyrics.toEditableLyricsText()
-
-                            // 获取原文歌词
-                            val lyrics = when {
-                                displayedLyrics.hasWordTimedEntries() -> displayedLyricsText
-                                else -> resolvePreferredLyricContent(
-                                    matchedLyric = actualSong.matchedLyric,
-                                    preferredNeteaseLyric = rawNeteaseLyric
-                                ) ?: run {
-                                    val lyricEntries = PlayerManager.getLyrics(actualSong)
-                                    if (lyricEntries.isNotEmpty()) {
-                                        lyricEntries.toEditableLyricsText()
+                            val (loadedLyrics, loadedTranslatedLyrics) = withContext(Dispatchers.IO) {
+                                val rawNeteaseLyric = runCatching {
+                                    val preferredSongId = resolvePreferredNeteaseLyricSongId(actualSong)
+                                    if (preferredSongId != null) {
+                                        extractPreferredNeteaseLyricContent(
+                                            AppContainer.neteaseClient.getLyricNew(preferredSongId)
+                                        )
                                     } else {
-                                        displayedLyricsText
+                                        null
+                                    }
+                                }.getOrNull().orEmpty()
+                                val displayedLyricsText = displayedLyricsSnapshot.toEditableLyricsText()
+
+                                // 把歌词准备挪到后台，避免打开编辑器时把主线程卡住
+                                val lyrics = when {
+                                    displayedLyricsSnapshot.hasWordTimedEntries() -> displayedLyricsText
+                                    else -> resolvePreferredLyricContent(
+                                        matchedLyric = actualSong.matchedLyric,
+                                        preferredNeteaseLyric = rawNeteaseLyric
+                                    ) ?: run {
+                                        val lyricEntries = PlayerManager.getLyrics(actualSong)
+                                        if (lyricEntries.isNotEmpty()) {
+                                            lyricEntries.toEditableLyricsText()
+                                        } else {
+                                            displayedLyricsText
+                                        }
                                     }
                                 }
+
+                                val translatedLyrics = try {
+                                    if (actualSong.matchedTranslatedLyric != null) {
+                                        actualSong.matchedTranslatedLyric
+                                    } else {
+                                        val translatedEntries =
+                                            if (displayedTranslatedLyricsSnapshot.isNotEmpty()) {
+                                                displayedTranslatedLyricsSnapshot
+                                            } else {
+                                                PlayerManager.getTranslatedLyrics(actualSong)
+                                            }
+                                        if (translatedEntries.isNotEmpty()) {
+                                            translatedEntries.toEditableLyricsText()
+                                        } else {
+                                            ""
+                                        }
+                                    }
+                                } catch (_: Exception) {
+                                    ""
+                                }
+
+                                lyrics to translatedLyrics
                             }
 
-                            // 获取翻译歌词
-                            val translatedLyrics = try {
-                                if (actualSong.matchedTranslatedLyric != null) {
-                                    actualSong.matchedTranslatedLyric
-                                } else {
-                                    val translatedEntries = if (displayedTranslatedLyrics.isNotEmpty()) {
-                                        displayedTranslatedLyrics
-                                    } else {
-                                        PlayerManager.getTranslatedLyrics(actualSong)
-                                    }
-                                    if (translatedEntries.isNotEmpty()) {
-                                        translatedEntries.toEditableLyricsText()
-                                    } else {
-                                        ""
-                                    }
-                                }
-                            } catch (_: Exception) {
-                                ""
-                            }
-
-                            lyricsToEdit = lyrics
-                            translatedLyricsToEdit = translatedLyrics
+                            lyricsToEdit = loadedLyrics
+                            translatedLyricsToEdit = loadedTranslatedLyrics
                             showLyricsEditor = true
+                        } catch (e: CancellationException) {
+                            throw e
                         } catch (e: Exception) {
                             e.printStackTrace()
                             lyricsToEdit = ""
@@ -2986,6 +2948,151 @@ fun EditSongInfoSheet(
             }
         }
     }
+}
+
+@Composable
+private fun NowPlayingProgressSection(
+    songKey: String?,
+    durationMs: Long,
+    isPlaying: Boolean,
+    progressInfoSegments: List<NowPlayingProgressInfoSegment>,
+    useWideLandscapeLayout: Boolean,
+    onPreviewPositionChange: (Long?) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val currentPosition by PlayerManager.playbackPositionFlow.collectAsState()
+    val latestOnPreviewPositionChange by rememberUpdatedState(onPreviewPositionChange)
+    var isUserDraggingSlider by remember(songKey) { mutableStateOf(false) }
+    var sliderPosition by remember(songKey) {
+        mutableFloatStateOf(PlayerManager.playbackPositionFlow.value.toFloat())
+    }
+    var pendingSeekPreviewPositionMs by remember(songKey) { mutableStateOf<Long?>(null) }
+    val effectivePreviewPositionMs = resolveLyricPreviewTimeMs(
+        isDraggingSlider = isUserDraggingSlider,
+        sliderPreviewPositionMs = sliderPosition.toLong(),
+        pendingSeekPreviewPositionMs = pendingSeekPreviewPositionMs,
+        playbackPositionMs = currentPosition
+    )
+    val previewOverridePositionMs = remember(
+        effectivePreviewPositionMs,
+        isUserDraggingSlider,
+        pendingSeekPreviewPositionMs
+    ) {
+        if (isUserDraggingSlider || pendingSeekPreviewPositionMs != null) {
+            effectivePreviewPositionMs
+        } else {
+            null
+        }
+    }
+
+    LaunchedEffect(currentPosition, isUserDraggingSlider, pendingSeekPreviewPositionMs) {
+        if (!isUserDraggingSlider && pendingSeekPreviewPositionMs == null) {
+            sliderPosition = currentPosition.toFloat()
+        }
+        val pendingPreview = pendingSeekPreviewPositionMs
+        if (!isUserDraggingSlider && pendingPreview != null &&
+            shouldReleaseLyricSeekPreview(
+                playbackPositionMs = currentPosition,
+                pendingSeekPreviewPositionMs = pendingPreview
+            )
+        ) {
+            pendingSeekPreviewPositionMs = null
+        }
+    }
+    LaunchedEffect(previewOverridePositionMs) {
+        latestOnPreviewPositionChange(previewOverridePositionMs)
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            latestOnPreviewPositionChange(null)
+        }
+    }
+
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = formatDuration(effectivePreviewPositionMs),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            WaveformSlider(
+                modifier = Modifier.weight(1f),
+                value = if (durationMs > 0) {
+                    effectivePreviewPositionMs.toFloat() / durationMs
+                } else {
+                    0f
+                },
+                onValueChange = { newPercentage ->
+                    isUserDraggingSlider = true
+                    sliderPosition = newPercentage * durationMs
+                },
+                onValueChangeFinished = {
+                    val previewTarget = sliderPosition.toLong()
+                    pendingSeekPreviewPositionMs = previewTarget
+                    PlayerManager.seekTo(previewTarget)
+                    isUserDraggingSlider = false
+                },
+                isPlaying = isPlaying
+            )
+
+            Text(
+                text = formatDuration(durationMs),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        if (progressInfoSegments.isNotEmpty()) {
+            Spacer(Modifier.height(0.dp))
+            NowPlayingProgressInfoRow(
+                segments = progressInfoSegments,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .offset(y = if (useWideLandscapeLayout) (-5).dp else (-6).dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun NowPlayingLyricsPane(
+    lyrics: List<LyricEntry>,
+    previewPositionOverrideMs: Long?,
+    modifier: Modifier = Modifier,
+    textColor: Color,
+    fontSize: androidx.compose.ui.unit.TextUnit,
+    translationFontSize: androidx.compose.ui.unit.TextUnit,
+    visualSpec: LyricVisualSpec,
+    lyricOffsetMs: Long,
+    lyricBlurEnabled: Boolean,
+    lyricBlurAmount: Float,
+    onLyricClick: (LyricEntry) -> Unit,
+    translatedLyrics: List<LyricEntry>? = null
+) {
+    val currentPosition by PlayerManager.playbackPositionFlow.collectAsState()
+    val effectivePositionMs = previewPositionOverrideMs ?: currentPosition
+    AppleMusicLyric(
+        lyrics = lyrics,
+        currentTimeMs = effectivePositionMs,
+        modifier = modifier,
+        textColor = textColor,
+        fontSize = fontSize,
+        translationFontSize = translationFontSize,
+        visualSpec = visualSpec,
+        lyricOffsetMs = lyricOffsetMs,
+        lyricBlurEnabled = lyricBlurEnabled,
+        lyricBlurAmount = lyricBlurAmount,
+        onLyricClick = onLyricClick,
+        translatedLyrics = translatedLyrics
+    )
 }
 
 @Composable

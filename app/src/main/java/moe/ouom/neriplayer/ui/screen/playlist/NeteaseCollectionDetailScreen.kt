@@ -137,7 +137,9 @@ import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.core.download.countPendingDownloadTasks
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.hasPendingDownloadTasks
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
@@ -288,7 +290,8 @@ fun DetailScreen(
     var showDownloadManager by remember { mutableStateOf(false) }
     val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
     val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsState()
-    val hasDownloadManagerEntry = remember(downloadTasks) { downloadTasks.isNotEmpty() }
+    val pendingTaskCount = remember(downloadTasks) { countPendingDownloadTasks(downloadTasks) }
+    val hasDownloadManagerEntry = remember(downloadTasks) { hasPendingDownloadTasks(downloadTasks) }
 
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
     val listState = rememberSaveable(playlistId, saver = LazyListState.Saver) {
@@ -819,7 +822,7 @@ fun DetailScreen(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                if (batchDownloadProgress != null || downloadTasks.isNotEmpty()) {
+                if (batchDownloadProgress != null || pendingTaskCount > 0) {
                     val progress = batchDownloadProgress
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -871,17 +874,17 @@ fun DetailScreen(
                                     modifier = Modifier.fillMaxWidth()
                                 )
                             } else {
-                                Text(
-                                    text = pluralStringResource(
-                                        R.plurals.download_tasks_count,
-                                        downloadTasks.size,
-                                        downloadTasks.size
-                                    ),
-                                    style = MaterialTheme.typography.titleMedium
-                                )
-                            }
+                                    Text(
+                                        text = pluralStringResource(
+                                            R.plurals.download_tasks_count,
+                                            pendingTaskCount,
+                                            pendingTaskCount
+                                        ),
+                                        style = MaterialTheme.typography.titleMedium
+                                    )
+                                }
 
-                            if (downloadTasks.isNotEmpty()) {
+                            if (pendingTaskCount > 0) {
                                 Spacer(modifier = Modifier.height(12.dp))
                                 ActiveDownloadTaskList(
                                     tasks = downloadTasks,

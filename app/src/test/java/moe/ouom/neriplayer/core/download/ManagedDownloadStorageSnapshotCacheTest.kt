@@ -197,4 +197,59 @@ class ManagedDownloadStorageSnapshotCacheTest {
         assertEquals(listOf(audioEntry), updatedSnapshot.audioEntriesByStableKey["new-stable"])
         assertEquals(listOf(audioEntry), updatedSnapshot.audioEntriesBySongId[2L])
     }
+
+    @Test
+    fun `stored entry write updates snapshot bucket without disturbing other indexes`() {
+        val audioEntry = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Song.flac",
+            reference = "/music/Artist - Song.flac",
+            mediaUri = "file:///music/Artist%20-%20Song.flac",
+            localFilePath = "/music/Artist - Song.flac",
+            sizeBytes = 1024L,
+            lastModifiedMs = 99L
+        )
+        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            stableKey = "stable",
+            songId = 7L,
+            name = "Song",
+            artist = "Artist"
+        )
+        val snapshot = ManagedDownloadStorage.DownloadLibrarySnapshot(
+            audioEntries = listOf(audioEntry),
+            audioEntriesByLookupKey = mapOf(
+                audioEntry.reference to audioEntry,
+                audioEntry.mediaUri to audioEntry,
+                audioEntry.localFilePath.orEmpty() to audioEntry
+            ),
+            metadataEntriesByAudioName = emptyMap(),
+            metadataByAudioName = mapOf(audioEntry.name to metadata),
+            audioEntriesWithoutMetadata = emptyList(),
+            audioEntriesByStableKey = mapOf("stable" to listOf(audioEntry)),
+            audioEntriesBySongId = mapOf(7L to listOf(audioEntry)),
+            audioEntriesByMediaUri = emptyMap(),
+            audioEntriesByRemoteTrackKey = emptyMap(),
+            coverEntriesByName = emptyMap(),
+            lyricEntriesByName = emptyMap(),
+            knownReferences = setOf(audioEntry.reference)
+        )
+        val coverEntry = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Song.jpg",
+            reference = "/music/Covers/Artist - Song.jpg",
+            mediaUri = "file:///music/Covers/Artist%20-%20Song.jpg",
+            localFilePath = "/music/Covers/Artist - Song.jpg",
+            sizeBytes = 64L,
+            lastModifiedMs = 120L
+        )
+
+        val updatedSnapshot = ManagedDownloadStorage.applyStoredEntryWriteToSnapshot(
+            snapshot = snapshot,
+            storedEntry = coverEntry,
+            bucket = ManagedDownloadStorage.SnapshotEntryBucket.COVER
+        )
+
+        assertEquals(audioEntry, updatedSnapshot.audioEntries.single())
+        assertEquals(coverEntry, updatedSnapshot.coverEntriesByName[coverEntry.name])
+        assertEquals(listOf(audioEntry), updatedSnapshot.audioEntriesByStableKey["stable"])
+        assertEquals(listOf(audioEntry), updatedSnapshot.audioEntriesBySongId[7L])
+    }
 }

@@ -45,13 +45,16 @@ import moe.ouom.neriplayer.core.player.model.AudioDevice
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.core.player.playlist.PlayerFavoritesController
+import moe.ouom.neriplayer.data.settings.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshotSync
 import moe.ouom.neriplayer.util.NPLogger
 import java.io.File
 
 internal fun PlayerManager.initializeImpl(
     app: Application,
-    maxCacheSize: Long = 1024L * 1024 * 1024
+    maxCacheSize: Long = 1024L * 1024 * 1024,
+    startupPlaybackPreferences: PlaybackPreferenceSnapshot? = null,
+    restoredStateSnapshot: RestoredPlayerStateSnapshot? = null
 ) {
     if (initialized) {
         NPLogger.d("NERI-PlayerManager", "initialize(): ignored because already initialized")
@@ -73,7 +76,8 @@ internal fun PlayerManager.initializeImpl(
         lastPersistedPlaylistReference = null
         lastPersistedPlaybackState = null
         lastStatePersistAtMs = 0L
-        val initialPlaybackPreferences = readPlaybackPreferenceSnapshotSync(app)
+        val initialPlaybackPreferences =
+            startupPlaybackPreferences ?: readPlaybackPreferenceSnapshotSync(app)
         preferredQuality = initialPlaybackPreferences.audioQuality
         youtubePreferredQuality = initialPlaybackPreferences.youtubeAudioQuality
         biliPreferredQuality = initialPlaybackPreferences.biliAudioQuality
@@ -429,7 +433,11 @@ internal fun PlayerManager.initializeImpl(
         }
 
         setupAudioDeviceCallback()
-        restoreState()
+        if (restoredStateSnapshot != null) {
+            applyRestoredStateSnapshot(restoredStateSnapshot)
+        } else {
+            restoreState()
+        }
 
         sleepTimerManager = createSleepTimerManager()
 

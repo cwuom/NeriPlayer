@@ -37,13 +37,17 @@ fun SongItem.displayCoverUrl(context: Context): String? {
     customCoverUrl?.takeIf { it.isNotBlank() }?.let { return it }
 
     val current = coverUrl?.takeIf { it.isNotBlank() }
+    val onMainThread = Looper.myLooper() == Looper.getMainLooper()
     if (!current.isNullOrBlank() && !current.isRemoteCoverSource()) {
+        return current
+    }
+    if (!current.isNullOrBlank() && onMainThread) {
         return current
     }
 
     AudioDownloadManager.getLocalCoverUri(context, this)?.let { return it }
     if (!isLocalSong()) return current
-    if (Looper.myLooper() == Looper.getMainLooper()) return current
+    if (onMainThread) return current
     LocalMediaSupport.inspect(context, this)?.coverUri?.takeIf { it.isNotBlank() }?.let { return it }
     return current
 }

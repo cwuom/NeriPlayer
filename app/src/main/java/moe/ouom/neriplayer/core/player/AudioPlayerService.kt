@@ -62,6 +62,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
@@ -102,6 +104,7 @@ private data class PlaybackMetadataSnapshot(
 
 internal const val MEDIA_SESSION_STOP_SOURCE = "media_session_stop"
 internal const val PLAY_SONGS_AND_OPEN_NOW_PLAYING_SOURCE = "play_songs_and_open_now_playing"
+private const val PLAYBACK_STATE_PROGRESS_BUCKET_MS = 250L
 
 internal fun isLocalPlaybackCommandSyncSource(
     source: String,
@@ -455,9 +458,14 @@ class AudioPlayerService : Service() {
             }
         }
         serviceScope.launch {
-            PlayerManager.playbackPositionFlow.collect {
-                updatePlaybackState()
-            }
+            PlayerManager.playbackPositionFlow
+                .map { positionMs ->
+                    positionMs.coerceAtLeast(0L) / PLAYBACK_STATE_PROGRESS_BUCKET_MS
+                }
+                .distinctUntilChanged()
+                .collect {
+                    updatePlaybackState()
+                }
         }
         serviceScope.launch {
             PlayerManager.playbackSoundStateFlow.collect {

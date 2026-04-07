@@ -104,37 +104,39 @@ internal object PlayerLyricsProvider {
         neteaseClient: NeteaseClient,
         biliSourceTag: String
     ): List<LyricEntry> {
-        val localTranslatedLyrics = AudioDownloadManager.getTranslatedLyricContent(application, song)
-        if (!localTranslatedLyrics.isNullOrBlank()) {
-            try {
-                return parseBestLyricEntries(localTranslatedLyrics)
-            } catch (error: Exception) {
-                NPLogger.w("NERI-PlayerManager", "本地翻译歌词读取失败: ${error.message}")
-            }
-        }
-
-        if (isYouTubeMusicSong(song)) {
-            return emptyList()
-        }
-
-        if (song.album.startsWith(biliSourceTag)) {
-            return when (song.matchedLyricSource) {
-                MusicPlatform.CLOUD_MUSIC -> {
-                    val matchedId = song.matchedSongId?.toLongOrNull()
-                    if (matchedId != null) {
-                        getNeteaseTranslatedLyrics(matchedId, neteaseClient)
-                    } else {
-                        emptyList()
-                    }
+        return withContext(Dispatchers.IO) {
+            val localTranslatedLyrics = AudioDownloadManager.getTranslatedLyricContent(application, song)
+            if (!localTranslatedLyrics.isNullOrBlank()) {
+                try {
+                    return@withContext parseBestLyricEntries(localTranslatedLyrics)
+                } catch (error: Exception) {
+                    NPLogger.w("NERI-PlayerManager", "本地翻译歌词读取失败: ${error.message}")
                 }
+            }
+
+            if (isYouTubeMusicSong(song)) {
+                return@withContext emptyList()
+            }
+
+            if (song.album.startsWith(biliSourceTag)) {
+                return@withContext when (song.matchedLyricSource) {
+                    MusicPlatform.CLOUD_MUSIC -> {
+                        val matchedId = song.matchedSongId?.toLongOrNull()
+                        if (matchedId != null) {
+                            getNeteaseTranslatedLyrics(matchedId, neteaseClient)
+                        } else {
+                            emptyList()
+                        }
+                    }
+                    else -> emptyList()
+                }
+            }
+
+            when (song.matchedLyricSource) {
+                null,
+                MusicPlatform.CLOUD_MUSIC -> getNeteaseTranslatedLyrics(song.id, neteaseClient)
                 else -> emptyList()
             }
-        }
-
-        return when (song.matchedLyricSource) {
-            null,
-            MusicPlatform.CLOUD_MUSIC -> getNeteaseTranslatedLyrics(song.id, neteaseClient)
-            else -> emptyList()
         }
     }
 
@@ -147,30 +149,32 @@ internal object PlayerLyricsProvider {
         ytMusicLyricsCache: LruCache<String, List<LyricEntry>>,
         biliSourceTag: String
     ): List<LyricEntry> {
-        if (isYouTubeMusicSong(song)) {
-            return getYouTubeMusicLyrics(song, youtubeMusicClient, lrcLibClient, ytMusicLyricsCache)
-        }
-
-        if (!song.matchedLyric.isNullOrBlank()) {
-            try {
-                return parseBestLyricEntries(song.matchedLyric)
-            } catch (error: Exception) {
-                NPLogger.w("NERI-PlayerManager", "匹配歌词解析失败: ${error.message}")
+        return withContext(Dispatchers.IO) {
+            if (isYouTubeMusicSong(song)) {
+                return@withContext getYouTubeMusicLyrics(song, youtubeMusicClient, lrcLibClient, ytMusicLyricsCache)
             }
-        }
 
-        val localLyricContent = AudioDownloadManager.getLyricContent(application, song)
-        if (!localLyricContent.isNullOrBlank()) {
-            try {
-                return parseBestLyricEntries(localLyricContent)
-            } catch (error: Exception) {
-                NPLogger.w("NERI-PlayerManager", "本地歌词读取失败: ${error.message}")
+            if (!song.matchedLyric.isNullOrBlank()) {
+                try {
+                    return@withContext parseBestLyricEntries(song.matchedLyric)
+                } catch (error: Exception) {
+                    NPLogger.w("NERI-PlayerManager", "匹配歌词解析失败: ${error.message}")
+                }
             }
-        }
 
-        return when {
-            song.album.startsWith(biliSourceTag) -> emptyList()
-            else -> getNeteaseLyrics(song.id, neteaseClient)
+            val localLyricContent = AudioDownloadManager.getLyricContent(application, song)
+            if (!localLyricContent.isNullOrBlank()) {
+                try {
+                    return@withContext parseBestLyricEntries(localLyricContent)
+                } catch (error: Exception) {
+                    NPLogger.w("NERI-PlayerManager", "本地歌词读取失败: ${error.message}")
+                }
+            }
+
+            when {
+                song.album.startsWith(biliSourceTag) -> emptyList()
+                else -> getNeteaseLyrics(song.id, neteaseClient)
+            }
         }
     }
 

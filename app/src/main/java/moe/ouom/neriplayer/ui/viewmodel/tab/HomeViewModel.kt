@@ -154,13 +154,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     client.getRecommendedPlaylists(limit = 30, usePersistedCookies = hasRecommendLogin)
                 }
                 try {
-                    parseRecommend(raw)
+                    parseRecommendOnWorker(raw)
                 } catch (e: ApiCodeException) {
                     if (hasRecommendLogin && shouldFallbackRecommend(e.code)) {
                         val fallbackRaw = withContext(Dispatchers.IO) {
                             client.getRecommendedPlaylists(limit = 30, usePersistedCookies = false)
                         }
-                        parseRecommend(fallbackRaw)
+                        parseRecommendOnWorker(fallbackRaw)
                     } else {
                         throw e
                     }
@@ -218,7 +218,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         usePersistedCookies = false
                     )
                 }
-                parseSongs(raw)
+                parseSongsOnWorker(raw)
             }) {
                 is RetryLoadResult.Success -> {
                     _uiState.value = _uiState.value.copy(
@@ -254,7 +254,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         usePersistedCookies = false
                     )
                 }
-                parseSongs(raw)
+                parseSongsOnWorker(raw)
             }) {
                 is RetryLoadResult.Success -> {
                     _uiState.value = _uiState.value.copy(
@@ -377,6 +377,16 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
     }
+
+    private suspend fun parseRecommendOnWorker(raw: String): List<PlaylistSummary> =
+        withContext(Dispatchers.Default) {
+            parseRecommend(raw)
+        }
+
+    private suspend fun parseSongsOnWorker(raw: String): List<SongItem> =
+        withContext(Dispatchers.Default) {
+            parseSongs(raw)
+        }
 
     private fun parseRecommend(raw: String): List<PlaylistSummary> {
         val result = mutableListOf<PlaylistSummary>()

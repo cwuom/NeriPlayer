@@ -79,6 +79,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -86,6 +87,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -114,6 +116,7 @@ import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.sameIdentityAs
+import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.component.AdvancedLyricsView
 import moe.ouom.neriplayer.ui.component.AppleMusicLyric
 import moe.ouom.neriplayer.ui.component.flattenWordTimedEntries
@@ -155,7 +158,6 @@ fun LyricsScreen(
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
     val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
     val isPlaybackControlPlaying by PlayerManager.playbackControlPlayingFlow.collectAsState()
-    val currentPosition by PlayerManager.playbackPositionFlow.collectAsState()
     val lyricsPlaybackSoundState by PlayerManager.playbackSoundStateFlow.collectAsState()
     val plainLyrics = remember(lyrics) { lyrics.flattenWordTimedEntries() }
     val plainTranslatedLyrics = remember(translatedLyrics) {
@@ -180,6 +182,7 @@ fun LyricsScreen(
 
     // 动画状态
     var isLyricsMode by remember { mutableStateOf(false) }
+    var previewPositionOverrideMs by remember(currentSong?.id) { mutableStateOf<Long?>(null) }
 
     // 启动进入动画
     LaunchedEffect(Unit) {
@@ -214,39 +217,6 @@ fun LyricsScreen(
     )
 
     // 播放控件动画 - 轻微上浮/下沉，保持常驻在安全区域内
-
-    // 进度条拖拽状态
-    var isUserDraggingSlider by remember(currentSong?.id) { mutableStateOf(false) }
-    var sliderPosition by remember(currentSong?.id) {
-        mutableFloatStateOf(PlayerManager.playbackPositionFlow.value.toFloat())
-    }
-    var pendingSeekPreviewPositionMs by remember(currentSong?.id) { mutableStateOf<Long?>(null) }
-    val effectiveLyricTimeMs = resolveLyricPreviewTimeMs(
-        isDraggingSlider = isUserDraggingSlider,
-        sliderPreviewPositionMs = sliderPosition.toLong(),
-        pendingSeekPreviewPositionMs = pendingSeekPreviewPositionMs,
-        playbackPositionMs = currentPosition
-    )
-    val shouldAnimateFromPlayback = shouldAnimateAdvancedLyricsFromPlayback(
-        isPlaying = isPlaying,
-        isDraggingSlider = isUserDraggingSlider,
-        pendingSeekPreviewPositionMs = pendingSeekPreviewPositionMs
-    )
-
-    LaunchedEffect(currentPosition, isUserDraggingSlider, pendingSeekPreviewPositionMs) {
-        if (!isUserDraggingSlider && pendingSeekPreviewPositionMs == null) {
-            sliderPosition = currentPosition.toFloat()
-        }
-        val pendingPreview = pendingSeekPreviewPositionMs
-        if (!isUserDraggingSlider && pendingPreview != null &&
-            shouldReleaseLyricSeekPreview(
-                playbackPositionMs = currentPosition,
-                pendingSeekPreviewPositionMs = pendingPreview
-            )
-        ) {
-            pendingSeekPreviewPositionMs = null
-        }
-    }
 
     // 使用填充整个屏幕，不创建新背景，复用现有背景
     Column(
@@ -494,63 +464,25 @@ fun LyricsScreen(
         Box(
             modifier = Modifier.weight(1f)
         ) {
-            if (lyrics.isNotEmpty()) {
-                if (advancedLyricsEnabled) {
-                    AdvancedLyricsView(
-                        lyrics = lyrics,
-                        currentTimeMs = effectiveLyricTimeMs,
-                        modifier = Modifier.fillMaxSize(),
-                        textColor = MaterialTheme.colorScheme.onBackground,
-                        lyricFontScale = lyricFontScale,
-                        baseFontSizeSp = 20f,
-                        lyricOffsetMs = lyricOffsetMs,
-                        lyricBlurEnabled = lyricBlurEnabled,
-                        lyricBlurAmount = lyricBlurAmount,
-                        translatedLyrics = translatedLyrics.orEmpty(),
-                        showLyricTranslation = showLyricTranslation,
-                        rawLyrics = currentSong?.matchedLyric,
-                        rawTranslatedLyrics = currentSong?.matchedTranslatedLyric,
-                        isPlaying = shouldAnimateFromPlayback,
-                        animateViewportScroll = isUserDraggingSlider ||
-                            pendingSeekPreviewPositionMs != null,
-                        playbackSpeed = lyricsPlaybackSoundState.speed,
-                        onSeekTo = onSeekTo
-                    )
-                } else {
-                    AppleMusicLyric(
-                        lyrics = plainLyrics,
-                        currentTimeMs = effectiveLyricTimeMs,
-                        modifier = Modifier.fillMaxSize(),
-                        textColor = MaterialTheme.colorScheme.onBackground,
-                        // 放大歌词与行距，增强可读性
-                        fontSize = scaledLyricFontSize(20f, lyricFontScale).sp,
-                        centerPadding = 24.dp,
-                        visualSpec = LyricVisualSpec(
-                            // 控制缩放范围，避免超界
-                            activeScale = 1.06f,
-                            nearScale = 0.95f,
-                            farScale = 0.88f,
-                            inactiveBlurNear = 0.dp,
-                            inactiveBlurFar = 0.dp
-                        ),
-                        lyricOffsetMs = lyricOffsetMs,
-                        lyricBlurEnabled = lyricBlurEnabled,
-                        lyricBlurAmount = lyricBlurAmount,
-                        onLyricClick = { lyricEntry ->
-                            onSeekTo(lyricEntry.startTimeMs)
-                        },
-                        translatedLyrics = if (showLyricTranslation) plainTranslatedLyrics else null,
-                        translationFontSize = scaledLyricFontSize(16f, lyricFontScale).sp,
-                    )
-                }
-            } else {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(stringResource(R.string.lyrics_no_lyrics), style = MaterialTheme.typography.headlineSmall)
-                }
-            }
+            LyricsContentPane(
+                lyrics = lyrics,
+                plainLyrics = plainLyrics,
+                plainTranslatedLyrics = plainTranslatedLyrics,
+                translatedLyrics = translatedLyrics.orEmpty(),
+                previewPositionOverrideMs = previewPositionOverrideMs,
+                advancedLyricsEnabled = advancedLyricsEnabled,
+                showLyricTranslation = showLyricTranslation,
+                lyricFontScale = lyricFontScale,
+                lyricOffsetMs = lyricOffsetMs,
+                lyricBlurEnabled = lyricBlurEnabled,
+                lyricBlurAmount = lyricBlurAmount,
+                textColor = MaterialTheme.colorScheme.onBackground,
+                matchedLyric = currentSong?.matchedLyric,
+                matchedTranslatedLyric = currentSong?.matchedTranslatedLyric,
+                playbackSpeed = lyricsPlaybackSoundState.speed,
+                isPlaying = isPlaying,
+                onSeekTo = onSeekTo
+            )
         }
 
         // 底部控件 - 使用共享元素动画
@@ -577,34 +509,13 @@ fun LyricsScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(
-                    text = formatDuration(effectiveLyricTimeMs),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                WaveformSlider(
-                    modifier = Modifier.weight(1f),
-                    value = if (durationMs > 0) {
-                        effectiveLyricTimeMs.toFloat() / durationMs
-                    } else 0f,
-                    onValueChange = { newValue ->
-                        isUserDraggingSlider = true
-                        sliderPosition = newValue * durationMs.toFloat()
-                    },
-                    onValueChangeFinished = {
-                        val previewTarget = sliderPosition.toLong()
-                        pendingSeekPreviewPositionMs = previewTarget
-                        PlayerManager.seekTo(previewTarget)
-                        isUserDraggingSlider = false
-                    },
-                    isPlaying = isPlaying
-                )
-
-                Text(
-                    text = formatDuration(durationMs),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                LyricsProgressSection(
+                    songKey = currentSong?.stableKey(),
+                    durationMs = durationMs,
+                    isPlaying = isPlaying,
+                    onSeekTo = onSeekTo,
+                    onPreviewPositionChange = { previewPositionOverrideMs = it },
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
 
@@ -1016,6 +927,189 @@ fun LyricsScreen(
                 }
             )
         }
+    }
+}
+
+@Composable
+private fun LyricsContentPane(
+    lyrics: List<LyricEntry>,
+    plainLyrics: List<LyricEntry>,
+    plainTranslatedLyrics: List<LyricEntry>,
+    translatedLyrics: List<LyricEntry>,
+    previewPositionOverrideMs: Long?,
+    advancedLyricsEnabled: Boolean,
+    showLyricTranslation: Boolean,
+    lyricFontScale: Float,
+    lyricOffsetMs: Long,
+    lyricBlurEnabled: Boolean,
+    lyricBlurAmount: Float,
+    textColor: Color,
+    matchedLyric: String?,
+    matchedTranslatedLyric: String?,
+    playbackSpeed: Float,
+    isPlaying: Boolean,
+    onSeekTo: (Long) -> Unit
+) {
+    if (lyrics.isEmpty()) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                stringResource(R.string.lyrics_no_lyrics),
+                style = MaterialTheme.typography.headlineSmall
+            )
+        }
+        return
+    }
+
+    val currentPosition by PlayerManager.playbackPositionFlow.collectAsState()
+    val effectiveLyricTimeMs = previewPositionOverrideMs ?: currentPosition
+    val isPreviewingSeek = previewPositionOverrideMs != null
+    val shouldAnimateFromPlayback = isPlaying && !isPreviewingSeek
+
+    if (advancedLyricsEnabled) {
+        AdvancedLyricsView(
+            lyrics = lyrics,
+            currentTimeMs = effectiveLyricTimeMs,
+            modifier = Modifier.fillMaxSize(),
+            textColor = textColor,
+            lyricFontScale = lyricFontScale,
+            baseFontSizeSp = 20f,
+            lyricOffsetMs = lyricOffsetMs,
+            lyricBlurEnabled = lyricBlurEnabled,
+            lyricBlurAmount = lyricBlurAmount,
+            translatedLyrics = translatedLyrics,
+            showLyricTranslation = showLyricTranslation,
+            rawLyrics = matchedLyric,
+            rawTranslatedLyrics = matchedTranslatedLyric,
+            isPlaying = shouldAnimateFromPlayback,
+            animateViewportScroll = isPreviewingSeek,
+            playbackSpeed = playbackSpeed,
+            onSeekTo = onSeekTo
+        )
+        return
+    }
+
+    AppleMusicLyric(
+        lyrics = plainLyrics,
+        currentTimeMs = effectiveLyricTimeMs,
+        modifier = Modifier.fillMaxSize(),
+        textColor = textColor,
+        fontSize = scaledLyricFontSize(20f, lyricFontScale).sp,
+        centerPadding = 24.dp,
+        visualSpec = LyricVisualSpec(
+            activeScale = 1.06f,
+            nearScale = 0.95f,
+            farScale = 0.88f,
+            inactiveBlurNear = 0.dp,
+            inactiveBlurFar = 0.dp
+        ),
+        lyricOffsetMs = lyricOffsetMs,
+        lyricBlurEnabled = lyricBlurEnabled,
+        lyricBlurAmount = lyricBlurAmount,
+        onLyricClick = { lyricEntry ->
+            onSeekTo(lyricEntry.startTimeMs)
+        },
+        translatedLyrics = if (showLyricTranslation) plainTranslatedLyrics else null,
+        translationFontSize = scaledLyricFontSize(16f, lyricFontScale).sp,
+    )
+}
+
+@Composable
+private fun LyricsProgressSection(
+    songKey: String?,
+    durationMs: Long,
+    isPlaying: Boolean,
+    onSeekTo: (Long) -> Unit,
+    onPreviewPositionChange: (Long?) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val currentPosition by PlayerManager.playbackPositionFlow.collectAsState()
+    val latestOnPreviewPositionChange by rememberUpdatedState(onPreviewPositionChange)
+    var isUserDraggingSlider by remember(songKey) { mutableStateOf(false) }
+    var sliderPosition by remember(songKey) {
+        mutableFloatStateOf(PlayerManager.playbackPositionFlow.value.toFloat())
+    }
+    var pendingSeekPreviewPositionMs by remember(songKey) { mutableStateOf<Long?>(null) }
+    val effectivePreviewPositionMs = resolveLyricPreviewTimeMs(
+        isDraggingSlider = isUserDraggingSlider,
+        sliderPreviewPositionMs = sliderPosition.toLong(),
+        pendingSeekPreviewPositionMs = pendingSeekPreviewPositionMs,
+        playbackPositionMs = currentPosition
+    )
+    val previewOverridePositionMs = remember(
+        effectivePreviewPositionMs,
+        isUserDraggingSlider,
+        pendingSeekPreviewPositionMs
+    ) {
+        if (isUserDraggingSlider || pendingSeekPreviewPositionMs != null) {
+            effectivePreviewPositionMs
+        } else {
+            null
+        }
+    }
+
+    LaunchedEffect(currentPosition, isUserDraggingSlider, pendingSeekPreviewPositionMs) {
+        if (!isUserDraggingSlider && pendingSeekPreviewPositionMs == null) {
+            sliderPosition = currentPosition.toFloat()
+        }
+        val pendingPreview = pendingSeekPreviewPositionMs
+        if (!isUserDraggingSlider &&
+            pendingPreview != null &&
+            shouldReleaseLyricSeekPreview(
+                playbackPositionMs = currentPosition,
+                pendingSeekPreviewPositionMs = pendingPreview
+            )
+        ) {
+            pendingSeekPreviewPositionMs = null
+        }
+    }
+    LaunchedEffect(previewOverridePositionMs) {
+        latestOnPreviewPositionChange(previewOverridePositionMs)
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            latestOnPreviewPositionChange(null)
+        }
+    }
+
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = formatDuration(effectivePreviewPositionMs),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        WaveformSlider(
+            modifier = Modifier.weight(1f),
+            value = if (durationMs > 0) {
+                effectivePreviewPositionMs.toFloat() / durationMs
+            } else {
+                0f
+            },
+            onValueChange = { newValue ->
+                isUserDraggingSlider = true
+                sliderPosition = newValue * durationMs.toFloat()
+            },
+            onValueChangeFinished = {
+                val previewTarget = sliderPosition.toLong()
+                pendingSeekPreviewPositionMs = previewTarget
+                onSeekTo(previewTarget)
+                isUserDraggingSlider = false
+            },
+            isPlaying = isPlaying
+        )
+
+        Text(
+            text = formatDuration(durationMs),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 

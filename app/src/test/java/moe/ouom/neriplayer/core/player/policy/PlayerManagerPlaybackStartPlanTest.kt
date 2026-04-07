@@ -195,9 +195,10 @@ class PlayerManagerPlaybackStartPlanTest {
     }
 
     @Test
-    fun `app bootstrap restores paused queue for external controls`() {
+    fun `app bootstrap skips paused queue without active transport`() {
         val shouldBootstrap = shouldBootstrapPlaybackServiceOnAppLaunch(
             hasCurrentSong = true,
+            resumePlaybackRequested = false,
             playJobActive = false,
             pendingPauseJobActive = false,
             playWhenReady = false,
@@ -205,13 +206,14 @@ class PlayerManagerPlaybackStartPlanTest {
             playerPlaybackState = 0
         )
 
-        assertTrue(shouldBootstrap)
+        assertFalse(shouldBootstrap)
     }
 
     @Test
     fun `app bootstrap still resumes live buffering session`() {
         val shouldBootstrap = shouldBootstrapPlaybackServiceOnAppLaunch(
             hasCurrentSong = true,
+            resumePlaybackRequested = false,
             playJobActive = false,
             pendingPauseJobActive = false,
             playWhenReady = false,

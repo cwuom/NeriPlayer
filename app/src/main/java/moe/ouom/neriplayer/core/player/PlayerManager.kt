@@ -85,6 +85,7 @@ import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
+import moe.ouom.neriplayer.data.settings.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.listentogether.ListenTogetherChannels
 import moe.ouom.neriplayer.listentogether.buildStableTrackKey
 import moe.ouom.neriplayer.listentogether.resolvedAudioId
@@ -361,6 +362,7 @@ object PlayerManager {
         if (!initialized || _currentSongFlow.value == null) return false
         return shouldBootstrapPlaybackServiceOnAppLaunch(
             hasCurrentSong = _currentSongFlow.value != null,
+            resumePlaybackRequested = resumePlaybackRequested,
             playJobActive = playJob?.isActive == true,
             pendingPauseJobActive = pendingPauseJob?.isActive == true,
             playWhenReady = _playWhenReadyFlow.value,
@@ -1053,6 +1055,17 @@ internal fun cancelVolumeFade(resetToFull: Boolean = false) =
 
     fun initialize(app: Application, maxCacheSize: Long = 1024L * 1024 * 1024) =
         initializeImpl(app, maxCacheSize)
+
+    internal fun initializePreloaded(
+        app: Application,
+        startupPlaybackPreferences: PlaybackPreferenceSnapshot,
+        restoredStateSnapshot: RestoredPlayerStateSnapshot? = null
+    ) = initializeImpl(
+        app = app,
+        maxCacheSize = startupPlaybackPreferences.maxCacheSizeBytes,
+        startupPlaybackPreferences = startupPlaybackPreferences,
+        restoredStateSnapshot = restoredStateSnapshot
+    )
 
     @Suppress("unused")
     suspend fun clearCache(

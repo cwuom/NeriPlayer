@@ -47,6 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.download.countPendingDownloadTasks
 import moe.ouom.neriplayer.core.download.DownloadStatus
 import moe.ouom.neriplayer.core.download.DownloadTask
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
@@ -66,6 +67,7 @@ fun DownloadProgressScreen(
 ) {
     val context = LocalContext.current
     val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsState()
+    val pendingTaskCount = remember(downloadTasks) { countPendingDownloadTasks(downloadTasks) }
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     var showClearDialog by remember { mutableStateOf(false) }
 
@@ -107,11 +109,11 @@ fun DownloadProgressScreen(
                         style = MaterialTheme.typography.titleLarge
                     )
                     Text(
-                pluralStringResource(
-                    R.plurals.download_tasks_count,
-                    downloadTasks.size,
-                    downloadTasks.size
-                ),
+                        pluralStringResource(
+                            R.plurals.download_tasks_count,
+                            pendingTaskCount,
+                            pendingTaskCount
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
