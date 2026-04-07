@@ -7,7 +7,9 @@ import android.widget.Toast
 import androidx.media3.common.Player
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
@@ -18,8 +20,11 @@ import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.metadata.applyManualSearchMetadata
 import moe.ouom.neriplayer.core.player.metadata.normalizeCustomMetadataValue
 import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
+import moe.ouom.neriplayer.core.player.model.PersistedPlaybackState
 import moe.ouom.neriplayer.core.player.model.PersistedState
 import moe.ouom.neriplayer.core.player.model.toPersistedSongItem
+import moe.ouom.neriplayer.core.player.model.toPlaybackState
+import moe.ouom.neriplayer.core.player.model.withPlaybackState
 import moe.ouom.neriplayer.core.player.playlist.PlayerFavoritesController
 import moe.ouom.neriplayer.core.player.policy.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.source.toSongItem
@@ -29,8 +34,77 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.data.model.sameIdentityAs
+import java.io.File
+import java.lang.reflect.Type
 
 internal fun PlayerManager.hasItemsImpl(): Boolean = currentPlaylist.isNotEmpty()
+
+private fun PlayerManager.buildPersistedPlaybackState(
+    currentIndexSnapshot: Int,
+    mediaUrlSnapshot: String?,
+    positionMs: Long,
+    shouldResumePlayback: Boolean,
+    repeatMode: Int,
+    shuffleEnabled: Boolean
+): PersistedPlaybackState {
+    return PersistedPlaybackState(
+        index = currentIndexSnapshot,
+        mediaUrl = mediaUrlSnapshot,
+        positionMs = positionMs,
+        shouldResumePlayback = shouldResumePlayback,
+        repeatMode = repeatMode,
+        shuffleEnabled = shuffleEnabled
+    )
+}
+
+private fun PlayerManager.buildPersistedPlaylistState(
+    playlistReference: List<SongItem>,
+    playbackStateSnapshot: PersistedPlaybackState
+): PersistedState {
+    return PersistedState(
+        playlist = playlistReference.mapIndexed { index, song ->
+            // 只给当前歌曲保留内嵌歌词，避免大队列切歌时反复序列化整批长文本
+            song.toPersistedSongItem(
+                includeLyrics = shouldPersistEmbeddedLyrics(song) && index == playbackStateSnapshot.index
+            )
+        },
+        index = playbackStateSnapshot.index,
+        mediaUrl = playbackStateSnapshot.mediaUrl,
+        positionMs = playbackStateSnapshot.positionMs,
+        shouldResumePlayback = playbackStateSnapshot.shouldResumePlayback,
+        repeatMode = playbackStateSnapshot.repeatMode,
+        shuffleEnabled = playbackStateSnapshot.shuffleEnabled
+    )
+}
+
+private fun PlayerManager.writeJson(file: File, payload: Any) {
+    file.outputStream().bufferedWriter().use { writer ->
+        gson.toJson(payload, writer)
+    }
+}
+
+private fun <T> PlayerManager.readJson(file: File, type: Type): T {
+    file.inputStream().bufferedReader().use { reader ->
+        return gson.fromJson(reader, type)
+    }
+}
+
+internal fun PlayerManager.scheduleStatePersist(
+    positionMs: Long = _playbackPositionMs.value.coerceAtLeast(0L),
+    shouldResumePlayback: Boolean = currentPlaylist.isNotEmpty() && shouldResumePlaybackSnapshot(),
+    debounceMs: Long = STATE_PERSIST_DEBOUNCE_MS
+) {
+    scheduledStatePersistJob?.cancel()
+    scheduledStatePersistJob = ioScope.launch {
+        if (debounceMs > 0L) {
+            delay(debounceMs)
+        }
+        persistState(
+            positionMs = positionMs,
+            shouldResumePlayback = shouldResumePlayback
+        )
+    }
+}
 
 private fun PlayerManager.updateCurrentFavorite(song: SongItem, add: Boolean) {
     NPLogger.d(
@@ -94,7 +168,8 @@ internal suspend fun PlayerManager.persistStateImpl(
     positionMs: Long = _playbackPositionMs.value.coerceAtLeast(0L),
     shouldResumePlayback: Boolean = currentPlaylist.isNotEmpty() && shouldResumePlaybackSnapshot()
 ) {
-    val playlistSnapshot = currentPlaylist.toList()
+    scheduledStatePersistJob = null
+    val playlistReference = currentPlaylist
     val currentIndexSnapshot = currentIndex
     val mediaUrlSnapshot = _currentMediaUrl.value
     val persistedShouldResumePlayback =
@@ -110,45 +185,67 @@ internal suspend fun PlayerManager.persistStateImpl(
         Player.REPEAT_MODE_OFF
     }
     val persistedShuffleEnabled = keepPlaybackModeStateEnabled && _shuffleModeFlow.value
+    val playbackStateSnapshot = buildPersistedPlaybackState(
+        currentIndexSnapshot = currentIndexSnapshot,
+        mediaUrlSnapshot = mediaUrlSnapshot,
+        positionMs = persistedPositionMs,
+        shouldResumePlayback = persistedShouldResumePlayback,
+        repeatMode = persistedRepeatMode,
+        shuffleEnabled = persistedShuffleEnabled
+    )
     NPLogger.d(
         "NERI-PlayerManager",
-        "persistState: queueSize=${playlistSnapshot.size}, index=$currentIndexSnapshot, positionMs=$persistedPositionMs, shouldResume=$persistedShouldResumePlayback, repeatMode=$persistedRepeatMode, shuffle=$persistedShuffleEnabled, mediaUrlPresent=${!mediaUrlSnapshot.isNullOrBlank()}"
+        "persistState: queueSize=${playlistReference.size}, index=$currentIndexSnapshot, positionMs=$persistedPositionMs, shouldResume=$persistedShouldResumePlayback, repeatMode=$persistedRepeatMode, shuffle=$persistedShuffleEnabled, mediaUrlPresent=${!mediaUrlSnapshot.isNullOrBlank()}"
     )
 
     withContext(Dispatchers.IO) {
-        try {
-            if (playlistSnapshot.isEmpty()) {
-                restoredResumePositionMs = 0L
-                restoredShouldResumePlayback = false
-                if (stateFile.exists()) {
+        statePersistMutex.withLock {
+            try {
+                if (playlistReference.isEmpty()) {
+                    restoredResumePositionMs = 0L
+                    restoredShouldResumePlayback = false
                     stateFile.delete()
+                    playbackStateFile.delete()
+                    lastPersistedPlaylistReference = null
+                    lastPersistedPlaybackState = null
+                    lastStatePersistAtMs = SystemClock.elapsedRealtime()
                     NPLogger.d(
                         "NERI-PlayerManager",
-                        "persistState: deleted state file because queue is empty, path=${stateFile.absolutePath}"
+                        "persistState: cleared persisted playback state because queue is empty"
+                    )
+                    return@withLock
+                }
+
+                val shouldWriteLegacyState = playlistReference !== lastPersistedPlaylistReference
+                val shouldWritePlaybackState =
+                    shouldWriteLegacyState ||
+                        playbackStateSnapshot != lastPersistedPlaybackState ||
+                        !playbackStateFile.exists()
+
+                if (shouldWriteLegacyState) {
+                    val data = buildPersistedPlaylistState(
+                        playlistReference = playlistReference,
+                        playbackStateSnapshot = playbackStateSnapshot
+                    )
+                    writeJson(stateFile, data)
+                    lastPersistedPlaylistReference = playlistReference
+                    NPLogger.d(
+                        "NERI-PlayerManager",
+                        "persistState: wrote state file, path=${stateFile.absolutePath}, queueSize=${playlistReference.size}, index=$currentIndexSnapshot"
                     )
                 }
-            } else {
-                val data = PersistedState(
-                    playlist = playlistSnapshot.map { song ->
-                        song.toPersistedSongItem(
-                            includeLyrics = shouldPersistEmbeddedLyrics(song)
-                        )
-                    },
-                    index = currentIndexSnapshot,
-                    mediaUrl = mediaUrlSnapshot,
-                    positionMs = persistedPositionMs,
-                    shouldResumePlayback = persistedShouldResumePlayback,
-                    repeatMode = persistedRepeatMode,
-                    shuffleEnabled = persistedShuffleEnabled
-                )
-                stateFile.writeText(gson.toJson(data))
-                NPLogger.d(
-                    "NERI-PlayerManager",
-                    "persistState: wrote state file, path=${stateFile.absolutePath}, queueSize=${playlistSnapshot.size}, index=$currentIndexSnapshot"
-                )
+
+                if (shouldWritePlaybackState) {
+                    writeJson(playbackStateFile, playbackStateSnapshot)
+                    lastPersistedPlaybackState = playbackStateSnapshot
+                }
+
+                if (shouldWriteLegacyState || shouldWritePlaybackState) {
+                    lastStatePersistAtMs = SystemClock.elapsedRealtime()
+                }
+            } catch (e: Exception) {
+                NPLogger.e("PlayerManager", "Failed to persist state", e)
             }
-        } catch (e: Exception) {
-            NPLogger.e("PlayerManager", "Failed to persist state", e)
         }
     }
 }
@@ -357,7 +454,15 @@ internal fun PlayerManager.restoreState() {
             "restoreState: reading ${stateFile.absolutePath}"
         )
         val type = object : TypeToken<PersistedState>() {}.type
-        val data: PersistedState = gson.fromJson(stateFile.readText(), type)
+        val legacyData: PersistedState = readJson(stateFile, type)
+        val playbackState =
+            playbackStateFile.takeIf(File::exists)?.runCatching {
+                readJson<PersistedPlaybackState>(
+                    this,
+                    PersistedPlaybackState::class.java
+                )
+            }?.getOrNull()
+        val data = playbackState?.let(legacyData::withPlaybackState) ?: legacyData
         currentPlaylist = sanitizeRestoredPlaylist(
             data.playlist.map { persistedSong -> persistedSong.toSongItem() }
         )
@@ -425,6 +530,9 @@ internal fun PlayerManager.restoreState() {
         updateResumePlaybackRequested(false)
         _playbackPositionMs.value = restoredResumePositionMs
         currentMediaUrlResolvedAtMs = 0L
+        lastPersistedPlaylistReference = currentPlaylist
+        lastPersistedPlaybackState = data.toPlaybackState()
+        lastStatePersistAtMs = SystemClock.elapsedRealtime()
         NPLogger.d(
             "NERI-PlayerManager",
             "restoreState completed: queueSize=${currentPlaylist.size}, currentIndex=$currentIndex, restoredResumePositionMs=$restoredResumePositionMs, restoredShouldResumePlayback=$restoredShouldResumePlayback, shuffle=${_shuffleModeFlow.value}, repeatMode=$repeatModeSetting, currentSong=${_currentSongFlow.value?.name}, mediaUrlPresent=${!_currentMediaUrl.value.isNullOrBlank()}"

@@ -266,9 +266,7 @@ internal fun PlayerManager.playPlaylistImpl(
         queue = currentPlaylist,
         currentIndex = currentIndex
     )
-    ioScope.launch {
-        persistState()
-    }
+    scheduleStatePersist()
 }
 
 internal fun PlayerManager.rebuildShuffleBag(excludeIndex: Int? = null) {
@@ -328,12 +326,10 @@ internal fun PlayerManager.playAtIndex(
     updateResumePlaybackRequested(true)
     restoredShouldResumePlayback = false
     restoredResumePositionMs = 0L
-    ioScope.launch {
-        persistState(
-            positionMs = resumePositionMs.coerceAtLeast(0L),
-            shouldResumePlayback = true
-        )
-    }
+    scheduleStatePersist(
+        positionMs = resumePositionMs.coerceAtLeast(0L),
+        shouldResumePlayback = true
+    )
 
     if (player.shuffleModeEnabled) {
         shuffleBag.remove(index)
@@ -383,7 +379,7 @@ internal fun PlayerManager.playAtIndex(
                 _currentMediaUrl.value = result.url
                 _currentPlaybackAudioInfo.value = result.audioInfo
                 currentMediaUrlResolvedAtMs = SystemClock.elapsedRealtime()
-                persistState(
+                scheduleStatePersist(
                     positionMs = resumePositionMs.coerceAtLeast(0L),
                     shouldResumePlayback = true
                 )
@@ -431,12 +427,10 @@ internal fun PlayerManager.playAtIndex(
                     "Waiting for authoritative listen-together stream: song=${song.name}, stableKey=${song.listenTogetherStableKeyOrNull()}"
                 )
                 updateResumePlaybackRequested(false)
-                ioScope.launch {
-                    persistState(
-                        positionMs = resumePositionMs.coerceAtLeast(0L),
-                        shouldResumePlayback = false
-                    )
-                }
+                scheduleStatePersist(
+                    positionMs = resumePositionMs.coerceAtLeast(0L),
+                    shouldResumePlayback = false
+                )
             }
             is SongUrlResult.RequiresLogin -> {
                 NPLogger.w(
@@ -614,12 +608,10 @@ internal fun PlayerManager.playImpl(
             )
             val resumePositionMs = player.currentPosition.coerceAtLeast(0L)
             _playbackPositionMs.value = resumePositionMs
-            ioScope.launch {
-                persistState(
-                    positionMs = resumePositionMs,
-                    shouldResumePlayback = true
-                )
-            }
+            scheduleStatePersist(
+                positionMs = resumePositionMs,
+                shouldResumePlayback = true
+            )
             emitPlaybackCommand(
                 type = "PLAY",
                 source = commandSource,
@@ -782,9 +774,10 @@ private fun PlayerManager.pauseInternal(forcePersist: Boolean, resetVolumeToFull
             persistState(positionMs = currentPosition, shouldResumePlayback = false)
         }
     } else {
-        ioScope.launch {
-            persistState(positionMs = currentPosition, shouldResumePlayback = false)
-        }
+        scheduleStatePersist(
+            positionMs = currentPosition,
+            shouldResumePlayback = false
+        )
     }
 }
 
@@ -829,12 +822,10 @@ internal fun PlayerManager.seekToImpl(
     }
     player.seekTo(resolvedPositionMs)
     _playbackPositionMs.value = resolvedPositionMs
-    ioScope.launch {
-        persistState(
-            positionMs = resolvedPositionMs,
-            shouldResumePlayback = shouldResumePlaybackSnapshot()
-        )
-    }
+    scheduleStatePersist(
+        positionMs = resolvedPositionMs,
+        shouldResumePlayback = shouldResumePlaybackSnapshot()
+    )
     emitPlaybackCommand(
         type = "SEEK",
         source = commandSource,
@@ -991,9 +982,7 @@ internal fun PlayerManager.cycleRepeatModeImpl() {
         "NERI-PlayerManager",
         "cycleRepeatMode: previousMode=$previousMode, newMode=$newMode, exoRepeatMode=${player.repeatMode}"
     )
-    ioScope.launch {
-        persistState()
-    }
+    scheduleStatePersist()
 }
 
 internal fun PlayerManager.setShuffleImpl(enabled: Boolean) {
@@ -1012,9 +1001,7 @@ internal fun PlayerManager.setShuffleImpl(enabled: Boolean) {
     } else {
         shuffleBag.clear()
     }
-    ioScope.launch {
-        persistState()
-    }
+    scheduleStatePersist()
 }
 
 internal fun PlayerManager.startProgressUpdates() {
@@ -1056,9 +1043,7 @@ private fun PlayerManager.maybePersistPlaybackProgress(positionMs: Long) {
         "NERI-PlayerManager",
         "maybePersistPlaybackProgress(): positionMs=$positionMs, queueSize=${currentPlaylist.size}, currentIndex=$currentIndex, song=${_currentSongFlow.value?.name}"
     )
-    ioScope.launch {
-        persistState(positionMs = positionMs, shouldResumePlayback = true)
-    }
+    scheduleStatePersist(positionMs = positionMs, shouldResumePlayback = true)
 }
 
 internal fun PlayerManager.stopPlaybackPreservingQueueImpl(clearMediaUrl: Boolean = false) {
@@ -1102,7 +1087,5 @@ internal fun PlayerManager.stopPlaybackPreservingQueueImpl(clearMediaUrl: Boolea
         "NERI-PlayerManager",
         "stopPlaybackPreservingQueue(): completed, queueSize=${currentPlaylist.size}, currentIndex=$currentIndex, retainedSong=${_currentSongFlow.value?.name}, mediaUrlPresent=${!_currentMediaUrl.value.isNullOrBlank()}"
     )
-    ioScope.launch {
-        persistState()
-    }
+    scheduleStatePersist()
 }

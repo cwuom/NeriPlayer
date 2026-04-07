@@ -51,6 +51,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
@@ -61,6 +62,7 @@ import moe.ouom.neriplayer.core.player.model.AudioDevice
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_PITCH
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_SPEED
+import moe.ouom.neriplayer.core.player.model.PersistedPlaybackState
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import moe.ouom.neriplayer.core.player.model.PlaybackEqualizerPresetId
@@ -153,6 +155,7 @@ object PlayerManager {
         get() = LocalPlaylistRepository.getInstance(application)
 
     internal lateinit var stateFile: File
+    internal lateinit var playbackStateFile: File
 
     internal var preferredQuality: String = "exhigh"
     internal var youtubePreferredQuality: String = "very_high"
@@ -182,6 +185,7 @@ object PlayerManager {
     internal const val MEDIA_URL_STALE_MS = 10 * 60 * 1000L
     internal const val URL_REFRESH_COOLDOWN_MS = 10 * 1000L
     internal const val STATE_PERSIST_INTERVAL_MS = 15 * 1000L
+    internal const val STATE_PERSIST_DEBOUNCE_MS = 250L
     internal const val DEFAULT_FADE_DURATION_MS = 500L
     internal const val BLUETOOTH_DISCONNECT_CONFIRM_DELAY_MS = 1200L
     internal const val AUTO_TRANSITION_EXTERNAL_PAUSE_GUARD_MS = 2_000L
@@ -200,7 +204,11 @@ object PlayerManager {
     internal var restoredResumePositionMs: Long = 0L
     internal var restoredShouldResumePlayback = false
     internal var lastStatePersistAtMs: Long = 0L
+    internal var lastPersistedPlaylistReference: List<SongItem>? = null
+    internal var lastPersistedPlaybackState: PersistedPlaybackState? = null
+    internal var scheduledStatePersistJob: Job? = null
     internal var lastAutoTrackAdvanceAtMs: Long = 0L
+    internal val statePersistMutex = Mutex()
     @Volatile
     internal var resumePlaybackRequested = false
         set(value) {

@@ -69,6 +69,10 @@ internal fun PlayerManager.initializeImpl(
 
     runCatching {
         stateFile = File(app.filesDir, "last_playlist.json")
+        playbackStateFile = File(app.filesDir, "last_playback_state.json")
+        lastPersistedPlaylistReference = null
+        lastPersistedPlaybackState = null
+        lastStatePersistAtMs = 0L
         val initialPlaybackPreferences = readPlaybackPreferenceSnapshotSync(app)
         preferredQuality = initialPlaybackPreferences.audioQuality
         youtubePreferredQuality = initialPlaybackPreferences.youtubeAudioQuality
@@ -244,12 +248,10 @@ internal fun PlayerManager.initializeImpl(
                 if (isPlaying) startProgressUpdates() else stopProgressUpdates()
                 val positionMs = player.currentPosition.coerceAtLeast(0L)
                 val shouldResumePlayback = shouldResumePlaybackSnapshot()
-                ioScope.launch {
-                    persistState(
-                        positionMs = positionMs,
-                        shouldResumePlayback = shouldResumePlayback
-                    )
-                }
+                scheduleStatePersist(
+                    positionMs = positionMs,
+                    shouldResumePlayback = shouldResumePlayback
+                )
             }
 
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {

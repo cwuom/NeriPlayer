@@ -172,7 +172,11 @@ fun DownloadProgressScreen(
                     bottom = 16.dp + miniPlayerHeight
                 )
             ) {
-                items(downloadTasks, key = { it.song.stableKey() }) { task ->
+                items(
+                    items = downloadTasks,
+                    key = { it.song.stableKey() },
+                    contentType = { task -> task.status }
+                ) { task ->
                     val songKey = task.song.stableKey()
                     val canDismiss = task.status == DownloadStatus.COMPLETED || task.status == DownloadStatus.CANCELLED
 
@@ -220,11 +224,7 @@ fun DownloadProgressScreen(
                                 context.performHapticFeedback()
                                 GlobalDownloadManager.resumeDownloadTask(context, songKey)
                             },
-                            modifier = Modifier.animateItem(
-                                fadeInSpec = tween(durationMillis = 250),
-                                fadeOutSpec = tween(durationMillis = 250),
-                                placementSpec = tween(durationMillis = 250)
-                            )
+                            modifier = Modifier
                         )
                     }
                 }
@@ -240,6 +240,8 @@ private fun DownloadTaskItem(
     modifier: Modifier = Modifier,
     onResume: () -> Unit = {}
 ) {
+    val songName = remember(task.song) { task.song.displayName() }
+    val songArtist = remember(task.song) { task.song.displayArtist() }
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -257,39 +259,22 @@ private fun DownloadTaskItem(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // 状态图标
-                Icon(
-                    when (task.status) {
-                        DownloadStatus.DOWNLOADING -> Icons.Default.CloudDownload
-                        DownloadStatus.COMPLETED -> Icons.Default.CheckCircle
-                        DownloadStatus.FAILED -> Icons.Default.Error
-                        DownloadStatus.CANCELLED -> Icons.Default.Cancel
-                    },
-                    contentDescription = null,
-                    tint = when (task.status) {
-                        DownloadStatus.DOWNLOADING -> MaterialTheme.colorScheme.primary
-                        DownloadStatus.COMPLETED -> Color(0xFF4CAF50)
-                        DownloadStatus.FAILED -> MaterialTheme.colorScheme.error
-                        DownloadStatus.CANCELLED -> MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                    modifier = Modifier.size(24.dp)
-                )
+                DownloadTaskStatusIcon(task.status)
 
                 Spacer(modifier = Modifier.width(12.dp))
 
-                // 歌曲信息
                 Column(
                     modifier = Modifier.weight(1f)
                 ) {
                     Text(
-                        text = task.song.displayName(),
+                        text = songName,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Medium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = task.song.displayArtist(),
+                        text = songArtist,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -297,123 +282,170 @@ private fun DownloadTaskItem(
                     )
                 }
 
-                // 取消/恢复按钮
-                when (task.status) {
-                    DownloadStatus.DOWNLOADING -> {
-                        IconButton(onClick = onCancel) {
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = stringResource(R.string.download_cancel_download),
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                        }
-                    }
-                    DownloadStatus.CANCELLED -> {
-                        IconButton(onClick = onResume) {
-                            Icon(
-                                Icons.Default.Refresh,
-                                contentDescription = stringResource(R.string.download_to_local),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                    else -> {}
-                }
+                DownloadTaskActionButton(
+                    status = task.status,
+                    onCancel = onCancel,
+                    onResume = onResume
+                )
             }
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // 进度条和信息
-            when (task.status) {
-                DownloadStatus.DOWNLOADING -> {
-                    task.progress?.let { progress ->
-                        Column {
-                            if (progress.stage == AudioDownloadManager.DownloadStage.FINALIZING) {
-                                Text(
-                                    text = stringResource(R.string.download_finalizing),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                LinearProgressIndicator(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(4.dp)
-                                        .clip(RoundedCornerShape(2.dp))
-                                )
-                            } else if (progress.totalBytes > 0L) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text(
-                                        text = "${progress.percentage}%",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                    Text(
-                                        text = "${formatFileSize(progress.bytesRead)} / ${formatFileSize(progress.totalBytes)}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                Spacer(modifier = Modifier.height(4.dp))
-                                LinearProgressIndicator(
-                                    progress = {
-                                        (progress.bytesRead.toFloat() / progress.totalBytes.toFloat())
-                                            .coerceIn(0f, 1f)
-                                    },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(4.dp)
-                                        .clip(RoundedCornerShape(2.dp)),
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "${formatFileSize(progress.speedBytesPerSec)}/s",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            } else {
-                                LinearProgressIndicator(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(4.dp)
-                                        .clip(RoundedCornerShape(2.dp))
-                                )
-                            }
-                        }
-                    } ?: run {
-                        LinearProgressIndicator(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(4.dp)
-                                .clip(RoundedCornerShape(2.dp))
-                        )
-                    }
-                }
-                DownloadStatus.COMPLETED -> {
-                    Text(
-                        text = stringResource(R.string.download_completed),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF4CAF50)
-                    )
-                }
-                DownloadStatus.FAILED -> {
-                    Text(
-                        text = stringResource(R.string.download_failed),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-                DownloadStatus.CANCELLED -> {
-                    Text(
-                        text = stringResource(R.string.download_cancelled_status),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
+            DownloadTaskProgressSection(task = task)
         }
     }
+}
+
+@Composable
+private fun DownloadTaskStatusIcon(status: DownloadStatus) {
+    Icon(
+        imageVector = when (status) {
+            DownloadStatus.DOWNLOADING -> Icons.Default.CloudDownload
+            DownloadStatus.COMPLETED -> Icons.Default.CheckCircle
+            DownloadStatus.FAILED -> Icons.Default.Error
+            DownloadStatus.CANCELLED -> Icons.Default.Cancel
+        },
+        contentDescription = null,
+        tint = when (status) {
+            DownloadStatus.DOWNLOADING -> MaterialTheme.colorScheme.primary
+            DownloadStatus.COMPLETED -> Color(0xFF4CAF50)
+            DownloadStatus.FAILED -> MaterialTheme.colorScheme.error
+            DownloadStatus.CANCELLED -> MaterialTheme.colorScheme.onSurfaceVariant
+        },
+        modifier = Modifier.size(24.dp)
+    )
+}
+
+@Composable
+private fun DownloadTaskActionButton(
+    status: DownloadStatus,
+    onCancel: () -> Unit,
+    onResume: () -> Unit
+) {
+    when (status) {
+        DownloadStatus.DOWNLOADING -> {
+            IconButton(onClick = onCancel) {
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = stringResource(R.string.download_cancel_download),
+                    tint = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+
+        DownloadStatus.CANCELLED -> {
+            IconButton(onClick = onResume) {
+                Icon(
+                    Icons.Default.Refresh,
+                    contentDescription = stringResource(R.string.download_to_local),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+
+        else -> Unit
+    }
+}
+
+@Composable
+private fun DownloadTaskProgressSection(task: DownloadTask) {
+    when (task.status) {
+        DownloadStatus.DOWNLOADING -> {
+            val progress = task.progress
+            if (progress == null) {
+                DownloadTaskIndeterminateProgress()
+                return
+            }
+            if (progress.stage == AudioDownloadManager.DownloadStage.FINALIZING) {
+                Text(
+                    text = stringResource(R.string.download_finalizing),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                DownloadTaskIndeterminateProgress()
+                return
+            }
+            if (progress.totalBytes <= 0L) {
+                DownloadTaskIndeterminateProgress()
+                return
+            }
+
+            val progressFraction = remember(progress.bytesRead, progress.totalBytes) {
+                (progress.bytesRead.toFloat() / progress.totalBytes.toFloat())
+                    .coerceIn(0f, 1f)
+            }
+            val progressText = remember(progress.percentage) { "${progress.percentage}%" }
+            val sizeText = remember(progress.bytesRead, progress.totalBytes) {
+                "${formatFileSize(progress.bytesRead)} / ${formatFileSize(progress.totalBytes)}"
+            }
+            val speedText = remember(progress.speedBytesPerSec) {
+                "${formatFileSize(progress.speedBytesPerSec)}/s"
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = progressText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = sizeText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            LinearProgressIndicator(
+                progress = { progressFraction },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = speedText,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        DownloadStatus.COMPLETED -> {
+            Text(
+                text = stringResource(R.string.download_completed),
+                style = MaterialTheme.typography.bodySmall,
+                color = Color(0xFF4CAF50)
+            )
+        }
+
+        DownloadStatus.FAILED -> {
+            Text(
+                text = stringResource(R.string.download_failed),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
+
+        DownloadStatus.CANCELLED -> {
+            Text(
+                text = stringResource(R.string.download_cancelled_status),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun DownloadTaskIndeterminateProgress() {
+    LinearProgressIndicator(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(4.dp)
+            .clip(RoundedCornerShape(2.dp))
+    )
 }

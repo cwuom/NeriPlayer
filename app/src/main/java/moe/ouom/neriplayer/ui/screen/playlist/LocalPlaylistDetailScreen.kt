@@ -149,6 +149,7 @@ import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -321,9 +322,14 @@ fun LocalPlaylistDetailScreen(
             val keyboardController = LocalSoftwareKeyboardController.current
             
             // 下载进度
-            val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
-            val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsState()
-            val hasDownloadManagerEntry = remember(downloadTasks) { downloadTasks.isNotEmpty() }
+            val hasDownloadManagerEntryFlow = remember {
+                GlobalDownloadManager.downloadTasks
+                    .map { tasks -> tasks.isNotEmpty() }
+                    .distinctUntilChanged()
+            }
+            val hasDownloadManagerEntry by hasDownloadManagerEntryFlow.collectAsState(
+                initial = GlobalDownloadManager.downloadTasks.value.isNotEmpty()
+            )
             val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsState()
 
             // Snackbar状态
@@ -1506,6 +1512,8 @@ fun LocalPlaylistDetailScreen(
 
                 // 下载管理器
                 if (showDownloadManager) {
+                    val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
+                    val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsState()
                     ModalBottomSheet(
                         onDismissRequest = { showDownloadManager = false },
                         sheetGesturesEnabled = false

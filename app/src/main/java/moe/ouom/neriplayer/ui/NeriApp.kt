@@ -471,6 +471,39 @@ fun NeriApp(
     initialThemeSnapshot: ThemePreferenceSnapshot = ThemePreferenceSnapshot(),
     onIsDarkChanged: (Boolean) -> Unit = {}
 ) {
+    var appContentReady by rememberSaveable { mutableStateOf(false) }
+    val bootstrapIsDark = when {
+        initialThemeSnapshot.forceDark -> true
+        initialThemeSnapshot.followSystemDark -> isSystemInDarkTheme()
+        else -> false
+    }
+
+    LaunchedEffect(Unit) {
+        // 先交一个极轻的背景首帧，下一帧再挂整棵导航和状态订阅树
+        withFrameNanos { }
+        appContentReady = true
+    }
+
+    if (!appContentReady) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(if (bootstrapIsDark) Color(0xFF121212) else Color.White)
+        )
+        return
+    }
+
+    NeriAppContent(
+        initialThemeSnapshot = initialThemeSnapshot,
+        onIsDarkChanged = onIsDarkChanged
+    )
+}
+
+@Composable
+private fun NeriAppContent(
+    initialThemeSnapshot: ThemePreferenceSnapshot = ThemePreferenceSnapshot(),
+    onIsDarkChanged: (Boolean) -> Unit = {}
+) {
     val context = LocalContext.current
     val rootView = LocalView.current
     val repo = remember { AppContainer.settingsRepo }
@@ -616,6 +649,7 @@ fun NeriApp(
     }
 
     LaunchedEffect(application) {
+        withFrameNanos { }
         PlayerManager.initialize(application, startupPlaybackPreferences.maxCacheSizeBytes)
         NPLogger.d("NERI-App", "PlayerManager.initialize called")
         NPLogger.d(

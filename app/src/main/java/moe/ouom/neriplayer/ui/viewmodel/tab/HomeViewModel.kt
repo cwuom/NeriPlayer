@@ -29,8 +29,10 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
@@ -47,6 +49,7 @@ private const val HOME_SEARCH_HOT_KEYWORD = "热歌"
 private const val HOME_SEARCH_RADAR_KEYWORD = "私人雷达"
 private const val HOME_MAX_FAILURE_BEFORE_WARNING = 3
 private const val HOME_YT_MUSIC_PLAYLIST_LIMIT = 24
+private const val HOME_INITIAL_LOAD_DEFER_MS = 250L
 
 private class ApiCodeException(val code: Int) : IllegalStateException("api_code=$code")
 private fun shouldFallbackRecommend(code: Int): Boolean = code == 301 || code == 50000005
@@ -87,10 +90,17 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private var ytMusicPlaylistJob: Job? = null
     private var ytMusicHomeFeedJob: Job? = null
     private var hasRecommendLogin = false
+    private var homeRecommendationsBootstrapped = false
 
     private fun localizedAppContext() = LanguageManager.applyLanguage(getApplication())
 
     init {
+        val initialCookies = repo.getCookiesOnce().toMutableMap().apply {
+            putIfAbsent("os", "pc")
+        }
+        hasRecommendLogin = !initialCookies["MUSIC_U"].isNullOrBlank()
+        _uiState.value = _uiState.value.copy(hasLogin = hasRecommendLogin)
+
         // 观察国际化设置变化，切换推荐源
         viewModelScope.launch {
             AppContainer.settingsRepo.internationalizationEnabledFlow.collect { enabled ->
@@ -104,7 +114,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
         // 登录后自动刷新首页推荐歌单
         viewModelScope.launch {
-            repo.cookieFlow.collect { raw ->
+            repo.cookieFlow.drop(1).collect { raw ->
                 val cookies = raw.toMutableMap()
                 if (!cookies.containsKey("os")) cookies["os"] = "pc"
                 NPLogger.d(TAG, "cookieFlow updated: keys=${cookies.keys.joinToString()}")
@@ -113,14 +123,22 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 hasRecommendLogin = nextHasLogin
                 if (loginChanged) {
                     _uiState.value = _uiState.value.copy(hasLogin = nextHasLogin)
+                    refreshRecommend()
                 }
-                refreshRecommend()
-                if (hasRecommendLogin) {
+                if (!homeRecommendationsBootstrapped) {
+                    homeRecommendationsBootstrapped = true
                     loadHomeRecommendations(force = true)
                 }
             }
         }
-        loadHomeRecommendations(force = true)
+        viewModelScope.launch {
+            delay(HOME_INITIAL_LOAD_DEFER_MS)
+            refreshRecommend()
+            if (!homeRecommendationsBootstrapped) {
+                homeRecommendationsBootstrapped = true
+                loadHomeRecommendations(force = true)
+            }
+        }
     }
 
     /** 拉首页推荐歌单 */

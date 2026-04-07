@@ -1423,7 +1423,11 @@ fun NowPlayingScreen(
                         state = listState,
                         modifier = Modifier.bottomSheetScrollGuard()
                     ) {
-                        itemsIndexed(displayedQueue) { index, song ->
+                        itemsIndexed(
+                            items = displayedQueue,
+                            key = { _, song -> song.stableKey() },
+                            contentType = { _, _ -> "queue_song" }
+                        ) { index, song ->
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -1524,7 +1528,11 @@ fun NowPlayingScreen(
                     sheetGesturesEnabled = false
                 ) {
                     LazyColumn(modifier = Modifier.bottomSheetScrollGuard()) {
-                        itemsIndexed(selectablePlaylists) { _, pl ->
+                        itemsIndexed(
+                            items = selectablePlaylists,
+                            key = { _, pl -> pl.id },
+                            contentType = { _, _ -> "playlist_option" }
+                        ) { _, pl ->
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -2026,7 +2034,13 @@ fun MoreOptionsSheet(
                                         !searchResultsListState.canScrollBackward
                                     }
                                 ) {
-                                    items(searchState.searchResults) { songResult ->
+                                    items(
+                                        items = searchState.searchResults,
+                                        key = { songResult ->
+                                            "${songResult.source.name}:${songResult.id}"
+                                        },
+                                        contentType = { "search_result" }
+                                    ) { songResult ->
                                         ListItem(
                                             headlineContent = { Text(songResult.songName, maxLines = 1) },
                                             supportingContent = { Text(songResult.singer, maxLines = 1) },
@@ -2918,7 +2932,13 @@ fun EditSongInfoSheet(
                             modifier = Modifier.bottomSheetScrollGuard(),
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            items(searchState.searchResults) { songResult ->
+                            items(
+                                items = searchState.searchResults,
+                                key = { songResult ->
+                                    "${songResult.source.name}:${songResult.id}"
+                                },
+                                contentType = { "search_result" }
+                            ) { songResult ->
                                 androidx.compose.material3.Card(
                                     modifier = Modifier.fillMaxWidth(),
                                     shape = RoundedCornerShape(18.dp),

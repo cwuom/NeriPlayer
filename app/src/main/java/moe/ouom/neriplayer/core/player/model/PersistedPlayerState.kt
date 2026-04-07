@@ -117,3 +117,34 @@ internal data class PersistedState(
     val repeatMode: Int? = null,
     val shuffleEnabled: Boolean? = null
 )
+
+internal data class PersistedPlaybackState(
+    val index: Int,
+    val mediaUrl: String? = null,
+    val positionMs: Long = 0L,
+    val shouldResumePlayback: Boolean = false,
+    val repeatMode: Int? = null,
+    val shuffleEnabled: Boolean? = null
+)
+
+internal fun PersistedState.toPlaybackState(): PersistedPlaybackState {
+    return PersistedPlaybackState(
+        index = index,
+        mediaUrl = mediaUrl,
+        positionMs = positionMs,
+        shouldResumePlayback = shouldResumePlayback,
+        repeatMode = repeatMode,
+        shuffleEnabled = shuffleEnabled
+    )
+}
+
+internal fun PersistedState.withPlaybackState(playbackState: PersistedPlaybackState): PersistedState {
+    return copy(
+        index = playbackState.index,
+        mediaUrl = playbackState.mediaUrl,
+        positionMs = playbackState.positionMs,
+        shouldResumePlayback = playbackState.shouldResumePlayback,
+        repeatMode = playbackState.repeatMode,
+        shuffleEnabled = playbackState.shuffleEnabled
+    )
+}
