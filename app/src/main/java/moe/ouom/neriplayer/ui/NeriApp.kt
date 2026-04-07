@@ -157,6 +157,7 @@ import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.ui.component.NeriBottomBar
 import moe.ouom.neriplayer.ui.component.NeriMiniPlayer
 import moe.ouom.neriplayer.ui.component.ThemeRevealOverlay
+import moe.ouom.neriplayer.ui.component.blockUnderlyingTouches
 import moe.ouom.neriplayer.ui.screen.DownloadManagerScreen
 import moe.ouom.neriplayer.ui.screen.DownloadProgressScreen
 import moe.ouom.neriplayer.ui.screen.NowPlayingScreen
@@ -1841,7 +1842,11 @@ private fun NeriAppContent(
                             currentSongNP.resolveUiCoverSource(context)
                         }
 
-                        Box(Modifier.fillMaxSize()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .blockUnderlyingTouches()
+                        ) {
                             val coverBlurAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
                             val hasCoverBlur =
                                 coverBlurAvailable &&
