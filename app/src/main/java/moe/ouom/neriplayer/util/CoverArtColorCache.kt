@@ -10,6 +10,7 @@ import coil.Coil
 import coil.request.ImageRequest
 import coil.request.SuccessResult
 import coil.size.Precision
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -23,6 +24,7 @@ object CoverArtColorCache {
     private const val COVER_ART_COLOR_SAMPLE_SIZE_PX = 96
     private val cache = LruCache<String, CoverArtColorSample>(CACHE_SIZE)
     private val cacheLock = Any()
+    private val inFlightLoads = mutableMapOf<String, CompletableDeferred<CoverArtColorSample?>>()
 
     fun peek(coverUrl: String?): CoverArtColorSample? {
         if (coverUrl.isNullOrBlank()) return null
@@ -39,20 +41,51 @@ object CoverArtColorCache {
     suspend fun getOrLoad(context: Context, coverUrl: String): CoverArtColorSample? {
         peek(coverUrl)?.let { return it }
 
+        var pendingLoad: CompletableDeferred<CoverArtColorSample?>? = null
+        var ownsLoad = false
+        synchronized(cacheLock) {
+            val cached = cache.get(coverUrl)
+            if (cached != null) {
+                return cached
+            }
+            pendingLoad = inFlightLoads[coverUrl]
+            if (pendingLoad == null) {
+                pendingLoad = CompletableDeferred()
+                inFlightLoads[coverUrl] = pendingLoad!!
+                ownsLoad = true
+            }
+        }
+        val deferred = pendingLoad ?: return null
+        if (!ownsLoad) {
+            return deferred.await()
+        }
+
+        val sample = runCatching {
+            loadSample(context, coverUrl)
+        }.getOrNull()
+
+        synchronized(cacheLock) {
+            if (sample != null) {
+                cache.put(coverUrl, sample)
+            }
+            inFlightLoads.remove(coverUrl)
+        }
+        deferred.complete(sample)
+        return sample
+    }
+
+    private suspend fun loadSample(context: Context, coverUrl: String): CoverArtColorSample? {
         val loader = Coil.imageLoader(context)
         val request = ImageRequest.Builder(context)
             .data(coverUrl)
             .allowHardware(false)
+            .bitmapConfig(Bitmap.Config.RGB_565)
             .size(COVER_ART_COLOR_SAMPLE_SIZE_PX)
             .precision(Precision.INEXACT)
             .build()
         val result = withContext(Dispatchers.IO) { loader.execute(request) }
         val bitmap = ((result as? SuccessResult)?.drawable as? BitmapDrawable)?.bitmap ?: return null
-        val sample = withContext(Dispatchers.Default) { extract(bitmap) }
-        synchronized(cacheLock) {
-            cache.put(coverUrl, sample)
-        }
-        return sample
+        return withContext(Dispatchers.Default) { extract(bitmap) }
     }
 
     private fun extract(bitmap: Bitmap): CoverArtColorSample {

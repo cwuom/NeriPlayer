@@ -120,6 +120,9 @@ object PlayerManager {
         skipFrames: Int = 2,
         maxFrames: Int = 6
     ): String {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            return "main"
+        }
         return Throwable().stackTrace
             .drop(skipFrames)
             .take(maxFrames)

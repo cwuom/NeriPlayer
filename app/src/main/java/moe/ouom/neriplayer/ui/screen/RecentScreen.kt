@@ -191,8 +191,7 @@ fun RecentScreen(
     // 当前播放态
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
     val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
-    val downloadedSongs by GlobalDownloadManager.downloadedSongs.collectAsState()
-    val downloadedSongFilePaths = remember(downloadedSongs) { downloadedSongs.map { it.filePath } }
+    val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsState()
 
     // 清空确认
     var showClearConfirm by remember { mutableStateOf(false) }
@@ -351,7 +350,7 @@ fun RecentScreen(
                     RecentRowRich(
                         index = index + 1,
                         song = song,
-                        downloadedSongFilePaths = downloadedSongFilePaths,
+                        downloadPresenceVersion = downloadPresenceVersion,
                         selectionMode = selectionMode,
                         selected = song.stableKey() in selectedKeys,
                         isCurrentSong = currentSong?.sameIdentityAs(song) == true,
@@ -467,7 +466,7 @@ fun RecentScreen(
 private fun RecentRowRich(
     index: Int,
     song: SongItem,
-    downloadedSongFilePaths: List<String>,
+    downloadPresenceVersion: Int,
     selectionMode: Boolean,
     selected: Boolean,
     isCurrentSong: Boolean,
@@ -552,7 +551,12 @@ private fun RecentRowRich(
         // 封面
         if (!coverUrl.isNullOrBlank()) {
             AsyncImage(
-                model = offlineCachedImageRequest(ctx, coverUrl),
+                model = offlineCachedImageRequest(
+                    context = ctx,
+                    data = coverUrl,
+                    sizePx = 192,
+                    allowHardware = false
+                ),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
@@ -574,7 +578,7 @@ private fun RecentRowRich(
                     style = MaterialTheme.typography.titleMedium
                 )
                 // 已下载标志
-                if (remember(downloadedSongFilePaths, song) {
+                if (remember(downloadPresenceVersion, song) {
                         AudioDownloadManager.hasLocalDownload(ctx, song)
                     }) {
                     Spacer(Modifier.width(6.dp))

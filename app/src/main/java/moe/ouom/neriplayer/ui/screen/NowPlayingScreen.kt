@@ -356,7 +356,9 @@ fun NowPlayingScreen(
 
     val playlists by PlayerManager.playlistsFlow.collectAsState()
     val context = LocalContext.current
-    val currentCoverUrl = currentSong?.displayCoverUrl(context)
+    val currentCoverUrl = remember(currentSong, context) {
+        currentSong?.displayCoverUrl(context)
+    }
 
     // 点击即切换，回流后撤销覆盖
     var favOverride by remember(currentSong) { mutableStateOf<Boolean?>(null) }
@@ -820,6 +822,9 @@ fun NowPlayingScreen(
                             isLandscape -> minOf(windowWidthDp * 0.45f, maxHeight * 0.5f, maxWidth)
                             else -> minOf(maxWidth * 0.6f, maxHeight * 0.65f)
                         }
+                        val coverRequestSizePx = with(LocalDensity.current) {
+                            coverSize.roundToPx().coerceAtLeast(256)
+                        }
                         Box(
                             modifier = Modifier
                                 .align(Alignment.Center)
@@ -859,7 +864,14 @@ fun NowPlayingScreen(
                             ) {
                                 currentCoverUrl?.let { cover ->
                                     AsyncImage(
-                                        model = offlineCachedImageRequest(context, cover),
+                                        model = remember(context, cover, coverRequestSizePx) {
+                                            offlineCachedImageRequest(
+                                                context = context,
+                                                data = cover,
+                                                sizePx = coverRequestSizePx,
+                                                allowHardware = false
+                                            )
+                                        },
                                         contentDescription = currentSong?.customName ?: currentSong?.name ?: "",
                                         contentScale = ContentScale.Crop,
                                         modifier = Modifier.fillMaxSize()
@@ -1654,9 +1666,9 @@ fun MoreOptionsSheet(
     val canSwitchQuality = qualityOptions.size > 1
     val currentQualityLabel = currentPlaybackAudioInfo?.qualityLabel
     val playbackSoundState by PlayerManager.playbackSoundStateFlow.collectAsState()
-    val downloadedSongs by GlobalDownloadManager.downloadedSongs.collectAsState()
+    val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsState()
     val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsState()
-    val hasLocalDownload = remember(downloadedSongs, originalSong, context) {
+    val hasLocalDownload = remember(downloadPresenceVersion, originalSong, context) {
         AudioDownloadManager.hasLocalDownload(context, originalSong)
     }
     val downloadSongKey = remember(originalSong) { originalSong.stableKey() }
@@ -2519,7 +2531,12 @@ fun EditSongInfoSheet(
                     contentAlignment = Alignment.Center
                 ) {
                     AsyncImage(
-                        model = offlineCachedImageRequest(context, coverUrl),
+                        model = offlineCachedImageRequest(
+                            context = context,
+                            data = coverUrl,
+                            sizePx = 384,
+                            allowHardware = false
+                        ),
                         contentDescription = stringResource(R.string.music_edit_cover),
                         modifier = Modifier
                             .size(120.dp)

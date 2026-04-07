@@ -29,7 +29,9 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -69,6 +71,18 @@ data class PlayedEntry(
     val playedAt: Long
 )
 
+internal enum class PlayHistorySyncUrgency {
+    SETTLED,
+    IMMEDIATE
+}
+
+internal fun playHistoryAutoSyncDelayMillis(urgency: PlayHistorySyncUrgency): Long {
+    return when (urgency) {
+        PlayHistorySyncUrgency.SETTLED -> 15_000L
+        PlayHistorySyncUrgency.IMMEDIATE -> 0L
+    }
+}
+
 class PlayHistoryRepository private constructor(private val app: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val gson = Gson()
@@ -78,6 +92,7 @@ class PlayHistoryRepository private constructor(private val app: Context) {
     private val storage by lazy { SecureTokenStorage(app) }
     private var lastBatchSyncTime = 0L
     private val historyMutex = Mutex()
+    private var pendingSettledSyncJob: Job? = null
 
     private fun loadFromDisk(): List<PlayedEntry> {
         return try {
@@ -101,16 +116,16 @@ class PlayHistoryRepository private constructor(private val app: Context) {
         }
     }
 
-    private fun triggerSyncIfNeeded() {
+    private fun triggerSyncIfNeeded(urgency: PlayHistorySyncUrgency = PlayHistorySyncUrgency.IMMEDIATE) {
         try {
             val mode = storage.getPlayHistoryUpdateMode()
             val now = System.currentTimeMillis()
             when (mode) {
-                SecureTokenStorage.PlayHistoryUpdateMode.IMMEDIATE -> triggerAutoSync()
+                SecureTokenStorage.PlayHistoryUpdateMode.IMMEDIATE -> triggerAutoSync(urgency)
                 SecureTokenStorage.PlayHistoryUpdateMode.BATCHED -> {
                     if (now - lastBatchSyncTime >= 10 * 60 * 1000) {
                         lastBatchSyncTime = now
-                        triggerAutoSync()
+                        triggerAutoSync(urgency)
                     }
                 }
             }
@@ -118,7 +133,22 @@ class PlayHistoryRepository private constructor(private val app: Context) {
         }
     }
 
-    private fun triggerAutoSync() {
+    private fun triggerAutoSync(urgency: PlayHistorySyncUrgency) {
+        val delayMs = playHistoryAutoSyncDelayMillis(urgency)
+        if (delayMs > 0L) {
+            pendingSettledSyncJob?.cancel()
+            pendingSettledSyncJob = scope.launch {
+                delay(delayMs)
+                triggerAutoSyncNow()
+            }
+            return
+        }
+        pendingSettledSyncJob?.cancel()
+        pendingSettledSyncJob = null
+        triggerAutoSyncNow()
+    }
+
+    private fun triggerAutoSyncNow() {
         try {
             storage.markSyncMutation()
             if (!storage.isAutoSyncEnabled()) {
@@ -168,7 +198,7 @@ class PlayHistoryRepository private constructor(private val app: Context) {
                 if (!LocalSongSupport.isLocalSong(song.album, song.mediaUri, song.albumId, app)) {
                     storage.removeRecentPlayDeletion(song.identityKey())
                 }
-                triggerSyncIfNeeded()
+                triggerSyncIfNeeded(PlayHistorySyncUrgency.SETTLED)
             }
         }
     }
@@ -196,7 +226,7 @@ class PlayHistoryRepository private constructor(private val app: Context) {
 
                 _history.value = updated
                 persistToDisk(updated)
-                triggerSyncIfNeeded()
+                triggerSyncIfNeeded(PlayHistorySyncUrgency.SETTLED)
             }
         }
     }

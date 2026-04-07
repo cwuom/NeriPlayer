@@ -25,7 +25,6 @@ package moe.ouom.neriplayer.ui.screen
 
 
 import android.app.Application
-import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -51,14 +50,12 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.net.toUri
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.DownloadedSong
-import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.DownloadManagerViewModel
 import moe.ouom.neriplayer.util.formatDate
@@ -504,27 +501,8 @@ private fun DownloadedSongItem(
     onLongClick: () -> Unit
 ) {
     val context = LocalContext.current
-    val resolvedCover = remember(song.coverPath, song.customCoverUrl, song.coverUrl, song.filePath) {
-        song.customCoverUrl
-            ?.takeIf { it.isNotBlank() }
-            ?: song.coverPath
-            ?.takeIf { it.isNotBlank() }
-            ?.let { coverPath ->
-                if (coverPath.startsWith("/")) {
-                    File(coverPath).takeIf(File::exists)?.toURI()?.toString()
-                } else {
-                    coverPath
-                }
-            }
-            ?: song.coverUrl?.takeIf { it.isNotBlank() }
-            ?: runCatching {
-                val localUri = if (song.filePath.startsWith("/")) {
-                    Uri.fromFile(File(song.filePath))
-                } else {
-                    song.filePath.toUri()
-                }
-                LocalMediaSupport.inspect(context, localUri).coverUri
-            }.getOrNull()
+    val resolvedCover = remember(song.coverPath, song.customCoverUrl, song.coverUrl) {
+        resolveDownloadedSongCoverReference(song)
     }
 
     Card(
@@ -572,7 +550,14 @@ private fun DownloadedSongItem(
             // 封面或音乐图标
             if (!resolvedCover.isNullOrBlank()) {
                 AsyncImage(
-                    model = offlineCachedImageRequest(context, resolvedCover),
+                    model = remember(context, resolvedCover) {
+                        offlineCachedImageRequest(
+                            context = context,
+                            data = resolvedCover,
+                            sizePx = 128,
+                            allowHardware = false
+                        )
+                    },
                     contentDescription = null,
                     modifier = Modifier
                         .size(48.dp)
@@ -652,4 +637,19 @@ private fun DownloadedSongItem(
             }
         }
     }
+}
+
+internal fun resolveDownloadedSongCoverReference(song: DownloadedSong): String? {
+    return song.customCoverUrl
+        ?.takeIf(String::isNotBlank)
+        ?: song.coverPath
+            ?.takeIf(String::isNotBlank)
+            ?.let { coverPath ->
+                if (!coverPath.startsWith("/")) {
+                    coverPath
+                } else {
+                    File(coverPath).takeIf(File::exists)?.toURI()?.toString()
+                }
+            }
+        ?: song.coverUrl?.takeIf(String::isNotBlank)
 }

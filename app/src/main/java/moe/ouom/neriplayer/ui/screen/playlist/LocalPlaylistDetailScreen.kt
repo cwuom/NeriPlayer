@@ -321,7 +321,7 @@ fun LocalPlaylistDetailScreen(
             
             // 下载进度
             val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
-            val downloadedSongs by GlobalDownloadManager.downloadedSongs.collectAsState()
+            val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsState()
 
             // Snackbar状态
             val snackbarHostState = remember { SnackbarHostState() }
@@ -991,7 +991,12 @@ fun LocalPlaylistDetailScreen(
                                         baseQueue.firstOrNull { !it.displayCoverUrl(headerContext).isNullOrBlank() }
                                             ?.displayCoverUrl(headerContext)
                                     AsyncImage(
-                                        model = offlineCachedImageRequest(headerContext, headerCover),
+                                        model = offlineCachedImageRequest(
+                                            context = headerContext,
+                                            data = headerCover,
+                                            sizePx = 768,
+                                            allowHardware = false
+                                        ),
                                         contentDescription = playlist.name,
                                         contentScale = ContentScale.Crop,
                                         modifier = Modifier
@@ -1127,7 +1132,12 @@ fun LocalPlaylistDetailScreen(
                                             val displayCoverUrl = song.displayCoverUrl(itemContext)
                                             if (!displayCoverUrl.isNullOrBlank()) {
                                                 AsyncImage(
-                                                    model = offlineCachedImageRequest(itemContext, displayCoverUrl),
+                                                    model = offlineCachedImageRequest(
+                                                        context = itemContext,
+                                                        data = displayCoverUrl,
+                                                        sizePx = 192,
+                                                        allowHardware = false
+                                                    ),
                                                     contentDescription = null,
                                                     contentScale = ContentScale.Crop,
                                                     modifier = Modifier
@@ -1152,7 +1162,7 @@ fun LocalPlaylistDetailScreen(
                                                         style = MaterialTheme.typography.titleMedium
                                                     )
                                                     // 下载完成标志
-                                                    if (remember(downloadedSongs, song, itemContext) {
+                                                    if (remember(downloadPresenceVersion, song, itemContext) {
                                                             AudioDownloadManager.hasLocalDownload(
                                                                 itemContext,
                                                                 song

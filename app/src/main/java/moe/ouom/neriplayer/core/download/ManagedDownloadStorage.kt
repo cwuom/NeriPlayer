@@ -5,8 +5,18 @@ import android.net.Uri
 import android.os.Environment
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.identity
@@ -27,8 +37,10 @@ internal object ManagedDownloadStorage {
     private const val COVER_SUBDIRECTORY = "Covers"
     private const val NO_MEDIA_FILE_NAME = ".nomedia"
     private const val SNAPSHOT_CACHE_FILE_NAME = "managed_download_snapshot_v1.json"
+    private const val SNAPSHOT_CACHE_PERSIST_DEBOUNCE_MS = 1_200L
     @Suppress("SpellCheckingInspection")
     private const val METADATA_SUFFIX = ".npmeta.json"
+    private const val MIGRATION_COPY_PARALLELISM = 4
     private val audioExtensions = setOf("mp3", "m4a", "aac", "flac", "wav", "ogg", "webm", "eac3")
     private val imageExtensions = setOf("jpg", "jpeg", "png", "webp")
 
@@ -45,12 +57,20 @@ internal object ManagedDownloadStorage {
     private var snapshotCache: SnapshotCache? = null
 
     private val snapshotBuildLock = Any()
+    private val snapshotPersistenceLock = Any()
+    private val snapshotScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    @Volatile
+    private var snapshotPersistJob: Job? = null
+
+    @Volatile
+    private var snapshotRestoreScheduled = false
 
     fun initialize(context: Context) {
         val appContext = context.applicationContext
         createDefaultRoot(appContext)
         invalidateSnapshotCache()
-        restoreSnapshotCacheFromDisk(appContext)
+        scheduleSnapshotCacheRestore(appContext)
     }
 
     data class StoredEntry(
@@ -121,6 +141,8 @@ internal object ManagedDownloadStorage {
         val name: String? = null,
         val artist: String? = null,
         val coverUrl: String? = null,
+        val matchedLyric: String? = null,
+        val matchedTranslatedLyric: String? = null,
         val matchedLyricSource: String? = null,
         val matchedSongId: String? = null,
         val userLyricOffsetMs: Long = 0L,
@@ -130,6 +152,8 @@ internal object ManagedDownloadStorage {
         val originalName: String? = null,
         val originalArtist: String? = null,
         val originalCoverUrl: String? = null,
+        val originalLyric: String? = null,
+        val originalTranslatedLyric: String? = null,
         val mediaUri: String? = null,
         val channelId: String? = null,
         val audioId: String? = null,
@@ -248,44 +272,22 @@ internal object ManagedDownloadStorage {
             return@withContext MigrationResult(movedFiles = 0, skippedFiles = 0)
         }
 
-        val copiedEntries = mutableListOf<CopiedMigrationEntry>()
-        var skippedFiles = 0
-
-        entries.forEach { migrationEntry ->
-            val copiedEntry = runCatching {
-                openStoredEntryInputStream(context, migrationEntry.entry)?.use { input ->
-                    if (migrationEntry.subdirectory == null) {
-                        writeRootStream(
+        val copyLimiter = Semaphore(MIGRATION_COPY_PARALLELISM)
+        val copyResults = coroutineScope {
+            entries.map { migrationEntry ->
+                async(Dispatchers.IO) {
+                    copyLimiter.withPermit {
+                        copyManagedMigrationEntry(
                             context = context,
-                            root = targetRoot,
-                            displayName = migrationEntry.entry.name,
-                            mimeType = migrationMimeTypeFor(migrationEntry),
-                            input = input
-                        )
-                    } else {
-                        writeSubdirectoryStream(
-                            context = context,
-                            root = targetRoot,
-                            subdirectory = migrationEntry.subdirectory,
-                            displayName = migrationEntry.entry.name,
-                            mimeType = migrationMimeTypeFor(migrationEntry),
-                            input = input
+                            targetRoot = targetRoot,
+                            migrationEntry = migrationEntry
                         )
                     }
-                } ?: throw IOException("无法读取源下载文件: ${migrationEntry.entry.name}")
-            }.onFailure {
-                NPLogger.w(TAG, "迁移下载文件失败: ${migrationEntry.entry.reference}, ${it.message}")
-            }.getOrNull()
-
-            if (copiedEntry != null) {
-                copiedEntries += CopiedMigrationEntry(
-                    original = migrationEntry,
-                    copiedEntry = copiedEntry
-                )
-            } else {
-                skippedFiles++
-            }
+                }
+            }.awaitAll()
         }
+        val copiedEntries = copyResults.mapNotNull { it.copiedEntry }
+        val skippedFiles = copyResults.count { it.copiedEntry == null }
 
         if (skippedFiles > 0) {
             return@withContext MigrationResult(
@@ -323,6 +325,49 @@ internal object ManagedDownloadStorage {
             movedFiles = copiedEntries.size,
             skippedFiles = 0,
             cleanupFailedFiles = cleanupFailedFiles
+        )
+    }
+
+    private data class ManagedMigrationCopyResult(
+        val copiedEntry: CopiedMigrationEntry?
+    )
+
+    private fun copyManagedMigrationEntry(
+        context: Context,
+        targetRoot: RootHandle,
+        migrationEntry: ManagedMigrationEntry
+    ): ManagedMigrationCopyResult {
+        val copiedEntry = runCatching {
+            openStoredEntryInputStream(context, migrationEntry.entry)?.use { input ->
+                if (migrationEntry.subdirectory == null) {
+                    writeRootStream(
+                        context = context,
+                        root = targetRoot,
+                        displayName = migrationEntry.entry.name,
+                        mimeType = migrationMimeTypeFor(migrationEntry),
+                        input = input
+                    )
+                } else {
+                    writeSubdirectoryStream(
+                        context = context,
+                        root = targetRoot,
+                        subdirectory = migrationEntry.subdirectory,
+                        displayName = migrationEntry.entry.name,
+                        mimeType = migrationMimeTypeFor(migrationEntry),
+                        input = input
+                    )
+                }
+            } ?: throw IOException("无法读取源下载文件: ${migrationEntry.entry.name}")
+        }.onFailure {
+            NPLogger.w(TAG, "迁移下载文件失败: ${migrationEntry.entry.reference}, ${it.message}")
+        }.getOrNull()
+            ?: return ManagedMigrationCopyResult(copiedEntry = null)
+
+        return ManagedMigrationCopyResult(
+            copiedEntry = CopiedMigrationEntry(
+                original = migrationEntry,
+                copiedEntry = copiedEntry
+            )
         )
     }
 
@@ -453,7 +498,7 @@ internal object ManagedDownloadStorage {
             lyricEntries = lyricEntries
         ).also { snapshot ->
             snapshotCache = SnapshotCache(key = cacheKey, snapshot = snapshot)
-            persistSnapshotCache(context, cacheKey, snapshot)
+            scheduleSnapshotCachePersist(context, cacheKey)
         }
     }
 
@@ -580,6 +625,10 @@ internal object ManagedDownloadStorage {
         rewriteMetadataReferenceField(root, "coverPath", referenceMap)
         rewriteMetadataReferenceField(root, "lyricPath", referenceMap)
         rewriteMetadataReferenceField(root, "translatedLyricPath", referenceMap)
+        rewriteMetadataReferenceField(root, "coverUrl", referenceMap)
+        rewriteMetadataReferenceField(root, "originalCoverUrl", referenceMap)
+        rewriteMetadataReferenceField(root, "mediaUri", referenceMap)
+        rewriteMetadataEmbeddedReferenceField(root, "stableKey", referenceMap)
         return root.toString()
     }
 
@@ -604,10 +653,16 @@ internal object ManagedDownloadStorage {
         if (hasManagedCover) {
             return true
         }
-        return candidateBaseNames.any { baseName ->
-            lyricEntryNames.contains("$baseName.lrc") ||
-                lyricEntryNames.contains("${baseName}_trans.lrc")
-        }
+        return buildLyricCandidateNames(
+            songId = null,
+            candidateBaseNames = candidateBaseNames,
+            translated = false
+        ).any(lyricEntryNames::contains) ||
+            buildLyricCandidateNames(
+                songId = null,
+                candidateBaseNames = candidateBaseNames,
+                translated = true
+            ).any(lyricEntryNames::contains)
     }
 
     private fun shouldIndexMetadataLessAudio(): Boolean {
@@ -624,13 +679,45 @@ internal object ManagedDownloadStorage {
         root.put(fieldName, updated)
     }
 
+    private fun rewriteMetadataEmbeddedReferenceField(
+        root: JSONObject,
+        fieldName: String,
+        referenceMap: Map<String, String>
+    ) {
+        val current = root.optString(fieldName).takeIf(String::isNotBlank) ?: return
+        val updated = referenceMap.entries.fold(current) { value, (from, to) ->
+            if (value.contains(from)) {
+                value.replace(from, to)
+            } else {
+                value
+            }
+        }
+        if (updated != current) {
+            root.put(fieldName, updated)
+        }
+    }
+
     suspend fun findMetadataForAudio(context: Context, audio: StoredEntry): StoredEntry? = withContext(Dispatchers.IO) {
         buildDownloadLibrarySnapshotBlocking(context).metadataEntriesByAudioName[audio.name]
     }
 
     suspend fun saveMetadata(context: Context, audio: StoredEntry, json: String) = withContext(Dispatchers.IO) {
         val root = resolveRootBlocking(context)
-        writeRootText(context, root, "${audio.name}$METADATA_SUFFIX", json)
+        val metadataEntry = writeRootText(
+            context = context,
+            root = root,
+            displayName = "${audio.name}$METADATA_SUFFIX",
+            content = json,
+            invalidateSnapshot = false
+        )
+        val metadata = parseDownloadedAudioMetadataJson(json)
+        if (metadataEntry == null || metadata == null) {
+            invalidateSnapshotCache(context)
+            return@withContext
+        }
+        if (!updateSnapshotCacheAfterMetadataWrite(context, metadataEntry, metadata)) {
+            invalidateSnapshotCache(context)
+        }
     }
 
     suspend fun readText(context: Context, reference: String): String? = withContext(Dispatchers.IO) {
@@ -688,7 +775,7 @@ internal object ManagedDownloadStorage {
                     ?: throw IOException("无法读取已写入的下载文件")
             }
         }
-        invalidateSnapshotCache()
+        invalidateSnapshotCache(context)
         return storedEntry
     }
 
@@ -722,7 +809,7 @@ internal object ManagedDownloadStorage {
             subdirectory = "Lyrics",
             displayName = displayName,
             bytes = content.toByteArray(Charsets.UTF_8),
-            mimeType = "text/plain"
+            mimeType = mimeTypeFromName(displayName, null)
         )?.reference
     }
 
@@ -955,19 +1042,27 @@ internal object ManagedDownloadStorage {
         }
     }
 
-    private fun buildLyricCandidateNames(
+    internal fun buildLyricCandidateNames(
         songId: Long?,
         candidateBaseNames: List<String>,
         translated: Boolean
     ): List<String> {
-        return buildList {
-            songId?.takeIf { it > 0L }?.let { resolvedSongId ->
-                add(if (translated) "${resolvedSongId}_trans.lrc" else "${resolvedSongId}.lrc")
-            }
-            candidateBaseNames.forEach { baseName ->
-                add(if (translated) "${baseName}_trans.lrc" else "$baseName.lrc")
+        val names = linkedSetOf<String>()
+        fun addLyricNames(baseName: String) {
+            if (translated) {
+                names += "${baseName}_trans.lrc"
+                names += "${baseName}_trans.lrc.txt"
+            } else {
+                names += "$baseName.lrc"
+                names += "$baseName.lrc.txt"
             }
         }
+
+        songId?.takeIf { it > 0L }?.let { resolvedSongId ->
+            addLyricNames(resolvedSongId.toString())
+        }
+        candidateBaseNames.forEach(::addLyricNames)
+        return names.toList()
     }
 
     private fun parseDownloadedAudioMetadata(
@@ -1046,6 +1141,43 @@ internal object ManagedDownloadStorage {
         return restored.second
     }
 
+    private fun scheduleSnapshotCacheRestore(context: Context) {
+        if (snapshotRestoreScheduled) {
+            return
+        }
+        synchronized(snapshotPersistenceLock) {
+            if (snapshotRestoreScheduled) {
+                return
+            }
+            snapshotRestoreScheduled = true
+        }
+        val appContext = context.applicationContext
+        snapshotScope.launch {
+            try {
+                restoreSnapshotCacheFromDisk(appContext)
+            } finally {
+                snapshotRestoreScheduled = false
+            }
+        }
+    }
+
+    private fun scheduleSnapshotCachePersist(
+        context: Context,
+        expectedKey: String
+    ) {
+        val appContext = context.applicationContext
+        synchronized(snapshotPersistenceLock) {
+            snapshotPersistJob?.cancel()
+            snapshotPersistJob = snapshotScope.launch {
+                delay(SNAPSHOT_CACHE_PERSIST_DEBOUNCE_MS)
+                val currentCache = snapshotCache
+                    ?.takeIf { it.key == expectedKey }
+                    ?: return@launch
+                persistSnapshotCache(appContext, currentCache.key, currentCache.snapshot)
+            }
+        }
+    }
+
     internal fun serializeSnapshotCachePayload(
         cacheKey: String,
         snapshot: DownloadLibrarySnapshot
@@ -1095,6 +1227,25 @@ internal object ManagedDownloadStorage {
         )
     }
 
+    internal fun applyMetadataWriteToSnapshot(
+        snapshot: DownloadLibrarySnapshot,
+        metadataEntry: StoredEntry,
+        metadata: DownloadedAudioMetadata
+    ): DownloadLibrarySnapshot {
+        val targetAudioName = metadataEntry.name.removeSuffix(METADATA_SUFFIX)
+        return composeSnapshot(
+            audioEntries = snapshot.audioEntries,
+            metadataEntries = snapshot.metadataEntriesByAudioName.values
+                .filterNot { it.name.removeSuffix(METADATA_SUFFIX) == targetAudioName } +
+                metadataEntry,
+            metadataByAudioName = snapshot.metadataByAudioName.toMutableMap().apply {
+                put(targetAudioName, metadata)
+            },
+            coverEntries = snapshot.coverEntriesByName.values.toList(),
+            lyricEntries = snapshot.lyricEntriesByName.values.toList()
+        )
+    }
+
     private fun buildRemoteTrackKey(
         channelId: String?,
         audioId: String?,
@@ -1118,8 +1269,21 @@ internal object ManagedDownloadStorage {
         }
     }
 
-    private fun invalidateSnapshotCache() {
+    private fun invalidateSnapshotCache(context: Context? = null) {
         snapshotCache = null
+        synchronized(snapshotPersistenceLock) {
+            snapshotPersistJob?.cancel()
+            snapshotPersistJob = null
+        }
+        val appContext = context?.applicationContext ?: return
+        runCatching {
+            val cacheFile = snapshotCacheFile(appContext)
+            if (cacheFile.exists() && !cacheFile.delete()) {
+                throw IOException("无法删除旧下载索引缓存")
+            }
+        }.onFailure {
+            NPLogger.w(TAG, "清理下载索引缓存失败: ${it.message}")
+        }
     }
 
     private fun existingNames(dir: File): Set<String> {
@@ -1143,8 +1307,17 @@ internal object ManagedDownloadStorage {
             existing.delete()
         }
         val finalName = if (replace) desiredName else createUniqueName(parent.listFiles().mapNotNull(DocumentFile::getName).toSet(), desiredName)
-        return parent.createFile(mimeType, finalName)
+        return parent.createFile(documentCreateMimeType(finalName, mimeType), finalName)
             ?: throw IOException("无法在下载目录创建文件: $finalName")
+    }
+
+    internal fun documentCreateMimeType(desiredName: String, mimeType: String): String {
+        val normalizedMimeType = mimeType.takeIf { it.isNotBlank() } ?: "application/octet-stream"
+        val extension = desiredName.substringAfterLast('.', "").lowercase()
+        if (normalizedMimeType.equals("text/plain", ignoreCase = true) && extension.isNotBlank() && extension != "txt") {
+            return "application/octet-stream"
+        }
+        return normalizedMimeType
     }
 
     private fun writeRootStream(
@@ -1170,7 +1343,7 @@ internal object ManagedDownloadStorage {
                     ?: throw IOException("无法读取已写入的目录文件: $displayName")
             }
         }
-        invalidateSnapshotCache()
+        invalidateSnapshotCache(context)
         return storedEntry
     }
 
@@ -1200,7 +1373,7 @@ internal object ManagedDownloadStorage {
                 target.toStoredEntry()
             }
         }
-        storedEntry?.let { invalidateSnapshotCache() }
+        storedEntry?.let { invalidateSnapshotCache(context) }
         return storedEntry
     }
 
@@ -1233,14 +1406,22 @@ internal object ManagedDownloadStorage {
                     ?: throw IOException("无法读取已写入的目录文件: $displayName")
             }
         }
-        invalidateSnapshotCache()
+        invalidateSnapshotCache(context)
         return storedEntry
     }
 
-    private fun writeRootText(context: Context, root: RootHandle, displayName: String, content: String) {
-        when (root) {
+    private fun writeRootText(
+        context: Context,
+        root: RootHandle,
+        displayName: String,
+        content: String,
+        invalidateSnapshot: Boolean = true
+    ): StoredEntry? {
+        val storedEntry = when (root) {
             is RootHandle.FileRoot -> {
-                File(root.dir, displayName).writeText(content, Charsets.UTF_8)
+                val target = File(root.dir, displayName)
+                target.writeText(content, Charsets.UTF_8)
+                target.toStoredEntry()
             }
 
             is RootHandle.TreeRoot -> {
@@ -1248,9 +1429,14 @@ internal object ManagedDownloadStorage {
                 context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
                     output.write(content.toByteArray(Charsets.UTF_8))
                 } ?: throw IOException("无法写入元数据文件: $displayName")
+                target.toStoredEntry()
+                    ?: throw IOException("无法读取已写入的元数据文件: $displayName")
             }
         }
-        invalidateSnapshotCache()
+        if (invalidateSnapshot) {
+            invalidateSnapshotCache(context)
+        }
+        return storedEntry
     }
 
     private fun findSubdirectory(root: RootHandle, name: String): RootHandle? {
@@ -1470,12 +1656,12 @@ internal object ManagedDownloadStorage {
             }
         }
         if (deleted) {
-            invalidateSnapshotCache()
+            invalidateSnapshotCache(context)
         }
         return deleted
     }
 
-    private fun mimeTypeFromName(name: String, fallback: String?): String {
+    internal fun mimeTypeFromName(name: String, fallback: String?): String {
         val normalizedFallback = fallback?.takeIf { it.isNotBlank() }
         if (normalizedFallback != null) return normalizedFallback
         return when (name.substringAfterLast('.', "").lowercase()) {
@@ -1490,7 +1676,8 @@ internal object ManagedDownloadStorage {
             "jpg", "jpeg" -> "image/jpeg"
             "png" -> "image/png"
             "webp" -> "image/webp"
-            "lrc", "txt", "json" -> "text/plain"
+            "lrc" -> "application/octet-stream"
+            "txt", "json" -> "text/plain"
             else -> "application/octet-stream"
         }
     }
@@ -1545,6 +1732,8 @@ internal object ManagedDownloadStorage {
             put("name", name)
             put("artist", artist)
             put("coverUrl", coverUrl)
+            put("matchedLyric", matchedLyric)
+            put("matchedTranslatedLyric", matchedTranslatedLyric)
             put("matchedLyricSource", matchedLyricSource)
             put("matchedSongId", matchedSongId)
             put("userLyricOffsetMs", userLyricOffsetMs)
@@ -1554,6 +1743,8 @@ internal object ManagedDownloadStorage {
             put("originalName", originalName)
             put("originalArtist", originalArtist)
             put("originalCoverUrl", originalCoverUrl)
+            put("originalLyric", originalLyric)
+            put("originalTranslatedLyric", originalTranslatedLyric)
             put("mediaUri", mediaUri)
             put("channelId", channelId)
             put("audioId", audioId)
@@ -1573,6 +1764,8 @@ internal object ManagedDownloadStorage {
             name = optString("name").takeIf(String::isNotBlank),
             artist = optString("artist").takeIf(String::isNotBlank),
             coverUrl = optString("coverUrl").takeIf(String::isNotBlank),
+            matchedLyric = optString("matchedLyric").takeIf(String::isNotBlank),
+            matchedTranslatedLyric = optString("matchedTranslatedLyric").takeIf(String::isNotBlank),
             matchedLyricSource = optString("matchedLyricSource").takeIf(String::isNotBlank),
             matchedSongId = optString("matchedSongId").takeIf(String::isNotBlank),
             userLyricOffsetMs = optLong("userLyricOffsetMs"),
@@ -1582,6 +1775,8 @@ internal object ManagedDownloadStorage {
             originalName = optString("originalName").takeIf(String::isNotBlank),
             originalArtist = optString("originalArtist").takeIf(String::isNotBlank),
             originalCoverUrl = optString("originalCoverUrl").takeIf(String::isNotBlank),
+            originalLyric = optString("originalLyric").takeIf(String::isNotBlank),
+            originalTranslatedLyric = optString("originalTranslatedLyric").takeIf(String::isNotBlank),
             mediaUri = optString("mediaUri").takeIf(String::isNotBlank),
             channelId = optString("channelId").takeIf(String::isNotBlank),
             audioId = optString("audioId").takeIf(String::isNotBlank),
@@ -1591,6 +1786,36 @@ internal object ManagedDownloadStorage {
             translatedLyricPath = optString("translatedLyricPath").takeIf(String::isNotBlank),
             durationMs = optLong("durationMs")
         )
+    }
+
+    private fun parseDownloadedAudioMetadataJson(rawJson: String): DownloadedAudioMetadata? {
+        return runCatching {
+            JSONObject(rawJson).toDownloadedAudioMetadata()
+        }.onFailure {
+            NPLogger.w(TAG, "解析写回元数据失败: ${it.message}")
+        }.getOrNull()
+    }
+
+    private fun updateSnapshotCacheAfterMetadataWrite(
+        context: Context,
+        metadataEntry: StoredEntry,
+        metadata: DownloadedAudioMetadata
+    ): Boolean {
+        val appContext = context.applicationContext
+        val cacheKey = buildSnapshotCacheKey(appContext)
+        val currentSnapshot = snapshotCache
+            ?.takeIf { it.key == cacheKey }
+            ?.snapshot
+            ?: restoreSnapshotCacheFromDisk(appContext, expectedKey = cacheKey)
+            ?: return true
+        val updatedSnapshot = applyMetadataWriteToSnapshot(
+            snapshot = currentSnapshot,
+            metadataEntry = metadataEntry,
+            metadata = metadata
+        )
+        snapshotCache = SnapshotCache(key = cacheKey, snapshot = updatedSnapshot)
+        scheduleSnapshotCachePersist(appContext, cacheKey)
+        return true
     }
 
     private fun File.toStoredEntry(): StoredEntry {

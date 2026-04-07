@@ -456,17 +456,26 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
     suspend fun updateSongMetadata(originalSong: SongItem, newSongInfo: SongItem) {
         withContext(Dispatchers.IO) {
             saveCoverMapping(newSongInfo)
+            var changed = false
             val updated = _playlists.value.map { playlist ->
                 val songIndex = playlist.songs.indexOfFirst { it.sameIdentityAs(originalSong) }
                 if (songIndex == -1) {
                     playlist
                 } else {
+                    if (playlist.songs[songIndex] == newSongInfo) {
+                        return@map playlist
+                    }
                     val songs = playlist.songs.toMutableList()
                     songs[songIndex] = newSongInfo
-                    playlist.copy(songs = songs, modifiedAt = System.currentTimeMillis())
+                    changed = true
+                    playlist.copy(songs = songs)
                 }
             }
-            publish(updated)
+            if (!changed) {
+                return@withContext
+            }
+            // 播放期自动补 metadata 只需要把本地视图写稳，不该顺手唤醒整条云同步链
+            publish(updated, triggerSync = false)
         }
     }
 

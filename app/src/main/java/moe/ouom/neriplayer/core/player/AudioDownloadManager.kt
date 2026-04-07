@@ -633,6 +633,9 @@ object AudioDownloadManager {
     }
 
     fun hasLocalDownload(context: Context, song: SongItem): Boolean {
+        if (GlobalDownloadManager.hasDownloadedSongCached(song)) {
+            return true
+        }
         if (ManagedDownloadStorage.peekDownloadedAudio(song) != null) {
             return true
         }

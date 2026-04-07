@@ -104,7 +104,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
@@ -129,6 +128,7 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.HapticFilledIconButton
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.formatDuration
+import moe.ouom.neriplayer.util.offlineCachedImageRequest
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, androidx.compose.animation.ExperimentalSharedTransitionApi::class)
@@ -166,6 +166,9 @@ fun LyricsScreen(
     val playlistAddActionLabel = stringResource(R.string.playlist_add_to)
 
     val context = LocalContext.current
+    val currentCoverUrl = remember(currentSong, context) {
+        currentSong?.displayCoverUrl(context)
+    }
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
 
@@ -292,9 +295,16 @@ fun LyricsScreen(
                     .graphicsLayer { translationY = coverOffsetY }
                     .clip(RoundedCornerShape(10.dp))
             ) {
-                currentSong?.displayCoverUrl(context)?.let { cover ->
+                currentCoverUrl?.let { cover ->
                     AsyncImage(
-                        model = ImageRequest.Builder(LocalContext.current).data(cover).build(),
+                        model = remember(context, cover) {
+                            offlineCachedImageRequest(
+                                context = context,
+                                data = cover,
+                                sizePx = 192,
+                                allowHardware = false
+                            )
+                        },
                         contentDescription = currentSong?.displayName() ?: "",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()

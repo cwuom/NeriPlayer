@@ -958,7 +958,12 @@ private fun LocalPlaylistList(
                                 val cover = system.displayCoverUrl(context)
                                 if (!cover.isNullOrEmpty()) {
                                     AsyncImage(
-                                        model = offlineCachedImageRequest(context, cover),
+                                        model = offlineCachedImageRequest(
+                                            context = context,
+                                            data = cover,
+                                            sizePx = 192,
+                                            allowHardware = false
+                                        ),
                                         contentDescription = null,
                                         contentScale = ContentScale.Crop,
                                         modifier = Modifier
@@ -1060,7 +1065,12 @@ private fun LocalPlaylistList(
                                 val cover = pl.displayCoverUrl(context)
                                 if (!cover.isNullOrEmpty()) {
                                     AsyncImage(
-                                        model = offlineCachedImageRequest(context, cover),
+                                        model = offlineCachedImageRequest(
+                                            context = context,
+                                            data = cover,
+                                            sizePx = 192,
+                                            allowHardware = false
+                                        ),
                                         contentDescription = null,
                                         contentScale = ContentScale.Crop,
                                         modifier = Modifier
@@ -1224,7 +1234,12 @@ private fun LocalPlaylistList(
                                 val cover = system.displayCoverUrl(context)
                                 if (!cover.isNullOrEmpty()) {
                                     AsyncImage(
-                                        model = offlineCachedImageRequest(context, cover),
+                                        model = offlineCachedImageRequest(
+                                            context = context,
+                                            data = cover,
+                                            sizePx = 192,
+                                            allowHardware = false
+                                        ),
                                         contentDescription = null,
                                         contentScale = ContentScale.Crop,
                                         modifier = Modifier
@@ -1655,7 +1670,12 @@ private fun FavoritePlaylistList(
                             leadingContent = {
                                 if (!favorite.coverUrl.isNullOrEmpty()) {
                                     AsyncImage(
-                                        model = offlineCachedImageRequest(context, favorite.coverUrl),
+                                        model = offlineCachedImageRequest(
+                                            context = context,
+                                            data = favorite.coverUrl,
+                                            sizePx = 192,
+                                            allowHardware = false
+                                        ),
                                         contentDescription = null,
                                         contentScale = ContentScale.Crop,
                                         modifier = Modifier

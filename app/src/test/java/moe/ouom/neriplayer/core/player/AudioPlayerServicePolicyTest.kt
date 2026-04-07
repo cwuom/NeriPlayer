@@ -152,4 +152,114 @@ class AudioPlayerServicePolicyTest {
             )
         )
     }
+
+    @Test
+    fun `local playback sync start is skipped only when service is already ready`() {
+        assertTrue(
+            shouldSkipLocalPlaybackSyncServiceStart(
+                source = "local_playback_command_play_playlist",
+                serviceReady = true,
+                hasItems = true
+            )
+        )
+        assertFalse(
+            shouldSkipLocalPlaybackSyncServiceStart(
+                source = "local_playback_command_play_playlist",
+                serviceReady = false,
+                hasItems = true
+            )
+        )
+        assertFalse(
+            shouldSkipLocalPlaybackSyncServiceStart(
+                source = "local_playback_command_play_playlist",
+                serviceReady = true,
+                hasItems = false
+            )
+        )
+        assertFalse(
+            shouldSkipLocalPlaybackSyncServiceStart(
+                source = "app_bootstrap",
+                serviceReady = true,
+                hasItems = true
+            )
+        )
+    }
+
+    @Test
+    fun `opening now playing from local playback is treated as local sync start only for local songs`() {
+        assertTrue(
+            shouldSkipLocalPlaybackSyncServiceStart(
+                source = PLAY_SONGS_AND_OPEN_NOW_PLAYING_SOURCE,
+                serviceReady = true,
+                hasItems = true,
+                hasLocalCurrentSong = true
+            )
+        )
+        assertFalse(
+            shouldSkipLocalPlaybackSyncServiceStart(
+                source = PLAY_SONGS_AND_OPEN_NOW_PLAYING_SOURCE,
+                serviceReady = true,
+                hasItems = true,
+                hasLocalCurrentSong = false
+            )
+        )
+    }
+
+    @Test
+    fun `local playback action sync is skipped only after service is already tracking a song`() {
+        assertTrue(
+            shouldSkipFullSyncForLocalPlaybackAction(
+                source = "local_playback_command_play_playlist",
+                foregroundStarted = true,
+                hasItems = true,
+                hasCurrentSong = true
+            )
+        )
+        assertFalse(
+            shouldSkipFullSyncForLocalPlaybackAction(
+                source = "local_playback_command_play_playlist",
+                foregroundStarted = false,
+                hasItems = true,
+                hasCurrentSong = true
+            )
+        )
+        assertFalse(
+            shouldSkipFullSyncForLocalPlaybackAction(
+                source = "local_playback_command_play_playlist",
+                foregroundStarted = true,
+                hasItems = true,
+                hasCurrentSong = false
+            )
+        )
+        assertFalse(
+            shouldSkipFullSyncForLocalPlaybackAction(
+                source = "app_bootstrap",
+                foregroundStarted = true,
+                hasItems = true,
+                hasCurrentSong = true
+            )
+        )
+    }
+
+    @Test
+    fun `opening now playing from local playback skips full sync only when current song is local`() {
+        assertTrue(
+            shouldSkipFullSyncForLocalPlaybackAction(
+                source = PLAY_SONGS_AND_OPEN_NOW_PLAYING_SOURCE,
+                foregroundStarted = true,
+                hasItems = true,
+                hasCurrentSong = true,
+                hasLocalCurrentSong = true
+            )
+        )
+        assertFalse(
+            shouldSkipFullSyncForLocalPlaybackAction(
+                source = PLAY_SONGS_AND_OPEN_NOW_PLAYING_SOURCE,
+                foregroundStarted = true,
+                hasItems = true,
+                hasCurrentSong = true,
+                hasLocalCurrentSong = false
+            )
+        )
+    }
 }

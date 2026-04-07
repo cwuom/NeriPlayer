@@ -130,4 +130,71 @@ class ManagedDownloadStorageSnapshotCacheTest {
         assertEquals("new-lyric", root.getString("lyricPath"))
         assertEquals("new-translated", root.getString("translatedLyricPath"))
     }
+
+    @Test
+    fun `metadata write updates snapshot without rebuilding audio index`() {
+        val audioEntry = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Song.flac",
+            reference = "/music/Artist - Song.flac",
+            mediaUri = "file:///music/Artist%20-%20Song.flac",
+            localFilePath = "/music/Artist - Song.flac",
+            sizeBytes = 1024L,
+            lastModifiedMs = 99L
+        )
+        val staleMetadataEntry = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Song.flac.npmeta.json",
+            reference = "/music/Artist - Song.flac.npmeta.json",
+            mediaUri = "file:///music/Artist%20-%20Song.flac.npmeta.json",
+            localFilePath = "/music/Artist - Song.flac.npmeta.json",
+            sizeBytes = 128L,
+            lastModifiedMs = 100L
+        )
+        val staleMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            stableKey = "old-stable",
+            songId = 1L,
+            name = "Old Song",
+            artist = "Artist"
+        )
+        val snapshot = ManagedDownloadStorage.DownloadLibrarySnapshot(
+            audioEntries = listOf(audioEntry),
+            audioEntriesByLookupKey = mapOf(
+                audioEntry.reference to audioEntry,
+                audioEntry.mediaUri to audioEntry,
+                audioEntry.localFilePath.orEmpty() to audioEntry
+            ),
+            metadataEntriesByAudioName = mapOf(audioEntry.name to staleMetadataEntry),
+            metadataByAudioName = mapOf(audioEntry.name to staleMetadata),
+            audioEntriesWithoutMetadata = emptyList(),
+            audioEntriesByStableKey = mapOf("old-stable" to listOf(audioEntry)),
+            audioEntriesBySongId = mapOf(1L to listOf(audioEntry)),
+            audioEntriesByMediaUri = emptyMap(),
+            audioEntriesByRemoteTrackKey = emptyMap(),
+            coverEntriesByName = emptyMap(),
+            lyricEntriesByName = emptyMap(),
+            knownReferences = setOf(audioEntry.reference, staleMetadataEntry.reference)
+        )
+        val updatedMetadataEntry = staleMetadataEntry.copy(
+            reference = "/music/new/Artist - Song.flac.npmeta.json",
+            mediaUri = "file:///music/new/Artist%20-%20Song.flac.npmeta.json",
+            localFilePath = "/music/new/Artist - Song.flac.npmeta.json",
+            lastModifiedMs = 200L
+        )
+        val updatedMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            stableKey = "new-stable",
+            songId = 2L,
+            name = "New Song",
+            artist = "New Artist"
+        )
+
+        val updatedSnapshot = ManagedDownloadStorage.applyMetadataWriteToSnapshot(
+            snapshot = snapshot,
+            metadataEntry = updatedMetadataEntry,
+            metadata = updatedMetadata
+        )
+
+        assertEquals(updatedMetadata, updatedSnapshot.metadataByAudioName[audioEntry.name])
+        assertEquals(updatedMetadataEntry, updatedSnapshot.metadataEntriesByAudioName[audioEntry.name])
+        assertEquals(listOf(audioEntry), updatedSnapshot.audioEntriesByStableKey["new-stable"])
+        assertEquals(listOf(audioEntry), updatedSnapshot.audioEntriesBySongId[2L])
+    }
 }

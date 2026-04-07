@@ -255,12 +255,9 @@ internal fun PlayerManager.initializeImpl(
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                 _playWhenReadyFlow.value = playWhenReady
                 if (!playWhenReady) {
-                    val stackHint = Throwable().stackTrace.take(6).joinToString(" <- ") {
-                        "${it.fileName}:${it.lineNumber}"
-                    }
                     NPLogger.d(
                         "NERI-PlayerManager",
-                        "playWhenReady=false, reason=${playWhenReadyChangeReasonName(reason)}, state=${playbackStateName(player.playbackState)}, mediaId=${player.currentMediaItem?.mediaId}, stack=[$stackHint]"
+                        "playWhenReady=false, reason=${playWhenReadyChangeReasonName(reason)}, state=${playbackStateName(player.playbackState)}, mediaId=${player.currentMediaItem?.mediaId}, stack=[${debugStackHint()}]"
                     )
                 }
                 if (

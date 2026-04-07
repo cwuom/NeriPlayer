@@ -71,6 +71,7 @@ import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.sameIdentityAs
+import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import androidx.core.graphics.createBitmap
@@ -79,6 +80,7 @@ import android.content.pm.ServiceInfo
 import androidx.core.net.toUri
 
 private data class PlaybackNotificationSnapshot(
+    val songKey: String?,
     val title: String,
     val text: String,
     val isTransportActive: Boolean,
@@ -89,7 +91,25 @@ private data class PlaybackNotificationSnapshot(
     val coverSource: String?,
 )
 
+private data class PlaybackMetadataSnapshot(
+    val songKey: String?,
+    val title: String,
+    val artist: String,
+    val durationMs: Long,
+    val coverSource: String?,
+    val largeIconReady: Boolean,
+)
+
 internal const val MEDIA_SESSION_STOP_SOURCE = "media_session_stop"
+internal const val PLAY_SONGS_AND_OPEN_NOW_PLAYING_SOURCE = "play_songs_and_open_now_playing"
+
+internal fun isLocalPlaybackCommandSyncSource(
+    source: String,
+    hasLocalCurrentSong: Boolean = false
+): Boolean {
+    return source.startsWith("local_playback_command_") ||
+        (hasLocalCurrentSong && source == PLAY_SONGS_AND_OPEN_NOW_PLAYING_SOURCE)
+}
 
 internal fun shouldStopServiceForExternalPauseCommand(
     source: String,
@@ -168,6 +188,31 @@ internal fun shouldSkipRedundantSyncServiceStart(
     return elapsed in 0L..dedupeWindowMs
 }
 
+internal fun shouldSkipLocalPlaybackSyncServiceStart(
+    source: String,
+    serviceReady: Boolean,
+    hasItems: Boolean,
+    hasLocalCurrentSong: Boolean = false
+): Boolean {
+    if (!isLocalPlaybackCommandSyncSource(source, hasLocalCurrentSong)) {
+        return false
+    }
+    return serviceReady && hasItems
+}
+
+internal fun shouldSkipFullSyncForLocalPlaybackAction(
+    source: String,
+    foregroundStarted: Boolean,
+    hasItems: Boolean,
+    hasCurrentSong: Boolean,
+    hasLocalCurrentSong: Boolean = false
+): Boolean {
+    if (!isLocalPlaybackCommandSyncSource(source, hasLocalCurrentSong)) {
+        return false
+    }
+    return foregroundStarted && hasItems && hasCurrentSong
+}
+
 private fun Context.findActivityReadyForDirectServiceStart(): Activity? {
     var current: Context? = this
     while (current is ContextWrapper) {
@@ -209,6 +254,14 @@ class AudioPlayerService : Service() {
         private var lastSuccessfulSyncStartElapsedRealtime: Long = 0L
         @Volatile
         private var lastSuccessfulSyncStartSource: String? = null
+        @Volatile
+        private var isServiceInstanceActive: Boolean = false
+        @Volatile
+        private var isServiceForegroundActive: Boolean = false
+
+        fun isReadyForPassiveLocalPlaybackSync(): Boolean {
+            return isServiceInstanceActive && isServiceForegroundActive
+        }
 
         fun createSyncIntent(context: Context, source: String): Intent {
             return Intent(context, AudioPlayerService::class.java).apply {
@@ -281,6 +334,7 @@ class AudioPlayerService : Service() {
     private var hasReceivedStartCommand = false
     private var isForegroundStarted = false
     private var lastNotificationSnapshot: PlaybackNotificationSnapshot? = null
+    private var lastMetadataSnapshot: PlaybackMetadataSnapshot? = null
 
     private fun shouldKeepServiceSticky(): Boolean {
         return PlayerManager.hasItems() && PlayerManager.shouldRunPlaybackServiceInForeground()
@@ -341,6 +395,7 @@ class AudioPlayerService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        isServiceInstanceActive = true
         NPLogger.d("NERI-APS", "onCreate begin ${buildStateSummary()}")
         val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         val channel = NotificationChannel(
@@ -508,8 +563,25 @@ class AudioPlayerService : Service() {
                     stopSelf()
                     return START_NOT_STICKY
                 }
-                NPLogger.d("NERI-APS", "Handling ACTION_SYNC source=$startSource ${buildStateSummary()}")
-                updateAll()
+                if (
+                    shouldSkipFullSyncForLocalPlaybackAction(
+                        source = startSource,
+                        foregroundStarted = isForegroundStarted,
+                        hasItems = PlayerManager.hasItems(),
+                        hasCurrentSong = PlayerManager.currentSongFlow.value != null,
+                        hasLocalCurrentSong = PlayerManager.currentSongFlow.value?.let {
+                            LocalSongSupport.isLocalSong(it, this)
+                        } == true
+                    )
+                ) {
+                    NPLogger.d(
+                        "NERI-APS",
+                        "Skipping full ACTION_SYNC because active service already tracks local playback, source=$startSource"
+                    )
+                } else {
+                    NPLogger.d("NERI-APS", "Handling ACTION_SYNC source=$startSource ${buildStateSummary()}")
+                    updateAll()
+                }
             }
 
             ACTION_TOGGLE_FAV -> {
@@ -730,6 +802,7 @@ class AudioPlayerService : Service() {
             song?.displayArtist() ?: ""
         }
         return PlaybackNotificationSnapshot(
+            songKey = song?.stableKey(),
             title = song?.displayName() ?: "NeriPlayer",
             text = text,
             isTransportActive = PlayerManager.isTransportActive(),
@@ -754,6 +827,18 @@ class AudioPlayerService : Service() {
 
         val displayTitle = song?.displayName() ?: "NeriPlayer"
         val displayArtist = song?.displayArtist().orEmpty()
+        val snapshot = PlaybackMetadataSnapshot(
+            songKey = song?.stableKey(),
+            title = displayTitle,
+            artist = displayArtist,
+            durationMs = duration,
+            coverSource = coverSource,
+            largeIconReady = currentLargeIcon != null,
+        )
+        if (snapshot == lastMetadataSnapshot) {
+            return
+        }
+        lastMetadataSnapshot = snapshot
 
         val metadataBuilder = MediaMetadataCompat.Builder()
             .putString(MediaMetadataCompat.METADATA_KEY_TITLE, displayTitle)
@@ -914,6 +999,8 @@ class AudioPlayerService : Service() {
             "NERI-APS",
             "onDestroy ${buildStateSummary()}"
         )
+        isServiceForegroundActive = false
+        isServiceInstanceActive = false
         unregisterReceiver(becomingNoisyReceiver)
         serviceScope.cancel()
         mediaSession.isActive = false
@@ -964,6 +1051,7 @@ class AudioPlayerService : Service() {
                 startForeground(NOTIFICATION_ID, notification)
             }
             isForegroundStarted = true
+            isServiceForegroundActive = true
             NPLogger.d("NERI-APS", "startForegroundImmediately success reason=$reason")
             true
         } catch (e: SecurityException) {
@@ -991,6 +1079,7 @@ class AudioPlayerService : Service() {
         NPLogger.w("NERI-APS", "stopForegroundIfStarted reason=$reason ${buildStateSummary()}")
         stopForeground(STOP_FOREGROUND_REMOVE)
         isForegroundStarted = false
+        isServiceForegroundActive = false
     }
 
     private fun NotificationPaddedIcon(
