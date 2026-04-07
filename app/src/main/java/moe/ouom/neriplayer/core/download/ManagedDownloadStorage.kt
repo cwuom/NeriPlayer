@@ -30,20 +30,26 @@ import java.io.IOException
 import java.io.InputStream
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
+import java.util.concurrent.ConcurrentHashMap
 
 internal object ManagedDownloadStorage {
     private const val TAG = "ManagedDownloadStorage"
     private const val LOG_HOT_AUDIO_HITS = false
     private const val ROOT_DIR_NAME = "NeriPlayer"
     private const val COVER_SUBDIRECTORY = "Covers"
+    private const val LYRIC_SUBDIRECTORY = "Lyrics"
     private const val NO_MEDIA_FILE_NAME = ".nomedia"
     private const val SNAPSHOT_CACHE_FILE_NAME = "managed_download_snapshot_v1.json"
     private const val SNAPSHOT_CACHE_PERSIST_DEBOUNCE_MS = 1_200L
     @Suppress("SpellCheckingInspection")
     private const val METADATA_SUFFIX = ".npmeta.json"
     private const val MIGRATION_COPY_PARALLELISM = 8
+    private const val MIGRATION_TREE_COPY_PARALLELISM = 1
     private const val MIGRATION_REWRITE_PARALLELISM = 4
+    private const val MIGRATION_TREE_REWRITE_PARALLELISM = 1
     private const val MIGRATION_DELETE_PARALLELISM = 8
+    private const val MIGRATION_IO_MAX_ATTEMPTS = 3
+    private const val MIGRATION_IO_RETRY_DELAY_MS = 150L
     private const val STREAM_COPY_BUFFER_SIZE_BYTES = 1 * 1024 * 1024
     private val audioExtensions = setOf("mp3", "m4a", "aac", "flac", "wav", "ogg", "webm", "eac3")
     private val imageExtensions = setOf("jpg", "jpeg", "png", "webp")
@@ -63,6 +69,7 @@ internal object ManagedDownloadStorage {
     private val snapshotBuildLock = Any()
     private val snapshotPersistenceLock = Any()
     private val snapshotScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val treeDirectoryLocks = ConcurrentHashMap<String, Any>()
 
     @Volatile
     private var snapshotPersistJob: Job? = null
@@ -115,8 +122,16 @@ internal object ManagedDownloadStorage {
 
     private data class CopiedMigrationEntry(
         val original: ManagedMigrationEntry,
-        val copiedEntry: StoredEntry
+        val copiedEntry: StoredEntry,
+        val createdNew: Boolean
     )
+
+    private data class StoredWriteResult(
+        val entry: StoredEntry,
+        val createdNew: Boolean
+    )
+
+    private class MigrationTargetConflictException(message: String) : IOException(message)
 
     data class DownloadLibrarySnapshot(
         val audioEntries: List<StoredEntry>,
@@ -258,14 +273,20 @@ internal object ManagedDownloadStorage {
 
     suspend fun hasMigratableDownloads(context: Context, directoryUri: String?): Boolean = withContext(Dispatchers.IO) {
         val root = resolveRoot(context, directoryUri) ?: return@withContext false
-        collectManagedMigrationEntries(root).isNotEmpty()
+        collectManagedMigrationEntries(
+            context = context,
+            root = root,
+            allowMetadataLessAudio = shouldIndexMetadataLessAudio(directoryUri)
+        ).isNotEmpty()
     }
 
     suspend fun mayHaveMigratableDownloads(context: Context, directoryUri: String?): Boolean = withContext(Dispatchers.IO) {
         val root = resolveRoot(context, directoryUri) ?: return@withContext false
-        hasManagedMigrationCandidates(root) ||
-            subdirectoryHasFiles(root, "Lyrics") ||
-            subdirectoryHasFiles(root, COVER_SUBDIRECTORY)
+        collectManagedMigrationEntries(
+            context = context,
+            root = root,
+            allowMetadataLessAudio = shouldIndexMetadataLessAudio(directoryUri)
+        ).isNotEmpty()
     }
 
     suspend fun migrateManagedDownloads(
@@ -284,12 +305,16 @@ internal object ManagedDownloadStorage {
         val targetRoot = resolveRoot(context, toDirectoryUri)
             ?: throw IOException("目标下载目录不可用")
 
-        val entries = collectManagedMigrationEntries(sourceRoot)
+        val entries = collectManagedMigrationEntries(
+            context = context,
+            root = sourceRoot,
+            allowMetadataLessAudio = shouldIndexMetadataLessAudio(fromDirectoryUri)
+        )
         if (entries.isEmpty()) {
             return@withContext MigrationResult(movedFiles = 0, skippedFiles = 0)
         }
 
-        val copyLimiter = Semaphore(MIGRATION_COPY_PARALLELISM)
+        val copyLimiter = Semaphore(migrationCopyParallelism(sourceRoot, targetRoot))
         val copyResults = coroutineScope {
             entries.map { migrationEntry ->
                 async(Dispatchers.IO) {
@@ -307,8 +332,9 @@ internal object ManagedDownloadStorage {
         val skippedFiles = copyResults.count { it.copiedEntry == null }
 
         if (skippedFiles > 0) {
+            rollbackMigratedEntries(context, copiedEntries)
             return@withContext MigrationResult(
-                movedFiles = copiedEntries.size,
+                movedFiles = 0,
                 skippedFiles = skippedFiles
             )
         }
@@ -316,11 +342,13 @@ internal object ManagedDownloadStorage {
         val rewriteFailedFiles = rewriteMigratedMetadataReferences(
             context = context,
             targetRoot = targetRoot,
-            copiedEntries = copiedEntries
+            copiedEntries = copiedEntries,
+            parallelism = migrationRewriteParallelism(targetRoot)
         )
         if (rewriteFailedFiles > 0) {
+            rollbackMigratedEntries(context, copiedEntries)
             return@withContext MigrationResult(
-                movedFiles = copiedEntries.size,
+                movedFiles = 0,
                 skippedFiles = rewriteFailedFiles
             )
         }
@@ -343,43 +371,42 @@ internal object ManagedDownloadStorage {
         val copiedEntry: CopiedMigrationEntry?
     )
 
-    private fun copyManagedMigrationEntry(
+    private suspend fun copyManagedMigrationEntry(
         context: Context,
         targetRoot: RootHandle,
         migrationEntry: ManagedMigrationEntry
     ): ManagedMigrationCopyResult {
-        val copiedEntry = runCatching {
+        val copiedEntry = retryManagedMigrationWrite(
+            reference = migrationEntry.entry.reference
+        ) {
             openStoredEntryInputStream(context, migrationEntry.entry)?.use { input ->
                 if (migrationEntry.subdirectory == null) {
-                    writeRootStream(
+                    writeMigrationRootStream(
                         context = context,
                         root = targetRoot,
                         displayName = migrationEntry.entry.name,
                         mimeType = migrationMimeTypeFor(migrationEntry),
-                        input = input,
-                        invalidateSnapshot = false
+                        input = input
                     )
                 } else {
-                    writeSubdirectoryStream(
+                    writeMigrationSubdirectoryStream(
                         context = context,
                         root = targetRoot,
                         subdirectory = migrationEntry.subdirectory,
                         displayName = migrationEntry.entry.name,
                         mimeType = migrationMimeTypeFor(migrationEntry),
-                        input = input,
-                        invalidateSnapshot = false
+                        input = input
                     )
                 }
             } ?: throw IOException("无法读取源下载文件: ${migrationEntry.entry.name}")
-        }.onFailure {
-            NPLogger.w(TAG, "迁移下载文件失败: ${migrationEntry.entry.reference}, ${it.message}")
-        }.getOrNull()
+        }
             ?: return ManagedMigrationCopyResult(copiedEntry = null)
 
         return ManagedMigrationCopyResult(
             copiedEntry = CopiedMigrationEntry(
                 original = migrationEntry,
-                copiedEntry = copiedEntry
+                copiedEntry = copiedEntry.entry,
+                createdNew = copiedEntry.createdNew
             )
         )
     }
@@ -483,7 +510,7 @@ internal object ManagedDownloadStorage {
             }
         }.toMap()
         val coverEntries = listSubdirectoryEntries(root, COVER_SUBDIRECTORY)
-        val lyricEntries = listSubdirectoryEntries(root, "Lyrics")
+        val lyricEntries = listSubdirectoryEntries(root, LYRIC_SUBDIRECTORY)
         val coverEntriesByName = coverEntries.associateBy(StoredEntry::name)
         val lyricEntriesByName = lyricEntries.associateBy(StoredEntry::name)
         val allowMetadataLessAudio = shouldIndexMetadataLessAudio()
@@ -588,13 +615,14 @@ internal object ManagedDownloadStorage {
     private suspend fun rewriteMigratedMetadataReferences(
         context: Context,
         targetRoot: RootHandle,
-        copiedEntries: List<CopiedMigrationEntry>
+        copiedEntries: List<CopiedMigrationEntry>,
+        parallelism: Int
     ): Int = coroutineScope {
         if (copiedEntries.isEmpty()) return@coroutineScope 0
         val referenceMap = copiedEntries.associate { copied ->
             copied.original.entry.reference to copied.copiedEntry.reference
         }
-        val rewriteLimiter = Semaphore(MIGRATION_REWRITE_PARALLELISM)
+        val rewriteLimiter = Semaphore(parallelism)
         copiedEntries
             .filter { it.original.entry.name.endsWith(METADATA_SUFFIX) }
             .map { copied ->
@@ -659,6 +687,33 @@ internal object ManagedDownloadStorage {
         }.awaitAll().sum()
     }
 
+    private suspend fun rollbackMigratedEntries(
+        context: Context,
+        copiedEntries: List<CopiedMigrationEntry>
+    ): Int = coroutineScope {
+        if (copiedEntries.isEmpty()) return@coroutineScope 0
+        val cleanupLimiter = Semaphore(MIGRATION_DELETE_PARALLELISM)
+        copiedEntries.map { migrationEntry ->
+            async(Dispatchers.IO) {
+                cleanupLimiter.withPermit {
+                    if (!migrationEntry.createdNew) {
+                        return@withPermit 0
+                    }
+                    val deleted = runCatching {
+                        deleteInternal(
+                            context = context,
+                            reference = migrationEntry.copiedEntry.reference,
+                            invalidateSnapshot = false
+                        )
+                    }.onFailure {
+                        NPLogger.w(TAG, "回滚迁移目标文件失败: ${migrationEntry.copiedEntry.reference}, ${it.message}")
+                    }.getOrDefault(false)
+                    if (deleted) 0 else 1
+                }
+            }
+        }.awaitAll().sum()
+    }
+
     internal fun rewriteManagedMetadataReferences(
         rawJson: String,
         referenceMap: Map<String, String>
@@ -709,7 +764,7 @@ internal object ManagedDownloadStorage {
     }
 
     private fun shouldIndexMetadataLessAudio(): Boolean {
-        return normalizeDirectoryUri(customDirectoryUri) == null
+        return shouldIndexMetadataLessAudio(customDirectoryUri)
     }
 
     private fun rewriteMetadataReferenceField(
@@ -853,7 +908,7 @@ internal object ManagedDownloadStorage {
     private fun saveLyricTextBlocking(context: Context, displayName: String, content: String): String? {
         return writeSubdirectoryBytesBlocking(
             context = context,
-            subdirectory = "Lyrics",
+            subdirectory = LYRIC_SUBDIRECTORY,
             displayName = displayName,
             bytes = content.toByteArray(Charsets.UTF_8),
             mimeType = mimeTypeFromName(displayName, null)
@@ -894,13 +949,75 @@ internal object ManagedDownloadStorage {
     }
 
     fun readLyrics(context: Context, song: SongItem, translated: Boolean): String? {
-        val reference = findLyricLocation(
+        val snapshot = buildDownloadLibrarySnapshotBlocking(context)
+        val resolvedAudio = findAudioEntry(snapshot, song)
+        val resolvedMetadata = resolvedAudio?.let { snapshot.metadataByAudioName[it.name] }
+        val reference = resolveManagedLyricReference(
             context = context,
-            songId = song.id,
+            snapshot = snapshot,
+            song = song,
+            resolvedAudio = resolvedAudio,
+            resolvedMetadata = resolvedMetadata,
+            translated = translated
+        )
+        if (reference != null) {
+            return readTextInternal(context, reference)
+        }
+        return if (translated) {
+            resolvedMetadata?.matchedTranslatedLyric ?: resolvedMetadata?.originalTranslatedLyric
+        } else {
+            resolvedMetadata?.matchedLyric ?: resolvedMetadata?.originalLyric
+        }
+    }
+
+    private fun resolveManagedLyricReference(
+        context: Context,
+        snapshot: DownloadLibrarySnapshot,
+        song: SongItem,
+        resolvedAudio: StoredEntry?,
+        resolvedMetadata: DownloadedAudioMetadata?,
+        translated: Boolean
+    ): String? {
+        val metadataReference = if (translated) {
+            resolvedMetadata?.translatedLyricPath
+        } else {
+            resolvedMetadata?.lyricPath
+        }
+        if (existsInternal(context, metadataReference)) {
+            return metadataReference
+        }
+
+        resolvedAudio?.let { audio ->
+            findIndexedLyricReference(
+                snapshot = snapshot,
+                songId = resolvedMetadata?.songId ?: song.id.takeIf { it > 0L },
+                candidateBaseNames = candidateManagedDownloadBaseNames(audio.nameWithoutExtension),
+                translated = translated
+            )?.let { return it }
+        }
+
+        return findIndexedLyricReference(
+            snapshot = snapshot,
+            songId = song.id.takeIf { it > 0L },
             candidateBaseNames = candidateManagedDownloadBaseNames(song, downloadFileNameTemplate),
             translated = translated
-        ) ?: return null
-        return readTextInternal(context, reference)
+        )
+    }
+
+    private fun findIndexedLyricReference(
+        snapshot: DownloadLibrarySnapshot,
+        songId: Long?,
+        candidateBaseNames: List<String>,
+        translated: Boolean
+    ): String? {
+        return findIndexedEntryByNames(
+            names = buildLyricCandidateNames(
+                songId = songId,
+                candidateBaseNames = candidateBaseNames,
+                translated = translated
+            ),
+            entriesByName = snapshot.lyricEntriesByName
+        )?.reference
     }
 
     fun toPlayableUri(reference: String?): String? {
@@ -1053,58 +1170,96 @@ internal object ManagedDownloadStorage {
         }
     }
 
-    private fun hasManagedMigrationCandidates(root: RootHandle): Boolean {
-        return when (root) {
-            is RootHandle.FileRoot -> (
-                root.dir.listFiles()?.any { file ->
-                    file.isFile && isManagedMigrationCandidate(file.name)
-                } == true
-                )
-
-            is RootHandle.TreeRoot -> root.tree.listFiles().any { file ->
-                file.isFile && file.name?.let(::isManagedMigrationCandidate) == true
-            }
-        }
-    }
-
-    private fun subdirectoryHasFiles(root: RootHandle, subdirectory: String): Boolean {
-        val directory = findSubdirectory(root, subdirectory) ?: return false
-        return when (directory) {
-            is RootHandle.FileRoot -> directory.dir.listFiles()?.any(File::isFile) == true
-            is RootHandle.TreeRoot -> directory.tree.listFiles().any(DocumentFile::isFile)
-        }
-    }
-
-    private fun isManagedMigrationCandidate(fileName: String): Boolean {
-        return fileName.substringAfterLast('.', "").lowercase() in audioExtensions ||
-            fileName.endsWith(METADATA_SUFFIX)
-    }
-
-    private fun collectManagedMigrationEntries(root: RootHandle): List<ManagedMigrationEntry> {
-        val rootEntries = listChildren(root)
-            .filterNot(StoredEntry::isDirectory)
-            .filter { entry -> isManagedMigrationCandidate(entry.name) }
-            .map { entry -> ManagedMigrationEntry(subdirectory = null, entry = entry) }
-
-        return (rootEntries +
-            collectManagedMigrationEntries(root, "Lyrics") +
-            collectManagedMigrationEntries(root, COVER_SUBDIRECTORY))
-            .sortedWith(compareBy({ it.subdirectory ?: "" }, { it.entry.name }))
+    private fun shouldIndexMetadataLessAudio(directoryUri: String?): Boolean {
+        return normalizeDirectoryUri(directoryUri) == null
     }
 
     private fun collectManagedMigrationEntries(
+        context: Context,
         root: RootHandle,
-        subdirectory: String
+        allowMetadataLessAudio: Boolean
     ): List<ManagedMigrationEntry> {
-        val directory = findSubdirectory(root, subdirectory) ?: return emptyList()
-        return listChildren(directory)
-            .filterNot(StoredEntry::isDirectory)
-            .map { entry -> ManagedMigrationEntry(subdirectory = subdirectory, entry = entry) }
+        val rootEntries = listChildren(root).filterNot(StoredEntry::isDirectory)
+        val audioEntries = rootEntries.filter { it.extension in audioExtensions }
+        val metadataEntries = rootEntries.filter { it.name.endsWith(METADATA_SUFFIX) }
+        val coverEntries = listSubdirectoryEntries(root, COVER_SUBDIRECTORY)
+        val lyricEntries = listSubdirectoryEntries(root, LYRIC_SUBDIRECTORY)
+        val metadataEntriesByAudioName = metadataEntries.associateBy { entry ->
+            entry.name.removeSuffix(METADATA_SUFFIX)
+        }
+        val coverEntryNames = coverEntries.mapTo(linkedSetOf(), StoredEntry::name)
+        val lyricEntryNames = lyricEntries.mapTo(linkedSetOf(), StoredEntry::name)
+        val managedAudioEntries = audioEntries.filter { entry ->
+            shouldTreatAudioAsManaged(
+                audioName = entry.name,
+                metadataAudioNames = metadataEntriesByAudioName.keys,
+                coverEntryNames = coverEntryNames,
+                lyricEntryNames = lyricEntryNames,
+                allowMetadataLessAudio = allowMetadataLessAudio
+            )
+        }
+        if (managedAudioEntries.isEmpty() && metadataEntriesByAudioName.isEmpty()) {
+            return emptyList()
+        }
+
+        val managedAudioNames = managedAudioEntries.mapTo(linkedSetOf(), StoredEntry::name)
+        val parsedMetadataByAudioName = metadataEntriesByAudioName.mapNotNull { (audioName, entry) ->
+            parseDownloadedAudioMetadata(context, entry)?.let { metadata ->
+                audioName to metadata
+            }
+        }.toMap()
+        val managedCoverNames = buildSet {
+            managedAudioEntries.forEach { entry ->
+                buildSidecarCandidateNames(
+                    candidateManagedDownloadBaseNames(entry.nameWithoutExtension)
+                ).forEach(::add)
+            }
+        }
+        val managedLyricNames = buildSet {
+            managedAudioEntries.forEach { entry ->
+                val candidateBaseNames = candidateManagedDownloadBaseNames(entry.nameWithoutExtension)
+                val songId = parsedMetadataByAudioName[entry.name]?.songId
+                buildLyricCandidateNames(
+                    songId = songId,
+                    candidateBaseNames = candidateBaseNames,
+                    translated = false
+                ).forEach(::add)
+                buildLyricCandidateNames(
+                    songId = songId,
+                    candidateBaseNames = candidateBaseNames,
+                    translated = true
+                ).forEach(::add)
+            }
+        }
+
+        val migrationEntries = buildList {
+            managedAudioEntries.forEach { entry ->
+                add(ManagedMigrationEntry(subdirectory = null, entry = entry))
+            }
+            metadataEntries.forEach { entry ->
+                if (entry.name.removeSuffix(METADATA_SUFFIX) in managedAudioNames) {
+                    add(ManagedMigrationEntry(subdirectory = null, entry = entry))
+                }
+            }
+            coverEntries.forEach { entry ->
+                if (entry.name in managedCoverNames) {
+                    add(ManagedMigrationEntry(subdirectory = COVER_SUBDIRECTORY, entry = entry))
+                }
+            }
+            lyricEntries.forEach { entry ->
+                if (entry.name in managedLyricNames) {
+                    add(ManagedMigrationEntry(subdirectory = LYRIC_SUBDIRECTORY, entry = entry))
+                }
+            }
+        }
+
+        return migrationEntries.sortedWith(compareBy({ it.subdirectory ?: "" }, { it.entry.name }))
     }
 
     private fun listSubdirectoryEntries(root: RootHandle, subdirectory: String): List<StoredEntry> {
-        val directory = findSubdirectory(root, subdirectory) ?: return emptyList()
-        return listChildren(directory).filterNot(StoredEntry::isDirectory)
+        return findSubdirectories(root, subdirectory, canonicalLast = true)
+            .flatMap(::listChildren)
+            .filterNot(StoredEntry::isDirectory)
     }
 
     private fun findIndexedEntryByNames(
@@ -1152,36 +1307,7 @@ internal object ManagedDownloadStorage {
         entry: StoredEntry
     ): DownloadedAudioMetadata? {
         val raw = readTextInternal(context, entry.reference) ?: return null
-        return runCatching {
-            val root = JSONObject(raw)
-            DownloadedAudioMetadata(
-                stableKey = root.optString("stableKey").takeIf(String::isNotBlank),
-                songId = root.optLong("songId").takeIf { it > 0L },
-                identityAlbum = root.optString("identityAlbum").takeIf(String::isNotBlank),
-                name = root.optString("name").takeIf(String::isNotBlank),
-                artist = root.optString("artist").takeIf(String::isNotBlank),
-                coverUrl = root.optString("coverUrl").takeIf(String::isNotBlank),
-                matchedLyricSource = root.optString("matchedLyricSource").takeIf(String::isNotBlank),
-                matchedSongId = root.optString("matchedSongId").takeIf(String::isNotBlank),
-                userLyricOffsetMs = root.optLong("userLyricOffsetMs"),
-                customCoverUrl = root.optString("customCoverUrl").takeIf(String::isNotBlank),
-                customName = root.optString("customName").takeIf(String::isNotBlank),
-                customArtist = root.optString("customArtist").takeIf(String::isNotBlank),
-                originalName = root.optString("originalName").takeIf(String::isNotBlank),
-                originalArtist = root.optString("originalArtist").takeIf(String::isNotBlank),
-                originalCoverUrl = root.optString("originalCoverUrl").takeIf(String::isNotBlank),
-                mediaUri = root.optString("mediaUri").takeIf(String::isNotBlank),
-                channelId = root.optString("channelId").takeIf(String::isNotBlank),
-                audioId = root.optString("audioId").takeIf(String::isNotBlank),
-                subAudioId = root.optString("subAudioId").takeIf(String::isNotBlank),
-                coverPath = root.optString("coverPath").takeIf(String::isNotBlank),
-                lyricPath = root.optString("lyricPath").takeIf(String::isNotBlank),
-                translatedLyricPath = root.optString("translatedLyricPath").takeIf(String::isNotBlank),
-                durationMs = root.optLong("durationMs")
-            )
-        }.onFailure { error ->
-            NPLogger.w(TAG, "解析下载 metadata 失败: ${entry.name} - ${error.message}")
-        }.getOrNull()
+        return parseDownloadedAudioMetadataJson(raw)
     }
 
     private fun snapshotCacheFile(context: Context): File {
@@ -1476,6 +1602,43 @@ internal object ManagedDownloadStorage {
         return storedEntry
     }
 
+    private fun writeMigrationRootStream(
+        context: Context,
+        root: RootHandle,
+        displayName: String,
+        mimeType: String,
+        input: InputStream
+    ): StoredWriteResult {
+        return when (root) {
+            is RootHandle.FileRoot -> {
+                val target = File(root.dir, displayName)
+                if (target.exists()) {
+                    throw MigrationTargetConflictException("目标下载目录已存在同名文件: $displayName")
+                }
+                target.outputStream().use { output ->
+                    input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
+                }
+                StoredWriteResult(
+                    entry = target.toStoredEntry(),
+                    createdNew = true
+                )
+            }
+
+            is RootHandle.TreeRoot -> {
+                ensureMigrationTargetAbsent(root.tree, displayName)
+                val target = createRootFile(root.tree, displayName, mimeType, replace = true)
+                context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
+                    input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
+                } ?: throw IOException("无法写入根目录文件: $displayName")
+                StoredWriteResult(
+                    entry = target.toStoredEntry()
+                        ?: throw IOException("无法读取已写入的目录文件: $displayName"),
+                    createdNew = true
+                )
+            }
+        }
+    }
+
     private fun writeSubdirectoryBytesBlocking(
         context: Context,
         subdirectory: String,
@@ -1505,7 +1668,7 @@ internal object ManagedDownloadStorage {
         storedEntry?.let { entry ->
             val bucket = when (subdirectory) {
                 COVER_SUBDIRECTORY -> SnapshotEntryBucket.COVER
-                "Lyrics" -> SnapshotEntryBucket.LYRIC
+                LYRIC_SUBDIRECTORY -> SnapshotEntryBucket.LYRIC
                 else -> null
             }
             if (bucket == null || !updateSnapshotCacheAfterStoredEntryWrite(context, entry, bucket)) {
@@ -1553,6 +1716,49 @@ internal object ManagedDownloadStorage {
         return storedEntry
     }
 
+    private fun writeMigrationSubdirectoryStream(
+        context: Context,
+        root: RootHandle,
+        subdirectory: String,
+        displayName: String,
+        mimeType: String,
+        input: InputStream
+    ): StoredWriteResult {
+        return when (root) {
+            is RootHandle.FileRoot -> {
+                val dir = File(root.dir, subdirectory).apply { mkdirs() }
+                ensureManagedMediaScanIsolation(subdirectory, dir)
+                val target = File(dir, displayName)
+                if (target.exists()) {
+                    throw MigrationTargetConflictException("目标下载目录已存在同名文件: $subdirectory/$displayName")
+                }
+                target.outputStream().use { output ->
+                    input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
+                }
+                StoredWriteResult(
+                    entry = target.toStoredEntry(),
+                    createdNew = true
+                )
+            }
+
+            is RootHandle.TreeRoot -> {
+                val directory = findOrCreateDirectory(root.tree, subdirectory)
+                    ?: throw IOException("无法创建目录: $subdirectory")
+                ensureManagedMediaScanIsolation(subdirectory, directory)
+                ensureMigrationTargetAbsent(directory, displayName)
+                val target = createRootFile(directory, displayName, mimeType, replace = true)
+                context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
+                    input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
+                } ?: throw IOException("无法写入目录文件: $displayName")
+                StoredWriteResult(
+                    entry = target.toStoredEntry()
+                        ?: throw IOException("无法读取已写入的目录文件: $displayName"),
+                    createdNew = true
+                )
+            }
+        }
+    }
+
     private fun writeRootText(
         context: Context,
         root: RootHandle,
@@ -1582,38 +1788,50 @@ internal object ManagedDownloadStorage {
         return storedEntry
     }
 
-    private fun findSubdirectory(root: RootHandle, name: String): RootHandle? {
-        return when (root) {
-            is RootHandle.FileRoot -> {
-                val dir = File(root.dir, name)
-                if (dir.exists() && dir.isDirectory) RootHandle.FileRoot(dir) else null
-            }
-
-            is RootHandle.TreeRoot -> root.tree.findFile(name)
-                ?.takeIf(DocumentFile::isDirectory)
-                ?.let { RootHandle.TreeRoot(it) }
-        }
-    }
-
     private fun findOrCreateDirectory(parent: DocumentFile, displayName: String): DocumentFile? {
-        parent.findFile(displayName)?.takeIf(DocumentFile::isDirectory)?.let { return it }
-        return parent.createDirectory(displayName)
+        val lock = treeDirectoryLocks.computeIfAbsent("${parent.uri}|$displayName") { Any() }
+        return synchronized(lock) {
+            parent.listFiles()
+                .filter(DocumentFile::isDirectory)
+                .mapNotNull { file -> file.name?.let { name -> name to file } }
+                .filter { (name, _) -> matchesManagedSubdirectoryName(name, displayName) }
+                .sortedWith(
+                    compareBy<Pair<String, DocumentFile>>(
+                        { if (it.first == displayName) 0 else 1 },
+                        { managedSubdirectoryOrdinal(it.first, displayName) },
+                        { it.first }
+                    )
+                )
+                .firstOrNull()
+                ?.second
+                ?.let { return@synchronized it }
+            parent.createDirectory(displayName)
+                ?: parent.listFiles()
+                    .firstOrNull { file ->
+                        file.isDirectory && file.name?.let { name ->
+                            matchesManagedSubdirectoryName(name, displayName)
+                        } == true
+                    }
+        }
     }
 
     private fun ensureManagedMediaScanIsolation(root: RootHandle) {
         runCatching {
             when (root) {
                 is RootHandle.FileRoot -> {
-                    val directory = File(root.dir, COVER_SUBDIRECTORY)
-                    if (directory.isDirectory) {
-                        ensureNoMediaMarker(directory)
+                    findSubdirectories(root, COVER_SUBDIRECTORY).forEach { directory ->
+                        if (directory is RootHandle.FileRoot) {
+                            ensureNoMediaMarker(directory.dir)
+                        }
                     }
                 }
 
                 is RootHandle.TreeRoot -> {
-                    root.tree.findFile(COVER_SUBDIRECTORY)
-                        ?.takeIf(DocumentFile::isDirectory)
-                        ?.let { ensureNoMediaMarker(it) }
+                    findSubdirectories(root, COVER_SUBDIRECTORY).forEach { directory ->
+                        if (directory is RootHandle.TreeRoot) {
+                            ensureNoMediaMarker(directory.tree)
+                        }
+                    }
                 }
             }
         }.onFailure {
@@ -1624,6 +1842,80 @@ internal object ManagedDownloadStorage {
     // 只给封面目录补 .nomedia，避免把用户手选的整个下载根目录从媒体库里隐藏
     internal fun shouldCreateNoMediaMarker(subdirectory: String): Boolean {
         return subdirectory == COVER_SUBDIRECTORY
+    }
+
+    internal fun matchesManagedSubdirectoryName(actualName: String, desiredName: String): Boolean {
+        if (actualName == desiredName) {
+            return true
+        }
+        if (!actualName.startsWith("$desiredName (") || !actualName.endsWith(")")) {
+            return false
+        }
+        val suffix = actualName.removePrefix("$desiredName (").removeSuffix(")")
+        return suffix.isNotBlank() && suffix.all(Char::isDigit)
+    }
+
+    private fun managedSubdirectoryOrdinal(actualName: String, desiredName: String): Int {
+        if (actualName == desiredName) {
+            return 0
+        }
+        return actualName.removePrefix("$desiredName (")
+            .removeSuffix(")")
+            .toIntOrNull()
+            ?: Int.MAX_VALUE
+    }
+
+    private data class NamedDirectoryRoot(
+        val name: String,
+        val root: RootHandle
+    )
+
+    private fun findSubdirectories(
+        root: RootHandle,
+        desiredName: String,
+        canonicalLast: Boolean = false
+    ): List<RootHandle> {
+        val comparator = if (canonicalLast) {
+            compareBy<NamedDirectoryRoot>(
+                { if (it.name == desiredName) 1 else 0 },
+                { managedSubdirectoryOrdinal(it.name, desiredName) },
+                { it.name }
+            )
+        } else {
+            compareBy<NamedDirectoryRoot>(
+                { if (it.name == desiredName) 0 else 1 },
+                { managedSubdirectoryOrdinal(it.name, desiredName) },
+                { it.name }
+            )
+        }
+        return listDirectoryChildren(root)
+            .filter { matchesManagedSubdirectoryName(it.name, desiredName) }
+            .sortedWith(comparator)
+            .map(NamedDirectoryRoot::root)
+    }
+
+    private fun listDirectoryChildren(root: RootHandle): List<NamedDirectoryRoot> {
+        return when (root) {
+            is RootHandle.FileRoot -> root.dir.listFiles()
+                ?.filter(File::isDirectory)
+                ?.map { file -> NamedDirectoryRoot(name = file.name, root = RootHandle.FileRoot(file)) }
+                .orEmpty()
+
+            is RootHandle.TreeRoot -> root.tree.listFiles()
+                .filter(DocumentFile::isDirectory)
+                .mapNotNull { file ->
+                    file.name?.let { name ->
+                        NamedDirectoryRoot(name = name, root = RootHandle.TreeRoot(file))
+                    }
+                }
+        }
+    }
+
+    private fun ensureMigrationTargetAbsent(parent: DocumentFile, displayName: String) {
+        parent.findFile(displayName)?.let { existing ->
+            val targetType = if (existing.isDirectory) "目录" else "文件"
+            throw MigrationTargetConflictException("目标下载目录已存在同名$targetType: $displayName")
+        }
     }
 
     private fun ensureManagedMediaScanIsolation(subdirectory: String, directory: File) {
@@ -1681,6 +1973,50 @@ internal object ManagedDownloadStorage {
         } else {
             mimeTypeFromName(entry.entry.name, null)
         }
+    }
+
+    private fun migrationCopyParallelism(sourceRoot: RootHandle, targetRoot: RootHandle): Int {
+        return if (sourceRoot is RootHandle.TreeRoot || targetRoot is RootHandle.TreeRoot) {
+            MIGRATION_TREE_COPY_PARALLELISM
+        } else {
+            MIGRATION_COPY_PARALLELISM
+        }
+    }
+
+    private fun migrationRewriteParallelism(targetRoot: RootHandle): Int {
+        return if (targetRoot is RootHandle.TreeRoot) {
+            MIGRATION_TREE_REWRITE_PARALLELISM
+        } else {
+            MIGRATION_REWRITE_PARALLELISM
+        }
+    }
+
+    private suspend fun <T> retryManagedMigrationWrite(
+        reference: String,
+        block: () -> T
+    ): T? {
+        repeat(MIGRATION_IO_MAX_ATTEMPTS) { attempt ->
+            var shouldRetry = true
+            val result = runCatching(block).onFailure { error ->
+                if (error is MigrationTargetConflictException) {
+                    shouldRetry = false
+                }
+                NPLogger.w(
+                    TAG,
+                    "迁移下载文件失败: $reference, attempt=${attempt + 1}/$MIGRATION_IO_MAX_ATTEMPTS, ${error.message}"
+                )
+            }.getOrNull()
+            if (result != null) {
+                return result
+            }
+            if (!shouldRetry) {
+                return null
+            }
+            if (attempt < MIGRATION_IO_MAX_ATTEMPTS - 1) {
+                delay(MIGRATION_IO_RETRY_DELAY_MS * (attempt + 1))
+            }
+        }
+        return null
     }
 
     private fun normalizeDirectoryUri(uriString: String?): String? {
@@ -1935,7 +2271,7 @@ internal object ManagedDownloadStorage {
         )
     }
 
-    private fun parseDownloadedAudioMetadataJson(rawJson: String): DownloadedAudioMetadata? {
+    internal fun parseDownloadedAudioMetadataJson(rawJson: String): DownloadedAudioMetadata? {
         return runCatching {
             JSONObject(rawJson).toDownloadedAudioMetadata()
         }.onFailure {

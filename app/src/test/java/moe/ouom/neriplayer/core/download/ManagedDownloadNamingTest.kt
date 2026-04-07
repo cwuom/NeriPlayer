@@ -87,4 +87,25 @@ class ManagedDownloadNamingTest {
 
         assertEquals("netease - Artist - Song - 123 - 456 - 789", result)
     }
+
+    @Test
+    fun `candidateManagedDownloadBaseNames keeps local file base name for scanned download entries`() {
+        val song = SongItem(
+            id = 1L,
+            name = "已经改过的标题",
+            artist = "已经改过的歌手",
+            album = "__local_files__",
+            albumId = 0L,
+            durationMs = 1000L,
+            coverUrl = null,
+            localFileName = "netease - 原歌手 - 原标题 (1).flac",
+            localFilePath = "/storage/emulated/0/Music/NeriPlayer/netease - 原歌手 - 原标题 (1).flac",
+            mediaUri = "/storage/emulated/0/Music/NeriPlayer/netease - 原歌手 - 原标题 (1).flac"
+        )
+
+        val candidates = candidateManagedDownloadBaseNames(song)
+
+        assertTrue(candidates.contains("netease - 原歌手 - 原标题 (1)"))
+        assertTrue(candidates.contains("netease - 原歌手 - 原标题"))
+    }
 }

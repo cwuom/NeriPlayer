@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download
 
 import java.text.Normalizer
+import java.io.File
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 
 internal const val DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE = "%source% - %artist% - %title%"
@@ -86,6 +87,7 @@ internal fun candidateManagedDownloadBaseNames(
     baseNames += sanitizeManagedDownloadFileName("${song.customArtist ?: song.artist} - ${song.customName ?: song.name}")
     baseNames += sanitizeManagedDownloadFileName("${song.artist} - ${song.name}")
     baseNames += sanitizeManagedDownloadFileName("$originalArtist - $originalName")
+    appendLocalFileDerivedBaseNames(baseNames, song)
 
     return baseNames.toList()
 }
@@ -107,4 +109,41 @@ private fun managedDownloadSource(song: SongItem): String {
             song.mediaUri?.contains("youtube", ignoreCase = true) == true -> "youtube_music"
             else -> "netease"
         }
+}
+
+private fun appendLocalFileDerivedBaseNames(
+    baseNames: MutableSet<String>,
+    song: SongItem
+) {
+    buildSet {
+        song.localFileName
+            ?.takeIf(String::isNotBlank)
+            ?.let(::add)
+        song.localFilePath
+            ?.takeIf(String::isNotBlank)
+            ?.let(::extractManagedLocalFileName)
+            ?.let(::add)
+        song.mediaUri
+            ?.takeIf(String::isNotBlank)
+            ?.let(::extractManagedLocalFileName)
+            ?.let(::add)
+    }.forEach { rawFileName ->
+        val normalizedName = rawFileName
+            .substringAfterLast('/')
+            .substringAfterLast(File.separatorChar)
+            .takeIf(String::isNotBlank)
+            ?: return@forEach
+        val baseName = normalizedName.substringBeforeLast('.', normalizedName)
+        candidateManagedDownloadBaseNames(baseName).forEach(baseNames::add)
+    }
+}
+
+private fun extractManagedLocalFileName(location: String): String? {
+    val normalized = location
+        .substringBefore('?')
+        .substringBefore('#')
+    if (normalized.isBlank()) return null
+    return normalized.substringAfterLast('/')
+        .substringAfterLast(File.separatorChar)
+        .takeIf(String::isNotBlank)
 }

@@ -110,6 +110,16 @@ class ManagedDownloadStorageMigrationCompatTest {
     }
 
     @Test
+    fun `matchesManagedSubdirectoryName keeps numbered sidecar directories compatible`() {
+        assertTrue(ManagedDownloadStorage.matchesManagedSubdirectoryName("Covers", "Covers"))
+        assertTrue(ManagedDownloadStorage.matchesManagedSubdirectoryName("Covers (1)", "Covers"))
+        assertTrue(ManagedDownloadStorage.matchesManagedSubdirectoryName("Lyrics (12)", "Lyrics"))
+        assertFalse(ManagedDownloadStorage.matchesManagedSubdirectoryName("Covers copy", "Covers"))
+        assertFalse(ManagedDownloadStorage.matchesManagedSubdirectoryName("Covers(1)", "Covers"))
+        assertFalse(ManagedDownloadStorage.matchesManagedSubdirectoryName("Lyrics (x)", "Lyrics"))
+    }
+
+    @Test
     fun `documentCreateMimeType preserves explicit lyric extensions`() {
         assertEquals(
             "application/octet-stream",
@@ -119,5 +129,24 @@ class ManagedDownloadStorageMigrationCompatTest {
             "text/plain",
             ManagedDownloadStorage.documentCreateMimeType("Artist - Song.txt", "text/plain")
         )
+    }
+
+    @Test
+    fun `parseDownloadedAudioMetadataJson keeps embedded lyrics for local fallback`() {
+        val metadata = ManagedDownloadStorage.parseDownloadedAudioMetadataJson(
+            JSONObject().apply {
+                put("matchedLyric", "[00:00.00]原文")
+                put("matchedTranslatedLyric", "[00:00.00]翻译")
+                put("originalLyric", "[00:00.00]原始原文")
+                put("originalTranslatedLyric", "[00:00.00]原始翻译")
+                put("lyricPath", "/music/Lyrics/Artist - Song.lrc")
+            }.toString()
+        )
+
+        assertEquals("[00:00.00]原文", metadata?.matchedLyric)
+        assertEquals("[00:00.00]翻译", metadata?.matchedTranslatedLyric)
+        assertEquals("[00:00.00]原始原文", metadata?.originalLyric)
+        assertEquals("[00:00.00]原始翻译", metadata?.originalTranslatedLyric)
+        assertEquals("/music/Lyrics/Artist - Song.lrc", metadata?.lyricPath)
     }
 }
