@@ -69,7 +69,7 @@ import moe.ouom.neriplayer.util.fastScrollableImageRequest
 import moe.ouom.neriplayer.util.HapticIconButton
 
 object NeriMiniPlayerDefaults {
-    val Height = 56.dp
+    val Height = 64.dp
 }
 
 @Composable
