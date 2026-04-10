@@ -234,7 +234,11 @@ internal fun PlayerManager.initializeImpl(
                 if (isOfflineCache) {
                     pause()
                 } else {
-                    mainScope.launch { handleTrackEndedIfNeeded(source = "playback_error") }
+                    mainScope.launch {
+                        advanceAfterPlaybackFailure(
+                            source = "playback_error_${error.errorCodeName}"
+                        )
+                    }
                 }
             }
 

@@ -5,7 +5,6 @@ import java.util.Locale
 private val ROOM_ID_REGEX = Regex("^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$")
 private val USER_UUID_REGEX =
     Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$")
-private val NICKNAME_REGEX = Regex("^[\\p{IsHan}A-Za-z0-9]{1,24}$")
 
 const val LISTEN_TOGETHER_ROOM_ID_LENGTH = 6
 const val LISTEN_TOGETHER_NICKNAME_MIN_LENGTH = 1
@@ -72,7 +71,7 @@ fun validateListenTogetherNickname(nickname: String): String? {
             }
         }
 
-        !NICKNAME_REGEX.matches(normalized) -> {
+        !isValidListenTogetherNickname(normalized) -> {
             if (isChineseLocale()) {
                 "当前昵称仅支持汉字、英文字母和数字。"
             } else {
@@ -110,4 +109,26 @@ fun requireValidListenTogetherNickname(nickname: String): String {
 
 private fun isChineseLocale(): Boolean {
     return Locale.getDefault().language.startsWith("zh", ignoreCase = true)
+}
+
+private fun isValidListenTogetherNickname(value: String): Boolean {
+    var index = 0
+    while (index < value.length) {
+        val codePoint = value.codePointAt(index)
+        if (!isAllowedNicknameCodePoint(codePoint)) {
+            return false
+        }
+        index += Character.charCount(codePoint)
+    }
+    return true
+}
+
+private fun isAllowedNicknameCodePoint(codePoint: Int): Boolean {
+    return when {
+        codePoint in '0'.code..'9'.code -> true
+        codePoint in 'A'.code..'Z'.code -> true
+        codePoint in 'a'.code..'z'.code -> true
+        Character.UnicodeScript.of(codePoint) == Character.UnicodeScript.HAN -> true
+        else -> false
+    }
 }

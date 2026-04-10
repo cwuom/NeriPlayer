@@ -170,7 +170,9 @@ internal fun PlayerManager.refreshCurrentSongUrlImpl(
             if (consecutivePlayFailures >= MAX_CONSECUTIVE_FAILURES) {
                 mainScope.launch { stopPlaybackPreservingQueue(clearMediaUrl = true) }
             } else {
-                mainScope.launch { handleTrackEndedIfNeeded(source = "refresh_cooldown") }
+                mainScope.launch {
+                    advanceAfterPlaybackFailure(source = "refresh_cooldown")
+                }
             }
         }
         return

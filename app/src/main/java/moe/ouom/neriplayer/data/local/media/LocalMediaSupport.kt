@@ -104,11 +104,25 @@ private fun Uri.isSupportedLocalMediaUri(): Boolean {
     }
 }
 
+internal fun preferredLocalMediaReference(
+    localFilePath: String?,
+    mediaUri: String?
+): String? {
+    val normalizedLocalPath = localFilePath?.takeIf { it.isNotBlank() }
+    val normalizedMediaUri = mediaUri?.takeIf { it.isNotBlank() }
+    return when {
+        normalizedMediaUri.isContentLocalMediaReference() -> normalizedMediaUri
+        normalizedLocalPath.isContentLocalMediaReference() -> normalizedLocalPath
+        normalizedLocalPath != null -> normalizedLocalPath
+        else -> normalizedMediaUri
+    }
+}
+
 fun SongItem.localMediaUri(): Uri? {
-    val source = localFilePath
-        ?.takeIf { it.isNotBlank() }
-        ?: mediaUri?.takeIf { it.isNotBlank() }
-        ?: return null
+    val source = preferredLocalMediaReference(
+        localFilePath = localFilePath,
+        mediaUri = mediaUri
+    ) ?: return null
     val localUri = if (source.startsWith("/")) {
         Uri.fromFile(File(source))
     } else {
@@ -598,7 +612,11 @@ object LocalMediaSupport {
             ?: queried.filePath
             ?: if (allowDescriptorFallback) resolvePathFromDescriptor(context, uri) else null
         val file = resolvedPath?.let(::File)?.takeIf(File::exists)
-        val playableUri = file?.let(Uri::fromFile) ?: uri
+        val playableUri = when {
+            uri.scheme.equals("content", ignoreCase = true) -> uri
+            uri.scheme.equals("android.resource", ignoreCase = true) -> uri
+            else -> file?.let(Uri::fromFile) ?: uri
+        }
         val displayName = file?.name
             ?: queried.displayName
             ?: resolvedPath?.substringAfterLast(File.separatorChar)
@@ -674,8 +692,12 @@ object LocalMediaSupport {
     }
 
     fun toSongItem(details: LocalMediaDetails): SongItem {
-        val source = details.filePath?.takeIf { it.isNotBlank() } ?: details.sourceUri.toString()
-        val stableId = computeStableSongId(source)
+        val stableSource = details.filePath?.takeIf { it.isNotBlank() } ?: details.sourceUri.toString()
+        val playbackSource = preferredLocalMediaReference(
+            localFilePath = details.filePath,
+            mediaUri = details.sourceUri.toString()
+        ) ?: stableSource
+        val stableId = computeStableSongId(stableSource)
         return SongItem(
             id = stableId,
             name = details.title,
@@ -684,7 +706,7 @@ object LocalMediaSupport {
             albumId = 0L,
             durationMs = details.durationMs,
             coverUrl = details.coverUri,
-            mediaUri = source,
+            mediaUri = playbackSource,
             matchedLyric = details.lyricContent,
             originalName = details.originalTitle ?: details.title,
             originalArtist = details.originalArtist ?: details.artist,

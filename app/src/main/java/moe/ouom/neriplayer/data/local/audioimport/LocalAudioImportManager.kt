@@ -37,6 +37,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.media.normalizeLocalAlbumIdentity
+import moe.ouom.neriplayer.data.local.media.preferredLocalMediaReference
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
@@ -227,6 +228,10 @@ object LocalAudioImportManager {
                         .takeIf(::isReadableScannedTitle)
                         ?: fileTitle
                     val source = resolvedFile.absolutePath
+                    val playbackRef = preferredLocalMediaReference(
+                        localFilePath = source,
+                        mediaUri = contentUri.toString()
+                    ) ?: source
                     val fallbackSong = SongItem(
                         id = computeStableSongId(source),
                         name = fallbackTitle,
@@ -235,7 +240,7 @@ object LocalAudioImportManager {
                         albumId = 0L,
                         durationMs = duration,
                         coverUrl = null,
-                        mediaUri = source,
+                        mediaUri = playbackRef,
                         originalName = fallbackTitle,
                         originalArtist = fallbackArtist,
                         originalCoverUrl = null,
@@ -251,6 +256,7 @@ object LocalAudioImportManager {
                                 LocalMediaSupport.inspect(context, contentUri)
                             ),
                             resolvedFile = resolvedFile,
+                            playbackRef = playbackRef,
                             fallbackTitle = fallbackTitle,
                             fallbackArtist = fallbackArtist,
                             fallbackAlbum = fallbackAlbum,
@@ -261,6 +267,7 @@ object LocalAudioImportManager {
                         normalizeScannedSong(
                             baseSong = fallbackSong,
                             resolvedFile = resolvedFile,
+                            playbackRef = playbackRef,
                             fallbackTitle = fallbackTitle,
                             fallbackArtist = fallbackArtist,
                             fallbackAlbum = fallbackAlbum,
@@ -285,6 +292,7 @@ object LocalAudioImportManager {
     private fun normalizeScannedSong(
         baseSong: SongItem,
         resolvedFile: File,
+        playbackRef: String,
         fallbackTitle: String,
         fallbackArtist: String,
         fallbackAlbum: String,
@@ -308,7 +316,7 @@ object LocalAudioImportManager {
             artist = safeArtist,
             album = safeAlbum,
             durationMs = baseSong.durationMs.takeIf { it > 0L } ?: fallbackDurationMs,
-            mediaUri = source,
+            mediaUri = playbackRef,
             originalName = baseSong.originalName?.takeIf { it.isNotBlank() } ?: safeTitle,
             originalArtist = baseSong.originalArtist?.takeIf { it.isNotBlank() } ?: safeArtist,
             localFileName = fileName,
@@ -351,7 +359,10 @@ object LocalAudioImportManager {
             albumId = 0L,
             durationMs = seed.durationMs?.takeIf { it > 0L } ?: 0L,
             coverUrl = seed.nearbyCoverUri,
-            mediaUri = resolvedSource,
+            mediaUri = preferredLocalMediaReference(
+                localFilePath = seed.localFile?.absolutePath,
+                mediaUri = seed.sourceRef
+            ) ?: resolvedSource,
             originalName = resolvedTitle,
             originalArtist = resolvedArtist,
             originalCoverUrl = seed.nearbyCoverUri,
@@ -423,7 +434,7 @@ object LocalAudioImportManager {
 
         return buildQuickImportedSong(
             seed = QuickImportedSongSeed(
-                sourceRef = resolvedFile?.absolutePath ?: uri.toString(),
+                sourceRef = uri.toString(),
                 displayName = displayName,
                 title = queryInfo.title,
                 artist = queryInfo.artist,

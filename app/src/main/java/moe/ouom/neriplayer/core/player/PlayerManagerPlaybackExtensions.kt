@@ -17,9 +17,11 @@ import moe.ouom.neriplayer.core.api.bili.buildBiliPartSong
 import moe.ouom.neriplayer.core.player.debug.playbackStateName
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
+import moe.ouom.neriplayer.core.player.policy.PlaybackFailureAdvanceAction
 import moe.ouom.neriplayer.core.player.policy.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.policy.PlaybackStartPlan
 import moe.ouom.neriplayer.core.player.policy.resolvePlaybackContinuationStartPlan
+import moe.ouom.neriplayer.core.player.policy.resolvePlaybackFailureAdvanceAction
 import moe.ouom.neriplayer.core.player.policy.resolveManagedPlaybackStartPlan
 import moe.ouom.neriplayer.core.player.policy.resolveManualResumePlaybackDecision
 import moe.ouom.neriplayer.core.player.policy.resolveYouTubeWarmupTargets
@@ -223,6 +225,38 @@ internal fun PlayerManager.handleTrackEnded() {
                     stopPlaybackPreservingQueue()
                 }
             }
+        }
+    }
+}
+
+internal fun PlayerManager.advanceAfterPlaybackFailure(source: String) {
+    clearPendingSeekPosition()
+    _playbackPositionMs.value = 0L
+
+    val action = resolvePlaybackFailureAdvanceAction(
+        currentIndex = currentIndex,
+        playlistSize = currentPlaylist.size,
+        repeatMode = repeatModeSetting,
+        shuffleEnabled = player.shuffleModeEnabled,
+        shuffleFutureSize = shuffleFuture.size,
+        shuffleBagSize = shuffleBag.size
+    )
+    NPLogger.d(
+        "NERI-PlayerManager",
+        "advanceAfterPlaybackFailure: source=$source, action=$action, currentIndex=$currentIndex, queueSize=${currentPlaylist.size}, repeatMode=$repeatModeSetting, shuffle=${player.shuffleModeEnabled}"
+    )
+
+    when (action) {
+        PlaybackFailureAdvanceAction.NEXT -> {
+            markAutoTrackAdvance()
+            next(force = false)
+        }
+        PlaybackFailureAdvanceAction.WRAP -> {
+            markAutoTrackAdvance()
+            next(force = true)
+        }
+        PlaybackFailureAdvanceAction.STOP -> {
+            stopPlaybackPreservingQueue(clearMediaUrl = true)
         }
     }
 }
@@ -455,7 +489,9 @@ internal fun PlayerManager.playAtIndex(
                     "获取播放地址失败，跳过当前歌曲: id=${song.id}, source=${song.album}"
                 )
                 consecutivePlayFailures++
-                withContext(Dispatchers.Main) { next() }
+                withContext(Dispatchers.Main) {
+                    advanceAfterPlaybackFailure(source = "resolve_song_url_failure")
+                }
             }
         }
     }

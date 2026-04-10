@@ -116,6 +116,27 @@ class LocalAudioImportManagerTest {
     }
 
     @Test
+    fun `buildQuickImportedSong keeps content playback uri when source came from media store`() {
+        val importedFile = tempFolder.newFile("media_store_track.flac")
+
+        val song = LocalAudioImportManager.buildQuickImportedSong(
+            seed = QuickImportedSongSeed(
+                sourceRef = "content://media/external/audio/media/42",
+                displayName = importedFile.name,
+                title = "MediaStore Title",
+                artist = "MediaStore Artist",
+                album = "MediaStore Album",
+                durationMs = 245_000L,
+                localFile = importedFile
+            ),
+            unknownArtistLabel = "Unknown Artist"
+        )
+
+        assertEquals("content://media/external/audio/media/42", song.mediaUri)
+        assertEquals(importedFile.absolutePath, song.localFilePath)
+    }
+
+    @Test
     fun `buildQuickImportedSong keeps cheap query metadata and nearby cover`() {
         val importedFile = tempFolder.newFile("cover_demo.mp3")
         val nearbyCover = File(importedFile.parentFile, "cover_demo.jpg").apply {

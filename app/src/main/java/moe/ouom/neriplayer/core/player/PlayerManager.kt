@@ -79,6 +79,7 @@ import moe.ouom.neriplayer.core.player.policy.shouldShowPauseButtonForPlaybackCo
 import moe.ouom.neriplayer.core.player.policy.shouldBootstrapPlaybackServiceOnAppLaunch
 import moe.ouom.neriplayer.core.player.policy.shouldRunPlaybackServiceInForeground
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.media.preferredLocalMediaReference
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.model.sameIdentityAs
@@ -97,6 +98,7 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import java.io.File
+import java.io.RandomAccessFile
 
 
 internal const val PLAYBACK_PROGRESS_UPDATE_INTERVAL_MS = 80L
@@ -653,8 +655,10 @@ object PlayerManager {
     }
 
     internal fun localMediaSource(song: SongItem): String? {
-        return song.localFilePath?.takeIf { it.isNotBlank() }
-            ?: song.mediaUri?.takeIf { it.isNotBlank() }
+        return preferredLocalMediaReference(
+            localFilePath = song.localFilePath,
+            mediaUri = song.mediaUri
+        )
     }
 
     internal fun toPlayableLocalUrl(mediaUri: String?): String? {
@@ -673,13 +677,13 @@ object PlayerManager {
     internal fun isReadableLocalMediaUri(mediaUri: String?): Boolean {
         val uriString = mediaUri?.takeIf { it.isNotBlank() } ?: return false
         if (uriString.startsWith("/")) {
-            return File(uriString).exists()
+            return canOpenLocalFile(File(uriString))
         }
 
         val uri = runCatching { uriString.toUri() }.getOrNull() ?: return false
         return when (uri.scheme?.lowercase()) {
-            null, "" -> File(uriString).exists()
-            "file" -> uri.path?.let(::File)?.exists() == true
+            null, "" -> canOpenLocalFile(File(uriString))
+            "file" -> uri.path?.let(::File)?.let(::canOpenLocalFile) == true
             "content", "android.resource" -> runCatching {
                 application.contentResolver.openAssetFileDescriptor(uri, "r")?.use { true } ?: false
             }.getOrDefault(false)
@@ -690,13 +694,16 @@ object PlayerManager {
     internal fun isRestorableLocalMediaUri(mediaUri: String?): Boolean {
         val uriString = mediaUri?.takeIf { it.isNotBlank() } ?: return false
         if (uriString.startsWith("/")) {
-            return File(uriString).exists()
+            return canOpenLocalFile(File(uriString))
         }
 
         val uri = runCatching { uriString.toUri() }.getOrNull() ?: return false
         return when (uri.scheme?.lowercase()) {
-            null, "" -> File(uriString).exists()
-            "file" -> uri.path?.let(::File)?.exists() == true
+            null, "" -> canOpenLocalFile(File(uriString))
+            "file" -> uri.path?.let(::File)?.let(::canOpenLocalFile) == true
+            "content", "android.resource" -> runCatching {
+                application.contentResolver.openAssetFileDescriptor(uri, "r")?.use { true } ?: false
+            }.getOrDefault(false)
             else -> false
         }
     }
@@ -713,6 +720,15 @@ object PlayerManager {
 
     internal fun isCurrentSong(song: SongItem): Boolean {
         return _currentSongFlow.value?.sameIdentityAs(song) == true
+    }
+
+    private fun canOpenLocalFile(file: File): Boolean {
+        if (!file.exists() || !file.isFile) {
+            return false
+        }
+        return runCatching {
+            RandomAccessFile(file, "r").use { true }
+        }.getOrDefault(false)
     }
 
     internal fun maybeUpdateSongDuration(song: SongItem, durationMs: Long) {

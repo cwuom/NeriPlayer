@@ -47,7 +47,7 @@ struct SignalHandlerEntry {
 };
 
 struct BacktraceState {
-    void** frames = nullptr;
+    [[maybe_unused]] void** frames = nullptr;
     size_t frame_count = 0;
     size_t max_frames = 0;
 };
@@ -216,7 +216,7 @@ void ReadSmallFile(const char* path, char* buffer, size_t capacity) {
         return;
     }
 
-    size_t length = static_cast<size_t>(bytes_read);
+    auto length = static_cast<size_t>(bytes_read);
     while (length > 0 && (buffer[length - 1] == '\n' || buffer[length - 1] == '\0')) {
         --length;
     }

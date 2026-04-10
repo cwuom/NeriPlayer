@@ -109,6 +109,16 @@ class LocalMediaSupportTest {
     }
 
     @Test
+    fun `preferredLocalMediaReference prefers content media uri over direct file path`() {
+        val preferred = preferredLocalMediaReference(
+            localFilePath = "/storage/emulated/0/Download/Oto music/dependant.ogg",
+            mediaUri = "content://media/external/audio/media/42"
+        )
+
+        assertEquals("content://media/external/audio/media/42", preferred)
+    }
+
+    @Test
     fun `selectQuickLocalMetadata falls back to defaults when query metadata is sparse`() {
         val selection = LocalMediaSupport.selectQuickLocalMetadata(
             title = "Track Name",
