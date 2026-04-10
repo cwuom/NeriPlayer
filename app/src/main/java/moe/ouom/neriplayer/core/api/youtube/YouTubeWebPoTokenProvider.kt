@@ -43,7 +43,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.data.auth.youtube.applyYouTubeWebCookies
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
-import moe.ouom.neriplayer.data.platform.youtube.effectiveCookieHeader
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeCookieSupport
+import moe.ouom.neriplayer.data.platform.youtube.buildBootstrapAuthFingerprint
 import moe.ouom.neriplayer.data.platform.youtube.isTrustedYouTubeBootstrapHost
 import moe.ouom.neriplayer.data.platform.youtube.resolveBootstrapUserAgent
 import moe.ouom.neriplayer.util.isAllowedMainFrameRequest
@@ -85,6 +86,10 @@ private data class WebPoMintResult(
     val error: String = ""
 )
 
+internal fun buildYouTubeWebPoAuthFingerprint(auth: YouTubeAuthBundle): String {
+    return auth.buildBootstrapAuthFingerprint()
+}
+
 internal class YouTubeWebPoTokenProvider(
     context: Context,
     private val authProvider: () -> YouTubeAuthBundle = { YouTubeAuthBundle() }
@@ -93,11 +98,13 @@ internal class YouTubeWebPoTokenProvider(
         private const val TAG = "YouTubeWebPoToken"
         private const val JS_BRIDGE_NAME = "__NERI_YT_WEBPO_BRIDGE__"
         private val WEB_PO_BOOTSTRAP_URLS = listOf(
-            "https://www.youtube.com/?themeRefresh=1",
-            "https://music.youtube.com/"
+            "https://music.youtube.com/",
+            "https://www.youtube.com/?themeRefresh=1"
         )
-        private const val PAGE_PREPARE_ATTEMPTS = 16
-        private const val PAGE_PREPARE_BACKOFF_MS = 1_000L
+        private const val FOREGROUND_PAGE_PREPARE_ATTEMPTS = 3
+        private const val FORCE_REFRESH_PAGE_PREPARE_ATTEMPTS = 5
+        private const val BACKGROUND_PAGE_PREPARE_ATTEMPTS = 8
+        private const val PAGE_PREPARE_BACKOFF_MS = 500L
         private const val PAGE_READY_UNAVAILABLE_THRESHOLD = 2
         private const val MINT_ATTEMPTS = 10
         private const val MINT_BACKOFF_MS = 1_000L
@@ -133,12 +140,28 @@ internal class YouTubeWebPoTokenProvider(
         if (!auth.hasLoginCookies()) {
             return
         }
-        accessMutex.withLock {
-            ensurePreparedPage(
-                auth = auth,
-                authFingerprint = buildAuthFingerprint(auth),
-                forceRefresh = false
+        if (!accessMutex.tryLock()) {
+            NPLogger.d(TAG, "warmSession skipped because provider is busy")
+            return
+        }
+        val startedAtMs = System.currentTimeMillis()
+        try {
+            try {
+                ensurePreparedPage(
+                    auth = auth,
+                    authFingerprint = buildAuthFingerprint(auth),
+                    forceRefresh = false,
+                    maxAttempts = BACKGROUND_PAGE_PREPARE_ATTEMPTS
+                )
+            } finally {
+                setWebViewActive(active = false)
+            }
+            NPLogger.d(
+                TAG,
+                "warmSession completed elapsedMs=${System.currentTimeMillis() - startedAtMs}"
             )
+        } finally {
+            accessMutex.unlock()
         }
     }
 
@@ -149,6 +172,7 @@ internal class YouTubeWebPoTokenProvider(
         preparedCookieFingerprint = null
         preparedAtMs = 0L
         preparedUrl = WEB_PO_BOOTSTRAP_URLS.first()
+        destroyPreparedWebViewAsync()
     }
 
     override suspend fun getWebRemixGvsPoToken(
@@ -158,88 +182,107 @@ internal class YouTubeWebPoTokenProvider(
         forceRefresh: Boolean
     ): String? {
         val auth = authProvider().normalized()
+        val startedAtMs = System.currentTimeMillis()
         return accessMutex.withLock {
-        val now = System.currentTimeMillis()
-        val authFingerprint = buildAuthFingerprint(auth)
-        val pageSnapshot = ensurePreparedPage(
-            auth = auth,
-            authFingerprint = authFingerprint,
-            forceRefresh = forceRefresh
-        ) ?: return@withLock null
-        if (!pageSnapshot.hasWebPoClient) {
-            return@withLock null
-        }
-
-        val contentBinding = resolveContentBinding(
-            videoId = videoId,
-            pageSnapshot = pageSnapshot,
-            visitorDataFallback = visitorData,
-            isAuthenticated = auth.hasLoginCookies()
-        ) ?: return@withLock null
-
-        val cacheKey = buildCacheKey(
-            contentBinding = contentBinding,
-            remoteHost = remoteHost
-        )
-        if (!forceRefresh) {
-            synchronized(tokenCache) {
-                tokenCache[cacheKey]
-                    ?.takeIf { it.expiresAtMs > now }
-                    ?.let { cached ->
-                        touchCacheKey(cacheKey, cached)
-                        return@withLock cached.token
+            try {
+                val now = System.currentTimeMillis()
+                val authFingerprint = buildAuthFingerprint(auth)
+                val pageSnapshot = ensurePreparedPage(
+                    auth = auth,
+                    authFingerprint = authFingerprint,
+                    forceRefresh = forceRefresh,
+                    maxAttempts = if (forceRefresh) {
+                        FORCE_REFRESH_PAGE_PREPARE_ATTEMPTS
+                    } else {
+                        FOREGROUND_PAGE_PREPARE_ATTEMPTS
                     }
-            }
-        }
-
-        repeat(MINT_ATTEMPTS) { attempt ->
-            val result = mintPoToken(contentBinding)
-            when {
-                result?.status == "ok" && result.token.isNotBlank() -> {
-                    synchronized(tokenCache) {
-                        tokenCache[cacheKey] = CachedWebPoToken(
-                            token = result.token,
-                            expiresAtMs = now + TOKEN_TTL_MS
-                        )
-                        trimCacheLocked()
-                    }
-                    return@withLock result.token
-                }
-
-                result?.status == "backoff" -> {
-                    delay(MINT_BACKOFF_MS)
-                }
-
-                result?.status == "missing" -> {
-                    logUnavailable(
-                        url = preparedUrl,
-                        snapshot = pageSnapshot
-                    )
+                ) ?: return@withLock null
+                if (!pageSnapshot.hasWebPoClient) {
                     return@withLock null
                 }
 
-                attempt < MINT_ATTEMPTS - 1 -> {
-                    NPLogger.w(
-                        TAG,
-                        "WebPoClient mint failed (attempt=${attempt + 1}): ${result?.error.orEmpty()}"
-                    )
-                    ensurePreparedPage(
-                        auth = auth,
-                        authFingerprint = authFingerprint,
-                        forceRefresh = true
-                    ) ?: return@withLock null
+                val contentBinding = resolveContentBinding(
+                    videoId = videoId,
+                    pageSnapshot = pageSnapshot,
+                    visitorDataFallback = visitorData,
+                    isAuthenticated = auth.hasLoginCookies()
+                ) ?: return@withLock null
+
+                val cacheKey = buildCacheKey(
+                    contentBinding = contentBinding,
+                    remoteHost = remoteHost
+                )
+                if (!forceRefresh) {
+                    synchronized(tokenCache) {
+                        tokenCache[cacheKey]
+                            ?.takeIf { it.expiresAtMs > now }
+                            ?.let { cached ->
+                                touchCacheKey(cacheKey, cached)
+                                NPLogger.d(
+                                    TAG,
+                                    "GVS PO token cache hit videoId=$videoId ttlMs=${cached.expiresAtMs - now} elapsedMs=${System.currentTimeMillis() - startedAtMs}"
+                                )
+                                return@withLock cached.token
+                            }
+                    }
                 }
 
-                else -> {
-                    NPLogger.w(
-                        TAG,
-                        "WebPoClient mint failed: ${result?.error.orEmpty()}"
-                    )
+                repeat(MINT_ATTEMPTS) { attempt ->
+                    val result = mintPoToken(contentBinding)
+                    when {
+                        result?.status == "ok" && result.token.isNotBlank() -> {
+                            synchronized(tokenCache) {
+                                tokenCache[cacheKey] = CachedWebPoToken(
+                                    token = result.token,
+                                    expiresAtMs = now + TOKEN_TTL_MS
+                                )
+                                trimCacheLocked()
+                            }
+                            NPLogger.d(
+                                TAG,
+                                "GVS PO token minted videoId=$videoId elapsedMs=${System.currentTimeMillis() - startedAtMs}"
+                            )
+                            return@withLock result.token
+                        }
+
+                        result?.status == "backoff" -> {
+                            delay(MINT_BACKOFF_MS)
+                        }
+
+                        result?.status == "missing" -> {
+                            logUnavailable(
+                                url = preparedUrl,
+                                snapshot = pageSnapshot
+                            )
+                            return@withLock null
+                        }
+
+                        attempt < MINT_ATTEMPTS - 1 -> {
+                            NPLogger.w(
+                                TAG,
+                                "WebPoClient mint failed (attempt=${attempt + 1}): ${result?.error.orEmpty()}"
+                            )
+                            ensurePreparedPage(
+                                auth = auth,
+                                authFingerprint = authFingerprint,
+                                forceRefresh = true,
+                                maxAttempts = FORCE_REFRESH_PAGE_PREPARE_ATTEMPTS
+                            ) ?: return@withLock null
+                        }
+
+                        else -> {
+                            NPLogger.w(
+                                TAG,
+                                "WebPoClient mint failed: ${result?.error.orEmpty()}"
+                            )
+                        }
+                    }
                 }
+
+                null
+            } finally {
+                setWebViewActive(active = false)
             }
-        }
-
-        null
         }
     }
 
@@ -262,17 +305,20 @@ internal class YouTubeWebPoTokenProvider(
     private suspend fun ensurePreparedPage(
         auth: YouTubeAuthBundle,
         authFingerprint: String,
-        forceRefresh: Boolean
+        forceRefresh: Boolean,
+        maxAttempts: Int
     ): WebPoPageSnapshot? {
         val shouldReload = forceRefresh ||
             webView == null ||
             preparedCookieFingerprint != authFingerprint ||
             System.currentTimeMillis() - preparedAtMs > WEBVIEW_RELOAD_TTL_MS
         if (!shouldReload) {
+            setWebViewActive(active = true)
             return readPageSnapshot()
         }
 
         val activeWebView = ensureWebView()
+        setWebViewActive(active = true)
         syncCookies(activeWebView, auth)
         preparedCookieFingerprint = authFingerprint
 
@@ -284,7 +330,8 @@ internal class YouTubeWebPoTokenProvider(
                 activeWebView.loadUrl(bootstrapUrl)
             }
 
-            for (attempt in 0 until PAGE_PREPARE_ATTEMPTS) {
+            val resolvedAttempts = maxAttempts.coerceAtLeast(1)
+            for (attempt in 0 until resolvedAttempts) {
                 delay(PAGE_PREPARE_BACKOFF_MS)
                 val snapshot = readPageSnapshot() ?: continue
                 if (snapshot.hasYtcfg && snapshot.hasWebPoClient) {
@@ -303,7 +350,7 @@ internal class YouTubeWebPoTokenProvider(
                 } else {
                     readyWithoutClientCount = 0
                 }
-                if (attempt == PAGE_PREPARE_ATTEMPTS - 1) {
+                if (attempt == resolvedAttempts - 1) {
                     logUnavailable(bootstrapUrl, snapshot)
                 }
             }
@@ -321,10 +368,11 @@ internal class YouTubeWebPoTokenProvider(
             settings.domStorageEnabled = true
             settings.cacheMode = WebSettings.LOAD_DEFAULT
             settings.loadsImagesAutomatically = false
-            settings.mediaPlaybackRequiresUserGesture = false
+            settings.mediaPlaybackRequiresUserGesture = true
             settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
             settings.allowFileAccess = false
             settings.allowContentAccess = false
+            settings.blockNetworkImage = true
             CookieManager.getInstance().setAcceptCookie(true)
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
             webChromeClient = WebChromeClient()
@@ -332,6 +380,38 @@ internal class YouTubeWebPoTokenProvider(
             addJavascriptInterface(WebPoResultBridge(), JS_BRIDGE_NAME)
         }.also { created ->
             webView = created
+        }
+    }
+
+    private suspend fun setWebViewActive(active: Boolean) = withContext(Dispatchers.Main) {
+        val activeWebView = webView ?: return@withContext
+        if (active) {
+            activeWebView.onResume()
+            activeWebView.resumeTimers()
+        } else {
+            activeWebView.onPause()
+            activeWebView.pauseTimers()
+        }
+    }
+
+    private fun destroyPreparedWebViewAsync() {
+        val activeWebView = webView ?: return
+        webView = null
+        activeWebView.post {
+            runCatching {
+                activeWebView.onPause()
+                activeWebView.pauseTimers()
+                activeWebView.stopLoading()
+                activeWebView.removeJavascriptInterface(JS_BRIDGE_NAME)
+                activeWebView.loadUrl("about:blank")
+                activeWebView.destroy()
+            }
+        }
+        synchronized(pendingBridgeResults) {
+            pendingBridgeResults.values.forEach { deferred ->
+                deferred.complete("")
+            }
+            pendingBridgeResults.clear()
         }
     }
 
@@ -344,6 +424,7 @@ internal class YouTubeWebPoTokenProvider(
         applyYouTubeWebCookies(
             cookieManager = cookieManager,
             cookies = cookies,
+            urls = YouTubeCookieSupport.webCookieReadUrls,
             skipExisting = true,
             includeConsentCookie = true
         )
@@ -541,11 +622,7 @@ internal class YouTubeWebPoTokenProvider(
     }
 
     private fun buildAuthFingerprint(auth: YouTubeAuthBundle): String {
-        return buildString {
-            append(auth.effectiveCookieHeader().hashCode())
-            append('|')
-            append(auth.resolveBootstrapUserAgent())
-        }
+        return buildYouTubeWebPoAuthFingerprint(auth)
     }
 
     private fun logUnavailable(

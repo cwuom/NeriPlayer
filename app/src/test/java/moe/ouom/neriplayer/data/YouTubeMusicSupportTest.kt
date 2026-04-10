@@ -15,6 +15,7 @@ import moe.ouom.neriplayer.data.platform.youtube.resolveBootstrapUserAgent
 import moe.ouom.neriplayer.data.platform.youtube.resolveXGoogAuthUser
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -91,6 +92,21 @@ class YouTubeMusicSupportTest {
         assertEquals(
             desktopAuth.buildBootstrapAuthFingerprint(),
             mobileAuth.buildBootstrapAuthFingerprint()
+        )
+    }
+
+    @Test
+    fun buildBootstrapAuthFingerprint_changesWhenAuthUserChangesWithSameCookies() {
+        val base = YouTubeAuthBundle(
+            cookieHeader = "SAPISID=sap-value; SID=sid-value",
+            xGoogAuthUser = "0",
+            userAgent = YOUTUBE_DEFAULT_WEB_USER_AGENT
+        )
+        val changedAuthUser = base.copy(xGoogAuthUser = "3")
+
+        assertNotEquals(
+            base.buildBootstrapAuthFingerprint(),
+            changedAuthUser.buildBootstrapAuthFingerprint()
         )
     }
 

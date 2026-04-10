@@ -32,7 +32,6 @@ import java.io.IOException
 import java.util.LinkedHashMap
 import java.util.UUID
 import java.util.concurrent.TimeUnit
-import moe.ouom.neriplayer.util.NPLogger
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
@@ -43,12 +42,55 @@ internal data class YouTubeJsChallengeSolution(
     val throttlingParameter: String? = null
 )
 
+internal enum class YouTubeJsChallengeSolveStatus {
+    SUCCESS,
+    PLAYER_JS_URL_BLANK,
+    JAVASCRIPT_SANDBOX_UNSUPPORTED,
+    JAVASCRIPT_SANDBOX_CONNECTION_FAILED,
+    MISSING_SANDBOX_FEATURES,
+    PLAYER_SCRIPT_FETCH_FAILED,
+    SCRIPT_EVALUATION_FAILED,
+    INVALID_RESPONSE,
+    SIGNATURE_NOT_RESOLVED,
+    THROTTLING_NOT_RESOLVED
+}
+
+internal data class YouTubeJsChallengeSolveResult(
+    val status: YouTubeJsChallengeSolveStatus,
+    val solution: YouTubeJsChallengeSolution = YouTubeJsChallengeSolution(),
+    val detail: String? = null,
+    val cause: Throwable? = null
+) {
+    val isSuccess: Boolean
+        get() = status == YouTubeJsChallengeSolveStatus.SUCCESS
+
+    fun summary(): String {
+        return buildString {
+            append(status.name)
+            detail?.takeIf { it.isNotBlank() }?.let {
+                append(": ")
+                append(it)
+            }
+            cause?.message?.takeIf { it.isNotBlank() }?.let { message ->
+                if (detail.isNullOrBlank()) {
+                    append(": ")
+                } else {
+                    append(" (")
+                }
+                append(message)
+                if (!detail.isNullOrBlank()) {
+                    append(')')
+                }
+            }
+        }
+    }
+}
+
 internal class YouTubeEjsChallengeSolver(
     context: Context,
     private val okHttpClient: OkHttpClient
 ) {
     companion object {
-        private const val TAG = "YouTubeEjsSolver"
         private const val LIB_ASSET_PATH = "youtube/yt.solver.lib.min.js"
         private const val CORE_ASSET_PATH = "youtube/yt.solver.core.min.js"
         private const val SCRIPT_TIMEOUT_SECONDS = 45L
@@ -73,14 +115,39 @@ internal class YouTubeEjsChallengeSolver(
         encryptedSignature: String? = null,
         throttlingParameter: String? = null
     ): YouTubeJsChallengeSolution? {
+        return solveDetailed(
+            playerJsUrl = playerJsUrl,
+            encryptedSignature = encryptedSignature,
+            throttlingParameter = throttlingParameter
+        ).solution.takeIf { solution ->
+            solution.signature != null || solution.throttlingParameter != null
+        } ?: if (encryptedSignature.isNullOrBlank() && throttlingParameter.isNullOrBlank()) {
+            YouTubeJsChallengeSolution()
+        } else {
+            null
+        }
+    }
+
+    @SuppressLint("RequiresFeature")
+    fun solveDetailed(
+        playerJsUrl: String,
+        encryptedSignature: String? = null,
+        throttlingParameter: String? = null
+    ): YouTubeJsChallengeSolveResult {
         val resolvedPlayerJsUrl = playerJsUrl.trim()
         val requestedSignature = encryptedSignature?.takeIf { it.isNotBlank() }
         val requestedThrottling = throttlingParameter?.takeIf { it.isNotBlank() }
         if (resolvedPlayerJsUrl.isBlank()) {
-            return null
+            return YouTubeJsChallengeSolveResult(
+                status = YouTubeJsChallengeSolveStatus.PLAYER_JS_URL_BLANK,
+                detail = "playerJsUrl is blank"
+            )
         }
         if (requestedSignature == null && requestedThrottling == null) {
-            return YouTubeJsChallengeSolution()
+            return YouTubeJsChallengeSolveResult(
+                status = YouTubeJsChallengeSolveStatus.SUCCESS,
+                solution = YouTubeJsChallengeSolution()
+            )
         }
 
         val signatureKey = requestedSignature?.let { cacheKey(resolvedPlayerJsUrl, it) }
@@ -90,9 +157,12 @@ internal class YouTubeEjsChallengeSolver(
         if ((requestedSignature == null || cachedSignature != null) &&
             (requestedThrottling == null || cachedThrottling != null)
         ) {
-            return YouTubeJsChallengeSolution(
-                signature = cachedSignature,
-                throttlingParameter = cachedThrottling
+            return YouTubeJsChallengeSolveResult(
+                status = YouTubeJsChallengeSolveStatus.SUCCESS,
+                solution = YouTubeJsChallengeSolution(
+                    signature = cachedSignature,
+                    throttlingParameter = cachedThrottling
+                )
             )
         }
 
@@ -102,79 +172,108 @@ internal class YouTubeEjsChallengeSolver(
             if ((requestedSignature == null || warmSignature != null) &&
                 (requestedThrottling == null || warmThrottling != null)
             ) {
-                return@synchronized YouTubeJsChallengeSolution(
-                    signature = warmSignature,
-                    throttlingParameter = warmThrottling
+                return@synchronized YouTubeJsChallengeSolveResult(
+                    status = YouTubeJsChallengeSolveStatus.SUCCESS,
+                    solution = YouTubeJsChallengeSolution(
+                        signature = warmSignature,
+                        throttlingParameter = warmThrottling
+                    )
                 )
             }
 
             if (!JavaScriptSandbox.isSupported()) {
-                NPLogger.w(TAG, "JavaScriptSandbox is not supported on this device")
-                return@synchronized null
+                return@synchronized YouTubeJsChallengeSolveResult(
+                    status = YouTubeJsChallengeSolveStatus.JAVASCRIPT_SANDBOX_UNSUPPORTED,
+                    detail = "JavaScriptSandbox is not supported on this device"
+                )
             }
 
-            val sandbox = JavaScriptSandbox.createConnectedInstanceAsync(appContext)
-                .get(SCRIPT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            val sandbox = runCatching {
+                JavaScriptSandbox.createConnectedInstanceAsync(appContext)
+                    .get(SCRIPT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            }.getOrElse { error ->
+                return@synchronized YouTubeJsChallengeSolveResult(
+                    status = YouTubeJsChallengeSolveStatus.JAVASCRIPT_SANDBOX_CONNECTION_FAILED,
+                    detail = "Failed to connect JavaScriptSandbox",
+                    cause = error
+                )
+            }
             try {
-                if (!sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROMISE_RETURN) ||
-                    !sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)
-                ) {
-                    NPLogger.w(
-                        TAG,
-                        "JavaScriptSandbox missing required features: promise=${sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROMISE_RETURN)}, arrayBuffer=${sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)}"
+                val hasPromiseSupport = sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROMISE_RETURN)
+                val hasArrayBufferSupport = sandbox.isFeatureSupported(
+                    JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER
+                )
+                if (!hasPromiseSupport || !hasArrayBufferSupport) {
+                    return@synchronized YouTubeJsChallengeSolveResult(
+                        status = YouTubeJsChallengeSolveStatus.MISSING_SANDBOX_FEATURES,
+                        detail = "promise=$hasPromiseSupport, arrayBuffer=$hasArrayBufferSupport"
                     )
-                    return@synchronized null
                 }
 
                 val isolate = sandbox.createIsolate()
                 try {
-                    val playerScript = getPlayerScript(resolvedPlayerJsUrl)
-                    isolate.evaluateJavaScriptAsync(
-                        buildString {
-                            append(libScript)
-                            append('\n')
-                            append("Object.assign(globalThis, lib);\n")
-                            append(coreScript)
-                        }
-                    ).get(SCRIPT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-
-                    val playerDataName = "player_js_${UUID.randomUUID().toString().replace("-", "")}"
-                    if (!sandbox.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_PROVIDE_CONSUME_ARRAY_BUFFER)) {
-                        NPLogger.w(TAG, "JavaScriptSandbox does not support provideNamedData")
-                        return@synchronized null
-                    }
-                    isolate.provideNamedData(playerDataName, playerScript.toByteArray(Charsets.UTF_8))
-                    val responseJson = isolate.evaluateJavaScriptAsync(
-                        buildSolveScript(
-                            playerDataName = playerDataName,
-                            encryptedSignature = if (warmSignature == null) requestedSignature else null,
-                            throttlingParameter = if (warmThrottling == null) requestedThrottling else null
+                    val playerScript = runCatching {
+                        getPlayerScript(resolvedPlayerJsUrl)
+                    }.getOrElse { error ->
+                        return@synchronized YouTubeJsChallengeSolveResult(
+                            status = YouTubeJsChallengeSolveStatus.PLAYER_SCRIPT_FETCH_FAILED,
+                            detail = "playerJsUrl=$resolvedPlayerJsUrl",
+                            cause = error
                         )
-                    ).get(SCRIPT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                    }
+                    val responseJson = runCatching {
+                        isolate.evaluateJavaScriptAsync(
+                            buildString {
+                                append(libScript)
+                                append('\n')
+                                append("Object.assign(globalThis, lib);\n")
+                                append(coreScript)
+                            }
+                        ).get(SCRIPT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
 
-                    val resolved = parseSolveResponse(
+                        val playerDataName = "player_js_${UUID.randomUUID().toString().replace("-", "")}"
+                        isolate.provideNamedData(playerDataName, playerScript.toByteArray(Charsets.UTF_8))
+                        isolate.evaluateJavaScriptAsync(
+                            buildSolveScript(
+                                playerDataName = playerDataName,
+                                encryptedSignature = if (warmSignature == null) requestedSignature else null,
+                                throttlingParameter = if (warmThrottling == null) requestedThrottling else null
+                            )
+                        ).get(SCRIPT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                    }.getOrElse { error ->
+                        return@synchronized YouTubeJsChallengeSolveResult(
+                            status = YouTubeJsChallengeSolveStatus.SCRIPT_EVALUATION_FAILED,
+                            detail = "playerJsUrl=$resolvedPlayerJsUrl",
+                            cause = error
+                        )
+                    }
+
+                    val parsedResult = parseYouTubeJsChallengeSolveResponse(
                         responseJson = responseJson,
                         requestedSignature = if (warmSignature == null) requestedSignature else null,
                         requestedThrottling = if (warmThrottling == null) requestedThrottling else null
-                    ) ?: return@synchronized null
+                    )
+                    if (!parsedResult.isSuccess) {
+                        return@synchronized parsedResult
+                    }
 
-                    resolved.signature?.let { solved ->
+                    parsedResult.solution.signature?.let { solved ->
                         signatureKey?.let { putCached(signatureCache, it, solved) }
                     }
-                    resolved.throttlingParameter?.let { solved ->
+                    parsedResult.solution.throttlingParameter?.let { solved ->
                         throttlingKey?.let { putCached(throttlingCache, it, solved) }
                     }
 
-                    return@synchronized YouTubeJsChallengeSolution(
-                        signature = warmSignature ?: resolved.signature,
-                        throttlingParameter = warmThrottling ?: resolved.throttlingParameter
+                    return@synchronized YouTubeJsChallengeSolveResult(
+                        status = YouTubeJsChallengeSolveStatus.SUCCESS,
+                        solution = YouTubeJsChallengeSolution(
+                            signature = warmSignature ?: parsedResult.solution.signature,
+                            throttlingParameter = warmThrottling ?: parsedResult.solution.throttlingParameter
+                        )
                     )
                 } finally {
                     closeQuietly(isolate)
                 }
-            } catch (error: Exception) {
-                NPLogger.w(TAG, "Failed to solve YouTube JS challenge", error)
-                return@synchronized null
             } finally {
                 closeQuietly(sandbox)
             }
@@ -264,50 +363,6 @@ internal class YouTubeEjsChallengeSolver(
         """.trimIndent()
     }
 
-    private fun parseSolveResponse(
-        responseJson: String,
-        requestedSignature: String?,
-        requestedThrottling: String?
-    ): YouTubeJsChallengeSolution? {
-        if (responseJson.isBlank()) {
-            return null
-        }
-        val root = JSONObject(responseJson)
-        if (root.optString("type") != "result") {
-            return null
-        }
-
-        var resolvedSignature: String? = null
-        var resolvedThrottling: String? = null
-        val responses = root.optJSONArray("responses") ?: JSONArray()
-        for (index in 0 until responses.length()) {
-            val response = responses.optJSONObject(index) ?: continue
-            if (response.optString("type") != "result") {
-                continue
-            }
-            val data = response.optJSONObject("data") ?: continue
-            val keys = data.keys()
-            while (keys.hasNext()) {
-                val challenge = keys.next()
-                val value = data.optString(challenge).takeIf { it.isNotBlank() } ?: continue
-                when (challenge) {
-                    requestedSignature -> resolvedSignature = value
-                    requestedThrottling -> resolvedThrottling = value
-                }
-            }
-        }
-        if (requestedSignature != null && resolvedSignature == null) {
-            return null
-        }
-        if (requestedThrottling != null && resolvedThrottling == null) {
-            return null
-        }
-        return YouTubeJsChallengeSolution(
-            signature = resolvedSignature,
-            throttlingParameter = resolvedThrottling
-        )
-    }
-
     @Synchronized
     private fun getPlayerScript(playerJsUrl: String): String {
         playerScriptCache[playerJsUrl]?.let { cached ->
@@ -357,4 +412,69 @@ internal class YouTubeEjsChallengeSolver(
     private fun closeQuietly(sandbox: JavaScriptSandbox) {
         runCatching { sandbox.close() }
     }
+}
+
+internal fun parseYouTubeJsChallengeSolveResponse(
+    responseJson: String,
+    requestedSignature: String?,
+    requestedThrottling: String?
+): YouTubeJsChallengeSolveResult {
+    if (responseJson.isBlank()) {
+        return YouTubeJsChallengeSolveResult(
+            status = YouTubeJsChallengeSolveStatus.INVALID_RESPONSE,
+            detail = "responseJson is blank"
+        )
+    }
+    val root = runCatching { JSONObject(responseJson) }.getOrElse { error ->
+        return YouTubeJsChallengeSolveResult(
+            status = YouTubeJsChallengeSolveStatus.INVALID_RESPONSE,
+            detail = "responseJson is not valid JSON",
+            cause = error
+        )
+    }
+    if (root.optString("type") != "result") {
+        return YouTubeJsChallengeSolveResult(
+            status = YouTubeJsChallengeSolveStatus.INVALID_RESPONSE,
+            detail = "root.type=${root.optString("type")}"
+        )
+    }
+
+    var resolvedSignature: String? = null
+    var resolvedThrottling: String? = null
+    val responses = root.optJSONArray("responses") ?: JSONArray()
+    for (index in 0 until responses.length()) {
+        val response = responses.optJSONObject(index) ?: continue
+        if (response.optString("type") != "result") {
+            continue
+        }
+        val data = response.optJSONObject("data") ?: continue
+        val keys = data.keys()
+        while (keys.hasNext()) {
+            val challenge = keys.next()
+            val value = data.optString(challenge).takeIf { it.isNotBlank() } ?: continue
+            when (challenge) {
+                requestedSignature -> resolvedSignature = value
+                requestedThrottling -> resolvedThrottling = value
+            }
+        }
+    }
+    if (requestedSignature != null && resolvedSignature == null) {
+        return YouTubeJsChallengeSolveResult(
+            status = YouTubeJsChallengeSolveStatus.SIGNATURE_NOT_RESOLVED,
+            detail = "missing signature result for requested challenge"
+        )
+    }
+    if (requestedThrottling != null && resolvedThrottling == null) {
+        return YouTubeJsChallengeSolveResult(
+            status = YouTubeJsChallengeSolveStatus.THROTTLING_NOT_RESOLVED,
+            detail = "missing throttling result for requested challenge"
+        )
+    }
+    return YouTubeJsChallengeSolveResult(
+        status = YouTubeJsChallengeSolveStatus.SUCCESS,
+        solution = YouTubeJsChallengeSolution(
+            signature = resolvedSignature,
+            throttlingParameter = resolvedThrottling
+        )
+    )
 }

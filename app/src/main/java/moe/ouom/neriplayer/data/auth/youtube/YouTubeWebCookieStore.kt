@@ -1,11 +1,45 @@
 package moe.ouom.neriplayer.data.auth.youtube
 
 import android.webkit.CookieManager
+import java.net.URI
+import java.util.Locale
 
-private const val YOUTUBE_WEB_COOKIE_TEMPLATE_SUFFIX = "; Path=/; Domain=.youtube.com; Secure"
-private const val YOUTUBE_WEB_COOKIE_CLEAR_SUFFIX = "; Max-Age=0; Path=/; Domain=.youtube.com; Secure"
-private const val YOUTUBE_WEB_HOST_COOKIE_CLEAR_SUFFIX = "; Max-Age=0; Path=/; Secure"
-private const val YOUTUBE_SOCS_COOKIE = "SOCS=CAI$YOUTUBE_WEB_COOKIE_TEMPLATE_SUFFIX"
+private const val YOUTUBE_WEB_COOKIE_YOUTUBE_DOMAIN = ".youtube.com"
+private const val YOUTUBE_WEB_COOKIE_GOOGLE_DOMAIN = ".google.com"
+private const val YOUTUBE_WEB_COOKIE_HOST_TEMPLATE_SUFFIX = "; Path=/; Secure"
+private const val YOUTUBE_WEB_COOKIE_HOST_CLEAR_SUFFIX = "; Max-Age=0; Path=/; Secure"
+
+internal fun resolveYouTubeWebCookieDomain(url: String): String? {
+    val host = runCatching { URI(url).host.orEmpty().lowercase(Locale.US) }
+        .getOrDefault("")
+    return when {
+        host == "youtube.com" || host.endsWith(".youtube.com") -> YOUTUBE_WEB_COOKIE_YOUTUBE_DOMAIN
+        host == "google.com" || host.endsWith(".google.com") -> YOUTUBE_WEB_COOKIE_GOOGLE_DOMAIN
+        else -> null
+    }
+}
+
+private fun buildYouTubeWebCookieTemplateSuffix(url: String): String {
+    val domain = resolveYouTubeWebCookieDomain(url)
+    return if (domain.isNullOrBlank()) {
+        YOUTUBE_WEB_COOKIE_HOST_TEMPLATE_SUFFIX
+    } else {
+        "; Path=/; Domain=$domain; Secure"
+    }
+}
+
+private fun buildYouTubeWebCookieClearSuffix(url: String): String {
+    val domain = resolveYouTubeWebCookieDomain(url)
+    return if (domain.isNullOrBlank()) {
+        YOUTUBE_WEB_COOKIE_HOST_CLEAR_SUFFIX
+    } else {
+        "; Max-Age=0; Path=/; Domain=$domain; Secure"
+    }
+}
+
+private fun buildYouTubeSocsCookie(url: String): String {
+    return "SOCS=CAI${buildYouTubeWebCookieTemplateSuffix(url)}"
+}
 
 internal fun shouldApplyYouTubeConsentCookie(
     includeConsentCookie: Boolean,
@@ -48,8 +82,8 @@ internal fun applyYouTubeWebCookies(
         if (replaceExisting) {
             existingCookies.keys.forEach { key ->
                 if (sanitizedCookies[key].isNullOrBlank()) {
-                    cookieManager.setCookie(url, "$key=$YOUTUBE_WEB_COOKIE_CLEAR_SUFFIX")
-                    cookieManager.setCookie(url, "$key=$YOUTUBE_WEB_HOST_COOKIE_CLEAR_SUFFIX")
+                    cookieManager.setCookie(url, "$key=${buildYouTubeWebCookieClearSuffix(url)}")
+                    cookieManager.setCookie(url, "$key=$YOUTUBE_WEB_COOKIE_HOST_CLEAR_SUFFIX")
                     changed = true
                 }
             }
@@ -68,7 +102,7 @@ internal fun applyYouTubeWebCookies(
             }
             cookieManager.setCookie(
                 url,
-                "$key=$value$YOUTUBE_WEB_COOKIE_TEMPLATE_SUFFIX"
+                "$key=$value${buildYouTubeWebCookieTemplateSuffix(url)}"
             )
             changed = true
         }
@@ -80,7 +114,7 @@ internal fun applyYouTubeWebCookies(
                 replaceExisting = replaceExisting
             )
         ) {
-            cookieManager.setCookie(url, YOUTUBE_SOCS_COOKIE)
+            cookieManager.setCookie(url, buildYouTubeSocsCookie(url))
             changed = true
         }
     }
@@ -89,4 +123,27 @@ internal fun applyYouTubeWebCookies(
         cookieManager.flush()
     }
     return changed
+}
+
+internal fun clearYouTubeWebCookies(
+    cookieManager: CookieManager,
+    cookieKeys: Iterable<String>,
+    urls: Iterable<String> = YouTubeCookieSupport.webCookieReadUrls
+): Boolean {
+    val normalizedKeys = cookieKeys
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .distinct()
+    if (normalizedKeys.isEmpty()) {
+        return false
+    }
+
+    urls.forEach { url ->
+        normalizedKeys.forEach { key ->
+            cookieManager.setCookie(url, "$key=${buildYouTubeWebCookieClearSuffix(url)}")
+            cookieManager.setCookie(url, "$key=$YOUTUBE_WEB_COOKIE_HOST_CLEAR_SUFFIX")
+        }
+    }
+    cookieManager.flush()
+    return true
 }

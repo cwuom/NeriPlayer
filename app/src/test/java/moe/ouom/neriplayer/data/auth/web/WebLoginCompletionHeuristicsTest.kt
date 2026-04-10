@@ -100,6 +100,62 @@ class WebLoginCompletionHeuristicsTest {
                 "__Secure-1PSIDTS" to "session-token",
                 "SID" to "sid-cookie",
                 "SIDCC" to "sidcc-cookie"
+            )
+        )
+
+        assertFalse(
+            shouldAutoCompleteYouTubeWebLogin(
+                currentAuth = currentAuth,
+                pageConfirmedSession = false
+            )
+        )
+    }
+
+    @Test
+    fun shouldAutoCompleteYouTubeWebLogin_rejectsAuthUserOnlyWithoutPageSession() {
+        val currentAuth = YouTubeAuthBundle(
+            cookies = linkedMapOf(
+                "SAPISID" to "sapisid-cookie",
+                "__Secure-1PAPISID" to "papisid-cookie",
+                "__Secure-1PSIDTS" to "session-token",
+                "SID" to "sid-cookie"
+            ),
+            xGoogAuthUser = "0"
+        )
+
+        assertFalse(
+            shouldAutoCompleteYouTubeWebLogin(
+                currentAuth = currentAuth,
+                pageConfirmedSession = false
+            )
+        )
+    }
+
+    @Test
+    fun shouldAutoCompleteYouTubeWebLogin_rejectsAuthorizationOnlyBundle() {
+        val currentAuth = YouTubeAuthBundle(
+            authorization = "SAPISIDHASH 1_signature",
+            xGoogAuthUser = "0"
+        )
+
+        assertFalse(
+            shouldAutoCompleteYouTubeWebLogin(
+                currentAuth = currentAuth,
+                pageConfirmedSession = false
+            )
+        )
+    }
+
+    @Test
+    fun shouldAutoCompleteYouTubeWebLogin_rejectsAuthorizationWithoutPageConfirm() {
+        val currentAuth = YouTubeAuthBundle(
+            cookies = linkedMapOf(
+                "LOGIN_INFO" to "login-token",
+                "SAPISID" to "sapisid-cookie",
+                "__Secure-1PAPISID" to "papisid-cookie",
+                "__Secure-1PSIDTS" to "session-token",
+                "SID" to "sid-cookie",
+                "SIDCC" to "sidcc-cookie"
             ),
             authorization = "SAPISIDHASH 1_signature",
             xGoogAuthUser = "0"
@@ -117,14 +173,12 @@ class WebLoginCompletionHeuristicsTest {
     fun shouldAutoCompleteYouTubeWebLogin_acceptsConfirmedLiveSession() {
         val currentAuth = YouTubeAuthBundle(
             cookies = linkedMapOf(
-                "LOGIN_INFO" to "login-token",
                 "SAPISID" to "sapisid-cookie",
                 "__Secure-1PAPISID" to "papisid-cookie",
                 "__Secure-1PSIDTS" to "session-token",
                 "SID" to "sid-cookie",
                 "SIDCC" to "sidcc-cookie"
             ),
-            authorization = "SAPISIDHASH 1_signature",
             xGoogAuthUser = "0"
         )
 

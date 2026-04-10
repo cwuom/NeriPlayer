@@ -59,7 +59,12 @@ private const val YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS = 2
 private const val YOUTUBE_MUSIC_SAFE_FALLBACK_HL = "zh-CN"
 private const val YOUTUBE_MUSIC_SAFE_FALLBACK_GL = "JP"
 private const val YOUTUBE_MUSIC_HOME_PLAYLIST_ITEM_LIMIT = 24
+private const val YOUTUBE_MUSIC_HOME_SONG_ITEM_LIMIT = 12
+private const val YOUTUBE_MUSIC_HOME_MAX_SHELVES = 8
+private const val YOUTUBE_MUSIC_HOME_PAGE_LIMIT = 2
+private const val YOUTUBE_MUSIC_HOME_SHELF_CONTINUATION_LIMIT = 2
 private const val YOUTUBE_MUSIC_SEARCH_ITEM_LIMIT = 30
+private const val YOUTUBE_MUSIC_LIBRARY_TRACK_COUNT_RESOLVE_LIMIT = 8
 private val YOUTUBE_MUSIC_BOOTSTRAP_PAGE_ORIGINS = listOf(
     YOUTUBE_MUSIC_MUSIC_ORIGIN,
     YOUTUBE_WEB_ORIGIN
@@ -1758,6 +1763,9 @@ class YouTubeMusicClient(
 
         val playlists = items.distinctBy { it.browseId }.toMutableList()
         playlists.indices.forEach { index ->
+            if (index >= YOUTUBE_MUSIC_LIBRARY_TRACK_COUNT_RESOLVE_LIMIT) {
+                return@forEach
+            }
             if (playlists[index].trackCount != null) {
                 return@forEach
             }
@@ -1799,7 +1807,10 @@ class YouTubeMusicClient(
         var continuation: String? = null
         var page = 0
 
-        while (page < YOUTUBE_MUSIC_CONTINUATION_PAGE_LIMIT) {
+        while (
+            page < YOUTUBE_MUSIC_HOME_PAGE_LIMIT &&
+            result.size < YOUTUBE_MUSIC_HOME_MAX_SHELVES
+        ) {
             val payload = if (continuation.isNullOrBlank()) {
                 JSONObject().put("browseId", "FEmusic_home")
             } else {
@@ -1810,19 +1821,23 @@ class YouTubeMusicClient(
             requestLocale = response.requestLocale
 
             val parsedShelves = YouTubeMusicParser.parseHomeShelfPages(response.root)
-            parsedShelves.forEach { parsedShelf ->
+            for (parsedShelf in parsedShelves) {
+                if (result.size >= YOUTUBE_MUSIC_HOME_MAX_SHELVES) {
+                    break
+                }
                 var shelfContinuation = parsedShelf.continuation
                 var shelfPage = 0
-                val maxItems = if (parsedShelf.items.all { it.videoId.isBlank() }) {
+                val isPlaylistShelf = parsedShelf.items.all { it.videoId.isBlank() }
+                val maxItems = if (isPlaylistShelf) {
                     YOUTUBE_MUSIC_HOME_PLAYLIST_ITEM_LIMIT
                 } else {
-                    Int.MAX_VALUE
+                    YOUTUBE_MUSIC_HOME_SONG_ITEM_LIMIT
                 }
                 val items = parsedShelf.items.toMutableList()
 
                 while (
                     !shelfContinuation.isNullOrBlank() &&
-                    shelfPage < YOUTUBE_MUSIC_CONTINUATION_PAGE_LIMIT &&
+                    shelfPage < YOUTUBE_MUSIC_HOME_SHELF_CONTINUATION_LIMIT &&
                     items.size < maxItems
                 ) {
                     val shelfResponse = try {
@@ -1869,7 +1884,7 @@ class YouTubeMusicClient(
                 return@withContext getHomeFeed()
             }
         }
-        result
+        result.take(YOUTUBE_MUSIC_HOME_MAX_SHELVES)
     }
 
     suspend fun getPlaylistDetail(
@@ -2089,12 +2104,16 @@ class YouTubeMusicClient(
     }
 
     private suspend fun bootstrap(forceRefresh: Boolean = false): YouTubeMusicBootstrapConfig {
-        authAutoRefreshManager?.refreshIfNeeded(
-            reason = "music_bootstrap",
-            force = forceRefresh
-        )
-        val auth = authRepo.getAuthOnce().normalized()
-        val authHealth = authRepo.getAuthHealthOnce()
+        var auth = authRepo.getAuthOnce().normalized()
+        var authHealth = authRepo.getAuthHealthOnce()
+        if (forceRefresh && authHealth.activeCookieKeys.isEmpty()) {
+            authAutoRefreshManager?.refreshIfNeeded(
+                reason = "music_bootstrap_missing_active_session",
+                force = true
+            )
+            auth = authRepo.getAuthOnce().normalized()
+            authHealth = authRepo.getAuthHealthOnce()
+        }
         val cookieHeader = if (authHealth.activeCookieKeys.isEmpty()) {
             ""
         } else {

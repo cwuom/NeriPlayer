@@ -38,6 +38,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeShelf
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.LanguageManager
 import moe.ouom.neriplayer.util.NPLogger
@@ -74,6 +75,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repo = AppContainer.neteaseCookieRepo
     private val client = AppContainer.neteaseClient
+    private val youtubeAuthRepo = AppContainer.youtubeAuthRepo
 
     private val _uiState = MutableStateFlow(
         HomeUiState(
@@ -91,6 +93,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private var ytMusicHomeFeedJob: Job? = null
     private var hasRecommendLogin = false
     private var homeRecommendationsBootstrapped = false
+    private var lastYouTubeAuthFingerprint: String? = null
 
     private fun localizedAppContext() = LanguageManager.applyLanguage(getApplication())
 
@@ -99,6 +102,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             putIfAbsent("os", "pc")
         }
         hasRecommendLogin = !initialCookies["MUSIC_U"].isNullOrBlank()
+        lastYouTubeAuthFingerprint = buildYouTubeAuthFingerprint(youtubeAuthRepo.getAuthOnce())
         _uiState.value = _uiState.value.copy(hasLogin = hasRecommendLogin)
 
         // 观察国际化设置变化，切换推荐源
@@ -109,6 +113,28 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     refreshYtMusicPlaylists()
                     refreshYtMusicHomeFeed()
                 }
+            }
+        }
+
+        viewModelScope.launch {
+            AppContainer.youtubeAuthRepo.authFlow.drop(1).collect { bundle ->
+                val nextFingerprint = buildYouTubeAuthFingerprint(bundle)
+                if (nextFingerprint == lastYouTubeAuthFingerprint) {
+                    return@collect
+                }
+                lastYouTubeAuthFingerprint = nextFingerprint
+                if (!_uiState.value.internationalizationEnabled) {
+                    return@collect
+                }
+                if (!bundle.hasLoginCookies()) {
+                    _uiState.value = _uiState.value.copy(
+                        ytMusicPlaylists = HomeSectionState(),
+                        ytMusicHomeShelves = HomeSectionState()
+                    )
+                    return@collect
+                }
+                refreshYtMusicPlaylists()
+                refreshYtMusicHomeFeed()
             }
         }
 
@@ -387,6 +413,17 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         withContext(Dispatchers.Default) {
             parseSongs(raw)
         }
+
+    private fun buildYouTubeAuthFingerprint(bundle: YouTubeAuthBundle): String {
+        val normalized = bundle.normalized()
+        return buildString {
+            append(normalized.cookieHeader)
+            append('|')
+            append(normalized.authorization)
+            append('|')
+            append(normalized.xGoogAuthUser)
+        }
+    }
 
     private fun parseRecommend(raw: String): List<PlaylistSummary> {
         val result = mutableListOf<PlaylistSummary>()

@@ -552,33 +552,20 @@ private suspend fun PlayerManager.getYouTubeMusicAudioUrl(
         return@withContext SongUrlResult.Failure
     }
 
+    val resolveStartedAtMs = System.currentTimeMillis()
     try {
-        val directPlayableAudio = youtubeMusicPlaybackRepository.getBestPlayableAudio(
+        // 播放时优先保留更高码率的 Opus，避免被 m4a 偏好压到 140
+        val resolvedPlayableAudio = youtubeMusicPlaybackRepository.getBestPlayableAudio(
             videoId = videoId,
             preferredQualityOverride = youtubePreferredQuality,
             forceRefresh = forceRefresh,
-            requireDirect = true,
-            preferM4a = true
-        )
-        val playableAudio = directPlayableAudio?.takeIf { it.url.isNotBlank() }
-            ?: run {
-                NPLogger.d(
-                    "NERI-PlayerManager",
-                    "YouTube Music direct stream unavailable, falling back for $videoId"
-                )
-                youtubeMusicPlaybackRepository.getBestPlayableAudio(
-                    videoId = videoId,
-                    preferredQualityOverride = youtubePreferredQuality,
-                    forceRefresh = forceRefresh,
-                    preferM4a = true
-                )
-            }
-        val resolvedPlayableAudio = playableAudio?.takeIf { it.url.isNotBlank() }
+            preferM4a = false
+        )?.takeIf { it.url.isNotBlank() }
         if (resolvedPlayableAudio != null) {
             maybeUpdateSongDuration(song, resolvedPlayableAudio.durationMs)
             NPLogger.d(
                 "NERI-PlayerManager",
-                "Resolved YouTube Music stream: videoId=$videoId, type=${resolvedPlayableAudio.streamType}, mime=${resolvedPlayableAudio.mimeType}, contentLength=${resolvedPlayableAudio.contentLength}"
+                "Resolved YouTube Music stream: videoId=$videoId, type=${resolvedPlayableAudio.streamType}, mime=${resolvedPlayableAudio.mimeType}, contentLength=${resolvedPlayableAudio.contentLength}, elapsedMs=${System.currentTimeMillis() - resolveStartedAtMs}"
             )
             SongUrlResult.Success(
                 url = resolvedPlayableAudio.url,
@@ -589,6 +576,10 @@ private suspend fun PlayerManager.getYouTubeMusicAudioUrl(
                 }
             )
         } else {
+            NPLogger.w(
+                "NERI-PlayerManager",
+                "Resolve YouTube Music stream returned empty: videoId=$videoId, elapsedMs=${System.currentTimeMillis() - resolveStartedAtMs}"
+            )
             if (!suppressError) {
                 postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(R.string.error_no_play_url)))
             }
@@ -596,7 +587,11 @@ private suspend fun PlayerManager.getYouTubeMusicAudioUrl(
         }
     } catch (e: Exception) {
         if (e is CancellationException) throw e
-        NPLogger.e("NERI-PlayerManager", "Failed to get YouTube Music play url", e)
+        NPLogger.e(
+            "NERI-PlayerManager",
+            "Failed to get YouTube Music play url: videoId=$videoId, elapsedMs=${System.currentTimeMillis() - resolveStartedAtMs}",
+            e
+        )
         if (!suppressError) {
             postPlayerEvent(
                 PlayerEvent.ShowError(

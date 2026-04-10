@@ -55,9 +55,6 @@ data class YouTubeAuthBundle(
     }
 
     fun isUsable(): Boolean {
-        if (authorization.isNotBlank()) {
-            return true
-        }
         return hasLoginCookies()
     }
 

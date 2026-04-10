@@ -113,16 +113,19 @@ class GitHubApiClient(private val context: Context, private val token: String) {
                 .header("Accept", "application/vnd.github+json")
                 .build()
 
-            val response = client.newCall(request).execute()
-            if (response.isSuccessful) {
-                val body = response.body?.string() ?: return@withContext Result.failure(IOException("Empty response"))
-                val user = gson.fromJson(body, Map::class.java)
-                val username = user["login"] as? String ?: "Unknown"
-                Result.success(username)
-            } else if (response.code == 401) {
-                // Token过期或无效
-                Result.failure(TokenExpiredException(context.getString(R.string.github_token_expired_message)))
-            } else {
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string()
+                        ?: return@withContext Result.failure(IOException("Empty response"))
+                    val user = gson.fromJson(body, Map::class.java)
+                    val username = user["login"] as? String ?: "Unknown"
+                    return@withContext Result.success(username)
+                }
+                if (response.code == 401) {
+                    return@withContext Result.failure(
+                        TokenExpiredException(context.getString(R.string.github_token_expired_message))
+                    )
+                }
                 Result.failure(IOException("Token validation failed: ${response.code}"))
             }
         } catch (e: Exception) {
@@ -146,12 +149,13 @@ class GitHubApiClient(private val context: Context, private val token: String) {
                 .post(json.toRequestBody("application/json".toMediaType()))
                 .build()
 
-            val response = client.newCall(request).execute()
-            if (response.isSuccessful) {
-                val body = response.body?.string() ?: return@withContext Result.failure(IOException("Empty response"))
-                val repo = gson.fromJson(body, GitHubRepoResponse::class.java)
-                Result.success(repo)
-            } else {
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string()
+                        ?: return@withContext Result.failure(IOException("Empty response"))
+                    val repo = gson.fromJson(body, GitHubRepoResponse::class.java)
+                    return@withContext Result.success(repo)
+                }
                 val errorBody = response.body?.string() ?: "Unknown error"
                 Result.failure(IOException("Failed to create repository: ${response.code} - $errorBody"))
             }
@@ -206,18 +210,21 @@ class GitHubApiClient(private val context: Context, private val token: String) {
                 .header("Accept", "application/vnd.github+json")
                 .build()
 
-            val response = client.newCall(request).execute()
-            if (response.isSuccessful) {
-                val body = response.body?.string() ?: return@withContext Result.failure(IOException("Empty response"))
-                val fileResponse = gson.fromJson(body, GitHubFileResponse::class.java)
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string()
+                        ?: return@withContext Result.failure(IOException("Empty response"))
+                    val fileResponse = gson.fromJson(body, GitHubFileResponse::class.java)
 
-                // 解码Base64内容
-                val decodedContent = String(Base64.decode(fileResponse.content.replace("\n", ""), Base64.DEFAULT))
-                Result.success(Pair(decodedContent, fileResponse.sha))
-            } else if (response.code == 404) {
-                // 文件不存在
-                Result.success(Pair("", ""))
-            } else {
+                    // 解码Base64内容
+                    val decodedContent = String(
+                        Base64.decode(fileResponse.content.replace("\n", ""), Base64.DEFAULT)
+                    )
+                    return@withContext Result.success(Pair(decodedContent, fileResponse.sha))
+                }
+                if (response.code == 404) {
+                    return@withContext Result.success(Pair("", ""))
+                }
                 Result.failure(IOException("Failed to get file: ${response.code}"))
             }
         } catch (e: Exception) {
@@ -317,16 +324,19 @@ class GitHubApiClient(private val context: Context, private val token: String) {
                 .put(json.toRequestBody("application/json".toMediaType()))
                 .build()
 
-            val response = client.newCall(request).execute()
-            if (response.isSuccessful) {
-                val body = response.body?.string() ?: return@withContext Result.failure(IOException("Empty response"))
-                val result = gson.fromJson(body, Map::class.java)
-                val newSha = (result["content"] as? Map<*, *>)?.get("sha") as? String ?: ""
-                Result.success(newSha)
-            } else if (response.code == 401) {
-                // Token过期或无效
-                Result.failure(TokenExpiredException(context.getString(R.string.github_token_expired_message)))
-            } else {
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string()
+                        ?: return@withContext Result.failure(IOException("Empty response"))
+                    val result = gson.fromJson(body, Map::class.java)
+                    val newSha = (result["content"] as? Map<*, *>)?.get("sha") as? String ?: ""
+                    return@withContext Result.success(newSha)
+                }
+                if (response.code == 401) {
+                    return@withContext Result.failure(
+                        TokenExpiredException(context.getString(R.string.github_token_expired_message))
+                    )
+                }
                 val errorBody = response.body?.string() ?: "Unknown error"
                 Result.failure(IOException("Failed to update file: ${response.code} - $errorBody"))
             }

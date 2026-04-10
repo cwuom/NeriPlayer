@@ -100,4 +100,45 @@ class YouTubeBootstrapHtmlSourceTest {
         assertEquals("hex-visitor-data", source.optionalString("VISITOR_DATA"))
         assertEquals("false", source.optionalBoolean("LOGGED_IN"))
     }
+
+    @Test
+    fun optionalString_supportsWhitespaceBetweenSetAndOpeningParenthesis() {
+        val source = YouTubeBootstrapHtmlSource(
+            """
+                <script>
+                ytcfg.set ({
+                  "INNERTUBE_API_KEY":"spaced-api-key",
+                  "VISITOR_DATA":"visitor-data",
+                  "INNERTUBE_CLIENT_VERSION":"1.20260408.01.00"
+                });
+                </script>
+            """.trimIndent()
+        )
+
+        assertEquals("spaced-api-key", source.optionalString("INNERTUBE_API_KEY"))
+        assertEquals("visitor-data", source.optionalString("VISITOR_DATA"))
+        assertEquals("1.20260408.01.00", source.optionalString("INNERTUBE_CLIENT_VERSION"))
+    }
+
+    @Test
+    fun optionalNumber_findsSignatureTimestampWithoutDecodingWholeBootstrapHtml() {
+        val source = YouTubeBootstrapHtmlSource(
+            """
+                <html>
+                <script>
+                ytcfg.set({
+                  "WEB_PLAYER_CONTEXT_CONFIGS": {
+                    "WEB_PLAYER_CONTEXT_CONFIG_ID_MUSIC_WATCH": {
+                      "signatureTimestamp": 20550
+                    }
+                  },
+                  "jsUrl": "/s/player/test-player/base.js"
+                });
+                </script>
+                </html>
+            """.trimIndent()
+        )
+
+        assertEquals("20550", source.optionalNumber("STS", "signatureTimestamp"))
+    }
 }

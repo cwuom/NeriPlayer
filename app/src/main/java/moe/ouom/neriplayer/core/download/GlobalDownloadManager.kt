@@ -132,6 +132,10 @@ object GlobalDownloadManager {
         }
     }
 
+    private fun notifyDownloadPresenceChanged() {
+        _downloadPresenceVersion.value = _downloadPresenceVersion.value + 1
+    }
+
     private fun scheduleDownloadedSongsCatalogPersist(
         context: Context,
         songs: List<DownloadedSong>
@@ -728,7 +732,17 @@ object GlobalDownloadManager {
         audio: ManagedDownloadStorage.StoredEntry,
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
     ): String? {
-        return candidateManagedDownloadBaseNames(audio.nameWithoutExtension)
+        return findIndexedCoverReference(
+            candidateBaseNames = candidateManagedDownloadBaseNames(audio.nameWithoutExtension),
+            snapshot = snapshot
+        )
+    }
+
+    private fun findIndexedCoverReference(
+        candidateBaseNames: List<String>,
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
+    ): String? {
+        return candidateBaseNames
             .firstNotNullOfOrNull { baseName ->
                 sequenceOf("jpg", "jpeg", "png", "webp").firstNotNullOfOrNull { extension ->
                     snapshot.coverEntriesByName["$baseName.$extension"]?.reference
@@ -736,57 +750,153 @@ object GlobalDownloadManager {
             }
     }
 
+    private fun findIndexedLyricReference(
+        candidateBaseNames: List<String>,
+        songId: Long?,
+        translated: Boolean,
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
+    ): String? {
+        val candidates = ManagedDownloadStorage.buildLyricCandidateNames(
+            songId = songId,
+            candidateBaseNames = candidateBaseNames,
+            translated = translated
+        )
+        return candidates.firstNotNullOfOrNull { candidate ->
+            snapshot.lyricEntriesByName[candidate]?.reference
+        }
+    }
+
+    private suspend fun removeManagedDownloadArtifacts(
+        context: Context,
+        songName: String,
+        storedAudio: ManagedDownloadStorage.StoredEntry?,
+        songId: Long,
+        candidateBaseNames: List<String>,
+        explicitReferences: List<String> = emptyList()
+    ) {
+        val snapshot = ManagedDownloadStorage.buildDownloadLibrarySnapshot(
+            context = context,
+            forceRefresh = true
+        )
+        val metadataReference = storedAudio?.let {
+            ManagedDownloadStorage.findMetadataForAudio(context, it)?.reference
+        }
+        val metadata = storedAudio?.let {
+            readDownloadedMetadata(context, it)
+        }
+        val resolvedSongId = metadata?.songId ?: songId.takeIf { it > 0L }
+        val currentAudioName = storedAudio?.name
+        val lyricReferences = buildList {
+            metadata?.lyricPath?.let(::add)
+            metadata?.translatedLyricPath?.let(::add)
+            if (isEmpty()) {
+                findIndexedLyricReference(
+                    candidateBaseNames = candidateBaseNames,
+                    songId = resolvedSongId,
+                    translated = false,
+                    snapshot = snapshot
+                )?.let(::add)
+                findIndexedLyricReference(
+                    candidateBaseNames = candidateBaseNames,
+                    songId = resolvedSongId,
+                    translated = true,
+                    snapshot = snapshot
+                )?.let(::add)
+            }
+        }
+        val coverReferences = buildList {
+            metadata?.coverPath?.let(::add)
+            when {
+                storedAudio != null -> findIndexedCoverReference(storedAudio, snapshot)
+                else -> findIndexedCoverReference(candidateBaseNames, snapshot)
+            }?.let(::add)
+        }
+
+        storedAudio?.let {
+            NPLogger.d(TAG, "删除下载音频: song=$songName, reference=${it.reference}")
+            ManagedDownloadStorage.deleteReference(context, it.reference)
+        }
+
+        explicitReferences
+            .plus(listOfNotNull(metadataReference))
+            .plus(coverReferences)
+            .plus(lyricReferences)
+            .distinct()
+            .forEach { reference ->
+                if (metadataReference != null && reference == metadataReference) {
+                    NPLogger.d(TAG, "删除下载关联文件: song=$songName, reference=$reference")
+                    ManagedDownloadStorage.deleteReference(context, reference)
+                } else if (isReferenceOwnedByOtherDownload(snapshot, currentAudioName, reference)) {
+                    NPLogger.w(TAG, "跳过删除共享关联文件: song=$songName, reference=$reference")
+                } else {
+                    NPLogger.d(TAG, "删除下载关联文件: song=$songName, reference=$reference")
+                    ManagedDownloadStorage.deleteReference(context, reference)
+                }
+            }
+    }
+
+    internal suspend fun rollbackCancelledDownload(
+        context: Context,
+        song: SongItem,
+        storedAudio: ManagedDownloadStorage.StoredEntry?,
+        sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences? = null
+    ) {
+        val appContext = context.applicationContext
+        val resolvedStoredAudio = storedAudio ?: resolveStoredAudio(appContext, song)
+        val candidateBaseNames = buildList {
+            resolvedStoredAudio?.nameWithoutExtension
+                ?.takeIf(String::isNotBlank)
+                ?.let(::add)
+            addAll(ManagedDownloadStorage.buildCandidateBaseNames(song))
+        }.distinct()
+        val explicitReferences = listOfNotNull(
+            sidecarReferences?.coverReference,
+            sidecarReferences?.lyricReference,
+            sidecarReferences?.translatedLyricReference
+        )
+
+        NPLogger.d(
+            TAG,
+            "回滚已取消下载: song=${song.name}, audio=${resolvedStoredAudio?.reference}, baseNames=$candidateBaseNames, sidecars=$explicitReferences"
+        )
+
+        removeManagedDownloadArtifacts(
+            context = appContext,
+            songName = song.name,
+            storedAudio = resolvedStoredAudio,
+            songId = song.id,
+            candidateBaseNames = candidateBaseNames,
+            explicitReferences = explicitReferences
+        )
+
+        val currentSongs = _downloadedSongs.value
+        val updatedSongs = currentSongs.filterNot { downloaded ->
+            (resolvedStoredAudio != null && downloaded.filePath == resolvedStoredAudio.reference) ||
+                matchesDownloadedSong(song, downloaded)
+        }
+        if (updatedSongs != currentSongs) {
+            publishDownloadedSongs(appContext, updatedSongs, persistCatalog = true)
+        } else {
+            notifyDownloadPresenceChanged()
+        }
+        scanLocalFiles(appContext, forceRefresh = true)
+        NPLogger.d(TAG, "回滚已取消下载完成: ${song.name}")
+    }
+
     fun deleteDownloadedSong(context: Context, song: DownloadedSong) {
         val appContext = context.applicationContext
         scope.launch {
             try {
                 val storedAudio = resolveStoredAudio(appContext, song.filePath)
-                val snapshot = ManagedDownloadStorage.buildDownloadLibrarySnapshot(appContext)
                 val baseNames = candidateBaseNames(song, storedAudio?.nameWithoutExtension)
-                val metadataReference = storedAudio?.let {
-                    ManagedDownloadStorage.findMetadataForAudio(appContext, it)?.reference
-                }
-                val metadata = storedAudio?.let {
-                    readDownloadedMetadata(appContext, it)
-                }
-                val currentAudioName = storedAudio?.name
-                val lyricReferences = buildList {
-                    metadata?.lyricPath?.let(::add)
-                    metadata?.translatedLyricPath?.let(::add)
-                    if (isEmpty()) {
-                        ManagedDownloadStorage.findLyricLocation(
-                            context = appContext,
-                            songId = metadata?.songId ?: song.id,
-                            candidateBaseNames = baseNames,
-                            translated = false
-                        )?.let(::add)
-                        ManagedDownloadStorage.findLyricLocation(
-                            context = appContext,
-                            songId = metadata?.songId ?: song.id,
-                            candidateBaseNames = baseNames,
-                            translated = true
-                        )?.let(::add)
-                    }
-                }
-
-                storedAudio?.let {
-                    ManagedDownloadStorage.deleteReference(appContext, it.reference)
-                } ?: ManagedDownloadStorage.deleteReference(appContext, song.filePath)
-
-                listOfNotNull(metadata?.coverPath, song.coverPath, metadataReference)
-                    .plus(lyricReferences)
-                    .distinct()
-                    .forEach { reference ->
-                        if (metadataReference != null && reference == metadataReference) {
-                            NPLogger.d(TAG, "删除下载关联文件: song=${song.name}, reference=$reference")
-                            ManagedDownloadStorage.deleteReference(appContext, reference)
-                        } else if (isReferenceOwnedByOtherDownload(snapshot, currentAudioName, reference)) {
-                            NPLogger.w(TAG, "跳过删除共享关联文件: song=${song.name}, reference=$reference")
-                        } else {
-                            NPLogger.d(TAG, "删除下载关联文件: song=${song.name}, reference=$reference")
-                            ManagedDownloadStorage.deleteReference(appContext, reference)
-                        }
-                    }
+                removeManagedDownloadArtifacts(
+                    context = appContext,
+                    songName = song.name,
+                    storedAudio = storedAudio,
+                    songId = song.id,
+                    candidateBaseNames = baseNames,
+                    explicitReferences = listOfNotNull(song.coverPath, song.filePath.takeIf { storedAudio == null })
+                )
 
                 scanLocalFiles(appContext, forceRefresh = true)
                 NPLogger.d(TAG, "删除下载文件完成: ${song.name}")

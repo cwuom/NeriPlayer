@@ -41,8 +41,8 @@ class YouTubeCookieSupportTest {
     }
 
     @Test
-    fun isLoggedIn_returnsTrueForPsidTsCookies() {
-        assertTrue(
+    fun isLoggedIn_returnsFalseForPsidTsCookies() {
+        assertFalse(
             YouTubeCookieSupport.isLoggedIn(
                 mapOf("__Secure-1PSIDTS" to "value")
             )
@@ -60,7 +60,7 @@ class YouTubeCookieSupportTest {
 
     @Test
     fun activeSessionCookieKeys_excludesLoginInfoOnly() {
-        assertTrue(YouTubeCookieSupport.importantLoginCookieKeys.contains("LOGIN_INFO"))
+        assertFalse(YouTubeCookieSupport.importantLoginCookieKeys.contains("LOGIN_INFO"))
         assertFalse(YouTubeCookieSupport.activeSessionCookieKeys.contains("LOGIN_INFO"))
     }
 
@@ -80,6 +80,24 @@ class YouTubeCookieSupportTest {
     }
 
     @Test
+    fun hasUsefulRequestCookies_rejectsLoginInfoOnlyHeader() {
+        assertFalse(
+            YouTubeCookieSupport.hasUsefulRequestCookies(
+                "LOGIN_INFO=token; VISITOR_INFO1_LIVE=visitor"
+            )
+        )
+    }
+
+    @Test
+    fun hasUsefulRequestCookies_acceptsRealLoginCookieHeader() {
+        assertTrue(
+            YouTubeCookieSupport.hasUsefulRequestCookies(
+                "LOGIN_INFO=token; SAPISID=real-session"
+            )
+        )
+    }
+
+    @Test
     fun sanitizePersistedCookies_keepsSessionCookiesAndDropsNoise() {
         val sanitized = YouTubeCookieSupport.sanitizePersistedCookies(
             mapOf(
@@ -96,5 +114,61 @@ class YouTubeCookieSupportTest {
         assertEquals("ts-value", sanitized["__Secure-1PSIDTS"])
         assertEquals("privacy", sanitized["VISITOR_PRIVACY_METADATA"])
         assertEquals("visitor", sanitized["VISITOR_INFO1_LIVE"])
+    }
+
+    @Test
+    fun sanitizeWebLoginGoogleSeedCookies_keepsOnlyLowRiskGoogleCookies() {
+        val sanitized = YouTubeCookieSupport.sanitizeWebLoginGoogleSeedCookies(
+            mapOf(
+                "SAPISID" to "auth",
+                "SID" to "sid",
+                "SOCS" to "CAI",
+                "CONSENT" to "YES+",
+                "PREF" to "tz=Asia/Taipei",
+                "VISITOR_INFO1_LIVE" to "visitor"
+            )
+        )
+
+        assertEquals(setOf("SOCS", "CONSENT", "PREF"), sanitized.keys)
+    }
+
+    @Test
+    fun sanitizeWebLoginYouTubeSeedCookies_keepsVisitorButDropsAuthCookies() {
+        val sanitized = YouTubeCookieSupport.sanitizeWebLoginYouTubeSeedCookies(
+            mapOf(
+                "SAPISID" to "auth",
+                "__Secure-1PSID" to "psid",
+                "SOCS" to "CAI",
+                "VISITOR_INFO1_LIVE" to "visitor",
+                "VISITOR_PRIVACY_METADATA" to "privacy",
+                "PREF" to "tz=Asia/Taipei"
+            )
+        )
+
+        assertEquals(
+            setOf("SOCS", "VISITOR_INFO1_LIVE", "VISITOR_PRIVACY_METADATA", "PREF"),
+            sanitized.keys
+        )
+    }
+
+    @Test
+    fun collectWebLoginBlockingCookieKeys_matchesAccountCookiesOnly() {
+        val blockingKeys = YouTubeCookieSupport.collectWebLoginBlockingCookieKeys(
+            mapOf(
+                "SID" to "sid",
+                "LOGIN_INFO" to "login",
+                "__Secure-1PSIDTS" to "psidts",
+                "__Secure-3PAPISID" to "papisid",
+                "SOCS" to "CAI",
+                "VISITOR_INFO1_LIVE" to "visitor"
+            )
+        )
+
+        assertTrue(blockingKeys.contains("SID"))
+        assertTrue(blockingKeys.contains("LOGIN_INFO"))
+        assertTrue(blockingKeys.contains("__Secure-1PSIDTS"))
+        assertTrue(blockingKeys.contains("__Secure-3PAPISID"))
+        assertFalse(blockingKeys.contains("SOCS"))
+        assertFalse(blockingKeys.contains("VISITOR_INFO1_LIVE"))
     }
 }

@@ -24,6 +24,12 @@ package moe.ouom.neriplayer.data.auth.youtube
  */
 
 object YouTubeCookieSupport {
+    val webCookieGoogleUrls: List<String> = listOf(
+        "https://accounts.google.com",
+        "https://www.google.com",
+        "https://google.com"
+    )
+
     val webCookieWriteUrls: List<String> = listOf(
         "https://music.youtube.com",
         "https://www.youtube.com",
@@ -31,11 +37,7 @@ object YouTubeCookieSupport {
         "https://youtube.com"
     )
 
-    val webCookieReadUrls: List<String> = listOf(
-        "https://accounts.google.com",
-        "https://www.google.com",
-        "https://google.com"
-    ) + webCookieWriteUrls
+    val webCookieReadUrls: List<String> = webCookieGoogleUrls + webCookieWriteUrls
 
     // 兼容现有调用方，默认写入目标仍然只投射到 YouTube 域
     val webUrls: List<String> = webCookieWriteUrls
@@ -48,16 +50,10 @@ object YouTubeCookieSupport {
         "__Secure-1PSID",
         "__Secure-3PSID",
         "SSID",
-        "LOGIN_INFO",
         "SID"
     )
 
-    private val importantLoginCookiePrefixes: List<String> = listOf(
-        "__Secure-1PSID",
-        "__Secure-3PSID",
-        "__Secure-1PAPISID",
-        "__Secure-3PAPISID"
-    )
+    private val importantLoginCookiePrefixes: List<String> = emptyList()
 
     val activeSessionCookieKeys: List<String> = listOf(
         "SAPISID",
@@ -75,12 +71,7 @@ object YouTubeCookieSupport {
         "SIDCC"
     )
 
-    private val activeSessionCookiePrefixes: List<String> = listOf(
-        "__Secure-1PSID",
-        "__Secure-3PSID",
-        "__Secure-1PAPISID",
-        "__Secure-3PAPISID"
-    )
+    private val activeSessionCookiePrefixes: List<String> = emptyList()
 
     private val persistedCookieKeys: Set<String> = setOf(
         "SID",
@@ -106,6 +97,38 @@ object YouTubeCookieSupport {
         "__Secure-1PAPISID",
         "__Secure-3PAPISID",
         "__Secure-ROLLOUT_"
+    )
+
+    private val webLoginGoogleSeedCookieKeys: Set<String> = setOf(
+        "SOCS",
+        "CONSENT",
+        "PREF"
+    )
+
+    private val webLoginYouTubeSeedCookieKeys: Set<String> = setOf(
+        "SOCS",
+        "CONSENT",
+        "PREF",
+        "VISITOR_INFO1_LIVE",
+        "VISITOR_PRIVACY_METADATA"
+    )
+
+    private val webLoginBlockingCookieKeys: Set<String> = setOf(
+        "SID",
+        "HSID",
+        "SSID",
+        "APISID",
+        "SAPISID",
+        "LSID",
+        "LOGIN_INFO",
+        "SIDCC"
+    )
+
+    private val webLoginBlockingCookiePrefixes: List<String> = listOf(
+        "__Secure-1PSID",
+        "__Secure-3PSID",
+        "__Secure-1PAPISID",
+        "__Secure-3PAPISID"
     )
 
     fun parseCookieString(raw: String): LinkedHashMap<String, String> {
@@ -147,8 +170,27 @@ object YouTubeCookieSupport {
         return sanitized
     }
 
+    fun sanitizeWebLoginGoogleSeedCookies(
+        cookies: Map<String, String>
+    ): LinkedHashMap<String, String> {
+        return sanitizeCookiesByExactKeys(cookies, webLoginGoogleSeedCookieKeys)
+    }
+
+    fun sanitizeWebLoginYouTubeSeedCookies(
+        cookies: Map<String, String>
+    ): LinkedHashMap<String, String> {
+        return sanitizeCookiesByExactKeys(cookies, webLoginYouTubeSeedCookieKeys)
+    }
+
     fun isLoggedIn(cookies: Map<String, String>): Boolean {
         return collectImportantLoginCookieKeys(cookies).isNotEmpty()
+    }
+
+    fun hasUsefulRequestCookies(rawCookieHeader: String): Boolean {
+        if (rawCookieHeader.isBlank()) {
+            return false
+        }
+        return isLoggedIn(parseCookieString(rawCookieHeader))
     }
 
     fun collectImportantLoginCookieKeys(cookies: Map<String, String>): List<String> {
@@ -165,6 +207,30 @@ object YouTubeCookieSupport {
             exactKeys = activeSessionCookieKeys,
             prefixes = activeSessionCookiePrefixes
         )
+    }
+
+    fun collectWebLoginBlockingCookieKeys(cookies: Map<String, String>): List<String> {
+        return collectMatchingCookieKeys(
+            cookies = cookies,
+            exactKeys = webLoginBlockingCookieKeys,
+            prefixes = webLoginBlockingCookiePrefixes
+        )
+    }
+
+    private fun sanitizeCookiesByExactKeys(
+        cookies: Map<String, String>,
+        exactKeys: Set<String>
+    ): LinkedHashMap<String, String> {
+        val sanitized = linkedMapOf<String, String>()
+        cookies.forEach { (key, value) ->
+            if (key.isBlank() || value.isBlank()) {
+                return@forEach
+            }
+            if (key in exactKeys) {
+                sanitized[key] = value
+            }
+        }
+        return sanitized
     }
 
     private fun collectMatchingCookieKeys(

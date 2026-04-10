@@ -9,9 +9,18 @@ import org.json.JSONObject
  * 优先从 ytcfg.set({...}) 提取配置，再回退到正则匹配，避免被页面格式细节卡死
  */
 internal class YouTubeBootstrapHtmlSource(html: String) {
-    private val normalizedHtml = decodeInlineJavascriptEscapes(html)
+    private val rawHtml = html
 
-    private val ytcfg = extractYtcfgJson(normalizedHtml)
+    private val normalizedHtml by lazy(LazyThreadSafetyMode.NONE) {
+        decodeInlineJavascriptEscapes(rawHtml)
+    }
+
+    private val ytcfg by lazy(LazyThreadSafetyMode.NONE) {
+        extractYtcfgJson(rawHtml)
+            ?: normalizedHtml
+                .takeUnless { it == rawHtml }
+                ?.let(::extractYtcfgJson)
+    }
 
     fun requireString(
         errorPrefix: String,
@@ -53,26 +62,38 @@ internal class YouTubeBootstrapHtmlSource(html: String) {
             .firstOrNull { it.isNotBlank() }
             ?.let { return it }
 
-        return fieldNames.asSequence()
-            .map { fieldName -> Regex(patternBuilder(fieldName)).find(normalizedHtml)?.groupValues?.getOrNull(1).orEmpty() }
-            .firstOrNull { it.isNotBlank() }
+        findRegexValue(rawHtml, fieldNames, patternBuilder)
+            .takeIf { it.isNotBlank() }
+            ?.let { return it }
+
+        return normalizedHtml
+            .takeUnless { it == rawHtml }
+            ?.let { decoded ->
+                findRegexValue(decoded, fieldNames, patternBuilder)
+            }
             .orEmpty()
     }
 
     private fun extractYtcfgJson(source: String): JSONObject? {
         var searchStart = 0
         while (true) {
-            val callIndex = source.indexOf("ytcfg.set(", startIndex = searchStart)
-            if (callIndex < 0) {
+            val match = ytcfgSetCallPattern.find(source, startIndex = searchStart)
+            if (match == null) {
                 return null
             }
+            val callIndex = match.range.first
             val objectStart = source.indexOf('{', startIndex = callIndex)
             if (objectStart < 0) {
-                return null
+                searchStart = match.range.last + 1
+                continue
             }
-            val objectEnd = findMatchingBrace(source, objectStart) ?: return null
+            val objectEnd = findMatchingBrace(source, objectStart)
+            if (objectEnd == null) {
+                searchStart = objectStart + 1
+                continue
+            }
             val candidate = source.substring(objectStart, objectEnd + 1)
-            val parsed = runCatching { JSONObject(candidate) }.getOrNull()
+            val parsed = parseYtcfgCandidate(candidate)
             if (
                 parsed != null &&
                 (
@@ -115,9 +136,43 @@ internal class YouTubeBootstrapHtmlSource(html: String) {
         }
         return null
     }
+
+    private fun findRegexValue(
+        source: String,
+        fieldNames: Array<String>,
+        patternBuilder: (String) -> String
+    ): String {
+        return fieldNames.asSequence()
+            .map { fieldName ->
+                Regex(patternBuilder(fieldName))
+                    .find(source)
+                    ?.groupValues
+                    ?.getOrNull(1)
+                    .orEmpty()
+            }
+            .firstOrNull { it.isNotBlank() }
+            .orEmpty()
+    }
+
+    private fun parseYtcfgCandidate(candidate: String): JSONObject? {
+        runCatching { JSONObject(candidate) }.getOrNull()?.let { return it }
+        val decodedCandidate = decodeInlineJavascriptEscapes(candidate)
+        if (decodedCandidate == candidate) {
+            return null
+        }
+        return runCatching { JSONObject(decodedCandidate) }.getOrNull()
+    }
 }
 
 private fun decodeInlineJavascriptEscapes(source: String): String {
+    if (!source.contains('\\') ||
+        (!source.contains("\\x") &&
+            !source.contains("\\X") &&
+            !source.contains("\\u") &&
+            !source.contains("\\U"))
+    ) {
+        return source
+    }
     var normalized = source
     repeat(2) {
         val decoded = sourceEscapePattern.replace(normalized) { match ->
@@ -134,6 +189,8 @@ private fun decodeInlineJavascriptEscapes(source: String): String {
     }
     return normalized
 }
+
+private val ytcfgSetCallPattern = Regex("""ytcfg\.set\s*\(""")
 
 private val sourceEscapePattern = Regex(
     """\\+(?:[xX]([0-9A-Fa-f]{2})|[uU]([0-9A-Fa-f]{4}))"""

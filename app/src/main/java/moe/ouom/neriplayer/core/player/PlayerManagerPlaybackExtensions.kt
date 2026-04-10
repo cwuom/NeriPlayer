@@ -493,22 +493,13 @@ private fun PlayerManager.maybeWarmCurrentAndUpcomingYouTubeMusic(currentSongInd
     )
 
     ioScope.launch {
-        runCatching {
-            youtubeMusicPlaybackRepository.warmBootstrapAsync()
-        }.onFailure { error ->
-            NPLogger.w(
-                "NERI-PlayerManager",
-                "Warm YouTube Music bootstrap failed: ${error.message}"
-            )
-        }
-
         targets.currentVideoId?.let { videoId ->
             runCatching {
                 youtubeMusicPlaybackRepository.kickoffPlayableAudioPrefetch(
                     videoId = videoId,
                     preferredQualityOverride = targets.preferredQuality,
-                    requireDirect = true,
-                    preferM4a = true
+                    requireDirect = false,
+                    preferM4a = false
                 )
             }.onFailure { error ->
                 NPLogger.w(
@@ -523,8 +514,8 @@ private fun PlayerManager.maybeWarmCurrentAndUpcomingYouTubeMusic(currentSongInd
                 youtubeMusicPlaybackRepository.kickoffPlayableAudioPrefetch(
                     videoId = videoId,
                     preferredQualityOverride = targets.preferredQuality,
-                    requireDirect = true,
-                    preferM4a = true
+                    requireDirect = false,
+                    preferM4a = false
                 )
             }.onFailure { error ->
                 NPLogger.w(

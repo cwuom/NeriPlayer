@@ -75,21 +75,22 @@ class LrcLibClient(private val okHttpClient: OkHttpClient) {
                 .get()
                 .build()
 
-            val response = okHttpClient.newCall(request).execute()
-            if (!response.isSuccessful) {
-                NPLogger.d(TAG, "LRCLIB get returned ${response.code} for '$trackName' by '$artistName'")
-                return@withContext null
+            okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    NPLogger.d(TAG, "LRCLIB get returned ${response.code} for '$trackName' by '$artistName'")
+                    return@withContext null
+                }
+
+                val body = response.body?.string() ?: return@withContext null
+                val json = JSONObject(body)
+
+                LrcLibResult(
+                    syncedLyrics = json.optString("syncedLyrics").takeIf { it.isNotBlank() },
+                    plainLyrics = json.optString("plainLyrics").takeIf { it.isNotBlank() },
+                    trackName = json.optString("trackName"),
+                    artistName = json.optString("artistName")
+                )
             }
-
-            val body = response.body?.string() ?: return@withContext null
-            val json = JSONObject(body)
-
-            LrcLibResult(
-                syncedLyrics = json.optString("syncedLyrics").takeIf { it.isNotBlank() },
-                plainLyrics = json.optString("plainLyrics").takeIf { it.isNotBlank() },
-                trackName = json.optString("trackName"),
-                artistName = json.optString("artistName")
-            )
         } catch (e: Exception) {
             NPLogger.d(TAG, "LRCLIB getLyrics failed: ${e.message}")
             null
@@ -112,38 +113,39 @@ class LrcLibClient(private val okHttpClient: OkHttpClient) {
                 .get()
                 .build()
 
-            val response = okHttpClient.newCall(request).execute()
-            if (!response.isSuccessful) {
-                NPLogger.d(TAG, "LRCLIB search returned ${response.code} for '$query'")
-                return@withContext null
-            }
-
-            val body = response.body?.string() ?: return@withContext null
-            val arr = org.json.JSONArray(body)
-            if (arr.length() == 0) return@withContext null
-
-            // 优先选择有同步歌词的结果
-            for (i in 0 until arr.length()) {
-                val json = arr.optJSONObject(i) ?: continue
-                val synced = json.optString("syncedLyrics").takeIf { it.isNotBlank() }
-                if (synced != null) {
-                    return@withContext LrcLibResult(
-                        syncedLyrics = synced,
-                        plainLyrics = json.optString("plainLyrics").takeIf { it.isNotBlank() },
-                        trackName = json.optString("trackName"),
-                        artistName = json.optString("artistName")
-                    )
+            okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    NPLogger.d(TAG, "LRCLIB search returned ${response.code} for '$query'")
+                    return@withContext null
                 }
-            }
 
-            // 没有同步歌词，返回第一个有纯文本歌词的
-            val first = arr.optJSONObject(0) ?: return@withContext null
-            LrcLibResult(
-                syncedLyrics = null,
-                plainLyrics = first.optString("plainLyrics").takeIf { it.isNotBlank() },
-                trackName = first.optString("trackName"),
-                artistName = first.optString("artistName")
-            )
+                val body = response.body?.string() ?: return@withContext null
+                val arr = org.json.JSONArray(body)
+                if (arr.length() == 0) return@withContext null
+
+                // 优先选择有同步歌词的结果
+                for (i in 0 until arr.length()) {
+                    val json = arr.optJSONObject(i) ?: continue
+                    val synced = json.optString("syncedLyrics").takeIf { it.isNotBlank() }
+                    if (synced != null) {
+                        return@withContext LrcLibResult(
+                            syncedLyrics = synced,
+                            plainLyrics = json.optString("plainLyrics").takeIf { it.isNotBlank() },
+                            trackName = json.optString("trackName"),
+                            artistName = json.optString("artistName")
+                        )
+                    }
+                }
+
+                // 没有同步歌词，返回第一个有纯文本歌词的
+                val first = arr.optJSONObject(0) ?: return@withContext null
+                LrcLibResult(
+                    syncedLyrics = null,
+                    plainLyrics = first.optString("plainLyrics").takeIf { it.isNotBlank() },
+                    trackName = first.optString("trackName"),
+                    artistName = first.optString("artistName")
+                )
+            }
         } catch (e: Exception) {
             NPLogger.d(TAG, "LRCLIB searchLyrics failed: ${e.message}")
             null

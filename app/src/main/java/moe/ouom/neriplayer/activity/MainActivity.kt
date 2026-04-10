@@ -153,6 +153,11 @@ private data class PendingAudioServiceStart(
 )
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        private const val STARTUP_SYNC_SCHEDULE_DELAY_MS = 20_000L
+        private const val STARTUP_SYNC_STAGGER_DELAY_MS = 10_000L
+    }
+
     private val settingsRepository by lazy { SettingsRepository(applicationContext) }
     private var externalAudioImportJob: Job? = null
     private var externalAudioMetadataHydrationJob: Job? = null
@@ -849,9 +854,13 @@ class MainActivity : ComponentActivity() {
 
     private fun scheduleStartupSyncIfNeeded() {
         lifecycleScope.launch(Dispatchers.IO) {
-            delay(1000)
+            delay(STARTUP_SYNC_SCHEDULE_DELAY_MS)
+            if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                return@launch
+            }
             val storage = moe.ouom.neriplayer.data.sync.github.SecureTokenStorage(this@MainActivity)
-            if (storage.isConfigured()) {
+            val shouldScheduleGitHubSync = storage.isConfigured() && storage.isAutoSyncEnabled()
+            if (shouldScheduleGitHubSync) {
                 moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker.scheduleDelayedSync(
                     this@MainActivity,
                     markMutation = false
@@ -859,12 +868,19 @@ class MainActivity : ComponentActivity() {
             }
 
             val webDavStorage = WebDavStorage(this@MainActivity)
-            if (webDavStorage.isConfigured()) {
-                WebDavSyncWorker.scheduleDelayedSync(
-                    this@MainActivity,
-                    markMutation = false
-                )
+            if (!webDavStorage.isConfigured() || !webDavStorage.isAutoSyncEnabled()) {
+                return@launch
             }
+            if (shouldScheduleGitHubSync) {
+                delay(STARTUP_SYNC_STAGGER_DELAY_MS)
+                if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                    return@launch
+                }
+            }
+            WebDavSyncWorker.scheduleDelayedSync(
+                this@MainActivity,
+                markMutation = false
+            )
         }
     }
 

@@ -41,4 +41,18 @@ class YouTubeWebCookieStoreTest {
             )
         )
     }
+
+    @Test
+    fun resolveYouTubeWebCookieDomain_usesGoogleDomainForGoogleHosts() {
+        assertTrue(
+            resolveYouTubeWebCookieDomain("https://accounts.google.com/ServiceLogin") == ".google.com"
+        )
+    }
+
+    @Test
+    fun resolveYouTubeWebCookieDomain_usesYouTubeDomainForYouTubeHosts() {
+        assertTrue(
+            resolveYouTubeWebCookieDomain("https://music.youtube.com/") == ".youtube.com"
+        )
+    }
 }

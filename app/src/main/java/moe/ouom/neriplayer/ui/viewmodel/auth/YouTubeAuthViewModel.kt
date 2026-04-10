@@ -39,6 +39,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.common.parseRawCookieText
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthHealth
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
 import moe.ouom.neriplayer.data.auth.youtube.evaluateYouTubeAuthHealth
 
 data class YouTubeAuthUiState(
@@ -134,7 +135,8 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
             val normalized = bundle.normalized(
                 savedAt = bundle.savedAt.takeIf { it > 0L } ?: System.currentTimeMillis()
             )
-            if (!normalized.isUsable()) {
+            val health = evaluateYouTubeAuthHealth(normalized)
+            if (health.state == YouTubeAuthState.Missing) {
                 _events.send(
                     YouTubeAuthEvent.ShowSnack(
                         getApplication<Application>().getString(R.string.settings_youtube_auth_missing)
@@ -144,7 +146,10 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
             }
 
             repo.saveAuth(normalized)
-            _uiState.value = YouTubeAuthUiState(health = repo.getAuthHealthOnce())
+            _uiState.value = YouTubeAuthUiState(
+                health = repo.getAuthHealthOnce(),
+                hasSavedAuth = true
+            )
             _events.send(
                 YouTubeAuthEvent.ShowCookies(
                     normalized.cookies.ifEmpty { parseRawCookieText(normalized.cookieHeader) }
@@ -166,6 +171,6 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun YouTubeAuthBundle.hasPersistedAuth(): Boolean {
-        return cookies.isNotEmpty() || cookieHeader.isNotBlank() || authorization.isNotBlank()
+        return evaluateYouTubeAuthHealth(this).state != YouTubeAuthState.Missing
     }
 }

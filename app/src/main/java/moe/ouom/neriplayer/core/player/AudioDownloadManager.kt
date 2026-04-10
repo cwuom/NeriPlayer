@@ -108,6 +108,8 @@ object AudioDownloadManager {
     private val lastPublishedProgressBySongKey = mutableMapOf<String, PublishedProgressState>()
     private val completedSidecarReferencesBySongKey =
         ConcurrentHashMap<String, DownloadedSidecarReferences>()
+    private val partialSidecarReferencesBySongKey =
+        ConcurrentHashMap<String, DownloadedSidecarReferences>()
 
     private data class ResolvedDownloadSource(
         val url: String,
@@ -250,6 +252,12 @@ object AudioDownloadManager {
         return completedSidecarReferencesBySongKey.remove(songKey)
     }
 
+    internal fun consumePartialSidecarReferences(
+        songKey: String
+    ): DownloadedSidecarReferences? {
+        return partialSidecarReferencesBySongKey.remove(songKey)
+    }
+
     private fun rememberCompletedSidecarReferences(
         songKey: String,
         sidecarReferences: DownloadedSidecarReferences
@@ -261,8 +269,37 @@ object AudioDownloadManager {
         completedSidecarReferencesBySongKey[songKey] = sidecarReferences
     }
 
+    private fun rememberPartialSidecarReferences(
+        songKey: String,
+        sidecarReferences: DownloadedSidecarReferences
+    ) {
+        if (sidecarReferences.isEmpty) {
+            return
+        }
+        partialSidecarReferencesBySongKey.compute(songKey) { _, existing ->
+            mergeDownloadedSidecarReferences(existing, sidecarReferences)
+                .takeUnless(DownloadedSidecarReferences::isEmpty)
+        }
+    }
+
     private fun clearCompletedSidecarReferences(songKey: String) {
         completedSidecarReferencesBySongKey.remove(songKey)
+    }
+
+    private fun clearPartialSidecarReferences(songKey: String) {
+        partialSidecarReferencesBySongKey.remove(songKey)
+    }
+
+    internal fun mergeDownloadedSidecarReferences(
+        existing: DownloadedSidecarReferences?,
+        incoming: DownloadedSidecarReferences?
+    ): DownloadedSidecarReferences {
+        return DownloadedSidecarReferences(
+            coverReference = incoming?.coverReference ?: existing?.coverReference,
+            lyricReference = incoming?.lyricReference ?: existing?.lyricReference,
+            translatedLyricReference = incoming?.translatedLyricReference
+                ?: existing?.translatedLyricReference
+        )
     }
 
     private fun publishFinalizingProgress(
@@ -286,11 +323,25 @@ object AudioDownloadManager {
         )
     }
 
+    private fun ensureSongDownloadNotCancelled(
+        songKey: String,
+        stage: String
+    ) {
+        if (!_isCancelled.value && !GlobalDownloadManager.isSongCancelled(songKey)) {
+            return
+        }
+        NPLogger.d(TAG, "检测到下载取消: songKey=$songKey, stage=$stage")
+        _progressFlow.value = null
+        throw java.util.concurrent.CancellationException("Download cancelled during $stage")
+    }
+
     suspend fun downloadSong(context: Context, song: SongItem) {
         downloadSemaphore.withPermit {
             withContext(Dispatchers.IO) {
                 val songKey = song.stableKey()
+                var storedAudio: ManagedDownloadStorage.StoredEntry? = null
                 clearCompletedSidecarReferences(songKey)
+                clearPartialSidecarReferences(songKey)
                 try {
                     // 检查文件是否已存在
                     if (LocalSongSupport.isLocalSong(song, context)) {
@@ -399,12 +450,14 @@ object AudioDownloadManager {
                         bytesRead = transferredBytes,
                         totalBytes = transferredBytes
                     )
-                    val storedAudio = ManagedDownloadStorage.saveAudioFromTemp(
+                    ensureSongDownloadNotCancelled(songKey, "audio_commit")
+                    storedAudio = ManagedDownloadStorage.saveAudioFromTemp(
                         context = context,
                         fileName = fileName,
                         tempFile = tempFile,
                         mimeType = mime
                     )
+                    ensureSongDownloadNotCancelled(songKey, "audio_committed")
                     publishFinalizingProgress(
                         songId = workingSong.id,
                         songKey = workingSong.stableKey(),
@@ -419,15 +472,18 @@ object AudioDownloadManager {
                     val sidecarReferences = downloadSidecars(
                         context = context,
                         song = song,
+                        songKey = songKey,
                         baseName = storedAudio.nameWithoutExtension,
                         storedAudio = storedAudio
                     )
+                    ensureSongDownloadNotCancelled(songKey, "sidecar_completed")
                     rememberCompletedSidecarReferences(songKey, sidecarReferences)
 
                     _progressFlow.value = null
                     try {
                         context.contentResolver.openInputStream(storedAudio.playbackUri.toUri())?.close()
                     } catch (_: Exception) { }
+                    clearPartialSidecarReferences(songKey)
 
                 } catch (e: Exception) {
                     if (
@@ -435,15 +491,38 @@ object AudioDownloadManager {
                             _isCancelled.value ||
                             GlobalDownloadManager.isSongCancelled(songKey)
                     ) {
+                        val partialSidecarReferences = consumePartialSidecarReferences(songKey)
                         NPLogger.d(TAG, "下载已取消: ${song.name}")
+                        if (storedAudio != null || !(partialSidecarReferences?.isEmpty ?: true)) {
+                            runCatching {
+                                NPLogger.d(
+                                    TAG,
+                                    "下载取消后回滚半成品: song=${song.name}, audio=${storedAudio?.reference}, sidecars=$partialSidecarReferences"
+                                )
+                                GlobalDownloadManager.rollbackCancelledDownload(
+                                    context = context,
+                                    song = song,
+                                    storedAudio = storedAudio,
+                                    sidecarReferences = partialSidecarReferences
+                                )
+                            }.onFailure { rollbackError ->
+                                NPLogger.e(
+                                    TAG,
+                                    "回滚已取消下载失败: ${song.name}, ${rollbackError.message}",
+                                    rollbackError
+                                )
+                            }
+                        }
                         _progressFlow.value = null
                         clearSongCancelled(songKey)
                         clearCompletedSidecarReferences(songKey)
+                        clearPartialSidecarReferences(songKey)
                         throw java.util.concurrent.CancellationException("Download cancelled")
                     }
                     NPLogger.e(TAG, "下载失败: ${song.name}, 错误: ${e.javaClass.simpleName} - ${e.message}", e)
                     _progressFlow.value = null
                     clearCompletedSidecarReferences(songKey)
+                    clearPartialSidecarReferences(songKey)
                     throw e  // 重新抛出异常，让调用方知道下载失败
                 } finally {
                     clearPublishedProgress(songKey)
@@ -455,23 +534,17 @@ object AudioDownloadManager {
     private suspend fun downloadSidecars(
         context: Context,
         song: SongItem,
+        songKey: String,
         baseName: String,
         storedAudio: ManagedDownloadStorage.StoredEntry
     ): DownloadedSidecarReferences {
+        ensureSongDownloadNotCancelled(songKey, "sidecar_prepare")
         return coroutineScope {
             val lyricJob = async {
-                runCatching {
-                    downloadLyrics(context, song, baseName)
-                }.onFailure { error ->
-                    NPLogger.w(TAG, "歌词后台下载失败: ${song.name} - ${error.message}")
-                }.getOrDefault(DownloadedSidecarReferences())
+                downloadLyrics(context, song, songKey, baseName)
             }
             val coverJob = async {
-                runCatching {
-                    cacheCover(context, song, baseName, storedAudio)
-                }.onFailure { error ->
-                    NPLogger.w(TAG, "封面后台下载失败: ${song.name} - ${error.message}")
-                }.getOrNull()
+                cacheCover(context, song, songKey, baseName, storedAudio)
             }
             val lyricReferences = lyricJob.await()
             val coverReference = coverJob.await()
@@ -486,6 +559,7 @@ object AudioDownloadManager {
     private suspend fun cacheCover(
         context: Context,
         song: SongItem,
+        songKey: String,
         baseName: String,
         storedAudio: ManagedDownloadStorage.StoredEntry
     ): String? {
@@ -496,46 +570,67 @@ object AudioDownloadManager {
 
         val existingCover = ManagedDownloadStorage.findCoverReference(context, storedAudio)
         if (!existingCover.isNullOrBlank()) {
+            rememberPartialSidecarReferences(
+                songKey,
+                DownloadedSidecarReferences(coverReference = existingCover)
+            )
             return existingCover
         }
 
         val req = Request.Builder().url(coverUrl).build()
         var committedCoverReference: String? = null
-        AppContainer.sharedOkHttpClient.newCall(req).execute().use { response ->
-            if (!response.isSuccessful) {
-                return@use
-            }
-            val body = response.body ?: return@use
-            val contentType = body.contentType()?.toString().orEmpty()
-            if (contentType.isNotBlank() && !contentType.startsWith("image/", ignoreCase = true)) {
-                throw IOException("封面响应不是图片: $contentType")
-            }
-            val expectedLength = body.contentLength()
-            val bytes = body.bytes()
-            val copiedBytes = bytes.size.toLong()
-            if (copiedBytes <= 0L) {
-                throw IOException("封面写入为空")
-            }
-            if (expectedLength > 0L && copiedBytes < expectedLength) {
-                throw IOException("封面写入不完整: $copiedBytes/$expectedLength")
-            }
-            if (!isUsableCoverBytes(bytes)) {
-                throw IOException("封面文件校验失败")
-            }
-            val tempFile = ManagedDownloadStorage.createWorkingFile(context, "$baseName.jpg")
-            committedCoverReference = runCatching {
-                tempFile.writeBytes(bytes)
-                ManagedDownloadStorage.commitCoverFile(
-                    context = context,
-                    tempFile = tempFile,
-                    fileName = "$baseName.jpg",
-                    mimeType = contentType.takeIf { it.isNotBlank() }
-                )?.reference
-            }.also {
-                if (tempFile.exists()) {
-                    tempFile.delete()
+        try {
+            ensureSongDownloadNotCancelled(songKey, "cover_request")
+            AppContainer.sharedOkHttpClient.newCall(req).execute().use { response ->
+                if (!response.isSuccessful) {
+                    return@use
                 }
-            }.getOrNull()
+                val body = response.body ?: return@use
+                val contentType = body.contentType()?.toString().orEmpty()
+                if (contentType.isNotBlank() && !contentType.startsWith("image/", ignoreCase = true)) {
+                    throw IOException("封面响应不是图片: $contentType")
+                }
+                val expectedLength = body.contentLength()
+                val bytes = body.bytes()
+                ensureSongDownloadNotCancelled(songKey, "cover_downloaded")
+                val copiedBytes = bytes.size.toLong()
+                if (copiedBytes <= 0L) {
+                    throw IOException("封面写入为空")
+                }
+                if (expectedLength > 0L && copiedBytes < expectedLength) {
+                    throw IOException("封面写入不完整: $copiedBytes/$expectedLength")
+                }
+                if (!isUsableCoverBytes(bytes)) {
+                    throw IOException("封面文件校验失败")
+                }
+                val tempFile = ManagedDownloadStorage.createWorkingFile(context, "$baseName.jpg")
+                try {
+                    tempFile.writeBytes(bytes)
+                    ensureSongDownloadNotCancelled(songKey, "cover_commit")
+                    committedCoverReference = ManagedDownloadStorage.commitCoverFile(
+                        context = context,
+                        tempFile = tempFile,
+                        fileName = "$baseName.jpg",
+                        mimeType = contentType.takeIf { it.isNotBlank() }
+                    )?.reference
+                } finally {
+                    if (tempFile.exists()) {
+                        tempFile.delete()
+                    }
+                }
+            }
+        } catch (cancellation: java.util.concurrent.CancellationException) {
+            NPLogger.d(TAG, "封面整理阶段收到取消: ${song.name}")
+            throw cancellation
+        } catch (error: Exception) {
+            NPLogger.w(TAG, "封面后台下载失败: ${song.name} - ${error.message}")
+        }
+        committedCoverReference?.let { reference ->
+            rememberPartialSidecarReferences(
+                songKey,
+                DownloadedSidecarReferences(coverReference = reference)
+            )
+            NPLogger.d(TAG, "封面写入完成: song=${song.name}, reference=$reference")
         }
         return committedCoverReference
     }
@@ -752,9 +847,13 @@ object AudioDownloadManager {
     private suspend fun downloadLyrics(
         context: Context,
         song: SongItem,
+        songKey: String,
         baseName: String
     ): DownloadedSidecarReferences {
+        var lyricReference: String? = null
+        var translatedLyricReference: String? = null
         try {
+            ensureSongDownloadNotCancelled(songKey, "lyrics_prepare")
             var lyricText = song.matchedLyric?.takeIf { it.isNotBlank() }
             var translatedText: String? = null
             if (lyricText != null) {
@@ -779,8 +878,7 @@ object AudioDownloadManager {
                 }
             }
 
-            var lyricReference: String? = null
-            var translatedLyricReference: String? = null
+            ensureSongDownloadNotCancelled(songKey, "lyrics_resolved")
             lyricText?.takeIf { it.isNotBlank() }?.let { lyric ->
                 lyricReference = writeManagedLyrics(
                     context = context,
@@ -789,7 +887,15 @@ object AudioDownloadManager {
                     content = lyric,
                     translated = false
                 )
+                lyricReference?.let { reference ->
+                    rememberPartialSidecarReferences(
+                        songKey,
+                        DownloadedSidecarReferences(lyricReference = reference)
+                    )
+                    NPLogger.d(TAG, "歌词写入完成: song=${song.name}, reference=$reference")
+                }
             }
+            ensureSongDownloadNotCancelled(songKey, "lyrics_primary_written")
             translatedText?.takeIf { it.isNotBlank() }?.let { lyric ->
                 translatedLyricReference = writeManagedLyrics(
                     context = context,
@@ -798,15 +904,24 @@ object AudioDownloadManager {
                     content = lyric,
                     translated = true
                 )
+                translatedLyricReference?.let { reference ->
+                    rememberPartialSidecarReferences(
+                        songKey,
+                        DownloadedSidecarReferences(translatedLyricReference = reference)
+                    )
+                    NPLogger.d(TAG, "翻译歌词写入完成: song=${song.name}, reference=$reference")
+                }
             }
-            return DownloadedSidecarReferences(
-                lyricReference = lyricReference,
-                translatedLyricReference = translatedLyricReference
-            )
+        } catch (cancellation: java.util.concurrent.CancellationException) {
+            NPLogger.d(TAG, "歌词整理阶段收到取消: ${song.name}")
+            throw cancellation
         } catch (e: Exception) {
             NPLogger.w(TAG, "歌词下载失败: ${song.name} - ${e.message}")
         }
-        return DownloadedSidecarReferences()
+        return DownloadedSidecarReferences(
+            lyricReference = lyricReference,
+            translatedLyricReference = translatedLyricReference
+        )
     }
 
     /** 从 LRCLIB / YouTube Music API 获取歌词并保存 */

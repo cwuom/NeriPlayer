@@ -54,6 +54,7 @@ class GitHubSyncWorker(
         private const val PERIODIC_WORK_NAME = "github_sync_periodic"
         private const val NOTIFICATION_CHANNEL_ID = "github_sync_channel"
         private const val NOTIFICATION_ID = 1001
+        private const val DEFAULT_DELAY_MS = 5_000L
 
         /**
          * 调度延迟同步(5秒后执行)
@@ -67,8 +68,14 @@ class GitHubSyncWorker(
             if (markMutation) {
                 SecureTokenStorage(context).markSyncMutation()
             }
+            if (!triggerByUserAction) {
+                val storage = SecureTokenStorage(context)
+                if (!storage.isConfigured() || !storage.isAutoSyncEnabled()) {
+                    return
+                }
+            }
             val syncRequest = OneTimeWorkRequestBuilder<GitHubSyncWorker>()
-                .setInitialDelay(5, TimeUnit.SECONDS)
+                .setInitialDelay(DEFAULT_DELAY_MS, TimeUnit.MILLISECONDS)
                 .addTag(WORK_NAME)
                 .setInputData(workDataOf("trigger_by_user_action" to triggerByUserAction))
                 .build()

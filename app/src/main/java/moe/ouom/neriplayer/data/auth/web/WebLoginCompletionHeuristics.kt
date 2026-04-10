@@ -58,10 +58,6 @@ internal fun shouldAutoCompleteYouTubeWebLogin(
     currentAuth: YouTubeAuthBundle,
     pageConfirmedSession: Boolean
 ): Boolean {
-    if (!pageConfirmedSession) {
-        return false
-    }
-
     val normalizedCurrent = currentAuth.normalized(
         savedAt = currentAuth.savedAt.takeIf { it > 0L } ?: SYNTHETIC_SAVED_AT
     )
@@ -73,5 +69,9 @@ internal fun shouldAutoCompleteYouTubeWebLogin(
         bundle = normalizedCurrent,
         now = SYNTHETIC_CHECKED_AT
     )
-    return !(currentHealth.state == YouTubeAuthState.Missing || currentHealth.activeCookieKeys.isEmpty())
+    if (currentHealth.state == YouTubeAuthState.Missing || currentHealth.activeCookieKeys.isEmpty()) {
+        return false
+    }
+
+    return pageConfirmedSession
 }

@@ -149,6 +149,22 @@ tasks.withType<Test>().configureEach {
         "runNeteaseSmoke",
         System.getProperty("runNeteaseSmoke") ?: "false"
     )
+    systemProperty(
+        "runYouTubePlaybackSmoke",
+        System.getProperty("runYouTubePlaybackSmoke") ?: "false"
+    )
+    systemProperty(
+        "youtubeSmokeVideoId",
+        System.getProperty("youtubeSmokeVideoId") ?: ""
+    )
+    systemProperty(
+        "youtubeSmokeForceRefresh",
+        System.getProperty("youtubeSmokeForceRefresh") ?: "false"
+    )
+    systemProperty(
+        "youtubeSmokeCookieFile",
+        System.getProperty("youtubeSmokeCookieFile") ?: ""
+    )
 }
 
 
