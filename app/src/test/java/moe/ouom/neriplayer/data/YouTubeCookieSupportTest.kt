@@ -171,4 +171,25 @@ class YouTubeCookieSupportTest {
         assertFalse(blockingKeys.contains("SOCS"))
         assertFalse(blockingKeys.contains("VISITOR_INFO1_LIVE"))
     }
+
+    @Test
+    fun collectWebLoginResetCookieKeys_clearsAllVisibleGoogleAndYouTubeCookies() {
+        val resetKeys = YouTubeCookieSupport.collectWebLoginResetCookieKeys(
+            mapOf(
+                "SID" to "sid",
+                "PREF" to "tz=Asia/Taipei",
+                "VISITOR_INFO1_LIVE" to "visitor",
+                "__Secure-BUCKET" to "bucket",
+                "" to "ignored",
+                "LOGIN_INFO" to ""
+            )
+        )
+
+        assertTrue(resetKeys.contains("SID"))
+        assertTrue(resetKeys.contains("PREF"))
+        assertTrue(resetKeys.contains("VISITOR_INFO1_LIVE"))
+        assertTrue(resetKeys.contains("__Secure-BUCKET"))
+        assertFalse(resetKeys.contains(""))
+        assertFalse(resetKeys.contains("LOGIN_INFO"))
+    }
 }

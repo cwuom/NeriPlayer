@@ -117,4 +117,28 @@ class AppContainerBootstrapTest {
 
         assertEquals(0, warmCalls)
     }
+
+    @Test
+    fun `warmYouTubePlaybackIfAuthorized triggers warm bootstrap when login cookies exist`() {
+        var warmCalls = 0
+
+        warmYouTubePlaybackIfAuthorized(
+            bundle = YouTubeAuthBundle(cookies = mapOf("SAPISID" to "cookie")),
+            warmBootstrapAsync = { warmCalls += 1 }
+        )
+
+        assertEquals(1, warmCalls)
+    }
+
+    @Test
+    fun `warmYouTubePlaybackIfAuthorized skips warm bootstrap without login cookies`() {
+        var warmCalls = 0
+
+        warmYouTubePlaybackIfAuthorized(
+            bundle = YouTubeAuthBundle(),
+            warmBootstrapAsync = { warmCalls += 1 }
+        )
+
+        assertEquals(0, warmCalls)
+    }
 }

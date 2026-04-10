@@ -42,7 +42,9 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.auth.youtube.isYouTubeAuthRecoverableFailure
@@ -113,6 +115,7 @@ private const val YOUTUBE_PLAYER_WEB_REMIX_HISTORY_LENGTH = 5
 private const val YOUTUBE_PLAYER_PLAYBACK_LACT_MILLISECONDS = "9"
 
 private const val YOUTUBE_PLAYER_API_FORMAT_VERSION = "2"
+private const val STREAMING_CIPHER_LOG_THRESHOLD_MS = 250L
 
 private fun playbackElapsedMs(startedAtMs: Long): Long = System.currentTimeMillis() - startedAtMs
 
@@ -188,7 +191,7 @@ private data class InFlightBootstrapRequest(
 )
 
 private data class YouTubePlayerAudioCandidate(
-    val url: String,
+    val format: JSONObject,
     val mimeType: String?,
     val bitrate: Int,
     val audioSampleRate: Int,
@@ -272,23 +275,27 @@ internal object YouTubeMusicPlaybackParser {
         preferM4a: Boolean = false,
         cipherResolver: YouTubeStreamingCipherResolver? = null
     ): YouTubePlayableAudio? {
-        val candidates = collectAudioCandidates(
-            root = root,
-            requirePlayableUrl = true,
-            cipherResolver = cipherResolver
+        val candidates = selectCandidate(
+            candidates = collectAudioCandidates(root),
+            preferredQualityKey = preferredQualityKey,
+            preferM4a = preferM4a
         )
-        val selected = selectCandidate(candidates, preferredQualityKey, preferM4a)
-            .firstOrNull()
-            ?: return null
-
-        return YouTubePlayableAudio(
-            url = selected.url,
-            durationMs = selected.durationMs.takeIf { it > 0L } ?: parseDurationMs(root),
-            mimeType = selected.mimeType,
-            contentLength = selected.contentLength,
-            bitrateKbps = selected.bitrate.takeIf { it > 0 }?.let { (it + 500) / 1000 },
-            sampleRateHz = selected.audioSampleRate.takeIf { it > 0 }
-        )
+        val durationFallbackMs = parseDurationMs(root)
+        for (candidate in candidates) {
+            val playableUrl = resolveFormatUrl(candidate.format, cipherResolver)
+            if (playableUrl.isBlank()) {
+                continue
+            }
+            return YouTubePlayableAudio(
+                url = playableUrl,
+                durationMs = candidate.durationMs.takeIf { it > 0L } ?: durationFallbackMs,
+                mimeType = candidate.mimeType,
+                contentLength = candidate.contentLength,
+                bitrateKbps = candidate.bitrate.takeIf { it > 0 }?.let { (it + 500) / 1000 },
+                sampleRateHz = candidate.audioSampleRate.takeIf { it > 0 }
+            )
+        }
+        return null
     }
 
     fun parsePreferredAudioMetadata(
@@ -296,7 +303,7 @@ internal object YouTubeMusicPlaybackParser {
         preferredQualityKey: String? = null,
         preferM4a: Boolean = false
     ): YouTubeAudioMetadata? {
-        val candidates = collectAudioCandidates(root, requirePlayableUrl = false)
+        val candidates = collectAudioCandidates(root)
         val selected = selectCandidate(candidates, preferredQualityKey, preferM4a).firstOrNull()
 
         val durationMs = selected?.durationMs?.takeIf { it > 0L } ?: parseDurationMs(root)
@@ -321,9 +328,7 @@ internal object YouTubeMusicPlaybackParser {
     }
 
     private fun collectAudioCandidates(
-        root: JSONObject,
-        requirePlayableUrl: Boolean,
-        cipherResolver: YouTubeStreamingCipherResolver? = null
+        root: JSONObject
     ): List<YouTubePlayerAudioCandidate> {
         val streamingData = root.optJSONObject("streamingData") ?: return emptyList()
         val formatArrays = listOfNotNull(
@@ -339,13 +344,9 @@ internal object YouTubeMusicPlaybackParser {
                     if (mimeType?.startsWith("audio/") != true) {
                         continue
                     }
-                    val url = resolveFormatUrl(format, cipherResolver)
-                    if (requirePlayableUrl && url.isBlank()) {
-                        continue
-                    }
                     add(
                         YouTubePlayerAudioCandidate(
-                            url = url,
+                            format = format,
                             mimeType = mimeType,
                             bitrate = parseIntLike(
                                 format.opt("bitrate"),
@@ -466,16 +467,30 @@ internal object YouTubeMusicPlaybackParser {
         val sortedDescending = candidates.sortedWith(comparator)
         val sortedAscending = sortedDescending.asReversed()
         return when (YouTubeMusicPlaybackQuality.fromSetting(preferredQualityKey)) {
-            YouTubeMusicPlaybackQuality.LOW -> listOf(sortedAscending.first())
-            YouTubeMusicPlaybackQuality.MEDIUM -> listOf(
-                sortedAscending.firstOrNull { it.bitrate >= 96_000 }
-                    ?: sortedDescending.first()
+            YouTubeMusicPlaybackQuality.LOW -> sortedAscending
+            YouTubeMusicPlaybackQuality.MEDIUM -> prioritizeThresholdCandidate(
+                sortedAscending = sortedAscending,
+                thresholdBitrate = 96_000
             )
-            YouTubeMusicPlaybackQuality.HIGH -> listOf(
-                sortedAscending.firstOrNull { it.bitrate >= 128_000 }
-                    ?: sortedDescending.first()
+            YouTubeMusicPlaybackQuality.HIGH -> prioritizeThresholdCandidate(
+                sortedAscending = sortedAscending,
+                thresholdBitrate = 128_000
             )
-            YouTubeMusicPlaybackQuality.VERY_HIGH -> listOf(sortedDescending.first())
+            YouTubeMusicPlaybackQuality.VERY_HIGH -> sortedDescending
+        }
+    }
+
+    private fun prioritizeThresholdCandidate(
+        sortedAscending: List<YouTubePlayerAudioCandidate>,
+        thresholdBitrate: Int
+    ): List<YouTubePlayerAudioCandidate> {
+        val preferredIndex = sortedAscending.indexOfFirst { it.bitrate >= thresholdBitrate }
+        if (preferredIndex < 0) {
+            return sortedAscending.asReversed()
+        }
+        return buildList(sortedAscending.size) {
+            addAll(sortedAscending.subList(preferredIndex, sortedAscending.size))
+            addAll(sortedAscending.subList(0, preferredIndex).asReversed())
         }
     }
 
@@ -879,7 +894,28 @@ class YouTubeMusicPlaybackRepository(
             return@withContext
         }
         try {
-            bootstrap(auth = auth, forceRefresh = false)
+            coroutineScope {
+                val bootstrapDeferred = async {
+                    bootstrap(auth = auth, forceRefresh = false)
+                }
+                val poTokenWarmJob = poTokenProvider?.let { provider ->
+                    launch {
+                        runCatching { provider.warmSession() }
+                            .onFailure { error ->
+                                if (error is CancellationException) {
+                                    throw error
+                                }
+                                NPLogger.w(
+                                    "YouTubeMusicPlayback",
+                                    "Warm WebPo session failed",
+                                    error
+                                )
+                            }
+                    }
+                }
+                bootstrapDeferred.await()
+                poTokenWarmJob?.join()
+            }
         } catch (error: Exception) {
             if (error is CancellationException) throw error
             NPLogger.w(
@@ -1570,11 +1606,50 @@ class YouTubeMusicPlaybackRepository(
         val throttlingErrorLogged = AtomicBoolean(false)
         val signatureEjsFallbackLogged = AtomicBoolean(false)
         val throttlingEjsFallbackLogged = AtomicBoolean(false)
+        val signatureResolutionLogged = AtomicBoolean(false)
+        val throttlingResolutionLogged = AtomicBoolean(false)
+
+        fun maybeLogResolution(
+            challengeType: String,
+            source: String,
+            elapsedMs: Long,
+            logged: AtomicBoolean
+        ) {
+            if (elapsedMs >= STREAMING_CIPHER_LOG_THRESHOLD_MS || logged.compareAndSet(false, true)) {
+                NPLogger.d(
+                    "YouTubeMusicPlayback",
+                    "Resolved $challengeType via $source for $videoId elapsedMs=$elapsedMs"
+                )
+            }
+        }
 
         return object : YouTubeStreamingCipherResolver {
             override fun resolveSignature(encryptedSignature: String): String? {
+                val newPipeStartedAtMs = System.currentTimeMillis()
+                val resolvedByNewPipe = runCatching {
+                    YoutubeJavaScriptPlayerManager.deobfuscateSignature(videoId, encryptedSignature)
+                }.onFailure { error ->
+                    if (signatureErrorLogged.compareAndSet(false, true)) {
+                        NPLogger.w(
+                            "YouTubeMusicPlayback",
+                            "Failed to deobfuscate streaming signature for $videoId via NewPipe elapsedMs=${playbackElapsedMs(newPipeStartedAtMs)}",
+                            error
+                        )
+                    }
+                }.getOrNull()?.takeIf { it.isNotBlank() && it != encryptedSignature }
+                if (resolvedByNewPipe != null) {
+                    maybeLogResolution(
+                        challengeType = "signature",
+                        source = "NEWPIPE",
+                        elapsedMs = playbackElapsedMs(newPipeStartedAtMs),
+                        logged = signatureResolutionLogged
+                    )
+                    return resolvedByNewPipe
+                }
+
                 val resolvedPlayerJsUrl = playerJsUrl.ifBlank { bootstrapCache?.playerJsUrl.orEmpty() }
                 if (resolvedPlayerJsUrl.isNotBlank()) {
+                    val ejsStartedAtMs = System.currentTimeMillis()
                     val ejsResult = runCatching {
                         runBlocking {
                             ejsChallengeSolver?.solveDetailed(
@@ -1592,8 +1667,16 @@ class YouTubeMusicPlaybackRepository(
                         status = YouTubeJsChallengeSolveStatus.SCRIPT_EVALUATION_FAILED,
                         detail = "ejsChallengeSolver is unavailable"
                     )
-                    val resolvedByEjs = ejsResult.solution.signature?.takeIf { it.isNotBlank() }
+                    val ejsElapsedMs = playbackElapsedMs(ejsStartedAtMs)
+                    val resolvedByEjs = ejsResult.solution.signature
+                        ?.takeIf { it.isNotBlank() && it != encryptedSignature }
                     if (resolvedByEjs != null) {
+                        maybeLogResolution(
+                            challengeType = "signature",
+                            source = "EJS_FALLBACK",
+                            elapsedMs = ejsElapsedMs,
+                            logged = signatureResolutionLogged
+                        )
                         return resolvedByEjs
                     }
                     if (ejsResult.status != YouTubeJsChallengeSolveStatus.SUCCESS &&
@@ -1601,28 +1684,47 @@ class YouTubeMusicPlaybackRepository(
                     ) {
                         NPLogger.w(
                             "YouTubeMusicPlayback",
-                            "EJS signature fallback for $videoId: ${ejsResult.summary()}",
+                            "EJS signature fallback failed for $videoId: ${ejsResult.summary()}, elapsedMs=$ejsElapsedMs",
                             ejsResult.cause
                         )
                     }
                 }
-                return runCatching {
-                    YoutubeJavaScriptPlayerManager.deobfuscateSignature(videoId, encryptedSignature)
-                }.onFailure { error ->
-                    if (signatureErrorLogged.compareAndSet(false, true)) {
-                        NPLogger.w(
-                            "YouTubeMusicPlayback",
-                            "Failed to deobfuscate streaming signature for $videoId",
-                            error
-                        )
-                    }
-                }.getOrNull()?.takeIf { it.isNotBlank() }
+                return null
             }
 
             override fun resolveStreamingUrl(url: String): String {
                 val obfuscatedN = extractStreamQueryParameter(url, "n")
+                if (obfuscatedN.isNullOrBlank()) {
+                    return url
+                }
+                val newPipeStartedAtMs = System.currentTimeMillis()
+                val resolvedByNewPipe = runCatching {
+                    YoutubeJavaScriptPlayerManager.getUrlWithThrottlingParameterDeobfuscated(
+                        videoId,
+                        url
+                    )
+                }.onFailure { error ->
+                    if (throttlingErrorLogged.compareAndSet(false, true)) {
+                        NPLogger.w(
+                            "YouTubeMusicPlayback",
+                            "Failed to deobfuscate throttling parameter for $videoId via NewPipe elapsedMs=${playbackElapsedMs(newPipeStartedAtMs)}",
+                            error
+                        )
+                    }
+                }.getOrNull()
+                if (!resolvedByNewPipe.isNullOrBlank() && resolvedByNewPipe != url) {
+                    maybeLogResolution(
+                        challengeType = "throttling",
+                        source = "NEWPIPE",
+                        elapsedMs = playbackElapsedMs(newPipeStartedAtMs),
+                        logged = throttlingResolutionLogged
+                    )
+                    return resolvedByNewPipe
+                }
+
                 val resolvedPlayerJsUrl = playerJsUrl.ifBlank { bootstrapCache?.playerJsUrl.orEmpty() }
                 if (!obfuscatedN.isNullOrBlank() && resolvedPlayerJsUrl.isNotBlank()) {
+                    val ejsStartedAtMs = System.currentTimeMillis()
                     val ejsResult = runCatching {
                         runBlocking {
                             ejsChallengeSolver?.solveDetailed(
@@ -1640,8 +1742,15 @@ class YouTubeMusicPlaybackRepository(
                         status = YouTubeJsChallengeSolveStatus.SCRIPT_EVALUATION_FAILED,
                         detail = "ejsChallengeSolver is unavailable"
                     )
+                    val ejsElapsedMs = playbackElapsedMs(ejsStartedAtMs)
                     val resolvedByEjs = ejsResult.solution.throttlingParameter?.takeIf { it.isNotBlank() }
                     if (resolvedByEjs != null && resolvedByEjs != obfuscatedN) {
+                        maybeLogResolution(
+                            challengeType = "throttling",
+                            source = "EJS_FALLBACK",
+                            elapsedMs = ejsElapsedMs,
+                            logged = throttlingResolutionLogged
+                        )
                         return replaceStreamQueryParameter(
                             url,
                             "n",
@@ -1653,25 +1762,12 @@ class YouTubeMusicPlaybackRepository(
                     ) {
                         NPLogger.w(
                             "YouTubeMusicPlayback",
-                            "EJS throttling fallback for $videoId: ${ejsResult.summary()}",
+                            "EJS throttling fallback failed for $videoId: ${ejsResult.summary()}, elapsedMs=$ejsElapsedMs",
                             ejsResult.cause
                         )
                     }
                 }
-                return runCatching {
-                    YoutubeJavaScriptPlayerManager.getUrlWithThrottlingParameterDeobfuscated(
-                        videoId,
-                        url
-                    )
-                }.onFailure { error ->
-                    if (throttlingErrorLogged.compareAndSet(false, true)) {
-                        NPLogger.w(
-                            "YouTubeMusicPlayback",
-                            "Failed to deobfuscate throttling parameter for $videoId",
-                            error
-                        )
-                    }
-                }.getOrDefault(url)
+                return resolvedByNewPipe?.takeIf { it.isNotBlank() } ?: url
             }
         }
     }

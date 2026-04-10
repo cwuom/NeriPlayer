@@ -191,6 +191,156 @@ class YouTubeMusicPlaybackRepositoryTest {
     }
 
     @Test
+    fun parsePlayableAudio_resolvesOnlySelectedCipherCandidate() {
+        val root = JSONObject(
+            """
+            {
+              "streamingData": {
+                "adaptiveFormats": [
+                  {
+                    "mimeType": "audio/webm; codecs=\"opus\"",
+                    "signatureCipher": "url=https%3A%2F%2Frr1---sn.googlevideo.com%2Fvideoplayback%3Fid%3Daudio-low%26n%3Dlow-obfuscated&sp=signature&s=encrypted-signature-low",
+                    "bitrate": 96000,
+                    "audioSampleRate": "44100",
+                    "approxDurationMs": "123000"
+                  },
+                  {
+                    "mimeType": "audio/webm; codecs=\"opus\"",
+                    "signatureCipher": "url=https%3A%2F%2Frr1---sn.googlevideo.com%2Fvideoplayback%3Fid%3Daudio-mid%26n%3Dmid-obfuscated&sp=signature&s=encrypted-signature-mid",
+                    "bitrate": 128000,
+                    "audioSampleRate": "48000",
+                    "approxDurationMs": "123000"
+                  },
+                  {
+                    "mimeType": "audio/webm; codecs=\"opus\"",
+                    "signatureCipher": "url=https%3A%2F%2Frr1---sn.googlevideo.com%2Fvideoplayback%3Fid%3Daudio-high%26n%3Dhigh-obfuscated&sp=signature&s=encrypted-signature-high",
+                    "bitrate": 160000,
+                    "audioSampleRate": "48000",
+                    "approxDurationMs": "123000"
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+        val signatureCalls = mutableListOf<String>()
+        val streamingUrlCalls = mutableListOf<String>()
+        val cipherResolver = object : YouTubeStreamingCipherResolver {
+            override fun resolveSignature(encryptedSignature: String): String? {
+                signatureCalls += encryptedSignature
+                return when (encryptedSignature) {
+                    "encrypted-signature-low" -> "resolved-signature-low"
+                    "encrypted-signature-mid" -> "resolved-signature-mid"
+                    "encrypted-signature-high" -> "resolved-signature-high"
+                    else -> null
+                }
+            }
+
+            override fun resolveStreamingUrl(url: String): String {
+                streamingUrlCalls += url
+                return url
+                    .replace("low-obfuscated", "low-resolved")
+                    .replace("mid-obfuscated", "mid-resolved")
+                    .replace("high-obfuscated", "high-resolved")
+            }
+        }
+
+        val playableAudio = YouTubeMusicPlaybackParser.parsePlayableAudio(
+            root = root,
+            preferredQualityKey = "higher",
+            cipherResolver = cipherResolver
+        )
+
+        assertNotNull(playableAudio)
+        assertEquals(
+            "https://rr1---sn.googlevideo.com/videoplayback?id=audio-mid&n=mid-resolved&signature=resolved-signature-mid",
+            playableAudio?.url
+        )
+        assertEquals(listOf("encrypted-signature-mid"), signatureCalls)
+        assertEquals(1, streamingUrlCalls.size)
+        assertTrue(streamingUrlCalls.single().contains("id=audio-mid"))
+        assertFalse(streamingUrlCalls.any { it.contains("audio-low") })
+        assertFalse(streamingUrlCalls.any { it.contains("audio-high") })
+    }
+
+    @Test
+    fun parsePlayableAudio_fallsBackToNextCipherCandidateWhenPreferredOneFails() {
+        val root = JSONObject(
+            """
+            {
+              "streamingData": {
+                "adaptiveFormats": [
+                  {
+                    "mimeType": "audio/webm; codecs=\"opus\"",
+                    "signatureCipher": "url=https%3A%2F%2Frr1---sn.googlevideo.com%2Fvideoplayback%3Fid%3Daudio-low%26n%3Dlow-obfuscated&sp=signature&s=encrypted-signature-low",
+                    "bitrate": 96000,
+                    "audioSampleRate": "44100",
+                    "approxDurationMs": "123000"
+                  },
+                  {
+                    "mimeType": "audio/webm; codecs=\"opus\"",
+                    "signatureCipher": "url=https%3A%2F%2Frr1---sn.googlevideo.com%2Fvideoplayback%3Fid%3Daudio-mid%26n%3Dmid-obfuscated&sp=signature&s=encrypted-signature-mid",
+                    "bitrate": 128000,
+                    "audioSampleRate": "48000",
+                    "approxDurationMs": "123000"
+                  },
+                  {
+                    "mimeType": "audio/webm; codecs=\"opus\"",
+                    "signatureCipher": "url=https%3A%2F%2Frr1---sn.googlevideo.com%2Fvideoplayback%3Fid%3Daudio-high%26n%3Dhigh-obfuscated&sp=signature&s=encrypted-signature-high",
+                    "bitrate": 160000,
+                    "audioSampleRate": "48000",
+                    "approxDurationMs": "123000"
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+        val signatureCalls = mutableListOf<String>()
+        val streamingUrlCalls = mutableListOf<String>()
+        val cipherResolver = object : YouTubeStreamingCipherResolver {
+            override fun resolveSignature(encryptedSignature: String): String? {
+                signatureCalls += encryptedSignature
+                return when (encryptedSignature) {
+                    "encrypted-signature-mid" -> null
+                    "encrypted-signature-high" -> "resolved-signature-high"
+                    "encrypted-signature-low" -> "resolved-signature-low"
+                    else -> null
+                }
+            }
+
+            override fun resolveStreamingUrl(url: String): String {
+                streamingUrlCalls += url
+                return url
+                    .replace("low-obfuscated", "low-resolved")
+                    .replace("mid-obfuscated", "mid-resolved")
+                    .replace("high-obfuscated", "high-resolved")
+            }
+        }
+
+        val playableAudio = YouTubeMusicPlaybackParser.parsePlayableAudio(
+            root = root,
+            preferredQualityKey = "higher",
+            cipherResolver = cipherResolver
+        )
+
+        assertNotNull(playableAudio)
+        assertEquals(
+            "https://rr1---sn.googlevideo.com/videoplayback?id=audio-high&n=high-resolved&signature=resolved-signature-high",
+            playableAudio?.url
+        )
+        assertEquals(
+            listOf("encrypted-signature-mid", "encrypted-signature-high"),
+            signatureCalls
+        )
+        assertEquals(1, streamingUrlCalls.size)
+        assertTrue(streamingUrlCalls.single().contains("id=audio-high"))
+        assertFalse(signatureCalls.contains("encrypted-signature-low"))
+        assertFalse(streamingUrlCalls.any { it.contains("audio-low") })
+        assertFalse(streamingUrlCalls.any { it.contains("audio-mid") })
+    }
+
+    @Test
     fun getBestPlayableAudio_usesInjectedCipherResolverForPlayerApiDirectStream() = runBlocking {
         val requests = mutableListOf<okhttp3.Request>()
         val bootstrapHtml = """
@@ -2285,7 +2435,7 @@ class YouTubeMusicPlaybackRepositoryTest {
     }
 
     @Test
-    fun warmBootstrapAsync_prefetchesBootstrapWithoutStartingPoTokenWebView() {
+    fun warmBootstrapAsync_prefetchesBootstrapAndWarmsPoTokenSession() {
         val bootstrapRequests = AtomicInteger(0)
         val bootstrapHtml = """
             <html>
@@ -2353,7 +2503,18 @@ class YouTubeMusicPlaybackRepositoryTest {
 
         assertTrue(warmed)
         assertEquals(1, bootstrapRequests.get())
-        assertEquals(0, poTokenProvider.warmSessionCount)
+
+        var poSessionWarmed = false
+        repeat(100) {
+            if (poTokenProvider.warmSessionCount > 0) {
+                poSessionWarmed = true
+                return@repeat
+            }
+            Thread.sleep(20)
+        }
+
+        assertTrue(poSessionWarmed)
+        assertEquals(1, poTokenProvider.warmSessionCount)
     }
 
     @Test

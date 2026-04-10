@@ -7,6 +7,7 @@ import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.webkit.ScriptHandler
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -14,7 +15,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import moe.ouom.neriplayer.data.platform.youtube.installYouTubeBackgroundWebViewGuard
 import moe.ouom.neriplayer.data.platform.youtube.isTrustedYouTubeLoginHost
+import moe.ouom.neriplayer.data.platform.youtube.removeYouTubeBackgroundWebViewGuard
 import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
 import org.json.JSONTokener
@@ -165,6 +168,9 @@ class YouTubeAuthAutoRefreshManager(
 
     @Volatile
     private var webView: WebView? = null
+
+    @Volatile
+    private var backgroundWebViewGuard: ScriptHandler? = null
 
     @Volatile
     private var pendingPageLoad: CompletableDeferred<Boolean>? = null
@@ -380,6 +386,7 @@ class YouTubeAuthAutoRefreshManager(
             webChromeClient = WebChromeClient()
             webViewClient = RefreshWebViewClient()
         }.also { created ->
+            backgroundWebViewGuard = installYouTubeBackgroundWebViewGuard(created, TAG)
             webViewUserAgent = created.settings.userAgentString.orEmpty()
             webView = created
         }
@@ -389,8 +396,11 @@ class YouTubeAuthAutoRefreshManager(
         pendingPageLoad?.complete(false)
         pendingPageLoad = null
         val activeWebView = webView ?: return@withContext
+        removeYouTubeBackgroundWebViewGuard(backgroundWebViewGuard)
+        backgroundWebViewGuard = null
         activeWebView.stopLoading()
-        activeWebView.loadUrl("about:blank")
+        activeWebView.webChromeClient = null
+        activeWebView.webViewClient = WebViewClient()
         activeWebView.destroy()
         webView = null
         capturedHeaders = null

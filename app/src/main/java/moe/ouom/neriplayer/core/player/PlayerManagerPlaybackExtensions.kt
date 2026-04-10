@@ -492,37 +492,35 @@ private fun PlayerManager.maybeWarmCurrentAndUpcomingYouTubeMusic(currentSongInd
         "maybeWarmCurrentAndUpcomingYouTubeMusic: currentVideoId=${targets.currentVideoId}, nextVideoId=${targets.nextVideoId}, preferredQuality=${targets.preferredQuality}, queueSize=${currentPlaylist.size}"
     )
 
-    ioScope.launch {
-        targets.currentVideoId?.let { videoId ->
-            runCatching {
-                youtubeMusicPlaybackRepository.kickoffPlayableAudioPrefetch(
-                    videoId = videoId,
-                    preferredQualityOverride = targets.preferredQuality,
-                    requireDirect = false,
-                    preferM4a = false
-                )
-            }.onFailure { error ->
-                NPLogger.w(
-                    "NERI-PlayerManager",
-                    "Warm current YouTube Music stream failed for $videoId: ${error.message}"
-                )
-            }
+    targets.currentVideoId?.let { videoId ->
+        runCatching {
+            youtubeMusicPlaybackRepository.kickoffPlayableAudioPrefetch(
+                videoId = videoId,
+                preferredQualityOverride = targets.preferredQuality,
+                requireDirect = false,
+                preferM4a = false
+            )
+        }.onFailure { error ->
+            NPLogger.w(
+                "NERI-PlayerManager",
+                "Warm current YouTube Music stream failed for $videoId: ${error.message}"
+            )
         }
+    }
 
-        targets.nextVideoId?.let { videoId ->
-            runCatching {
-                youtubeMusicPlaybackRepository.kickoffPlayableAudioPrefetch(
-                    videoId = videoId,
-                    preferredQualityOverride = targets.preferredQuality,
-                    requireDirect = false,
-                    preferM4a = false
-                )
-            }.onFailure { error ->
-                NPLogger.w(
-                    "NERI-PlayerManager",
-                    "Prefetch next YouTube Music stream failed for $videoId: ${error.message}"
-                )
-            }
+    targets.nextVideoId?.let { videoId ->
+        runCatching {
+            youtubeMusicPlaybackRepository.kickoffPlayableAudioPrefetch(
+                videoId = videoId,
+                preferredQualityOverride = targets.preferredQuality,
+                requireDirect = false,
+                preferM4a = false
+            )
+        }.onFailure { error ->
+            NPLogger.w(
+                "NERI-PlayerManager",
+                "Prefetch next YouTube Music stream failed for $videoId: ${error.message}"
+            )
         }
     }
 }

@@ -217,6 +217,15 @@ object YouTubeCookieSupport {
         )
     }
 
+    fun collectWebLoginResetCookieKeys(cookies: Map<String, String>): List<String> {
+        return cookies.entries
+            .asSequence()
+            .filter { (key, value) -> key.isNotBlank() && value.isNotBlank() }
+            .map { (key, _) -> key }
+            .distinct()
+            .toList()
+    }
+
     private fun sanitizeCookiesByExactKeys(
         cookies: Map<String, String>,
         exactKeys: Set<String>

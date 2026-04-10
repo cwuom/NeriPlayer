@@ -34,6 +34,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.webkit.ScriptHandler
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -45,7 +46,9 @@ import moe.ouom.neriplayer.data.auth.youtube.applyYouTubeWebCookies
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeCookieSupport
 import moe.ouom.neriplayer.data.platform.youtube.buildBootstrapAuthFingerprint
+import moe.ouom.neriplayer.data.platform.youtube.installYouTubeBackgroundWebViewGuard
 import moe.ouom.neriplayer.data.platform.youtube.isTrustedYouTubeBootstrapHost
+import moe.ouom.neriplayer.data.platform.youtube.removeYouTubeBackgroundWebViewGuard
 import moe.ouom.neriplayer.data.platform.youtube.resolveBootstrapUserAgent
 import moe.ouom.neriplayer.util.isAllowedMainFrameRequest
 import moe.ouom.neriplayer.util.NPLogger
@@ -64,6 +67,20 @@ interface YouTubePoTokenProvider {
     ): String?
 
     fun clearSession() {}
+}
+
+private const val YOUTUBE_WEB_PO_WARM_BOOTSTRAP_URL = "https://music.youtube.com/"
+private const val YOUTUBE_WEB_PO_FOREGROUND_BOOTSTRAP_URL = "https://www.youtube.com/?themeRefresh=1"
+
+internal fun resolveWebPoBootstrapUrls(backgroundWarmup: Boolean): List<String> {
+    return if (backgroundWarmup) {
+        listOf(YOUTUBE_WEB_PO_WARM_BOOTSTRAP_URL)
+    } else {
+        listOf(
+            YOUTUBE_WEB_PO_FOREGROUND_BOOTSTRAP_URL,
+            YOUTUBE_WEB_PO_WARM_BOOTSTRAP_URL
+        )
+    }
 }
 
 private data class WebPoPageSnapshot(
@@ -97,10 +114,6 @@ internal class YouTubeWebPoTokenProvider(
     companion object {
         private const val TAG = "YouTubeWebPoToken"
         private const val JS_BRIDGE_NAME = "__NERI_YT_WEBPO_BRIDGE__"
-        private val WEB_PO_BOOTSTRAP_URLS = listOf(
-            "https://music.youtube.com/",
-            "https://www.youtube.com/?themeRefresh=1"
-        )
         private const val FOREGROUND_PAGE_PREPARE_ATTEMPTS = 3
         private const val FORCE_REFRESH_PAGE_PREPARE_ATTEMPTS = 5
         private const val BACKGROUND_PAGE_PREPARE_ATTEMPTS = 8
@@ -124,13 +137,16 @@ internal class YouTubeWebPoTokenProvider(
     private var webView: WebView? = null
 
     @Volatile
+    private var backgroundWebViewGuard: ScriptHandler? = null
+
+    @Volatile
     private var preparedCookieFingerprint: String? = null
 
     @Volatile
     private var preparedAtMs: Long = 0L
 
     @Volatile
-    private var preparedUrl: String = WEB_PO_BOOTSTRAP_URLS.first()
+    private var preparedUrl: String = YOUTUBE_WEB_PO_WARM_BOOTSTRAP_URL
 
     @Volatile
     private var lastUnavailableLogAtMs: Long = 0L
@@ -151,7 +167,8 @@ internal class YouTubeWebPoTokenProvider(
                     auth = auth,
                     authFingerprint = buildAuthFingerprint(auth),
                     forceRefresh = false,
-                    maxAttempts = BACKGROUND_PAGE_PREPARE_ATTEMPTS
+                    maxAttempts = BACKGROUND_PAGE_PREPARE_ATTEMPTS,
+                    bootstrapUrls = resolveWebPoBootstrapUrls(backgroundWarmup = true)
                 )
             } finally {
                 setWebViewActive(active = false)
@@ -171,7 +188,7 @@ internal class YouTubeWebPoTokenProvider(
         }
         preparedCookieFingerprint = null
         preparedAtMs = 0L
-        preparedUrl = WEB_PO_BOOTSTRAP_URLS.first()
+        preparedUrl = YOUTUBE_WEB_PO_WARM_BOOTSTRAP_URL
         destroyPreparedWebViewAsync()
     }
 
@@ -195,7 +212,8 @@ internal class YouTubeWebPoTokenProvider(
                         FORCE_REFRESH_PAGE_PREPARE_ATTEMPTS
                     } else {
                         FOREGROUND_PAGE_PREPARE_ATTEMPTS
-                    }
+                    },
+                    bootstrapUrls = resolveWebPoBootstrapUrls(backgroundWarmup = false)
                 ) ?: return@withLock null
                 if (!pageSnapshot.hasWebPoClient) {
                     return@withLock null
@@ -266,7 +284,8 @@ internal class YouTubeWebPoTokenProvider(
                                 auth = auth,
                                 authFingerprint = authFingerprint,
                                 forceRefresh = true,
-                                maxAttempts = FORCE_REFRESH_PAGE_PREPARE_ATTEMPTS
+                                maxAttempts = FORCE_REFRESH_PAGE_PREPARE_ATTEMPTS,
+                                bootstrapUrls = resolveWebPoBootstrapUrls(backgroundWarmup = false)
                             ) ?: return@withLock null
                         }
 
@@ -306,7 +325,8 @@ internal class YouTubeWebPoTokenProvider(
         auth: YouTubeAuthBundle,
         authFingerprint: String,
         forceRefresh: Boolean,
-        maxAttempts: Int
+        maxAttempts: Int,
+        bootstrapUrls: List<String>
     ): WebPoPageSnapshot? {
         val shouldReload = forceRefresh ||
             webView == null ||
@@ -322,7 +342,7 @@ internal class YouTubeWebPoTokenProvider(
         syncCookies(activeWebView, auth)
         preparedCookieFingerprint = authFingerprint
 
-        for (bootstrapUrl in WEB_PO_BOOTSTRAP_URLS) {
+        for (bootstrapUrl in bootstrapUrls) {
             var readyWithoutClientCount = 0
             withContext(Dispatchers.Main) {
                 activeWebView.settings.userAgentString = auth.resolveBootstrapUserAgent()
@@ -379,6 +399,7 @@ internal class YouTubeWebPoTokenProvider(
             webViewClient = BootstrapWebViewClient()
             addJavascriptInterface(WebPoResultBridge(), JS_BRIDGE_NAME)
         }.also { created ->
+            backgroundWebViewGuard = installYouTubeBackgroundWebViewGuard(created, TAG)
             webView = created
         }
     }
@@ -396,9 +417,12 @@ internal class YouTubeWebPoTokenProvider(
 
     private fun destroyPreparedWebViewAsync() {
         val activeWebView = webView ?: return
+        val activeGuard = backgroundWebViewGuard
         webView = null
+        backgroundWebViewGuard = null
         activeWebView.post {
             runCatching {
+                removeYouTubeBackgroundWebViewGuard(activeGuard)
                 activeWebView.onPause()
                 activeWebView.pauseTimers()
                 activeWebView.stopLoading()

@@ -112,6 +112,13 @@ internal fun handleYouTubeAuthStateChanged(
     // 只移除旧请求引用，避免 auth 恢复成功时把当前播放请求自己取消掉
     clearPlaybackAuthBoundCaches(false)
     evictConnections()
+    warmYouTubePlaybackIfAuthorized(bundle, warmBootstrapAsync)
+}
+
+internal fun warmYouTubePlaybackIfAuthorized(
+    bundle: moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle,
+    warmBootstrapAsync: () -> Unit
+) {
     if (bundle.hasLoginCookies()) {
         warmBootstrapAsync()
     }
@@ -257,6 +264,7 @@ object AppContainer {
         startCookieObserver()
         startYouTubeAuthObserver()
         startSettingsObserver()
+        warmYouTubePlaybackOnAppStart()
     }
 
     private fun primeProxySetting() {
@@ -334,6 +342,13 @@ object AppContainer {
                 ManagedDownloadStorage.updateDownloadFileNameTemplate(template)
             }
             .launchIn(scope)
+    }
+
+    private fun warmYouTubePlaybackOnAppStart() {
+        warmYouTubePlaybackIfAuthorized(
+            bundle = youtubeAuthRepo.getAuthOnce().normalized(),
+            warmBootstrapAsync = youtubeMusicPlaybackRepository::warmBootstrapAsync
+        )
     }
 
     private fun isYouTubeHost(host: String): Boolean {

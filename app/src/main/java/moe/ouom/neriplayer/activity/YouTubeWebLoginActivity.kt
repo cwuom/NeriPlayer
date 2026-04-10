@@ -32,6 +32,7 @@ import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
+import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
@@ -88,6 +89,13 @@ class YouTubeWebLoginActivity : ComponentActivity() {
             "www.youtube.com",
             "youtube.com",
             "m.youtube.com"
+        )
+        private val WEB_STORAGE_ORIGINS = listOf(
+            "https://accounts.google.com",
+            "https://music.youtube.com",
+            "https://www.youtube.com",
+            "https://youtube.com",
+            "https://m.youtube.com"
         )
     }
 
@@ -329,40 +337,43 @@ class YouTubeWebLoginActivity : ComponentActivity() {
             cookieManager = cookieManager,
             urls = YouTubeCookieSupport.webCookieReadUrls
         )
-        val cookiesToInspect = linkedMapOf<String, String>().apply {
+        val cookiesToReset = linkedMapOf<String, String>().apply {
             putAll(existingCookies)
             putAll(savedCookies)
         }
-        val blockingCookieKeys = YouTubeCookieSupport.collectWebLoginBlockingCookieKeys(
-            cookiesToInspect
+        val resetCookieKeys = YouTubeCookieSupport.collectWebLoginResetCookieKeys(
+            cookiesToReset
         )
-        if (blockingCookieKeys.isNotEmpty()) {
+        if (resetCookieKeys.isNotEmpty()) {
             NPLogger.d(
                 "NERI-YouTubeLogin",
-                "Clearing stale login cookies before WebView sign-in: " +
-                    blockingCookieKeys.joinToString()
+                "Resetting Google and YouTube WebView cookies before sign-in: " +
+                    resetCookieKeys.joinToString()
             )
             clearYouTubeWebCookies(
                 cookieManager = cookieManager,
-                cookieKeys = blockingCookieKeys,
+                cookieKeys = resetCookieKeys,
                 urls = YouTubeCookieSupport.webCookieReadUrls
             )
         }
+        resetPersistedWebStorage()
 
+        // Google 登录页对历史 cookie 很敏感，这里只保留最小 consent 基线
         applyYouTubeWebCookies(
             cookieManager = cookieManager,
-            cookies = YouTubeCookieSupport.sanitizeWebLoginGoogleSeedCookies(savedCookies),
-            urls = YouTubeCookieSupport.webCookieGoogleUrls,
+            cookies = emptyMap(),
+            urls = YouTubeCookieSupport.webCookieReadUrls,
             skipExisting = false,
             includeConsentCookie = true
         )
-        applyYouTubeWebCookies(
-            cookieManager = cookieManager,
-            cookies = YouTubeCookieSupport.sanitizeWebLoginYouTubeSeedCookies(savedCookies),
-            urls = YouTubeCookieSupport.webCookieWriteUrls,
-            skipExisting = false,
-            includeConsentCookie = true
-        )
+    }
+
+    private fun resetPersistedWebStorage() {
+        val webStorage = WebStorage.getInstance()
+        WEB_STORAGE_ORIGINS.forEach(webStorage::deleteOrigin)
+        if (this::webView.isInitialized) {
+            webView.clearHistory()
+        }
     }
 
     private fun buildObservedAuthBundle(

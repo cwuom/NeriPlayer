@@ -4,6 +4,7 @@ import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.platform.youtube.YOUTUBE_DEFAULT_WEB_USER_AGENT
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class YouTubeWebPoTokenProviderTest {
@@ -38,5 +39,21 @@ class YouTubeWebPoTokenProviderTest {
             buildYouTubeWebPoAuthFingerprint(desktopAuth),
             buildYouTubeWebPoAuthFingerprint(mobileAuth)
         )
+    }
+
+    @Test
+    fun resolveWebPoBootstrapUrls_backgroundWarmupUsesMusicOnly() {
+        assertEquals(
+            listOf("https://music.youtube.com/"),
+            resolveWebPoBootstrapUrls(backgroundWarmup = true)
+        )
+    }
+
+    @Test
+    fun resolveWebPoBootstrapUrls_foregroundMintKeepsYoutubeFallback() {
+        val urls = resolveWebPoBootstrapUrls(backgroundWarmup = false)
+
+        assertEquals("https://www.youtube.com/?themeRefresh=1", urls.first())
+        assertTrue(urls.contains("https://music.youtube.com/"))
     }
 }
