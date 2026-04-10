@@ -32,7 +32,7 @@ import kotlinx.coroutines.isActive
 import kotlin.math.abs
 import kotlin.math.max
 
-private const val TranslationAlignmentToleranceMs = 1_500L
+private const val TranslationAlignmentToleranceMs = 450L
 private const val InterpolatedPlaybackResyncThresholdMs = 220L
 private const val InterpolatedPlaybackBackwardToleranceMs = 24L
 private const val FocusedLyricVisualCompensationRatio = 0.42f
@@ -344,13 +344,21 @@ private fun SyncedLyrics.attachTranslations(translations: List<LyricEntry>): Syn
         return this
     }
 
-    val updatedLines = lines.map { line ->
-        val matchedTranslation = findBestMatchingTranslation(
-            translations = translations,
-            lineStartMs = line.start.toLong(),
-            lineEndMs = line.end.toLong(),
-            toleranceMs = TranslationAlignmentToleranceMs
-        )?.text
+    val baseLyricEntries = lines.map { line ->
+        LyricEntry(
+            text = "",
+            startTimeMs = line.start.toLong(),
+            endTimeMs = line.end.toLong()
+        )
+    }
+    val translationMatchesByIndex = matchTranslationsToLineIndices(
+        lines = baseLyricEntries,
+        translations = translations,
+        toleranceMs = TranslationAlignmentToleranceMs
+    )
+
+    val updatedLines = lines.mapIndexed { index, line ->
+        val matchedTranslation = translationMatchesByIndex[index]?.text
 
         when {
             matchedTranslation.isNullOrBlank() -> line

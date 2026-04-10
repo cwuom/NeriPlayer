@@ -325,6 +325,17 @@ fun AppleMusicLyric(
             callback(line)
         }
     }
+    val translationMatchesByIndex = remember(lyrics, translatedLyrics) {
+        val safeTranslatedLyrics = translatedLyrics.orEmpty()
+        if (safeTranslatedLyrics.isEmpty()) {
+            emptyMap<Int, LyricEntry>()
+        } else {
+            matchTranslationsToLineIndices(
+                lines = lyrics,
+                translations = safeTranslatedLyrics
+            )
+        }
+    }
 
     BoxWithConstraints(
         modifier = modifier.fillMaxSize(),
@@ -471,14 +482,7 @@ fun AppleMusicLyric(
                         }
                     }
 
-                    val transText = translatedLyrics?.let { list ->
-                        // 普通歌词与高级歌词共用同一套配对逻辑，避免边界时间命中下一句翻译
-                        findBestMatchingTranslation(
-                            translations = list,
-                            lineStartMs = line.startTimeMs,
-                            lineEndMs = line.endTimeMs
-                        )?.text
-                    }
+                    val transText = translationMatchesByIndex[index]?.text
                     val shouldShowTranslation = (shouldUseClearText || isActive) && !transText.isNullOrBlank()
 
                     Crossfade(

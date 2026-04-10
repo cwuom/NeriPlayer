@@ -100,32 +100,55 @@ class AdvancedLyricsViewTest {
     }
 
     @Test
-    fun `buildAdvancedSyncedLyrics falls back to nearest translation within tolerance`() {
+    fun `buildAdvancedSyncedLyrics keeps sparse translation bound to its own line`() {
         val lyrics = listOf(
             LyricEntry(
-                text = "Starlight",
-                startTimeMs = 1_000L,
-                endTimeMs = 1_500L
-            )
-        )
-        val translations = listOf(
+                text = "My Baby",
+                startTimeMs = 29_440L,
+                endTimeMs = 30_180L
+            ),
             LyricEntry(
-                text = "星光",
-                startTimeMs = 1_550L,
-                endTimeMs = 1_900L
+                text = "Let It Go",
+                startTimeMs = 30_180L,
+                endTimeMs = 30_860L
+            ),
+            LyricEntry(
+                text = "我们去过的每个角落像寄托",
+                startTimeMs = 30_860L,
+                endTimeMs = 32_780L
+            ),
+            LyricEntry(
+                text = "那我们也笑过",
+                startTimeMs = 32_780L,
+                endTimeMs = 33_950L
+            ),
+            LyricEntry(
+                text = "那逝去的生活的每个片段叫我如何删减",
+                startTimeMs = 33_950L,
+                endTimeMs = 37_080L
             )
         )
 
         val result = buildAdvancedSyncedLyrics(
             rawLyrics = null,
-            rawTranslatedLyrics = null,
+            rawTranslatedLyrics = """
+                [00:29.44]我的宝贝
+                [00:30.18]放手吧
+            """.trimIndent(),
             lyrics = lyrics,
-            translatedLyrics = translations
+            translatedLyrics = emptyList()
         )
 
-        val line = result.lines.single()
-        assertTrue(line is SyncedLine)
-        assertEquals("星光", (line as SyncedLine).translation)
+        val firstLine = result.lines[0] as SyncedLine
+        val secondLine = result.lines[1] as SyncedLine
+        val thirdLine = result.lines[2] as SyncedLine
+        val fourthLine = result.lines[3] as SyncedLine
+        val fifthLine = result.lines[4] as SyncedLine
+        assertEquals("我的宝贝", firstLine.translation)
+        assertEquals("放手吧", secondLine.translation)
+        assertEquals(null, thirdLine.translation)
+        assertEquals(null, fourthLine.translation)
+        assertEquals(null, fifthLine.translation)
     }
 
     @Test
