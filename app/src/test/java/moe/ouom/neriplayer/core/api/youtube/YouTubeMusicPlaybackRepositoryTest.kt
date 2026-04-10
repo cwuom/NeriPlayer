@@ -2,7 +2,9 @@ package moe.ouom.neriplayer.core.api.youtube
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.platform.youtube.resolveAuthorizationHeader
@@ -16,6 +18,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
+import org.junit.Before
 import org.junit.Test
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -29,8 +32,14 @@ class YouTubeMusicPlaybackRepositoryTest {
 
     private val repository = YouTubeMusicPlaybackRepository(OkHttpClient())
 
+    @Before
+    fun resetNewPipeFallbackTracker() {
+        NewPipeFallbackTracker.reset()
+    }
+
     private class FakePoTokenProvider(
-        private val queuedTokens: MutableList<String?> = mutableListOf()
+        private val queuedTokens: MutableList<String?> = mutableListOf(),
+        private val delayMs: Long = 0L
     ) : YouTubePoTokenProvider {
         val forceRefreshCalls = mutableListOf<Boolean>()
         var warmSessionCount = 0
@@ -46,6 +55,9 @@ class YouTubeMusicPlaybackRepositoryTest {
             forceRefresh: Boolean
         ): String? {
             forceRefreshCalls += forceRefresh
+            if (delayMs > 0L) {
+                delay(delayMs)
+            }
             return if (queuedTokens.isEmpty()) {
                 null
             } else {
@@ -2002,6 +2014,129 @@ class YouTubeMusicPlaybackRepositoryTest {
     }
 
     @Test
+    fun getBestPlayableAudio_slowWebRemixPoTokenFallsBackToTvDirectWithoutWaitingForMint() = runBlocking {
+        val requests = mutableListOf<okhttp3.Request>()
+        val bootstrapHtml = """
+            <html>
+            <script>
+            ytcfg.set({
+              "INNERTUBE_API_KEY":"test-api-key",
+              "INNERTUBE_CLIENT_VERSION":"1.20260321.00.00",
+              "VISITOR_DATA":"visitor-data-123",
+              "jsUrl":"/s/player/test-player/base.js",
+              "SESSION_INDEX":"7",
+              "remoteHost":"13.114.209.29",
+              "STS":20529
+            });
+            </script>
+            </html>
+        """.trimIndent()
+        val webRemixDirectResponse = """
+            {
+              "playabilityStatus":{"status":"OK"},
+              "streamingData":{
+                "adaptiveFormats":[
+                  {
+                    "mimeType":"audio/webm; codecs=\"opus\"",
+                    "url":"https://rr1---sn.googlevideo.com/videoplayback?id=audio-web-remix-direct&source=youtube&c=WEB_REMIX&n=resolved-web&sig=web-signature",
+                    "bitrate":128646,
+                    "audioSampleRate":"48000",
+                    "contentLength":"3586688",
+                    "approxDurationMs":"223041"
+                  }
+                ]
+              },
+              "videoDetails":{"lengthSeconds":"223"}
+            }
+        """.trimIndent()
+        val tvDirectResponse = """
+            {
+              "playabilityStatus":{"status":"OK"},
+              "streamingData":{
+                "adaptiveFormats":[
+                  {
+                    "mimeType":"audio/webm; codecs=\"opus\"",
+                    "url":"https://rr1---sn.googlevideo.com/videoplayback?id=audio-tv-fast&source=youtube&c=TVHTML5",
+                    "bitrate":140073,
+                    "audioSampleRate":"48000",
+                    "contentLength":"3830033",
+                    "approxDurationMs":"223041"
+                  }
+                ]
+              },
+              "videoDetails":{"lengthSeconds":"223"}
+            }
+        """.trimIndent()
+
+        val client = OkHttpClient.Builder()
+            .addInterceptor(
+                Interceptor { chain ->
+                    val request = chain.request()
+                    requests += request
+                    val body = when {
+                        request.url.host == "music.youtube.com" && request.url.encodedPath == "/" -> {
+                            bootstrapHtml to "text/html; charset=utf-8"
+                        }
+                        request.url.encodedPath.contains("/youtubei/v1/player") -> {
+                            when (request.header("X-YouTube-Client-Name")) {
+                                "67" -> webRemixDirectResponse to "application/json; charset=utf-8"
+                                "7" -> tvDirectResponse to "application/json; charset=utf-8"
+                                else -> """{"playabilityStatus":{"status":"ERROR"}}""" to "application/json; charset=utf-8"
+                            }
+                        }
+                        else -> "{}" to "application/json; charset=utf-8"
+                    }
+                    Response.Builder()
+                        .request(request)
+                        .protocol(Protocol.HTTP_1_1)
+                        .code(200)
+                        .message("OK")
+                        .body(body.first.toResponseBody(body.second.toMediaType()))
+                        .build()
+                }
+            )
+            .build()
+
+        val authBundle = YouTubeAuthBundle(
+            cookieHeader = "SAPISID=sap-value; SID=sid-value",
+            xGoogAuthUser = "7",
+            userAgent = "RepoUserAgent/1.0"
+        )
+        val poTokenProvider = FakePoTokenProvider(
+            queuedTokens = mutableListOf("late-po-token"),
+            delayMs = 1_500L
+        )
+        val playbackRepository = YouTubeMusicPlaybackRepository(
+            okHttpClient = client,
+            authProvider = { authBundle },
+            poTokenProvider = poTokenProvider
+        )
+
+        val playableAudio = withTimeout(1_200L) {
+            playbackRepository.getBestPlayableAudio(
+                videoId = "demo-video",
+                forceRefresh = false
+            )
+        }
+
+        assertNotNull(playableAudio)
+        assertEquals(
+            "https://rr1---sn.googlevideo.com/videoplayback?id=audio-tv-fast&source=youtube&c=TVHTML5",
+            playableAudio?.url
+        )
+        assertFalse(poTokenProvider.forceRefreshCalls.any { it })
+        val firstWebRemixRequestIndex = requests.indexOfFirst { request ->
+            request.url.encodedPath.contains("/youtubei/v1/player") &&
+                request.header("X-YouTube-Client-Name") == "67"
+        }
+        val firstTvRequestIndex = requests.indexOfFirst { request ->
+            request.url.encodedPath.contains("/youtubei/v1/player") &&
+                request.header("X-YouTube-Client-Name") == "7"
+        }
+        assertTrue(firstWebRemixRequestIndex in 0 until firstTvRequestIndex)
+    }
+
+    @Test
     fun getBestPlayableAudio_webRemixRequestCarriesVisitorDataAndStreamHeaders() = runBlocking {
         val requests = mutableListOf<okhttp3.Request>()
         val bootstrapHtml = """
@@ -3095,5 +3230,25 @@ class YouTubeMusicPlaybackRepositoryTest {
         } catch (error: CancellationException) {
             assertEquals("cancelled during tv player request", error.message)
         }
+    }
+
+    @Test
+    fun newPipeFallbackTrackerSignatureBlocksAfterThreshold() {
+        val key = "https://music.youtube.com/player.js"
+        assertFalse(NewPipeFallbackTracker.maybeSkipSignature(key))
+        NewPipeFallbackTracker.recordSignatureFailure(key)
+        assertFalse(NewPipeFallbackTracker.maybeSkipSignature(key))
+        NewPipeFallbackTracker.recordSignatureFailure(key)
+        assertTrue(NewPipeFallbackTracker.maybeSkipSignature(key))
+    }
+
+    @Test
+    fun newPipeFallbackTrackerThrottlingBlocksAfterThreshold() {
+        val key = "https://music.youtube.com/player.js"
+        assertFalse(NewPipeFallbackTracker.maybeSkipThrottling(key))
+        NewPipeFallbackTracker.recordThrottlingFailure(key)
+        assertFalse(NewPipeFallbackTracker.maybeSkipThrottling(key))
+        NewPipeFallbackTracker.recordThrottlingFailure(key)
+        assertTrue(NewPipeFallbackTracker.maybeSkipThrottling(key))
     }
 }

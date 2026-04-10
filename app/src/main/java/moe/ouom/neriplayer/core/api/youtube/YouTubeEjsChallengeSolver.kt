@@ -281,6 +281,19 @@ internal class YouTubeEjsChallengeSolver(
         return resolved
     }
 
+    fun warmPlayerScript(playerJsUrl: String): Boolean {
+        val resolvedPlayerJsUrl = playerJsUrl.trim()
+        if (resolvedPlayerJsUrl.isBlank()) {
+            return false
+        }
+        return runCatching {
+            synchronized(solverLock) {
+                getPlayerScript(resolvedPlayerJsUrl)
+            }
+            true
+        }.getOrDefault(false)
+    }
+
     private fun buildSolveScript(
         playerDataName: String,
         encryptedSignature: String?,

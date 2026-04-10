@@ -135,6 +135,7 @@ class YouTubeAuthAutoRefreshManager(
         private const val PAGE_SETTLE_DELAY_MS = 800L
         private const val REFRESH_COOLDOWN_MS = 15L * 60L * 1000L
         private const val FORCE_REFRESH_BACKOFF_MS = 90_000L
+        private const val STALE_VALID_AUTH_REFRESH_AGE_MS = 12L * 60L * 60L * 1000L
         private const val MAX_CONSECUTIVE_FAILURES = 2
         private const val CIRCUIT_BREAK_MS = 30L * 60L * 1000L
     }
@@ -356,7 +357,10 @@ class YouTubeAuthAutoRefreshManager(
         if (!auth.hasLoginCookies()) {
             return RefreshGateDecision(allowed = false, reason = "no_login_cookies")
         }
-        if (!force && health.state == YouTubeAuthState.Valid && health.activeCookieKeys.isNotEmpty()) {
+        val hasActiveValidSession = health.state == YouTubeAuthState.Valid &&
+            health.activeCookieKeys.isNotEmpty()
+        val isFreshEnoughToSkipRefresh = health.ageMs in 0 until STALE_VALID_AUTH_REFRESH_AGE_MS
+        if (!force && hasActiveValidSession && isFreshEnoughToSkipRefresh) {
             return RefreshGateDecision(allowed = false, reason = "auth_valid")
         }
         if (health.state == YouTubeAuthState.Missing) {

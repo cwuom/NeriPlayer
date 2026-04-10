@@ -24,12 +24,15 @@ import moe.ouom.neriplayer.core.player.policy.resolveManagedPlaybackStartPlan
 import moe.ouom.neriplayer.core.player.policy.resolveManualResumePlaybackDecision
 import moe.ouom.neriplayer.core.player.policy.resolveYouTubeWarmupTargets
 import moe.ouom.neriplayer.core.player.policy.shouldPausePlaybackWhenToggling
+import java.util.WeakHashMap
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.SearchManager
 import kotlin.random.Random
+
+private val youtubeNextWarmupTracker = WeakHashMap<PlayerManager, String?>()
 
 internal fun PlayerManager.cancelVolumeFadeImpl(resetToFull: Boolean = false) {
     val hadActiveFade = volumeFadeJob?.isActive == true
@@ -317,6 +320,7 @@ internal fun PlayerManager.playAtIndex(
     _currentMediaUrl.value = null
     _currentPlaybackAudioInfo.value = null
     currentMediaUrlResolvedAtMs = 0L
+    youtubeNextWarmupTracker[this] = null
     val shouldAwaitAuthoritativeStream =
         commandSource == PlaybackCommandSource.REMOTE_SYNC &&
             shouldWaitForListenTogetherAuthoritativeStream(song)
@@ -419,6 +423,7 @@ internal fun PlayerManager.playAtIndex(
                     player.prepare()
                     startPlayerPlaybackWithFade(startPlan)
                 }
+                maybeWarmNextYouTubeMusicAfterCurrentResolved()
                 maybeAutoMatchBiliMetadata(song, requestToken)
             }
             SongUrlResult.WaitingForAuthoritativeStream -> {
@@ -507,21 +512,35 @@ private fun PlayerManager.maybeWarmCurrentAndUpcomingYouTubeMusic(currentSongInd
             )
         }
     }
+}
 
-    targets.nextVideoId?.let { videoId ->
-        runCatching {
-            youtubeMusicPlaybackRepository.kickoffPlayableAudioPrefetch(
-                videoId = videoId,
-                preferredQualityOverride = targets.preferredQuality,
-                requireDirect = false,
-                preferM4a = false
-            )
-        }.onFailure { error ->
-            NPLogger.w(
-                "NERI-PlayerManager",
-                "Prefetch next YouTube Music stream failed for $videoId: ${error.message}"
-            )
-        }
+private fun PlayerManager.maybeWarmNextYouTubeMusicAfterCurrentResolved() {
+    val currentSong = _currentSongFlow.value ?: return
+    if (!isYouTubeMusicTrack(currentSong) || currentMediaUrlResolvedAtMs <= 0) {
+        return
+    }
+    val nextVideoId = resolveYouTubeWarmupTargets(
+        playlist = currentPlaylist,
+        currentSongIndex = currentIndex,
+        preferredQuality = youtubePreferredQuality
+    ).nextVideoId ?: return
+    val lastWarmId = youtubeNextWarmupTracker[this]
+    if (lastWarmId == nextVideoId) {
+        return
+    }
+    youtubeNextWarmupTracker[this] = nextVideoId
+    runCatching {
+        youtubeMusicPlaybackRepository.kickoffPlayableAudioPrefetch(
+            videoId = nextVideoId,
+            preferredQualityOverride = youtubePreferredQuality,
+            requireDirect = false,
+            preferM4a = false
+        )
+    }.onFailure { error ->
+        NPLogger.w(
+            "NERI-PlayerManager",
+            "Prefetch next YouTube Music stream failed for $nextVideoId: ${error.message}"
+        )
     }
 }
 

@@ -482,7 +482,13 @@ fun NowPlayingScreen(
     var translatedLyrics by remember(currentSong?.id) { mutableStateOf<List<LyricEntry>>(emptyList()) }
     val nowPlayingViewModel: NowPlayingViewModel = viewModel()
 
-    LaunchedEffect(currentSong?.id, currentSong?.matchedLyric, currentSong?.matchedTranslatedLyric, isFromNetease) {
+    LaunchedEffect(
+        currentSong?.id,
+        currentSong?.matchedLyric,
+        currentSong?.matchedTranslatedLyric,
+        isFromNetease,
+        currentMediaUrl
+    ) {
         val song = currentSong
         val (loadedLyrics, loadedTranslatedLyrics) = withContext(Dispatchers.IO) {
             val preferredNeteaseLyric = runCatching {
@@ -500,9 +506,17 @@ fun NowPlayingScreen(
                 matchedLyric = song?.matchedLyric,
                 preferredNeteaseLyric = preferredNeteaseLyric
             )
+            val shouldDelayOnlineLyrics =
+                song != null &&
+                    extractYouTubeMusicVideoId(song.mediaUri) != null &&
+                    currentMediaUrl.isNullOrBlank()
             val resolvedLyrics = when {
                 !effectiveRawLyrics.isNullOrBlank() -> {
                     parseNeteaseLyricsAuto(effectiveRawLyrics)
+                }
+                shouldDelayOnlineLyrics -> {
+                    // 当前曲目还在抢首播地址，先别让歌词请求去争 EJS 和鉴权链路
+                    emptyList()
                 }
                 song != null -> {
                     // 在线拉取歌词
