@@ -123,6 +123,7 @@
     <string name="download_completed">Completed</string>
     <string name="download_cancel_download">Cancel Download</string>
     <string name="download_cancelled_status">Cancelled</string>
+    <string name="download_finalizing">Audio has been written, lyrics and covers are being sorted</string>
 
     <!-- Search -->
     <string name="search_keyword">Search Keyword</string>
