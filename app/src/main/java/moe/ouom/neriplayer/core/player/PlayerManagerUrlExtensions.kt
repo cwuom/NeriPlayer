@@ -13,6 +13,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.resolveBiliSong
+import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
@@ -281,9 +282,17 @@ private suspend fun PlayerManager.applyResolvedMediaItem(
 private fun PlayerManager.checkLocalCache(song: SongItem): SongUrlResult? {
     val context = application
     val localReference = AudioDownloadManager.getLocalPlaybackUri(context, song) ?: return null
+    if (!isReadableLocalMediaUri(localReference)) {
+        NPLogger.w(
+            "NERI-PlayerManager",
+            "checkLocalCache: 命中不可读本地引用，回退远端解析 song=${song.name}, reference=$localReference"
+        )
+        GlobalDownloadManager.scanLocalFiles(context, forceRefresh = true)
+        return null
+    }
     val durationMs = if (song.durationMs <= 0L) {
+        val retriever = android.media.MediaMetadataRetriever()
         try {
-            val retriever = android.media.MediaMetadataRetriever()
             val localUri = localReference.toUri()
             when (localUri.scheme?.lowercase()) {
                 "content", "android.resource" -> retriever.setDataSource(context, localUri)
@@ -291,13 +300,13 @@ private fun PlayerManager.checkLocalCache(song: SongItem): SongUrlResult? {
                 null, "" -> retriever.setDataSource(localReference)
                 else -> retriever.setDataSource(context, localUri)
             }
-            val d = retriever.extractMetadata(
+            retriever.extractMetadata(
                 android.media.MediaMetadataRetriever.METADATA_KEY_DURATION
             )?.toLongOrNull() ?: 0L
-            retriever.release()
-            d
         } catch (_: Exception) {
             null
+        } finally {
+            runCatching { retriever.release() }
         }
     } else {
         null

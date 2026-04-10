@@ -98,7 +98,6 @@ import coil.compose.AsyncImage
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.local.media.displayAlbum
@@ -579,7 +578,7 @@ private fun RecentRowRich(
                 )
                 // 已下载标志
                 if (remember(downloadPresenceVersion, song) {
-                        AudioDownloadManager.hasLocalDownload(ctx, song)
+                        GlobalDownloadManager.hasDownloadedSongCached(song)
                     }) {
                     Spacer(Modifier.width(6.dp))
                     Icon(

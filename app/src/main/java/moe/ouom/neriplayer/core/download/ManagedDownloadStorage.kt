@@ -31,6 +31,7 @@ import java.io.InputStream
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 internal object ManagedDownloadStorage {
     private const val TAG = "ManagedDownloadStorage"
@@ -38,6 +39,8 @@ internal object ManagedDownloadStorage {
     private const val ROOT_DIR_NAME = "NeriPlayer"
     private const val COVER_SUBDIRECTORY = "Covers"
     private const val LYRIC_SUBDIRECTORY = "Lyrics"
+    private const val DOWNLOAD_STAGING_DIR_NAME = "download_staging"
+    private const val PENDING_AUDIO_WRITE_MARKER = ".npdl_pending"
     private const val NO_MEDIA_FILE_NAME = ".nomedia"
     private const val SNAPSHOT_CACHE_FILE_NAME = "managed_download_snapshot_v1.json"
     private const val SNAPSHOT_CACHE_PERSIST_DEBOUNCE_MS = 1_200L
@@ -70,6 +73,7 @@ internal object ManagedDownloadStorage {
     private val snapshotPersistenceLock = Any()
     private val snapshotScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val treeDirectoryLocks = ConcurrentHashMap<String, Any>()
+    private val pendingAudioWriteIdGenerator = AtomicLong(0L)
 
     @Volatile
     private var snapshotPersistJob: Job? = null
@@ -77,11 +81,28 @@ internal object ManagedDownloadStorage {
     @Volatile
     private var snapshotRestoreScheduled = false
 
+    @Volatile
+    private var startupRecoveryResult = StartupRecoveryResult()
+
     fun initialize(context: Context) {
         val appContext = context.applicationContext
         createDefaultRoot(appContext)
+        val stagingRecovery = cleanupStagingFiles(appContext)
+        val pendingAudioRecovery = cleanupPendingAudioWrites(appContext)
+        startupRecoveryResult = StartupRecoveryResult(
+            cleanedCount = stagingRecovery.cleanedCount + pendingAudioRecovery.cleanedCount,
+            failedCount = stagingRecovery.failedCount + pendingAudioRecovery.failedCount
+        )
         invalidateSnapshotCache()
         scheduleSnapshotCacheRestore(appContext)
+    }
+
+    internal data class StartupRecoveryResult(
+        val cleanedCount: Int = 0,
+        val failedCount: Int = 0
+    ) {
+        val hasRecoveredEntries: Boolean
+            get() = cleanedCount > 0 || failedCount > 0
     }
 
     data class StoredEntry(
@@ -424,8 +445,12 @@ internal object ManagedDownloadStorage {
         }
     }
 
-    fun hasDownloadedAudio(context: Context, song: SongItem): Boolean {
-        return findDownloadedAudioBlocking(context, song) != null
+    fun hasDownloadedAudio(
+        context: Context,
+        song: SongItem,
+        forceRefresh: Boolean = false
+    ): Boolean {
+        return findDownloadedAudioBlocking(context, song, forceRefresh) != null
     }
 
     fun buildDisplayBaseName(song: SongItem): String {
@@ -433,12 +458,62 @@ internal object ManagedDownloadStorage {
     }
 
     fun createWorkingFile(context: Context, fileName: String): File {
-        val stagingDir = File(context.cacheDir, "download_staging").apply { mkdirs() }
-        return File(stagingDir, fileName)
+        val stagingDir = File(context.cacheDir, DOWNLOAD_STAGING_DIR_NAME).apply { mkdirs() }
+        val normalizedPrefix = fileName.substringBeforeLast('.', fileName)
+            .ifBlank { "download" }
+            .replace(Regex("[^A-Za-z0-9._-]"), "_")
+            .takeLast(48)
+            .ifBlank { "download" }
+        val extension = fileName.substringAfterLast('.', "")
+            .takeIf { it.isNotBlank() }
+        val suffix = extension?.let { ".$it.download" } ?: ".download"
+        return File.createTempFile("${normalizedPrefix}_", suffix, stagingDir)
     }
 
-    fun findAudio(context: Context, song: SongItem): StoredEntry? {
-        return findDownloadedAudioBlocking(context, song)
+    internal fun consumeStartupRecoveryResult(): StartupRecoveryResult {
+        val result = startupRecoveryResult
+        startupRecoveryResult = StartupRecoveryResult()
+        return result
+    }
+
+    fun cleanupStagingFiles(context: Context): StartupRecoveryResult {
+        val stagingDir = File(context.cacheDir, DOWNLOAD_STAGING_DIR_NAME)
+        val stagingEntries = stagingDir.listFiles().orEmpty()
+        if (stagingEntries.isEmpty()) {
+            return StartupRecoveryResult()
+        }
+
+        var cleanedCount = 0
+        var failedCount = 0
+        stagingEntries.forEach { entry ->
+            val deleted = runCatching {
+                if (entry.isDirectory) {
+                    entry.deleteRecursively()
+                } else {
+                    !entry.exists() || entry.delete()
+                }
+            }.getOrDefault(false)
+            if (deleted) {
+                cleanedCount++
+            } else {
+                failedCount++
+            }
+        }
+        if (cleanedCount > 0 || failedCount > 0) {
+            NPLogger.d(TAG, "清理下载临时区完成: cleaned=$cleanedCount, failed=$failedCount")
+        }
+        return StartupRecoveryResult(
+            cleanedCount = cleanedCount,
+            failedCount = failedCount
+        )
+    }
+
+    fun findAudio(
+        context: Context,
+        song: SongItem,
+        forceRefresh: Boolean = false
+    ): StoredEntry? {
+        return findDownloadedAudioBlocking(context, song, forceRefresh)
     }
 
     fun peekDownloadedAudio(song: SongItem): StoredEntry? {
@@ -459,13 +534,23 @@ internal object ManagedDownloadStorage {
         return candidateManagedDownloadBaseNames(song, downloadFileNameTemplate)
     }
 
-    suspend fun findDownloadedAudio(context: Context, song: SongItem): StoredEntry? = withContext(Dispatchers.IO) {
-        findDownloadedAudioBlocking(context, song)
+    suspend fun findDownloadedAudio(
+        context: Context,
+        song: SongItem,
+        forceRefresh: Boolean = false
+    ): StoredEntry? = withContext(Dispatchers.IO) {
+        findDownloadedAudioBlocking(context, song, forceRefresh)
     }
 
     suspend fun queryStoredEntry(context: Context, reference: String?): StoredEntry? = withContext(Dispatchers.IO) {
         val target = reference?.takeIf { it.isNotBlank() } ?: return@withContext null
-        buildDownloadLibrarySnapshotBlocking(context).audioEntriesByLookupKey[target]
+        val cachedEntry = buildDownloadLibrarySnapshotBlocking(context).audioEntriesByLookupKey[target]
+            ?: return@withContext null
+        if (isReferenceAccessible(context, cachedEntry.playbackUri)) {
+            return@withContext cachedEntry
+        }
+        buildDownloadLibrarySnapshotBlocking(context, forceRefresh = true).audioEntriesByLookupKey[target]
+            ?.takeIf { refreshedEntry -> isReferenceAccessible(context, refreshedEntry.playbackUri) }
     }
 
     suspend fun listDownloadedAudio(context: Context): List<StoredEntry> = withContext(Dispatchers.IO) {
@@ -479,9 +564,24 @@ internal object ManagedDownloadStorage {
         buildDownloadLibrarySnapshotBlocking(context, forceRefresh)
     }
 
-    private fun findDownloadedAudioBlocking(context: Context, song: SongItem): StoredEntry? {
-        val snapshot = buildDownloadLibrarySnapshotBlocking(context)
-        return findAudioEntry(snapshot, song)
+    fun isReferenceAccessible(context: Context, reference: String?): Boolean {
+        return existsInternal(context, reference)
+    }
+
+    private fun findDownloadedAudioBlocking(
+        context: Context,
+        song: SongItem,
+        forceRefresh: Boolean = false
+    ): StoredEntry? {
+        val snapshot = buildDownloadLibrarySnapshotBlocking(context, forceRefresh = forceRefresh)
+        val entry = findAudioEntry(snapshot, song) ?: return null
+        if (isReferenceAccessible(context, entry.playbackUri)) {
+            return entry
+        }
+        if (forceRefresh) {
+            return null
+        }
+        return findDownloadedAudioBlocking(context, song, forceRefresh = true)
     }
 
     private fun buildDownloadLibrarySnapshotBlocking(
@@ -850,29 +950,47 @@ internal object ManagedDownloadStorage {
         fileName: String,
         mimeType: String?
     ): StoredEntry {
-        val storedEntry = when (val root = resolveRootBlocking(context)) {
-            is RootHandle.FileRoot -> {
-                val target = File(root.dir, createUniqueName(existingNames(root.dir), fileName))
-                tempFile.copyTo(target, overwrite = false)
-                tempFile.delete()
-                target.toStoredEntry()
-            }
-
-            is RootHandle.TreeRoot -> {
-                val target = createRootFile(
-                    parent = root.tree,
-                    desiredName = fileName,
-                    mimeType = mimeTypeFromName(fileName, mimeType),
-                    replace = false
-                )
-                context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
-                    tempFile.inputStream().use { input ->
-                        input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
+        val storedEntry = try {
+            when (val root = resolveRootBlocking(context)) {
+                is RootHandle.FileRoot -> {
+                    val finalName = createUniqueName(existingNames(root.dir), fileName)
+                    val pendingTarget = File(root.dir, buildPendingAudioWriteName(finalName))
+                    tempFile.copyTo(pendingTarget, overwrite = false)
+                    val target = File(root.dir, finalName)
+                    if (!pendingTarget.renameTo(target)) {
+                        pendingTarget.delete()
+                        throw IOException("无法提交下载文件: $finalName")
                     }
-                } ?: throw IOException("无法打开下载目录输出流")
+                    target.toStoredEntry()
+                }
+
+                is RootHandle.TreeRoot -> {
+                    val finalName = createUniqueName(
+                        root.tree.listFiles().mapNotNull(DocumentFile::getName).toSet(),
+                        fileName
+                    )
+                    val pendingTarget = createRootFile(
+                        parent = root.tree,
+                        desiredName = buildPendingAudioWriteName(finalName),
+                        mimeType = mimeTypeFromName(finalName, mimeType),
+                        replace = false
+                    )
+                    context.contentResolver.openOutputStream(pendingTarget.uri, "w")?.use { output ->
+                        tempFile.inputStream().use { input ->
+                            input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
+                        }
+                    } ?: throw IOException("无法打开下载目录输出流")
+                    if (!pendingTarget.renameTo(finalName)) {
+                        runCatching { pendingTarget.delete() }
+                        throw IOException("无法提交下载文件: $finalName")
+                    }
+                    (root.tree.findFile(finalName) ?: pendingTarget).toStoredEntry()
+                        ?: throw IOException("无法读取已写入的下载文件")
+                }
+            }
+        } finally {
+            if (tempFile.exists()) {
                 tempFile.delete()
-                target.toStoredEntry()
-                    ?: throw IOException("无法读取已写入的下载文件")
             }
         }
         if (!updateSnapshotCacheAfterStoredEntryWrite(context, storedEntry, SnapshotEntryBucket.AUDIO)) {
@@ -1544,11 +1662,59 @@ internal object ManagedDownloadStorage {
         }
     }
 
+    private fun cleanupPendingAudioWrites(context: Context): StartupRecoveryResult {
+        return runCatching {
+            val pendingEntries = when (val root = resolveRootBlocking(context)) {
+                is RootHandle.FileRoot -> root.dir.listFiles()
+                    ?.filter(File::isFile)
+                    ?.filter { file -> isPendingAudioWriteName(file.name) }
+                    .orEmpty()
+
+                is RootHandle.TreeRoot -> root.tree.listFiles()
+                    .filter(DocumentFile::isFile)
+                    .filter { file -> isPendingAudioWriteName(file.name.orEmpty()) }
+            }
+
+            var cleanedCount = 0
+            var failedCount = 0
+            pendingEntries.forEach { entry ->
+                val deleted = when (entry) {
+                    is File -> runCatching { !entry.exists() || entry.delete() }.getOrDefault(false)
+                    is DocumentFile -> runCatching { entry.delete() }.getOrDefault(false)
+                    else -> false
+                }
+                if (deleted) {
+                    cleanedCount++
+                } else {
+                    failedCount++
+                }
+            }
+            if (cleanedCount > 0 || failedCount > 0) {
+                NPLogger.d(TAG, "清理下载提交残留完成: cleaned=$cleanedCount, failed=$failedCount")
+            }
+            StartupRecoveryResult(
+                cleanedCount = cleanedCount,
+                failedCount = failedCount
+            )
+        }.onFailure {
+            NPLogger.w(TAG, "清理下载提交残留失败: ${it.message}")
+        }.getOrDefault(StartupRecoveryResult())
+    }
+
     private fun existingNames(dir: File): Set<String> {
         return dir.listFiles()
             ?.mapNotNull(File::getName)
             ?.toSet()
             .orEmpty()
+    }
+
+    internal fun isPendingAudioWriteName(name: String): Boolean {
+        return name.contains(PENDING_AUDIO_WRITE_MARKER)
+    }
+
+    private fun buildPendingAudioWriteName(fileName: String): String {
+        val pendingId = pendingAudioWriteIdGenerator.incrementAndGet()
+        return "$fileName$PENDING_AUDIO_WRITE_MARKER.$pendingId"
     }
 
     private fun createRootFile(

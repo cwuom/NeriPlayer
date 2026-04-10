@@ -1047,7 +1047,11 @@ object PlayerManager {
         cacheKey: String,
         mimeType: String? = null
     ): MediaItem {
-        val isLocalFile = url.startsWith("file://")
+        val isLocalFile =
+            url.startsWith("file://") ||
+                url.startsWith("content://") ||
+                url.startsWith("android.resource://") ||
+                url.startsWith("/")
         return MediaItem.Builder()
             .setMediaId("${song.id}|${song.album}|${song.mediaUri.orEmpty()}")
             .setUri(url.toUri())

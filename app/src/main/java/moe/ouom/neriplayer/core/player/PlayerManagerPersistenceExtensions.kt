@@ -150,8 +150,16 @@ private fun loadRestoredStateSnapshot(
             null
         } else {
             data.mediaUrl?.takeIf {
-                !LocalSongSupport.isLocalSong(currentSong, app) ||
-                    PlayerManager.isRestorableLocalSong(currentSong)
+                val isPersistedLocalMediaUrl =
+                    it.startsWith("file://") ||
+                        it.startsWith("content://") ||
+                        it.startsWith("android.resource://") ||
+                        it.startsWith("/")
+                val isSongRestorable =
+                    !LocalSongSupport.isLocalSong(currentSong, app) ||
+                        PlayerManager.isRestorableLocalSong(currentSong)
+                isSongRestorable &&
+                    (!isPersistedLocalMediaUrl || PlayerManager.isReadableLocalMediaUri(it))
             }
         }
         val repeatMode = if (keepPlaybackModeStateEnabled) {

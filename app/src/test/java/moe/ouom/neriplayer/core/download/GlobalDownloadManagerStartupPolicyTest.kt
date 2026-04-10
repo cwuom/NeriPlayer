@@ -16,6 +16,14 @@ class GlobalDownloadManagerStartupPolicyTest {
         assertEquals(true, shouldRunInitialDownloadScan(snapshotReady = true, catalogReady = false))
         assertEquals(true, shouldRunInitialDownloadScan(snapshotReady = false, catalogReady = true))
         assertEquals(true, shouldRunInitialDownloadScan(snapshotReady = false, catalogReady = false))
+        assertEquals(
+            true,
+            shouldRunInitialDownloadScan(
+                snapshotReady = true,
+                catalogReady = true,
+                hasRecoveredEntries = true
+            )
+        )
     }
 
     @Test
@@ -165,6 +173,29 @@ class GlobalDownloadManagerStartupPolicyTest {
 
         assertTrue(isDownloadTaskFinalizing(task))
         assertTrue(isDownloadTaskCancellable(task))
+    }
+
+    @Test
+    fun `task mutation applies only to matching attempt id`() {
+        val task = DownloadTask(
+            song = SongItem(
+                id = 8L,
+                name = "Attempt",
+                artist = "Artist",
+                album = "Album",
+                albumId = 1L,
+                durationMs = 1_000L,
+                coverUrl = null,
+                mediaUri = "https://example.com/attempt"
+            ),
+            progress = null,
+            status = DownloadStatus.DOWNLOADING,
+            attemptId = 42L
+        )
+
+        assertTrue(shouldApplyTaskMutation(task, expectedAttemptId = 42L))
+        assertFalse(shouldApplyTaskMutation(task, expectedAttemptId = 7L))
+        assertTrue(shouldApplyTaskMutation(task, expectedAttemptId = null))
     }
 
     @Test
@@ -559,6 +590,57 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
+    fun `task mutation ignores stale attempt id but accepts current attempt`() {
+        val task = DownloadTask(
+            song = SongItem(
+                id = 11L,
+                name = "Song",
+                artist = "Artist",
+                album = "Album",
+                albumId = 1L,
+                durationMs = 1_000L,
+                coverUrl = null,
+                mediaUri = "https://example.com/audio"
+            ),
+            progress = null,
+            status = DownloadStatus.DOWNLOADING,
+            attemptId = 99L
+        )
+
+        assertFalse(shouldApplyTaskMutation(task, expectedAttemptId = 98L))
+        assertTrue(shouldApplyTaskMutation(task, expectedAttemptId = 99L))
+        assertTrue(shouldApplyTaskMutation(task, expectedAttemptId = null))
+    }
+
+    @Test
+    fun `active download attempt only matches current unfinished attempt`() {
+        val song = SongItem(
+            id = 12L,
+            name = "Retry",
+            artist = "Artist",
+            album = "Album",
+            albumId = 12L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            mediaUri = "https://example.com/retry"
+        )
+        val queuedTask = DownloadTask(
+            song = song,
+            progress = null,
+            status = DownloadStatus.QUEUED,
+            attemptId = 201L
+        )
+        val completedTask = queuedTask.copy(
+            status = DownloadStatus.COMPLETED,
+            attemptId = 202L
+        )
+
+        assertTrue(isActiveDownloadAttempt(listOf(queuedTask), song.stableKey(), expectedAttemptId = 201L))
+        assertFalse(isActiveDownloadAttempt(listOf(queuedTask), song.stableKey(), expectedAttemptId = 200L))
+        assertFalse(isActiveDownloadAttempt(listOf(completedTask), song.stableKey(), expectedAttemptId = 202L))
+    }
+
+    @Test
     fun `finalizing download task remains cancellable`() {
         val task = DownloadTask(
             song = SongItem(
@@ -681,5 +763,76 @@ class GlobalDownloadManagerStartupPolicyTest {
                 hydratedSong = hydratedSong
             )
         )
+    }
+
+    @Test
+    fun `applyCancelledStatus keeps cancelled tasks visible for the matching attempt`() {
+        val queuedTask = DownloadTask(
+            song = SongItem(
+                id = 11L,
+                name = "Queued",
+                artist = "Artist",
+                album = "Album",
+                albumId = 11L,
+                durationMs = 1_000L,
+                coverUrl = null,
+                mediaUri = "https://example.com/queued"
+            ),
+            progress = null,
+            status = DownloadStatus.QUEUED,
+            attemptId = 101L
+        )
+        val downloadingTask = queuedTask.copy(
+            song = queuedTask.song.copy(id = 12L, name = "Downloading"),
+            status = DownloadStatus.DOWNLOADING,
+            attemptId = 102L
+        )
+        val completedTask = queuedTask.copy(
+            song = queuedTask.song.copy(id = 13L, name = "Completed"),
+            status = DownloadStatus.COMPLETED,
+            attemptId = 103L
+        )
+
+        val updatedTasks = applyCancelledStatus(
+            tasks = listOf(queuedTask, downloadingTask, completedTask),
+            cancelledTasks = listOf(queuedTask, downloadingTask)
+        )
+
+        assertEquals(3, updatedTasks.size)
+        assertEquals(DownloadStatus.CANCELLED, updatedTasks[0].status)
+        assertEquals(DownloadStatus.CANCELLED, updatedTasks[1].status)
+        assertEquals(DownloadStatus.COMPLETED, updatedTasks[2].status)
+    }
+
+    @Test
+    fun `applyCancelledStatus ignores stale attempts for the same song`() {
+        val song = SongItem(
+            id = 21L,
+            name = "Retry",
+            artist = "Artist",
+            album = "Album",
+            albumId = 21L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            mediaUri = "https://example.com/retry"
+        )
+        val activeRetryTask = DownloadTask(
+            song = song,
+            progress = null,
+            status = DownloadStatus.QUEUED,
+            attemptId = 202L
+        )
+        val staleCancelledTask = activeRetryTask.copy(
+            status = DownloadStatus.DOWNLOADING,
+            attemptId = 201L
+        )
+
+        val updatedTasks = applyCancelledStatus(
+            tasks = listOf(activeRetryTask),
+            cancelledTasks = listOf(staleCancelledTask)
+        )
+
+        assertEquals(DownloadStatus.QUEUED, updatedTasks.single().status)
+        assertEquals(202L, updatedTasks.single().attemptId)
     }
 }
