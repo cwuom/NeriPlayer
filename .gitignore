@@ -32,3 +32,4 @@ demo
 /buildSrc/.kotlin/
 /build-logic/convention/bin/
 /.cpu-perfetto/
+/.har/

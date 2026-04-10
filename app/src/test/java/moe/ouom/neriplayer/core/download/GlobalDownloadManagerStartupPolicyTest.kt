@@ -4,6 +4,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import moe.ouom.neriplayer.core.player.AudioDownloadManager
+import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 
 class GlobalDownloadManagerStartupPolicyTest {
@@ -373,6 +375,147 @@ class GlobalDownloadManagerStartupPolicyTest {
         )
 
         assertTrue(matchesDownloadedSong(song, downloadedSong))
+    }
+
+    @Test
+    fun `downloaded song stable key prevents same name track collisions`() {
+        val song = SongItem(
+            id = 42L,
+            name = "Song",
+            artist = "Artist",
+            album = "Bilibili|2002",
+            albumId = 0L,
+            durationMs = 3000L,
+            coverUrl = null
+        )
+        val downloadedSong = DownloadedSong(
+            id = 42L,
+            name = "Song",
+            artist = "Artist",
+            album = "Album",
+            filePath = "/music/song.flac",
+            fileSize = 10L,
+            downloadTime = 20L,
+            stableKey = SongItem(
+                id = 42L,
+                name = "Song",
+                artist = "Artist",
+                album = "Bilibili|1001",
+                albumId = 0L,
+                durationMs = 3000L,
+                coverUrl = null
+            ).stableKey()
+        )
+
+        assertFalse(matchesDownloadedSong(song, downloadedSong))
+    }
+
+    @Test
+    fun `downloaded song catalog preserves stable key`() {
+        val song = DownloadedSong(
+            id = 42L,
+            name = "Song",
+            artist = "Artist",
+            album = "Album",
+            filePath = "/music/song.mp3",
+            fileSize = 2048L,
+            downloadTime = 123456L,
+            stableKey = "42|Album|content://song",
+            mediaUri = "content://downloads/song.mp3",
+            durationMs = 3000L
+        )
+
+        val payload = serializeDownloadedSongsCatalog(
+            cacheKey = "tree:test",
+            songs = listOf(song)
+        )
+
+        val restored = deserializeDownloadedSongsCatalog(
+            raw = payload,
+            expectedCacheKey = "tree:test"
+        )
+
+        assertEquals(listOf(song), restored)
+    }
+
+    @Test
+    fun `completed download finalization rolls back when cancel arrives after audio commit`() {
+        assertEquals(
+            CompletedDownloadFinalizationAction.ROLLBACK_CANCELLED,
+            resolveCompletedDownloadFinalizationAction(
+                hasStoredAudio = true,
+                cancelled = true
+            )
+        )
+    }
+
+    @Test
+    fun `completed download finalization keeps missing audio fallback when not cancelled`() {
+        assertEquals(
+            CompletedDownloadFinalizationAction.COMPLETE_WITHOUT_STORED_AUDIO,
+            resolveCompletedDownloadFinalizationAction(
+                hasStoredAudio = false,
+                cancelled = false
+            )
+        )
+    }
+
+    @Test
+    fun `finalizing download task is not cancellable`() {
+        val task = DownloadTask(
+            song = SongItem(
+                id = 1L,
+                name = "Song",
+                artist = "Artist",
+                album = "Album",
+                albumId = 1L,
+                durationMs = 1_000L,
+                coverUrl = null
+            ),
+            progress = AudioDownloadManager.DownloadProgress(
+                songKey = "1|Album|",
+                songId = 1L,
+                fileName = "song.flac",
+                bytesRead = 10L,
+                totalBytes = 10L,
+                speedBytesPerSec = 0L,
+                stage = AudioDownloadManager.DownloadStage.FINALIZING
+            ),
+            status = DownloadStatus.DOWNLOADING
+        )
+
+        assertTrue(isDownloadTaskFinalizing(task))
+        assertFalse(isDownloadTaskCancellable(task))
+    }
+
+    @Test
+    fun `download action stays visible while task is unfinished even if local file is detected`() {
+        val task = DownloadTask(
+            song = SongItem(
+                id = 1L,
+                name = "Song",
+                artist = "Artist",
+                album = "Album",
+                albumId = 1L,
+                durationMs = 1_000L,
+                coverUrl = null
+            ),
+            progress = null,
+            status = DownloadStatus.CANCELLED
+        )
+
+        assertFalse(
+            shouldHideRemoteDownloadAction(
+                hasLocalDownload = true,
+                task = task
+            )
+        )
+        assertTrue(
+            shouldHideRemoteDownloadAction(
+                hasLocalDownload = true,
+                task = null
+            )
+        )
     }
 
     @Test

@@ -336,7 +336,7 @@ fun LocalPlaylistDetailScreen(
                     .distinctUntilChanged()
             }
             val hasDownloadManagerEntry by hasDownloadManagerEntryFlow.collectAsState(
-                initial = hasPendingDownloadTasks(GlobalDownloadManager.downloadTasks.value)
+                initial = hasPendingDownloadTasks(GlobalDownloadManager.downloadTasks.collectAsState().value)
             )
             val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsState()
 
@@ -1585,6 +1585,8 @@ fun LocalPlaylistDetailScreen(
                                                 horizontalArrangement = Arrangement.SpaceBetween,
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
+                                                val canCancelBatchDownload =
+                                                    progress.currentProgress?.stage != AudioDownloadManager.DownloadStage.FINALIZING
                                                 Text(
                                                     stringResource(R.string.bili_download_progress_format, progress.completedSongs, progress.totalSongs),
                                                     style = MaterialTheme.typography.titleMedium
@@ -1592,9 +1594,23 @@ fun LocalPlaylistDetailScreen(
                                                 HapticTextButton(
                                                     onClick = {
                                                         AudioDownloadManager.cancelDownload()
-                                                    }
+                                                    },
+                                                    enabled = canCancelBatchDownload
                                                 ) {
-                                                    Text(stringResource(R.string.action_cancel), color = MaterialTheme.colorScheme.error)
+                                                    Text(
+                                                        stringResource(
+                                                            if (canCancelBatchDownload) {
+                                                                R.string.action_cancel
+                                                            } else {
+                                                                R.string.download_finalizing
+                                                            }
+                                                        ),
+                                                        color = if (canCancelBatchDownload) {
+                                                            MaterialTheme.colorScheme.error
+                                                        } else {
+                                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                                        }
+                                                    )
                                                 }
                                             }
 

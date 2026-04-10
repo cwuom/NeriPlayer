@@ -194,8 +194,11 @@ import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.search.SongSearchInfo
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.DownloadStatus
+import moe.ouom.neriplayer.core.download.isDownloadTaskCancellable
+import moe.ouom.neriplayer.core.download.isDownloadTaskFinalizing
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.shouldHideRemoteDownloadAction
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.metadata.extractPreferredNeteaseLyricContent
@@ -253,7 +256,10 @@ private const val CoverSourceBadgeRevealBufferMs = 120
 private const val CoverSourceBadgeRevealDelayMs =
     LyricsPageTransitionDurationMs + CoverSourceBadgeRevealBufferMs
 
-internal fun shouldHideDownloadActionForSong(hasLocalDownload: Boolean): Boolean = hasLocalDownload
+internal fun shouldHideDownloadActionForSong(
+    hasLocalDownload: Boolean,
+    currentTask: moe.ouom.neriplayer.core.download.DownloadTask?
+): Boolean = shouldHideRemoteDownloadAction(hasLocalDownload, currentTask)
 
 private fun hasCachedLocalDownload(song: SongItem): Boolean {
     return GlobalDownloadManager.hasDownloadedSongCached(song) ||
@@ -1655,7 +1661,15 @@ fun MoreOptionsSheet(
     val currentDownloadTask = remember(downloadTasks, downloadSongKey) {
         downloadTasks.firstOrNull { it.song.stableKey() == downloadSongKey }
     }
-    val shouldHideDownloadAction = shouldHideDownloadActionForSong(hasLocalDownload)
+    val shouldHideDownloadAction = remember(hasLocalDownload, currentDownloadTask) {
+        shouldHideDownloadActionForSong(hasLocalDownload, currentDownloadTask)
+    }
+    val currentDownloadFinalizing = remember(currentDownloadTask) {
+        isDownloadTaskFinalizing(currentDownloadTask)
+    }
+    val currentDownloadCancellable = remember(currentDownloadTask) {
+        isDownloadTaskCancellable(currentDownloadTask)
+    }
 
     LaunchedEffect(showSearchView) {
         if (showSearchView) {
@@ -1780,12 +1794,15 @@ fun MoreOptionsSheet(
                                 }
                             )
                         } else if (!shouldHideDownloadAction) {
-                            val downloadHeadlineRes = when (currentDownloadTask?.status) {
-                                DownloadStatus.DOWNLOADING -> R.string.download_cancel_download
-                                DownloadStatus.CANCELLED -> R.string.download_to_local
-                                DownloadStatus.FAILED -> R.string.action_retry
+                            val downloadHeadlineRes = when {
+                                currentDownloadFinalizing -> R.string.download_finalizing
+                                currentDownloadTask?.status == DownloadStatus.DOWNLOADING -> R.string.download_cancel_download
+                                currentDownloadTask?.status == DownloadStatus.CANCELLED -> R.string.download_to_local
+                                currentDownloadTask?.status == DownloadStatus.FAILED -> R.string.action_retry
                                 else -> R.string.download_to_local
                             }
+                            val canClickDownloadAction = currentDownloadTask?.status != DownloadStatus.DOWNLOADING ||
+                                currentDownloadCancellable
 
                             ListItem(
                                 headlineContent = {
@@ -1833,7 +1850,7 @@ fun MoreOptionsSheet(
                                         }
                                     }
                                 },
-                                modifier = Modifier.clickable {
+                                modifier = Modifier.clickable(enabled = canClickDownloadAction) {
                                     when (currentDownloadTask?.status) {
                                         DownloadStatus.DOWNLOADING -> {
                                             viewModel.cancelDownload(downloadSongKey)

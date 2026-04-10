@@ -130,10 +130,25 @@ private fun SettingsDownloadExpandedContent(
                 },
                 trailingContent = {
                     if (progress != null) {
-                        HapticTextButton(onClick = { AudioDownloadManager.cancelDownload() }) {
+                        val canCancelBatchDownload =
+                            progress.currentProgress?.stage != AudioDownloadManager.DownloadStage.FINALIZING
+                        HapticTextButton(
+                            onClick = { AudioDownloadManager.cancelDownload() },
+                            enabled = canCancelBatchDownload
+                        ) {
                             Text(
-                                stringResource(R.string.action_cancel),
-                                color = MaterialTheme.colorScheme.error
+                                stringResource(
+                                    if (canCancelBatchDownload) {
+                                        R.string.action_cancel
+                                    } else {
+                                        R.string.download_finalizing
+                                    }
+                                ),
+                                color = if (canCancelBatchDownload) {
+                                    MaterialTheme.colorScheme.error
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
                             )
                         }
                     }

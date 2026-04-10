@@ -51,6 +51,7 @@ import moe.ouom.neriplayer.core.download.countPendingDownloadTasks
 import moe.ouom.neriplayer.core.download.DownloadStatus
 import moe.ouom.neriplayer.core.download.DownloadTask
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.isDownloadTaskCancellable
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayName
@@ -285,7 +286,7 @@ private fun DownloadTaskItem(
                 }
 
                 DownloadTaskActionButton(
-                    status = task.status,
+                    task = task,
                     onCancel = onCancel,
                     onResume = onResume
                 )
@@ -320,17 +321,24 @@ private fun DownloadTaskStatusIcon(status: DownloadStatus) {
 
 @Composable
 private fun DownloadTaskActionButton(
-    status: DownloadStatus,
+    task: DownloadTask,
     onCancel: () -> Unit,
     onResume: () -> Unit
 ) {
-    when (status) {
+    when (task.status) {
         DownloadStatus.DOWNLOADING -> {
-            IconButton(onClick = onCancel) {
+            val cancellable = isDownloadTaskCancellable(task)
+            IconButton(onClick = onCancel, enabled = cancellable) {
                 Icon(
                     Icons.Default.Close,
-                    contentDescription = stringResource(R.string.download_cancel_download),
-                    tint = MaterialTheme.colorScheme.error
+                    contentDescription = stringResource(
+                        if (cancellable) R.string.download_cancel_download else R.string.download_finalizing
+                    ),
+                    tint = if (cancellable) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
                 )
             }
         }

@@ -61,7 +61,7 @@ import kotlin.LazyThreadSafetyMode
 object GlobalDownloadManager {
     private const val TAG = "GlobalDownloadManager"
     private const val INITIAL_SCAN_DELAY_MS = 1_500L
-    private const val DOWNLOAD_CATALOG_CACHE_FILE_NAME = "downloaded_song_catalog_v2.json"
+    private const val DOWNLOAD_CATALOG_CACHE_FILE_NAME = "downloaded_song_catalog_v3.json"
     private const val DOWNLOAD_CATALOG_PERSIST_DEBOUNCE_MS = 1_200L
     private const val DOWNLOAD_TASK_COMPLETED_RETENTION_MS = 800L
     private const val DOWNLOAD_CATALOG_RECONCILE_DELAY_MS = 1_200L
@@ -152,7 +152,8 @@ object GlobalDownloadManager {
 
     private data class DownloadedSongPresenceIndex(
         val localReferences: Set<String>,
-        val identityKeys: Set<String>
+        val stableIdentityKeys: Set<String>,
+        val legacyIdentityKeys: Set<String>
     ) {
         fun contains(song: SongItem): Boolean {
             val localCandidates = listOfNotNull(
@@ -162,13 +163,20 @@ object GlobalDownloadManager {
             if (localCandidates.any(localReferences::contains)) {
                 return true
             }
-            return identityKeys.contains(downloadedSongPresenceIdentityKey(song.id, song.name, song.artist))
+            val stableIdentityKey = song.stableKey()
+            if (stableIdentityKeys.contains(stableIdentityKey)) {
+                return true
+            }
+            return legacyIdentityKeys.contains(
+                downloadedSongPresenceIdentityKey(song.id, song.name, song.artist)
+            )
         }
 
         companion object {
             val EMPTY = DownloadedSongPresenceIndex(
                 localReferences = emptySet(),
-                identityKeys = emptySet()
+                stableIdentityKeys = emptySet(),
+                legacyIdentityKeys = emptySet()
             )
         }
     }
@@ -183,8 +191,15 @@ object GlobalDownloadManager {
                     song.mediaUri?.takeIf(String::isNotBlank)?.let(::add)
                 }
             },
-            identityKeys = songs.mapTo(mutableSetOf()) { song ->
-                downloadedSongPresenceIdentityKey(song.id, song.name, song.artist)
+            stableIdentityKeys = songs.mapNotNullTo(mutableSetOf()) { song ->
+                song.stableKey?.takeIf(String::isNotBlank)
+            },
+            legacyIdentityKeys = songs.mapNotNullTo(mutableSetOf()) { song ->
+                if (!song.stableKey.isNullOrBlank()) {
+                    null
+                } else {
+                    downloadedSongPresenceIdentityKey(song.id, song.name, song.artist)
+                }
             }
         )
     }
@@ -247,33 +262,102 @@ object GlobalDownloadManager {
         song: SongItem,
         refreshCatalog: Boolean
     ) {
-        val sidecarReferences = AudioDownloadManager.consumeCompletedSidecarReferences(song.stableKey())
+        val songKey = song.stableKey()
+        val sidecarReferences = AudioDownloadManager.consumeCompletedSidecarReferences(songKey)
         val storedAudio = resolveStoredAudio(context, song)
-        if (storedAudio == null) {
-            NPLogger.w(TAG, "下载完成但未找到已下载文件: ${song.name}")
-            updateTaskStatus(song.stableKey(), DownloadStatus.COMPLETED)
-            scheduleCompletedTaskRemoval(song.stableKey())
-            scheduleCatalogReconcile(context, forceRefresh = true)
-            return
+        when (
+            resolveCompletedDownloadFinalizationAction(
+                hasStoredAudio = storedAudio != null,
+                cancelled = isSongCancelled(songKey)
+            )
+        ) {
+            CompletedDownloadFinalizationAction.ROLLBACK_CANCELLED -> {
+                handleCancelledCompletedDownload(
+                    context = context,
+                    song = song,
+                    songKey = songKey,
+                    storedAudio = storedAudio,
+                    sidecarReferences = sidecarReferences
+                )
+                return
+            }
+            CompletedDownloadFinalizationAction.COMPLETE_WITHOUT_STORED_AUDIO -> {
+                NPLogger.w(TAG, "下载完成但未找到已下载文件: ${song.name}")
+                updateTaskStatus(songKey, DownloadStatus.COMPLETED)
+                scheduleCompletedTaskRemoval(songKey)
+                scheduleCatalogReconcile(context, forceRefresh = true)
+                return
+            }
+            CompletedDownloadFinalizationAction.COMPLETE -> Unit
         }
+        val resolvedStoredAudio = storedAudio ?: return
 
         persistDownloadedMetadata(
             context = context,
-            audio = storedAudio,
+            audio = resolvedStoredAudio,
             song = song,
             sidecarReferences = sidecarReferences
         )
+        if (
+            handleCancelledCompletedDownload(
+                context = context,
+                song = song,
+                songKey = songKey,
+                storedAudio = storedAudio,
+                sidecarReferences = sidecarReferences
+            )
+        ) {
+            return
+        }
         publishCompletedDownloadOptimistically(
             context = context,
             song = song,
-            storedAudio = storedAudio,
+            storedAudio = resolvedStoredAudio,
             sidecarReferences = sidecarReferences
         )
-        updateTaskStatus(song.stableKey(), DownloadStatus.COMPLETED)
-        scheduleCompletedTaskRemoval(song.stableKey())
+        if (
+            handleCancelledCompletedDownload(
+                context = context,
+                song = song,
+                songKey = songKey,
+                storedAudio = storedAudio,
+                sidecarReferences = sidecarReferences
+            )
+        ) {
+            return
+        }
+        updateTaskStatus(songKey, DownloadStatus.COMPLETED)
+        scheduleCompletedTaskRemoval(songKey)
         if (refreshCatalog) {
             scheduleCatalogReconcile(context, forceRefresh = true)
         }
+    }
+
+    private suspend fun handleCancelledCompletedDownload(
+        context: Context,
+        song: SongItem,
+        songKey: String,
+        storedAudio: ManagedDownloadStorage.StoredEntry?,
+        sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences?
+    ): Boolean {
+        if (!isSongCancelled(songKey)) {
+            return false
+        }
+
+        NPLogger.d(TAG, "下载最终入库阶段检测到取消，开始回滚: ${song.name}")
+        runCatching {
+            rollbackCancelledDownload(
+                context = context,
+                song = song,
+                storedAudio = storedAudio,
+                sidecarReferences = sidecarReferences
+            )
+        }.onFailure { error ->
+            NPLogger.e(TAG, "下载最终入库回滚失败: ${song.name}, ${error.message}", error)
+        }
+        clearSongCancelled(songKey)
+        updateTaskStatus(songKey, DownloadStatus.CANCELLED)
+        return true
     }
 
     fun scanLocalFiles(context: Context, forceRefresh: Boolean = false) {
@@ -569,7 +653,8 @@ object GlobalDownloadManager {
             originalLyric = originalLyric,
             originalTranslatedLyric = originalTranslatedLyric,
             mediaUri = storedAudio.playbackUri,
-            durationMs = metadata?.durationMs?.takeIf { it > 0L } ?: localDetails?.durationMs ?: 0L
+            durationMs = metadata?.durationMs?.takeIf { it > 0L } ?: localDetails?.durationMs ?: 0L,
+            stableKey = metadata?.stableKey
         )
     }
 
@@ -1460,7 +1545,8 @@ object GlobalDownloadManager {
             originalLyric = song.originalLyric,
             originalTranslatedLyric = song.originalTranslatedLyric,
             mediaUri = storedAudio.mediaUri,
-            durationMs = song.durationMs.coerceAtLeast(0L)
+            durationMs = song.durationMs.coerceAtLeast(0L),
+            stableKey = song.stableKey()
         )
     }
 
@@ -1522,6 +1608,42 @@ internal fun shouldRunInitialDownloadScan(
     return !snapshotReady || !catalogReady
 }
 
+internal enum class CompletedDownloadFinalizationAction {
+    COMPLETE,
+    COMPLETE_WITHOUT_STORED_AUDIO,
+    ROLLBACK_CANCELLED
+}
+
+internal fun resolveCompletedDownloadFinalizationAction(
+    hasStoredAudio: Boolean,
+    cancelled: Boolean
+): CompletedDownloadFinalizationAction {
+    return when {
+        cancelled -> CompletedDownloadFinalizationAction.ROLLBACK_CANCELLED
+        !hasStoredAudio -> CompletedDownloadFinalizationAction.COMPLETE_WITHOUT_STORED_AUDIO
+        else -> CompletedDownloadFinalizationAction.COMPLETE
+    }
+}
+
+internal fun isDownloadTaskFinalizing(task: DownloadTask?): Boolean {
+    return task?.status == DownloadStatus.DOWNLOADING &&
+        task.progress?.stage == AudioDownloadManager.DownloadStage.FINALIZING
+}
+
+internal fun isDownloadTaskCancellable(task: DownloadTask?): Boolean {
+    return task?.status == DownloadStatus.DOWNLOADING && !isDownloadTaskFinalizing(task)
+}
+
+internal fun shouldHideRemoteDownloadAction(
+    hasLocalDownload: Boolean,
+    task: DownloadTask?
+): Boolean {
+    if (!hasLocalDownload) {
+        return false
+    }
+    return task == null || task.status == DownloadStatus.COMPLETED
+}
+
 internal fun shouldUseImmediateDownloadedPlaybackHydration(
     originalSong: SongItem,
     hydratedSong: SongItem
@@ -1563,6 +1685,11 @@ internal fun matchesDownloadedSong(
     ) {
         return true
     }
+    downloadedSong.stableKey
+        ?.takeIf(String::isNotBlank)
+        ?.let { stableIdentityKey ->
+            return song.stableKey() == stableIdentityKey
+        }
     return song.id == downloadedSong.id &&
         song.name == downloadedSong.name &&
         song.artist == downloadedSong.artist
@@ -1674,6 +1801,7 @@ internal fun serializeDownloadedSongsCatalog(
                         put("originalCoverUrl", song.originalCoverUrl)
                         put("mediaUri", song.mediaUri)
                         put("durationMs", song.durationMs)
+                        put("stableKey", song.stableKey)
                     }
                 )
             }
@@ -1718,7 +1846,8 @@ internal fun deserializeDownloadedSongsCatalog(
                     originalLyric = item.optString("originalLyric").takeIf(String::isNotBlank),
                     originalTranslatedLyric = item.optString("originalTranslatedLyric").takeIf(String::isNotBlank),
                     mediaUri = item.optString("mediaUri").takeIf(String::isNotBlank),
-                    durationMs = item.optLong("durationMs")
+                    durationMs = item.optLong("durationMs"),
+                    stableKey = item.optString("stableKey").takeIf(String::isNotBlank)
                 )
             )
         }
@@ -1749,7 +1878,8 @@ data class DownloadedSong(
     val originalLyric: String? = null,
     val originalTranslatedLyric: String? = null,
     val mediaUri: String? = null,
-    val durationMs: Long = 0L
+    val durationMs: Long = 0L,
+    val stableKey: String? = null
 ) {
     fun displayName(): String = customName ?: name
     fun displayArtist(): String = customArtist ?: artist

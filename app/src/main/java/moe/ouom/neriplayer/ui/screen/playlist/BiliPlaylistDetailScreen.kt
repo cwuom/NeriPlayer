@@ -639,12 +639,30 @@ fun BiliPlaylistDetailScreen(
                                             horizontalArrangement = Arrangement.SpaceBetween,
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
+                                            val canCancelBatchDownload =
+                                                progress.currentProgress?.stage != AudioDownloadManager.DownloadStage.FINALIZING
                                             Text(
                                                 stringResource(R.string.bili_download_progress_format, progress.completedSongs, progress.totalSongs),
                                                 style = MaterialTheme.typography.titleMedium
                                             )
-                                            HapticTextButton(onClick = { AudioDownloadManager.cancelDownload() }) {
-                                                Text(stringResource(R.string.action_cancel), color = MaterialTheme.colorScheme.error)
+                                            HapticTextButton(
+                                                onClick = { AudioDownloadManager.cancelDownload() },
+                                                enabled = canCancelBatchDownload
+                                            ) {
+                                                Text(
+                                                    stringResource(
+                                                        if (canCancelBatchDownload) {
+                                                            R.string.action_cancel
+                                                        } else {
+                                                            R.string.download_finalizing
+                                                        }
+                                                    ),
+                                                    color = if (canCancelBatchDownload) {
+                                                        MaterialTheme.colorScheme.error
+                                                    } else {
+                                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                                    }
+                                                )
                                             }
                                         }
 
