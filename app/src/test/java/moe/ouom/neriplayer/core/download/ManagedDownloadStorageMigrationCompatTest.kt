@@ -149,4 +149,21 @@ class ManagedDownloadStorageMigrationCompatTest {
         assertEquals("[00:00.00]原始翻译", metadata?.originalTranslatedLyric)
         assertEquals("/music/Lyrics/Artist - Song.lrc", metadata?.lyricPath)
     }
+
+    @Test
+    fun `parseDownloadedAudioMetadataJson keeps explicit cleared lyrics as blank string`() {
+        val metadata = ManagedDownloadStorage.parseDownloadedAudioMetadataJson(
+            JSONObject().apply {
+                put("matchedLyric", "")
+                put("matchedTranslatedLyric", "")
+                put("originalLyric", "")
+                put("originalTranslatedLyric", "")
+            }.toString()
+        )
+
+        assertEquals("", metadata?.matchedLyric)
+        assertEquals("", metadata?.matchedTranslatedLyric)
+        assertEquals("", metadata?.originalLyric)
+        assertEquals("", metadata?.originalTranslatedLyric)
+    }
 }

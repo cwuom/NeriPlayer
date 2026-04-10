@@ -48,6 +48,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.countPendingDownloadTasks
+import moe.ouom.neriplayer.core.download.countQueuedDownloadTasks
 import moe.ouom.neriplayer.core.download.DownloadStatus
 import moe.ouom.neriplayer.core.download.DownloadTask
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
@@ -67,8 +68,13 @@ fun DownloadProgressScreen(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
+    val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
     val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsState()
     val pendingTaskCount = remember(downloadTasks) { countPendingDownloadTasks(downloadTasks) }
+    val queuedTaskCount = remember(downloadTasks) { countQueuedDownloadTasks(downloadTasks) }
+    val visibleTasks = remember(downloadTasks) {
+        downloadTasks.filter { it.status != DownloadStatus.QUEUED }
+    }
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     var showClearDialog by remember { mutableStateOf(false) }
 
@@ -110,11 +116,19 @@ fun DownloadProgressScreen(
                         style = MaterialTheme.typography.titleLarge
                     )
                     Text(
-                        pluralStringResource(
-                            R.plurals.download_tasks_count,
-                            pendingTaskCount,
-                            pendingTaskCount
-                        ),
+                        text = if (batchDownloadProgress != null) {
+                            stringResource(
+                                R.string.download_progress_format,
+                                batchDownloadProgress!!.completedSongs,
+                                batchDownloadProgress!!.totalSongs
+                            )
+                        } else {
+                            pluralStringResource(
+                                R.plurals.download_tasks_count,
+                                pendingTaskCount,
+                                pendingTaskCount
+                            )
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -141,7 +155,7 @@ fun DownloadProgressScreen(
             }
         )
 
-        if (downloadTasks.isEmpty()) {
+        if (visibleTasks.isEmpty() && queuedTaskCount == 0) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -175,8 +189,43 @@ fun DownloadProgressScreen(
                     bottom = 16.dp + miniPlayerHeight
                 )
             ) {
+                if (queuedTaskCount > 0) {
+                    item(key = "queued-summary") {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                            ),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = pluralStringResource(
+                                        R.plurals.download_tasks_count,
+                                        queuedTaskCount,
+                                        queuedTaskCount
+                                    ),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = stringResource(R.string.download_waiting_queue_summary),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+
                 items(
-                    items = downloadTasks,
+                    items = visibleTasks,
                     key = { it.song.stableKey() },
                     contentType = { task -> task.status }
                 ) { task ->
@@ -303,6 +352,7 @@ private fun DownloadTaskItem(
 private fun DownloadTaskStatusIcon(status: DownloadStatus) {
     Icon(
         imageVector = when (status) {
+            DownloadStatus.QUEUED -> Icons.Default.Schedule
             DownloadStatus.DOWNLOADING -> Icons.Default.CloudDownload
             DownloadStatus.COMPLETED -> Icons.Default.CheckCircle
             DownloadStatus.FAILED -> Icons.Default.Error
@@ -310,6 +360,7 @@ private fun DownloadTaskStatusIcon(status: DownloadStatus) {
         },
         contentDescription = null,
         tint = when (status) {
+            DownloadStatus.QUEUED -> MaterialTheme.colorScheme.onSurfaceVariant
             DownloadStatus.DOWNLOADING -> MaterialTheme.colorScheme.primary
             DownloadStatus.COMPLETED -> Color(0xFF4CAF50)
             DownloadStatus.FAILED -> MaterialTheme.colorScheme.error
@@ -326,6 +377,7 @@ private fun DownloadTaskActionButton(
     onResume: () -> Unit
 ) {
     when (task.status) {
+        DownloadStatus.QUEUED,
         DownloadStatus.DOWNLOADING -> {
             val cancellable = isDownloadTaskCancellable(task)
             IconButton(onClick = onCancel, enabled = cancellable) {
@@ -360,6 +412,14 @@ private fun DownloadTaskActionButton(
 @Composable
 private fun DownloadTaskProgressSection(task: DownloadTask) {
     when (task.status) {
+        DownloadStatus.QUEUED -> {
+            Text(
+                text = stringResource(R.string.download_queued_status),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
         DownloadStatus.DOWNLOADING -> {
             val progress = task.progress
             if (progress == null) {

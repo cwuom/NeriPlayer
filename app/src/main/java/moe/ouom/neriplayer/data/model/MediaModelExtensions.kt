@@ -34,18 +34,15 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 fun SongItem.displayCoverUrl(): String? = customCoverUrl ?: coverUrl
 
 fun SongItem.displayCoverUrl(context: Context): String? {
-    customCoverUrl?.takeIf { it.isNotBlank() }?.let { return it }
-
     val current = coverUrl?.takeIf { it.isNotBlank() }
     val onMainThread = Looper.myLooper() == Looper.getMainLooper()
-    if (!current.isNullOrBlank() && !current.isRemoteCoverSource()) {
-        return current
-    }
-    if (!current.isNullOrBlank() && onMainThread) {
-        return current
-    }
-
-    AudioDownloadManager.getLocalCoverUri(context, this)?.let { return it }
+    val localCover = AudioDownloadManager.getLocalCoverUri(context, this)
+    resolveDisplayCoverUrl(
+        customCoverUrl = customCoverUrl,
+        currentCoverUrl = current,
+        localCoverUrl = localCover,
+        onMainThread = onMainThread
+    )?.let { return it }
     if (!isLocalSong()) return current
     if (onMainThread) return current
     LocalMediaSupport.inspect(context, this)?.coverUri?.takeIf { it.isNotBlank() }?.let { return it }
@@ -64,4 +61,20 @@ fun LocalPlaylist.displayCoverUrl(context: Context): String? {
 private fun String.isRemoteCoverSource(): Boolean {
     return startsWith("http://", ignoreCase = true) ||
         startsWith("https://", ignoreCase = true)
+}
+
+internal fun resolveDisplayCoverUrl(
+    customCoverUrl: String?,
+    currentCoverUrl: String?,
+    localCoverUrl: String?,
+    onMainThread: Boolean
+): String? {
+    customCoverUrl?.takeIf { it.isNotBlank() }?.let { return it }
+    localCoverUrl?.takeIf { it.isNotBlank() }?.let { return it }
+
+    val current = currentCoverUrl?.takeIf { it.isNotBlank() } ?: return null
+    if (!current.isRemoteCoverSource()) {
+        return current
+    }
+    return if (onMainThread) current else null
 }

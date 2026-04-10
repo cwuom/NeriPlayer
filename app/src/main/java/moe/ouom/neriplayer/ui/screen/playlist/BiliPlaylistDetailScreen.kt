@@ -84,8 +84,7 @@ import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
-import moe.ouom.neriplayer.ui.component.ActiveDownloadTaskList
-import moe.ouom.neriplayer.ui.component.bottomSheetDragBlocker
+import moe.ouom.neriplayer.ui.component.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliPlaylistDetailViewModel
@@ -336,8 +335,8 @@ fun BiliPlaylistDetailScreen(
                                             .filter { it.bvid in selectedIds }
                                             .map { it.toSongItem() }
 
+                                        showDownloadManager = true
                                         GlobalDownloadManager.startBatchDownload(context, selectedSongs)
-
                                         exitSelection()
                                     }
                                 },
@@ -598,151 +597,25 @@ fun BiliPlaylistDetailScreen(
 
             // 下载管理器
             if (showDownloadManager) {
-                ModalBottomSheet(
-                    onDismissRequest = { showDownloadManager = false },
-                    sheetGesturesEnabled = false
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .bottomSheetDragBlocker()
-                            .padding(20.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                stringResource(R.string.download_manager),
-                                style = MaterialTheme.typography.titleLarge
-                            )
-                            HapticIconButton(onClick = { showDownloadManager = false }) {
-                                Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.action_close))
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        if (batchDownloadProgress != null || pendingTaskCount > 0) {
-                            val progress = batchDownloadProgress
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                                )
-                            ) {
-                                Column(modifier = Modifier.padding(16.dp)) {
-                                    if (progress != null) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            val canCancelBatchDownload =
-                                                progress.currentProgress?.stage != AudioDownloadManager.DownloadStage.FINALIZING
-                                            Text(
-                                                stringResource(R.string.bili_download_progress_format, progress.completedSongs, progress.totalSongs),
-                                                style = MaterialTheme.typography.titleMedium
-                                            )
-                                            HapticTextButton(
-                                                onClick = { AudioDownloadManager.cancelDownload() },
-                                                enabled = canCancelBatchDownload
-                                            ) {
-                                                Text(
-                                                    stringResource(
-                                                        if (canCancelBatchDownload) {
-                                                            R.string.action_cancel
-                                                        } else {
-                                                            R.string.download_finalizing
-                                                        }
-                                                    ),
-                                                    color = if (canCancelBatchDownload) {
-                                                        MaterialTheme.colorScheme.error
-                                                    } else {
-                                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                                    }
-                                                )
-                                            }
-                                        }
-
-                                        if (progress.currentSong.isNotBlank()) {
-                                            Text(
-                                                stringResource(R.string.bili_downloading_current, progress.currentSong),
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-
-                                        Spacer(modifier = Modifier.height(12.dp))
-
-                                        Text(
-                                            stringResource(R.string.download_overall_progress, progress.percentage),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                        val animatedOverallProgress by animateFloatAsState(
-                                            targetValue = (progress.percentage / 100f).coerceIn(0f, 1f),
-                                            animationSpec = spring(
-                                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                                stiffness = Spring.StiffnessMedium
-                                            ),
-                                            label = "overallProgress"
-                                        )
-                                        LinearProgressIndicator(
-                                            progress = { animatedOverallProgress },
-                                            modifier = Modifier.fillMaxWidth()
-                                        )
-                                    } else {
-                                        Text(
-                                            text = pluralStringResource(
-                                                R.plurals.download_tasks_count,
-                                                pendingTaskCount,
-                                                pendingTaskCount
-                                            ),
-                                            style = MaterialTheme.typography.titleMedium
-                                        )
-                                    }
-
-                                    if (pendingTaskCount > 0) {
-                                        Spacer(modifier = Modifier.height(12.dp))
-                                        ActiveDownloadTaskList(
-                                            tasks = downloadTasks,
-                                            modifier = Modifier.fillMaxWidth()
-                                        )
-                                    }
-                                }
-                            }
-                        } else {
-                            Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Icon(
-                                    Icons.Outlined.Download,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(64.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Spacer(modifier = Modifier.height(16.dp))
-                                Text(
-                                    stringResource(R.string.download_no_tasks),
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(
-                                    stringResource(R.string.download_select_hint),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    textAlign = TextAlign.Center
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(20.dp))
-                    }
-                }
+                val progress = batchDownloadProgress
+                BatchDownloadManagerSheet(
+                    batchDownloadProgress = progress,
+                    downloadTasks = downloadTasks,
+                    progressSummaryText = if (progress != null) {
+                        stringResource(
+                            R.string.bili_download_progress_format,
+                            progress.completedSongs,
+                            progress.totalSongs
+                        )
+                    } else {
+                        pluralStringResource(
+                            R.plurals.download_tasks_count,
+                            pendingTaskCount,
+                            pendingTaskCount
+                        )
+                    },
+                    onDismiss = { showDownloadManager = false }
+                )
             }
 
             if (showPartsSheet && partsInfo != null) {

@@ -49,10 +49,42 @@ internal fun extractPreferredNeteaseLyricContent(rawResponse: String): String {
     return payload.optJSONObject("lrc")?.optString("lyric").orEmpty()
 }
 
+internal enum class LocalLyricOverrideState {
+    ABSENT,
+    CLEARED,
+    PRESENT
+}
+
+internal fun resolveLocalLyricOverrideState(rawLyric: String?): LocalLyricOverrideState {
+    return when {
+        rawLyric == null -> LocalLyricOverrideState.ABSENT
+        rawLyric.isBlank() -> LocalLyricOverrideState.CLEARED
+        else -> LocalLyricOverrideState.PRESENT
+    }
+}
+
 internal object PlayerLyricsProvider {
 
     private fun parseBestLyricEntries(rawLyric: String): List<LyricEntry> {
         return parseNeteaseLyricsAuto(rawLyric)
+    }
+
+    private fun parseLocalLyricOverride(
+        rawLyric: String?,
+        logPrefix: String
+    ): List<LyricEntry>? {
+        return when (resolveLocalLyricOverrideState(rawLyric)) {
+            LocalLyricOverrideState.ABSENT -> null
+            LocalLyricOverrideState.CLEARED -> emptyList()
+            LocalLyricOverrideState.PRESENT -> {
+                try {
+                    parseBestLyricEntries(rawLyric!!)
+                } catch (error: Exception) {
+                    NPLogger.w("NERI-PlayerManager", "$logPrefix: ${error.message}")
+                    null
+                }
+            }
+        }
     }
 
     suspend fun getNeteaseLyrics(
@@ -105,14 +137,14 @@ internal object PlayerLyricsProvider {
         biliSourceTag: String
     ): List<LyricEntry> {
         return withContext(Dispatchers.IO) {
-            val localTranslatedLyrics = AudioDownloadManager.getTranslatedLyricContent(application, song)
-            if (!localTranslatedLyrics.isNullOrBlank()) {
-                try {
-                    return@withContext parseBestLyricEntries(localTranslatedLyrics)
-                } catch (error: Exception) {
-                    NPLogger.w("NERI-PlayerManager", "本地翻译歌词读取失败: ${error.message}")
-                }
-            }
+            parseLocalLyricOverride(
+                rawLyric = song.matchedTranslatedLyric,
+                logPrefix = "本地翻译歌词解析失败"
+            )?.let { return@withContext it }
+            parseLocalLyricOverride(
+                rawLyric = AudioDownloadManager.getTranslatedLyricContent(application, song),
+                logPrefix = "本地翻译歌词读取失败"
+            )?.let { return@withContext it }
 
             if (isYouTubeMusicSong(song)) {
                 return@withContext emptyList()
@@ -150,25 +182,17 @@ internal object PlayerLyricsProvider {
         biliSourceTag: String
     ): List<LyricEntry> {
         return withContext(Dispatchers.IO) {
+            parseLocalLyricOverride(
+                rawLyric = song.matchedLyric,
+                logPrefix = "匹配歌词解析失败"
+            )?.let { return@withContext it }
+            parseLocalLyricOverride(
+                rawLyric = AudioDownloadManager.getLyricContent(application, song),
+                logPrefix = "本地歌词读取失败"
+            )?.let { return@withContext it }
+
             if (isYouTubeMusicSong(song)) {
                 return@withContext getYouTubeMusicLyrics(song, youtubeMusicClient, lrcLibClient, ytMusicLyricsCache)
-            }
-
-            if (!song.matchedLyric.isNullOrBlank()) {
-                try {
-                    return@withContext parseBestLyricEntries(song.matchedLyric)
-                } catch (error: Exception) {
-                    NPLogger.w("NERI-PlayerManager", "匹配歌词解析失败: ${error.message}")
-                }
-            }
-
-            val localLyricContent = AudioDownloadManager.getLyricContent(application, song)
-            if (!localLyricContent.isNullOrBlank()) {
-                try {
-                    return@withContext parseBestLyricEntries(localLyricContent)
-                } catch (error: Exception) {
-                    NPLogger.w("NERI-PlayerManager", "本地歌词读取失败: ${error.message}")
-                }
             }
 
             when {

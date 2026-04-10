@@ -572,8 +572,8 @@ object GlobalDownloadManager {
         }
         val needsLocalLyricFallback = loadLyricContents &&
             fileLyric.isNullOrBlank() &&
-            metadata?.matchedLyric.isNullOrBlank() &&
-            metadata?.originalLyric.isNullOrBlank() &&
+            metadata?.matchedLyric == null &&
+            metadata?.originalLyric == null &&
             indexedLyric.isNullOrBlank()
         val localDetails by lazy(LazyThreadSafetyMode.NONE) {
             if (
@@ -591,31 +591,26 @@ object GlobalDownloadManager {
         }
         val coverReference = cachedCoverReference ?: localDetails?.coverUri
         val matchedLyric = if (loadLyricContents) {
-            when {
-                !fileLyric.isNullOrBlank() -> fileLyric
-                !metadata?.matchedLyric.isNullOrBlank() -> metadata?.matchedLyric
-                !metadata?.originalLyric.isNullOrBlank() -> metadata?.originalLyric
-                else -> resolveDownloadedLyricContent(
-                    fileLyric = null,
-                    embeddedMatchedLyric = null,
-                    embeddedOriginalLyric = null,
-                    localLyricContent = localDetails?.lyricContent,
-                    indexedLyricContent = indexedLyric
-                )
-            }
+            resolveDownloadedLyricOverride(
+                fileLyric = fileLyric,
+                embeddedMatchedLyric = metadata?.matchedLyric,
+                embeddedOriginalLyric = metadata?.originalLyric,
+                localLyricContent = localDetails?.lyricContent,
+                indexedLyricContent = indexedLyric
+            )
         } else {
             null
         }
         val matchedTranslatedLyric = if (loadLyricContents) {
-            resolveDownloadedLyricContent(
+            resolveDownloadedLyricOverride(
                 fileLyric = fileTranslatedLyric,
                 embeddedMatchedLyric = metadata?.matchedTranslatedLyric,
                 embeddedOriginalLyric = metadata?.originalTranslatedLyric,
                 localLyricContent = null,
                 indexedLyricContent = if (
                     fileTranslatedLyric.isNullOrBlank() &&
-                    metadata?.matchedTranslatedLyric.isNullOrBlank() &&
-                    metadata?.originalTranslatedLyric.isNullOrBlank()
+                    metadata?.matchedTranslatedLyric == null &&
+                    metadata?.originalTranslatedLyric == null
                 ) {
                     indexedTranslatedLyric
                 } else {
@@ -743,42 +738,7 @@ object GlobalDownloadManager {
             ?: ManagedDownloadStorage.findMetadataForAudio(context, audio)
             ?: return null
         val raw = ManagedDownloadStorage.readText(context, resolvedMetadataEntry.reference) ?: return null
-
-        return runCatching {
-            val root = JSONObject(raw)
-            ManagedDownloadStorage.DownloadedAudioMetadata(
-                stableKey = root.optString("stableKey").takeIf(String::isNotBlank),
-                songId = root.optLong("songId").takeIf { it > 0L },
-                identityAlbum = root.optString("identityAlbum").takeIf(String::isNotBlank),
-                name = root.optString("name").takeIf(String::isNotBlank),
-                artist = root.optString("artist").takeIf(String::isNotBlank),
-                coverUrl = root.optString("coverUrl").takeIf(String::isNotBlank),
-                matchedLyric = root.optString("matchedLyric").takeIf(String::isNotBlank),
-                matchedTranslatedLyric = root.optString("matchedTranslatedLyric").takeIf(String::isNotBlank),
-                matchedLyricSource = root.optString("matchedLyricSource").takeIf(String::isNotBlank),
-                matchedSongId = root.optString("matchedSongId").takeIf(String::isNotBlank),
-                userLyricOffsetMs = root.optLong("userLyricOffsetMs"),
-                customCoverUrl = root.optString("customCoverUrl").takeIf(String::isNotBlank),
-                customName = root.optString("customName").takeIf(String::isNotBlank),
-                customArtist = root.optString("customArtist").takeIf(String::isNotBlank),
-                originalName = root.optString("originalName").takeIf(String::isNotBlank),
-                originalArtist = root.optString("originalArtist").takeIf(String::isNotBlank),
-                originalCoverUrl = root.optString("originalCoverUrl").takeIf(String::isNotBlank),
-                originalLyric = root.optString("originalLyric").takeIf(String::isNotBlank),
-                originalTranslatedLyric = root.optString("originalTranslatedLyric").takeIf(String::isNotBlank),
-                coverPath = root.optString("coverPath").takeIf(String::isNotBlank),
-                lyricPath = root.optString("lyricPath").takeIf(String::isNotBlank),
-                translatedLyricPath = root.optString("translatedLyricPath").takeIf(String::isNotBlank),
-                mediaUri = root.optString("mediaUri").takeIf(String::isNotBlank),
-                channelId = root.optString("channelId").takeIf(String::isNotBlank),
-                audioId = root.optString("audioId").takeIf(String::isNotBlank),
-                subAudioId = root.optString("subAudioId").takeIf(String::isNotBlank),
-                durationMs = root.optLong("durationMs")
-            )
-        }.getOrElse { error ->
-            NPLogger.w(TAG, "解析下载元数据失败: ${audio.name} - ${error.message}")
-            null
-        }
+        return ManagedDownloadStorage.parseDownloadedAudioMetadataJson(raw)
     }
 
     private fun findIndexedLyricReference(
@@ -1178,7 +1138,7 @@ object GlobalDownloadManager {
                     return@launch
                 }
 
-                if (!prepareDownloadTask(song, activate = true)) {
+                if (!prepareDownloadTask(song)) {
                     return@launch
                 }
 
@@ -1235,7 +1195,7 @@ object GlobalDownloadManager {
                             return@forEach
                         }
 
-                        if (prepareDownloadTask(song, activate = false)) {
+                        if (prepareDownloadTask(song, status = DownloadStatus.QUEUED)) {
                             add(song)
                         }
                     }
@@ -1287,7 +1247,10 @@ object GlobalDownloadManager {
         }
     }
 
-    private fun prepareDownloadTask(song: SongItem, activate: Boolean): Boolean {
+    private fun prepareDownloadTask(
+        song: SongItem,
+        status: DownloadStatus = DownloadStatus.DOWNLOADING
+    ): Boolean {
         val songKey = song.stableKey()
         clearSongCancelled(songKey)
         val existingTask = _downloadTasks.value.find { it.song.stableKey() == songKey }
@@ -1297,35 +1260,43 @@ object GlobalDownloadManager {
                 DownloadStatus.CANCELLED,
                 DownloadStatus.FAILED -> {
                     removeDownloadTask(songKey)
-                    if (activate) {
-                        registerActiveDownloadTask(song)
-                    }
+                    registerDownloadTask(song, status)
                     true
                 }
+                DownloadStatus.QUEUED,
                 DownloadStatus.DOWNLOADING -> false
             }
         }
 
-        if (activate) {
-            registerActiveDownloadTask(song)
-        }
+        registerDownloadTask(song, status)
         return true
     }
 
+    private fun registerQueuedDownloadTask(song: SongItem) {
+        registerDownloadTask(song, DownloadStatus.QUEUED)
+    }
+
     private fun registerActiveDownloadTask(song: SongItem) {
+        registerDownloadTask(song, DownloadStatus.DOWNLOADING)
+    }
+
+    private fun registerDownloadTask(
+        song: SongItem,
+        status: DownloadStatus
+    ) {
         val songKey = song.stableKey()
         val tasks = _downloadTasks.value
         val existingIndex = tasks.indexOfFirst { it.song.stableKey() == songKey }
         if (existingIndex >= 0) {
             val existingTask = tasks[existingIndex]
-            if (existingTask.status == DownloadStatus.DOWNLOADING && existingTask.progress == null) {
+            if (existingTask.status == status && existingTask.progress == null) {
                 return
             }
             val updatedTasks = tasks.toMutableList()
             updatedTasks[existingIndex] = DownloadTask(
                 song = song,
                 progress = null,
-                status = DownloadStatus.DOWNLOADING
+                status = status
             )
             _downloadTasks.value = updatedTasks
             return
@@ -1334,7 +1305,7 @@ object GlobalDownloadManager {
         _downloadTasks.value = tasks + DownloadTask(
             song = song,
             progress = null,
-            status = DownloadStatus.DOWNLOADING
+            status = status
         )
     }
 
@@ -1400,15 +1371,38 @@ object GlobalDownloadManager {
     }
 
     private fun cancelAllActiveTasks() {
-        _downloadTasks.value = _downloadTasks.value.filter { it.status != DownloadStatus.DOWNLOADING }
+        _downloadTasks.value = _downloadTasks.value.filterNot { task ->
+            task.status == DownloadStatus.QUEUED || task.status == DownloadStatus.DOWNLOADING
+        }
     }
 
     fun cancelDownloadTask(songKey: String) {
         val task = _downloadTasks.value.find { it.song.stableKey() == songKey } ?: return
-        if (task.status != DownloadStatus.DOWNLOADING) return
+        if (task.status != DownloadStatus.QUEUED && task.status != DownloadStatus.DOWNLOADING) return
 
         markSongCancelled(songKey)
         updateTaskStatus(songKey, DownloadStatus.CANCELLED)
+    }
+
+    fun cancelAllDownloadTasks() {
+        val activeTasks = _downloadTasks.value.filter { task ->
+            task.status == DownloadStatus.QUEUED || task.status == DownloadStatus.DOWNLOADING
+        }
+        if (activeTasks.isEmpty()) {
+            return
+        }
+
+        val activeKeys = activeTasks.map { it.song.stableKey() }.toSet()
+        activeKeys.forEach(::markSongCancelled)
+        AudioDownloadManager.cancelDownload()
+        _downloadTasks.value = _downloadTasks.value.filterNot { task ->
+            task.song.stableKey() in activeKeys &&
+                (task.status == DownloadStatus.QUEUED || task.status == DownloadStatus.DOWNLOADING)
+        }
+        scope.launch {
+            delay(150)
+            AudioDownloadManager.resetCancelFlag()
+        }
     }
 
     fun isSongCancelled(songKey: String): Boolean {
@@ -1426,7 +1420,9 @@ object GlobalDownloadManager {
     }
 
     fun clearCompletedTasks() {
-        val downloadingTasks = _downloadTasks.value.filter { it.status == DownloadStatus.DOWNLOADING }
+        val downloadingTasks = _downloadTasks.value.filter { task ->
+            task.status == DownloadStatus.QUEUED || task.status == DownloadStatus.DOWNLOADING
+        }
         if (downloadingTasks.isNotEmpty()) {
             AudioDownloadManager.cancelDownload()
             downloadingTasks.forEach { task ->
@@ -1631,7 +1627,7 @@ internal fun isDownloadTaskFinalizing(task: DownloadTask?): Boolean {
 }
 
 internal fun isDownloadTaskCancellable(task: DownloadTask?): Boolean {
-    return task?.status == DownloadStatus.DOWNLOADING && !isDownloadTaskFinalizing(task)
+    return task?.status == DownloadStatus.QUEUED || task?.status == DownloadStatus.DOWNLOADING
 }
 
 internal fun shouldHideRemoteDownloadAction(
@@ -1765,6 +1761,31 @@ internal fun resolveDownloadedLyricContent(
         ?: indexedLyricContent?.takeIf(String::isNotBlank)
 }
 
+internal fun resolveDownloadedLyricOverride(
+    fileLyric: String?,
+    embeddedMatchedLyric: String?,
+    embeddedOriginalLyric: String?,
+    localLyricContent: String?,
+    indexedLyricContent: String?
+): String? {
+    if (!fileLyric.isNullOrBlank()) {
+        return fileLyric
+    }
+    if (embeddedMatchedLyric != null) {
+        return embeddedMatchedLyric
+    }
+    if (embeddedOriginalLyric != null) {
+        return embeddedOriginalLyric
+    }
+    return resolveDownloadedLyricContent(
+        fileLyric = null,
+        embeddedMatchedLyric = null,
+        embeddedOriginalLyric = null,
+        localLyricContent = localLyricContent,
+        indexedLyricContent = indexedLyricContent
+    )
+}
+
 private fun isResolvableLocalReference(reference: String): Boolean {
     return reference.startsWith("/") ||
         reference.startsWith("content://") ||
@@ -1892,6 +1913,7 @@ data class DownloadTask(
 )
 
 enum class DownloadStatus {
+    QUEUED,
     DOWNLOADING,
     COMPLETED,
     FAILED,
@@ -1899,9 +1921,21 @@ enum class DownloadStatus {
 }
 
 fun countPendingDownloadTasks(tasks: List<DownloadTask>): Int {
-    return tasks.count { it.status != DownloadStatus.COMPLETED }
+    return tasks.count { task ->
+        task.status == DownloadStatus.QUEUED ||
+            task.status == DownloadStatus.DOWNLOADING ||
+            task.status == DownloadStatus.FAILED
+    }
 }
 
 fun hasPendingDownloadTasks(tasks: List<DownloadTask>): Boolean {
-    return tasks.any { it.status != DownloadStatus.COMPLETED }
+    return countPendingDownloadTasks(tasks) > 0
+}
+
+fun countQueuedDownloadTasks(tasks: List<DownloadTask>): Int {
+    return tasks.count { it.status == DownloadStatus.QUEUED }
+}
+
+fun hasActiveDownloadTasks(tasks: List<DownloadTask>): Boolean {
+    return tasks.any { it.status == DownloadStatus.DOWNLOADING }
 }

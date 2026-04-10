@@ -115,6 +115,59 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
+    fun `resolveDownloadedLyricOverride keeps explicit blank metadata over fallback lyrics`() {
+        assertEquals(
+            "",
+            resolveDownloadedLyricOverride(
+                fileLyric = null,
+                embeddedMatchedLyric = "",
+                embeddedOriginalLyric = "[00:00.00]original",
+                localLyricContent = "[00:00.00]local",
+                indexedLyricContent = "[00:00.00]indexed"
+            )
+        )
+        assertEquals(
+            "",
+            resolveDownloadedLyricOverride(
+                fileLyric = null,
+                embeddedMatchedLyric = null,
+                embeddedOriginalLyric = "",
+                localLyricContent = "[00:00.00]local",
+                indexedLyricContent = "[00:00.00]indexed"
+            )
+        )
+    }
+
+    @Test
+    fun `download task remains cancellable during finalizing stage`() {
+        val task = DownloadTask(
+            song = SongItem(
+                id = 7L,
+                name = "Finalizing",
+                artist = "Artist",
+                album = "Album",
+                albumId = 1L,
+                durationMs = 1_000L,
+                coverUrl = null,
+                mediaUri = "https://example.com/finalizing"
+            ),
+            progress = AudioDownloadManager.DownloadProgress(
+                songKey = "7|Album|https://example.com/finalizing",
+                songId = 7L,
+                fileName = "Finalizing.flac",
+                bytesRead = 1024L,
+                totalBytes = 1024L,
+                speedBytesPerSec = 0L,
+                stage = AudioDownloadManager.DownloadStage.FINALIZING
+            ),
+            status = DownloadStatus.DOWNLOADING
+        )
+
+        assertTrue(isDownloadTaskFinalizing(task))
+        assertTrue(isDownloadTaskCancellable(task))
+    }
+
+    @Test
     fun `upsertDownloadedSongCatalog replaces same file and keeps newest first`() {
         val olderSong = DownloadedSong(
             id = 1L,
@@ -211,15 +264,60 @@ class GlobalDownloadManagerStartupPolicyTest {
             song = downloadingTask.song.copy(id = 3L, name = "Failed"),
             status = DownloadStatus.FAILED
         )
+        val cancelledTask = downloadingTask.copy(
+            song = downloadingTask.song.copy(id = 4L, name = "Cancelled"),
+            status = DownloadStatus.CANCELLED
+        )
 
         assertEquals(
             2,
-            countPendingDownloadTasks(listOf(downloadingTask, completedTask, failedTask))
+            countPendingDownloadTasks(
+                listOf(downloadingTask, completedTask, failedTask, cancelledTask)
+            )
         )
         assertTrue(
-            hasPendingDownloadTasks(listOf(downloadingTask, completedTask, failedTask))
+            hasPendingDownloadTasks(
+                listOf(downloadingTask, completedTask, failedTask, cancelledTask)
+            )
         )
         assertFalse(hasPendingDownloadTasks(listOf(completedTask)))
+        assertFalse(hasPendingDownloadTasks(listOf(cancelledTask)))
+    }
+
+    @Test
+    fun `active download helpers keep finalizing tasks cancellable`() {
+        val finalizingTask = DownloadTask(
+            song = SongItem(
+                id = 4L,
+                name = "Finalizing",
+                artist = "Artist",
+                album = "Album",
+                albumId = 4L,
+                durationMs = 1_000L,
+                coverUrl = null,
+                mediaUri = "https://example.com/finalizing"
+            ),
+            progress = AudioDownloadManager.DownloadProgress(
+                songKey = "song:4",
+                songId = 4L,
+                fileName = "Finalizing.flac",
+                bytesRead = 1_024L,
+                totalBytes = 1_024L,
+                speedBytesPerSec = 0L,
+                stage = AudioDownloadManager.DownloadStage.FINALIZING
+            ),
+            status = DownloadStatus.DOWNLOADING
+        )
+        val completedTask = finalizingTask.copy(
+            song = finalizingTask.song.copy(id = 5L, name = "Completed"),
+            progress = null,
+            status = DownloadStatus.COMPLETED
+        )
+
+        assertTrue(isDownloadTaskFinalizing(finalizingTask))
+        assertTrue(isDownloadTaskCancellable(finalizingTask))
+        assertTrue(hasActiveDownloadTasks(listOf(finalizingTask, completedTask)))
+        assertFalse(hasActiveDownloadTasks(listOf(completedTask)))
     }
 
     @Test
@@ -461,7 +559,7 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
-    fun `finalizing download task is not cancellable`() {
+    fun `finalizing download task remains cancellable`() {
         val task = DownloadTask(
             song = SongItem(
                 id = 1L,
@@ -485,7 +583,7 @@ class GlobalDownloadManagerStartupPolicyTest {
         )
 
         assertTrue(isDownloadTaskFinalizing(task))
-        assertFalse(isDownloadTaskCancellable(task))
+        assertTrue(isDownloadTaskCancellable(task))
     }
 
     @Test

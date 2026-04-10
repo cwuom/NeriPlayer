@@ -859,6 +859,9 @@ internal suspend fun PlayerManager.updateSongLyricsImpl(
         withContext(Dispatchers.IO) {
             localRepo.updateSongMetadata(songToUpdate, latestSong)
         }
+        GlobalDownloadManager.syncDownloadedSongMetadata(latestSong)
+        AppContainer.playHistoryRepo.updateSongMetadata(songToUpdate, latestSong)
+        AppContainer.playlistUsageRepo.syncLocalEntries(localRepo.playlists.value)
     }
 
     persistState()
@@ -893,6 +896,9 @@ internal suspend fun PlayerManager.updateSongTranslatedLyricsImpl(
         withContext(Dispatchers.IO) {
             localRepo.updateSongMetadata(songToUpdate, latestSong)
         }
+        GlobalDownloadManager.syncDownloadedSongMetadata(latestSong)
+        AppContainer.playHistoryRepo.updateSongMetadata(songToUpdate, latestSong)
+        AppContainer.playlistUsageRepo.syncLocalEntries(localRepo.playlists.value)
     }
 
     persistState()
@@ -942,6 +948,9 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
         withContext(Dispatchers.IO) {
             localRepo.updateSongMetadata(songToUpdate, latestSong)
         }
+        GlobalDownloadManager.syncDownloadedSongMetadata(latestSong)
+        AppContainer.playHistoryRepo.updateSongMetadata(songToUpdate, latestSong)
+        AppContainer.playlistUsageRepo.syncLocalEntries(localRepo.playlists.value)
         NPLogger.d(
             "PlayerManager",
             "歌词更新已同步到本地仓库: id=${latestSong.id}, lyric=${latestSong.matchedLyric?.take(32)}, translated=${latestSong.matchedTranslatedLyric?.take(32)}"

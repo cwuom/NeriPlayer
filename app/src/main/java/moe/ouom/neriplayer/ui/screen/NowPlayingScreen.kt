@@ -1795,14 +1795,16 @@ fun MoreOptionsSheet(
                             )
                         } else if (!shouldHideDownloadAction) {
                             val downloadHeadlineRes = when {
-                                currentDownloadFinalizing -> R.string.download_finalizing
+                                currentDownloadTask?.status == DownloadStatus.QUEUED -> R.string.download_cancel_download
                                 currentDownloadTask?.status == DownloadStatus.DOWNLOADING -> R.string.download_cancel_download
                                 currentDownloadTask?.status == DownloadStatus.CANCELLED -> R.string.download_to_local
                                 currentDownloadTask?.status == DownloadStatus.FAILED -> R.string.action_retry
                                 else -> R.string.download_to_local
                             }
-                            val canClickDownloadAction = currentDownloadTask?.status != DownloadStatus.DOWNLOADING ||
-                                currentDownloadCancellable
+                            val canClickDownloadAction =
+                                (currentDownloadTask?.status != DownloadStatus.QUEUED &&
+                                    currentDownloadTask?.status != DownloadStatus.DOWNLOADING) ||
+                                    currentDownloadCancellable
 
                             ListItem(
                                 headlineContent = {
@@ -1852,6 +1854,7 @@ fun MoreOptionsSheet(
                                 },
                                 modifier = Modifier.clickable(enabled = canClickDownloadAction) {
                                     when (currentDownloadTask?.status) {
+                                        DownloadStatus.QUEUED,
                                         DownloadStatus.DOWNLOADING -> {
                                             viewModel.cancelDownload(downloadSongKey)
                                         }
@@ -2761,8 +2764,8 @@ fun EditSongInfoSheet(
                                 NPLogger.d("NowPlayingScreen", "准备调用PlayerManager.updateSongLyricsAndTranslation清除歌词")
                                 PlayerManager.updateSongLyricsAndTranslation(
                                     actualSong,
-                                    null,  // 清空歌词
-                                    null  // 清空翻译歌词
+                                    "",  // 清空歌词
+                                    ""  // 清空翻译歌词
                                 )
                                 NPLogger.d("NowPlayingScreen", "PlayerManager.updateSongLyricsAndTranslation调用完成")
                                 shouldClearLyrics = false  // 重置标志

@@ -9,6 +9,14 @@ import org.junit.Test
 class PlayerLyricsProviderTest {
 
     @Test
+    fun `resolveLocalLyricOverrideState keeps blank local override as cleared`() {
+        assertEquals(LocalLyricOverrideState.ABSENT, resolveLocalLyricOverrideState(null))
+        assertEquals(LocalLyricOverrideState.CLEARED, resolveLocalLyricOverrideState(""))
+        assertEquals(LocalLyricOverrideState.CLEARED, resolveLocalLyricOverrideState("   "))
+        assertEquals(LocalLyricOverrideState.PRESENT, resolveLocalLyricOverrideState("[00:00.00]歌词"))
+    }
+
+    @Test
     fun `extractPreferredNeteaseLyricContent prefers yrc over lrc`() {
         val payload = """
             {

@@ -4,7 +4,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -25,7 +28,8 @@ import moe.ouom.neriplayer.data.model.displayName
 fun ActiveDownloadTaskList(
     tasks: List<DownloadTask>,
     modifier: Modifier = Modifier,
-    maxVisibleTasks: Int = 2
+    maxVisibleTasks: Int = AudioDownloadManager.DEFAULT_MAX_CONCURRENT_DOWNLOADS,
+    maxHeight: androidx.compose.ui.unit.Dp = 320.dp
 ) {
     val visibleTasks = remember(tasks, maxVisibleTasks) {
         tasks.filter { it.status == DownloadStatus.DOWNLOADING }
@@ -36,7 +40,9 @@ fun ActiveDownloadTaskList(
     }
 
     Column(
-        modifier = modifier,
+        modifier = modifier
+            .heightIn(max = maxHeight)
+            .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         visibleTasks.forEach { task ->

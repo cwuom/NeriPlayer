@@ -123,6 +123,8 @@
     <string name="download_completed">下载完成</string>
     <string name="download_cancel_download">取消下载</string>
     <string name="download_cancelled_status">已取消</string>
+    <string name="download_queued_status">等待开始</string>
+    <string name="download_waiting_queue_summary">其余任务正在排队，等待空闲下载槽</string>
     <string name="download_finalizing">音频已写入，正在整理歌词和封面</string>
 
     <!-- Search -->

@@ -952,6 +952,14 @@ internal object ManagedDownloadStorage {
         val snapshot = buildDownloadLibrarySnapshotBlocking(context)
         val resolvedAudio = findAudioEntry(snapshot, song)
         val resolvedMetadata = resolvedAudio?.let { snapshot.metadataByAudioName[it.name] }
+        val embeddedLyric = if (translated) {
+            resolvedMetadata?.matchedTranslatedLyric
+        } else {
+            resolvedMetadata?.matchedLyric
+        }
+        if (embeddedLyric != null && embeddedLyric.isBlank()) {
+            return ""
+        }
         val reference = resolveManagedLyricReference(
             context = context,
             snapshot = snapshot,
@@ -2247,8 +2255,8 @@ internal object ManagedDownloadStorage {
             name = optString("name").takeIf(String::isNotBlank),
             artist = optString("artist").takeIf(String::isNotBlank),
             coverUrl = optString("coverUrl").takeIf(String::isNotBlank),
-            matchedLyric = optString("matchedLyric").takeIf(String::isNotBlank),
-            matchedTranslatedLyric = optString("matchedTranslatedLyric").takeIf(String::isNotBlank),
+            matchedLyric = optPresentString("matchedLyric"),
+            matchedTranslatedLyric = optPresentString("matchedTranslatedLyric"),
             matchedLyricSource = optString("matchedLyricSource").takeIf(String::isNotBlank),
             matchedSongId = optString("matchedSongId").takeIf(String::isNotBlank),
             userLyricOffsetMs = optLong("userLyricOffsetMs"),
@@ -2258,8 +2266,8 @@ internal object ManagedDownloadStorage {
             originalName = optString("originalName").takeIf(String::isNotBlank),
             originalArtist = optString("originalArtist").takeIf(String::isNotBlank),
             originalCoverUrl = optString("originalCoverUrl").takeIf(String::isNotBlank),
-            originalLyric = optString("originalLyric").takeIf(String::isNotBlank),
-            originalTranslatedLyric = optString("originalTranslatedLyric").takeIf(String::isNotBlank),
+            originalLyric = optPresentString("originalLyric"),
+            originalTranslatedLyric = optPresentString("originalTranslatedLyric"),
             mediaUri = optString("mediaUri").takeIf(String::isNotBlank),
             channelId = optString("channelId").takeIf(String::isNotBlank),
             audioId = optString("audioId").takeIf(String::isNotBlank),
@@ -2277,6 +2285,13 @@ internal object ManagedDownloadStorage {
         }.onFailure {
             NPLogger.w(TAG, "解析写回元数据失败: ${it.message}")
         }.getOrNull()
+    }
+
+    private fun JSONObject.optPresentString(fieldName: String): String? {
+        if (!has(fieldName) || isNull(fieldName)) {
+            return null
+        }
+        return optString(fieldName)
     }
 
     private fun updateSnapshotCacheAfterMetadataWrite(
