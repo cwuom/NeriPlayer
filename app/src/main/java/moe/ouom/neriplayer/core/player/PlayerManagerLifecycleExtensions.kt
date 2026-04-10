@@ -44,6 +44,7 @@ import moe.ouom.neriplayer.core.player.debug.playbackStateName
 import moe.ouom.neriplayer.core.player.model.AudioDevice
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
+import moe.ouom.neriplayer.core.player.policy.shouldClearResumePlaybackRequestOnPlayWhenReadyPause
 import moe.ouom.neriplayer.core.player.playlist.PlayerFavoritesController
 import moe.ouom.neriplayer.data.settings.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshotSync
@@ -265,6 +266,16 @@ internal fun PlayerManager.initializeImpl(
                         "NERI-PlayerManager",
                         "playWhenReady=false, reason=${playWhenReadyChangeReasonName(reason)}, state=${playbackStateName(player.playbackState)}, mediaId=${player.currentMediaItem?.mediaId}, stack=[${debugStackHint()}]"
                     )
+                    if (
+                        shouldClearResumePlaybackRequestOnPlayWhenReadyPause(
+                            playWhenReady = playWhenReady,
+                            playWhenReadyChangeReason = reason,
+                            pendingPauseJobActive = pendingPauseJob?.isActive == true,
+                            playJobActive = playJob?.isActive == true
+                        )
+                    ) {
+                        updateResumePlaybackRequested(false)
+                    }
                 }
                 if (
                     !playWhenReady &&

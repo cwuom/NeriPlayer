@@ -768,7 +768,7 @@ fun NowPlayingScreen(
                                     imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
                                     contentDescription = if (isFavorite) stringResource(R.string.nowplaying_favorited) else stringResource(R.string.nowplaying_favorite),
                                     tint = if (isFavorite) {
-                                        MaterialTheme.colorScheme.error.copy(alpha = 0.82f)
+                                        Color.Red.copy(alpha = 0.6f)
                                     } else {
                                         MaterialTheme.colorScheme.onSurface
                                     }

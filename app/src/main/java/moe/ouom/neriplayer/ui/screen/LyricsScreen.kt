@@ -411,7 +411,7 @@ fun LyricsScreen(
                     imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
                     contentDescription = if (isFavorite) stringResource(R.string.lyrics_favorited) else stringResource(R.string.lyrics_favorite),
                     tint = if (isFavorite) {
-                        MaterialTheme.colorScheme.error.copy(alpha = 0.82f)
+                        Color.Red.copy(alpha = 0.6f)
                     } else {
                         MaterialTheme.colorScheme.onSurface
                     }

@@ -181,6 +181,22 @@ internal fun shouldShowPauseButtonForPlaybackControls(
     return resumePlaybackRequested && !pendingPauseJobActive
 }
 
+internal fun shouldClearResumePlaybackRequestOnPlayWhenReadyPause(
+    playWhenReady: Boolean,
+    playWhenReadyChangeReason: Int,
+    pendingPauseJobActive: Boolean,
+    playJobActive: Boolean
+): Boolean {
+    if (playWhenReady) return false
+    if (pendingPauseJobActive || playJobActive) return false
+    return when (playWhenReadyChangeReason) {
+        Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS,
+        Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY,
+        Player.PLAY_WHEN_READY_CHANGE_REASON_REMOTE -> true
+        else -> false
+    }
+}
+
 internal fun shouldPausePlaybackWhenToggling(
     resumePlaybackRequested: Boolean,
     pendingPauseJobActive: Boolean,

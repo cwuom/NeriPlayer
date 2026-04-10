@@ -1,8 +1,10 @@
 package moe.ouom.neriplayer.core.player
 
+import androidx.media3.common.Player
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import moe.ouom.neriplayer.core.player.policy.shouldClearResumePlaybackRequestOnPlayWhenReadyPause
 import moe.ouom.neriplayer.core.player.policy.shouldShowPauseButtonForPlaybackControls
 import moe.ouom.neriplayer.core.player.policy.shouldPausePlaybackWhenToggling
 
@@ -49,5 +51,41 @@ class PlayerManagerPlaybackControlStateTest {
         )
 
         assertFalse(shouldPause)
+    }
+
+    @Test
+    fun `audio focus loss clears visual playback intent`() {
+        val shouldClear = shouldClearResumePlaybackRequestOnPlayWhenReadyPause(
+            playWhenReady = false,
+            playWhenReadyChangeReason = Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS,
+            pendingPauseJobActive = false,
+            playJobActive = false
+        )
+
+        assertTrue(shouldClear)
+    }
+
+    @Test
+    fun `pending local pause keeps external callback from overriding local transition`() {
+        val shouldClear = shouldClearResumePlaybackRequestOnPlayWhenReadyPause(
+            playWhenReady = false,
+            playWhenReadyChangeReason = Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS,
+            pendingPauseJobActive = true,
+            playJobActive = false
+        )
+
+        assertFalse(shouldClear)
+    }
+
+    @Test
+    fun `buffering style user intent is kept for non external play when ready reasons`() {
+        val shouldClear = shouldClearResumePlaybackRequestOnPlayWhenReadyPause(
+            playWhenReady = false,
+            playWhenReadyChangeReason = Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST,
+            pendingPauseJobActive = false,
+            playJobActive = false
+        )
+
+        assertFalse(shouldClear)
     }
 }
