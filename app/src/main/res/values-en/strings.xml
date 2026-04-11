@@ -1060,6 +1060,7 @@
     <string name="settings_download_directory_migrated">Moved %1$d downloaded files and switched folders</string>
     <string name="settings_download_directory_migrated_partial">Moved %1$d files, but %2$d old files could not be removed</string>
     <string name="settings_download_directory_migrate_failed">Failed to move %1$d files, so the original folder was kept</string>
+    <string name="settings_download_directory_change_blocked_active_download">Cannot change the download directory while downloads are in progress</string>
     <string name="settings_backup_restore">Backup &amp; Restore</string>
     <string name="settings_backup_expand">Manage backups</string>
 

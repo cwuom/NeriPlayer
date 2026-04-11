@@ -10,12 +10,12 @@ class ManagedDownloadStorageDeleteSemanticsTest {
     @Test
     fun `missing saf document failures are treated as already deleted`() {
         assertTrue(
-            ManagedDownloadStorage.isMissingManagedDocumentDeleteFailure(
+            ManagedDownloadStorage.isMissingManagedDocumentFailure(
                 FileNotFoundException("Missing file for primary:neriplayer-download/test.flac")
             )
         )
         assertTrue(
-            ManagedDownloadStorage.isMissingManagedDocumentDeleteFailure(
+            ManagedDownloadStorage.isMissingManagedDocumentFailure(
                 IllegalArgumentException("Failed to determine if uri is child of primary:neriplayer-download")
             )
         )
@@ -24,7 +24,7 @@ class ManagedDownloadStorageDeleteSemanticsTest {
     @Test
     fun `unrelated delete failures are not swallowed as missing document`() {
         assertFalse(
-            ManagedDownloadStorage.isMissingManagedDocumentDeleteFailure(
+            ManagedDownloadStorage.isMissingManagedDocumentFailure(
                 IllegalStateException("provider offline")
             )
         )

@@ -90,8 +90,11 @@ internal fun maskCookieValue(value: String): String {
 
 private val SettingsItemShape = RoundedCornerShape(18.dp)
 
-internal fun Modifier.settingsItemClickable(onClick: () -> Unit): Modifier {
-    return clip(SettingsItemShape).clickable(onClick = onClick)
+internal fun Modifier.settingsItemClickable(
+    enabled: Boolean = true,
+    onClick: () -> Unit
+): Modifier {
+    return clip(SettingsItemShape).clickable(enabled = enabled, onClick = onClick)
 }
 
 /** 可复用的折叠区头部 */

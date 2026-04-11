@@ -353,6 +353,57 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
+    fun `active download operations keep directory changes blocked until download pipeline is fully idle`() {
+        val queuedTask = DownloadTask(
+            song = SongItem(
+                id = 6L,
+                name = "Queued",
+                artist = "Artist",
+                album = "Album",
+                albumId = 6L,
+                durationMs = 1_000L,
+                coverUrl = null,
+                mediaUri = "https://example.com/queued"
+            ),
+            progress = null,
+            status = DownloadStatus.QUEUED
+        )
+        val completedTask = queuedTask.copy(
+            song = queuedTask.song.copy(id = 7L, name = "Completed"),
+            status = DownloadStatus.COMPLETED
+        )
+
+        assertTrue(
+            hasActiveDownloadOperations(
+                tasks = listOf(queuedTask),
+                isSingleDownloading = false,
+                hasActiveBatchJobs = false
+            )
+        )
+        assertTrue(
+            hasActiveDownloadOperations(
+                tasks = listOf(completedTask),
+                isSingleDownloading = true,
+                hasActiveBatchJobs = false
+            )
+        )
+        assertTrue(
+            hasActiveDownloadOperations(
+                tasks = listOf(completedTask),
+                isSingleDownloading = false,
+                hasActiveBatchJobs = true
+            )
+        )
+        assertFalse(
+            hasActiveDownloadOperations(
+                tasks = listOf(completedTask),
+                isSingleDownloading = false,
+                hasActiveBatchJobs = false
+            )
+        )
+    }
+
+    @Test
     fun `detailed inspection stays disabled when slow local inspection is turned off`() {
         assertEquals(
             false,
@@ -880,6 +931,34 @@ class GlobalDownloadManagerStartupPolicyTest {
                 "song-b" to setOf("cover-shared", "lyric-b")
             ),
             remainingBySong
+        )
+    }
+
+    @Test
+    fun `shouldRepairMetadataLessManagedDownload returns true for fallback parsed source prefix`() {
+        assertTrue(
+            shouldRepairMetadataLessManagedDownload(
+                expectedTitles = setOf("One Day"),
+                expectedArtists = setOf("Matisyahu"),
+                expectedDurationMs = 205_000L,
+                actualTitle = "Matisyahu - One Day",
+                actualArtist = "netease",
+                actualDurationMs = 205_000L
+            )
+        )
+    }
+
+    @Test
+    fun `shouldRepairMetadataLessManagedDownload keeps valid metadata less legacy file`() {
+        assertFalse(
+            shouldRepairMetadataLessManagedDownload(
+                expectedTitles = setOf("One Day"),
+                expectedArtists = setOf("Matisyahu"),
+                expectedDurationMs = 205_000L,
+                actualTitle = "One Day",
+                actualArtist = "Matisyahu",
+                actualDurationMs = 204_500L
+            )
         )
     }
 }

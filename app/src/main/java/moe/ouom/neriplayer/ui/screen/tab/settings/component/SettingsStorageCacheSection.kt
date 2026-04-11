@@ -66,6 +66,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -91,6 +92,7 @@ internal fun SettingsStorageCacheSection(
     onExpandedChange: (Boolean) -> Unit,
     currentDownloadDirectorySummary: String,
     isCustomDownloadDirectory: Boolean,
+    downloadDirectoryChangeEnabled: Boolean,
     onPickDownloadDirectory: () -> Unit,
     onResetDownloadDirectory: () -> Unit,
     downloadFileNameTemplate: String?,
@@ -182,14 +184,31 @@ internal fun SettingsStorageCacheSection(
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.outline
                         )
+                        if (!downloadDirectoryChangeEnabled) {
+                            Text(
+                                text = stringResource(
+                                    R.string.settings_download_directory_change_blocked_active_download
+                                ),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
                     }
                 },
                 trailingContent = {
-                    HapticTextButton(onClick = onPickDownloadDirectory) {
+                    HapticTextButton(
+                        onClick = onPickDownloadDirectory,
+                        enabled = downloadDirectoryChangeEnabled
+                    ) {
                         Text(stringResource(R.string.settings_download_directory_choose))
                     }
                 },
-                modifier = Modifier.settingsItemClickable(onClick = onPickDownloadDirectory),
+                modifier = Modifier
+                    .alpha(if (downloadDirectoryChangeEnabled) 1f else 0.6f)
+                    .settingsItemClickable(
+                        enabled = downloadDirectoryChangeEnabled,
+                        onClick = onPickDownloadDirectory
+                    ),
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent)
             )
 
@@ -206,7 +225,12 @@ internal fun SettingsStorageCacheSection(
                     supportingContent = {
                         Text(stringResource(R.string.settings_download_directory_reset_desc))
                     },
-                    modifier = Modifier.settingsItemClickable(onClick = onResetDownloadDirectory),
+                    modifier = Modifier
+                        .alpha(if (downloadDirectoryChangeEnabled) 1f else 0.6f)
+                        .settingsItemClickable(
+                            enabled = downloadDirectoryChangeEnabled,
+                            onClick = onResetDownloadDirectory
+                        ),
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
             }

@@ -41,8 +41,11 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -61,6 +64,7 @@ import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.LazyThreadSafetyMode
+import kotlin.math.abs
 
 /**
  * 全局下载管理器，统一维护下载任务和本地下载列表
@@ -81,6 +85,22 @@ object GlobalDownloadManager {
     private val _isSingleDownloading = MutableStateFlow(false)
     private val _downloadTasks = MutableStateFlow<List<DownloadTask>>(emptyList())
     val downloadTasks: StateFlow<List<DownloadTask>> = _downloadTasks.asStateFlow()
+    private val _activeBatchDownloadJobCount = MutableStateFlow(0)
+    val activeDownloadOperationsFlow: StateFlow<Boolean> = combine(
+        _downloadTasks,
+        _isSingleDownloading,
+        _activeBatchDownloadJobCount
+    ) { tasks, isSingleDownloading, activeBatchDownloadJobCount ->
+        hasActiveDownloadOperations(
+            tasks = tasks,
+            isSingleDownloading = isSingleDownloading,
+            hasActiveBatchJobs = activeBatchDownloadJobCount > 0
+        )
+    }.stateIn(
+        scope = scope,
+        started = SharingStarted.Eagerly,
+        initialValue = false
+    )
 
     private val _downloadedSongs = MutableStateFlow<List<DownloadedSong>>(emptyList())
     val downloadedSongs: StateFlow<List<DownloadedSong>> = _downloadedSongs.asStateFlow()
@@ -135,6 +155,14 @@ object GlobalDownloadManager {
                 forceRefresh = startupRecovery.hasRecoveredEntries
             )
         }
+    }
+
+    fun hasActiveDownloadOperations(): Boolean {
+        return hasActiveDownloadOperations(
+            tasks = _downloadTasks.value,
+            isSingleDownloading = _isSingleDownloading.value,
+            hasActiveBatchJobs = _activeBatchDownloadJobCount.value > 0
+        )
     }
 
     private fun publishDownloadedSongs(
@@ -1539,8 +1567,10 @@ object GlobalDownloadManager {
             }
         }
         activeBatchDownloadJobs += batchJob
+        _activeBatchDownloadJobCount.value = activeBatchDownloadJobs.size
         batchJob.invokeOnCompletion {
             activeBatchDownloadJobs.remove(batchJob)
+            _activeBatchDownloadJobCount.value = activeBatchDownloadJobs.size
         }
     }
 
@@ -1632,8 +1662,57 @@ object GlobalDownloadManager {
         if (isSongCancelled(songKey) || AudioDownloadManager.isSongDownloadActive(songKey)) {
             return null
         }
-        ManagedDownloadStorage.peekDownloadedAudio(song)?.let { return it }
-        return ManagedDownloadStorage.findDownloadedAudio(context, song)
+        val existingAudio = ManagedDownloadStorage.peekDownloadedAudio(song)
+            ?: ManagedDownloadStorage.findDownloadedAudio(context, song)
+            ?: return null
+        return validateExistingDownloadedAudio(
+            context = context,
+            song = song,
+            audio = existingAudio
+        )
+    }
+
+    private suspend fun validateExistingDownloadedAudio(
+        context: Context,
+        song: SongItem,
+        audio: ManagedDownloadStorage.StoredEntry
+    ): ManagedDownloadStorage.StoredEntry? {
+        val metadataEntry = ManagedDownloadStorage.findMetadataForAudio(context, audio)
+        val metadata = metadataEntry?.let {
+            readDownloadedMetadata(
+                context = context,
+                audio = audio,
+                metadataEntry = it
+            )
+        }
+        if (metadata != null) {
+            return audio
+        }
+
+        val localDetails = inspectDownloadedAudioDetails(context, audio)
+        val shouldRepair = shouldRepairMetadataLessManagedDownload(
+            expectedTitles = buildExpectedDownloadTitles(song),
+            expectedArtists = buildExpectedDownloadArtists(song),
+            expectedDurationMs = song.durationMs.coerceAtLeast(0L),
+            actualTitle = localDetails?.originalTitle ?: localDetails?.title,
+            actualArtist = localDetails?.originalArtist ?: localDetails?.artist,
+            actualDurationMs = localDetails?.durationMs ?: 0L
+        )
+        if (!shouldRepair) {
+            persistDownloadedMetadata(context, audio, song)
+            return audio
+        }
+
+        NPLogger.w(
+            TAG,
+            "发现残缺下载文件，回滚后重新下载: song=${song.name}, file=${audio.name}"
+        )
+        rollbackCancelledDownload(
+            context = context,
+            song = song,
+            storedAudio = audio
+        )
+        return null
     }
 
     private fun shouldSkipDownload(context: Context, song: SongItem): Boolean {
@@ -2232,10 +2311,74 @@ internal fun resolveDownloadedLyricOverride(
     )
 }
 
+internal fun shouldRepairMetadataLessManagedDownload(
+    expectedTitles: Collection<String>,
+    expectedArtists: Collection<String>,
+    expectedDurationMs: Long,
+    actualTitle: String?,
+    actualArtist: String?,
+    actualDurationMs: Long
+): Boolean {
+    val normalizedExpectedTitles = expectedTitles
+        .map(::normalizeManagedDownloadText)
+        .filter(String::isNotBlank)
+        .toSet()
+    val normalizedExpectedArtists = expectedArtists
+        .map(::normalizeManagedDownloadText)
+        .filter(String::isNotBlank)
+        .toSet()
+    val normalizedActualTitle = normalizeManagedDownloadText(actualTitle)
+    val normalizedActualArtist = normalizeManagedDownloadText(actualArtist)
+
+    if (
+        normalizedExpectedTitles.isEmpty() ||
+        normalizedExpectedArtists.isEmpty() ||
+        normalizedActualTitle.isBlank() ||
+        normalizedActualArtist.isBlank()
+    ) {
+        return true
+    }
+    if (actualDurationMs <= 0L) {
+        return true
+    }
+    if (
+        expectedDurationMs > 0L &&
+        abs(expectedDurationMs - actualDurationMs) > 5_000L
+    ) {
+        return true
+    }
+    return normalizedActualTitle !in normalizedExpectedTitles ||
+        normalizedActualArtist !in normalizedExpectedArtists
+}
+
+internal fun buildExpectedDownloadTitles(song: SongItem): Set<String> {
+    return linkedSetOf<String>().apply {
+        add(song.customName ?: song.name)
+        add(song.name)
+        song.originalName?.takeIf(String::isNotBlank)?.let(::add)
+    }
+}
+
+internal fun buildExpectedDownloadArtists(song: SongItem): Set<String> {
+    return linkedSetOf<String>().apply {
+        add(song.customArtist ?: song.artist)
+        add(song.artist)
+        song.originalArtist?.takeIf(String::isNotBlank)?.let(::add)
+    }
+}
+
 private fun isResolvableLocalReference(reference: String): Boolean {
     return reference.startsWith("/") ||
         reference.startsWith("content://") ||
         reference.startsWith("file://")
+}
+
+private fun normalizeManagedDownloadText(value: String?): String {
+    return value
+        ?.trim()
+        ?.lowercase()
+        ?.replace(Regex("\\s+"), " ")
+        .orEmpty()
 }
 
 private data class ManagedDownloadArtifactRemovalResult(
@@ -2503,4 +2646,17 @@ fun countQueuedDownloadTasks(tasks: List<DownloadTask>): Int {
 
 fun hasActiveDownloadTasks(tasks: List<DownloadTask>): Boolean {
     return tasks.any { it.status == DownloadStatus.DOWNLOADING }
+}
+
+internal fun hasActiveDownloadOperations(
+    tasks: List<DownloadTask>,
+    isSingleDownloading: Boolean,
+    hasActiveBatchJobs: Boolean
+): Boolean {
+    if (isSingleDownloading || hasActiveBatchJobs) {
+        return true
+    }
+    return tasks.any { task ->
+        task.status == DownloadStatus.QUEUED || task.status == DownloadStatus.DOWNLOADING
+    }
 }

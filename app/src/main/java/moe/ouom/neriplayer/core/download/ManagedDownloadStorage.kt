@@ -2031,7 +2031,11 @@ internal object ManagedDownloadStorage {
             pendingEntries.forEach { entry ->
                 val deleted = when (entry) {
                     is File -> runCatching { !entry.exists() || entry.delete() }.getOrDefault(false)
-                    is DocumentFile -> runCatching { entry.delete() }.getOrDefault(false)
+                    is DocumentFile -> deleteContentReference(
+                        context = context,
+                        reference = entry.uri.toString(),
+                        uri = entry.uri
+                    )
                     else -> false
                 }
                 if (deleted) {
@@ -2933,9 +2937,17 @@ internal object ManagedDownloadStorage {
     private fun readTextInternal(context: Context, reference: String): String? {
         return when {
             reference.startsWith("/") -> File(reference).takeIf(File::exists)?.readText(Charsets.UTF_8)
-            else -> context.contentResolver.openInputStream(reference.toUri())
-                ?.bufferedReader(Charsets.UTF_8)
-                ?.use { it.readText() }
+            else -> runCatching {
+                context.contentResolver.openInputStream(reference.toUri())
+                    ?.bufferedReader(Charsets.UTF_8)
+                    ?.use { it.readText() }
+            }.getOrElse { error ->
+                if (isMissingManagedDocumentFailure(error)) {
+                    null
+                } else {
+                    throw error
+                }
+            }
         }
     }
 
@@ -3023,7 +3035,7 @@ internal object ManagedDownloadStorage {
         val deletedByContract = runCatching {
             DocumentsContract.deleteDocument(context.contentResolver, uri)
         }.getOrElse { error ->
-            if (isMissingManagedDocumentDeleteFailure(error)) {
+            if (isMissingManagedDocumentFailure(error)) {
                 return true
             }
             false
@@ -3035,7 +3047,7 @@ internal object ManagedDownloadStorage {
         val deletedByDocumentFile = runCatching {
             resolveDocumentFile(context, uri)?.delete() ?: false
         }.getOrElse { error ->
-            if (isMissingManagedDocumentDeleteFailure(error)) {
+            if (isMissingManagedDocumentFailure(error)) {
                 return true
             }
             false
@@ -3043,7 +3055,7 @@ internal object ManagedDownloadStorage {
         return deletedByDocumentFile || !existsInternal(context, reference)
     }
 
-    internal fun isMissingManagedDocumentDeleteFailure(error: Throwable): Boolean {
+    internal fun isMissingManagedDocumentFailure(error: Throwable): Boolean {
         return generateSequence(error) { it.cause }.any { cause ->
             when (cause) {
                 is FileNotFoundException -> true

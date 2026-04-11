@@ -1313,9 +1313,6 @@ object AudioDownloadManager {
         audio: ManagedDownloadStorage.StoredEntry,
         song: SongItem
     ) {
-        if (ManagedDownloadStorage.usesDocumentTree(context)) {
-            return
-        }
         val identity = song.identity()
         val payload = JSONObject().apply {
             put("stableKey", identity.stableKey())

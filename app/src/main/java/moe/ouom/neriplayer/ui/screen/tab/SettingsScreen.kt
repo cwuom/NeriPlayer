@@ -414,6 +414,7 @@ fun SettingsScreen(
     var pendingDownloadDirectoryChange by remember { mutableStateOf<PendingDownloadDirectoryChange?>(null) }
     var isMigratingDownloadDirectory by remember { mutableStateOf(false) }
     val migrationProgress by ManagedDownloadStorage.migrationProgressFlow.collectAsState()
+    val hasActiveDownloadOperations by GlobalDownloadManager.activeDownloadOperationsFlow.collectAsState()
     var confirmPhoneMasked by remember { mutableStateOf<String?>(null) }
     var cookieText by remember { mutableStateOf("") }
     var versionTapCount by remember { mutableIntStateOf(0) }
@@ -431,6 +432,29 @@ fun SettingsScreen(
     val localPlaylistRepo = remember(context) { LocalPlaylistRepository.getInstance(context) }
     val localPlaylists by localPlaylistRepo.playlists.collectAsState(initial = emptyList())
     val defaultDownloadDirectorySummary = context.getString(R.string.settings_download_directory_default_label)
+    val downloadDirectoryChangeEnabled = !hasActiveDownloadOperations && !isMigratingDownloadDirectory
+
+    fun guardDownloadDirectoryChange(
+        targetUri: String? = null,
+        releaseTargetPermissionOnBlock: Boolean = false
+    ): Boolean {
+        if (!GlobalDownloadManager.hasActiveDownloadOperations()) {
+            return false
+        }
+        if (
+            releaseTargetPermissionOnBlock &&
+            !targetUri.isNullOrBlank() &&
+            !ManagedDownloadStorage.areEquivalentDirectoryUris(downloadDirectoryUri, targetUri)
+        ) {
+            ManagedDownloadStorage.releasePersistedDirectoryPermission(context, targetUri)
+        }
+        val message = context.getString(
+            R.string.settings_download_directory_change_blocked_active_download
+        )
+        inlineMsg = message
+        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        return true
+    }
 
     fun applyDownloadDirectoryChange(
         targetUri: String?,
@@ -473,6 +497,14 @@ fun SettingsScreen(
         targetSummary: String,
         releaseTargetPermissionOnCancel: Boolean
     ) {
+        if (
+            guardDownloadDirectoryChange(
+                targetUri = targetUri,
+                releaseTargetPermissionOnBlock = releaseTargetPermissionOnCancel
+            )
+        ) {
+            return
+        }
         val previousUri = downloadDirectoryUri?.takeIf { it.isNotBlank() }
         if (previousUri == targetUri) {
             inlineMsg = if (targetUri.isNullOrBlank()) {
@@ -561,6 +593,9 @@ fun SettingsScreen(
         if (uri == null) {
             return@rememberLauncherForActivityResult
         }
+        if (guardDownloadDirectoryChange()) {
+            return@rememberLauncherForActivityResult
+        }
         try {
             val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             context.contentResolver.takePersistableUriPermission(uri, flags)
@@ -591,12 +626,14 @@ fun SettingsScreen(
         ManagedDownloadStorage.describeConfiguredDirectory(context, downloadDirectoryUri)
     }
     val resetDownloadDirectory: () -> Unit = {
-        scope.launch {
-            prepareDownloadDirectoryChange(
-                targetUri = null,
-                targetSummary = defaultDownloadDirectorySummary,
-                releaseTargetPermissionOnCancel = false
-            )
+        if (!guardDownloadDirectoryChange()) {
+            scope.launch {
+                prepareDownloadDirectoryChange(
+                    targetUri = null,
+                    targetSummary = defaultDownloadDirectorySummary,
+                    releaseTargetPermissionOnCancel = false
+                )
+            }
         }
     }
 
@@ -1614,7 +1651,12 @@ fun SettingsScreen(
                     onExpandedChange = { cacheExpanded = it },
                     currentDownloadDirectorySummary = downloadDirectorySummary,
                     isCustomDownloadDirectory = !downloadDirectoryUri.isNullOrBlank(),
-                    onPickDownloadDirectory = { downloadDirectoryLauncher.launch(null) },
+                    downloadDirectoryChangeEnabled = downloadDirectoryChangeEnabled,
+                    onPickDownloadDirectory = {
+                        if (!guardDownloadDirectoryChange()) {
+                            downloadDirectoryLauncher.launch(null)
+                        }
+                    },
                     onResetDownloadDirectory = resetDownloadDirectory,
                     downloadFileNameTemplate = downloadFileNameTemplate,
                     onDownloadFileNameTemplateChange = onDownloadFileNameTemplateChange,
@@ -2025,7 +2067,17 @@ fun SettingsScreen(
             },
             confirmButton = {
                 TextButton(
+                    enabled = downloadDirectoryChangeEnabled,
                     onClick = {
+                        if (
+                            guardDownloadDirectoryChange(
+                                targetUri = pendingChange.targetUri,
+                                releaseTargetPermissionOnBlock = pendingChange.releaseTargetPermissionOnCancel
+                            )
+                        ) {
+                            pendingDownloadDirectoryChange = null
+                            return@TextButton
+                        }
                         pendingDownloadDirectoryChange = null
                         scope.launch {
                             isMigratingDownloadDirectory = true
@@ -2079,7 +2131,17 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(
+                    enabled = downloadDirectoryChangeEnabled,
                     onClick = {
+                        if (
+                            guardDownloadDirectoryChange(
+                                targetUri = pendingChange.targetUri,
+                                releaseTargetPermissionOnBlock = pendingChange.releaseTargetPermissionOnCancel
+                            )
+                        ) {
+                            pendingDownloadDirectoryChange = null
+                            return@TextButton
+                        }
                         pendingDownloadDirectoryChange = null
                         scope.launch {
                             runCatching {
