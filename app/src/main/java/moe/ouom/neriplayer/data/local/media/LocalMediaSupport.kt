@@ -261,6 +261,7 @@ object LocalMediaSupport {
         val bitrateKbps: Int? = null,
         val sampleRateHz: Int? = null,
         val channelCount: Int? = null,
+        val lyrics: String? = null,
         val coverBytes: ByteArray? = null
     ) {
         override fun equals(other: Any?): Boolean {
@@ -280,6 +281,7 @@ object LocalMediaSupport {
                 bitrateKbps == other.bitrateKbps &&
                 sampleRateHz == other.sampleRateHz &&
                 channelCount == other.channelCount &&
+                lyrics == other.lyrics &&
                 (coverBytes?.contentEquals(other.coverBytes) ?: (other.coverBytes == null))
         }
 
@@ -297,6 +299,7 @@ object LocalMediaSupport {
             result = 31 * result + (bitrateKbps ?: 0)
             result = 31 * result + (sampleRateHz ?: 0)
             result = 31 * result + (channelCount ?: 0)
+            result = 31 * result + (lyrics?.hashCode() ?: 0)
             result = 31 * result + (coverBytes?.contentHashCode() ?: 0)
             return result
         }
@@ -388,13 +391,14 @@ object LocalMediaSupport {
         )
         val nearbyCover = findNearbyCover(file)
         val nearbyLyrics = findNearbyLyrics(file)
-        val lyricContent = nearbyLyrics?.let {
+        val nearbyLyricContent = nearbyLyrics?.let {
             readTextFile(it)
                 ?: run {
                     NPLogger.w(TAG, "read lyric failed for ${it.absolutePath}")
                     null
                 }
         }
+        val effectiveLyricContent = nearbyLyricContent ?: tagLibMetadata?.lyrics?.takeIf { it.isNotBlank() }
 
         val retriever = MediaMetadataRetriever()
         return try {
@@ -526,9 +530,13 @@ object LocalMediaSupport {
                     effectiveNearbyCover != null -> context.getString(R.string.local_song_cover_external)
                     else -> null
                 },
-                lyricContent = lyricContent,
+                lyricContent = effectiveLyricContent,
                 lyricPath = nearbyLyrics?.absolutePath,
-                lyricSource = nearbyLyrics?.let { context.getString(R.string.local_song_lyric_external) },
+                lyricSource = when {
+                    nearbyLyrics != null -> context.getString(R.string.local_song_lyric_external)
+                    !effectiveLyricContent.isNullOrBlank() -> context.getString(R.string.local_song_lyric_embedded)
+                    else -> null
+                },
                 originalTitle = title,
                 originalArtist = tagLibMetadata?.artist ?: containerMetadata?.artist ?: queried.artist ?: artist,
                 embeddedCover = embeddedCover || tagLibCoverUri != null
@@ -586,9 +594,13 @@ object LocalMediaSupport {
                     nearbyCover != null -> context.getString(R.string.local_song_cover_external)
                     else -> null
                 },
-                lyricContent = lyricContent,
+                lyricContent = effectiveLyricContent,
                 lyricPath = nearbyLyrics?.absolutePath,
-                lyricSource = nearbyLyrics?.let { context.getString(R.string.local_song_lyric_external) },
+                lyricSource = when {
+                    nearbyLyrics != null -> context.getString(R.string.local_song_lyric_external)
+                    !effectiveLyricContent.isNullOrBlank() -> context.getString(R.string.local_song_lyric_embedded)
+                    else -> null
+                },
                 originalTitle = title,
                 originalArtist = tagLibMetadata?.artist
                     ?: containerMetadata?.artist?.takeIf { it.isNotBlank() }
@@ -1041,6 +1053,11 @@ object LocalMediaSupport {
                 bitrateKbps = audioProperties?.bitrate?.takeIf { it > 0 },
                 sampleRateHz = audioProperties?.sampleRate?.takeIf { it > 0 },
                 channelCount = audioProperties?.channels?.takeIf { it > 0 },
+                lyrics = propertyMap.readFirstValue(
+                    "LYRICS",
+                    "UNSYNCEDLYRICS",
+                    "DESCRIPTION"
+                ),
                 coverBytes = coverBytes?.takeIf { it.isNotEmpty() }
             )
         }

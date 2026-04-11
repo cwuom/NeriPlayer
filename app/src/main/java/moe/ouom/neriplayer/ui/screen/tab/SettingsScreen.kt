@@ -25,6 +25,7 @@
 
 import android.content.Intent
 import android.net.Uri
+import android.text.format.Formatter
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -73,6 +74,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeTopAppBar
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -411,6 +413,7 @@ fun SettingsScreen(
     var inlineMsg by remember { mutableStateOf<String?>(null) }
     var pendingDownloadDirectoryChange by remember { mutableStateOf<PendingDownloadDirectoryChange?>(null) }
     var isMigratingDownloadDirectory by remember { mutableStateOf(false) }
+    val migrationProgress by ManagedDownloadStorage.migrationProgressFlow.collectAsState()
     var confirmPhoneMasked by remember { mutableStateOf<String?>(null) }
     var cookieText by remember { mutableStateOf("") }
     var versionTapCount by remember { mutableIntStateOf(0) }
@@ -2108,16 +2111,69 @@ fun SettingsScreen(
     }
 
     if (isMigratingDownloadDirectory) {
+        val activeMigrationProgress = migrationProgress
+        val stageText = when (activeMigrationProgress?.stage) {
+            ManagedDownloadStorage.MigrationStage.PREPARING ->
+                stringResource(R.string.settings_download_directory_migrating_stage_preparing)
+            ManagedDownloadStorage.MigrationStage.COPYING ->
+                stringResource(R.string.settings_download_directory_migrating_stage_copying)
+            ManagedDownloadStorage.MigrationStage.REWRITING_METADATA ->
+                stringResource(R.string.settings_download_directory_migrating_stage_rewriting)
+            ManagedDownloadStorage.MigrationStage.CLEANING_UP ->
+                stringResource(R.string.settings_download_directory_migrating_stage_cleanup)
+            ManagedDownloadStorage.MigrationStage.FINALIZING ->
+                stringResource(R.string.settings_download_directory_migrating)
+            null -> stringResource(R.string.settings_download_directory_migrating_desc)
+        }
+        val progressFraction = activeMigrationProgress?.fraction?.coerceIn(0f, 1f) ?: 0f
+        val processedSummary = activeMigrationProgress?.let { progress ->
+            context.getString(
+                R.string.settings_download_directory_migrating_progress_files,
+                progress.stageProcessed.coerceAtLeast(0),
+                progress.stageTotal.coerceAtLeast(0)
+            )
+        }
+        val copiedBytesSummary = activeMigrationProgress
+            ?.takeIf { it.totalBytes > 0L }
+            ?.let { progress ->
+                context.getString(
+                    R.string.settings_download_directory_migrating_progress_bytes,
+                    Formatter.formatShortFileSize(context, progress.copiedBytes.coerceAtLeast(0L)),
+                    Formatter.formatShortFileSize(context, progress.totalBytes)
+                )
+            }
+        val currentFileSummary = activeMigrationProgress?.currentFileName
+            ?.takeIf(String::isNotBlank)
+            ?.let { fileName ->
+                context.getString(R.string.settings_download_directory_migrating_current, fileName)
+            }
         AlertDialog(
             onDismissRequest = {},
             title = { Text(stringResource(R.string.settings_download_directory_migrating)) },
             text = {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                    Text(stringResource(R.string.settings_download_directory_migrating_desc))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                        Text(stageText)
+                    }
+                    LinearProgressIndicator(
+                        progress = { progressFraction },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    processedSummary?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+                    copiedBytesSummary?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+                    currentFileSummary?.let {
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             },
             confirmButton = {}

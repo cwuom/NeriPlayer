@@ -3,11 +3,14 @@ package moe.ouom.neriplayer.core.download
 import android.content.Context
 import android.net.Uri
 import android.os.Environment
+import android.provider.DocumentsContract
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -26,6 +29,7 @@ import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.FileNotFoundException
 import java.io.IOException
 import java.io.InputStream
 import java.net.URLDecoder
@@ -44,12 +48,15 @@ internal object ManagedDownloadStorage {
     private const val NO_MEDIA_FILE_NAME = ".nomedia"
     private const val SNAPSHOT_CACHE_FILE_NAME = "managed_download_snapshot_v1.json"
     private const val SNAPSHOT_CACHE_PERSIST_DEBOUNCE_MS = 1_200L
+    private const val TREE_ROOT_CACHE_VALIDATE_INTERVAL_MS = 1_500L
+    private const val TREE_CHILDREN_CACHE_VALIDATE_INTERVAL_MS = 2_000L
+    private const val MIGRATION_PROGRESS_EMIT_INTERVAL_MS = 80L
     @Suppress("SpellCheckingInspection")
     private const val METADATA_SUFFIX = ".npmeta.json"
     private const val MIGRATION_COPY_PARALLELISM = 8
-    private const val MIGRATION_TREE_COPY_PARALLELISM = 1
+    private const val MIGRATION_TREE_COPY_PARALLELISM = 2
     private const val MIGRATION_REWRITE_PARALLELISM = 4
-    private const val MIGRATION_TREE_REWRITE_PARALLELISM = 1
+    private const val MIGRATION_TREE_REWRITE_PARALLELISM = 2
     private const val MIGRATION_DELETE_PARALLELISM = 8
     private const val MIGRATION_IO_MAX_ATTEMPTS = 3
     private const val MIGRATION_IO_RETRY_DELAY_MS = 150L
@@ -73,6 +80,8 @@ internal object ManagedDownloadStorage {
     private val snapshotPersistenceLock = Any()
     private val snapshotScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val treeDirectoryLocks = ConcurrentHashMap<String, Any>()
+    private val treeSubdirectoryCache = ConcurrentHashMap<String, DocumentFile>()
+    private val treeChildrenNameCache = ConcurrentHashMap<String, CachedTreeChildren>()
     private val pendingAudioWriteIdGenerator = AtomicLong(0L)
 
     @Volatile
@@ -83,6 +92,12 @@ internal object ManagedDownloadStorage {
 
     @Volatile
     private var startupRecoveryResult = StartupRecoveryResult()
+
+    @Volatile
+    private var cachedTreeRoot: CachedTreeRoot? = null
+
+    private val _migrationProgressFlow = MutableStateFlow<MigrationProgress?>(null)
+    val migrationProgressFlow: StateFlow<MigrationProgress?> = _migrationProgressFlow
 
     fun initialize(context: Context) {
         val appContext = context.applicationContext
@@ -136,9 +151,93 @@ internal object ManagedDownloadStorage {
             get() = skippedFiles == 0
     }
 
+    enum class MigrationStage {
+        PREPARING,
+        COPYING,
+        REWRITING_METADATA,
+        CLEANING_UP,
+        FINALIZING
+    }
+
+    data class MigrationProgress(
+        val stage: MigrationStage,
+        val totalFiles: Int,
+        val processedFiles: Int,
+        val copiedFiles: Int,
+        val copiedBytes: Long,
+        val totalBytes: Long,
+        val metadataFilesProcessed: Int,
+        val metadataFilesTotal: Int,
+        val cleanupFilesProcessed: Int,
+        val cleanupFilesTotal: Int,
+        val currentFileName: String? = null
+    ) {
+        val stageProcessed: Int
+            get() = when (stage) {
+                MigrationStage.PREPARING -> 0
+                MigrationStage.COPYING -> copiedFiles
+                MigrationStage.REWRITING_METADATA -> metadataFilesProcessed
+                MigrationStage.CLEANING_UP -> cleanupFilesProcessed
+                MigrationStage.FINALIZING -> totalFiles
+            }
+
+        val stageTotal: Int
+            get() = when (stage) {
+                MigrationStage.PREPARING -> totalFiles
+                MigrationStage.COPYING -> totalFiles
+                MigrationStage.REWRITING_METADATA -> metadataFilesTotal
+                MigrationStage.CLEANING_UP -> cleanupFilesTotal
+                MigrationStage.FINALIZING -> totalFiles
+            }
+
+        val fraction: Float
+            get() {
+                val copyProgress = when {
+                    totalFiles <= 0 -> 1f
+                    totalBytes > 0L -> (copiedBytes.toDouble() / totalBytes.toDouble()).toFloat().coerceIn(0f, 1f)
+                    else -> (copiedFiles.toFloat() / totalFiles.toFloat()).coerceIn(0f, 1f)
+                }
+                val rewriteProgress = when {
+                    metadataFilesTotal <= 0 -> 1f
+                    else -> (metadataFilesProcessed.toFloat() / metadataFilesTotal.toFloat()).coerceIn(0f, 1f)
+                }
+                val cleanupProgress = when {
+                    cleanupFilesTotal <= 0 -> 1f
+                    else -> (cleanupFilesProcessed.toFloat() / cleanupFilesTotal.toFloat()).coerceIn(0f, 1f)
+                }
+                return when (stage) {
+                    MigrationStage.PREPARING -> 0.02f
+                    MigrationStage.COPYING -> 0.02f + copyProgress * 0.83f
+                    MigrationStage.REWRITING_METADATA -> 0.85f + rewriteProgress * 0.10f
+                    MigrationStage.CLEANING_UP -> 0.95f + cleanupProgress * 0.04f
+                    MigrationStage.FINALIZING -> 1f
+                }.coerceIn(0f, 1f)
+            }
+    }
+
     private data class ManagedMigrationEntry(
         val subdirectory: String?,
         val entry: StoredEntry
+    )
+
+    private data class CachedTreeRoot(
+        val identity: String,
+        val normalizedUri: String,
+        val root: RootHandle.TreeRoot,
+        val validatedAtMs: Long
+    )
+
+    private data class CachedTreeChildren(
+        val names: Set<String>,
+        val refreshedAtMs: Long
+    )
+
+    private data class QueriedTreeChild(
+        val name: String,
+        val documentUri: Uri,
+        val sizeBytes: Long,
+        val lastModifiedMs: Long,
+        val isDirectory: Boolean
     )
 
     private data class CopiedMigrationEntry(
@@ -153,6 +252,140 @@ internal object ManagedDownloadStorage {
     )
 
     private class MigrationTargetConflictException(message: String) : IOException(message)
+
+    private class MigrationProgressTracker(
+        private val totalFiles: Int,
+        private val totalBytes: Long,
+        private val metadataFilesTotal: Int
+    ) {
+        private val lock = Any()
+        private val activeCopyBytes = mutableMapOf<String, Long>()
+        private var stage: MigrationStage = MigrationStage.PREPARING
+        private var currentFileName: String? = null
+        private var completedCopyBytes = 0L
+        private var copiedFiles = 0
+        private var metadataFilesProcessed = 0
+        private var cleanupFilesProcessed = 0
+        private var cleanupFilesTotal = 0
+        private var lastEmitAtMs = 0L
+
+        fun startPreparing(fileName: String? = null) {
+            synchronized(lock) {
+                stage = MigrationStage.PREPARING
+                currentFileName = fileName
+                emitLocked(force = true)
+            }
+        }
+
+        fun startCopy(entry: ManagedMigrationEntry) {
+            synchronized(lock) {
+                stage = MigrationStage.COPYING
+                currentFileName = entry.entry.name
+                activeCopyBytes.putIfAbsent(entry.entry.reference, 0L)
+                emitLocked(force = true)
+            }
+        }
+
+        fun onCopyProgress(entry: ManagedMigrationEntry, copiedBytes: Long) {
+            synchronized(lock) {
+                stage = MigrationStage.COPYING
+                currentFileName = entry.entry.name
+                activeCopyBytes[entry.entry.reference] = copiedBytes.coerceAtLeast(0L)
+                emitLocked(force = false)
+            }
+        }
+
+        fun completeCopy(entry: ManagedMigrationEntry) {
+            synchronized(lock) {
+                stage = MigrationStage.COPYING
+                currentFileName = entry.entry.name
+                val finishedBytes = activeCopyBytes.remove(entry.entry.reference)
+                    ?: entry.entry.sizeBytes.coerceAtLeast(0L)
+                completedCopyBytes += finishedBytes.coerceAtLeast(0L)
+                copiedFiles++
+                emitLocked(force = true)
+            }
+        }
+
+        fun failCopy(entry: ManagedMigrationEntry) {
+            synchronized(lock) {
+                activeCopyBytes.remove(entry.entry.reference)
+                currentFileName = entry.entry.name
+                emitLocked(force = true)
+            }
+        }
+
+        fun startRewrite(fileName: String?) {
+            synchronized(lock) {
+                stage = MigrationStage.REWRITING_METADATA
+                currentFileName = fileName
+                emitLocked(force = true)
+            }
+        }
+
+        fun finishRewrite(fileName: String?) {
+            synchronized(lock) {
+                stage = MigrationStage.REWRITING_METADATA
+                currentFileName = fileName
+                metadataFilesProcessed++
+                emitLocked(force = true)
+            }
+        }
+
+        fun startCleanup(totalEntries: Int, fileName: String?) {
+            synchronized(lock) {
+                stage = MigrationStage.CLEANING_UP
+                cleanupFilesTotal = totalEntries
+                currentFileName = fileName
+                emitLocked(force = true)
+            }
+        }
+
+        fun finishCleanup(fileName: String?) {
+            synchronized(lock) {
+                stage = MigrationStage.CLEANING_UP
+                currentFileName = fileName
+                cleanupFilesProcessed++
+                emitLocked(force = true)
+            }
+        }
+
+        fun finishAll() {
+            synchronized(lock) {
+                stage = MigrationStage.FINALIZING
+                currentFileName = null
+                emitLocked(force = true)
+            }
+        }
+
+        private fun emitLocked(force: Boolean) {
+            val now = System.currentTimeMillis()
+            if (!force && now - lastEmitAtMs < MIGRATION_PROGRESS_EMIT_INTERVAL_MS) {
+                return
+            }
+            lastEmitAtMs = now
+            val inFlightBytes = activeCopyBytes.values.sum()
+            _migrationProgressFlow.value = MigrationProgress(
+                stage = stage,
+                totalFiles = totalFiles,
+                processedFiles = when (stage) {
+                    MigrationStage.PREPARING -> 0
+                    MigrationStage.COPYING -> copiedFiles
+                    MigrationStage.REWRITING_METADATA -> copiedFiles + metadataFilesProcessed
+                    MigrationStage.CLEANING_UP -> copiedFiles + metadataFilesTotal + cleanupFilesProcessed
+                    MigrationStage.FINALIZING -> totalFiles
+                }.coerceAtMost(totalFiles),
+                copiedFiles = copiedFiles,
+                copiedBytes = completedCopyBytes + inFlightBytes,
+                totalBytes = totalBytes,
+                metadataFilesProcessed = metadataFilesProcessed,
+                metadataFilesTotal = metadataFilesTotal,
+                cleanupFilesProcessed = cleanupFilesProcessed,
+                cleanupFilesTotal = cleanupFilesTotal,
+                currentFileName = currentFileName
+            )
+        }
+    }
 
     data class DownloadLibrarySnapshot(
         val audioEntries: List<StoredEntry>,
@@ -219,11 +452,13 @@ internal object ManagedDownloadStorage {
         customDirectoryUri = directoryUri?.takeIf { it.isNotBlank() }
         customDirectoryLabel = directoryLabel?.takeIf { it.isNotBlank() }
         downloadFileNameTemplate = normalizeDownloadFileNameTemplate(fileNameTemplate)
+        clearTreeDirectoryCache()
         invalidateSnapshotCache()
     }
 
     fun updateCustomDirectoryUri(uri: String?) {
         customDirectoryUri = uri?.takeIf { it.isNotBlank() }
+        clearTreeDirectoryCache()
         invalidateSnapshotCache()
     }
 
@@ -315,77 +550,94 @@ internal object ManagedDownloadStorage {
         fromDirectoryUri: String?,
         toDirectoryUri: String?
     ): MigrationResult = withContext(Dispatchers.IO) {
-        if (areEquivalentDirectoryUris(fromDirectoryUri, toDirectoryUri)) {
-            return@withContext MigrationResult(movedFiles = 0, skippedFiles = 0)
-        }
+        try {
+            _migrationProgressFlow.value = null
+            if (areEquivalentDirectoryUris(fromDirectoryUri, toDirectoryUri)) {
+                return@withContext MigrationResult(movedFiles = 0, skippedFiles = 0)
+            }
 
-        val sourceRoot = resolveRoot(context, fromDirectoryUri) ?: return@withContext MigrationResult(
-            movedFiles = 0,
-            skippedFiles = 0
-        )
-        val targetRoot = resolveRoot(context, toDirectoryUri)
-            ?: throw IOException("目标下载目录不可用")
+            val sourceRoot = resolveRoot(context, fromDirectoryUri) ?: return@withContext MigrationResult(
+                movedFiles = 0,
+                skippedFiles = 0
+            )
+            val targetRoot = resolveRoot(context, toDirectoryUri)
+                ?: throw IOException("目标下载目录不可用")
 
-        val entries = collectManagedMigrationEntries(
-            context = context,
-            root = sourceRoot,
-            allowMetadataLessAudio = shouldIndexMetadataLessAudio(fromDirectoryUri)
-        )
-        if (entries.isEmpty()) {
-            return@withContext MigrationResult(movedFiles = 0, skippedFiles = 0)
-        }
+            val entries = collectManagedMigrationEntries(
+                context = context,
+                root = sourceRoot,
+                allowMetadataLessAudio = shouldIndexMetadataLessAudio(fromDirectoryUri)
+            )
+            if (entries.isEmpty()) {
+                return@withContext MigrationResult(movedFiles = 0, skippedFiles = 0)
+            }
 
-        val copyLimiter = Semaphore(migrationCopyParallelism(sourceRoot, targetRoot))
-        val copyResults = coroutineScope {
-            entries.map { migrationEntry ->
-                async(Dispatchers.IO) {
-                    copyLimiter.withPermit {
-                        copyManagedMigrationEntry(
-                            context = context,
-                            targetRoot = targetRoot,
-                            migrationEntry = migrationEntry
-                        )
+            val metadataEntriesTotal = entries.count { it.entry.name.endsWith(METADATA_SUFFIX) }
+            val progressTracker = MigrationProgressTracker(
+                totalFiles = entries.size,
+                totalBytes = entries.sumOf { it.entry.sizeBytes.coerceAtLeast(0L) },
+                metadataFilesTotal = metadataEntriesTotal
+            )
+            progressTracker.startPreparing(entries.firstOrNull()?.entry?.name)
+
+            val copyLimiter = Semaphore(migrationCopyParallelism(sourceRoot, targetRoot))
+            val copyResults = coroutineScope {
+                entries.map { migrationEntry ->
+                    async(Dispatchers.IO) {
+                        copyLimiter.withPermit {
+                            copyManagedMigrationEntry(
+                                context = context,
+                                targetRoot = targetRoot,
+                                migrationEntry = migrationEntry,
+                                progressTracker = progressTracker
+                            )
+                        }
                     }
-                }
-            }.awaitAll()
-        }
-        val copiedEntries = copyResults.mapNotNull { it.copiedEntry }
-        val skippedFiles = copyResults.count { it.copiedEntry == null }
+                }.awaitAll()
+            }
+            val copiedEntries = copyResults.mapNotNull { it.copiedEntry }
+            val skippedFiles = copyResults.count { it.copiedEntry == null }
 
-        if (skippedFiles > 0) {
-            rollbackMigratedEntries(context, copiedEntries)
-            return@withContext MigrationResult(
-                movedFiles = 0,
-                skippedFiles = skippedFiles
+            if (skippedFiles > 0) {
+                rollbackMigratedEntries(context, copiedEntries)
+                return@withContext MigrationResult(
+                    movedFiles = 0,
+                    skippedFiles = skippedFiles
+                )
+            }
+
+            val rewriteFailedFiles = rewriteMigratedMetadataReferences(
+                context = context,
+                targetRoot = targetRoot,
+                copiedEntries = copiedEntries,
+                parallelism = migrationRewriteParallelism(targetRoot),
+                progressTracker = progressTracker
             )
-        }
+            if (rewriteFailedFiles > 0) {
+                rollbackMigratedEntries(context, copiedEntries)
+                return@withContext MigrationResult(
+                    movedFiles = 0,
+                    skippedFiles = rewriteFailedFiles
+                )
+            }
 
-        val rewriteFailedFiles = rewriteMigratedMetadataReferences(
-            context = context,
-            targetRoot = targetRoot,
-            copiedEntries = copiedEntries,
-            parallelism = migrationRewriteParallelism(targetRoot)
-        )
-        if (rewriteFailedFiles > 0) {
-            rollbackMigratedEntries(context, copiedEntries)
-            return@withContext MigrationResult(
-                movedFiles = 0,
-                skippedFiles = rewriteFailedFiles
+            val cleanupFailedFiles = cleanupMigratedEntries(
+                context = context,
+                copiedEntries = copiedEntries,
+                progressTracker = progressTracker
             )
+            progressTracker.finishAll()
+
+            invalidateSnapshotCache(context)
+
+            MigrationResult(
+                movedFiles = copiedEntries.size,
+                skippedFiles = 0,
+                cleanupFailedFiles = cleanupFailedFiles
+            )
+        } finally {
+            _migrationProgressFlow.value = null
         }
-
-        val cleanupFailedFiles = cleanupMigratedEntries(
-            context = context,
-            copiedEntries = copiedEntries
-        )
-
-        invalidateSnapshotCache(context)
-
-        MigrationResult(
-            movedFiles = copiedEntries.size,
-            skippedFiles = 0,
-            cleanupFailedFiles = cleanupFailedFiles
-        )
     }
 
     private data class ManagedMigrationCopyResult(
@@ -395,31 +647,46 @@ internal object ManagedDownloadStorage {
     private suspend fun copyManagedMigrationEntry(
         context: Context,
         targetRoot: RootHandle,
-        migrationEntry: ManagedMigrationEntry
+        migrationEntry: ManagedMigrationEntry,
+        progressTracker: MigrationProgressTracker? = null
     ): ManagedMigrationCopyResult {
         val copiedEntry = retryManagedMigrationWrite(
             reference = migrationEntry.entry.reference
         ) {
-            openStoredEntryInputStream(context, migrationEntry.entry)?.use { input ->
-                if (migrationEntry.subdirectory == null) {
-                    writeMigrationRootStream(
-                        context = context,
-                        root = targetRoot,
-                        displayName = migrationEntry.entry.name,
-                        mimeType = migrationMimeTypeFor(migrationEntry),
-                        input = input
-                    )
-                } else {
-                    writeMigrationSubdirectoryStream(
-                        context = context,
-                        root = targetRoot,
-                        subdirectory = migrationEntry.subdirectory,
-                        displayName = migrationEntry.entry.name,
-                        mimeType = migrationMimeTypeFor(migrationEntry),
-                        input = input
-                    )
-                }
-            } ?: throw IOException("无法读取源下载文件: ${migrationEntry.entry.name}")
+            progressTracker?.startCopy(migrationEntry)
+            try {
+                openStoredEntryInputStream(context, migrationEntry.entry)?.use { input ->
+                    if (migrationEntry.subdirectory == null) {
+                        writeMigrationRootStream(
+                            context = context,
+                            root = targetRoot,
+                            displayName = migrationEntry.entry.name,
+                            mimeType = migrationMimeTypeFor(migrationEntry),
+                            input = input,
+                            onProgress = { copiedBytes ->
+                                progressTracker?.onCopyProgress(migrationEntry, copiedBytes)
+                            }
+                        )
+                    } else {
+                        writeMigrationSubdirectoryStream(
+                            context = context,
+                            root = targetRoot,
+                            subdirectory = migrationEntry.subdirectory,
+                            displayName = migrationEntry.entry.name,
+                            mimeType = migrationMimeTypeFor(migrationEntry),
+                            input = input,
+                            onProgress = { copiedBytes ->
+                                progressTracker?.onCopyProgress(migrationEntry, copiedBytes)
+                            }
+                        )
+                    }
+                } ?: throw IOException("无法读取源下载文件: ${migrationEntry.entry.name}")
+            } catch (error: Throwable) {
+                progressTracker?.failCopy(migrationEntry)
+                throw error
+            }.also {
+                progressTracker?.completeCopy(migrationEntry)
+            }
         }
             ?: return ManagedMigrationCopyResult(copiedEntry = null)
 
@@ -598,7 +865,7 @@ internal object ManagedDownloadStorage {
         }
 
         val root = resolveRootBlocking(context)
-        val rootEntries = listChildren(root).filterNot(StoredEntry::isDirectory)
+        val rootEntries = listChildren(context, root).filterNot(StoredEntry::isDirectory)
         val audioEntries = rootEntries.filter { it.extension in audioExtensions }
         val metadataEntries = rootEntries.filter { it.name.endsWith(METADATA_SUFFIX) }
         val metadataEntriesByAudioName = metadataEntries.associateBy { entry ->
@@ -609,8 +876,8 @@ internal object ManagedDownloadStorage {
                 entry.name.removeSuffix(METADATA_SUFFIX) to metadata
             }
         }.toMap()
-        val coverEntries = listSubdirectoryEntries(root, COVER_SUBDIRECTORY)
-        val lyricEntries = listSubdirectoryEntries(root, LYRIC_SUBDIRECTORY)
+        val coverEntries = listSubdirectoryEntries(context, root, COVER_SUBDIRECTORY)
+        val lyricEntries = listSubdirectoryEntries(context, root, LYRIC_SUBDIRECTORY)
         val coverEntriesByName = coverEntries.associateBy(StoredEntry::name)
         val lyricEntriesByName = lyricEntries.associateBy(StoredEntry::name)
         val allowMetadataLessAudio = shouldIndexMetadataLessAudio()
@@ -716,7 +983,8 @@ internal object ManagedDownloadStorage {
         context: Context,
         targetRoot: RootHandle,
         copiedEntries: List<CopiedMigrationEntry>,
-        parallelism: Int
+        parallelism: Int,
+        progressTracker: MigrationProgressTracker? = null
     ): Int = coroutineScope {
         if (copiedEntries.isEmpty()) return@coroutineScope 0
         val referenceMap = copiedEntries.associate { copied ->
@@ -728,6 +996,7 @@ internal object ManagedDownloadStorage {
             .map { copied ->
                 async(Dispatchers.IO) {
                     rewriteLimiter.withPermit {
+                        progressTracker?.startRewrite(copied.copiedEntry.name)
                         val raw = readTextInternal(context, copied.copiedEntry.reference)
                         val rewritten = runCatching {
                             val metadataText = raw
@@ -737,9 +1006,11 @@ internal object ManagedDownloadStorage {
                             NPLogger.w(TAG, "迁移后重写 metadata 引用失败: ${copied.copiedEntry.reference}, ${it.message}")
                         }.getOrNull()
                         if (rewritten == null) {
+                            progressTracker?.finishRewrite(copied.copiedEntry.name)
                             return@withPermit 1
                         }
                         if (rewritten == raw) {
+                            progressTracker?.finishRewrite(copied.copiedEntry.name)
                             return@withPermit 0
                         }
                         runCatching {
@@ -753,8 +1024,10 @@ internal object ManagedDownloadStorage {
                         }.onFailure {
                             NPLogger.w(TAG, "回写迁移后的 metadata 失败: ${copied.copiedEntry.reference}, ${it.message}")
                         }.getOrElse {
+                            progressTracker?.finishRewrite(copied.copiedEntry.name)
                             return@withPermit 1
                         }
+                        progressTracker?.finishRewrite(copied.copiedEntry.name)
                         0
                     }
                 }
@@ -765,13 +1038,15 @@ internal object ManagedDownloadStorage {
 
     private suspend fun cleanupMigratedEntries(
         context: Context,
-        copiedEntries: List<CopiedMigrationEntry>
+        copiedEntries: List<CopiedMigrationEntry>,
+        progressTracker: MigrationProgressTracker? = null
     ): Int = coroutineScope {
         if (copiedEntries.isEmpty()) return@coroutineScope 0
         val cleanupLimiter = Semaphore(MIGRATION_DELETE_PARALLELISM)
         copiedEntries.map { migrationEntry ->
             async(Dispatchers.IO) {
                 cleanupLimiter.withPermit {
+                    progressTracker?.startCleanup(copiedEntries.size, migrationEntry.original.entry.name)
                     val deleted = runCatching {
                         deleteInternal(
                             context = context,
@@ -781,6 +1056,7 @@ internal object ManagedDownloadStorage {
                     }.onFailure {
                         NPLogger.w(TAG, "迁移后删除旧下载文件失败: ${migrationEntry.original.entry.reference}, ${it.message}")
                     }.getOrDefault(false)
+                    progressTracker?.finishCleanup(migrationEntry.original.entry.name)
                     if (deleted) 0 else 1
                 }
             }
@@ -918,6 +1194,10 @@ internal object ManagedDownloadStorage {
         }
     }
 
+    suspend fun usesDocumentTree(context: Context): Boolean = withContext(Dispatchers.IO) {
+        resolveRootBlocking(context) is RootHandle.TreeRoot
+    }
+
     suspend fun readText(context: Context, reference: String): String? = withContext(Dispatchers.IO) {
         readTextInternal(context, reference)
     }
@@ -928,6 +1208,14 @@ internal object ManagedDownloadStorage {
 
     suspend fun deleteReference(context: Context, reference: String?): Boolean = withContext(Dispatchers.IO) {
         deleteInternal(context, reference)
+    }
+
+    suspend fun deleteReferences(context: Context, references: Collection<String?>): Set<String> = withContext(Dispatchers.IO) {
+        deleteReferencesInternal(
+            context = context,
+            references = references,
+            invalidateSnapshot = true
+        )
     }
 
     suspend fun saveAudioFromTemp(
@@ -966,12 +1254,15 @@ internal object ManagedDownloadStorage {
 
                 is RootHandle.TreeRoot -> {
                     val finalName = createUniqueName(
-                        root.tree.listFiles().mapNotNull(DocumentFile::getName).toSet(),
+                        cachedTreeChildrenNames(context, root.tree),
                         fileName
                     )
+                    val committedAtMs = System.currentTimeMillis()
+                    val pendingName = buildPendingAudioWriteName(finalName)
                     val pendingTarget = createRootFile(
+                        context = context,
                         parent = root.tree,
-                        desiredName = buildPendingAudioWriteName(finalName),
+                        desiredName = pendingName,
                         mimeType = mimeTypeFromName(finalName, mimeType),
                         replace = false
                     )
@@ -981,10 +1272,18 @@ internal object ManagedDownloadStorage {
                         }
                     } ?: throw IOException("无法打开下载目录输出流")
                     if (!pendingTarget.renameTo(finalName)) {
+                        forgetTreeChildName(root.tree, pendingName)
                         runCatching { pendingTarget.delete() }
                         throw IOException("无法提交下载文件: $finalName")
                     }
-                    (root.tree.findFile(finalName) ?: pendingTarget).toStoredEntry()
+                    forgetTreeChildName(root.tree, pendingName)
+                    rememberTreeChildName(root.tree, finalName)
+                    pendingTarget.toStoredEntry(
+                        knownName = finalName,
+                        knownSizeBytes = tempFile.length().coerceAtLeast(0L),
+                        knownLastModifiedMs = committedAtMs,
+                        knownIsDirectory = false
+                    )
                         ?: throw IOException("无法读取已写入的下载文件")
                 }
             }
@@ -1005,7 +1304,25 @@ internal object ManagedDownloadStorage {
         fileName: String,
         mimeType: String?
     ): StoredEntry? {
-        val bytes = tempFile.takeIf(File::exists)?.readBytes() ?: return null
+        val sourceFile = tempFile.takeIf(File::exists) ?: return null
+        return writeSubdirectoryFileBlocking(
+            context = context,
+            subdirectory = COVER_SUBDIRECTORY,
+            displayName = fileName,
+            sourceFile = sourceFile,
+            mimeType = mimeTypeFromName(fileName, mimeType)
+        )
+    }
+
+    fun commitCoverBytes(
+        context: Context,
+        bytes: ByteArray,
+        fileName: String,
+        mimeType: String?
+    ): StoredEntry? {
+        if (bytes.isEmpty()) {
+            return null
+        }
         return writeSubdirectoryBytesBlocking(
             context = context,
             subdirectory = COVER_SUBDIRECTORY,
@@ -1170,13 +1487,13 @@ internal object ManagedDownloadStorage {
     private fun resolveRootBlocking(context: Context): RootHandle {
         val configuredUri = normalizeDirectoryUri(customDirectoryUri)
         resolveTreeRootBlocking(context, configuredUri)?.also {
-            ensureManagedMediaScanIsolation(it)
+            ensureManagedMediaScanIsolation(context, it)
         }?.let { return it }
         if (configuredUri != null) {
             NPLogger.w(TAG, "自定义下载目录不可用，回退默认目录: $configuredUri")
         }
         return createDefaultRoot(context).also {
-            ensureManagedMediaScanIsolation(it)
+            ensureManagedMediaScanIsolation(context, it)
         }
     }
 
@@ -1187,7 +1504,7 @@ internal object ManagedDownloadStorage {
         } else {
             resolveTreeRootBlocking(context, normalizedUri)
         }
-        root?.let { ensureManagedMediaScanIsolation(it) }
+        root?.let { ensureManagedMediaScanIsolation(context, it) }
         return root
     }
 
@@ -1281,7 +1598,7 @@ internal object ManagedDownloadStorage {
             ?: audioEntries.maxByOrNull(StoredEntry::lastModifiedMs)
     }
 
-    private fun listChildren(root: RootHandle): List<StoredEntry> {
+    private fun listChildren(context: Context, root: RootHandle): List<StoredEntry> {
         return when (root) {
             is RootHandle.FileRoot -> {
                 root.dir.listFiles()
@@ -1290,8 +1607,18 @@ internal object ManagedDownloadStorage {
             }
 
             is RootHandle.TreeRoot -> {
-                root.tree.listFiles()
-                    .mapNotNull { file -> file.toStoredEntry() }
+                queryTreeChildren(context, root.tree)
+                    .map { child ->
+                        StoredEntry(
+                            name = child.name,
+                            reference = child.documentUri.toString(),
+                            mediaUri = child.documentUri.toString(),
+                            localFilePath = null,
+                            sizeBytes = child.sizeBytes,
+                            lastModifiedMs = child.lastModifiedMs,
+                            isDirectory = child.isDirectory
+                        )
+                    }
             }
         }
     }
@@ -1305,11 +1632,11 @@ internal object ManagedDownloadStorage {
         root: RootHandle,
         allowMetadataLessAudio: Boolean
     ): List<ManagedMigrationEntry> {
-        val rootEntries = listChildren(root).filterNot(StoredEntry::isDirectory)
+        val rootEntries = listChildren(context, root).filterNot(StoredEntry::isDirectory)
         val audioEntries = rootEntries.filter { it.extension in audioExtensions }
         val metadataEntries = rootEntries.filter { it.name.endsWith(METADATA_SUFFIX) }
-        val coverEntries = listSubdirectoryEntries(root, COVER_SUBDIRECTORY)
-        val lyricEntries = listSubdirectoryEntries(root, LYRIC_SUBDIRECTORY)
+        val coverEntries = listSubdirectoryEntries(context, root, COVER_SUBDIRECTORY)
+        val lyricEntries = listSubdirectoryEntries(context, root, LYRIC_SUBDIRECTORY)
         val metadataEntriesByAudioName = metadataEntries.associateBy { entry ->
             entry.name.removeSuffix(METADATA_SUFFIX)
         }
@@ -1382,9 +1709,9 @@ internal object ManagedDownloadStorage {
         return migrationEntries.sortedWith(compareBy({ it.subdirectory ?: "" }, { it.entry.name }))
     }
 
-    private fun listSubdirectoryEntries(root: RootHandle, subdirectory: String): List<StoredEntry> {
-        return findSubdirectories(root, subdirectory, canonicalLast = true)
-            .flatMap(::listChildren)
+    private fun listSubdirectoryEntries(context: Context, root: RootHandle, subdirectory: String): List<StoredEntry> {
+        return findSubdirectories(context, root, subdirectory, canonicalLast = true)
+            .flatMap { childRoot -> listChildren(context, childRoot) }
             .filterNot(StoredEntry::isDirectory)
     }
 
@@ -1612,6 +1939,30 @@ internal object ManagedDownloadStorage {
         }
     }
 
+    internal fun applyReferenceDeletesToSnapshot(
+        snapshot: DownloadLibrarySnapshot,
+        references: Set<String>
+    ): DownloadLibrarySnapshot {
+        if (references.isEmpty()) {
+            return snapshot
+        }
+        val deletedMetadataAudioNames = snapshot.metadataEntriesByAudioName.values
+            .filter { entry -> entry.reference in references }
+            .mapTo(linkedSetOf()) { entry -> entry.name.removeSuffix(METADATA_SUFFIX) }
+        return composeSnapshot(
+            audioEntries = snapshot.audioEntries.filterNot { entry -> entry.reference in references },
+            metadataEntries = snapshot.metadataEntriesByAudioName.values
+                .filterNot { entry -> entry.reference in references },
+            metadataByAudioName = snapshot.metadataByAudioName.filterKeys { audioName ->
+                audioName !in deletedMetadataAudioNames
+            },
+            coverEntries = snapshot.coverEntriesByName.values
+                .filterNot { entry -> entry.reference in references },
+            lyricEntries = snapshot.lyricEntriesByName.values
+                .filterNot { entry -> entry.reference in references }
+        )
+    }
+
     private fun replaceStoredEntry(
         entries: Collection<StoredEntry>,
         storedEntry: StoredEntry
@@ -1717,22 +2068,143 @@ internal object ManagedDownloadStorage {
         return "$fileName$PENDING_AUDIO_WRITE_MARKER.$pendingId"
     }
 
+    private fun queryTreeChildren(context: Context, parent: DocumentFile): List<QueriedTreeChild> {
+        val parentUri = parent.uri
+        val documentId = runCatching { DocumentsContract.getDocumentId(parentUri) }.getOrNull()
+            ?: return parent.listFiles().mapNotNull { file ->
+                file.name?.let { name ->
+                    QueriedTreeChild(
+                        name = name,
+                        documentUri = file.uri,
+                        sizeBytes = file.length(),
+                        lastModifiedMs = file.lastModified(),
+                        isDirectory = file.isDirectory
+                    )
+                }
+            }
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(parentUri, documentId)
+        return runCatching {
+            context.contentResolver.query(
+                childrenUri,
+                arrayOf(
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    DocumentsContract.Document.COLUMN_MIME_TYPE,
+                    DocumentsContract.Document.COLUMN_SIZE,
+                    DocumentsContract.Document.COLUMN_LAST_MODIFIED
+                ),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                val idIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                val nameIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                val mimeTypeIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+                val sizeIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
+                val modifiedIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+                if (idIndex < 0 || nameIndex < 0 || mimeTypeIndex < 0) {
+                    return@use emptyList()
+                }
+                buildList {
+                    while (cursor.moveToNext()) {
+                        val childDocumentId = cursor.getString(idIndex) ?: continue
+                        val childName = cursor.getString(nameIndex) ?: continue
+                        val childMimeType = cursor.getString(mimeTypeIndex).orEmpty()
+                        val childUri = DocumentsContract.buildDocumentUriUsingTree(parentUri, childDocumentId)
+                        add(
+                            QueriedTreeChild(
+                                name = childName,
+                                documentUri = childUri,
+                                sizeBytes = if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) {
+                                    cursor.getLong(sizeIndex)
+                                } else {
+                                    0L
+                                },
+                                lastModifiedMs = if (modifiedIndex >= 0 && !cursor.isNull(modifiedIndex)) {
+                                    cursor.getLong(modifiedIndex)
+                                } else {
+                                    0L
+                                },
+                                isDirectory = childMimeType == DocumentsContract.Document.MIME_TYPE_DIR
+                            )
+                        )
+                    }
+                }
+            }.orEmpty()
+        }.onFailure {
+            NPLogger.w(TAG, "查询目录子项失败，回退 DocumentFile 枚举: ${it.message}")
+        }.getOrElse {
+            parent.listFiles().mapNotNull { file ->
+                file.name?.let { name ->
+                    QueriedTreeChild(
+                        name = name,
+                        documentUri = file.uri,
+                        sizeBytes = file.length(),
+                        lastModifiedMs = file.lastModified(),
+                        isDirectory = file.isDirectory
+                    )
+                }
+            }
+        }
+    }
+
+    private fun cachedTreeChildrenNames(context: Context, parent: DocumentFile): Set<String> {
+        val cacheKey = parent.uri.toString()
+        val now = System.currentTimeMillis()
+        treeChildrenNameCache[cacheKey]
+            ?.takeIf { now - it.refreshedAtMs <= TREE_CHILDREN_CACHE_VALIDATE_INTERVAL_MS }
+            ?.let { return it.names }
+        val refreshedNames = queryTreeChildren(context, parent)
+            .map(QueriedTreeChild::name)
+            .toSet()
+        treeChildrenNameCache[cacheKey] = CachedTreeChildren(
+            names = refreshedNames,
+            refreshedAtMs = now
+        )
+        return refreshedNames
+    }
+
+    private fun rememberTreeChildName(parent: DocumentFile, childName: String) {
+        val cacheKey = parent.uri.toString()
+        val existing = treeChildrenNameCache[cacheKey]?.names.orEmpty()
+        treeChildrenNameCache[cacheKey] = CachedTreeChildren(
+            names = existing + childName,
+            refreshedAtMs = System.currentTimeMillis()
+        )
+    }
+
+    private fun forgetTreeChildName(parent: DocumentFile, childName: String) {
+        val cacheKey = parent.uri.toString()
+        val existing = treeChildrenNameCache[cacheKey]?.names ?: return
+        treeChildrenNameCache[cacheKey] = CachedTreeChildren(
+            names = existing - childName,
+            refreshedAtMs = System.currentTimeMillis()
+        )
+    }
+
     private fun createRootFile(
+        context: Context,
         parent: DocumentFile,
         desiredName: String,
         mimeType: String,
         replace: Boolean
     ): DocumentFile {
-        val existing = parent.findFile(desiredName)
+        val childNames = cachedTreeChildrenNames(context, parent)
+        val existing = desiredName
+            .takeIf { it in childNames }
+            ?.let(parent::findFile)
         if (replace && existing != null && existing.isFile) {
             return existing
         }
         if (replace && existing != null) {
             existing.delete()
+            forgetTreeChildName(parent, desiredName)
         }
-        val finalName = if (replace) desiredName else createUniqueName(parent.listFiles().mapNotNull(DocumentFile::getName).toSet(), desiredName)
-        return parent.createFile(documentCreateMimeType(finalName, mimeType), finalName)
-            ?: throw IOException("无法在下载目录创建文件: $finalName")
+        val finalName = if (replace) desiredName else createUniqueName(childNames, desiredName)
+        return (
+            parent.createFile(documentCreateMimeType(finalName, mimeType), finalName)
+                ?: throw IOException("无法在下载目录创建文件: $finalName")
+            ).also { rememberTreeChildName(parent, finalName) }
     }
 
     internal fun documentCreateMimeType(desiredName: String, mimeType: String): String {
@@ -1762,12 +2234,18 @@ internal object ManagedDownloadStorage {
             }
 
             is RootHandle.TreeRoot -> {
-                val target = createRootFile(root.tree, displayName, mimeType, replace = true)
+                val target = createRootFile(context, root.tree, displayName, mimeType, replace = true)
+                val writtenAtMs = System.currentTimeMillis()
+                var copiedBytes = 0L
                 context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
-                    input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
+                    copiedBytes = input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
                 } ?: throw IOException("无法写入根目录文件: $displayName")
-                target.toStoredEntry()
-                    ?: throw IOException("无法读取已写入的目录文件: $displayName")
+                target.toStoredEntry(
+                    knownName = displayName,
+                    knownSizeBytes = copiedBytes.coerceAtLeast(0L),
+                    knownLastModifiedMs = writtenAtMs,
+                    knownIsDirectory = false
+                ) ?: throw IOException("无法读取已写入的目录文件: $displayName")
             }
         }
         if (invalidateSnapshot) {
@@ -1781,7 +2259,8 @@ internal object ManagedDownloadStorage {
         root: RootHandle,
         displayName: String,
         mimeType: String,
-        input: InputStream
+        input: InputStream,
+        onProgress: ((Long) -> Unit)? = null
     ): StoredWriteResult {
         return when (root) {
             is RootHandle.FileRoot -> {
@@ -1789,28 +2268,60 @@ internal object ManagedDownloadStorage {
                 if (target.exists()) {
                     throw MigrationTargetConflictException("目标下载目录已存在同名文件: $displayName")
                 }
+                var copiedBytes = 0L
                 target.outputStream().use { output ->
-                    input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
+                    copiedBytes = copyStreamWithProgress(input, output, onProgress)
                 }
                 StoredWriteResult(
-                    entry = target.toStoredEntry(),
+                    entry = target.toStoredEntry().copy(sizeBytes = copiedBytes.coerceAtLeast(0L)),
                     createdNew = true
                 )
             }
 
             is RootHandle.TreeRoot -> {
-                ensureMigrationTargetAbsent(root.tree, displayName)
-                val target = createRootFile(root.tree, displayName, mimeType, replace = true)
+                ensureMigrationTargetAbsent(context, root.tree, displayName)
+                val target = createRootFile(context, root.tree, displayName, mimeType, replace = true)
+                val writtenAtMs = System.currentTimeMillis()
+                var copiedBytes = 0L
                 context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
-                    input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
+                    copiedBytes = copyStreamWithProgress(input, output, onProgress)
                 } ?: throw IOException("无法写入根目录文件: $displayName")
                 StoredWriteResult(
-                    entry = target.toStoredEntry()
-                        ?: throw IOException("无法读取已写入的目录文件: $displayName"),
+                    entry = target.toStoredEntry(
+                        knownName = displayName,
+                        knownSizeBytes = copiedBytes.coerceAtLeast(0L),
+                        knownLastModifiedMs = writtenAtMs,
+                        knownIsDirectory = false
+                    ) ?: throw IOException("无法读取已写入的目录文件: $displayName"),
                     createdNew = true
                 )
             }
         }
+    }
+
+    private fun copyStreamWithProgress(
+        input: InputStream,
+        output: java.io.OutputStream,
+        onProgress: ((Long) -> Unit)? = null
+    ): Long {
+        if (onProgress == null) {
+            return input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
+        }
+        val buffer = ByteArray(STREAM_COPY_BUFFER_SIZE_BYTES)
+        var copiedBytes = 0L
+        while (true) {
+            val readCount = input.read(buffer)
+            if (readCount < 0) {
+                break
+            }
+            if (readCount == 0) {
+                continue
+            }
+            output.write(buffer, 0, readCount)
+            copiedBytes += readCount
+            onProgress(copiedBytes)
+        }
+        return copiedBytes
     }
 
     private fun writeSubdirectoryBytesBlocking(
@@ -1830,13 +2341,19 @@ internal object ManagedDownloadStorage {
             }
 
             is RootHandle.TreeRoot -> {
-                val directory = findOrCreateDirectory(root.tree, subdirectory) ?: return null
+                val directory = findOrCreateDirectory(context, root.tree, subdirectory) ?: return null
                 ensureManagedMediaScanIsolation(subdirectory, directory)
-                val target = createRootFile(directory, displayName, mimeType, replace = true)
+                val target = createRootFile(context, directory, displayName, mimeType, replace = true)
+                val writtenAtMs = System.currentTimeMillis()
                 context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
                     output.write(bytes)
                 } ?: throw IOException("无法写入目录文件: $displayName")
-                target.toStoredEntry()
+                target.toStoredEntry(
+                    knownName = displayName,
+                    knownSizeBytes = bytes.size.toLong(),
+                    knownLastModifiedMs = writtenAtMs,
+                    knownIsDirectory = false
+                )
             }
         }
         storedEntry?.let { entry ->
@@ -1850,6 +2367,38 @@ internal object ManagedDownloadStorage {
             }
         }
         return storedEntry
+    }
+
+    private fun writeSubdirectoryFileBlocking(
+        context: Context,
+        subdirectory: String,
+        displayName: String,
+        sourceFile: File,
+        mimeType: String
+    ): StoredEntry? {
+        if (!sourceFile.exists()) {
+            return null
+        }
+        sourceFile.inputStream().use { input ->
+            return writeSubdirectoryStream(
+                context = context,
+                root = resolveRootBlocking(context),
+                subdirectory = subdirectory,
+                displayName = displayName,
+                mimeType = mimeType,
+                input = input,
+                invalidateSnapshot = false
+            ).also { entry ->
+                val bucket = when (subdirectory) {
+                    COVER_SUBDIRECTORY -> SnapshotEntryBucket.COVER
+                    LYRIC_SUBDIRECTORY -> SnapshotEntryBucket.LYRIC
+                    else -> null
+                }
+                if (bucket == null || !updateSnapshotCacheAfterStoredEntryWrite(context, entry, bucket)) {
+                    invalidateSnapshotCache(context)
+                }
+            }
+        }
     }
 
     private fun writeSubdirectoryStream(
@@ -1873,15 +2422,21 @@ internal object ManagedDownloadStorage {
             }
 
             is RootHandle.TreeRoot -> {
-                val directory = findOrCreateDirectory(root.tree, subdirectory)
+                val directory = findOrCreateDirectory(context, root.tree, subdirectory)
                     ?: throw IOException("无法创建目录: $subdirectory")
                 ensureManagedMediaScanIsolation(subdirectory, directory)
-                val target = createRootFile(directory, displayName, mimeType, replace = true)
+                val target = createRootFile(context, directory, displayName, mimeType, replace = true)
+                val writtenAtMs = System.currentTimeMillis()
+                var copiedBytes = 0L
                 context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
-                    input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
+                    copiedBytes = input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
                 } ?: throw IOException("无法写入目录文件: $displayName")
-                target.toStoredEntry()
-                    ?: throw IOException("无法读取已写入的目录文件: $displayName")
+                target.toStoredEntry(
+                    knownName = displayName,
+                    knownSizeBytes = copiedBytes.coerceAtLeast(0L),
+                    knownLastModifiedMs = writtenAtMs,
+                    knownIsDirectory = false
+                ) ?: throw IOException("无法读取已写入的目录文件: $displayName")
             }
         }
         if (invalidateSnapshot) {
@@ -1896,7 +2451,8 @@ internal object ManagedDownloadStorage {
         subdirectory: String,
         displayName: String,
         mimeType: String,
-        input: InputStream
+        input: InputStream,
+        onProgress: ((Long) -> Unit)? = null
     ): StoredWriteResult {
         return when (root) {
             is RootHandle.FileRoot -> {
@@ -1906,27 +2462,34 @@ internal object ManagedDownloadStorage {
                 if (target.exists()) {
                     throw MigrationTargetConflictException("目标下载目录已存在同名文件: $subdirectory/$displayName")
                 }
+                var copiedBytes = 0L
                 target.outputStream().use { output ->
-                    input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
+                    copiedBytes = copyStreamWithProgress(input, output, onProgress)
                 }
                 StoredWriteResult(
-                    entry = target.toStoredEntry(),
+                    entry = target.toStoredEntry().copy(sizeBytes = copiedBytes.coerceAtLeast(0L)),
                     createdNew = true
                 )
             }
 
             is RootHandle.TreeRoot -> {
-                val directory = findOrCreateDirectory(root.tree, subdirectory)
+                val directory = findOrCreateDirectory(context, root.tree, subdirectory)
                     ?: throw IOException("无法创建目录: $subdirectory")
                 ensureManagedMediaScanIsolation(subdirectory, directory)
-                ensureMigrationTargetAbsent(directory, displayName)
-                val target = createRootFile(directory, displayName, mimeType, replace = true)
+                ensureMigrationTargetAbsent(context, directory, displayName)
+                val target = createRootFile(context, directory, displayName, mimeType, replace = true)
+                val writtenAtMs = System.currentTimeMillis()
+                var copiedBytes = 0L
                 context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
-                    input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
+                    copiedBytes = copyStreamWithProgress(input, output, onProgress)
                 } ?: throw IOException("无法写入目录文件: $displayName")
                 StoredWriteResult(
-                    entry = target.toStoredEntry()
-                        ?: throw IOException("无法读取已写入的目录文件: $displayName"),
+                    entry = target.toStoredEntry(
+                        knownName = displayName,
+                        knownSizeBytes = copiedBytes.coerceAtLeast(0L),
+                        knownLastModifiedMs = writtenAtMs,
+                        knownIsDirectory = false
+                    ) ?: throw IOException("无法读取已写入的目录文件: $displayName"),
                     createdNew = true
                 )
             }
@@ -1948,12 +2511,18 @@ internal object ManagedDownloadStorage {
             }
 
             is RootHandle.TreeRoot -> {
-                val target = createRootFile(root.tree, displayName, "application/json", replace = true)
+                val target = createRootFile(context, root.tree, displayName, "application/json", replace = true)
+                val writtenAtMs = System.currentTimeMillis()
+                val encoded = content.toByteArray(Charsets.UTF_8)
                 context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
-                    output.write(content.toByteArray(Charsets.UTF_8))
+                    output.write(encoded)
                 } ?: throw IOException("无法写入元数据文件: $displayName")
-                target.toStoredEntry()
-                    ?: throw IOException("无法读取已写入的元数据文件: $displayName")
+                target.toStoredEntry(
+                    knownName = displayName,
+                    knownSizeBytes = encoded.size.toLong(),
+                    knownLastModifiedMs = writtenAtMs,
+                    knownIsDirectory = false
+                ) ?: throw IOException("无法读取已写入的元数据文件: $displayName")
             }
         }
         if (invalidateSnapshot) {
@@ -1962,9 +2531,34 @@ internal object ManagedDownloadStorage {
         return storedEntry
     }
 
-    private fun findOrCreateDirectory(parent: DocumentFile, displayName: String): DocumentFile? {
-        val lock = treeDirectoryLocks.computeIfAbsent("${parent.uri}|$displayName") { Any() }
+    private fun findOrCreateDirectory(context: Context, parent: DocumentFile, displayName: String): DocumentFile? {
+        val cacheKey = "${parent.uri}|$displayName"
+        treeSubdirectoryCache[cacheKey]
+            ?.takeIf { it.isDirectory }
+            ?.let { return it }
+        val lock = treeDirectoryLocks.computeIfAbsent(cacheKey) { Any() }
         return synchronized(lock) {
+            treeSubdirectoryCache[cacheKey]
+                ?.takeIf { it.isDirectory }
+                ?.let { return@synchronized it }
+            queryTreeChildren(context, parent)
+                .filter(QueriedTreeChild::isDirectory)
+                .mapNotNull { child ->
+                    DocumentFile.fromTreeUri(context, child.documentUri)
+                        ?.let { directory -> child.name to directory }
+                }
+                .filter { (name, _) -> matchesManagedSubdirectoryName(name, displayName) }
+                .sortedWith(
+                    compareBy<Pair<String, DocumentFile>>(
+                        { if (it.first == displayName) 0 else 1 },
+                        { managedSubdirectoryOrdinal(it.first, displayName) },
+                        { it.first }
+                    )
+                )
+                .firstOrNull()
+                ?.second
+                ?.also { treeSubdirectoryCache[cacheKey] = it }
+                ?.let { return@synchronized it }
             parent.listFiles()
                 .filter(DocumentFile::isDirectory)
                 .mapNotNull { file -> file.name?.let { name -> name to file } }
@@ -1978,22 +2572,33 @@ internal object ManagedDownloadStorage {
                 )
                 .firstOrNull()
                 ?.second
+                ?.also { treeSubdirectoryCache[cacheKey] = it }
                 ?.let { return@synchronized it }
-            parent.createDirectory(displayName)
+            val createdDirectory = parent.createDirectory(displayName)
                 ?: parent.listFiles()
                     .firstOrNull { file ->
                         file.isDirectory && file.name?.let { name ->
                             matchesManagedSubdirectoryName(name, displayName)
                         } == true
                     }
+            createdDirectory?.also {
+                treeSubdirectoryCache[cacheKey] = it
+                it.name?.let { createdName -> rememberTreeChildName(parent, createdName) }
+            }
         }
     }
 
-    private fun ensureManagedMediaScanIsolation(root: RootHandle) {
+    private fun clearTreeDirectoryCache() {
+        treeSubdirectoryCache.clear()
+        treeChildrenNameCache.clear()
+        cachedTreeRoot = null
+    }
+
+    private fun ensureManagedMediaScanIsolation(context: Context, root: RootHandle) {
         runCatching {
             when (root) {
                 is RootHandle.FileRoot -> {
-                    findSubdirectories(root, COVER_SUBDIRECTORY).forEach { directory ->
+                    findSubdirectories(context, root, COVER_SUBDIRECTORY).forEach { directory ->
                         if (directory is RootHandle.FileRoot) {
                             ensureNoMediaMarker(directory.dir)
                         }
@@ -2001,7 +2606,7 @@ internal object ManagedDownloadStorage {
                 }
 
                 is RootHandle.TreeRoot -> {
-                    findSubdirectories(root, COVER_SUBDIRECTORY).forEach { directory ->
+                    findSubdirectories(context, root, COVER_SUBDIRECTORY).forEach { directory ->
                         if (directory is RootHandle.TreeRoot) {
                             ensureNoMediaMarker(directory.tree)
                         }
@@ -2045,6 +2650,7 @@ internal object ManagedDownloadStorage {
     )
 
     private fun findSubdirectories(
+        context: Context,
         root: RootHandle,
         desiredName: String,
         canonicalLast: Boolean = false
@@ -2062,30 +2668,46 @@ internal object ManagedDownloadStorage {
                 { it.name }
             )
         }
-        return listDirectoryChildren(root)
+        return listDirectoryChildren(context, root)
             .filter { matchesManagedSubdirectoryName(it.name, desiredName) }
             .sortedWith(comparator)
             .map(NamedDirectoryRoot::root)
     }
 
-    private fun listDirectoryChildren(root: RootHandle): List<NamedDirectoryRoot> {
+    private fun listDirectoryChildren(context: Context, root: RootHandle): List<NamedDirectoryRoot> {
         return when (root) {
             is RootHandle.FileRoot -> root.dir.listFiles()
                 ?.filter(File::isDirectory)
                 ?.map { file -> NamedDirectoryRoot(name = file.name, root = RootHandle.FileRoot(file)) }
                 .orEmpty()
 
-            is RootHandle.TreeRoot -> root.tree.listFiles()
-                .filter(DocumentFile::isDirectory)
-                .mapNotNull { file ->
-                    file.name?.let { name ->
-                        NamedDirectoryRoot(name = name, root = RootHandle.TreeRoot(file))
+            is RootHandle.TreeRoot -> {
+                val queriedDirectories = queryTreeChildren(context, root.tree)
+                    .filter(QueriedTreeChild::isDirectory)
+                    .mapNotNull { child ->
+                        DocumentFile.fromTreeUri(context, child.documentUri)?.let { file ->
+                            NamedDirectoryRoot(name = child.name, root = RootHandle.TreeRoot(file))
+                        }
                     }
+                if (queriedDirectories.isNotEmpty()) {
+                    queriedDirectories
+                } else {
+                    root.tree.listFiles()
+                        .filter(DocumentFile::isDirectory)
+                        .mapNotNull { file ->
+                            file.name?.let { name ->
+                                NamedDirectoryRoot(name = name, root = RootHandle.TreeRoot(file))
+                            }
+                        }
                 }
+            }
         }
     }
 
-    private fun ensureMigrationTargetAbsent(parent: DocumentFile, displayName: String) {
+    private fun ensureMigrationTargetAbsent(context: Context, parent: DocumentFile, displayName: String) {
+        if (displayName !in cachedTreeChildrenNames(context, parent)) {
+            return
+        }
         parent.findFile(displayName)?.let { existing ->
             val targetType = if (existing.isDirectory) "目录" else "文件"
             throw MigrationTargetConflictException("目标下载目录已存在同名$targetType: $displayName")
@@ -2243,11 +2865,48 @@ internal object ManagedDownloadStorage {
         return uriString.substring(authorityStartIndex, authorityEndIndex)
     }
 
+    private fun resolveCachedTreeRoot(normalizedUri: String, identity: String): RootHandle.TreeRoot? {
+        val now = System.currentTimeMillis()
+        val cachedRoot = cachedTreeRoot
+            ?.takeIf { it.identity == identity && it.normalizedUri == normalizedUri }
+            ?: return null
+        if (now - cachedRoot.validatedAtMs <= TREE_ROOT_CACHE_VALIDATE_INTERVAL_MS) {
+            return cachedRoot.root
+        }
+        return cachedRoot.root
+            .takeIf { it.tree.exists() && it.tree.isDirectory }
+            ?.also {
+                cachedTreeRoot = cachedRoot.copy(validatedAtMs = now)
+            }
+    }
+
+    private fun rememberCachedTreeRoot(
+        normalizedUri: String,
+        identity: String,
+        root: RootHandle.TreeRoot
+    ): RootHandle.TreeRoot {
+        cachedTreeRoot = CachedTreeRoot(
+            identity = identity,
+            normalizedUri = normalizedUri,
+            root = root,
+            validatedAtMs = System.currentTimeMillis()
+        )
+        return root
+    }
+
     private fun resolveTreeRootBlocking(context: Context, directoryUriString: String?): RootHandle.TreeRoot? {
-        val uriString = normalizeConfiguredDirectoryUri(directoryUriString) ?: return null
-        val treeUri = runCatching { uriString.toUri() }.getOrNull() ?: return null
-        val tree = DocumentFile.fromTreeUri(context, treeUri) ?: return null
-        return tree.takeIf { it.exists() && it.isDirectory }?.let(RootHandle::TreeRoot)
+        val normalizedUri = normalizeConfiguredDirectoryUri(directoryUriString) ?: return null
+        val identity = directoryIdentity(normalizedUri) ?: normalizedUri
+        resolveCachedTreeRoot(normalizedUri, identity)?.let { return it }
+
+        val lock = treeDirectoryLocks.computeIfAbsent("tree_root:$identity") { Any() }
+        return synchronized(lock) {
+            resolveCachedTreeRoot(normalizedUri, identity)?.let { return@synchronized it }
+            val treeUri = runCatching { normalizedUri.toUri() }.getOrNull() ?: return@synchronized null
+            val tree = DocumentFile.fromTreeUri(context, treeUri) ?: return@synchronized null
+            tree.takeIf { it.exists() && it.isDirectory }
+                ?.let { rememberCachedTreeRoot(normalizedUri, identity, RootHandle.TreeRoot(it)) }
+        }
     }
 
     private fun createDefaultRoot(context: Context): RootHandle.FileRoot {
@@ -2286,7 +2945,7 @@ internal object ManagedDownloadStorage {
             reference.startsWith("/") -> File(reference).exists()
             else -> {
                 val uri = runCatching { reference.toUri() }.getOrNull() ?: return false
-                DocumentFile.fromSingleUri(context, uri)?.exists()
+                resolveDocumentFile(context, uri)?.exists()
                     ?: runCatching {
                         context.contentResolver.openFileDescriptor(uri, "r")?.use { true } ?: false
                     }.getOrDefault(false)
@@ -2299,23 +2958,104 @@ internal object ManagedDownloadStorage {
         reference: String?,
         invalidateSnapshot: Boolean = true
     ): Boolean {
-        if (reference.isNullOrBlank()) return false
-        val deleted = when {
-            reference.startsWith("/") -> {
-                val file = File(reference)
-                !file.exists() || file.delete()
-            }
+        return deleteReferencesInternal(
+            context = context,
+            references = listOf(reference),
+            invalidateSnapshot = invalidateSnapshot
+        ).isNotEmpty()
+    }
 
-            else -> {
-                val uri = runCatching { reference.toUri() }.getOrNull() ?: return false
-                DocumentFile.fromSingleUri(context, uri)?.delete()
-                    ?: false
+    private fun deleteReferencesInternal(
+        context: Context,
+        references: Collection<String?>,
+        invalidateSnapshot: Boolean
+    ): Set<String> {
+        val normalizedReferences = references
+            .mapNotNull { it?.takeIf(String::isNotBlank) }
+            .distinct()
+        if (normalizedReferences.isEmpty()) {
+            return emptySet()
+        }
+        val deletedReferences = linkedSetOf<String>()
+        normalizedReferences.forEach { reference ->
+            val deleted = when {
+                reference.startsWith("/") -> {
+                    val file = File(reference)
+                    !file.exists() || file.delete()
+                }
+
+                else -> {
+                    val uri = runCatching { reference.toUri() }.getOrNull() ?: return@forEach
+                    deleteContentReference(
+                        context = context,
+                        reference = reference,
+                        uri = uri
+                    )
+                }
+            }
+            if (deleted) {
+                deletedReferences += reference
             }
         }
-        if (deleted && invalidateSnapshot) {
-            invalidateSnapshotCache(context)
+        if (deletedReferences.isNotEmpty() && invalidateSnapshot) {
+            clearTreeDirectoryCache()
+            if (!updateSnapshotCacheAfterDelete(context, deletedReferences)) {
+                invalidateSnapshotCache(context)
+            }
         }
-        return deleted
+        return deletedReferences
+    }
+
+    private fun resolveDocumentFile(context: Context, uri: Uri): DocumentFile? {
+        return DocumentFile.fromSingleUri(context, uri)
+            ?: DocumentFile.fromTreeUri(context, uri)
+    }
+
+    private fun deleteContentReference(
+        context: Context,
+        reference: String,
+        uri: Uri
+    ): Boolean {
+        if (!existsInternal(context, reference)) {
+            return true
+        }
+
+        val deletedByContract = runCatching {
+            DocumentsContract.deleteDocument(context.contentResolver, uri)
+        }.getOrElse { error ->
+            if (isMissingManagedDocumentDeleteFailure(error)) {
+                return true
+            }
+            false
+        }
+        if (deletedByContract || !existsInternal(context, reference)) {
+            return true
+        }
+
+        val deletedByDocumentFile = runCatching {
+            resolveDocumentFile(context, uri)?.delete() ?: false
+        }.getOrElse { error ->
+            if (isMissingManagedDocumentDeleteFailure(error)) {
+                return true
+            }
+            false
+        }
+        return deletedByDocumentFile || !existsInternal(context, reference)
+    }
+
+    internal fun isMissingManagedDocumentDeleteFailure(error: Throwable): Boolean {
+        return generateSequence(error) { it.cause }.any { cause ->
+            when (cause) {
+                is FileNotFoundException -> true
+                is IllegalArgumentException -> {
+                    val message = cause.message.orEmpty()
+                    message.contains("Missing file", ignoreCase = true) ||
+                        message.contains("Failed to determine if", ignoreCase = true)
+                }
+
+                else -> false
+            }
+        }
     }
 
     internal fun mimeTypeFromName(name: String, fallback: String?): String {
@@ -2504,6 +3244,29 @@ internal object ManagedDownloadStorage {
         return true
     }
 
+    private fun updateSnapshotCacheAfterDelete(
+        context: Context,
+        deletedReferences: Set<String>
+    ): Boolean {
+        if (deletedReferences.isEmpty()) {
+            return true
+        }
+        val appContext = context.applicationContext
+        val cacheKey = buildSnapshotCacheKey(appContext)
+        val currentSnapshot = snapshotCache
+            ?.takeIf { it.key == cacheKey }
+            ?.snapshot
+            ?: restoreSnapshotCacheFromDisk(appContext, expectedKey = cacheKey)
+            ?: return true
+        val updatedSnapshot = applyReferenceDeletesToSnapshot(
+            snapshot = currentSnapshot,
+            references = deletedReferences
+        )
+        snapshotCache = SnapshotCache(key = cacheKey, snapshot = updatedSnapshot)
+        scheduleSnapshotCachePersist(appContext, cacheKey)
+        return true
+    }
+
     private fun File.toStoredEntry(): StoredEntry {
         return StoredEntry(
             name = name,
@@ -2516,16 +3279,21 @@ internal object ManagedDownloadStorage {
         )
     }
 
-    private fun DocumentFile.toStoredEntry(): StoredEntry? {
-        val displayName = name ?: return null
+    private fun DocumentFile.toStoredEntry(
+        knownName: String? = null,
+        knownSizeBytes: Long? = null,
+        knownLastModifiedMs: Long? = null,
+        knownIsDirectory: Boolean? = null
+    ): StoredEntry? {
+        val displayName = knownName ?: name ?: return null
         return StoredEntry(
             name = displayName,
             reference = uri.toString(),
             mediaUri = uri.toString(),
             localFilePath = null,
-            sizeBytes = length(),
-            lastModifiedMs = lastModified(),
-            isDirectory = isDirectory
+            sizeBytes = knownSizeBytes ?: length(),
+            lastModifiedMs = knownLastModifiedMs ?: lastModified(),
+            isDirectory = knownIsDirectory ?: isDirectory
         )
     }
 }

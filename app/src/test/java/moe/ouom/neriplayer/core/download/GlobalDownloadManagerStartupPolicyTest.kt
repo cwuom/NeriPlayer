@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.download
 
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -834,5 +835,51 @@ class GlobalDownloadManagerStartupPolicyTest {
 
         assertEquals(DownloadStatus.QUEUED, updatedTasks.single().status)
         assertEquals(202L, updatedTasks.single().attemptId)
+    }
+
+    @Test
+    fun `resolveUndeletedManagedReferences only keeps references that still exist`() = runBlocking {
+        val remaining = resolveUndeletedManagedReferences(
+            requestedReferences = setOf("audio", "cover", "lyric"),
+            deletedReferences = setOf("audio")
+        ) { reference ->
+            reference == "cover"
+        }
+
+        assertEquals(setOf("cover"), remaining)
+    }
+
+    @Test
+    fun `mergeManagedRequestedReferences removes duplicates across songs`() {
+        val merged = mergeManagedRequestedReferences(
+            listOf(
+                linkedSetOf("audio-a", "cover-shared", "lyric-a"),
+                linkedSetOf("audio-b", "cover-shared", "lyric-b")
+            )
+        )
+
+        assertEquals(
+            linkedSetOf("audio-a", "cover-shared", "lyric-a", "audio-b", "lyric-b"),
+            merged
+        )
+    }
+
+    @Test
+    fun `groupRemainingManagedReferencesByIdentity only keeps remaining references per song`() {
+        val remainingBySong = groupRemainingManagedReferencesByIdentity(
+            requestedReferencesByIdentity = mapOf(
+                "song-a" to setOf("audio-a", "cover-shared"),
+                "song-b" to setOf("audio-b", "cover-shared", "lyric-b")
+            ),
+            remainingReferences = setOf("cover-shared", "lyric-b")
+        )
+
+        assertEquals(
+            mapOf(
+                "song-a" to setOf("cover-shared"),
+                "song-b" to setOf("cover-shared", "lyric-b")
+            ),
+            remainingBySong
+        )
     }
 }

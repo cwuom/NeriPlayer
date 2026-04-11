@@ -44,6 +44,11 @@ class DownloadManagerViewModel(application: Application) : AndroidViewModel(appl
         GlobalDownloadManager.deleteDownloadedSong(appContext, song)
     }
 
+    fun deleteDownloadedSongs(songs: List<DownloadedSong>) {
+        val appContext = getApplication<Application>()
+        GlobalDownloadManager.deleteDownloadedSongs(appContext, songs)
+    }
+
     fun playDownloadedSong(song: DownloadedSong) {
         val appContext = getApplication<Application>()
         GlobalDownloadManager.playDownloadedSong(appContext, song)

@@ -1050,6 +1050,13 @@
     <string name="settings_download_directory_migrate_skip">Keep Old Files</string>
     <string name="settings_download_directory_migrating">Moving download files</string>
     <string name="settings_download_directory_migrating_desc">Songs, lyrics, and covers are being moved to the new folder</string>
+    <string name="settings_download_directory_migrating_stage_preparing">Preparing files to move</string>
+    <string name="settings_download_directory_migrating_stage_copying">Copying files</string>
+    <string name="settings_download_directory_migrating_stage_rewriting">Updating metadata references</string>
+    <string name="settings_download_directory_migrating_stage_cleanup">Cleaning up old files</string>
+    <string name="settings_download_directory_migrating_progress_files">Processed %1$d / %2$d items</string>
+    <string name="settings_download_directory_migrating_progress_bytes">Copied %1$s / %2$s</string>
+    <string name="settings_download_directory_migrating_current">Current: %1$s</string>
     <string name="settings_download_directory_migrated">Moved %1$d downloaded files and switched folders</string>
     <string name="settings_download_directory_migrated_partial">Moved %1$d files, but %2$d old files could not be removed</string>
     <string name="settings_download_directory_migrate_failed">Failed to move %1$d files, so the original folder was kept</string>

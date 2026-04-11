@@ -36,6 +36,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -105,6 +108,7 @@ object GlobalDownloadManager {
     private var initialized = false
     private val taskAttemptIdGenerator = AtomicLong(0L)
     private val songExecutionLocks = ConcurrentHashMap<String, Mutex>()
+    private val activeBatchDownloadJobs = Collections.newSetFromMap(ConcurrentHashMap<Job, Boolean>())
 
     fun initialize(context: Context) {
         if (initialized) return
@@ -316,6 +320,18 @@ object GlobalDownloadManager {
             song = song,
             sidecarReferences = sidecarReferences
         )
+        scope.launch {
+            runCatching {
+                DownloadedAudioTagWriter.write(
+                    context = context,
+                    audio = resolvedStoredAudio,
+                    song = song,
+                    sidecarReferences = sidecarReferences
+                )
+            }.onFailure {
+                NPLogger.w(TAG, "异步写入音频内嵌标签失败: ${song.name}, ${it.message}")
+            }
+        }
         if (
             handleCancelledCompletedDownload(
                 context = context,
@@ -353,7 +369,9 @@ object GlobalDownloadManager {
         )
         scheduleCompletedTaskRemoval(songKey, expectedAttemptId = expectedAttemptId)
         if (refreshCatalog) {
-            scheduleCatalogReconcile(context, forceRefresh = true)
+            // 正常完成时前面已经做过 optimistic publish 和 snapshot 增量更新
+            // 这里继续走轻量 reconcile，避免非私有目录每首歌都强制全量重扫
+            scheduleCatalogReconcile(context, forceRefresh = false)
         }
     }
 
@@ -868,17 +886,55 @@ object GlobalDownloadManager {
         songId: Long,
         candidateBaseNames: List<String>,
         explicitReferences: List<String> = emptyList()
-    ) {
-        val snapshot = ManagedDownloadStorage.buildDownloadLibrarySnapshot(
+    ): ManagedDownloadArtifactRemovalResult {
+        var snapshot = ManagedDownloadStorage.buildDownloadLibrarySnapshot(
             context = context,
-            forceRefresh = true
+            forceRefresh = false
         )
-        val metadataReference = storedAudio?.let {
-            ManagedDownloadStorage.findMetadataForAudio(context, it)?.reference
+        if (storedAudio != null && snapshot.audioEntriesByLookupKey[storedAudio.reference] == null) {
+            snapshot = ManagedDownloadStorage.buildDownloadLibrarySnapshot(
+                context = context,
+                forceRefresh = true
+            )
         }
-        val metadata = storedAudio?.let {
-            readDownloadedMetadata(context, it)
+        val referencesToDelete = collectManagedDownloadArtifactReferences(
+            snapshot = snapshot,
+            storedAudio = storedAudio,
+            songId = songId,
+            candidateBaseNames = candidateBaseNames,
+            explicitReferences = explicitReferences
+        )
+        referencesToDelete.forEach { reference ->
+            if (storedAudio?.reference == reference) {
+                NPLogger.d(TAG, "删除下载音频: song=$songName, reference=$reference")
+            } else {
+                NPLogger.d(TAG, "删除下载关联文件: song=$songName, reference=$reference")
+            }
         }
+        val deletedReferences = if (referencesToDelete.isNotEmpty()) {
+            ManagedDownloadStorage.deleteReferences(context, referencesToDelete)
+        } else {
+            emptySet()
+        }
+        if (referencesToDelete.isNotEmpty()) {
+            return ManagedDownloadArtifactRemovalResult(
+                requestedReferences = referencesToDelete,
+                deletedReferences = deletedReferences
+            )
+        }
+        return ManagedDownloadArtifactRemovalResult()
+    }
+
+    private fun collectManagedDownloadArtifactReferences(
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
+        storedAudio: ManagedDownloadStorage.StoredEntry?,
+        songId: Long,
+        candidateBaseNames: List<String>,
+        explicitReferences: List<String> = emptyList(),
+        deletingAudioNames: Set<String> = emptySet()
+    ): Set<String> {
+        val metadataReference = storedAudio?.let { snapshot.metadataEntriesByAudioName[it.name]?.reference }
+        val metadata = storedAudio?.let { snapshot.metadataByAudioName[it.name] }
         val resolvedSongId = metadata?.songId ?: songId.takeIf { it > 0L }
         val currentAudioName = storedAudio?.name
         val lyricReferences = buildList {
@@ -907,27 +963,106 @@ object GlobalDownloadManager {
             }?.let(::add)
         }
 
-        storedAudio?.let {
-            NPLogger.d(TAG, "删除下载音频: song=$songName, reference=${it.reference}")
-            ManagedDownloadStorage.deleteReference(context, it.reference)
-        }
-
-        explicitReferences
-            .plus(listOfNotNull(metadataReference))
-            .plus(coverReferences)
-            .plus(lyricReferences)
-            .distinct()
-            .forEach { reference ->
-                if (metadataReference != null && reference == metadataReference) {
-                    NPLogger.d(TAG, "删除下载关联文件: song=$songName, reference=$reference")
-                    ManagedDownloadStorage.deleteReference(context, reference)
-                } else if (isReferenceOwnedByOtherDownload(snapshot, currentAudioName, reference)) {
-                    NPLogger.w(TAG, "跳过删除共享关联文件: song=$songName, reference=$reference")
-                } else {
-                    NPLogger.d(TAG, "删除下载关联文件: song=$songName, reference=$reference")
-                    ManagedDownloadStorage.deleteReference(context, reference)
+        return linkedSetOf<String>().apply {
+            storedAudio?.reference?.let(::add)
+            explicitReferences
+                .plus(listOfNotNull(metadataReference))
+                .plus(coverReferences)
+                .plus(lyricReferences)
+                .distinct()
+                .forEach { reference ->
+                    if (
+                        metadataReference == null ||
+                        reference == metadataReference ||
+                        !isReferenceOwnedByOtherDownload(
+                            snapshot = snapshot,
+                            currentAudioName = currentAudioName,
+                            reference = reference,
+                            deletingAudioNames = deletingAudioNames
+                        )
+                    ) {
+                        add(reference)
+                    }
                 }
+        }
+    }
+
+    private suspend fun buildManagedDownloadDeletePlans(
+        context: Context,
+        songs: List<DownloadedSong>
+    ): List<ManagedDownloadSongDeletePlan> {
+        if (songs.isEmpty()) {
+            return emptyList()
+        }
+        var snapshot = ManagedDownloadStorage.buildDownloadLibrarySnapshot(
+            context = context,
+            forceRefresh = false
+        )
+        var deleteContexts = songs.map { song ->
+            buildManagedDownloadSongDeleteContext(
+                context = context,
+                song = song,
+                snapshot = snapshot,
+                allowFallbackLookup = true
+            )
+        }
+        if (deleteContexts.any(ManagedDownloadSongDeleteContext::requiresSnapshotRefresh)) {
+            snapshot = ManagedDownloadStorage.buildDownloadLibrarySnapshot(
+                context = context,
+                forceRefresh = true
+            )
+            deleteContexts = songs.map { song ->
+                buildManagedDownloadSongDeleteContext(
+                    context = context,
+                    song = song,
+                    snapshot = snapshot,
+                    allowFallbackLookup = false
+                )
             }
+        }
+        val deletingAudioNames = deleteContexts.mapNotNullTo(mutableSetOf()) { it.storedAudio?.name }
+        return deleteContexts.map { deleteContext ->
+            ManagedDownloadSongDeletePlan(
+                song = deleteContext.song,
+                requestedReferences = collectManagedDownloadArtifactReferences(
+                    snapshot = snapshot,
+                    storedAudio = deleteContext.storedAudio,
+                    songId = deleteContext.song.id,
+                    candidateBaseNames = deleteContext.candidateBaseNames,
+                    explicitReferences = deleteContext.explicitReferences,
+                    deletingAudioNames = deletingAudioNames
+                )
+            )
+        }
+    }
+
+    private suspend fun buildManagedDownloadSongDeleteContext(
+        context: Context,
+        song: DownloadedSong,
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
+        allowFallbackLookup: Boolean
+    ): ManagedDownloadSongDeleteContext {
+        val locationReference = resolveDownloadedSongLocation(song)
+        val snapshotStoredAudio = locationReference?.let(snapshot.audioEntriesByLookupKey::get)
+        val fallbackStoredAudio = if (snapshotStoredAudio == null && allowFallbackLookup) {
+            resolveStoredAudio(context, locationReference)
+        } else {
+            null
+        }
+        val storedAudio = snapshotStoredAudio ?: fallbackStoredAudio
+        val requiresSnapshotRefresh = fallbackStoredAudio?.reference?.let { reference ->
+            snapshot.audioEntriesByLookupKey[reference] == null
+        } == true
+        return ManagedDownloadSongDeleteContext(
+            song = song,
+            storedAudio = storedAudio,
+            candidateBaseNames = candidateBaseNames(song, storedAudio?.nameWithoutExtension),
+            explicitReferences = listOfNotNull(
+                song.coverPath,
+                locationReference.takeIf { storedAudio == null }
+            ),
+            requiresSnapshotRefresh = requiresSnapshotRefresh
+        )
     }
 
     internal suspend fun rollbackCancelledDownload(
@@ -979,29 +1114,66 @@ object GlobalDownloadManager {
     }
 
     fun deleteDownloadedSong(context: Context, song: DownloadedSong) {
+        deleteDownloadedSongs(context, listOf(song))
+    }
+
+    fun deleteDownloadedSongs(context: Context, songs: List<DownloadedSong>) {
         val appContext = context.applicationContext
+        val targetSongs = songs.distinctBy(DownloadedSong::deletionIdentity)
+        if (targetSongs.isEmpty()) {
+            return
+        }
         scope.launch {
             val previousSongs = _downloadedSongs.value
+            val optimisticKeys = targetSongs.mapTo(mutableSetOf()) { it.deletionIdentity() }
             val optimisticSongs = previousSongs.filterNot { candidate ->
-                candidate.filePath == song.filePath || candidate.mediaUri == song.mediaUri
+                optimisticKeys.contains(candidate.deletionIdentity())
             }
             if (optimisticSongs != previousSongs) {
                 publishDownloadedSongs(appContext, optimisticSongs, persistCatalog = true)
             }
             try {
-                val storedAudio = resolveStoredAudio(appContext, song.filePath)
-                val baseNames = candidateBaseNames(song, storedAudio?.nameWithoutExtension)
-                removeManagedDownloadArtifacts(
+                val deletePlans = buildManagedDownloadDeletePlans(
                     context = appContext,
-                    songName = song.name,
-                    storedAudio = storedAudio,
-                    songId = song.id,
-                    candidateBaseNames = baseNames,
-                    explicitReferences = listOfNotNull(song.coverPath, song.filePath.takeIf { storedAudio == null })
+                    songs = targetSongs
                 )
-
-                scheduleCatalogReconcile(appContext, forceRefresh = false)
-                NPLogger.d(TAG, "删除下载文件完成: ${song.name}")
+                val requestedReferences = mergeManagedRequestedReferences(
+                    deletePlans.map(ManagedDownloadSongDeletePlan::requestedReferences)
+                )
+                val deletedReferences = if (requestedReferences.isNotEmpty()) {
+                    ManagedDownloadStorage.deleteReferences(appContext, requestedReferences)
+                } else {
+                    emptySet()
+                }
+                val remainingReferences = resolveUndeletedManagedReferences(
+                    requestedReferences = requestedReferences,
+                    deletedReferences = deletedReferences
+                ) { reference ->
+                    ManagedDownloadStorage.exists(appContext, reference)
+                }
+                val remainingReferencesBySong = groupRemainingManagedReferencesByIdentity(
+                    requestedReferencesByIdentity = deletePlans.associate { plan ->
+                        plan.song.deletionIdentity() to plan.requestedReferences
+                    },
+                    remainingReferences = remainingReferences
+                )
+                var deletionFailed = remainingReferences.isNotEmpty()
+                deletePlans.forEach { deletePlan ->
+                    val remainingForSong = remainingReferencesBySong[deletePlan.song.deletionIdentity()].orEmpty()
+                    if (remainingForSong.isNotEmpty()) {
+                        deletionFailed = true
+                        NPLogger.w(
+                            TAG,
+                            "删除下载文件不完整: ${deletePlan.song.name}, remaining=$remainingForSong"
+                        )
+                    } else {
+                        NPLogger.d(TAG, "删除下载文件完成: ${deletePlan.song.name}")
+                    }
+                }
+                scheduleCatalogReconcile(
+                    appContext,
+                    forceRefresh = deletionFailed
+                )
             } catch (error: Exception) {
                 if (previousSongs != _downloadedSongs.value) {
                     publishDownloadedSongs(appContext, previousSongs, persistCatalog = false)
@@ -1267,12 +1439,20 @@ object GlobalDownloadManager {
         if (songs.isEmpty()) return
 
         val appContext = context.applicationContext
-        scope.launch {
+        val batchJob = scope.launch {
+            val requestedSongs = songs.distinctBy { it.stableKey() }
             val pendingSongs = mutableListOf<PreparedDownloadTaskRequest>()
             try {
                 val optimisticCompletedSongs = mutableListOf<DownloadedSong>()
-                songs.forEach { song ->
-                    awaitSongCancellationSettled(song.stableKey())
+                val settledSongs = coroutineScope {
+                    requestedSongs.map { song ->
+                        async {
+                            awaitSongCancellationSettled(song.stableKey())
+                            song
+                        }
+                    }.awaitAll()
+                }
+                settledSongs.forEach { song ->
                     if (shouldSkipDownload(appContext, song)) {
                         return@forEach
                     }
@@ -1358,6 +1538,10 @@ object GlobalDownloadManager {
                 }
             }
         }
+        activeBatchDownloadJobs += batchJob
+        batchJob.invokeOnCompletion {
+            activeBatchDownloadJobs.remove(batchJob)
+        }
     }
 
     private fun prepareDownloadTask(
@@ -1393,6 +1577,9 @@ object GlobalDownloadManager {
             songKey = song.stableKey(),
             expectedAttemptId = expectedAttemptId
         ) { task ->
+            if (task.status == DownloadStatus.CANCELLED) {
+                return@updateDownloadTask task
+            }
             task.copy(
                 song = song,
                 progress = null,
@@ -1463,6 +1650,9 @@ object GlobalDownloadManager {
         expectedAttemptId: Long? = null
     ) {
         updateDownloadTask(songKey, expectedAttemptId) { task ->
+            if (task.status == status && task.progress == null) {
+                return@updateDownloadTask task
+            }
             task.copy(status = status, progress = null)
         }
     }
@@ -1529,16 +1719,22 @@ object GlobalDownloadManager {
     }
 
     fun cancelAllDownloadTasks() {
+        val batchJobs = activeBatchDownloadJobs.toList()
         val activeTasks = _downloadTasks.value.filter { task ->
             task.status == DownloadStatus.QUEUED || task.status == DownloadStatus.DOWNLOADING
         }
-        if (activeTasks.isEmpty()) {
+        if (activeTasks.isEmpty() && batchJobs.isEmpty()) {
             return
         }
 
         val activeKeys = activeTasks.map { it.song.stableKey() }.toSet()
         activeKeys.forEach(::markSongCancelled)
-        _downloadTasks.value = applyCancelledStatus(_downloadTasks.value, activeTasks)
+        if (activeTasks.isNotEmpty()) {
+            _downloadTasks.value = applyCancelledStatus(_downloadTasks.value, activeTasks)
+        }
+        batchJobs.forEach { job ->
+            job.cancel(CancellationException("cancel all download tasks"))
+        }
         AudioDownloadManager.cancelDownload()
     }
 
@@ -1621,6 +1817,18 @@ object GlobalDownloadManager {
         if (AudioDownloadManager.isSongDownloadActive(songKey)) {
             NPLogger.w(TAG, "等待取消中的下载清理超时: songKey=$songKey")
         }
+        _downloadTasks.value
+            .firstOrNull { it.song.stableKey() == songKey }
+            ?.takeIf { task ->
+                task.status == DownloadStatus.QUEUED || task.status == DownloadStatus.DOWNLOADING
+            }
+            ?.let { staleTask ->
+                updateTaskStatus(
+                    songKey = songKey,
+                    status = DownloadStatus.CANCELLED,
+                    expectedAttemptId = staleTask.attemptId
+                )
+            }
         clearSongCancelled(songKey)
     }
 
@@ -1790,6 +1998,15 @@ object GlobalDownloadManager {
         }
     }
 
+    private fun resolveDownloadedSongLocation(song: DownloadedSong): String? {
+        song.filePath
+            .takeIf { it.isNotBlank() }
+            ?.let { return it }
+
+        val mediaUri = song.mediaUri?.takeIf(::isResolvableLocalReference) ?: return null
+        return mediaUri
+    }
+
     private fun inspectDownloadedAudioDetails(
         context: Context,
         storedAudio: ManagedDownloadStorage.StoredEntry
@@ -1802,14 +2019,17 @@ object GlobalDownloadManager {
     private fun isReferenceOwnedByOtherDownload(
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
         currentAudioName: String?,
-        reference: String
+        reference: String,
+        deletingAudioNames: Set<String> = emptySet()
     ): Boolean {
         return snapshot.metadataByAudioName.any { (audioName, metadata) ->
-            audioName != currentAudioName && listOfNotNull(
-                metadata.coverPath,
-                metadata.lyricPath,
-                metadata.translatedLyricPath
-            ).contains(reference)
+            audioName != currentAudioName &&
+                audioName !in deletingAudioNames &&
+                listOfNotNull(
+                    metadata.coverPath,
+                    metadata.lyricPath,
+                    metadata.translatedLyricPath
+                ).contains(reference)
         }
     }
 }
@@ -2018,6 +2238,68 @@ private fun isResolvableLocalReference(reference: String): Boolean {
         reference.startsWith("file://")
 }
 
+private data class ManagedDownloadArtifactRemovalResult(
+    val requestedReferences: Set<String> = emptySet(),
+    val deletedReferences: Set<String> = emptySet()
+)
+
+private data class ManagedDownloadSongDeleteContext(
+    val song: DownloadedSong,
+    val storedAudio: ManagedDownloadStorage.StoredEntry?,
+    val candidateBaseNames: List<String>,
+    val explicitReferences: List<String>,
+    val requiresSnapshotRefresh: Boolean
+)
+
+private data class ManagedDownloadSongDeletePlan(
+    val song: DownloadedSong,
+    val requestedReferences: Set<String>
+)
+
+internal fun mergeManagedRequestedReferences(
+    requestedReferenceGroups: Collection<Set<String>>
+): Set<String> {
+    return linkedSetOf<String>().apply {
+        requestedReferenceGroups.forEach(::addAll)
+    }
+}
+
+internal fun groupRemainingManagedReferencesByIdentity(
+    requestedReferencesByIdentity: Map<String, Set<String>>,
+    remainingReferences: Set<String>
+): Map<String, Set<String>> {
+    if (requestedReferencesByIdentity.isEmpty() || remainingReferences.isEmpty()) {
+        return emptyMap()
+    }
+    return buildMap {
+        requestedReferencesByIdentity.forEach { (identity, requestedReferences) ->
+            val remainingForIdentity = requestedReferences.intersect(remainingReferences)
+            if (remainingForIdentity.isNotEmpty()) {
+                put(identity, remainingForIdentity)
+            }
+        }
+    }
+}
+
+internal suspend fun resolveUndeletedManagedReferences(
+    requestedReferences: Set<String>,
+    deletedReferences: Set<String>,
+    exists: suspend (String) -> Boolean
+): Set<String> {
+    if (requestedReferences.isEmpty()) {
+        return emptySet()
+    }
+    return buildSet {
+        requestedReferences
+            .minus(deletedReferences)
+            .forEach { reference ->
+                if (exists(reference)) {
+                    add(reference)
+                }
+            }
+    }
+}
+
 internal fun serializeDownloadedSongsCatalog(
     cacheKey: String,
     songs: List<DownloadedSong>
@@ -2130,6 +2412,12 @@ data class DownloadedSong(
 ) {
     fun displayName(): String = customName ?: name
     fun displayArtist(): String = customArtist ?: artist
+
+    internal fun deletionIdentity(): String {
+        return mediaUri
+            ?.takeIf(String::isNotBlank)
+            ?: filePath
+    }
 }
 
 data class DownloadTask(

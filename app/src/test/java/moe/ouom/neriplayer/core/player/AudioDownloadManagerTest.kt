@@ -1,7 +1,12 @@
 package moe.ouom.neriplayer.core.player
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.IOException
+import java.net.SocketException
+import java.net.UnknownHostException
 
 class AudioDownloadManagerTest {
 
@@ -32,6 +37,44 @@ class AudioDownloadManagerTest {
         assertEquals(
             "[00:00.00]translated",
             AudioDownloadManager.resolveLocalLyricForDownload("[00:00.00]translated")
+        )
+    }
+
+    @Test
+    fun `transient download retry delay grows and stays capped`() {
+        assertEquals(1_000L, AudioDownloadManager.resolveTransientDownloadRetryDelayMs(1))
+        assertEquals(2_000L, AudioDownloadManager.resolveTransientDownloadRetryDelayMs(2))
+        assertEquals(4_000L, AudioDownloadManager.resolveTransientDownloadRetryDelayMs(3))
+        assertEquals(5_000L, AudioDownloadManager.resolveTransientDownloadRetryDelayMs(4))
+        assertEquals(5_000L, AudioDownloadManager.resolveTransientDownloadRetryDelayMs(9))
+    }
+
+    @Test
+    fun `transient download failure detection only retries unstable network failures`() {
+        assertTrue(
+            AudioDownloadManager.shouldRetryTransientDownloadFailure(
+                UnknownHostException("Unable to resolve host")
+            )
+        )
+        assertTrue(
+            AudioDownloadManager.shouldRetryTransientDownloadFailure(
+                SocketException("Software caused connection abort")
+            )
+        )
+        assertTrue(
+            AudioDownloadManager.shouldRetryTransientDownloadFailure(
+                IllegalStateException("HTTP 503")
+            )
+        )
+        assertFalse(
+            AudioDownloadManager.shouldRetryTransientDownloadFailure(
+                IllegalStateException("HTTP 403")
+            )
+        )
+        assertFalse(
+            AudioDownloadManager.shouldRetryTransientDownloadFailure(
+                IOException("磁盘写入失败")
+            )
         )
     }
 }

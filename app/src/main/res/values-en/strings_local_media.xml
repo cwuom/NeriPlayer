@@ -33,6 +33,7 @@
     <string name="local_song_detail_no_lyrics_value">Not Found</string>
     <string name="local_song_cover_embedded">Embedded Cover</string>
     <string name="local_song_cover_external">Nearby Cover File</string>
+    <string name="local_song_lyric_embedded">Embedded Lyrics</string>
     <string name="local_song_lyric_external">Nearby Lyrics File</string>
     <string name="local_song_open_details">Song Details</string>
     <string name="local_song_sync_confirm_title">Local Song Won\'t Sync</string>

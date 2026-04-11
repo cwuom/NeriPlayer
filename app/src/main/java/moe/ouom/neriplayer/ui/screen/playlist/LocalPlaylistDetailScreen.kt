@@ -169,6 +169,7 @@ import moe.ouom.neriplayer.data.local.media.displayAlbum
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.sameIdentityAs
@@ -432,19 +433,19 @@ fun LocalPlaylistDetailScreen(
                 mutableStateListOf<SongItem>().also { it.addAll(playlist.songs) }
             }
 
-            // 阻断 VM->UI 同步；同时用 pendingOrderKeys 兼容重排和批删
+            // 阻断 VM->UI 同步；同时用 pendingOrderIdentities 兼容重排和批删
             var blockSync by remember(playlistId) { mutableStateOf(false) }
-            var pendingOrderKeys by remember(playlistId) { mutableStateOf<List<String>?>(null) }
-            LaunchedEffect(playlist.songs, blockSync, pendingOrderKeys) {
-                val repoKeys = playlist.songs.map { it.stableKey() }
-                val wanted = pendingOrderKeys
+            var pendingOrderIdentities by remember(playlistId) { mutableStateOf<List<SongIdentity>?>(null) }
+            LaunchedEffect(playlist.songs, blockSync, pendingOrderIdentities) {
+                val repoIdentities = playlist.songs.map { it.identity() }
+                val wanted = pendingOrderIdentities
                 if (!blockSync) {
                     localSongs.clear()
                     localSongs.addAll(playlist.songs)
-                } else if (wanted != null && wanted == repoKeys) {
+                } else if (wanted != null && wanted == repoIdentities) {
                     localSongs.clear()
                     localSongs.addAll(playlist.songs)
-                    pendingOrderKeys = null
+                    pendingOrderIdentities = null
                     blockSync = false
                 }
             }
@@ -649,7 +650,7 @@ fun LocalPlaylistDetailScreen(
                 canDragOver = { _, over -> (over.key as? String) != headerKey },
                 onDragEnd = { _, _ ->
                     val newOrder = localSongs.map { it.identity() }
-                    pendingOrderKeys = localSongs.map { it.stableKey() }
+                    pendingOrderIdentities = newOrder
                     blockSync = true
                     scope.launch {
                         vm.reorderSongs(newOrder)
@@ -1407,13 +1408,14 @@ fun LocalPlaylistDetailScreen(
                                 val songsToRemove = localSongs.filter {
                                     it.stableKey() in selectedKeysState.value
                                 }
-                                val expected = localSongs
-                                    .filterNot { it.stableKey() in selectedKeysState.value }
-                                    .map { it.stableKey() }
-                                pendingOrderKeys = expected
+                                val expectedSongs = localSongs.filterNot { candidate ->
+                                    songsToRemove.any { it.sameIdentityAs(candidate) }
+                                }
+                                pendingOrderIdentities = expectedSongs.map { it.identity() }
                                 blockSync = true
 
-                                localSongs.removeAll { it.stableKey() in selectedKeysState.value }
+                                localSongs.clear()
+                                localSongs.addAll(expectedSongs)
                                 showDeleteMultiConfirm = false
                                 exitSelectionMode()
 
