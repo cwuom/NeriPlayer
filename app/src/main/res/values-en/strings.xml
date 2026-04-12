@@ -1035,7 +1035,7 @@
     <string name="settings_download_directory_reset_desc">Switch back to the app private download folder</string>
     <string name="settings_download_file_name_format">Saved File Name Format</string>
     <string name="settings_download_file_name_format_desc">Customize how downloaded songs are named when saved locally</string>
-    <string name="settings_download_file_name_format_supported">Supported placeholders: %%artist%% , %%title%% , %%album%% , %%source%% , %%id%% , %%audioId%% , %%subAudioId%%</string>
+    <string name="settings_download_file_name_format_supported" formatted="false">Supported placeholders: %artist% , %title% , %album% , %source% , %id% , %audioId% , %subAudioId%</string>
     <string name="settings_download_file_name_format_preview">Preview: %1$s</string>
     <string name="settings_download_directory_default_label">App private folder</string>
     <string name="settings_download_directory_custom_label">Custom Directory</string>

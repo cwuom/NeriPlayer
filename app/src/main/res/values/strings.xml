@@ -1035,7 +1035,7 @@
     <string name="settings_download_directory_reset_desc">改回应用自己的下载位置</string>
     <string name="settings_download_file_name_format">保存文件名格式</string>
     <string name="settings_download_file_name_format_desc">自定义下载歌曲保存到本地时的文件名格式</string>
-    <string name="settings_download_file_name_format_supported">支持占位符：%%artist%% 、%%title%% 、%%album%% 、%%source%% 、%%id%% 、%%audioId%% 、%%subAudioId%%</string>
+    <string name="settings_download_file_name_format_supported" formatted="false">支持占位符：%artist% 、%title% 、%album% 、%source% 、%id% 、%audioId% 、%subAudioId%</string>
     <string name="settings_download_file_name_format_preview">预览：%1$s</string>
     <string name="settings_download_directory_default_label">应用私有目录</string>
     <string name="settings_download_directory_custom_label">自定义目录</string>
