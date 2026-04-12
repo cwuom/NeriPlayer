@@ -201,7 +201,6 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.shouldHideRemoteDownloadAction
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.core.player.metadata.extractPreferredNeteaseLyricContent
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.model.PlaybackQualityOption
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
@@ -522,9 +521,7 @@ fun NowPlayingScreen(
             val preferredNeteaseLyric = runCatching {
                 val preferredSongId = resolvePreferredNeteaseLyricSongId(song)
                 if (storedRawLyrics == null && preferredSongId != null) {
-                    extractPreferredNeteaseLyricContent(
-                        AppContainer.neteaseClient.getLyricNew(preferredSongId)
-                    )
+                    PlayerManager.getPreferredNeteaseLyricContent(preferredSongId)
                 } else {
                     ""
                 }
@@ -2662,9 +2659,7 @@ fun EditSongInfoSheet(
                                 val rawNeteaseLyric = runCatching {
                                     val preferredSongId = resolvePreferredNeteaseLyricSongId(actualSong)
                                     if (preferredSongId != null) {
-                                        extractPreferredNeteaseLyricContent(
-                                            AppContainer.neteaseClient.getLyricNew(preferredSongId)
-                                        )
+                                        PlayerManager.getPreferredNeteaseLyricContent(preferredSongId)
                                     } else {
                                         null
                                     }

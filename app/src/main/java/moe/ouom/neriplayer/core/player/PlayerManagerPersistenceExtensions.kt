@@ -459,11 +459,23 @@ internal fun PlayerManager.playBiliVideoAsAudioImpl(videos: List<BiliVideoItem>,
 }
 
 internal suspend fun PlayerManager.getNeteaseLyricsImpl(songId: Long): List<LyricEntry> {
-    return PlayerLyricsProvider.getNeteaseLyrics(songId, neteaseClient)
+    return PlayerLyricsProvider.getNeteaseLyrics(songId, neteaseClient, neteaseLyricsCache)
 }
 
 internal suspend fun PlayerManager.getNeteaseTranslatedLyricsImpl(songId: Long): List<LyricEntry> {
-    return PlayerLyricsProvider.getNeteaseTranslatedLyrics(songId, neteaseClient)
+    return PlayerLyricsProvider.getNeteaseTranslatedLyrics(
+        songId,
+        neteaseClient,
+        neteaseLyricsCache
+    )
+}
+
+internal suspend fun PlayerManager.getPreferredNeteaseLyricContentImpl(songId: Long): String {
+    return PlayerLyricsProvider.getPreferredNeteaseLyricContent(
+        songId,
+        neteaseClient,
+        neteaseLyricsCache
+    )
 }
 
 internal suspend fun PlayerManager.getTranslatedLyricsImpl(song: SongItem): List<LyricEntry> {
@@ -471,6 +483,7 @@ internal suspend fun PlayerManager.getTranslatedLyricsImpl(song: SongItem): List
         song = song,
         application = application,
         neteaseClient = neteaseClient,
+        neteaseLyricsCache = neteaseLyricsCache,
         biliSourceTag = BILI_SOURCE_TAG
     )
 }
@@ -480,6 +493,7 @@ internal suspend fun PlayerManager.getLyricsImpl(song: SongItem): List<LyricEntr
         song = song,
         application = application,
         neteaseClient = neteaseClient,
+        neteaseLyricsCache = neteaseLyricsCache,
         youtubeMusicClient = youtubeMusicClient,
         lrcLibClient = lrcLibClient,
         ytMusicLyricsCache = ytMusicLyricsCache,

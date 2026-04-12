@@ -69,6 +69,7 @@ import moe.ouom.neriplayer.core.player.model.PlaybackEqualizerPresetId
 import moe.ouom.neriplayer.core.player.model.PlaybackSoundConfig
 import moe.ouom.neriplayer.core.player.model.PlaybackSoundState
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
+import moe.ouom.neriplayer.core.player.metadata.NeteaseLyricsCacheEntry
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackLoudnessGainMb
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackPitch
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
@@ -301,6 +302,8 @@ object PlayerManager {
 
     // YouTube Music 歌词缓存，避免短时间内重复请求
     internal val ytMusicLyricsCache = android.util.LruCache<String, List<LyricEntry>>(20)
+    // 网易云歌词缓存，避免原文/翻译和编辑器回退重复打接口
+    internal val neteaseLyricsCache = android.util.LruCache<Long, NeteaseLyricsCacheEntry>(20)
 
     // 当前缓存上限，设置变化后会据此重建缓存
     internal var currentCacheSize: Long = 1024L * 1024 * 1024
@@ -1187,6 +1190,9 @@ internal fun cancelVolumeFade(resetToFull: Boolean = false) =
     @Suppress("unused")
     suspend fun getNeteaseTranslatedLyrics(songId: Long): List<LyricEntry> =
         getNeteaseTranslatedLyricsImpl(songId)
+
+    suspend fun getPreferredNeteaseLyricContent(songId: Long): String =
+        getPreferredNeteaseLyricContentImpl(songId)
 
     suspend fun getTranslatedLyrics(song: SongItem): List<LyricEntry> =
         getTranslatedLyricsImpl(song)

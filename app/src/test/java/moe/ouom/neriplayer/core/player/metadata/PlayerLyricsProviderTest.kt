@@ -57,4 +57,28 @@ class PlayerLyricsProviderTest {
         assertEquals("难以忘记", parsed.single().text)
         assertNull(parsed.single().words)
     }
+
+    @Test
+    fun `buildNeteaseLyricsCacheEntry parses original and translated lyrics from one payload`() {
+        val payload = """
+            {
+              "code": 200,
+              "yrc": {
+                "lyric": "[12580,3470](12580,250,0)难(12830,300,0)以(13130,200,0)忘记"
+              },
+              "tlyric": {
+                "lyric": "[00:12.58]hard to forget"
+              }
+            }
+        """.trimIndent()
+
+        val entry = PlayerLyricsProvider.buildNeteaseLyricsCacheEntry(payload)
+
+        assertEquals(
+            "[12580,3470](12580,250,0)难(12830,300,0)以(13130,200,0)忘记",
+            entry.preferredLyricText
+        )
+        assertEquals("难以忘记", entry.preferredLyricEntries.single().text)
+        assertEquals("hard to forget", entry.translatedLyricEntries.single().text)
+    }
 }
