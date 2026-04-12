@@ -47,6 +47,21 @@ class AppleMusicLyricTimingTest {
     }
 
     @Test
+    fun `findBestMatchingTranslation still prefers actual overlap when start delta is large`() {
+        val translations = listOf(
+            LyricEntry(text = "重叠翻译", startTimeMs = 0L, endTimeMs = 1_500L)
+        )
+
+        val matched = findBestMatchingTranslation(
+            translations = translations,
+            lineStartMs = 1_000L,
+            lineEndMs = 2_000L
+        )
+
+        assertEquals("重叠翻译", matched?.text)
+    }
+
+    @Test
     fun `matchTranslationsToLineIndices keeps sparse translation on its nearest line only`() {
         val lyrics = listOf(
             LyricEntry(text = "My Baby", startTimeMs = 29_440L, endTimeMs = 30_180L),
@@ -67,5 +82,35 @@ class AppleMusicLyricTimingTest {
         assertEquals(null, matchedTranslations[2]?.text)
         assertEquals(null, matchedTranslations[3]?.text)
         assertEquals(null, matchedTranslations[4]?.text)
+    }
+
+    @Test
+    fun `resolveHeadGlowTarget keeps glow on current line when next char wraps`() {
+        val target = resolveHeadGlowTarget(
+            currentLine = 0,
+            nextLine = 1,
+            currentLineRight = 180f,
+            currentLineCenterY = 24f,
+            nextCharLeft = 36f,
+            nextLineCenterY = 52f
+        )
+
+        assertEquals(180f, target.x)
+        assertEquals(24f, target.y)
+    }
+
+    @Test
+    fun `resolveHeadGlowTarget follows next char when wrap does not happen`() {
+        val target = resolveHeadGlowTarget(
+            currentLine = 0,
+            nextLine = 0,
+            currentLineRight = 180f,
+            currentLineCenterY = 24f,
+            nextCharLeft = 96f,
+            nextLineCenterY = 24f
+        )
+
+        assertEquals(96f, target.x)
+        assertEquals(24f, target.y)
     }
 }

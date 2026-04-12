@@ -56,4 +56,26 @@ class NowPlayingViewModelTest {
         assertNull(info.lyric)
         assertNull(info.translatedLyric)
     }
+
+    @Test
+    fun `buildLocalOriginalSongInfo keeps legacy matched lyrics during upgrade`() {
+        val song = SongItem(
+            id = 3L,
+            name = "当前标题",
+            artist = "当前歌手",
+            album = "当前专辑",
+            albumId = 0L,
+            durationMs = 1000L,
+            coverUrl = "current-cover",
+            mediaUri = "content://song",
+            matchedLyric = "[00:00.00]旧版本保存的歌词",
+            matchedTranslatedLyric = "[00:00.00]旧版本保存的翻译"
+        )
+
+        val info = buildLocalOriginalSongInfo(song)
+
+        assertFalse(info.shouldClearLyrics)
+        assertEquals("[00:00.00]旧版本保存的歌词", info.lyric)
+        assertEquals("[00:00.00]旧版本保存的翻译", info.translatedLyric)
+    }
 }

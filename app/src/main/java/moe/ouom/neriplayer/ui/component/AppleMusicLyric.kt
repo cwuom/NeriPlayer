@@ -325,17 +325,6 @@ fun AppleMusicLyric(
             callback(line)
         }
     }
-    val translationMatchesByIndex = remember(lyrics, translatedLyrics) {
-        val safeTranslatedLyrics = translatedLyrics.orEmpty()
-        if (safeTranslatedLyrics.isEmpty()) {
-            emptyMap<Int, LyricEntry>()
-        } else {
-            matchTranslationsToLineIndices(
-                lines = lyrics,
-                translations = safeTranslatedLyrics
-            )
-        }
-    }
 
     BoxWithConstraints(
         modifier = modifier.fillMaxSize(),
@@ -366,8 +355,9 @@ fun AppleMusicLyric(
                             enabled = handleLyricClick != null,
                             onClick = { handleLyricClick?.invoke(line) }
                         )
+                        .animateItem()
                         .widthIn(max = maxTextWidth)
-                        .animateContentSize( // 平滑处理高度变化
+                        .animateContentSize(
                             animationSpec = spring(
                                 dampingRatio = Spring.DampingRatioLowBouncy,
                                 stiffness = Spring.StiffnessLow
@@ -482,7 +472,15 @@ fun AppleMusicLyric(
                         }
                     }
 
-                    val transText = translationMatchesByIndex[index]?.text
+                    val transText = translatedLyrics?.let { list ->
+                        // 封面页这里继续沿用重叠优先的老策略
+                        // 一对一重映射会让长句换行时翻译归属切得太硬，视觉上更容易抖
+                        findBestMatchingTranslation(
+                            translations = list,
+                            lineStartMs = line.startTimeMs,
+                            lineEndMs = line.endTimeMs
+                        )?.text
+                    }
                     val shouldShowTranslation = (shouldUseClearText || isActive) && !transText.isNullOrBlank()
 
                     Crossfade(
@@ -783,6 +781,33 @@ fun AppleMusicActiveLine(
 
 data class ActiveWord(val range: IntRange, val sustainWeight: Float, val tInWord: Float)
 
+internal data class HeadGlowTarget(
+    val x: Float,
+    val y: Float
+)
+
+internal fun resolveHeadGlowTarget(
+    currentLine: Int,
+    nextLine: Int,
+    currentLineRight: Float,
+    currentLineCenterY: Float,
+    nextCharLeft: Float,
+    nextLineCenterY: Float
+): HeadGlowTarget {
+    return if (nextLine != currentLine) {
+        // 换行时先把高亮头部走到当前行末尾，别在最后一个字时提前切去下一行
+        HeadGlowTarget(
+            x = currentLineRight,
+            y = currentLineCenterY
+        )
+    } else {
+        HeadGlowTarget(
+            x = nextCharLeft,
+            y = nextLineCenterY
+        )
+    }
+}
+
 /**
  * 解析 LRC（逐句）
  * 支持 [mm:ss.SSS] 或 [mm:ss]
@@ -855,8 +880,7 @@ private fun DrawScope.drawRadialHeadGlow(
     val nextLine = layout.getLineForOffset(nextIndex)
     val nextLineTop = layout.getLineTop(nextLine)
     val nextLineBottom = layout.getLineBottom(nextLine)
-    val y1 = (nextLineTop + nextLineBottom) * 0.5f
-    val x1 = if (nextLine == currentLine && nextIndex >= layout.getLineEnd(currentLine, true) - 1) {
+    val nextCharLeft = if (nextLine == currentLine && nextIndex >= layout.getLineEnd(currentLine, true) - 1) {
         layout.getLineRight(currentLine)
     } else {
         try {
@@ -865,6 +889,16 @@ private fun DrawScope.drawRadialHeadGlow(
             layout.getHorizontalPosition(nextIndex, true)
         }
     }
+    val headGlowTarget = resolveHeadGlowTarget(
+        currentLine = currentLine,
+        nextLine = nextLine,
+        currentLineRight = layout.getLineRight(currentLine),
+        currentLineCenterY = y0,
+        nextCharLeft = nextCharLeft,
+        nextLineCenterY = (nextLineTop + nextLineBottom) * 0.5f
+    )
+    val x1 = headGlowTarget.x
+    val y1 = headGlowTarget.y
 
     val cx = x0 + (x1 - x0) * fraction
     val cy = y0 + (y1 - y0) * fraction

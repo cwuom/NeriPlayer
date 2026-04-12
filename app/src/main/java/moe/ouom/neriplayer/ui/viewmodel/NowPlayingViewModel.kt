@@ -258,8 +258,8 @@ class NowPlayingViewModel : ViewModel() {
 }
 
 internal fun buildLocalOriginalSongInfo(song: SongItem): NowPlayingViewModel.OriginalSongInfo {
-    val lyric = song.originalLyric
-    val translatedLyric = song.originalTranslatedLyric
+    val lyric = song.originalLyric ?: song.matchedLyric
+    val translatedLyric = song.originalTranslatedLyric ?: song.matchedTranslatedLyric
     val shouldClearLyrics = lyric.isNullOrBlank() && translatedLyric.isNullOrBlank()
     return NowPlayingViewModel.OriginalSongInfo(
         name = song.originalName ?: song.name,

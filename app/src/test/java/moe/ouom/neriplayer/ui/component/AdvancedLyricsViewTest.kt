@@ -195,14 +195,14 @@ class AdvancedLyricsViewTest {
     }
 
     @Test
-    fun `resolvePreferredLyricContent prefers yrc over matched lrc`() {
+    fun `resolvePreferredLyricContent keeps stored lyric as source of truth`() {
         val preferred = resolvePreferredLyricContent(
             matchedLyric = "[00:12.58]难以忘记",
             preferredNeteaseLyric = "[12580,3470](12580,250,0)难(12830,300,0)以(13130,200,0)忘记"
         )
 
         assertEquals(
-            "[12580,3470](12580,250,0)难(12830,300,0)以(13130,200,0)忘记",
+            "[00:12.58]难以忘记",
             preferred
         )
     }

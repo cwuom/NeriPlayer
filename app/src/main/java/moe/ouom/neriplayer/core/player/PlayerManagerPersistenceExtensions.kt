@@ -21,6 +21,7 @@ import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.metadata.applyManualSearchMetadata
 import moe.ouom.neriplayer.core.player.metadata.normalizeCustomMetadataValue
 import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
+import moe.ouom.neriplayer.core.player.metadata.withUpdatedLyricsPreservingOriginal
 import moe.ouom.neriplayer.core.player.model.PersistedPlaybackState
 import moe.ouom.neriplayer.core.player.model.PersistedState
 import moe.ouom.neriplayer.core.player.model.toPersistedSongItem
@@ -712,9 +713,10 @@ internal fun PlayerManager.replaceMetadataFromSearchImpl(
             val newDetails = api.getSongInfo(selectedSong.id)
 
             val updatedSong = if (isAuto) {
-                originalSong.copy(
-                    matchedLyric = newDetails.lyric ?: originalSong.matchedLyric,
-                    matchedTranslatedLyric = newDetails.translatedLyric ?: originalSong.matchedTranslatedLyric,
+                originalSong.withUpdatedLyricsPreservingOriginal(
+                    newLyrics = newDetails.lyric ?: originalSong.matchedLyric,
+                    newTranslatedLyric = newDetails.translatedLyric ?: originalSong.matchedTranslatedLyric
+                ).copy(
                     matchedLyricSource = selectedSong.source,
                     matchedSongId = selectedSong.id
                 )
@@ -851,7 +853,9 @@ internal suspend fun PlayerManager.updateSongLyricsImpl(
     )
     val queueIndex = queueIndexOf(songToUpdate)
     if (queueIndex != -1) {
-        val updatedSong = currentPlaylist[queueIndex].copy(matchedLyric = newLyrics)
+        val updatedSong = currentPlaylist[queueIndex].withUpdatedLyricsPreservingOriginal(
+            newLyrics = newLyrics
+        )
         val newList = currentPlaylist.toMutableList()
         newList[queueIndex] = updatedSong
         currentPlaylist = newList
@@ -859,7 +863,9 @@ internal suspend fun PlayerManager.updateSongLyricsImpl(
     }
 
     if (isCurrentSong(songToUpdate)) {
-        _currentSongFlow.value = _currentSongFlow.value?.copy(matchedLyric = newLyrics)
+        _currentSongFlow.value = _currentSongFlow.value?.withUpdatedLyricsPreservingOriginal(
+            newLyrics = newLyrics
+        )
     }
 
     val latestSong = currentPlaylist.firstOrNull { it.sameIdentityAs(songToUpdate) }
@@ -885,8 +891,8 @@ internal suspend fun PlayerManager.updateSongTranslatedLyricsImpl(
     )
     val queueIndex = queueIndexOf(songToUpdate)
     if (queueIndex != -1) {
-        val updatedSong = currentPlaylist[queueIndex].copy(
-            matchedTranslatedLyric = newTranslatedLyrics
+        val updatedSong = currentPlaylist[queueIndex].withUpdatedLyricsPreservingOriginal(
+            newTranslatedLyric = newTranslatedLyrics
         )
         val newList = currentPlaylist.toMutableList()
         newList[queueIndex] = updatedSong
@@ -896,7 +902,9 @@ internal suspend fun PlayerManager.updateSongTranslatedLyricsImpl(
 
     if (isCurrentSong(songToUpdate)) {
         _currentSongFlow.value =
-            _currentSongFlow.value?.copy(matchedTranslatedLyric = newTranslatedLyrics)
+            _currentSongFlow.value?.withUpdatedLyricsPreservingOriginal(
+                newTranslatedLyric = newTranslatedLyrics
+            )
     }
 
     val latestSong = currentPlaylist.firstOrNull { it.sameIdentityAs(songToUpdate) }
@@ -920,9 +928,9 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
     val queueIndex = queueIndexOf(songToUpdate)
 
     if (queueIndex != -1) {
-        val updatedSong = currentPlaylist[queueIndex].copy(
-            matchedLyric = newLyrics,
-            matchedTranslatedLyric = newTranslatedLyrics
+        val updatedSong = currentPlaylist[queueIndex].withUpdatedLyricsPreservingOriginal(
+            newLyrics = newLyrics,
+            newTranslatedLyric = newTranslatedLyrics
         )
         val newList = currentPlaylist.toMutableList()
         newList[queueIndex] = updatedSong
@@ -939,9 +947,9 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
     )
     if (isCurrentSong(songToUpdate)) {
         val beforeUpdate = _currentSongFlow.value?.matchedLyric
-        _currentSongFlow.value = _currentSongFlow.value?.copy(
-            matchedLyric = newLyrics,
-            matchedTranslatedLyric = newTranslatedLyrics
+        _currentSongFlow.value = _currentSongFlow.value?.withUpdatedLyricsPreservingOriginal(
+            newLyrics = newLyrics,
+            newTranslatedLyric = newTranslatedLyrics
         )
         NPLogger.e(
             "PlayerManager",

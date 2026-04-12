@@ -138,6 +138,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun LyricsScreen(
     lyrics: List<LyricEntry>,
+    rawLyrics: String? = null,
+    rawTranslatedLyrics: String? = null,
     lyricBlurEnabled: Boolean,
     lyricBlurAmount: Float,
     lyricFontScale: Float,
@@ -481,8 +483,8 @@ fun LyricsScreen(
                 lyricBlurEnabled = lyricBlurEnabled,
                 lyricBlurAmount = lyricBlurAmount,
                 textColor = MaterialTheme.colorScheme.onBackground,
-                matchedLyric = currentSong?.matchedLyric,
-                matchedTranslatedLyric = currentSong?.matchedTranslatedLyric,
+                rawLyrics = rawLyrics,
+                rawTranslatedLyrics = rawTranslatedLyrics,
                 playbackSpeed = lyricsPlaybackSoundState.speed,
                 isPlaying = isPlaying,
                 onSeekTo = onSeekTo
@@ -948,8 +950,8 @@ private fun LyricsContentPane(
     lyricBlurEnabled: Boolean,
     lyricBlurAmount: Float,
     textColor: Color,
-    matchedLyric: String?,
-    matchedTranslatedLyric: String?,
+    rawLyrics: String?,
+    rawTranslatedLyrics: String?,
     playbackSpeed: Float,
     isPlaying: Boolean,
     onSeekTo: (Long) -> Unit
@@ -985,8 +987,8 @@ private fun LyricsContentPane(
             lyricBlurAmount = lyricBlurAmount,
             translatedLyrics = translatedLyrics,
             showLyricTranslation = showLyricTranslation,
-            rawLyrics = matchedLyric,
-            rawTranslatedLyrics = matchedTranslatedLyric,
+            rawLyrics = rawLyrics,
+            rawTranslatedLyrics = rawTranslatedLyrics,
             isPlaying = shouldAnimateFromPlayback,
             animateViewportScroll = isPreviewingSeek,
             playbackSpeed = playbackSpeed,

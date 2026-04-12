@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.ui.component
 
+import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+
 fun List<LyricEntry>.flattenWordTimedEntries(): List<LyricEntry> {
     if (none { !it.words.isNullOrEmpty() }) {
         return this
@@ -14,6 +16,18 @@ fun List<LyricEntry>.flattenWordTimedEntries(): List<LyricEntry> {
 }
 
 fun List<LyricEntry>.hasWordTimedEntries(): Boolean = any { !it.words.isNullOrEmpty() }
+
+internal data class LyricsEditorSeed(
+    val lyrics: String,
+    val translatedLyrics: String
+)
+
+internal fun resolveStoredLyricText(
+    currentLyric: String?,
+    legacyLyric: String?
+): String? {
+    return if (currentLyric != null) currentLyric else legacyLyric
+}
 
 fun List<LyricEntry>.toEditableLyricsText(): String {
     if (isEmpty()) {
@@ -30,19 +44,17 @@ fun List<LyricEntry>.toEditableLyricsText(): String {
 
 fun resolvePreferredLyricContent(
     matchedLyric: String?,
-    preferredNeteaseLyric: String
+    preferredNeteaseLyric: String,
+    legacyLyric: String? = null
 ): String? {
-    if (matchedLyric != null && matchedLyric.isBlank()) {
-        return ""
+    val storedLyric = resolveStoredLyricText(
+        currentLyric = matchedLyric,
+        legacyLyric = legacyLyric
+    )
+    if (storedLyric != null) {
+        return storedLyric
     }
-    val normalizedMatchedLyric = matchedLyric?.takeIf { it.isNotBlank() }
-    val normalizedPreferredLyric = preferredNeteaseLyric.takeIf { it.isNotBlank() }
-    if (normalizedPreferredLyric != null &&
-        (normalizedMatchedLyric == null || !isNeteaseYrc(normalizedMatchedLyric))
-    ) {
-        return normalizedPreferredLyric
-    }
-    return normalizedMatchedLyric
+    return preferredNeteaseLyric.takeIf { it.isNotBlank() }
 }
 
 internal fun resolveLyricsEditorInitialText(
@@ -50,18 +62,36 @@ internal fun resolveLyricsEditorInitialText(
     preferredNeteaseLyric: String,
     displayedLyricsText: String,
     displayedHasWordTimedEntries: Boolean,
-    fallbackLyricsText: String?
+    fallbackLyricsText: String?,
+    legacyLyric: String? = null
 ): String {
-    if (matchedLyric != null && matchedLyric.isBlank()) {
-        return ""
+    resolveStoredLyricText(
+        currentLyric = matchedLyric,
+        legacyLyric = legacyLyric
+    )?.let {
+        return it
     }
     if (displayedHasWordTimedEntries) {
         return displayedLyricsText
     }
-    return resolvePreferredLyricContent(
-        matchedLyric = matchedLyric,
-        preferredNeteaseLyric = preferredNeteaseLyric
-    ) ?: fallbackLyricsText ?: displayedLyricsText
+    return preferredNeteaseLyric.takeIf { it.isNotBlank() } ?: fallbackLyricsText ?: displayedLyricsText
+}
+
+internal fun resolveLyricsEditorSeed(
+    song: SongItem,
+    preparedLyrics: String? = null,
+    preparedTranslatedLyrics: String? = null
+): LyricsEditorSeed {
+    return LyricsEditorSeed(
+        lyrics = preparedLyrics ?: resolveStoredLyricText(
+            currentLyric = song.matchedLyric,
+            legacyLyric = song.originalLyric
+        ).orEmpty(),
+        translatedLyrics = preparedTranslatedLyrics ?: resolveStoredLyricText(
+            currentLyric = song.matchedTranslatedLyric,
+            legacyLyric = song.originalTranslatedLyric
+        ).orEmpty()
+    )
 }
 
 private fun LyricEntry.toLrcText(): String {

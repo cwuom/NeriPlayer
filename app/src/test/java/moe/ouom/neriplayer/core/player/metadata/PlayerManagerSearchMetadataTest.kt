@@ -73,4 +73,27 @@ class PlayerManagerSearchMetadataTest {
         assertNull(updatedSong.customArtist)
         assertNull(updatedSong.customCoverUrl)
     }
+
+    @Test
+    fun `withUpdatedLyricsPreservingOriginal migrates legacy matched lyrics before override`() {
+        val updatedSong = SongItem(
+            id = 3L,
+            name = "标题",
+            artist = "歌手",
+            album = "专辑",
+            albumId = 0L,
+            durationMs = 1000L,
+            coverUrl = null,
+            matchedLyric = "[00:00.00]旧原文",
+            matchedTranslatedLyric = "[00:00.00]旧译文"
+        ).withUpdatedLyricsPreservingOriginal(
+            newLyrics = "[00:00.00]新原文",
+            newTranslatedLyric = "[00:00.00]新译文"
+        )
+
+        assertEquals("[00:00.00]新原文", updatedSong.matchedLyric)
+        assertEquals("[00:00.00]新译文", updatedSong.matchedTranslatedLyric)
+        assertEquals("[00:00.00]旧原文", updatedSong.originalLyric)
+        assertEquals("[00:00.00]旧译文", updatedSong.originalTranslatedLyric)
+    }
 }

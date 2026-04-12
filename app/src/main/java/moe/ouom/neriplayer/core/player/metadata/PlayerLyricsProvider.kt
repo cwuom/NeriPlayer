@@ -36,6 +36,7 @@ import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
 import moe.ouom.neriplayer.ui.component.LyricEntry
 import moe.ouom.neriplayer.ui.component.parseNeteaseLyricsAuto
+import moe.ouom.neriplayer.ui.component.resolveStoredLyricText
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
@@ -138,7 +139,10 @@ internal object PlayerLyricsProvider {
     ): List<LyricEntry> {
         return withContext(Dispatchers.IO) {
             parseLocalLyricOverride(
-                rawLyric = song.matchedTranslatedLyric,
+                rawLyric = resolveStoredLyricText(
+                    currentLyric = song.matchedTranslatedLyric,
+                    legacyLyric = song.originalTranslatedLyric
+                ),
                 logPrefix = "本地翻译歌词解析失败"
             )?.let { return@withContext it }
             parseLocalLyricOverride(
@@ -183,7 +187,10 @@ internal object PlayerLyricsProvider {
     ): List<LyricEntry> {
         return withContext(Dispatchers.IO) {
             parseLocalLyricOverride(
-                rawLyric = song.matchedLyric,
+                rawLyric = resolveStoredLyricText(
+                    currentLyric = song.matchedLyric,
+                    legacyLyric = song.originalLyric
+                ),
                 logPrefix = "匹配歌词解析失败"
             )?.let { return@withContext it }
             parseLocalLyricOverride(

@@ -3,6 +3,18 @@ package moe.ouom.neriplayer.core.player.metadata
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 
+internal fun SongItem.withUpdatedLyricsPreservingOriginal(
+    newLyrics: String? = matchedLyric,
+    newTranslatedLyric: String? = matchedTranslatedLyric
+): SongItem {
+    return copy(
+        matchedLyric = newLyrics,
+        matchedTranslatedLyric = newTranslatedLyric,
+        originalLyric = originalLyric ?: matchedLyric,
+        originalTranslatedLyric = originalTranslatedLyric ?: matchedTranslatedLyric
+    )
+}
+
 internal fun normalizeCustomMetadataValue(
     desiredValue: String?,
     baseValue: String?

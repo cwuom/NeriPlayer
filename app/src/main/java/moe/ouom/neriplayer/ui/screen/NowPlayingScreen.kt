@@ -223,9 +223,9 @@ import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.AppleMusicLyric
 import moe.ouom.neriplayer.ui.component.flattenWordTimedEntries
 import moe.ouom.neriplayer.ui.component.hasWordTimedEntries
-import moe.ouom.neriplayer.ui.component.isNeteaseYrc
 import moe.ouom.neriplayer.ui.component.LocalSongDetailsDialog
 import moe.ouom.neriplayer.ui.component.LocalSongSyncConfirmDialog
+import moe.ouom.neriplayer.ui.component.LyricsEditorSeed
 import moe.ouom.neriplayer.ui.component.LyricEntry
 import moe.ouom.neriplayer.ui.component.LyricVisualSpec
 import moe.ouom.neriplayer.ui.component.PlaybackSoundSheet
@@ -237,7 +237,9 @@ import moe.ouom.neriplayer.ui.component.bottomSheetDragBlocker
 import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.component.parseNeteaseLyricsAuto
 import moe.ouom.neriplayer.ui.component.resolveLyricsEditorInitialText
+import moe.ouom.neriplayer.ui.component.resolveLyricsEditorSeed
 import moe.ouom.neriplayer.ui.component.resolvePreferredLyricContent
+import moe.ouom.neriplayer.ui.component.resolveStoredLyricText
 import moe.ouom.neriplayer.ui.component.toEditableLyricsText
 import moe.ouom.neriplayer.ui.screen.debug.ListenTogetherRoomPanel
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
@@ -309,6 +311,13 @@ private fun resolvePreferredNeteaseLyricSongId(song: SongItem?): Long? {
         song.mediaUri?.contains("music.163.com") == true
     return if (isDirectNeteaseSong) song.id.takeIf { it > 0L } else null
 }
+
+private data class LoadedLyricsState(
+    val rawLyrics: String?,
+    val rawTranslatedLyrics: String?,
+    val lyrics: List<LyricEntry>,
+    val translatedLyrics: List<LyricEntry>
+)
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalSharedTransitionApi::class)
 @Composable
@@ -487,21 +496,32 @@ fun NowPlayingScreen(
 
     var lyrics by remember(currentSong?.id) { mutableStateOf<List<LyricEntry>>(emptyList()) }
     var translatedLyrics by remember(currentSong?.id) { mutableStateOf<List<LyricEntry>>(emptyList()) }
+    var rawLyricsText by remember(currentSong?.id) { mutableStateOf<String?>(null) }
+    var rawTranslatedLyricsText by remember(currentSong?.id) { mutableStateOf<String?>(null) }
     val nowPlayingViewModel: NowPlayingViewModel = viewModel()
 
     LaunchedEffect(
         currentSong?.id,
         currentSong?.matchedLyric,
         currentSong?.matchedTranslatedLyric,
+        currentSong?.originalLyric,
+        currentSong?.originalTranslatedLyric,
         isFromNetease,
         currentMediaUrl
     ) {
         val song = currentSong
-        val (loadedLyrics, loadedTranslatedLyrics) = withContext(Dispatchers.IO) {
+        val loadedLyricsState = withContext(Dispatchers.IO) {
+            val storedRawLyrics = resolveStoredLyricText(
+                currentLyric = song?.matchedLyric,
+                legacyLyric = song?.originalLyric
+            )
+            val storedRawTranslatedLyrics = resolveStoredLyricText(
+                currentLyric = song?.matchedTranslatedLyric,
+                legacyLyric = song?.originalTranslatedLyric
+            )
             val preferredNeteaseLyric = runCatching {
-                val shouldUpgradeMatchedLyric = song?.matchedLyric?.let(::isNeteaseYrc) != true
                 val preferredSongId = resolvePreferredNeteaseLyricSongId(song)
-                if (shouldUpgradeMatchedLyric && preferredSongId != null) {
+                if (storedRawLyrics == null && preferredSongId != null) {
                     extractPreferredNeteaseLyricContent(
                         AppContainer.neteaseClient.getLyricNew(preferredSongId)
                     )
@@ -511,7 +531,8 @@ fun NowPlayingScreen(
             }.getOrNull().orEmpty()
             val effectiveRawLyrics = resolvePreferredLyricContent(
                 matchedLyric = song?.matchedLyric,
-                preferredNeteaseLyric = preferredNeteaseLyric
+                preferredNeteaseLyric = preferredNeteaseLyric,
+                legacyLyric = song?.originalLyric
             )
             val shouldDelayOnlineLyrics =
                 song != null &&
@@ -536,9 +557,12 @@ fun NowPlayingScreen(
 
             val resolvedTranslatedLyrics = try {
                 when {
-                    // 优先使用存储的翻译歌词
-                    !song?.matchedTranslatedLyric.isNullOrBlank() -> {
-                        parseNeteaseLyricsAuto(song!!.matchedTranslatedLyric!!)
+                    storedRawTranslatedLyrics != null -> {
+                        if (storedRawTranslatedLyrics.isBlank()) {
+                            emptyList()
+                        } else {
+                            parseNeteaseLyricsAuto(storedRawTranslatedLyrics)
+                        }
                     }
                     song != null -> {
                         PlayerManager.getTranslatedLyrics(song)
@@ -548,10 +572,17 @@ fun NowPlayingScreen(
             } catch (_: Exception) {
                 emptyList()
             }
-            resolvedLyrics to resolvedTranslatedLyrics
+            LoadedLyricsState(
+                rawLyrics = effectiveRawLyrics,
+                rawTranslatedLyrics = storedRawTranslatedLyrics,
+                lyrics = resolvedLyrics,
+                translatedLyrics = resolvedTranslatedLyrics
+            )
         }
-        lyrics = loadedLyrics
-        translatedLyrics = loadedTranslatedLyrics
+        rawLyricsText = loadedLyricsState.rawLyrics
+        rawTranslatedLyricsText = loadedLyricsState.rawTranslatedLyrics
+        lyrics = loadedLyricsState.lyrics
+        translatedLyrics = loadedLyricsState.translatedLyrics
     }
     val plainLyrics = remember(lyrics) { lyrics.flattenWordTimedEntries() }
     val plainTranslatedLyrics = remember(translatedLyrics) { translatedLyrics.flattenWordTimedEntries() }
@@ -674,6 +705,8 @@ fun NowPlayingScreen(
                         // 歌词全屏页面
                         LyricsScreen(
                             lyrics = lyrics,
+                            rawLyrics = rawLyricsText,
+                            rawTranslatedLyrics = rawTranslatedLyricsText,
                             lyricBlurEnabled = lyricBlurEnabled,
                             lyricBlurAmount = lyricBlurAmount,
                             lyricFontScale = lyricFontScale,
@@ -2417,9 +2450,7 @@ fun EditSongInfoSheet(
     var artistName by remember { mutableStateOf(actualSong.customArtist ?: actualSong.artist) }
     var showSearchResults by remember { mutableStateOf(false) }
     var selectedSongForFill by remember { mutableStateOf<SongSearchInfo?>(null) }
-    var showLyricsEditor by remember { mutableStateOf(false) }
-    var lyricsToEdit by remember { mutableStateOf<String?>(null) }
-    var translatedLyricsToEdit by remember { mutableStateOf<String?>(null) }
+    var lyricsEditorSeed by remember { mutableStateOf<LyricsEditorSeed?>(null) }
     var shouldClearLyrics by remember { mutableStateOf(false) }  // 标记是否应该清除歌词(B站)
     var shouldRestoreLyrics by remember { mutableStateOf(false) }  // 标记是否应该恢复歌词(网易云)
     var originalLyric by remember { mutableStateOf<String?>(null) }  // 保存要恢复的原始歌词
@@ -2483,7 +2514,7 @@ fun EditSongInfoSheet(
 
     // 使用 AnimatedVisibility 控制内容显示，避免重叠
     AnimatedVisibility(
-        visible = !showLyricsEditor,
+        visible = lyricsEditorSeed == null,
         enter = fadeIn(),
         exit = fadeOut()
     ) {
@@ -2654,13 +2685,15 @@ fun EditSongInfoSheet(
                                     preferredNeteaseLyric = rawNeteaseLyric,
                                     displayedLyricsText = displayedLyricsText,
                                     displayedHasWordTimedEntries = displayedLyricsSnapshot.hasWordTimedEntries(),
-                                    fallbackLyricsText = fallbackLyricsText
+                                    fallbackLyricsText = fallbackLyricsText,
+                                    legacyLyric = actualSong.originalLyric
                                 )
 
                                 val translatedLyrics = try {
-                                    if (actualSong.matchedTranslatedLyric != null) {
-                                        actualSong.matchedTranslatedLyric
-                                    } else {
+                                    resolveStoredLyricText(
+                                        currentLyric = actualSong.matchedTranslatedLyric,
+                                        legacyLyric = actualSong.originalTranslatedLyric
+                                    ) ?: run {
                                         val translatedEntries =
                                             if (displayedTranslatedLyricsSnapshot.isNotEmpty()) {
                                                 displayedTranslatedLyricsSnapshot
@@ -2682,16 +2715,16 @@ fun EditSongInfoSheet(
                             val loadedLyrics = loadedLyricsResult.first
                             val loadedTranslatedLyrics = loadedLyricsResult.second
 
-                            lyricsToEdit = loadedLyrics
-                            translatedLyricsToEdit = loadedTranslatedLyrics
-                            showLyricsEditor = true
+                            lyricsEditorSeed = resolveLyricsEditorSeed(
+                                song = actualSong,
+                                preparedLyrics = loadedLyrics,
+                                preparedTranslatedLyrics = loadedTranslatedLyrics
+                            )
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
                             e.printStackTrace()
-                            lyricsToEdit = ""
-                            translatedLyricsToEdit = ""
-                            showLyricsEditor = true
+                            lyricsEditorSeed = resolveLyricsEditorSeed(song = actualSong)
                         }
                     }
                 },
@@ -2864,14 +2897,13 @@ fun EditSongInfoSheet(
     }
 
     // 歌词编辑器
-    if (showLyricsEditor) {
+    if (lyricsEditorSeed != null) {
         LyricsEditorSheet(
             originalSong = actualSong,
-            initialLyrics = lyricsToEdit ?: actualSong.matchedLyric ?: "",
-            initialTranslatedLyrics = translatedLyricsToEdit ?: "",
+            initialLyrics = lyricsEditorSeed!!.lyrics,
+            initialTranslatedLyrics = lyricsEditorSeed!!.translatedLyrics,
             onDismiss = {
-                showLyricsEditor = false
-                // 不关闭外层Sheet，只关闭歌词编辑器
+                lyricsEditorSeed = null
             }
         )
     }
@@ -3307,10 +3339,11 @@ fun LyricsEditorSheet(
                     isSaving = true
                     coroutineScope.launch {
                         try {
-                            // 保存原文歌词
-                            PlayerManager.updateSongLyrics(originalSong, lyricsText)
-                            // 保存翻译歌词
-                            PlayerManager.updateSongTranslatedLyrics(originalSong, translatedLyricsText)
+                            PlayerManager.updateSongLyricsAndTranslation(
+                                originalSong,
+                                lyricsText,
+                                translatedLyricsText
+                            )
                             onDismiss()
                         } catch (e: Exception) {
                             e.printStackTrace()
