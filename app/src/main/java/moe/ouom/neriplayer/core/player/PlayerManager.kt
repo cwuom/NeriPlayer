@@ -55,6 +55,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
+import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.search.SongSearchInfo
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.di.AppContainer.settingsRepo
@@ -1231,6 +1232,16 @@ internal fun cancelVolumeFade(resetToFull: Boolean = false) =
 
     suspend fun updateUserLyricOffset(songToUpdate: SongItem, newOffset: Long) =
         updateUserLyricOffsetImpl(songToUpdate, newOffset)
+
+    suspend fun rebaseUserLyricOffsetsForSource(
+        targetSource: MusicPlatform,
+        previousDefaultOffsetMs: Long,
+        newDefaultOffsetMs: Long
+    ) = rebaseUserLyricOffsetsForSourceImpl(
+        targetSource = targetSource,
+        previousDefaultOffsetMs = previousDefaultOffsetMs,
+        newDefaultOffsetMs = newDefaultOffsetMs
+    )
 
     suspend fun updateSongLyrics(songToUpdate: SongItem, newLyrics: String?) =
         updateSongLyricsImpl(songToUpdate, newLyrics)

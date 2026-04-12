@@ -106,6 +106,22 @@ class SettingsRepository(private val context: Context) {
     val lyricBlurAmountFlow: Flow<Float> =
         context.dataStore.data.map { it[SettingsKeys.LYRIC_BLUR_AMOUNT] ?: 1.5f }
 
+    val cloudMusicLyricDefaultOffsetMsFlow: Flow<Long> =
+        context.dataStore.data.map {
+            normalizeLyricDefaultOffsetMs(
+                it[SettingsKeys.CLOUD_MUSIC_LYRIC_DEFAULT_OFFSET_MS]
+                    ?: DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
+            )
+        }
+
+    val qqMusicLyricDefaultOffsetMsFlow: Flow<Long> =
+        context.dataStore.data.map {
+            normalizeLyricDefaultOffsetMs(
+                it[SettingsKeys.QQ_MUSIC_LYRIC_DEFAULT_OFFSET_MS]
+                    ?: DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
+            )
+        }
+
     val advancedLyricsEnabledFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.ADVANCED_LYRICS_ENABLED] ?: true }
 
@@ -394,6 +410,26 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setLyricBlurAmount(amount: Float) {
         context.dataStore.edit { it[SettingsKeys.LYRIC_BLUR_AMOUNT] = amount }
+    }
+
+    suspend fun setCloudMusicLyricDefaultOffsetMs(offsetMs: Long) {
+        val normalized = normalizeLyricDefaultOffsetMs(offsetMs)
+        context.dataStore.edit {
+            it[SettingsKeys.CLOUD_MUSIC_LYRIC_DEFAULT_OFFSET_MS] = normalized
+        }
+        updatePlaybackPreferenceSnapshot(context) {
+            it.copy(cloudMusicLyricDefaultOffsetMs = normalized)
+        }
+    }
+
+    suspend fun setQqMusicLyricDefaultOffsetMs(offsetMs: Long) {
+        val normalized = normalizeLyricDefaultOffsetMs(offsetMs)
+        context.dataStore.edit {
+            it[SettingsKeys.QQ_MUSIC_LYRIC_DEFAULT_OFFSET_MS] = normalized
+        }
+        updatePlaybackPreferenceSnapshot(context) {
+            it.copy(qqMusicLyricDefaultOffsetMs = normalized)
+        }
     }
 
     suspend fun setAdvancedLyricsEnabled(enabled: Boolean) {

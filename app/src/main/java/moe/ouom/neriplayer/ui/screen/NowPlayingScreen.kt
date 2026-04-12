@@ -214,9 +214,15 @@ import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
+import moe.ouom.neriplayer.data.settings.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.settings.DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.settings.LYRIC_DEFAULT_OFFSET_STEP_MS
+import moe.ouom.neriplayer.data.settings.MAX_LYRIC_DEFAULT_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.MAX_LYRIC_FONT_SCALE
+import moe.ouom.neriplayer.data.settings.MIN_LYRIC_DEFAULT_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.MIN_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.data.settings.normalizeLyricFontScale
+import moe.ouom.neriplayer.data.settings.resolveLyricDefaultOffsetMs
 import moe.ouom.neriplayer.data.settings.scaledLyricFontSize
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.AppleMusicLyric
@@ -257,6 +263,7 @@ private const val LyricsPageTransitionDurationMs = 300
 private const val CoverSourceBadgeRevealBufferMs = 120
 private const val CoverSourceBadgeRevealDelayMs =
     LyricsPageTransitionDurationMs + CoverSourceBadgeRevealBufferMs
+private val LyricOffsetStepMsFloat = LYRIC_DEFAULT_OFFSET_STEP_MS.toFloat()
 
 internal fun shouldHideDownloadActionForSong(
     hasLocalDownload: Boolean,
@@ -354,6 +361,12 @@ fun NowPlayingScreen(
     val showProgressAudioSpec by settingsRepo
         .nowPlayingProgressShowAudioSpecFlow
         .collectAsState(initial = true)
+    val cloudMusicLyricDefaultOffsetMs by settingsRepo
+        .cloudMusicLyricDefaultOffsetMsFlow
+        .collectAsState(initial = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS)
+    val qqMusicLyricDefaultOffsetMs by settingsRepo
+        .qqMusicLyricDefaultOffsetMsFlow
+        .collectAsState(initial = DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS)
 
     // 订阅当前播放链接
     val currentMediaUrl by PlayerManager.currentMediaUrlFlow.collectAsState()
@@ -661,7 +674,11 @@ fun NowPlayingScreen(
     }
 
     // 歌词偏移（平台 + 用户自定义）
-    val platformOffset = if (currentSong?.matchedLyricSource == MusicPlatform.QQ_MUSIC) 500L else 1000L
+    val platformOffset = resolveLyricDefaultOffsetMs(
+        lyricSource = currentSong?.matchedLyricSource,
+        cloudMusicDefaultOffsetMs = cloudMusicLyricDefaultOffsetMs,
+        qqMusicDefaultOffsetMs = qqMusicLyricDefaultOffsetMs
+    )
     val userOffset = currentSong?.userLyricOffsetMs ?: 0L
     val totalOffset = platformOffset + userOffset
     val progressInfoSegments = remember(
@@ -2319,6 +2336,10 @@ fun VolumeControlSheetContent() {
 fun LyricOffsetSheet(song: SongItem, onDismiss: () -> Unit) {
     var currentOffset by remember { mutableLongStateOf(song.userLyricOffsetMs) }
     val scope = rememberCoroutineScope()
+    val sliderMinOffset = minOf(MIN_LYRIC_DEFAULT_OFFSET_MS, currentOffset)
+    val sliderMaxOffset = maxOf(MAX_LYRIC_DEFAULT_OFFSET_MS, currentOffset)
+    val sliderSteps = (((sliderMaxOffset - sliderMinOffset) / LYRIC_DEFAULT_OFFSET_STEP_MS).toInt() - 1)
+        .coerceAtLeast(0)
 
     Column(
         modifier = Modifier
@@ -2344,15 +2365,16 @@ fun LyricOffsetSheet(song: SongItem, onDismiss: () -> Unit) {
         Slider(
             value = currentOffset.toFloat(),
             onValueChange = {
-                currentOffset = (it / 50).roundToInt() * 50L
+                currentOffset = ((it / LyricOffsetStepMsFloat).roundToInt() *
+                    LYRIC_DEFAULT_OFFSET_STEP_MS)
             },
             onValueChangeFinished = {
                 scope.launch {
                     PlayerManager.updateUserLyricOffset(song, currentOffset)
                 }
             },
-            valueRange = -2000f..2000f,
-            steps = 79
+            valueRange = sliderMinOffset.toFloat()..sliderMaxOffset.toFloat(),
+            steps = sliderSteps
         )
         Spacer(Modifier.height(16.dp))
         HapticTextButton(onClick = onDismiss) {

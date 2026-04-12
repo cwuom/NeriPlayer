@@ -138,6 +138,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.component.LazyAnimatedVisibili
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsAudioQualitySection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsBackupRestoreSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsDownloadSection
+import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsLyricsOffsetSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsMotionSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsPlaybackSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsStorageCacheSection
@@ -198,6 +199,10 @@ fun SettingsScreen(
     onLyricBlurEnabledChange: (Boolean) -> Unit,
     lyricBlurAmount: Float,
     onLyricBlurAmountChange: (Float) -> Unit,
+    cloudMusicLyricDefaultOffsetMs: Long,
+    onCloudMusicLyricDefaultOffsetMsChange: (Long) -> Unit,
+    qqMusicLyricDefaultOffsetMs: Long,
+    onQqMusicLyricDefaultOffsetMsChange: (Long) -> Unit,
     advancedLyricsEnabled: Boolean,
     onAdvancedLyricsEnabledChange: (Boolean) -> Unit,
     advancedBlurEnabled: Boolean,
@@ -327,6 +332,13 @@ fun SettingsScreen(
     // 动效设置菜单的状态
     var motionExpanded by rememberSaveable { mutableStateOf(false) }
     val motionArrowRotation by animateFloatAsState(targetValue = if (motionExpanded) 180f else 0f, label = "motion_arrow")
+
+    // 歌词偏移菜单的状态
+    var lyricsOffsetExpanded by rememberSaveable { mutableStateOf(false) }
+    val lyricsOffsetArrowRotation by animateFloatAsState(
+        targetValue = if (lyricsOffsetExpanded) 180f else 0f,
+        label = "lyrics_offset_arrow"
+    )
 
     LaunchedEffect(nowPlayingDynamicBackgroundEnabled, nowPlayingCoverBlurBackgroundEnabled) {
         if (nowPlayingCoverBlurBackgroundEnabled) {
@@ -1521,10 +1533,10 @@ fun SettingsScreen(
                   }
               }
 
-                item {
-                    SettingsMotionSection(
-                        expanded = motionExpanded,
-                        arrowRotation = motionArrowRotation,
+              item {
+                  SettingsMotionSection(
+                      expanded = motionExpanded,
+                      arrowRotation = motionArrowRotation,
                         onExpandedChange = { motionExpanded = it },
                         advancedLyricsEnabled = advancedLyricsEnabled,
                         onAdvancedLyricsEnabledChange = onAdvancedLyricsEnabledChange,
@@ -1544,6 +1556,18 @@ fun SettingsScreen(
                       onLyricBlurEnabledChange = onLyricBlurEnabledChange,
                       lyricBlurAmount = lyricBlurAmount,
                       onLyricBlurAmountChange = onLyricBlurAmountChange
+                  )
+              }
+
+              item {
+                  SettingsLyricsOffsetSection(
+                      expanded = lyricsOffsetExpanded,
+                      arrowRotation = lyricsOffsetArrowRotation,
+                      onExpandedChange = { lyricsOffsetExpanded = it },
+                      cloudMusicLyricDefaultOffsetMs = cloudMusicLyricDefaultOffsetMs,
+                      onCloudMusicLyricDefaultOffsetMsChange = onCloudMusicLyricDefaultOffsetMsChange,
+                      qqMusicLyricDefaultOffsetMs = qqMusicLyricDefaultOffsetMs,
+                      onQqMusicLyricDefaultOffsetMsChange = onQqMusicLyricDefaultOffsetMsChange
                   )
               }
 

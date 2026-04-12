@@ -133,6 +133,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
+import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.AudioPlayerService
@@ -532,6 +533,10 @@ private fun NeriAppContent(
     val themeColorPalette by repo.themeColorPaletteFlow.collectAsState(initial = ThemeDefaults.PRESET_COLORS)
     val lyricBlurEnabled by repo.lyricBlurEnabledFlow.collectAsState(initial = true)
     val lyricBlurAmount by repo.lyricBlurAmountFlow.collectAsState(initial = 1.5f)
+    val cloudMusicLyricDefaultOffsetMs by repo.cloudMusicLyricDefaultOffsetMsFlow
+        .collectAsState(initial = startupPlaybackPreferences.cloudMusicLyricDefaultOffsetMs)
+    val qqMusicLyricDefaultOffsetMs by repo.qqMusicLyricDefaultOffsetMsFlow
+        .collectAsState(initial = startupPlaybackPreferences.qqMusicLyricDefaultOffsetMs)
     val advancedLyricsEnabled by repo.advancedLyricsEnabledFlow.collectAsState(initial = true)
     val advancedBlurEnabled by repo.advancedBlurEnabledFlow.collectAsState(initial = true)
     val advancedBlurAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
@@ -1411,6 +1416,52 @@ private fun NeriAppContent(
                                         lyricBlurAmount = lyricBlurAmount,
                                         onLyricBlurAmountChange = { amount ->
                                             scope.launch { repo.setLyricBlurAmount(amount) }
+                                        },
+                                        cloudMusicLyricDefaultOffsetMs = cloudMusicLyricDefaultOffsetMs,
+                                        onCloudMusicLyricDefaultOffsetMsChange = { offsetMs ->
+                                            scope.launch {
+                                                val previousOffset = cloudMusicLyricDefaultOffsetMs
+                                                if (previousOffset == offsetMs) {
+                                                    return@launch
+                                                }
+                                                PlayerManager.rebaseUserLyricOffsetsForSource(
+                                                    targetSource = MusicPlatform.CLOUD_MUSIC,
+                                                    previousDefaultOffsetMs = previousOffset,
+                                                    newDefaultOffsetMs = offsetMs
+                                                )
+                                                runCatching {
+                                                    repo.setCloudMusicLyricDefaultOffsetMs(offsetMs)
+                                                }.onFailure {
+                                                    PlayerManager.rebaseUserLyricOffsetsForSource(
+                                                        targetSource = MusicPlatform.CLOUD_MUSIC,
+                                                        previousDefaultOffsetMs = offsetMs,
+                                                        newDefaultOffsetMs = previousOffset
+                                                    )
+                                                }.getOrThrow()
+                                            }
+                                        },
+                                        qqMusicLyricDefaultOffsetMs = qqMusicLyricDefaultOffsetMs,
+                                        onQqMusicLyricDefaultOffsetMsChange = { offsetMs ->
+                                            scope.launch {
+                                                val previousOffset = qqMusicLyricDefaultOffsetMs
+                                                if (previousOffset == offsetMs) {
+                                                    return@launch
+                                                }
+                                                PlayerManager.rebaseUserLyricOffsetsForSource(
+                                                    targetSource = MusicPlatform.QQ_MUSIC,
+                                                    previousDefaultOffsetMs = previousOffset,
+                                                    newDefaultOffsetMs = offsetMs
+                                                )
+                                                runCatching {
+                                                    repo.setQqMusicLyricDefaultOffsetMs(offsetMs)
+                                                }.onFailure {
+                                                    PlayerManager.rebaseUserLyricOffsetsForSource(
+                                                        targetSource = MusicPlatform.QQ_MUSIC,
+                                                        previousDefaultOffsetMs = offsetMs,
+                                                        newDefaultOffsetMs = previousOffset
+                                                    )
+                                                }.getOrThrow()
+                                            }
                                         },
                                         advancedLyricsEnabled = advancedLyricsEnabled,
                                         onAdvancedLyricsEnabledChange = { enabled ->

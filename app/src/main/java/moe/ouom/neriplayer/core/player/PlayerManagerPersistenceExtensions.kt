@@ -32,6 +32,8 @@ import moe.ouom.neriplayer.core.player.policy.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.source.toSongItem
 import moe.ouom.neriplayer.core.player.state.blockingIo
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.settings.rebaseLyricUserOffsetMs
+import moe.ouom.neriplayer.data.settings.shouldRebaseLyricOffsetForSource
 import moe.ouom.neriplayer.ui.component.LyricEntry
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
@@ -855,6 +857,79 @@ internal suspend fun PlayerManager.updateUserLyricOffsetImpl(
     }
 
     persistState()
+}
+
+internal suspend fun PlayerManager.rebaseUserLyricOffsetsForSourceImpl(
+    targetSource: MusicPlatform,
+    previousDefaultOffsetMs: Long,
+    newDefaultOffsetMs: Long
+) {
+    if (previousDefaultOffsetMs == newDefaultOffsetMs) {
+        return
+    }
+    NPLogger.d(
+        "NERI-PlayerManager",
+        "rebaseUserLyricOffsetsForSource: source=$targetSource old=$previousDefaultOffsetMs new=$newDefaultOffsetMs"
+    )
+    var queueChanged = false
+    val rebasedPlaylist = currentPlaylist.map { song ->
+        if (
+            !shouldRebaseLyricOffsetForSource(
+                lyricSource = song.matchedLyricSource,
+                targetSource = targetSource,
+                userOffsetMs = song.userLyricOffsetMs
+            )
+        ) {
+            return@map song
+        }
+        queueChanged = true
+        song.copy(
+            userLyricOffsetMs = rebaseLyricUserOffsetMs(
+                userOffsetMs = song.userLyricOffsetMs,
+                previousDefaultOffsetMs = previousDefaultOffsetMs,
+                newDefaultOffsetMs = newDefaultOffsetMs
+            )
+        )
+    }
+    if (queueChanged) {
+        currentPlaylist = rebasedPlaylist
+        _currentQueueFlow.value = rebasedPlaylist
+    }
+
+    val currentSong = _currentSongFlow.value
+    val rebasedCurrentSong = currentSong
+        ?.takeIf {
+            shouldRebaseLyricOffsetForSource(
+                lyricSource = it.matchedLyricSource,
+                targetSource = targetSource,
+                userOffsetMs = it.userLyricOffsetMs
+            )
+        }
+        ?.let { song ->
+            song.copy(
+                userLyricOffsetMs = rebaseLyricUserOffsetMs(
+                    userOffsetMs = song.userLyricOffsetMs,
+                    previousDefaultOffsetMs = previousDefaultOffsetMs,
+                    newDefaultOffsetMs = newDefaultOffsetMs
+                )
+            )
+        }
+    if (rebasedCurrentSong != null) {
+        _currentSongFlow.value = rebasedCurrentSong
+    }
+
+    withContext(Dispatchers.IO) {
+        localRepo.rebaseLyricOffsetsForSource(
+            targetSource = targetSource,
+            previousDefaultOffsetMs = previousDefaultOffsetMs,
+            newDefaultOffsetMs = newDefaultOffsetMs
+        )
+    }
+    AppContainer.playlistUsageRepo.syncLocalEntries(localRepo.playlists.value)
+
+    if (queueChanged || rebasedCurrentSong != null) {
+        persistState()
+    }
 }
 
 internal suspend fun PlayerManager.updateSongLyricsImpl(

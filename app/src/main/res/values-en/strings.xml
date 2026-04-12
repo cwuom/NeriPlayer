@@ -880,6 +880,13 @@
     <string name="settings_login_platforms_collapse">Collapse</string>
     <string name="settings_motion">Motion Settings</string>
     <string name="settings_motion_expand">Customize motion effects</string>
+    <string name="settings_lyrics_offset">Lyrics Offset</string>
+    <string name="settings_lyrics_offset_expand">Adjust default lyric offsets per source</string>
+    <string name="settings_lyrics_offset_cloud_music">Cloud Music default offset</string>
+    <string name="settings_lyrics_offset_cloud_music_desc">Default offset applied when loading Cloud Music lyrics</string>
+    <string name="settings_lyrics_offset_qq_music">QQ Music default offset</string>
+    <string name="settings_lyrics_offset_qq_music_desc">Default offset applied when loading QQ Music lyrics</string>
+    <string name="settings_lyrics_offset_value">Current offset: %1$s ms</string>
 
     <!-- Now Playing / Empty State -->
     <string name="nowplaying_no_playback">No Playback</string>

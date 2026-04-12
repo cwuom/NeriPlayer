@@ -880,6 +880,13 @@
     <string name="settings_login_platforms_collapse">收起</string>
     <string name="settings_motion">动效设置</string>
     <string name="settings_motion_expand">展开以调整动效表现</string>
+    <string name="settings_lyrics_offset">歌词偏移</string>
+    <string name="settings_lyrics_offset_expand">展开以调整各歌词来源默认偏移</string>
+    <string name="settings_lyrics_offset_cloud_music">网易云默认歌词偏移</string>
+    <string name="settings_lyrics_offset_cloud_music_desc">设置加载网易云歌词时的基础偏移</string>
+    <string name="settings_lyrics_offset_qq_music">QQ 音乐默认歌词偏移</string>
+    <string name="settings_lyrics_offset_qq_music_desc">设置加载 QQ 音乐歌词时的基础偏移</string>
+    <string name="settings_lyrics_offset_value">当前偏移：%1$s ms</string>
 
     <!-- Now Playing / Empty State -->
     <string name="nowplaying_no_playback">暂无播放</string>

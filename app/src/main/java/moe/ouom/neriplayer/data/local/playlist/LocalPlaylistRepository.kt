@@ -43,6 +43,8 @@ import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.sameIdentityAs
+import moe.ouom.neriplayer.data.settings.rebaseLyricUserOffsetMs
+import moe.ouom.neriplayer.data.settings.shouldRebaseLyricOffsetForSource
 import moe.ouom.neriplayer.data.sync.github.CoverUrlMapper
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
@@ -484,6 +486,51 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
             originalSong = newSongInfo.copy(id = songId, album = albumIdentifier),
             newSongInfo = newSongInfo
         )
+    }
+
+    suspend fun rebaseLyricOffsetsForSource(
+        targetSource: MusicPlatform,
+        previousDefaultOffsetMs: Long,
+        newDefaultOffsetMs: Long
+    ) {
+        if (previousDefaultOffsetMs == newDefaultOffsetMs) {
+            return
+        }
+        withContext(Dispatchers.IO) {
+            var changed = false
+            val updated = _playlists.value.map { playlist ->
+                var playlistChanged = false
+                val updatedSongs = playlist.songs.map { song ->
+                    if (
+                        shouldRebaseLyricOffsetForSource(
+                            lyricSource = song.matchedLyricSource,
+                            targetSource = targetSource,
+                            userOffsetMs = song.userLyricOffsetMs
+                        )
+                    ) {
+                        changed = true
+                        playlistChanged = true
+                        song.copy(
+                            userLyricOffsetMs = rebaseLyricUserOffsetMs(
+                                userOffsetMs = song.userLyricOffsetMs,
+                                previousDefaultOffsetMs = previousDefaultOffsetMs,
+                                newDefaultOffsetMs = newDefaultOffsetMs
+                            )
+                        )
+                    } else {
+                        song
+                    }
+                }
+                if (!playlistChanged) {
+                    playlist
+                } else {
+                    playlist.copy(songs = updatedSongs.toMutableList())
+                }
+            }
+            if (changed) {
+                publish(updated, triggerSync = false)
+            }
+        }
     }
 
     private fun saveCoverMapping(newSongInfo: SongItem) {
