@@ -1,6 +1,5 @@
 package moe.ouom.neriplayer.listentogether
 
-import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -8,6 +7,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.net.URI
 import java.util.Locale
 
 data class ListenTogetherServerTestResult(
@@ -157,10 +157,26 @@ internal fun String.normalizeBaseUrl(): String {
 
 internal fun String.normalizedHttpBaseUrlOrNull(): String? {
     val candidate = trim().trimEnd('/').takeIf { it.isNotBlank() } ?: return null
-    val scheme = runCatching { candidate.toUri().scheme }
-        .getOrNull()
-        ?.lowercase(Locale.ROOT)
-        ?: return null
+    val parsed = runCatching { URI(candidate) }.getOrNull() ?: return null
+    val scheme = parsed.scheme?.lowercase(Locale.ROOT) ?: return null
     if (scheme != "http" && scheme != "https") return null
-    return candidate
+    val authority = parsed.rawAuthority?.takeIf { it.isNotBlank() } ?: return null
+    if (parsed.rawQuery != null || parsed.rawFragment != null) return null
+    val normalizedPath = parsed.normalize()
+        .rawPath
+        ?.trimEnd('/')
+        .orEmpty()
+        .takeIf { it.isNotBlank() && it != "/" }
+        .orEmpty()
+    return buildString {
+        append(scheme)
+        append("://")
+        append(authority)
+        if (normalizedPath.isNotEmpty()) {
+            if (!normalizedPath.startsWith('/')) {
+                append('/')
+            }
+            append(normalizedPath)
+        }
+    }
 }

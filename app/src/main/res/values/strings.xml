@@ -1583,7 +1583,9 @@
     <string name="settings_listen_together_server_default_desc">留空即可使用内置默认服务器</string>
     <string name="settings_listen_together_server_custom_desc">当前使用自定义一起听服务器，分享邀请时会附带服务器地址</string>
     <string name="settings_listen_together_server_input_label">服务器地址</string>
-    <string name="settings_listen_together_server_input_placeholder">留空使用内置默认服务器</string>
+    <string name="settings_listen_together_server_input_placeholder">示例：https://example.com，留空使用内置默认服务器</string>
+    <string name="settings_listen_together_server_input_invalid">服务器地址格式无效，请输入完整的 http:// 或 https:// 地址</string>
+    <string name="listen_together_invite_server_invalid">邀请中的服务器地址无效，无法加入该房间</string>
     <string name="settings_listen_together_server_test">测试可用性</string>
     <string name="settings_listen_together_server_saved">一起听服务器设置已保存</string>
     <string name="settings_listen_together_server_reset_done">已恢复使用内置默认服务器</string>

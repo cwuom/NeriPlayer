@@ -228,8 +228,7 @@ class ListenTogetherSessionManager(
                                             applied.causedBy?.type?.startsWith("REQUEST_") == true &&
                                                 applied.causedBy.userUuid == _sessionState.value.userUuid
                                             )
-                                    ) &&
-                                applied.state != null
+                                    )
                             ) {
                                 NPLogger.d(
                                     TAG,
@@ -417,6 +416,14 @@ class ListenTogetherSessionManager(
             }
             return
         }
+        val latestRoomVersion = _roomState.value?.version ?: state.version
+        if (state.version < latestRoomVersion) {
+            NPLogger.d(
+                TAG,
+                "applyRoomStateToPlayer(): skip stale state, roomId=${state.roomId}, version=${state.version}, latest=$latestRoomVersion, causeType=$causeType"
+            )
+            return
+        }
         val queue = when {
             state.queue.isNotEmpty() -> state.queue
                 .mergeCurrentTrack(state.currentIndex, state.track)
@@ -438,51 +445,71 @@ class ListenTogetherSessionManager(
 
         val targetIndex = state.currentIndex.coerceIn(0, queue.lastIndex)
         val targetSong = queue[targetIndex]
+        val currentQueue = PlayerManager.currentQueueFlow.value
         val currentSong = PlayerManager.currentSongFlow.value
+        val localCurrentIndex = currentQueue.indexOfTrack(currentSong)
         val needsAuthoritativeStreamReload = shouldReloadForAuthoritativeStreamUrl(
             targetSong = targetSong,
             currentSong = currentSong
         )
-        val playbackContextChanged = true
-        val targetIndexChanged = true
+        val playbackContextChanged =
+            !currentQueue.hasSameTrackSequenceAs(queue) || needsAuthoritativeStreamReload
+        val targetIndexChanged = localCurrentIndex != targetIndex
 
-        PlayerManager.resetListenTogetherSyncPlaybackRate()
-        PlayerManager.playPlaylist(queue, targetIndex, commandSource = PlaybackCommandSource.REMOTE_SYNC)
+        if (playbackContextChanged || targetIndexChanged) {
+            PlayerManager.resetListenTogetherSyncPlaybackRate()
+            PlayerManager.playPlaylist(queue, targetIndex, commandSource = PlaybackCommandSource.REMOTE_SYNC)
+        }
 
         val resolvedExpectedPositionMs = expectedPositionMs ?: state.playback.expectedPositionMs()
         val localPositionMs = PlayerManager.playbackPositionFlow.value.coerceAtLeast(0L)
-        val signedDriftMs = resolvedExpectedPositionMs - localPositionMs
-        val driftMs = abs(signedDriftMs)
         val desiredPlaying = state.playback.state == "playing"
         val localPlaying = PlayerManager.isPlayingFlow.value
-        val shouldForcePauseAfterRemoteLoad =
-            !desiredPlaying && (playbackContextChanged || targetIndexChanged)
-        val isHeartbeatUpdate = causeType == "HEARTBEAT"
-        val shouldSeek = when {
-            playbackContextChanged || targetIndexChanged -> {
-                resolvedExpectedPositionMs > 0L || driftMs > TRACK_SWITCH_FORCE_SYNC_MS
-            }
-            isHeartbeatUpdate && desiredPlaying -> driftMs > HEARTBEAT_DRIFT_FORCE_SYNC_MS
-            desiredPlaying -> driftMs > PLAYING_DRIFT_FORCE_SYNC_MS
-            else -> driftMs > PAUSED_DRIFT_FORCE_SYNC_MS
-        }
+        val localPlaybackAlreadyStarting = PlayerManager.playWhenReadyFlow.value
+        val awaitingAuthoritativeStream = PlayerManager.shouldWaitForListenTogetherAuthoritativeStream(targetSong)
+        val ignoreUnexpectedZeroPositionRollback = shouldIgnoreUnexpectedZeroPositionRollback(
+            causeType = causeType,
+            desiredPlaying = desiredPlaying,
+            expectedPositionMs = resolvedExpectedPositionMs,
+            localPositionMs = localPositionMs,
+            playbackContextChanged = playbackContextChanged,
+            targetIndexChanged = targetIndexChanged
+        )
+        val syncPlan = resolveListenTogetherPlayerSyncPlan(
+            ListenTogetherPlayerSyncContext(
+                playbackContextChanged = playbackContextChanged,
+                targetIndexChanged = targetIndexChanged,
+                desiredPlaying = desiredPlaying,
+                localPlaying = localPlaying,
+                localPlaybackAlreadyStarting = localPlaybackAlreadyStarting,
+                awaitingAuthoritativeStream = awaitingAuthoritativeStream,
+                expectedPositionMs = resolvedExpectedPositionMs,
+                localPositionMs = localPositionMs,
+                ignoreUnexpectedZeroPositionRollback = ignoreUnexpectedZeroPositionRollback,
+                causeType = causeType,
+                trackSwitchForceSyncMs = TRACK_SWITCH_FORCE_SYNC_MS,
+                heartbeatDriftForceSyncMs = HEARTBEAT_DRIFT_FORCE_SYNC_MS,
+                playingDriftForceSyncMs = PLAYING_DRIFT_FORCE_SYNC_MS,
+                pausedDriftForceSyncMs = PAUSED_DRIFT_FORCE_SYNC_MS
+            )
+        )
         NPLogger.d(
             TAG,
-            "applyRoomStateToPlayer(): causeType=$causeType, desiredPlaying=$desiredPlaying, localPlaying=$localPlaying, driftMs=$driftMs, signedDriftMs=$signedDriftMs, shouldSeek=$shouldSeek, needsAuthoritativeStreamReload=$needsAuthoritativeStreamReload, shouldForcePauseAfterRemoteLoad=$shouldForcePauseAfterRemoteLoad"
+            "applyRoomStateToPlayer(): causeType=$causeType, desiredPlaying=$desiredPlaying, localPlaying=$localPlaying, localPlaybackAlreadyStarting=$localPlaybackAlreadyStarting, awaitingAuthoritativeStream=$awaitingAuthoritativeStream, localCurrentIndex=$localCurrentIndex, targetIndex=$targetIndex, playbackContextChanged=$playbackContextChanged, targetIndexChanged=$targetIndexChanged, shouldReloadPlaylist=${syncPlan.shouldReloadPlaylist}, effectiveExpectedPositionMs=${syncPlan.effectiveExpectedPositionMs}, driftMs=${syncPlan.driftMs}, signedDriftMs=${syncPlan.signedDriftMs}, shouldSeek=${syncPlan.shouldSeek}, shouldIssuePlay=${syncPlan.shouldIssuePlay}, needsAuthoritativeStreamReload=$needsAuthoritativeStreamReload, ignoreUnexpectedZeroPositionRollback=$ignoreUnexpectedZeroPositionRollback, shouldForcePauseAfterRemoteLoad=${syncPlan.shouldForcePauseAfterRemoteLoad}"
         )
         when {
             desiredPlaying -> {
-                if (shouldSeek) {
+                if (syncPlan.shouldSeek) {
                     PlayerManager.resetListenTogetherSyncPlaybackRate()
-                    PlayerManager.seekTo(resolvedExpectedPositionMs, commandSource = PlaybackCommandSource.REMOTE_SYNC)
+                    PlayerManager.seekTo(syncPlan.effectiveExpectedPositionMs, commandSource = PlaybackCommandSource.REMOTE_SYNC)
                 } else {
                     applySoftDriftCorrection(
-                        driftMs = driftMs,
-                        signedDriftMs = signedDriftMs,
+                        driftMs = syncPlan.driftMs,
+                        signedDriftMs = syncPlan.signedDriftMs,
                         allowSoftSync = false
                     )
                 }
-                if (!localPlaying) {
+                if (syncPlan.shouldIssuePlay) {
                     PlayerManager.resetListenTogetherSyncPlaybackRate()
                     PlayerManager.play(commandSource = PlaybackCommandSource.REMOTE_SYNC)
                 }
@@ -490,10 +517,10 @@ class ListenTogetherSessionManager(
 
             else -> {
                 PlayerManager.resetListenTogetherSyncPlaybackRate()
-                if (shouldSeek) {
-                    PlayerManager.seekTo(resolvedExpectedPositionMs, commandSource = PlaybackCommandSource.REMOTE_SYNC)
+                if (syncPlan.shouldSeek) {
+                    PlayerManager.seekTo(syncPlan.effectiveExpectedPositionMs, commandSource = PlaybackCommandSource.REMOTE_SYNC)
                 }
-                if (shouldForcePauseAfterRemoteLoad || localPlaying) {
+                if (syncPlan.shouldForcePauseAfterRemoteLoad || localPlaying) {
                     PlayerManager.pause(forcePersist = false, commandSource = PlaybackCommandSource.REMOTE_SYNC)
                 }
             }
@@ -1558,6 +1585,26 @@ class ListenTogetherSessionManager(
         PlayerManager.setListenTogetherSyncPlaybackRate(rate)
     }
 
+    private fun shouldIgnoreUnexpectedZeroPositionRollback(
+        causeType: String?,
+        desiredPlaying: Boolean,
+        expectedPositionMs: Long,
+        localPositionMs: Long,
+        playbackContextChanged: Boolean,
+        targetIndexChanged: Boolean
+    ): Boolean {
+        if (causeType !in PASSIVE_POSITION_UPDATE_TYPES) return false
+        if (!desiredPlaying) return false
+        if (expectedPositionMs > 0L) return false
+        if (localPositionMs < UNEXPECTED_ZERO_POSITION_ROLLBACK_GUARD_MS) return false
+        if (playbackContextChanged || targetIndexChanged) return false
+        NPLogger.w(
+            TAG,
+            "shouldIgnoreUnexpectedZeroPositionRollback(): ignore suspicious rollback, causeType=$causeType, expectedPositionMs=$expectedPositionMs, localPositionMs=$localPositionMs"
+        )
+        return true
+    }
+
     private fun publishControllerHeartbeatIfNeeded(
         force: Boolean = false,
         reason: String
@@ -1707,6 +1754,7 @@ class ListenTogetherSessionManager(
         private const val CONTROLLER_LOCAL_CONTROL_COOLDOWN_MS = 1_200L
         private const val SOFT_SYNC_MIN_DRIFT_MS = 600L
         private const val SOFT_SYNC_FAST_DRIFT_MS = 1_500L
+        private const val UNEXPECTED_ZERO_POSITION_ROLLBACK_GUARD_MS = 2_000L
         private val CONTROLLER_HEARTBEAT_RECOVERY_TYPES = setOf(
             "MEMBER_JOINED",
             "PLAY",
@@ -1718,6 +1766,11 @@ class ListenTogetherSessionManager(
             "REQUEST_PAUSE",
             "REQUEST_SEEK",
             "REQUEST_SET_TRACK"
+        )
+        private val PASSIVE_POSITION_UPDATE_TYPES = setOf(
+            "HEARTBEAT",
+            "LINK_READY",
+            "MEMBER_JOINED"
         )
         private val CONTROLLED_PLAYBACK_COMMAND_TYPES = setOf(
             "PLAY_PLAYLIST",
@@ -1784,6 +1837,16 @@ private fun SongItem.sameTrackAs(other: SongItem): Boolean {
         resolvedAudioId() == other.resolvedAudioId() &&
         resolvedSubAudioId() == other.resolvedSubAudioId() &&
         resolvedPlaylistContextId() == other.resolvedPlaylistContextId()
+}
+
+private fun List<SongItem>.hasSameTrackSequenceAs(other: List<SongItem>): Boolean {
+    if (size != other.size) return false
+    return indices.all { index -> this[index].sameTrackAs(other[index]) }
+}
+
+private fun List<SongItem>.indexOfTrack(track: SongItem?): Int {
+    track ?: return -1
+    return indexOfFirst { candidate -> candidate.sameTrackAs(track) }
 }
 
 private fun List<SongItem>.toShareableQueueSnapshot(

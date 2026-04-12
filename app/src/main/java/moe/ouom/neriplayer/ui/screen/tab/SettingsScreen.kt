@@ -123,6 +123,7 @@ import moe.ouom.neriplayer.data.settings.MAX_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.data.settings.MIN_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.data.settings.background.BackgroundImageStorage
 import moe.ouom.neriplayer.data.settings.scaledLyricFontSize
+import moe.ouom.neriplayer.listentogether.configuredListenTogetherBaseUrlOrNull
 import moe.ouom.neriplayer.listentogether.isDefaultListenTogetherBaseUrl
 import moe.ouom.neriplayer.listentogether.resolveListenTogetherBaseUrl
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
@@ -292,7 +293,7 @@ fun SettingsScreen(
     val listenTogetherApi = remember { AppContainer.listenTogetherApi }
     val listenTogetherSessionManager = remember { AppContainer.listenTogetherSessionManager }
     val listenTogetherSessionState by listenTogetherSessionManager.sessionState.collectAsState()
-    val listenTogetherWorkerBaseUrl by listenTogetherPreferences.workerBaseUrlFlow.collectAsState(initial = "")
+    val listenTogetherWorkerBaseUrlInput by listenTogetherPreferences.workerBaseUrlInputFlow.collectAsState(initial = "")
     var pendingBackgroundImageBlur by rememberSaveable(backgroundImageUri) {
         mutableFloatStateOf(backgroundImageBlur)
     }
@@ -616,9 +617,9 @@ fun SettingsScreen(
         }
     }
 
-    LaunchedEffect(listenTogetherWorkerBaseUrl) {
-        if (listenTogetherServerInput != listenTogetherWorkerBaseUrl) {
-            listenTogetherServerInput = listenTogetherWorkerBaseUrl
+    LaunchedEffect(listenTogetherWorkerBaseUrlInput) {
+        if (listenTogetherServerInput != listenTogetherWorkerBaseUrlInput) {
+            listenTogetherServerInput = listenTogetherWorkerBaseUrlInput
         }
     }
 
@@ -1737,7 +1738,9 @@ fun SettingsScreen(
                             .background(Color.Transparent)
                             .padding(start = 16.dp, end = 8.dp, bottom = 8.dp),
                         isUsingDefaultServer = listenTogetherServerInput.isBlank() ||
-                            isDefaultListenTogetherBaseUrl(resolveListenTogetherBaseUrl(listenTogetherServerInput)),
+                            configuredListenTogetherBaseUrlOrNull(listenTogetherServerInput)?.let(
+                                ::isDefaultListenTogetherBaseUrl
+                            ) == true,
                         isInRoom = !listenTogetherSessionState.roomId.isNullOrBlank(),
                         testing = listenTogetherServerTesting,
                         testMessage = listenTogetherServerTestMessage,
@@ -1904,7 +1907,7 @@ fun SettingsScreen(
             onDismissRequest = {
                 if (!listenTogetherServerTesting) {
                     showListenTogetherServerDialog = false
-                    listenTogetherServerInput = listenTogetherWorkerBaseUrl
+                    listenTogetherServerInput = listenTogetherWorkerBaseUrlInput
                     listenTogetherServerTestMessage = null
                 }
             },
@@ -1913,7 +1916,9 @@ fun SettingsScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
                         if (listenTogetherServerInput.isBlank() ||
-                            isDefaultListenTogetherBaseUrl(resolveListenTogetherBaseUrl(listenTogetherServerInput))
+                            configuredListenTogetherBaseUrlOrNull(listenTogetherServerInput)?.let(
+                                ::isDefaultListenTogetherBaseUrl
+                            ) == true
                         ) {
                             stringResource(R.string.settings_listen_together_server_default_desc)
                         } else {
@@ -1955,11 +1960,18 @@ fun SettingsScreen(
                         OutlinedButton(
                             onClick = {
                                 scope.launch {
+                                    val normalizedCustomServer =
+                                        configuredListenTogetherBaseUrlOrNull(listenTogetherServerInput)
+                                    if (listenTogetherServerInput.isNotBlank() && normalizedCustomServer == null) {
+                                        listenTogetherServerTestMessage = context.getString(
+                                            R.string.settings_listen_together_server_input_invalid
+                                        )
+                                        return@launch
+                                    }
                                     listenTogetherServerTesting = true
-                                    val usingDefaultServer = listenTogetherServerInput.isBlank() ||
-                                        isDefaultListenTogetherBaseUrl(resolveListenTogetherBaseUrl(listenTogetherServerInput))
+                                    val usingDefaultServer = normalizedCustomServer == null
                                     val result = listenTogetherApi.testServerAvailability(
-                                        resolveListenTogetherBaseUrl(listenTogetherServerInput)
+                                        normalizedCustomServer ?: resolveListenTogetherBaseUrl(null)
                                     )
                                     listenTogetherServerTesting = false
                                     listenTogetherServerTestMessage = when {
@@ -1999,9 +2011,17 @@ fun SettingsScreen(
                 HapticTextButton(
                     onClick = {
                         scope.launch {
-                            val normalizedInput = listenTogetherServerInput.trim()
-                            listenTogetherPreferences.setWorkerBaseUrl(normalizedInput)
-                            listenTogetherServerInput = normalizedInput
+                            val normalizedInput =
+                                configuredListenTogetherBaseUrlOrNull(listenTogetherServerInput)
+                            if (listenTogetherServerInput.isNotBlank() && normalizedInput == null) {
+                                listenTogetherServerTestMessage = context.getString(
+                                    R.string.settings_listen_together_server_input_invalid
+                                )
+                                return@launch
+                            }
+                            listenTogetherPreferences.setWorkerBaseUrl(normalizedInput.orEmpty())
+                            listenTogetherPreferences.setWorkerBaseUrlInput(normalizedInput.orEmpty())
+                            listenTogetherServerInput = normalizedInput.orEmpty()
                             showListenTogetherServerDialog = false
                             listenTogetherServerTestMessage = null
                             Toast.makeText(
@@ -2020,7 +2040,7 @@ fun SettingsScreen(
                 HapticTextButton(
                     onClick = {
                         showListenTogetherServerDialog = false
-                        listenTogetherServerInput = listenTogetherWorkerBaseUrl
+                        listenTogetherServerInput = listenTogetherWorkerBaseUrlInput
                         listenTogetherServerTestMessage = null
                     },
                     enabled = !listenTogetherServerTesting

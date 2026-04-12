@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import moe.ouom.neriplayer.listentogether.buildDefaultListenTogetherNickname
 import moe.ouom.neriplayer.listentogether.buildListenTogetherUserUuid
+import moe.ouom.neriplayer.listentogether.configuredListenTogetherBaseUrlOrNull
 import moe.ouom.neriplayer.listentogether.isDefaultListenTogetherBaseUrl
 import moe.ouom.neriplayer.listentogether.sanitizeListenTogetherNicknameOrNull
 
@@ -16,6 +17,7 @@ private val Context.listenTogetherDataStore by preferencesDataStore("listen_toge
 
 object ListenTogetherPreferenceKeys {
     val WORKER_BASE_URL = stringPreferencesKey("listen_together_worker_base_url")
+    val WORKER_BASE_URL_INPUT = stringPreferencesKey("listen_together_worker_base_url_input")
     val LAST_USER_ID = stringPreferencesKey("listen_together_last_user_id")
     val LAST_USER_UUID = stringPreferencesKey("listen_together_last_user_uuid")
     val LAST_NICKNAME = stringPreferencesKey("listen_together_last_nickname")
@@ -27,11 +29,27 @@ object ListenTogetherPreferenceKeys {
 class ListenTogetherPreferences(private val context: Context) {
     val workerBaseUrlFlow: Flow<String> =
         context.listenTogetherDataStore.data.map { prefs ->
-            prefs[ListenTogetherPreferenceKeys.WORKER_BASE_URL]
-                ?.trim()
-                .orEmpty()
+            configuredListenTogetherBaseUrlOrNull(
+                prefs[ListenTogetherPreferenceKeys.WORKER_BASE_URL]
+            )
                 .takeUnless { isDefaultListenTogetherBaseUrl(it) }
                 .orEmpty()
+        }
+
+    val workerBaseUrlInputFlow: Flow<String> =
+        context.listenTogetherDataStore.data.map { prefs ->
+            val savedInput = prefs[ListenTogetherPreferenceKeys.WORKER_BASE_URL_INPUT]
+                ?.trim()
+                .orEmpty()
+            if (savedInput.isNotBlank()) {
+                savedInput
+            } else {
+                configuredListenTogetherBaseUrlOrNull(
+                    prefs[ListenTogetherPreferenceKeys.WORKER_BASE_URL]
+                )
+                    .takeUnless { isDefaultListenTogetherBaseUrl(it) }
+                    .orEmpty()
+            }
         }
 
     val userUuidFlow: Flow<String> =
@@ -65,11 +83,39 @@ class ListenTogetherPreferences(private val context: Context) {
 
     suspend fun setWorkerBaseUrl(value: String) {
         context.listenTogetherDataStore.edit { prefs ->
-            val normalized = value.trim()
+            val savedInput = prefs[ListenTogetherPreferenceKeys.WORKER_BASE_URL_INPUT]
+                ?.trim()
+                .orEmpty()
+            if (savedInput.isBlank()) {
+                val currentCustomServer = configuredListenTogetherBaseUrlOrNull(
+                    prefs[ListenTogetherPreferenceKeys.WORKER_BASE_URL]
+                )
+                    .takeUnless { isDefaultListenTogetherBaseUrl(it) }
+                    .orEmpty()
+                if (currentCustomServer.isNotBlank()) {
+                    prefs[ListenTogetherPreferenceKeys.WORKER_BASE_URL_INPUT] = currentCustomServer
+                }
+            }
+            val normalized = configuredListenTogetherBaseUrlOrNull(value).orEmpty()
             if (normalized.isBlank() || isDefaultListenTogetherBaseUrl(normalized)) {
                 prefs.remove(ListenTogetherPreferenceKeys.WORKER_BASE_URL)
             } else {
                 prefs[ListenTogetherPreferenceKeys.WORKER_BASE_URL] = normalized
+            }
+        }
+    }
+
+    suspend fun setWorkerBaseUrlInput(value: String) {
+        context.listenTogetherDataStore.edit { prefs ->
+            val trimmed = value.trim()
+            val normalized = configuredListenTogetherBaseUrlOrNull(trimmed)
+            if (
+                trimmed.isBlank() ||
+                (normalized != null && isDefaultListenTogetherBaseUrl(normalized))
+            ) {
+                prefs.remove(ListenTogetherPreferenceKeys.WORKER_BASE_URL_INPUT)
+            } else {
+                prefs[ListenTogetherPreferenceKeys.WORKER_BASE_URL_INPUT] = trimmed
             }
         }
     }

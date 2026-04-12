@@ -123,6 +123,7 @@ import moe.ouom.neriplayer.data.sync.webdav.WebDavStorage
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.listentogether.DEFAULT_LISTEN_TOGETHER_BASE_URL
 import moe.ouom.neriplayer.listentogether.ListenTogetherInvite
+import moe.ouom.neriplayer.listentogether.configuredListenTogetherBaseUrlOrNull
 import moe.ouom.neriplayer.listentogether.normalizeListenTogetherRoomId
 import moe.ouom.neriplayer.listentogether.parseListenTogetherInvite
 import moe.ouom.neriplayer.listentogether.resolveListenTogetherBaseUrl
@@ -529,12 +530,15 @@ class MainActivity : ComponentActivity() {
                                                         val preferences = AppContainer.listenTogetherPreferences
                                                         val sessionManager = AppContainer.listenTogetherSessionManager
                                                         updateListenTogetherStatus(getString(R.string.listen_together_status_joining))
-                                                        val baseUrl = resolveListenTogetherBaseUrl(
-                                                            preferences.workerBaseUrlFlow.first()
-                                                                .ifBlank {
-                                                                    invite.baseUrl ?: DEFAULT_LISTEN_TOGETHER_BASE_URL
-                                                                }
-                                                        )
+                                                        val configuredCustomBaseUrl =
+                                                            configuredListenTogetherBaseUrlOrNull(
+                                                                preferences.workerBaseUrlInputFlow.first()
+                                                            )
+                                                                ?: configuredListenTogetherBaseUrlOrNull(
+                                                                preferences.workerBaseUrlFlow.first()
+                                                            )
+                                                        val baseUrl = configuredCustomBaseUrl
+                                                            ?: resolveListenTogetherBaseUrl(DEFAULT_LISTEN_TOGETHER_BASE_URL)
                                                         val userUuid = preferences.getOrCreateUserUuid()
                                                         val nickname = preferences.getOrCreateNickname()
                                                         preferences.setWorkerBaseUrl(baseUrl)

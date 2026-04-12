@@ -1,8 +1,10 @@
 package moe.ouom.neriplayer.listentogether
 
 import android.net.Uri
+import java.net.URI
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
 import java.util.UUID
-import androidx.core.net.toUri
 
 const val DEFAULT_LISTEN_TOGETHER_BASE_URL =
     "https://neriplayer.hancat.work/"
@@ -18,10 +20,16 @@ private val LISTEN_TOGETHER_INVITE_REGEX = Regex(
 data class ListenTogetherInvite(
     val roomId: String,
     val inviterNickname: String? = null,
-    val baseUrl: String? = null
+    val baseUrl: String? = null,
+    val hasInvalidBaseUrl: Boolean = false
 ) {
     val signature: String
-        get() = listOf(roomId, inviterNickname.orEmpty(), baseUrl.orEmpty()).joinToString("|")
+        get() = listOf(
+            roomId,
+            inviterNickname.orEmpty(),
+            baseUrl.orEmpty(),
+            hasInvalidBaseUrl.toString()
+        ).joinToString("|")
 }
 
 fun buildListenTogetherUserUuid(): String {
@@ -59,38 +67,77 @@ fun buildListenTogetherInviteUri(
         .toString()
 }
 
+fun configuredListenTogetherBaseUrlOrNull(value: String?): String? {
+    return value
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?.normalizedHttpBaseUrlOrNull()
+}
+
 fun resolveListenTogetherBaseUrl(value: String?): String {
-    val normalized = value?.trim()?.takeIf { it.isNotBlank() }?.normalizedHttpBaseUrlOrNull()
-    return normalized ?: DEFAULT_LISTEN_TOGETHER_BASE_URL.normalizeBaseUrl()
+    return configuredListenTogetherBaseUrlOrNull(value)
+        ?: DEFAULT_LISTEN_TOGETHER_BASE_URL.normalizeBaseUrl()
 }
 
 fun isDefaultListenTogetherBaseUrl(value: String?): Boolean {
-    val normalized = value?.trim()?.takeIf { it.isNotBlank() }?.normalizedHttpBaseUrlOrNull()
-    return normalized == DEFAULT_LISTEN_TOGETHER_BASE_URL.normalizeBaseUrl()
+    return configuredListenTogetherBaseUrlOrNull(value) ==
+        DEFAULT_LISTEN_TOGETHER_BASE_URL.normalizeBaseUrl()
 }
 
 fun parseListenTogetherInvite(uri: Uri?): ListenTogetherInvite? {
-    uri ?: return null
+    return uri?.toString()?.let(::parseListenTogetherInviteInternal)
+}
+
+private fun parseListenTogetherInviteInternal(rawText: String): ListenTogetherInvite? {
+    val uri = runCatching { URI(rawText) }.getOrNull() ?: return null
     if (!uri.scheme.equals(LISTEN_TOGETHER_INVITE_SCHEME, ignoreCase = true)) return null
     if (!uri.host.equals(LISTEN_TOGETHER_INVITE_HOST, ignoreCase = true)) return null
-    val pathSegments = uri.pathSegments
+    val pathSegments = uri.path
+        ?.split('/')
+        ?.filter { it.isNotBlank() }
+        .orEmpty()
     if (pathSegments.firstOrNull() != LISTEN_TOGETHER_INVITE_JOIN_PATH) return null
-    val roomId = normalizeListenTogetherRoomId(uri.getQueryParameter("roomId").orEmpty())
+    val query = decodeInviteQuery(uri.rawQuery)
+    val roomId = normalizeListenTogetherRoomId(query["roomId"].orEmpty())
     if (validateListenTogetherRoomId(roomId) != null) return null
-    val inviterNickname = uri.getQueryParameter("inviter")
+    val inviterNickname = query["inviter"]
         ?.trim()
         ?.takeIf { it.isNotBlank() && validateListenTogetherNickname(it) == null }
+    val rawBaseUrl = query["baseUrl"]?.trim().orEmpty()
+    val normalizedBaseUrl = configuredListenTogetherBaseUrlOrNull(rawBaseUrl)
     return ListenTogetherInvite(
         roomId = roomId,
         inviterNickname = inviterNickname,
-        baseUrl = uri.getQueryParameter("baseUrl")?.trim()?.takeIf { it.isNotBlank() }
+        baseUrl = normalizedBaseUrl,
+        hasInvalidBaseUrl = rawBaseUrl.isNotBlank() && normalizedBaseUrl == null
     )
 }
 
 fun parseListenTogetherInvite(rawText: String?): ListenTogetherInvite? {
     val text = rawText?.trim().orEmpty()
     if (text.isBlank()) return null
-    parseListenTogetherInvite(text.toUri())?.let { return it }
+    parseListenTogetherInviteInternal(text)?.let { return it }
     val match = LISTEN_TOGETHER_INVITE_REGEX.find(text)?.value ?: return null
-    return parseListenTogetherInvite(match.toUri())
+    return parseListenTogetherInviteInternal(match)
+}
+
+private fun decodeInviteQuery(rawQuery: String?): Map<String, String> {
+    if (rawQuery.isNullOrBlank()) return emptyMap()
+    return rawQuery.split('&')
+        .mapNotNull { pair ->
+            val separatorIndex = pair.indexOf('=')
+            val rawKey = if (separatorIndex >= 0) pair.substring(0, separatorIndex) else pair
+            val rawValue = if (separatorIndex >= 0) pair.substring(separatorIndex + 1) else ""
+            val key = decodeInviteQueryComponent(rawKey).trim()
+            if (key.isBlank()) {
+                null
+            } else {
+                key to decodeInviteQueryComponent(rawValue)
+            }
+        }
+        .toMap()
+}
+
+private fun decodeInviteQueryComponent(value: String): String {
+    return URLDecoder.decode(value, StandardCharsets.UTF_8)
 }

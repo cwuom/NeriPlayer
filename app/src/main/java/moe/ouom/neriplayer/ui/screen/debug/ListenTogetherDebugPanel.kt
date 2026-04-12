@@ -134,7 +134,7 @@ fun ListenTogetherRoomPanel(
     val preferences = remember { AppContainer.listenTogetherPreferences }
     val sessionState by sessionManager.sessionState.collectAsState()
     val roomState by sessionManager.roomState.collectAsState()
-    val savedBaseUrl by preferences.workerBaseUrlFlow.collectAsState(initial = "")
+    val savedBaseUrlInput by preferences.workerBaseUrlInputFlow.collectAsState(initial = "")
     val savedUserUuid by preferences.userUuidFlow.collectAsState(initial = "")
     val savedNickname by preferences.nicknameFlow.collectAsState(initial = "")
     val savedAllowMemberControl by preferences.allowMemberControlFlow.collectAsState(initial = true)
@@ -173,8 +173,10 @@ fun ListenTogetherRoomPanel(
         }
     }
 
-    LaunchedEffect(savedBaseUrl) {
-        if (baseUrl.isBlank()) baseUrl = resolveListenTogetherBaseUrl(savedBaseUrl)
+    LaunchedEffect(savedBaseUrlInput) {
+        if (baseUrl != savedBaseUrlInput) {
+            baseUrl = savedBaseUrlInput
+        }
     }
     LaunchedEffect(savedUserUuid, isInRoom) {
         if (!isInRoom) {
@@ -283,6 +285,7 @@ fun ListenTogetherRoomPanel(
                         userUuid = userUuid,
                         nickname = nickname,
                         roomIdInput = roomIdInput,
+                        baseUrlInput = baseUrl,
                         effectiveBaseUrl = effectiveBaseUrl,
                         roomSettings = ListenTogetherRoomSettings(allowMemberControl, autoPauseOnMemberChange, shareAudioLinks),
                         sessionState = sessionState,
@@ -333,7 +336,7 @@ fun ListenTogetherRoomPanel(
                             shareAudioLinks = updated.shareAudioLinks
                             activity?.lifecycleScope?.launch {
                                 runCatching {
-                                    persistSettings(preferences, effectiveBaseUrl, userUuid, nickname, updated)
+                                    persistSettings(preferences, baseUrl, effectiveBaseUrl, userUuid, nickname, updated)
                                     if (isInRoom && isController) {
                                         val result = sessionManager.updateRoomSettings(updated)
                                         check(result.ok) {
@@ -435,6 +438,7 @@ fun ListenTogetherRoomPanel(
                         userUuid = userUuid,
                         nickname = nickname,
                         roomIdInput = roomIdInput,
+                        baseUrlInput = baseUrl,
                         effectiveBaseUrl = effectiveBaseUrl,
                         roomSettings = ListenTogetherRoomSettings(allowMemberControl, autoPauseOnMemberChange, shareAudioLinks),
                         sessionState = sessionState,
@@ -487,7 +491,7 @@ fun ListenTogetherRoomPanel(
                             shareAudioLinks = updated.shareAudioLinks
                             activity?.lifecycleScope?.launch {
                                 runCatching {
-                                    persistSettings(preferences, effectiveBaseUrl, userUuid, nickname, updated)
+                                    persistSettings(preferences, baseUrl, effectiveBaseUrl, userUuid, nickname, updated)
                                     if (isInRoom && isController) {
                                         val result = sessionManager.updateRoomSettings(updated)
                                         check(result.ok) { result.error ?: "websocket unavailable" }
@@ -612,6 +616,7 @@ private fun RoomActions(
     userUuid: String,
     nickname: String,
     roomIdInput: String,
+    baseUrlInput: String,
     effectiveBaseUrl: String,
     roomSettings: ListenTogetherRoomSettings,
     sessionState: moe.ouom.neriplayer.listentogether.ListenTogetherSessionState,
@@ -633,7 +638,7 @@ private fun RoomActions(
                 activity?.lifecycleScope?.launch {
                     onRunningActionChange(R.string.listen_together_creating_room)
                     runCatching {
-                        persistSettings(preferences, effectiveBaseUrl, userUuid, nickname, roomSettings)
+                        persistSettings(preferences, baseUrlInput, effectiveBaseUrl, userUuid, nickname, roomSettings)
                         sessionManager.createRoom(
                             effectiveBaseUrl,
                             userUuid,
@@ -671,7 +676,7 @@ private fun RoomActions(
                             Toast.makeText(context, context.getString(R.string.listen_together_same_room_join_ignored, targetRoomId), Toast.LENGTH_SHORT).show()
                             return@runCatching
                         }
-                        persistSettings(preferences, effectiveBaseUrl, userUuid, nickname, roomSettings)
+                        persistSettings(preferences, baseUrlInput, effectiveBaseUrl, userUuid, nickname, roomSettings)
                         sessionManager.joinRoom(effectiveBaseUrl, targetRoomId, userUuid, nickname)
                         sessionManager.connectWebSocket()
                     }.onFailure {
@@ -1211,12 +1216,14 @@ private fun DebugSectionHeader(
 
 private suspend fun persistSettings(
     preferences: ListenTogetherPreferences,
+    baseUrlInput: String,
     baseUrl: String,
     userUuid: String,
     nickname: String,
     settings: ListenTogetherRoomSettings
 ) {
     preferences.setWorkerBaseUrl(baseUrl)
+    preferences.setWorkerBaseUrlInput(baseUrlInput)
     preferences.setUserUuid(userUuid)
     preferences.setNickname(nickname)
     preferences.setAllowMemberControl(settings.allowMemberControl)
