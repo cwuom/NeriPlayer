@@ -2217,6 +2217,12 @@ internal object ManagedDownloadStorage {
         if (normalizedMimeType.equals("text/plain", ignoreCase = true) && extension.isNotBlank() && extension != "txt") {
             return "application/octet-stream"
         }
+        if (
+            normalizedMimeType.equals("application/json", ignoreCase = true) &&
+            desiredName.endsWith(METADATA_SUFFIX, ignoreCase = true)
+        ) {
+            return "application/octet-stream"
+        }
         return normalizedMimeType
     }
 

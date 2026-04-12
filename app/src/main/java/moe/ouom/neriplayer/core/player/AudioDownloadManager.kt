@@ -1579,7 +1579,7 @@ object AudioDownloadManager {
         if (GlobalDownloadManager.isSongCancelled(songKey) || isSongDownloadActive(songKey)) {
             return null
         }
-        return resolveReadableManagedDownload(context, song)?.playbackUri
+        return resolveReadableDownloadedPlaybackUri(context, song)
     }
 
     fun hasLocalDownload(context: Context, song: SongItem): Boolean {
@@ -1587,7 +1587,7 @@ object AudioDownloadManager {
         if (GlobalDownloadManager.isSongCancelled(songKey) || isSongDownloadActive(songKey)) {
             return false
         }
-        return resolveReadableManagedDownload(context, song) != null
+        return resolveReadableDownloadedPlaybackUri(context, song) != null
     }
 
     /** 解析下载歌曲对应的本地封面，供离线 UI 兜底使用 */
@@ -1628,6 +1628,22 @@ object AudioDownloadManager {
             NPLogger.w(TAG, "resolve local cover fallback failed: ${it.message}")
             null
         }
+    }
+
+    private fun resolveReadableDownloadedPlaybackUri(
+        context: Context,
+        song: SongItem
+    ): String? {
+        resolveReadableManagedDownload(context, song)?.playbackUri?.let { return it }
+        val catalogPlaybackUri = GlobalDownloadManager.findAccessibleDownloadedSongPlaybackUri(
+            context = context,
+            song = song
+        ) ?: return null
+        NPLogger.d(
+            TAG,
+            "下载索引未命中，回退下载目录缓存播放: song=${song.name}, reference=$catalogPlaybackUri"
+        )
+        return catalogPlaybackUri
     }
 
     private fun candidateBaseNames(song: SongItem): List<String> {

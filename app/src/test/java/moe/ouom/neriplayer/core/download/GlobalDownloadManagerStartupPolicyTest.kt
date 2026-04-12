@@ -1,8 +1,13 @@
 package moe.ouom.neriplayer.core.download
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
@@ -10,6 +15,26 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 
 class GlobalDownloadManagerStartupPolicyTest {
+
+    @Test
+    fun `runNonCancellableDownloadRollback still completes after coroutine cancellation`() = runBlocking {
+        var executed = false
+        var rollbackResult: String? = null
+
+        val job = launch {
+            cancel(CancellationException("cancel all download tasks"))
+            rollbackResult = runNonCancellableDownloadRollback {
+                delay(1)
+                executed = true
+                "rolled-back"
+            }
+        }
+
+        job.join()
+
+        assertTrue(executed)
+        assertEquals("rolled-back", rollbackResult)
+    }
 
     @Test
     fun `startup scan is skipped only when snapshot and catalog are both ready`() {
@@ -399,6 +424,99 @@ class GlobalDownloadManagerStartupPolicyTest {
                 tasks = listOf(completedTask),
                 isSingleDownloading = false,
                 hasActiveBatchJobs = false
+            )
+        )
+    }
+
+    @Test
+    fun `findDownloadedSongCatalogMatch prefers stable identity for remote favorites playback`() {
+        val song = SongItem(
+            id = 9L,
+            name = "Favorite Song",
+            artist = "Artist",
+            album = "Album",
+            albumId = 1L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            mediaUri = "https://music.163.com/song?id=9"
+        )
+        val downloaded = DownloadedSong(
+            id = 100L,
+            name = "renamed locally",
+            artist = "local artist",
+            album = "Downloads",
+            filePath = "content://downloads/9",
+            fileSize = 10L,
+            downloadTime = 10L,
+            stableKey = song.stableKey()
+        )
+
+        assertEquals(downloaded, findDownloadedSongCatalogMatch(song, listOf(downloaded)))
+    }
+
+    @Test
+    fun `matchesDownloadedSongCatalogEntry keeps legacy media uri entries aligned`() {
+        val legacy = DownloadedSong(
+            id = 1L,
+            name = "Song",
+            artist = "Artist",
+            album = "Album",
+            filePath = "",
+            fileSize = 10L,
+            downloadTime = 10L,
+            mediaUri = "content://downloads/song"
+        )
+        val refreshed = legacy.copy(
+            filePath = "/storage/emulated/0/Android/data/moe.ouom.neriplayer/files/song.flac",
+            mediaUri = "content://downloads/song",
+            downloadTime = 20L
+        )
+
+        assertTrue(matchesDownloadedSongCatalogEntry(legacy, refreshed))
+    }
+
+    @Test
+    fun `upsertDownloadedSongCatalog replaces legacy media uri entries when file path was blank`() {
+        val legacy = DownloadedSong(
+            id = 1L,
+            name = "Song",
+            artist = "Artist",
+            album = "Album",
+            filePath = "",
+            fileSize = 10L,
+            downloadTime = 10L,
+            mediaUri = "content://downloads/song"
+        )
+        val refreshed = legacy.copy(
+            filePath = "/storage/emulated/0/Android/data/moe.ouom.neriplayer/files/song.flac",
+            fileSize = 20L,
+            downloadTime = 20L,
+            mediaUri = "content://downloads/song"
+        )
+
+        assertEquals(listOf(refreshed), upsertDownloadedSongCatalog(listOf(legacy), refreshed))
+    }
+
+    @Test
+    fun `resolveDownloadedSongPlaybackReference falls back to media uri when file path is blank`() {
+        val downloaded = DownloadedSong(
+            id = 1L,
+            name = "Song",
+            artist = "Artist",
+            album = "Album",
+            filePath = "",
+            fileSize = 10L,
+            downloadTime = 10L,
+            mediaUri = "content://downloads/song"
+        )
+
+        assertEquals(
+            "content://downloads/song",
+            resolveDownloadedSongPlaybackReference(downloaded)
+        )
+        assertNull(
+            resolveDownloadedSongPlaybackReference(
+                downloaded.copy(mediaUri = "https://example.com/remote")
             )
         )
     }

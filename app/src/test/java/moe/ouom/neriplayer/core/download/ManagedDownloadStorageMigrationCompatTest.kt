@@ -129,6 +129,17 @@ class ManagedDownloadStorageMigrationCompatTest {
             "text/plain",
             ManagedDownloadStorage.documentCreateMimeType("Artist - Song.txt", "text/plain")
         )
+        assertEquals(
+            "application/octet-stream",
+            ManagedDownloadStorage.documentCreateMimeType(
+                "Artist - Song.flac.npmeta.json",
+                "application/json"
+            )
+        )
+        assertEquals(
+            "application/json",
+            ManagedDownloadStorage.documentCreateMimeType("downloads-export.json", "application/json")
+        )
     }
 
     @Test

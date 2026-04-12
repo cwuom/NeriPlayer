@@ -35,6 +35,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -1070,7 +1071,7 @@ object GlobalDownloadManager {
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
         allowFallbackLookup: Boolean
     ): ManagedDownloadSongDeleteContext {
-        val locationReference = resolveDownloadedSongLocation(song)
+        val locationReference = resolveDownloadedSongPlaybackReference(song)
         val snapshotStoredAudio = locationReference?.let(snapshot.audioEntriesByLookupKey::get)
         val fallbackStoredAudio = if (snapshotStoredAudio == null && allowFallbackLookup) {
             resolveStoredAudio(context, locationReference)
@@ -1098,7 +1099,7 @@ object GlobalDownloadManager {
         song: SongItem,
         storedAudio: ManagedDownloadStorage.StoredEntry?,
         sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences? = null
-    ) {
+    ) = runNonCancellableDownloadRollback {
         val appContext = context.applicationContext
         val resolvedStoredAudio = storedAudio ?: resolveStoredAudio(appContext, song)
         val candidateBaseNames = buildList {
@@ -1215,10 +1216,14 @@ object GlobalDownloadManager {
         val appContext = context.applicationContext
         scope.launch {
             try {
-                if (!ManagedDownloadStorage.exists(appContext, song.filePath)) {
-                    NPLogger.w(TAG, "下载文件不存在: ${song.filePath}")
+                val playbackReference = resolveDownloadedSongPlaybackReference(song)
+                if (
+                    playbackReference.isNullOrBlank() ||
+                    !ManagedDownloadStorage.exists(appContext, playbackReference)
+                ) {
+                    NPLogger.w(TAG, "下载文件不存在: ${song.name}, reference=$playbackReference")
                     val updatedSongs = _downloadedSongs.value.filterNot { candidate ->
-                        candidate.filePath == song.filePath || candidate.mediaUri == song.mediaUri
+                        matchesDownloadedSongCatalogEntry(candidate, song)
                     }
                     if (updatedSongs != _downloadedSongs.value) {
                         publishDownloadedSongs(appContext, updatedSongs, persistCatalog = true)
@@ -1227,10 +1232,10 @@ object GlobalDownloadManager {
                     return@launch
                 }
 
-                val storedAudio = resolveStoredAudio(appContext, song.filePath)
+                val storedAudio = resolveStoredAudio(appContext, playbackReference)
                 val playbackUri = storedAudio?.playbackUri
-                    ?: ManagedDownloadStorage.toPlayableUri(song.filePath)
-                    ?: song.filePath
+                    ?: ManagedDownloadStorage.toPlayableUri(playbackReference)
+                    ?: playbackReference
                 val quickSong = song.toPlaybackSongItem(
                     playbackUri = playbackUri,
                     storedAudio = storedAudio,
@@ -1341,6 +1346,19 @@ object GlobalDownloadManager {
 
     fun hasDownloadedSongCached(song: SongItem): Boolean {
         return downloadedSongPresenceIndex.contains(song)
+    }
+
+    fun findAccessibleDownloadedSongPlaybackUri(context: Context, song: SongItem): String? {
+        val downloadedSong = findDownloadedSongCatalogMatch(song, _downloadedSongs.value) ?: return null
+        val reference = resolveDownloadedSongPlaybackReference(downloadedSong) ?: return null
+        if (!ManagedDownloadStorage.isReferenceAccessible(context, reference)) {
+            NPLogger.w(
+                TAG,
+                "下载目录缓存命中不可读引用，忽略本地回退: song=${song.name}, reference=$reference"
+            )
+            return null
+        }
+        return ManagedDownloadStorage.toPlayableUri(reference) ?: reference
     }
 
     private fun downloadedSongsCacheFile(context: Context): File {
@@ -2077,15 +2095,6 @@ object GlobalDownloadManager {
         }
     }
 
-    private fun resolveDownloadedSongLocation(song: DownloadedSong): String? {
-        song.filePath
-            .takeIf { it.isNotBlank() }
-            ?.let { return it }
-
-        val mediaUri = song.mediaUri?.takeIf(::isResolvableLocalReference) ?: return null
-        return mediaUri
-    }
-
     private fun inspectDownloadedAudioDetails(
         context: Context,
         storedAudio: ManagedDownloadStorage.StoredEntry
@@ -2208,19 +2217,63 @@ internal fun matchesDownloadedSong(
         song.artist == downloadedSong.artist
 }
 
+internal fun findDownloadedSongCatalogMatch(
+    song: SongItem,
+    downloadedSongs: List<DownloadedSong>
+): DownloadedSong? {
+    return downloadedSongs.firstOrNull { downloadedSong ->
+        matchesDownloadedSong(song, downloadedSong)
+    }
+}
+
+internal fun matchesDownloadedSongCatalogEntry(
+    existing: DownloadedSong,
+    target: DownloadedSong
+): Boolean {
+    val existingReference = resolveDownloadedSongPlaybackReference(existing)
+    val targetReference = resolveDownloadedSongPlaybackReference(target)
+    if (!existingReference.isNullOrBlank() && existingReference == targetReference) {
+        return true
+    }
+    val targetMediaUri = target.mediaUri
+        ?.takeIf(String::isNotBlank)
+        ?.takeIf(::isResolvableLocalReference)
+    if (!targetMediaUri.isNullOrBlank() && existing.mediaUri == targetMediaUri) {
+        return true
+    }
+    target.stableKey
+        ?.takeIf(String::isNotBlank)
+        ?.let { stableIdentityKey ->
+            if (existing.stableKey == stableIdentityKey) {
+                return true
+            }
+        }
+    return existing.id == target.id &&
+        existing.name == target.name &&
+        existing.artist == target.artist
+}
+
+internal fun resolveDownloadedSongPlaybackReference(song: DownloadedSong): String? {
+    song.filePath
+        .takeIf { it.isNotBlank() }
+        ?.let { return it }
+
+    return song.mediaUri?.takeIf(::isResolvableLocalReference)
+}
+
+internal suspend fun <T> runNonCancellableDownloadRollback(
+    block: suspend () -> T
+): T = withContext(NonCancellable) {
+    block()
+}
+
 fun upsertDownloadedSongCatalog(
     currentSongs: List<DownloadedSong>,
     updatedSong: DownloadedSong
 ): List<DownloadedSong> {
     return currentSongs
         .filterNot { existing ->
-            existing.filePath == updatedSong.filePath ||
-                (!updatedSong.stableKey.isNullOrBlank() && existing.stableKey == updatedSong.stableKey) ||
-                (
-                    existing.id == updatedSong.id &&
-                        existing.name == updatedSong.name &&
-                        existing.artist == updatedSong.artist
-                    )
+            matchesDownloadedSongCatalogEntry(existing, updatedSong)
         }
         .plus(updatedSong)
         .sortedByDescending { it.downloadTime }
