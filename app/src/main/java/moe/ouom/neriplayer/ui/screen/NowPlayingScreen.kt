@@ -236,6 +236,7 @@ import moe.ouom.neriplayer.ui.component.WaveformSlider
 import moe.ouom.neriplayer.ui.component.bottomSheetDragBlocker
 import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.component.parseNeteaseLyricsAuto
+import moe.ouom.neriplayer.ui.component.resolveLyricsEditorInitialText
 import moe.ouom.neriplayer.ui.component.resolvePreferredLyricContent
 import moe.ouom.neriplayer.ui.component.toEditableLyricsText
 import moe.ouom.neriplayer.ui.screen.debug.ListenTogetherRoomPanel
@@ -2626,7 +2627,7 @@ fun EditSongInfoSheet(
                     val displayedTranslatedLyricsSnapshot = displayedTranslatedLyrics.toList()
                     coroutineScope.launch {
                         try {
-                            val (loadedLyrics, loadedTranslatedLyrics) = withContext(Dispatchers.IO) {
+                            val loadedLyricsResult: Pair<String, String> = withContext(Dispatchers.IO) {
                                 val rawNeteaseLyric = runCatching {
                                     val preferredSongId = resolvePreferredNeteaseLyricSongId(actualSong)
                                     if (preferredSongId != null) {
@@ -2640,20 +2641,21 @@ fun EditSongInfoSheet(
                                 val displayedLyricsText = displayedLyricsSnapshot.toEditableLyricsText()
 
                                 // 把歌词准备挪到后台，避免打开编辑器时把主线程卡住
-                                val lyrics = when {
-                                    displayedLyricsSnapshot.hasWordTimedEntries() -> displayedLyricsText
-                                    else -> resolvePreferredLyricContent(
-                                        matchedLyric = actualSong.matchedLyric,
-                                        preferredNeteaseLyric = rawNeteaseLyric
-                                    ) ?: run {
-                                        val lyricEntries = PlayerManager.getLyrics(actualSong)
-                                        if (lyricEntries.isNotEmpty()) {
-                                            lyricEntries.toEditableLyricsText()
-                                        } else {
-                                            displayedLyricsText
-                                        }
+                                val fallbackLyricsText = run {
+                                    val lyricEntries = PlayerManager.getLyrics(actualSong)
+                                    if (lyricEntries.isNotEmpty()) {
+                                        lyricEntries.toEditableLyricsText()
+                                    } else {
+                                        null
                                     }
                                 }
+                                val lyrics = resolveLyricsEditorInitialText(
+                                    matchedLyric = actualSong.matchedLyric,
+                                    preferredNeteaseLyric = rawNeteaseLyric,
+                                    displayedLyricsText = displayedLyricsText,
+                                    displayedHasWordTimedEntries = displayedLyricsSnapshot.hasWordTimedEntries(),
+                                    fallbackLyricsText = fallbackLyricsText
+                                )
 
                                 val translatedLyrics = try {
                                     if (actualSong.matchedTranslatedLyric != null) {
@@ -2675,8 +2677,10 @@ fun EditSongInfoSheet(
                                     ""
                                 }
 
-                                lyrics to translatedLyrics
+                                Pair(lyrics, translatedLyrics)
                             }
+                            val loadedLyrics = loadedLyricsResult.first
+                            val loadedTranslatedLyrics = loadedLyricsResult.second
 
                             lyricsToEdit = loadedLyrics
                             translatedLyricsToEdit = loadedTranslatedLyrics

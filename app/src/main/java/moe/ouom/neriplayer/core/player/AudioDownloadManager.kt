@@ -609,6 +609,7 @@ object AudioDownloadManager {
                                     client = client,
                                     playlistRequest = request,
                                     destFile = tempFile,
+                                    displayFileName = fileName,
                                     songId = workingSong.id,
                                     songKey = workingSong.stableKey(),
                                     totalBytesHint = resolved.contentLength ?: 0L,
@@ -620,6 +621,7 @@ object AudioDownloadManager {
                                     client = client,
                                     request = request,
                                     destFile = tempFile,
+                                    displayFileName = fileName,
                                     songId = workingSong.id,
                                     songKey = workingSong.stableKey(),
                                     batchSessionId = batchSessionId,
@@ -1785,6 +1787,7 @@ object AudioDownloadManager {
         client: okhttp3.OkHttpClient,
         playlistRequest: Request,
         destFile: File,
+        displayFileName: String,
         songId: Long,
         songKey: String,
         totalBytesHint: Long,
@@ -1841,7 +1844,7 @@ object AudioDownloadManager {
                     DownloadProgress(
                         songKey = songKey,
                         songId = songId,
-                        fileName = destFile.name,
+                        fileName = resolveVisibleDownloadFileName(displayFileName, destFile.name),
                         bytesRead = downloadedBytes,
                         totalBytes = totalBytesHint,
                         speedBytesPerSec = (downloadedBytes / elapsedSec).toLong(),
@@ -1897,6 +1900,7 @@ object AudioDownloadManager {
         client: okhttp3.OkHttpClient,
         request: Request,
         destFile: File,
+        displayFileName: String,
         songId: Long,
         songKey: String,
         batchSessionId: Long? = null,
@@ -1913,6 +1917,7 @@ object AudioDownloadManager {
                 client = client,
                 request = request,
                 destFile = destFile,
+                displayFileName = displayFileName,
                 songId = songId,
                 songKey = songKey,
                 batchSessionId = batchSessionId,
@@ -1948,7 +1953,7 @@ object AudioDownloadManager {
                     val progress = DownloadProgress(
                         songKey = songKey,
                         songId = songId,
-                        fileName = destFile.name,
+                        fileName = resolveVisibleDownloadFileName(displayFileName, destFile.name),
                         bytesRead = readSoFar,
                         totalBytes = total,
                         speedBytesPerSec = speed,
@@ -1966,6 +1971,7 @@ object AudioDownloadManager {
         client: okhttp3.OkHttpClient,
         request: Request,
         destFile: File,
+        displayFileName: String,
         songId: Long,
         songKey: String,
         batchSessionId: Long? = null,
@@ -2000,6 +2006,7 @@ object AudioDownloadManager {
                             start = downloadedBytes,
                             requestedChunkLength = chunkLength,
                             sink = sink,
+                            displayFileName = displayFileName,
                             songId = songId,
                             songKey = songKey,
                             destFile = destFile,
@@ -2054,6 +2061,7 @@ object AudioDownloadManager {
         start: Long,
         requestedChunkLength: Long,
         sink: okio.BufferedSink,
+        displayFileName: String,
         songId: Long,
         songKey: String,
         destFile: File,
@@ -2111,7 +2119,7 @@ object AudioDownloadManager {
                     DownloadProgress(
                         songKey = songKey,
                         songId = songId,
-                        fileName = destFile.name,
+                        fileName = resolveVisibleDownloadFileName(displayFileName, destFile.name),
                         bytesRead = downloadedBytes,
                         totalBytes = totalBytes,
                         speedBytesPerSec = speed,
@@ -2165,6 +2173,15 @@ object AudioDownloadManager {
             throw java.util.concurrent.CancellationException("Download cancelled")
         }
     }
+}
+
+internal fun resolveVisibleDownloadFileName(
+    targetFileName: String?,
+    fallbackTempFileName: String
+): String {
+    return targetFileName
+        ?.takeIf(String::isNotBlank)
+        ?: fallbackTempFileName
 }
 
 

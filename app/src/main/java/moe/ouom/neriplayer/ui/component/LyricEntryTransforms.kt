@@ -32,6 +32,9 @@ fun resolvePreferredLyricContent(
     matchedLyric: String?,
     preferredNeteaseLyric: String
 ): String? {
+    if (matchedLyric != null && matchedLyric.isBlank()) {
+        return ""
+    }
     val normalizedMatchedLyric = matchedLyric?.takeIf { it.isNotBlank() }
     val normalizedPreferredLyric = preferredNeteaseLyric.takeIf { it.isNotBlank() }
     if (normalizedPreferredLyric != null &&
@@ -40,6 +43,25 @@ fun resolvePreferredLyricContent(
         return normalizedPreferredLyric
     }
     return normalizedMatchedLyric
+}
+
+internal fun resolveLyricsEditorInitialText(
+    matchedLyric: String?,
+    preferredNeteaseLyric: String,
+    displayedLyricsText: String,
+    displayedHasWordTimedEntries: Boolean,
+    fallbackLyricsText: String?
+): String {
+    if (matchedLyric != null && matchedLyric.isBlank()) {
+        return ""
+    }
+    if (displayedHasWordTimedEntries) {
+        return displayedLyricsText
+    }
+    return resolvePreferredLyricContent(
+        matchedLyric = matchedLyric,
+        preferredNeteaseLyric = preferredNeteaseLyric
+    ) ?: fallbackLyricsText ?: displayedLyricsText
 }
 
 private fun LyricEntry.toLrcText(): String {

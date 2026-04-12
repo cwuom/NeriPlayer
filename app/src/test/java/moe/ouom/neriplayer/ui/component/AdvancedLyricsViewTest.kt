@@ -208,6 +208,29 @@ class AdvancedLyricsViewTest {
     }
 
     @Test
+    fun `resolvePreferredLyricContent keeps explicit cleared lyric over fallback`() {
+        val preferred = resolvePreferredLyricContent(
+            matchedLyric = "",
+            preferredNeteaseLyric = "[12580,3470](12580,250,0)难(12830,300,0)以(13130,200,0)忘记"
+        )
+
+        assertEquals("", preferred)
+    }
+
+    @Test
+    fun `resolveLyricsEditorInitialText keeps explicit cleared lyric over displayed fallback`() {
+        val resolved = resolveLyricsEditorInitialText(
+            matchedLyric = "",
+            preferredNeteaseLyric = "[12580,3470](12580,250,0)难(12830,300,0)以(13130,200,0)忘记",
+            displayedLyricsText = "[00:12.58]旧歌词",
+            displayedHasWordTimedEntries = true,
+            fallbackLyricsText = "[00:12.58]远端旧歌词"
+        )
+
+        assertEquals("", resolved)
+    }
+
+    @Test
     fun `toEditableLyricsText preserves word timed entries as yrc`() {
         val serialized = listOf(
             LyricEntry(

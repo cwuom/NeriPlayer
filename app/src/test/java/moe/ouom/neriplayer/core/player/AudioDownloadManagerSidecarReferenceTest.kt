@@ -6,6 +6,28 @@ import org.junit.Test
 class AudioDownloadManagerSidecarReferenceTest {
 
     @Test
+    fun `resolveVisibleDownloadFileName prefers target file name over staging temp file`() {
+        assertEquals(
+            "netease - artist - song.flac",
+            resolveVisibleDownloadFileName(
+                "netease - artist - song.flac",
+                "netease_-___-_____8601164265291179768.flac.download"
+            )
+        )
+    }
+
+    @Test
+    fun `resolveVisibleDownloadFileName falls back to temp file when target is blank`() {
+        assertEquals(
+            "netease_-___-_____8601164265291179768.flac.download",
+            resolveVisibleDownloadFileName(
+                "",
+                "netease_-___-_____8601164265291179768.flac.download"
+            )
+        )
+    }
+
+    @Test
     fun `mergeDownloadedSidecarReferences keeps earlier files when later stage adds new refs`() {
         val existing = AudioDownloadManager.DownloadedSidecarReferences(
             lyricReference = "content://lyrics/song.lrc"
