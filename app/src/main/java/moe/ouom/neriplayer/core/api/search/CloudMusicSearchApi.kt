@@ -33,6 +33,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import moe.ouom.neriplayer.BuildConfig
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
+import moe.ouom.neriplayer.core.player.metadata.normalizeLegacyLrcTimestamps
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.core.di.AppContainer
 import okhttp3.OkHttpClient
@@ -121,9 +122,9 @@ class CloudMusicSearchApi(private val neteaseClient: NeteaseClient) : SearchApi 
                     val lyricResponse = json.decodeFromString<CloudMusicLyricResponse>(lyricJson)
                     Pair(
                         lyricResponse.yrc?.lyric?.takeIf { !it.isNullOrBlank() }
-                            ?: lyricResponse.lrc?.lyric,
+                            ?: lyricResponse.lrc?.lyric?.let(::normalizeLegacyLrcTimestamps),
                         lyricResponse.ytlrc?.lyric?.takeIf { !it.isNullOrBlank() }
-                            ?: lyricResponse.tlyric?.lyric
+                            ?: lyricResponse.tlyric?.lyric?.let(::normalizeLegacyLrcTimestamps)
                     )
                 }
 

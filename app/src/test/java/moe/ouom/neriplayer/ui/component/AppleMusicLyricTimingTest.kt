@@ -24,6 +24,22 @@ class AppleMusicLyricTimingTest {
     }
 
     @Test
+    fun `parseNeteaseLrc accepts legacy colon millisecond timestamps`() {
+        val lyrics = parseNeteaseLrc(
+            """
+            [00:00:15]The sky blue archive!
+            [00:12:76]新しい景色が見たくて自転車を漕いだ
+            """.trimIndent()
+        )
+
+        assertEquals(2, lyrics.size)
+        assertEquals("The sky blue archive!", lyrics[0].text)
+        assertEquals(150L, lyrics[0].startTimeMs)
+        assertEquals("新しい景色が見たくて自転車を漕いだ", lyrics[1].text)
+        assertEquals(12_760L, lyrics[1].startTimeMs)
+    }
+
+    @Test
     fun `shouldSnapLyricTimeSmoothing only animates small forward deltas`() {
         assertFalse(shouldSnapLyricTimeSmoothing(displayedTimeMs = 1_000L, targetTimeMs = 1_080L))
         assertTrue(shouldSnapLyricTimeSmoothing(displayedTimeMs = 1_000L, targetTimeMs = 1_400L))

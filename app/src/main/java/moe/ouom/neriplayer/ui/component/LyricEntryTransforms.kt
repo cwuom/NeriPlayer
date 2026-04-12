@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.component
 
+import moe.ouom.neriplayer.core.player.metadata.normalizeLegacyLrcTimestamps
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 
 fun List<LyricEntry>.flattenWordTimedEntries(): List<LyricEntry> {
@@ -26,7 +27,8 @@ internal fun resolveStoredLyricText(
     currentLyric: String?,
     legacyLyric: String?
 ): String? {
-    return if (currentLyric != null) currentLyric else legacyLyric
+    val storedLyric = if (currentLyric != null) currentLyric else legacyLyric
+    return storedLyric?.let(::normalizeLegacyLrcTimestamps)
 }
 
 fun List<LyricEntry>.toEditableLyricsText(): String {

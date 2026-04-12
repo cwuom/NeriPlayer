@@ -89,6 +89,7 @@ import androidx.compose.ui.unit.sp
 import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.roundToLong
+import moe.ouom.neriplayer.core.player.metadata.normalizeLegacyLrcTimestamps
 
 private const val LYRIC_TIME_SMOOTHING_DURATION_MS = 96
 private const val LYRIC_TIME_SMOOTHING_MAX_DELTA_MS = 240L
@@ -815,10 +816,11 @@ internal fun resolveHeadGlowTarget(
  */
 fun parseNeteaseLrc(lrc: String): List<LyricEntry> {
 //    NPLogger.d("parseLyc-N", lrc)
+    val normalizedLrc = normalizeLegacyLrcTimestamps(lrc)
     val tag = Regex("""\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?]""")
     val timeline = mutableListOf<Pair<Long, String>>()
 
-    lrc.lineSequence().forEach { raw ->
+    normalizedLrc.lineSequence().forEach { raw ->
         val line = raw.trim()
         if (line.isEmpty()) return@forEach
         if (line.startsWith("{") || line.startsWith("}")) return@forEach // 过滤 JSON 段

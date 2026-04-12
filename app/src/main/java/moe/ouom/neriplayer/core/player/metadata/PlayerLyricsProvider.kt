@@ -47,7 +47,9 @@ internal fun extractPreferredNeteaseLyricContent(rawResponse: String): String {
     if (yrc.isNotBlank()) {
         return yrc
     }
-    return payload.optJSONObject("lrc")?.optString("lyric").orEmpty()
+    return normalizeLegacyLrcTimestamps(
+        payload.optJSONObject("lrc")?.optString("lyric").orEmpty()
+    )
 }
 
 internal enum class LocalLyricOverrideState {

@@ -90,6 +90,16 @@ class LyricEntryTransformsTest {
         assertEquals("[00:00.00]升级前保存的歌词", resolved)
     }
 
+    @Test
+    fun `resolveStoredLyricText normalizes legacy lrc timestamps`() {
+        val resolved = resolveStoredLyricText(
+            currentLyric = "[00:00:15]The sky blue archive!",
+            legacyLyric = null
+        )
+
+        assertEquals("[00:00.15]The sky blue archive!", resolved)
+    }
+
     private fun demoSong(
         matchedLyric: String?,
         matchedTranslatedLyric: String?,
