@@ -7,11 +7,13 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
 import moe.ouom.neriplayer.listentogether.buildDefaultListenTogetherNickname
 import moe.ouom.neriplayer.listentogether.buildListenTogetherUserUuid
 import moe.ouom.neriplayer.listentogether.configuredListenTogetherBaseUrlOrNull
 import moe.ouom.neriplayer.listentogether.isDefaultListenTogetherBaseUrl
 import moe.ouom.neriplayer.listentogether.sanitizeListenTogetherNicknameOrNull
+import moe.ouom.neriplayer.data.config.ListenTogetherConfigSnapshot
 
 private val Context.listenTogetherDataStore by preferencesDataStore("listen_together_prefs")
 
@@ -193,6 +195,78 @@ class ListenTogetherPreferences(private val context: Context) {
     suspend fun setShareAudioLinks(value: Boolean) {
         context.listenTogetherDataStore.edit { prefs ->
             prefs[ListenTogetherPreferenceKeys.SHARE_AUDIO_LINKS] = value
+        }
+    }
+
+    suspend fun snapshot(): ListenTogetherConfigSnapshot {
+        val prefs = context.listenTogetherDataStore.data.first()
+        val workerBaseUrl = configuredListenTogetherBaseUrlOrNull(
+            prefs[ListenTogetherPreferenceKeys.WORKER_BASE_URL]
+        )
+            .takeUnless { isDefaultListenTogetherBaseUrl(it) }
+            .orEmpty()
+        val workerBaseUrlInput = prefs[ListenTogetherPreferenceKeys.WORKER_BASE_URL_INPUT]
+            ?.trim()
+            .orEmpty()
+            .ifBlank { workerBaseUrl }
+        return ListenTogetherConfigSnapshot(
+            workerBaseUrl = workerBaseUrl,
+            workerBaseUrlInput = workerBaseUrlInput,
+            userUuid = prefs[ListenTogetherPreferenceKeys.LAST_USER_UUID]
+                ?.trim()
+                .orEmpty(),
+            nickname = sanitizeListenTogetherNicknameOrNull(
+                prefs[ListenTogetherPreferenceKeys.LAST_NICKNAME]
+            ).orEmpty(),
+            allowMemberControl = prefs[ListenTogetherPreferenceKeys.ALLOW_MEMBER_CONTROL] ?: true,
+            autoPauseOnMemberChange =
+                prefs[ListenTogetherPreferenceKeys.AUTO_PAUSE_ON_MEMBER_CHANGE] ?: true,
+            shareAudioLinks = prefs[ListenTogetherPreferenceKeys.SHARE_AUDIO_LINKS] ?: true
+        )
+    }
+
+    suspend fun restore(snapshot: ListenTogetherConfigSnapshot) {
+        context.listenTogetherDataStore.edit { prefs ->
+            val normalizedWorkerBaseUrl = configuredListenTogetherBaseUrlOrNull(snapshot.workerBaseUrl)
+                .takeUnless { isDefaultListenTogetherBaseUrl(it) }
+                .orEmpty()
+            val normalizedInput = snapshot.workerBaseUrlInput.trim()
+
+            if (normalizedWorkerBaseUrl.isBlank()) {
+                prefs.remove(ListenTogetherPreferenceKeys.WORKER_BASE_URL)
+            } else {
+                prefs[ListenTogetherPreferenceKeys.WORKER_BASE_URL] = normalizedWorkerBaseUrl
+            }
+
+            if (
+                normalizedInput.isBlank() ||
+                normalizedInput == normalizedWorkerBaseUrl ||
+                configuredListenTogetherBaseUrlOrNull(normalizedInput)
+                    ?.let(::isDefaultListenTogetherBaseUrl) == true
+            ) {
+                prefs.remove(ListenTogetherPreferenceKeys.WORKER_BASE_URL_INPUT)
+            } else {
+                prefs[ListenTogetherPreferenceKeys.WORKER_BASE_URL_INPUT] = normalizedInput
+            }
+
+            val normalizedUserUuid = snapshot.userUuid.trim()
+            if (normalizedUserUuid.isBlank()) {
+                prefs.remove(ListenTogetherPreferenceKeys.LAST_USER_UUID)
+            } else {
+                prefs[ListenTogetherPreferenceKeys.LAST_USER_UUID] = normalizedUserUuid
+            }
+
+            val normalizedNickname = sanitizeListenTogetherNicknameOrNull(snapshot.nickname).orEmpty()
+            if (normalizedNickname.isBlank()) {
+                prefs.remove(ListenTogetherPreferenceKeys.LAST_NICKNAME)
+            } else {
+                prefs[ListenTogetherPreferenceKeys.LAST_NICKNAME] = normalizedNickname
+            }
+
+            prefs[ListenTogetherPreferenceKeys.ALLOW_MEMBER_CONTROL] = snapshot.allowMemberControl
+            prefs[ListenTogetherPreferenceKeys.AUTO_PAUSE_ON_MEMBER_CHANGE] =
+                snapshot.autoPauseOnMemberChange
+            prefs[ListenTogetherPreferenceKeys.SHARE_AUDIO_LINKS] = snapshot.shareAudioLinks
         }
     }
 }

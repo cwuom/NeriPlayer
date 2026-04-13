@@ -80,6 +80,27 @@
     <string name="playlist_exporting">正在导出歌单…</string>
     <string name="playlist_importing">正在导入歌单…</string>
     <string name="playlist_import_complete">导入完成！</string>
+    <string name="settings_export_config">导出配置文件</string>
+    <string name="settings_import_config">导入配置文件</string>
+    <string name="settings_export_config_desc">导出设置、登录信息和同步配置</string>
+    <string name="settings_import_config_desc">从配置文件恢复设置、登录信息和同步配置</string>
+    <string name="settings_config_export_progress">配置导出进度</string>
+    <string name="settings_config_import_progress">配置导入进度</string>
+    <string name="settings_config_exporting">正在导出配置文件…</string>
+    <string name="settings_config_importing">正在导入配置文件…</string>
+    <string name="settings_config_export_success">配置导出成功</string>
+    <string name="settings_config_export_failed">配置导出失败</string>
+    <string name="settings_config_import_success">配置导入完成</string>
+    <string name="settings_config_import_failed">配置导入失败</string>
+    <string name="settings_config_import_restored_settings">已恢复应用设置 %1$d 项</string>
+    <string name="settings_config_import_restored_listen_together">已恢复一起听设置 %1$d 项</string>
+    <string name="settings_config_import_restored_auth">已恢复登录状态 %1$d 项</string>
+    <string name="settings_config_import_restored_sync">已恢复同步配置 %1$d 项</string>
+    <string name="settings_config_import_warning_title">以下内容未能完整恢复</string>
+    <string name="settings_config_import_restart_hint">语言设置已更新，页面会自动刷新</string>
+    <string name="config_import_warning_netease_cookie">网易云登录信息校验失败，已跳过恢复</string>
+    <string name="config_import_warning_background_image">自定义背景图片没有可用读取权限，已跳过恢复</string>
+    <string name="config_import_warning_download_directory">下载目录没有可用访问权限，已跳过恢复</string>
     <string name="playlist_backup_date">备份时间: %s</string>
     <string name="playlist_analyzing">正在分析差异…</string>
     <string name="playlist_analysis_failed">分析失败: %s</string>
@@ -1069,7 +1090,7 @@
     <string name="settings_download_directory_migrate_failed">有 %1$d 个文件迁移失败，已保留原下载目录</string>
     <string name="settings_download_directory_change_blocked_active_download">下载进行中，暂时不能修改下载目录</string>
     <string name="settings_backup_restore">备份与恢复</string>
-    <string name="settings_backup_expand">展开以管理歌单备份</string>
+    <string name="settings_backup_expand">展开以管理配置与歌单备份</string>
 
     <!-- Explore / Screen -->
     <string name="explore_exit_selection">退出多选</string>

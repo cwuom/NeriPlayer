@@ -32,6 +32,7 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import moe.ouom.neriplayer.data.config.GitHubSyncConfigSnapshot
 import moe.ouom.neriplayer.data.model.SongIdentity
 import java.util.UUID
 
@@ -289,6 +290,34 @@ class SecureTokenStorage(context: Context) {
         val nextVersion = getSyncMutationVersion() + 1L
         encryptedPrefs.edit { putLong(KEY_SYNC_MUTATION_VERSION, nextVersion) }
         return nextVersion
+    }
+
+    fun snapshot(): GitHubSyncConfigSnapshot {
+        return GitHubSyncConfigSnapshot(
+            token = getToken().orEmpty(),
+            repoOwner = getRepoOwner().orEmpty(),
+            repoName = getRepoName().orEmpty(),
+            autoSyncEnabled = isAutoSyncEnabled(),
+            playHistoryUpdateMode = getPlayHistoryUpdateMode().name,
+            dataSaverMode = isDataSaverMode()
+        )
+    }
+
+    fun restore(snapshot: GitHubSyncConfigSnapshot) {
+        encryptedPrefs.edit {
+            clear()
+
+            if (snapshot.token.isNotBlank()) putString(KEY_GITHUB_TOKEN, snapshot.token)
+            if (snapshot.repoOwner.isNotBlank()) putString(KEY_REPO_OWNER, snapshot.repoOwner)
+            if (snapshot.repoName.isNotBlank()) putString(KEY_REPO_NAME, snapshot.repoName)
+            putBoolean(KEY_AUTO_SYNC_ENABLED, snapshot.autoSyncEnabled)
+
+            val updateMode = runCatching {
+                PlayHistoryUpdateMode.valueOf(snapshot.playHistoryUpdateMode)
+            }.getOrDefault(PlayHistoryUpdateMode.IMMEDIATE)
+            putString(KEY_PLAY_HISTORY_UPDATE_MODE, updateMode.name)
+            putBoolean(KEY_DATA_SAVER_MODE, snapshot.dataSaverMode)
+        }
     }
 
     private fun normalizeRecentPlayDeletions(

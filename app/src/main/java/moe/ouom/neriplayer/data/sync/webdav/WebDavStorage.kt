@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package moe.ouom.neriplayer.data.sync.webdav
 
 import android.content.Context
@@ -5,6 +7,7 @@ import android.content.SharedPreferences
 import androidx.core.content.edit
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import moe.ouom.neriplayer.data.config.WebDavSyncConfigSnapshot
 
 class WebDavStorage(context: Context) {
     private val masterKey = MasterKey.Builder(context)
@@ -83,6 +86,30 @@ class WebDavStorage(context: Context) {
 
     fun clearAll() {
         encryptedPrefs.edit { clear() }
+    }
+
+    fun snapshot(): WebDavSyncConfigSnapshot {
+        return WebDavSyncConfigSnapshot(
+            serverUrl = getServerUrl().orEmpty(),
+            basePath = getBasePath(),
+            username = getUsername().orEmpty(),
+            password = getPassword().orEmpty(),
+            autoSyncEnabled = isAutoSyncEnabled()
+        )
+    }
+
+    fun restore(snapshot: WebDavSyncConfigSnapshot) {
+        encryptedPrefs.edit {
+            clear()
+
+            val normalizedServerUrl = normalizeServerUrl(snapshot.serverUrl)
+            val normalizedBasePath = normalizeBasePath(snapshot.basePath)
+            if (normalizedServerUrl.isNotBlank()) putString(KEY_SERVER_URL, normalizedServerUrl)
+            if (normalizedBasePath.isNotBlank()) putString(KEY_BASE_PATH, normalizedBasePath)
+            if (snapshot.username.isNotBlank()) putString(KEY_USERNAME, snapshot.username)
+            if (snapshot.password.isNotBlank()) putString(KEY_PASSWORD, snapshot.password)
+            putBoolean(KEY_AUTO_SYNC_ENABLED, snapshot.autoSyncEnabled)
+        }
     }
 
     private fun normalizeServerUrl(serverUrl: String): String = serverUrl.trim().trimEnd('/')

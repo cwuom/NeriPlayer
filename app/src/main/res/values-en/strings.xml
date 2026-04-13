@@ -80,6 +80,27 @@
     <string name="playlist_exporting">Exporting playlists…</string>
     <string name="playlist_importing">Importing playlists…</string>
     <string name="playlist_import_complete">Import Complete!</string>
+    <string name="settings_export_config">Export Config File</string>
+    <string name="settings_import_config">Import Config File</string>
+    <string name="settings_export_config_desc">Export settings, sign-in state, and sync config</string>
+    <string name="settings_import_config_desc">Restore settings, sign-in state, and sync config from a file</string>
+    <string name="settings_config_export_progress">Config Export Progress</string>
+    <string name="settings_config_import_progress">Config Import Progress</string>
+    <string name="settings_config_exporting">Exporting config file…</string>
+    <string name="settings_config_importing">Importing config file…</string>
+    <string name="settings_config_export_success">Config export successful</string>
+    <string name="settings_config_export_failed">Config export failed</string>
+    <string name="settings_config_import_success">Config import complete</string>
+    <string name="settings_config_import_failed">Config import failed</string>
+    <string name="settings_config_import_restored_settings">Restored %1$d app settings</string>
+    <string name="settings_config_import_restored_listen_together">Restored %1$d Listen Together settings</string>
+    <string name="settings_config_import_restored_auth">Restored %1$d sign-in states</string>
+    <string name="settings_config_import_restored_sync">Restored %1$d sync configs</string>
+    <string name="settings_config_import_warning_title">The following items could not be fully restored</string>
+    <string name="settings_config_import_restart_hint">Language settings changed, so the page will refresh automatically</string>
+    <string name="config_import_warning_netease_cookie">NetEase sign-in data did not pass validation and was skipped</string>
+    <string name="config_import_warning_background_image">Custom background image access is unavailable and was skipped</string>
+    <string name="config_import_warning_download_directory">Download directory access is unavailable and was skipped</string>
     <string name="playlist_backup_date">Backup date: %s</string>
     <string name="playlist_analyzing">Analyzing differences…</string>
     <string name="playlist_analysis_failed">Analysis failed: %s</string>
@@ -1069,7 +1090,7 @@
     <string name="settings_download_directory_migrate_failed">Failed to move %1$d files, so the original folder was kept</string>
     <string name="settings_download_directory_change_blocked_active_download">Cannot change the download directory while downloads are in progress</string>
     <string name="settings_backup_restore">Backup &amp; Restore</string>
-    <string name="settings_backup_expand">Manage backups</string>
+    <string name="settings_backup_expand">Manage config and playlist backups</string>
 
     <!-- Explore / Screen -->
     <string name="explore_exit_selection">Exit Selection</string>

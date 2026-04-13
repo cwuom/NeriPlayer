@@ -153,6 +153,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsWebDavDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.collectAsStateWithLifecycleCompat
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.formatSyncTime
 import moe.ouom.neriplayer.ui.viewmodel.BackupRestoreViewModel
+import moe.ouom.neriplayer.ui.viewmodel.ConfigTransferViewModel
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthEvent
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthViewModel
 import moe.ouom.neriplayer.ui.viewmodel.auth.YouTubeAuthEvent
@@ -442,6 +443,8 @@ fun SettingsScreen(
     // 备份与恢复
     val backupRestoreVm: BackupRestoreViewModel = viewModel()
     val backupRestoreUiState by backupRestoreVm.uiState.collectAsState()
+    val configTransferVm: ConfigTransferViewModel = viewModel()
+    val configTransferUiState by configTransferVm.uiState.collectAsState()
     val localPlaylistRepo = remember(context) { LocalPlaylistRepository.getInstance(context) }
     val localPlaylists by localPlaylistRepo.playlists.collectAsState(initial = emptyList())
     val defaultDownloadDirectorySummary = context.getString(R.string.settings_download_directory_default_label)
@@ -667,6 +670,33 @@ fun SettingsScreen(
             backupRestoreVm.initialize(context)
             backupRestoreVm.importPlaylists(uri)
         }
+    }
+
+    val exportConfigLauncher = rememberLauncherForActivityResult(
+        contract = CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            configTransferVm.initialize(context)
+            configTransferVm.exportConfig(uri)
+        }
+    }
+
+    val importConfigLauncher = rememberLauncherForActivityResult(
+        contract = OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            configTransferVm.initialize(context)
+            configTransferVm.importConfig(uri)
+        }
+    }
+
+    LaunchedEffect(configTransferUiState.importRequiresActivityRecreate) {
+        if (!configTransferUiState.importRequiresActivityRecreate) {
+            return@LaunchedEffect
+        }
+        onBeforeLanguageRestart()
+        configTransferVm.consumeImportRecreateRequest()
+        (context as? android.app.Activity)?.recreate()
     }
 
     // 当前所选音质对应的中文标签
@@ -1717,8 +1747,10 @@ fun SettingsScreen(
                     onExpandedChange = { backupRestoreExpanded = it },
                     currentPlaylistCount = localPlaylists.size,
                     backupRestoreUiState = backupRestoreUiState,
+                    configTransferUiState = configTransferUiState,
                     onExportClick = {
                         if (!backupRestoreUiState.isExporting) {
+                            backupRestoreVm.initialize(context)
                             exportPlaylistLauncher.launch(backupRestoreVm.generateBackupFileName())
                         }
                     },
@@ -1727,8 +1759,21 @@ fun SettingsScreen(
                             importPlaylistLauncher.launch(arrayOf("*/*"))
                         }
                     },
+                    onExportConfigClick = {
+                        if (!configTransferUiState.isExporting) {
+                            configTransferVm.initialize(context)
+                            exportConfigLauncher.launch(configTransferVm.generateConfigFileName())
+                        }
+                    },
+                    onImportConfigClick = {
+                        if (!configTransferUiState.isImporting) {
+                            importConfigLauncher.launch(arrayOf("*/*"))
+                        }
+                    },
                     onClearExportStatus = backupRestoreVm::clearExportStatus,
                     onClearImportStatus = backupRestoreVm::clearImportStatus,
+                    onClearConfigExportStatus = configTransferVm::clearExportStatus,
+                    onClearConfigImportStatus = configTransferVm::clearImportStatus,
                     silentGitHubSyncFailure = silentGitHubSyncFailure,
                     onSilentGitHubSyncFailureChange = onSilentGitHubSyncFailureChange,
                     onOpenGitHubConfig = { showGitHubConfigDialog = true },

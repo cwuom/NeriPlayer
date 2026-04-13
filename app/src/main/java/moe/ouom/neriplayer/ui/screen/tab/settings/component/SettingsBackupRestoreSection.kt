@@ -86,6 +86,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
+import moe.ouom.neriplayer.ui.viewmodel.ConfigTransferUiState
 import moe.ouom.neriplayer.ui.viewmodel.BackupRestoreUiState
 import moe.ouom.neriplayer.ui.viewmodel.GitHubSyncViewModel
 import moe.ouom.neriplayer.ui.viewmodel.WebDavSyncViewModel
@@ -99,10 +100,15 @@ internal fun SettingsBackupRestoreSection(
     onExpandedChange: (Boolean) -> Unit,
     currentPlaylistCount: Int,
     backupRestoreUiState: BackupRestoreUiState,
+    configTransferUiState: ConfigTransferUiState,
     onExportClick: () -> Unit,
     onImportClick: () -> Unit,
+    onExportConfigClick: () -> Unit,
+    onImportConfigClick: () -> Unit,
     onClearExportStatus: () -> Unit,
     onClearImportStatus: () -> Unit,
+    onClearConfigExportStatus: () -> Unit,
+    onClearConfigImportStatus: () -> Unit,
     silentGitHubSyncFailure: Boolean,
     onSilentGitHubSyncFailureChange: (Boolean) -> Unit,
     onOpenGitHubConfig: () -> Unit,
@@ -198,6 +204,34 @@ internal fun SettingsBackupRestoreSection(
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent)
             )
 
+            ListItem(
+                leadingContent = {
+                    Icon(
+                        Icons.Outlined.Upload,
+                        contentDescription = stringResource(R.string.settings_export_config),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                },
+                headlineContent = { Text(stringResource(R.string.settings_export_config)) },
+                supportingContent = { Text(stringResource(R.string.settings_export_config_desc)) },
+                modifier = Modifier.settingsItemClickable(onClick = onExportConfigClick),
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+            )
+
+            ListItem(
+                leadingContent = {
+                    Icon(
+                        Icons.Outlined.Download,
+                        contentDescription = stringResource(R.string.settings_import_config),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                },
+                headlineContent = { Text(stringResource(R.string.settings_import_config)) },
+                supportingContent = { Text(stringResource(R.string.settings_import_config_desc)) },
+                modifier = Modifier.settingsItemClickable(onClick = onImportConfigClick),
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+            )
+
             backupRestoreUiState.exportProgress?.let { progress ->
                 ProgressStatusItem(
                     title = stringResource(R.string.playlist_export_progress),
@@ -207,6 +241,18 @@ internal fun SettingsBackupRestoreSection(
             backupRestoreUiState.importProgress?.let { progress ->
                 ProgressStatusItem(
                     title = stringResource(R.string.playlist_import_progress),
+                    message = progress
+                )
+            }
+            configTransferUiState.exportProgress?.let { progress ->
+                ProgressStatusItem(
+                    title = stringResource(R.string.settings_config_export_progress),
+                    message = progress
+                )
+            }
+            configTransferUiState.importProgress?.let { progress ->
+                ProgressStatusItem(
+                    title = stringResource(R.string.settings_config_import_progress),
                     message = progress
                 )
             }
@@ -263,6 +309,56 @@ internal fun SettingsBackupRestoreSection(
                         message = message,
                         isSuccess = backupRestoreUiState.lastImportSuccess == true,
                         onClose = onClearImportStatus
+                    )
+                }
+            }
+
+            AnimatedVisibility(
+                visible = configTransferUiState.lastExportMessage != null,
+                enter = slideInVertically(
+                    initialOffsetY = { -it },
+                    animationSpec = tween(durationMillis = 300, easing = EaseOutCubic)
+                ) + fadeIn(animationSpec = tween(durationMillis = 300, easing = EaseOutCubic)),
+                exit = slideOutVertically(
+                    targetOffsetY = { -it },
+                    animationSpec = tween(durationMillis = 250, easing = EaseInCubic)
+                ) + fadeOut(animationSpec = tween(durationMillis = 250, easing = EaseInCubic))
+            ) {
+                configTransferUiState.lastExportMessage?.let { message ->
+                    ResultStatusCard(
+                        title = if (configTransferUiState.lastExportSuccess == true) {
+                            stringResource(R.string.settings_config_export_success)
+                        } else {
+                            stringResource(R.string.settings_config_export_failed)
+                        },
+                        message = message,
+                        isSuccess = configTransferUiState.lastExportSuccess == true,
+                        onClose = onClearConfigExportStatus
+                    )
+                }
+            }
+
+            AnimatedVisibility(
+                visible = configTransferUiState.lastImportMessage != null,
+                enter = slideInVertically(
+                    initialOffsetY = { -it },
+                    animationSpec = tween(durationMillis = 300, easing = EaseOutCubic)
+                ) + fadeIn(animationSpec = tween(durationMillis = 300, easing = EaseOutCubic)),
+                exit = slideOutVertically(
+                    targetOffsetY = { -it },
+                    animationSpec = tween(durationMillis = 250, easing = EaseInCubic)
+                ) + fadeOut(animationSpec = tween(durationMillis = 250, easing = EaseInCubic))
+            ) {
+                configTransferUiState.lastImportMessage?.let { message ->
+                    ResultStatusCard(
+                        title = if (configTransferUiState.lastImportSuccess == true) {
+                            stringResource(R.string.settings_config_import_success)
+                        } else {
+                            stringResource(R.string.settings_config_import_failed)
+                        },
+                        message = message,
+                        isSuccess = configTransferUiState.lastImportSuccess == true,
+                        onClose = onClearConfigImportStatus
                     )
                 }
             }
