@@ -37,15 +37,12 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
-    fun `startup scan is skipped only when snapshot and catalog are both ready`() {
-        assertEquals(false, shouldRunInitialDownloadScan(snapshotReady = true, catalogReady = true))
-        assertEquals(true, shouldRunInitialDownloadScan(snapshotReady = true, catalogReady = false))
-        assertEquals(true, shouldRunInitialDownloadScan(snapshotReady = false, catalogReady = true))
-        assertEquals(true, shouldRunInitialDownloadScan(snapshotReady = false, catalogReady = false))
+    fun `startup scan is skipped once lightweight catalog is ready`() {
+        assertEquals(false, shouldRunInitialDownloadScan(catalogReady = true))
+        assertEquals(true, shouldRunInitialDownloadScan(catalogReady = false))
         assertEquals(
             true,
             shouldRunInitialDownloadScan(
-                snapshotReady = true,
                 catalogReady = true,
                 hasRecoveredEntries = true
             )
@@ -452,6 +449,82 @@ class GlobalDownloadManagerStartupPolicyTest {
         )
 
         assertEquals(downloaded, findDownloadedSongCatalogMatch(song, listOf(downloaded)))
+    }
+
+    @Test
+    fun `downloaded song catalog index keeps newest stable match first`() {
+        val song = SongItem(
+            id = 9L,
+            name = "Favorite Song",
+            artist = "Artist",
+            album = "Album",
+            albumId = 1L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            mediaUri = "https://music.163.com/song?id=9"
+        )
+        val newest = DownloadedSong(
+            id = 100L,
+            name = "renamed locally",
+            artist = "local artist",
+            album = "Downloads",
+            filePath = "content://downloads/newest",
+            fileSize = 10L,
+            downloadTime = 20L,
+            stableKey = song.stableKey()
+        )
+        val older = newest.copy(
+            filePath = "content://downloads/older",
+            downloadTime = 10L
+        )
+
+        val index = GlobalDownloadManager.buildDownloadedSongCatalogIndex(
+            listOf(newest, older)
+        )
+
+        assertEquals(newest, index.find(song))
+    }
+
+    @Test
+    fun `downloaded song catalog index still falls back to legacy identity when stable key entry mismatches`() {
+        val song = SongItem(
+            id = 42L,
+            name = "Song",
+            artist = "Artist",
+            album = "Bilibili|2002",
+            albumId = 0L,
+            durationMs = 3000L,
+            coverUrl = null
+        )
+        val mismatchedStable = DownloadedSong(
+            id = 42L,
+            name = "Song",
+            artist = "Artist",
+            album = "Album",
+            filePath = "/music/mismatch.flac",
+            fileSize = 10L,
+            downloadTime = 20L,
+            stableKey = SongItem(
+                id = 42L,
+                name = "Song",
+                artist = "Artist",
+                album = "Bilibili|1001",
+                albumId = 0L,
+                durationMs = 3000L,
+                coverUrl = null
+            ).stableKey()
+        )
+        val legacyFallback = mismatchedStable.copy(
+            filePath = "/music/legacy.flac",
+            downloadTime = 10L,
+            stableKey = null
+        )
+
+        val index = GlobalDownloadManager.buildDownloadedSongCatalogIndex(
+            listOf(mismatchedStable, legacyFallback)
+        )
+
+        assertEquals(legacyFallback, index.find(song))
     }
 
     @Test

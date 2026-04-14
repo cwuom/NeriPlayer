@@ -24,17 +24,13 @@ import moe.ouom.neriplayer.core.player.policy.resolvePlaybackContinuationStartPl
 import moe.ouom.neriplayer.core.player.policy.resolvePlaybackFailureAdvanceAction
 import moe.ouom.neriplayer.core.player.policy.resolveManagedPlaybackStartPlan
 import moe.ouom.neriplayer.core.player.policy.resolveManualResumePlaybackDecision
-import moe.ouom.neriplayer.core.player.policy.resolveYouTubeWarmupTargets
 import moe.ouom.neriplayer.core.player.policy.shouldPausePlaybackWhenToggling
-import java.util.WeakHashMap
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.SearchManager
 import kotlin.random.Random
-
-private val youtubeNextWarmupTracker = WeakHashMap<PlayerManager, String?>()
 
 internal fun PlayerManager.cancelVolumeFadeImpl(resetToFull: Boolean = false) {
     val hadActiveFade = volumeFadeJob?.isActive == true
@@ -354,7 +350,6 @@ internal fun PlayerManager.playAtIndex(
     _currentMediaUrl.value = null
     _currentPlaybackAudioInfo.value = null
     currentMediaUrlResolvedAtMs = 0L
-    youtubeNextWarmupTracker[this] = null
     val shouldAwaitAuthoritativeStream =
         commandSource == PlaybackCommandSource.REMOTE_SYNC &&
             shouldWaitForListenTogetherAuthoritativeStream(song)
@@ -520,34 +515,11 @@ private fun PlayerManager.maybeAutoMatchBiliMetadata(song: SongItem, requestToke
 }
 
 private fun PlayerManager.maybeWarmCurrentAndUpcomingYouTubeMusic(currentSongIndex: Int) {
-    val targets = resolveYouTubeWarmupTargets(
+    prefetchYouTubeQueueWindow(
         playlist = currentPlaylist,
-        currentSongIndex = currentSongIndex,
-        preferredQuality = youtubePreferredQuality
+        startIndex = currentSongIndex,
+        source = "play_at_index"
     )
-    if (!targets.hasWork) {
-        return
-    }
-    NPLogger.d(
-        "NERI-PlayerManager",
-        "maybeWarmCurrentAndUpcomingYouTubeMusic: currentVideoId=${targets.currentVideoId}, nextVideoId=${targets.nextVideoId}, preferredQuality=${targets.preferredQuality}, queueSize=${currentPlaylist.size}"
-    )
-
-    targets.currentVideoId?.let { videoId ->
-        runCatching {
-            youtubeMusicPlaybackRepository.kickoffPlayableAudioPrefetch(
-                videoId = videoId,
-                preferredQualityOverride = targets.preferredQuality,
-                requireDirect = false,
-                preferM4a = false
-            )
-        }.onFailure { error ->
-            NPLogger.w(
-                "NERI-PlayerManager",
-                "Warm current YouTube Music stream failed for $videoId: ${error.message}"
-            )
-        }
-    }
 }
 
 private fun PlayerManager.maybeWarmNextYouTubeMusicAfterCurrentResolved() {
@@ -555,29 +527,15 @@ private fun PlayerManager.maybeWarmNextYouTubeMusicAfterCurrentResolved() {
     if (!isYouTubeMusicTrack(currentSong) || currentMediaUrlResolvedAtMs <= 0) {
         return
     }
-    val nextVideoId = resolveYouTubeWarmupTargets(
-        playlist = currentPlaylist,
-        currentSongIndex = currentIndex,
-        preferredQuality = youtubePreferredQuality
-    ).nextVideoId ?: return
-    val lastWarmId = youtubeNextWarmupTracker[this]
-    if (lastWarmId == nextVideoId) {
+    val nextStartIndex = currentIndex + 1
+    if (nextStartIndex !in currentPlaylist.indices) {
         return
     }
-    youtubeNextWarmupTracker[this] = nextVideoId
-    runCatching {
-        youtubeMusicPlaybackRepository.kickoffPlayableAudioPrefetch(
-            videoId = nextVideoId,
-            preferredQualityOverride = youtubePreferredQuality,
-            requireDirect = false,
-            preferM4a = false
-        )
-    }.onFailure { error ->
-        NPLogger.w(
-            "NERI-PlayerManager",
-            "Prefetch next YouTube Music stream failed for $nextVideoId: ${error.message}"
-        )
-    }
+    prefetchYouTubeQueueWindow(
+        playlist = currentPlaylist,
+        startIndex = nextStartIndex,
+        source = "after_current_resolved"
+    )
 }
 
 internal fun PlayerManager.playBiliVideoPartsImpl(

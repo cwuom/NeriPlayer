@@ -112,6 +112,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.BuildConfig
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
@@ -1828,6 +1829,10 @@ fun SettingsScreen(
             settingsAboutSection(
                 devModeEnabled = devModeEnabled,
                 onVersionClick = {
+                    if (!BuildConfig.DEBUG) {
+                        inlineMsg = context.getString(R.string.debug_mode_enabled)
+                        return@settingsAboutSection
+                    }
                     if (!devModeEnabled) {
                         versionTapCount++
                         if (versionTapCount >= 7) {

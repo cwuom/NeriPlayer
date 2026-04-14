@@ -24,6 +24,7 @@ import moe.ouom.neriplayer.core.player.url.buildBiliPlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.url.buildLocalPlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.url.buildNeteaseQualityCandidates
 import moe.ouom.neriplayer.core.player.url.buildNeteaseSuccessResult
+import moe.ouom.neriplayer.core.player.url.buildYouTubeOfflineCacheAudioInfo
 import moe.ouom.neriplayer.core.player.url.buildYouTubePlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.url.shouldReplaceCachedPreviewResource
 import moe.ouom.neriplayer.core.player.url.shouldRetryNeteaseWithLowerQuality
@@ -68,6 +69,22 @@ internal suspend fun PlayerManager.resolveSongUrl(
     }
     val cacheKey = computeCacheKey(song)
     val hasCachedData = checkExoPlayerCache(cacheKey)
+    if (hasCachedData && isYouTubeMusicTrack(song)) {
+        NPLogger.d(
+            "NERI-PlayerManager",
+            "命中完整 YouTube 缓存，直接走离线缓存地址: $cacheKey"
+        )
+        val cachedAudioInfo = _currentPlaybackAudioInfo.value
+            ?.takeIf { _currentSongFlow.value?.sameIdentityAs(song) == true }
+            ?: buildYouTubeOfflineCacheAudioInfo(youtubePreferredQuality) {
+                getLocalizedString(it)
+            }
+        return SongUrlResult.Success(
+            url = "http://offline.cache/$cacheKey",
+            durationMs = song.durationMs.takeIf { it > 0L },
+            audioInfo = cachedAudioInfo
+        )
+    }
     val result = when {
         isYouTubeMusicTrack(song) -> getYouTubeMusicAudioUrl(
             song = song,
@@ -281,6 +298,9 @@ private suspend fun PlayerManager.applyResolvedMediaItem(
 
 private fun PlayerManager.checkLocalCache(song: SongItem): SongUrlResult? {
     val context = application
+    if (!AudioDownloadManager.mayHaveIndexedLocalDownload(context, song)) {
+        return null
+    }
     val localReference = AudioDownloadManager.getLocalPlaybackUri(context, song) ?: return null
     if (!isReadableLocalMediaUri(localReference)) {
         NPLogger.w(
@@ -323,7 +343,7 @@ private fun PlayerManager.checkLocalCache(song: SongItem): SongUrlResult? {
     )
 }
 
-private fun PlayerManager.checkExoPlayerCache(cacheKey: String): Boolean {
+internal fun PlayerManager.checkExoPlayerCache(cacheKey: String): Boolean {
     return try {
     if (!isCacheInitialized()) return false
 

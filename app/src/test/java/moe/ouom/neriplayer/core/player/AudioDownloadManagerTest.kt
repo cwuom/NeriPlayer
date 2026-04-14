@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import java.io.IOException
 import java.net.SocketException
 import java.net.UnknownHostException
@@ -76,5 +77,39 @@ class AudioDownloadManagerTest {
                 IOException("磁盘写入失败")
             )
         )
+    }
+
+    @Test
+    fun `cover download candidates keep stable fallback order and de duplicate urls`() {
+        val song = SongItem(
+            id = 1L,
+            name = "Song",
+            artist = "Artist",
+            album = "Album",
+            albumId = 1L,
+            durationMs = 1_000L,
+            coverUrl = "https://example.com/cover.jpg",
+            customCoverUrl = "https://example.com/custom.jpg",
+            originalCoverUrl = "https://example.com/original.jpg",
+            mediaUri = "https://example.com/audio.m4a"
+        )
+
+        assertEquals(
+            listOf(
+                "https://example.com/custom.jpg",
+                "https://example.com/cover.jpg",
+                "https://example.com/original.jpg"
+            ),
+            AudioDownloadManager.buildCoverDownloadCandidateUrls(song)
+        )
+    }
+
+    @Test
+    fun `transfer size completeness accepts unknown sizes and rejects truncated payloads`() {
+        assertTrue(AudioDownloadManager.isTransferSizeComplete(null, 128L))
+        assertTrue(AudioDownloadManager.isTransferSizeComplete(0L, 128L))
+        assertTrue(AudioDownloadManager.isTransferSizeComplete(256L, 256L))
+        assertTrue(AudioDownloadManager.isTransferSizeComplete(256L, 512L))
+        assertFalse(AudioDownloadManager.isTransferSizeComplete(256L, 128L))
     }
 }

@@ -37,10 +37,11 @@ internal data class ManualResumePlaybackDecision(
 internal data class YouTubeWarmupTargets(
     val currentVideoId: String?,
     val nextVideoId: String?,
+    val prefetchVideoIds: List<String>,
     val preferredQuality: String
 ) {
     val hasWork: Boolean
-        get() = currentVideoId != null || nextVideoId != null
+        get() = prefetchVideoIds.isNotEmpty()
 }
 
 internal const val RESTORED_PLAYBACK_PROTECTION_FADE_DURATION_MS = 1000L
@@ -227,13 +228,28 @@ internal fun resolveYouTubeWarmupTargets(
     currentSongIndex: Int,
     preferredQuality: String
 ): YouTubeWarmupTargets {
-    val currentVideoId = playlist.getOrNull(currentSongIndex)
-        ?.let { extractYouTubeMusicVideoId(it.mediaUri) }
-    val nextVideoId = playlist.getOrNull(currentSongIndex + 1)
-        ?.let { extractYouTubeMusicVideoId(it.mediaUri) }
+    val normalizedIndex = currentSongIndex.coerceAtLeast(0)
+    val remaining = (playlist.size - normalizedIndex).coerceAtLeast(0)
+    val warmupWindowSize = when {
+        remaining <= 0 -> 0
+        remaining <= 3 -> remaining
+        remaining <= 12 -> 3
+        else -> 4
+    }
+    val prefetchVideoIds = buildList {
+        var cursor = normalizedIndex
+        while (size < warmupWindowSize && cursor < playlist.size) {
+            val videoId = extractYouTubeMusicVideoId(playlist[cursor].mediaUri)
+            if (!videoId.isNullOrBlank() && !contains(videoId)) {
+                add(videoId)
+            }
+            cursor += 1
+        }
+    }
     return YouTubeWarmupTargets(
-        currentVideoId = currentVideoId,
-        nextVideoId = nextVideoId,
+        currentVideoId = prefetchVideoIds.firstOrNull(),
+        nextVideoId = prefetchVideoIds.getOrNull(1),
+        prefetchVideoIds = prefetchVideoIds,
         preferredQuality = preferredQuality
     )
 }

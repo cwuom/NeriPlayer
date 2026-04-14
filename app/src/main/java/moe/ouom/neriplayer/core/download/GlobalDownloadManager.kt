@@ -118,7 +118,10 @@ object GlobalDownloadManager {
     private var catalogReconcileJob: Job? = null
 
     @Volatile
-    private var downloadedSongPresenceIndex = DownloadedSongPresenceIndex.EMPTY
+    private var downloadedSongCatalogIndex = DownloadedSongCatalogIndex.EMPTY
+
+    @Volatile
+    private var downloadedSongCatalogReady = false
 
     @Volatile
     private var pendingRefresh = false
@@ -140,10 +143,8 @@ object GlobalDownloadManager {
         scope.launch {
             val startupRecovery = ManagedDownloadStorage.consumeStartupRecoveryResult()
             val restoredCatalog = restorePersistedDownloadedSongs(appContext)
-            val snapshotReady = ManagedDownloadStorage.ensureSnapshotCacheReady(appContext)
             if (
                 !shouldRunInitialDownloadScan(
-                    snapshotReady = snapshotReady,
                     catalogReady = restoredCatalog,
                     hasRecoveredEntries = startupRecovery.hasRecoveredEntries
                 )
@@ -172,7 +173,8 @@ object GlobalDownloadManager {
         persistCatalog: Boolean
     ) {
         _downloadedSongs.value = songs
-        downloadedSongPresenceIndex = buildDownloadedSongPresenceIndex(songs)
+        downloadedSongCatalogIndex = buildDownloadedSongCatalogIndex(songs)
+        downloadedSongCatalogReady = true
         _downloadPresenceVersion.value = _downloadPresenceVersion.value + 1
         if (persistCatalog) {
             scheduleDownloadedSongsCatalogPersist(context, songs)
@@ -197,61 +199,84 @@ object GlobalDownloadManager {
         }
     }
 
-    private data class DownloadedSongPresenceIndex(
-        val localReferences: Set<String>,
-        val stableIdentityKeys: Set<String>,
-        val legacyIdentityKeys: Set<String>
+    internal data class DownloadedSongCatalogIndex(
+        val songsByLocalReference: Map<String, DownloadedSong>,
+        val songsByStableIdentityKey: Map<String, DownloadedSong>,
+        val songsByLegacyIdentityKey: Map<String, DownloadedSong>
     ) {
-        fun contains(song: SongItem): Boolean {
+        fun find(song: SongItem): DownloadedSong? {
             val localCandidates = listOfNotNull(
                 song.localFilePath?.takeIf(String::isNotBlank),
                 song.mediaUri?.takeIf(String::isNotBlank)
             )
-            if (localCandidates.any(localReferences::contains)) {
-                return true
-            }
+            localCandidates.firstNotNullOfOrNull(songsByLocalReference::get)?.let { return it }
             val stableIdentityKey = song.stableKey()
-            if (stableIdentityKeys.contains(stableIdentityKey)) {
-                return true
-            }
-            return legacyIdentityKeys.contains(
-                downloadedSongPresenceIdentityKey(song.id, song.name, song.artist)
-            )
+            songsByStableIdentityKey[stableIdentityKey]?.let { return it }
+            return songsByLegacyIdentityKey[
+                downloadedSongCatalogIdentityKey(song.id, song.name, song.artist)
+            ]
+        }
+
+        fun contains(song: SongItem): Boolean {
+            return find(song) != null
         }
 
         companion object {
-            val EMPTY = DownloadedSongPresenceIndex(
-                localReferences = emptySet(),
-                stableIdentityKeys = emptySet(),
-                legacyIdentityKeys = emptySet()
+            val EMPTY = DownloadedSongCatalogIndex(
+                songsByLocalReference = emptyMap(),
+                songsByStableIdentityKey = emptyMap(),
+                songsByLegacyIdentityKey = emptyMap()
             )
         }
     }
 
-    private fun buildDownloadedSongPresenceIndex(
+    internal fun buildDownloadedSongCatalogIndex(
         songs: List<DownloadedSong>
-    ): DownloadedSongPresenceIndex {
-        return DownloadedSongPresenceIndex(
-            localReferences = buildSet {
-                songs.forEach { song ->
-                    add(song.filePath)
-                    song.mediaUri?.takeIf(String::isNotBlank)?.let(::add)
+    ): DownloadedSongCatalogIndex {
+        val songsByLocalReference = linkedMapOf<String, DownloadedSong>()
+        val songsByStableIdentityKey = linkedMapOf<String, DownloadedSong>()
+        val songsByLegacyIdentityKey = linkedMapOf<String, DownloadedSong>()
+        songs.forEach { song ->
+            song.filePath
+                .takeIf(String::isNotBlank)
+                ?.let { reference ->
+                    if (reference !in songsByLocalReference) {
+                        songsByLocalReference[reference] = song
+                    }
                 }
-            },
-            stableIdentityKeys = songs.mapNotNullTo(mutableSetOf()) { song ->
-                song.stableKey?.takeIf(String::isNotBlank)
-            },
-            legacyIdentityKeys = songs.mapNotNullTo(mutableSetOf()) { song ->
-                if (!song.stableKey.isNullOrBlank()) {
-                    null
-                } else {
-                    downloadedSongPresenceIdentityKey(song.id, song.name, song.artist)
+            song.mediaUri
+                ?.takeIf(String::isNotBlank)
+                ?.let { reference ->
+                    if (reference !in songsByLocalReference) {
+                        songsByLocalReference[reference] = song
+                    }
                 }
-            }
+            song.stableKey
+                ?.takeIf(String::isNotBlank)
+                ?.let { stableIdentityKey ->
+                    if (stableIdentityKey !in songsByStableIdentityKey) {
+                        songsByStableIdentityKey[stableIdentityKey] = song
+                    }
+                }
+                ?: run {
+                    val legacyIdentityKey = downloadedSongCatalogIdentityKey(
+                        song.id,
+                        song.name,
+                        song.artist
+                    )
+                    if (legacyIdentityKey !in songsByLegacyIdentityKey) {
+                        songsByLegacyIdentityKey[legacyIdentityKey] = song
+                    }
+                }
+        }
+        return DownloadedSongCatalogIndex(
+            songsByLocalReference = songsByLocalReference,
+            songsByStableIdentityKey = songsByStableIdentityKey,
+            songsByLegacyIdentityKey = songsByLegacyIdentityKey
         )
     }
 
-    private fun downloadedSongPresenceIdentityKey(
+    private fun downloadedSongCatalogIdentityKey(
         id: Long,
         name: String,
         artist: String
@@ -511,6 +536,9 @@ object GlobalDownloadManager {
                 .sortedByDescending { it.downloadTime }
             if (_downloadedSongs.value != songs) {
                 publishDownloadedSongs(context, songs, persistCatalog = true)
+            } else if (!downloadedSongCatalogReady) {
+                downloadedSongCatalogIndex = buildDownloadedSongCatalogIndex(songs)
+                downloadedSongCatalogReady = true
             }
         } catch (error: Exception) {
             NPLogger.e(TAG, "扫描已下载文件失败: ${error.message}", error)
@@ -1345,11 +1373,15 @@ object GlobalDownloadManager {
     }
 
     fun hasDownloadedSongCached(song: SongItem): Boolean {
-        return downloadedSongPresenceIndex.contains(song)
+        return downloadedSongCatalogIndex.contains(song)
+    }
+
+    fun isDownloadedSongCatalogReady(): Boolean {
+        return downloadedSongCatalogReady
     }
 
     fun findAccessibleDownloadedSongPlaybackUri(context: Context, song: SongItem): String? {
-        val downloadedSong = findDownloadedSongCatalogMatch(song, _downloadedSongs.value) ?: return null
+        val downloadedSong = downloadedSongCatalogIndex.find(song) ?: return null
         val reference = resolveDownloadedSongPlaybackReference(downloadedSong) ?: return null
         if (!ManagedDownloadStorage.isReferenceAccessible(context, reference)) {
             NPLogger.w(
@@ -2123,11 +2155,10 @@ object GlobalDownloadManager {
 }
 
 internal fun shouldRunInitialDownloadScan(
-    snapshotReady: Boolean,
     catalogReady: Boolean,
     hasRecoveredEntries: Boolean = false
 ): Boolean {
-    return hasRecoveredEntries || !snapshotReady || !catalogReady
+    return hasRecoveredEntries || !catalogReady
 }
 
 internal enum class CompletedDownloadFinalizationAction {

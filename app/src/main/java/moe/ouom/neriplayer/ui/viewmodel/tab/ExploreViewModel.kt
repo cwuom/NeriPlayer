@@ -338,6 +338,11 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                         limit = 30
                     ).map { it.toSongItem(app) }
                 }
+                PlayerManager.prefetchYouTubeQueueWindow(
+                    playlist = songs,
+                    startIndex = 0,
+                    source = "yt_search_result_load"
+                )
                 _uiState.value = _uiState.value.copy(
                     searching = false,
                     searchError = null,

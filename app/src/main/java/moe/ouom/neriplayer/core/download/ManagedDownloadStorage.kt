@@ -82,13 +82,11 @@ internal object ManagedDownloadStorage {
     private val treeDirectoryLocks = ConcurrentHashMap<String, Any>()
     private val treeSubdirectoryCache = ConcurrentHashMap<String, DocumentFile>()
     private val treeChildrenNameCache = ConcurrentHashMap<String, CachedTreeChildren>()
+    private val ensuredNoMediaMarkers = ConcurrentHashMap<String, Boolean>()
     private val pendingAudioWriteIdGenerator = AtomicLong(0L)
 
     @Volatile
     private var snapshotPersistJob: Job? = null
-
-    @Volatile
-    private var snapshotRestoreScheduled = false
 
     @Volatile
     private var startupRecoveryResult = StartupRecoveryResult()
@@ -103,13 +101,29 @@ internal object ManagedDownloadStorage {
         val appContext = context.applicationContext
         createDefaultRoot(appContext)
         val stagingRecovery = cleanupStagingFiles(appContext)
-        val pendingAudioRecovery = cleanupPendingAudioWrites(appContext)
+        val pendingAudioRecovery = resolveStartupPendingAudioRecovery(appContext)
         startupRecoveryResult = StartupRecoveryResult(
             cleanedCount = stagingRecovery.cleanedCount + pendingAudioRecovery.cleanedCount,
             failedCount = stagingRecovery.failedCount + pendingAudioRecovery.failedCount
         )
         invalidateSnapshotCache()
-        scheduleSnapshotCacheRestore(appContext)
+    }
+
+    private fun resolveStartupPendingAudioRecovery(context: Context): StartupRecoveryResult {
+        val configuredUri = normalizeDirectoryUri(customDirectoryUri)
+        return if (resolveTreeRootBlocking(context, configuredUri) != null) {
+            schedulePendingAudioWriteCleanup(context)
+            StartupRecoveryResult()
+        } else {
+            cleanupPendingAudioWrites(context)
+        }
+    }
+
+    private fun schedulePendingAudioWriteCleanup(context: Context) {
+        val appContext = context.applicationContext
+        snapshotScope.launch {
+            cleanupPendingAudioWrites(appContext)
+        }
     }
 
     internal data class StartupRecoveryResult(
@@ -1172,7 +1186,9 @@ internal object ManagedDownloadStorage {
     }
 
     suspend fun findMetadataForAudio(context: Context, audio: StoredEntry): StoredEntry? = withContext(Dispatchers.IO) {
-        buildDownloadLibrarySnapshotBlocking(context).metadataEntriesByAudioName[audio.name]
+        val snapshot = resolveSnapshotForIndexedLookup(context)
+            ?: buildDownloadLibrarySnapshotBlocking(context)
+        snapshot.metadataEntriesByAudioName[audio.name]
     }
 
     suspend fun saveMetadata(context: Context, audio: StoredEntry, json: String) = withContext(Dispatchers.IO) {
@@ -1222,13 +1238,15 @@ internal object ManagedDownloadStorage {
         context: Context,
         tempFile: File,
         fileName: String,
-        mimeType: String?
+        mimeType: String?,
+        expectedSizeBytes: Long? = null
     ): StoredEntry = withContext(Dispatchers.IO) {
         saveAudioFromTempBlocking(
             context = context,
             tempFile = tempFile,
             fileName = fileName,
-            mimeType = mimeType
+            mimeType = mimeType,
+            expectedSizeBytes = expectedSizeBytes
         )
     }
 
@@ -1236,8 +1254,13 @@ internal object ManagedDownloadStorage {
         context: Context,
         tempFile: File,
         fileName: String,
-        mimeType: String?
+        mimeType: String?,
+        expectedSizeBytes: Long?
     ): StoredEntry {
+        val actualSizeBytes = tempFile.length().coerceAtLeast(0L)
+        if (expectedSizeBytes != null && expectedSizeBytes > 0L && actualSizeBytes < expectedSizeBytes) {
+            throw IOException("下载文件写入不完整: $actualSizeBytes/$expectedSizeBytes")
+        }
         val storedEntry = try {
             when (val root = resolveRootBlocking(context)) {
                 is RootHandle.FileRoot -> {
@@ -1280,7 +1303,7 @@ internal object ManagedDownloadStorage {
                     rememberTreeChildName(root.tree, finalName)
                     pendingTarget.toStoredEntry(
                         knownName = finalName,
-                        knownSizeBytes = tempFile.length().coerceAtLeast(0L),
+                        knownSizeBytes = actualSizeBytes,
                         knownLastModifiedMs = committedAtMs,
                         knownIsDirectory = false
                     )
@@ -1354,13 +1377,22 @@ internal object ManagedDownloadStorage {
         return saveLyricTextBlocking(context, fileName, content)
     }
 
+    private fun resolveSnapshotForIndexedLookup(context: Context): DownloadLibrarySnapshot? {
+        snapshotCache?.snapshot?.let { return it }
+        if (ensureSnapshotCacheReady(context)) {
+            snapshotCache?.snapshot?.let { return it }
+        }
+        return null
+    }
+
     fun findLyricLocation(
         context: Context,
         songId: Long,
         candidateBaseNames: List<String>,
         translated: Boolean
     ): String? {
-        val snapshot = buildDownloadLibrarySnapshotBlocking(context)
+        val snapshot = resolveSnapshotForIndexedLookup(context)
+            ?: buildDownloadLibrarySnapshotBlocking(context)
         return findIndexedEntryByNames(
             names = buildLyricCandidateNames(
                 songId = songId.takeIf { it > 0L },
@@ -1473,7 +1505,8 @@ internal object ManagedDownloadStorage {
     }
 
     suspend fun findCoverReference(context: Context, audio: StoredEntry): String? = withContext(Dispatchers.IO) {
-        val snapshot = buildDownloadLibrarySnapshotBlocking(context)
+        val snapshot = resolveSnapshotForIndexedLookup(context)
+            ?: buildDownloadLibrarySnapshotBlocking(context)
         findIndexedEntryByNames(
             names = buildSidecarCandidateNames(candidateManagedDownloadBaseNames(audio.nameWithoutExtension)),
             entriesByName = snapshot.coverEntriesByName
@@ -1802,26 +1835,6 @@ internal object ManagedDownloadStorage {
         return restored.second
     }
 
-    private fun scheduleSnapshotCacheRestore(context: Context) {
-        if (snapshotRestoreScheduled) {
-            return
-        }
-        synchronized(snapshotPersistenceLock) {
-            if (snapshotRestoreScheduled) {
-                return
-            }
-            snapshotRestoreScheduled = true
-        }
-        val appContext = context.applicationContext
-        snapshotScope.launch {
-            try {
-                restoreSnapshotCacheFromDisk(appContext)
-            } finally {
-                snapshotRestoreScheduled = false
-            }
-        }
-    }
-
     private fun scheduleSnapshotCachePersist(
         context: Context,
         expectedKey: String
@@ -2021,9 +2034,9 @@ internal object ManagedDownloadStorage {
                     ?.filter { file -> isPendingAudioWriteName(file.name) }
                     .orEmpty()
 
-                is RootHandle.TreeRoot -> root.tree.listFiles()
-                    .filter(DocumentFile::isFile)
-                    .filter { file -> isPendingAudioWriteName(file.name.orEmpty()) }
+                is RootHandle.TreeRoot -> queryTreeChildren(context, root.tree)
+                    .filterNot(QueriedTreeChild::isDirectory)
+                    .filter { child -> isPendingAudioWriteName(child.name) }
             }
 
             var cleanedCount = 0
@@ -2031,10 +2044,10 @@ internal object ManagedDownloadStorage {
             pendingEntries.forEach { entry ->
                 val deleted = when (entry) {
                     is File -> runCatching { !entry.exists() || entry.delete() }.getOrDefault(false)
-                    is DocumentFile -> deleteContentReference(
+                    is QueriedTreeChild -> deleteContentReference(
                         context = context,
-                        reference = entry.uri.toString(),
-                        uri = entry.uri
+                        reference = entry.documentUri.toString(),
+                        uri = entry.documentUri
                     )
                     else -> false
                 }
@@ -2601,6 +2614,7 @@ internal object ManagedDownloadStorage {
     private fun clearTreeDirectoryCache() {
         treeSubdirectoryCache.clear()
         treeChildrenNameCache.clear()
+        ensuredNoMediaMarkers.clear()
         cachedTreeRoot = null
     }
 
@@ -2743,17 +2757,29 @@ internal object ManagedDownloadStorage {
     }
 
     private fun ensureNoMediaMarker(directory: File) {
+        val cacheKey = directory.absolutePath
+        if (ensuredNoMediaMarkers[cacheKey] == true) return
         val marker = File(directory, NO_MEDIA_FILE_NAME)
-        if (marker.exists()) return
+        if (marker.exists()) {
+            ensuredNoMediaMarkers[cacheKey] = true
+            return
+        }
         if (!marker.createNewFile()) {
             throw IOException("无法创建 $NO_MEDIA_FILE_NAME")
         }
+        ensuredNoMediaMarkers[cacheKey] = true
     }
 
     private fun ensureNoMediaMarker(directory: DocumentFile) {
-        if (directory.findFile(NO_MEDIA_FILE_NAME) != null) return
+        val cacheKey = directory.uri.toString()
+        if (ensuredNoMediaMarkers[cacheKey] == true) return
+        if (directory.findFile(NO_MEDIA_FILE_NAME) != null) {
+            ensuredNoMediaMarkers[cacheKey] = true
+            return
+        }
         directory.createFile("application/octet-stream", NO_MEDIA_FILE_NAME)
             ?: throw IOException("无法创建 $NO_MEDIA_FILE_NAME")
+        ensuredNoMediaMarkers[cacheKey] = true
     }
 
     private fun openStoredEntryInputStream(context: Context, entry: StoredEntry): InputStream? {

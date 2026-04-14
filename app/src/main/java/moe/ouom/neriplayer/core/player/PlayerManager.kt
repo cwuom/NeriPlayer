@@ -101,6 +101,7 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import java.io.File
 import java.io.RandomAccessFile
+import java.util.concurrent.ConcurrentHashMap
 
 
 internal const val PLAYBACK_PROGRESS_UPDATE_INTERVAL_MS = 80L
@@ -285,6 +286,7 @@ object PlayerManager {
     val playlistsFlow: StateFlow<List<LocalPlaylist>> = _playlistsFlow
 
     internal var playJob: Job? = null
+    internal val youtubeStreamWarmupJobs = ConcurrentHashMap<String, Job>()
     internal var playbackRequestToken = 0L
     internal var lastHandledTrackEndKey: String? = null
     internal var lastTrackEndHandledAtMs = 0L
@@ -1030,7 +1032,7 @@ object PlayerManager {
             isLocalSong(song) -> "local-${song.stableKey().hashCode()}"
             isYouTubeMusicTrack(song) -> {
                 val videoId = song.audioId ?: extractYouTubeMusicVideoId(song.mediaUri).orEmpty()
-                "ytmusic-$videoId-$youtubePreferredQuality-m4a"
+                computeYouTubeCacheKey(videoId, youtubePreferredQuality)
             }
             isBiliTrack(song) -> {
             val cidPart = song.subAudioId ?: song.album.split('|').getOrNull(1)
@@ -1043,6 +1045,13 @@ object PlayerManager {
             }
             else -> "netease-${song.id}-$preferredQuality"
         }
+    }
+
+    internal fun computeYouTubeCacheKey(
+        videoId: String,
+        preferredQuality: String = youtubePreferredQuality
+    ): String {
+        return "ytmusic-$videoId-$preferredQuality-m4a"
     }
 
     internal fun buildMediaItem(
@@ -1098,6 +1107,16 @@ internal fun cancelVolumeFade(resetToFull: Boolean = false) =
     ): Pair<Boolean, String> = clearCacheImpl(clearAudio, clearImage)
 
     internal fun ensureInitialized() = ensureInitializedImpl()
+
+    internal fun prefetchYouTubeQueueWindow(
+        playlist: List<SongItem>,
+        startIndex: Int,
+        source: String = "manual"
+    ) = prefetchYouTubeQueueWindowImpl(
+        playlist = playlist,
+        startIndex = startIndex,
+        source = source
+    )
 
     fun handleAudioBecomingNoisy(): Boolean = handleAudioBecomingNoisyImpl()
 

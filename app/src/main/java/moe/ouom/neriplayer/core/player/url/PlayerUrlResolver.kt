@@ -164,6 +164,22 @@ internal fun buildYouTubePlaybackAudioInfo(
     )
 }
 
+internal fun buildYouTubeOfflineCacheAudioInfo(
+    preferredQualityKey: String,
+    getLocalizedString: (Int) -> String
+): PlaybackAudioInfo {
+    val qualityKey = preferredQualityKey
+        .trim()
+        .lowercase()
+        .ifBlank { "very_high" }
+    return PlaybackAudioInfo(
+        source = PlaybackAudioSource.YOUTUBE_MUSIC,
+        qualityKey = qualityKey,
+        qualityLabel = qualityLabelForYouTube(qualityKey, getLocalizedString),
+        qualityOptions = buildYouTubeQualityOptions(getLocalizedString)
+    )
+}
+
 internal fun buildNeteaseQualityCandidates(preferredQuality: String): List<String> {
     val normalizedQuality = preferredQuality.trim().lowercase().ifBlank { "exhigh" }
     val preferredIndex = NETEASE_QUALITY_FALLBACK_ORDER.indexOf(normalizedQuality)

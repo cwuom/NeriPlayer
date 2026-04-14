@@ -71,6 +71,13 @@ object NativeCrashHandler {
     }
 
     fun triggerTestCrash(context: Context, crashType: TestCrashType) {
+        if (!BuildConfig.DEBUG) {
+            ExceptionHandler.handleException(
+                source = TAG,
+                throwable = IllegalStateException("Test crash entry is disabled in release builds")
+            )
+            return
+        }
         if (!ensureLibraryLoaded() || !installed) {
             ExceptionHandler.handleException(
                 source = TAG,

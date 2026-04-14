@@ -28,6 +28,7 @@ class PlayerManagerYouTubeWarmupTargetTest {
         assertTrue(targets.hasWork)
         assertEquals("currentVideo", targets.currentVideoId)
         assertEquals("nextVideo", targets.nextVideoId)
+        assertEquals(listOf("currentVideo", "nextVideo"), targets.prefetchVideoIds)
         assertEquals("very_high", targets.preferredQuality)
     }
 
@@ -49,6 +50,7 @@ class PlayerManagerYouTubeWarmupTargetTest {
         assertTrue(targets.hasWork)
         assertEquals("onlyCurrent", targets.currentVideoId)
         assertEquals(null, targets.nextVideoId)
+        assertEquals(listOf("onlyCurrent"), targets.prefetchVideoIds)
         assertEquals("medium", targets.preferredQuality)
     }
 
@@ -66,6 +68,38 @@ class PlayerManagerYouTubeWarmupTargetTest {
         assertFalse(targets.hasWork)
         assertEquals(null, targets.currentVideoId)
         assertEquals(null, targets.nextVideoId)
+        assertTrue(targets.prefetchVideoIds.isEmpty())
+    }
+
+    @Test
+    fun `resolveYouTubeWarmupTargets skips non youtube gaps and expands smart window`() {
+        val targets = resolveYouTubeWarmupTargets(
+            playlist = listOf(
+                testSong(
+                    id = 1L,
+                    mediaUri = "https://music.youtube.com/watch?v=currentVideo"
+                ),
+                testSong(id = 2L, mediaUri = "file:///sdcard/Music/local.mp3"),
+                testSong(
+                    id = 3L,
+                    mediaUri = "https://music.youtube.com/watch?v=futureVideo"
+                ),
+                testSong(
+                    id = 4L,
+                    mediaUri = "https://music.youtube.com/watch?v=futureVideo2"
+                )
+            ),
+            currentSongIndex = 0,
+            preferredQuality = "high"
+        )
+
+        assertTrue(targets.hasWork)
+        assertEquals("currentVideo", targets.currentVideoId)
+        assertEquals("futureVideo", targets.nextVideoId)
+        assertEquals(
+            listOf("currentVideo", "futureVideo", "futureVideo2"),
+            targets.prefetchVideoIds
+        )
     }
 
     private fun testSong(id: Long, mediaUri: String): SongItem {

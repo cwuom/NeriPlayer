@@ -91,12 +91,18 @@ class YouTubeMusicPlaylistDetailViewModel(application: Application) : AndroidVie
                         ?: detail.tracks.size.takeIf { it > 0 }
                         ?: playlist.trackCount
                 )
+                val resolvedTracks = detail.tracks
+                    .map { it.toSongItem(resolvedPlaylist) }
+                    .map(::overlayUserEdits)
+                PlayerManager.prefetchYouTubeQueueWindow(
+                    playlist = resolvedTracks,
+                    startIndex = 0,
+                    source = "yt_playlist_detail_load"
+                )
                 _uiState.value = YouTubeMusicPlaylistDetailUiState(
                     loading = false,
                     playlist = resolvedPlaylist,
-                    tracks = detail.tracks
-                        .map { it.toSongItem(resolvedPlaylist) }
-                        .map(::overlayUserEdits)
+                    tracks = resolvedTracks
                 )
             } catch (error: Exception) {
                 _uiState.value = _uiState.value.copy(
