@@ -639,6 +639,7 @@ fun DetailScreen(
                                         SongRow(
                                             index = index + 1,
                                             song = item,
+                                            showCover = ui.header?.isAlbum != true,
                                             selectionMode = selectionMode,
                                             selected = selectedIds.contains(item.id),
                                             onToggleSelect = { toggleSelect(item.id) },
@@ -839,6 +840,7 @@ private fun RetryChip(onClick: () -> Unit) {
 private fun SongRow(
     index: Int,
     song: SongItem,
+    showCover: Boolean,
     selectionMode: Boolean,
     selected: Boolean,
     onToggleSelect: () -> Unit,
@@ -891,7 +893,7 @@ private fun SongRow(
 
         val itemContext = LocalContext.current
         val displayCoverUrl = song.displayCoverUrl(itemContext)
-        if (!displayCoverUrl.isNullOrBlank()) {
+        if (showCover && !displayCoverUrl.isNullOrBlank()) {
             Box(
                 modifier = Modifier
                     .size(48.dp)

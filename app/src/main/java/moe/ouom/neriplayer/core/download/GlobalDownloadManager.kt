@@ -807,6 +807,11 @@ object GlobalDownloadManager {
         val candidateBaseNames = candidateManagedDownloadBaseNames(audio.nameWithoutExtension)
         val coverReference = sidecarReferences?.coverReference
             ?: ManagedDownloadStorage.findCoverReference(context, audio)
+            ?: ManagedDownloadStorage.findReusableCoverReference(
+                context = context,
+                song = song,
+                excludedAudioName = audio.name
+            )
         val lyricPath = sidecarReferences?.lyricReference
             ?: ManagedDownloadStorage.findLyricLocation(
                 context = context,

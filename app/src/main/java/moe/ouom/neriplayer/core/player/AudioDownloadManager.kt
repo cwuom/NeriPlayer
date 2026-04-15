@@ -139,6 +139,7 @@ object AudioDownloadManager {
         ConcurrentHashMap<String, DownloadedSidecarReferences>()
     private val partialSidecarReferencesBySongKey =
         ConcurrentHashMap<String, DownloadedSidecarReferences>()
+    private val sharedCoverReferencesByLookupKey = ConcurrentHashMap<String, String>()
     private val activeCallsBySongKey =
         ConcurrentHashMap<String, MutableSet<okhttp3.Call>>()
     private val activeSongOperationCounts = ConcurrentHashMap<String, Int>()
@@ -459,6 +460,51 @@ object AudioDownloadManager {
 
     private fun clearPartialSidecarReferences(songKey: String) {
         partialSidecarReferencesBySongKey.remove(songKey)
+    }
+
+    private fun buildSharedCoverLookupKeys(song: SongItem): List<String> {
+        return linkedSetOf<String>().apply {
+            song.customCoverUrl?.trim()?.takeIf(String::isNotBlank)?.let { add("url:$it") }
+            song.coverUrl?.trim()?.takeIf(String::isNotBlank)?.let { add("url:$it") }
+            song.originalCoverUrl?.trim()?.takeIf(String::isNotBlank)?.let { add("url:$it") }
+            if (song.customCoverUrl.isNullOrBlank()) {
+                song.identity().album.takeIf(String::isNotBlank)?.let { add("album:$it") }
+            }
+        }.toList()
+    }
+
+    private suspend fun findSharedCoverReference(
+        context: Context,
+        song: SongItem,
+        excludedAudioName: String? = null
+    ): String? {
+        val lookupKeys = buildSharedCoverLookupKeys(song)
+        if (lookupKeys.isEmpty()) {
+            return null
+        }
+        for (lookupKey in lookupKeys) {
+            val rememberedReference = sharedCoverReferencesByLookupKey[lookupKey] ?: continue
+            if (ManagedDownloadStorage.exists(context, rememberedReference)) {
+                return rememberedReference
+            }
+            sharedCoverReferencesByLookupKey.remove(lookupKey, rememberedReference)
+        }
+        val indexedReference = ManagedDownloadStorage.findReusableCoverReference(
+            context = context,
+            song = song,
+            excludedAudioName = excludedAudioName
+        )
+        if (!indexedReference.isNullOrBlank()) {
+            rememberSharedCoverReference(song, indexedReference)
+        }
+        return indexedReference
+    }
+
+    private fun rememberSharedCoverReference(song: SongItem, coverReference: String?) {
+        val normalizedReference = coverReference?.takeIf(String::isNotBlank) ?: return
+        buildSharedCoverLookupKeys(song).forEach { lookupKey ->
+            sharedCoverReferencesByLookupKey.putIfAbsent(lookupKey, normalizedReference)
+        }
     }
 
     internal fun mergeDownloadedSidecarReferences(
@@ -912,6 +958,7 @@ object AudioDownloadManager {
                 null
             }
         if (!existingCover.isNullOrBlank()) {
+            rememberSharedCoverReference(song, existingCover)
             rememberPartialSidecarReferences(
                 songKey,
                 DownloadedSidecarReferences(
@@ -920,6 +967,23 @@ object AudioDownloadManager {
                 )
             )
             return existingCover
+        }
+
+        val sharedCover = findSharedCoverReference(
+            context = context,
+            song = song,
+            excludedAudioName = storedAudio.name
+        )
+        if (!sharedCover.isNullOrBlank()) {
+            rememberSharedCoverReference(song, sharedCover)
+            rememberPartialSidecarReferences(
+                songKey,
+                DownloadedSidecarReferences(
+                    coverReference = sharedCover,
+                    createdCover = false
+                )
+            )
+            return sharedCover
         }
 
         try {
@@ -947,6 +1011,7 @@ object AudioDownloadManager {
                         null
                     }
                     if (!committedCoverReference.isNullOrBlank()) {
+                        rememberSharedCoverReference(song, committedCoverReference)
                         rememberPartialSidecarReferences(
                             songKey,
                             DownloadedSidecarReferences(

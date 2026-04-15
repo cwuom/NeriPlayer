@@ -1524,6 +1524,76 @@ internal object ManagedDownloadStorage {
         )?.reference
     }
 
+    suspend fun findReusableCoverReference(
+        context: Context,
+        song: SongItem,
+        excludedAudioName: String? = null
+    ): String? = withContext(Dispatchers.IO) {
+        val snapshot = resolveSnapshotForIndexedLookup(context)
+            ?: buildDownloadLibrarySnapshotBlocking(context)
+        findReusableCoverReference(
+            snapshot = snapshot,
+            song = song,
+            excludedAudioName = excludedAudioName
+        )
+    }
+
+    internal fun findReusableCoverReference(
+        snapshot: DownloadLibrarySnapshot,
+        song: SongItem,
+        excludedAudioName: String? = null
+    ): String? {
+        val remoteCoverKeys = linkedSetOf<String>().apply {
+            song.customCoverUrl?.trim()?.takeIf(String::isNotBlank)?.let(::add)
+            song.coverUrl?.trim()?.takeIf(String::isNotBlank)?.let(::add)
+            song.originalCoverUrl?.trim()?.takeIf(String::isNotBlank)?.let(::add)
+        }
+        val identityAlbum = song.identity().album.takeIf(String::isNotBlank)
+        val allowAlbumFallback = song.customCoverUrl.isNullOrBlank()
+
+        return snapshot.metadataByAudioName.asSequence()
+            .filter { (audioName, _) -> audioName != excludedAudioName }
+            .mapNotNull { (audioName, metadata) ->
+                val resolvedCoverReference = resolveMetadataCoverReference(
+                    snapshot = snapshot,
+                    audioName = audioName,
+                    metadata = metadata
+                ) ?: return@mapNotNull null
+                val remoteMatch = remoteCoverKeys.isNotEmpty() &&
+                    listOfNotNull(
+                        metadata.customCoverUrl?.takeIf(String::isNotBlank),
+                        metadata.coverUrl?.takeIf(String::isNotBlank),
+                        metadata.originalCoverUrl?.takeIf(String::isNotBlank)
+                    ).any(remoteCoverKeys::contains)
+                val albumMatch = allowAlbumFallback &&
+                    !identityAlbum.isNullOrBlank() &&
+                    metadata.customCoverUrl.isNullOrBlank() &&
+                    metadata.identityAlbum == identityAlbum
+                when {
+                    remoteMatch -> 2 to resolvedCoverReference
+                    albumMatch -> 1 to resolvedCoverReference
+                    else -> null
+                }
+            }
+            .maxByOrNull { it.first }
+            ?.second
+    }
+
+    private fun resolveMetadataCoverReference(
+        snapshot: DownloadLibrarySnapshot,
+        audioName: String,
+        metadata: DownloadedAudioMetadata
+    ): String? {
+        metadata.coverPath
+            ?.takeIf(snapshot.knownReferences::contains)
+            ?.let { return it }
+        val baseName = audioName.substringBeforeLast('.', audioName)
+        return findIndexedEntryByNames(
+            names = buildSidecarCandidateNames(candidateManagedDownloadBaseNames(baseName)),
+            entriesByName = snapshot.coverEntriesByName
+        )?.reference
+    }
+
     private suspend fun resolveRoot(context: Context, directoryUriString: String?): RootHandle? = withContext(Dispatchers.IO) {
         resolveRootBlocking(context, directoryUriString)
     }

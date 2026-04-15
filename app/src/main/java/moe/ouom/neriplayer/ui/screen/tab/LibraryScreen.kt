@@ -297,6 +297,7 @@ fun LibraryScreen(
                         LibraryTab.FAVORITE -> FavoritePlaylistList(
                             listState = favoriteListState,
                             onNeteasePlaylistClick = onNeteasePlaylistClick,
+                            onNeteaseAlbumClick = onNeteaseAlbumClick,
                             onBiliPlaylistClick = onBiliPlaylistClick,
                             onYouTubeMusicPlaylistClick = onYouTubeMusicPlaylistClick
                         )
@@ -1388,6 +1389,7 @@ private fun NeteaseAlbumList(
 private fun FavoritePlaylistList(
     listState: LazyListState,
     onNeteasePlaylistClick: (PlaylistSummary) -> Unit,
+    onNeteaseAlbumClick: (AlbumSummary) -> Unit,
     onBiliPlaylistClick: (BiliPlaylist) -> Unit,
     onYouTubeMusicPlaylistClick: (YouTubeMusicPlaylist) -> Unit
 ) {
@@ -1428,6 +1430,12 @@ private fun FavoritePlaylistList(
         selectedKeys = selectedKeys.intersect(validKeys)
         if (sortMode && favorites.isEmpty()) {
             exitEditMode()
+        }
+    }
+
+    LaunchedEffect(sortMode) {
+        if (sortMode && favorites.isNotEmpty()) {
+            listState.scrollToItem(0)
         }
     }
 
@@ -1607,6 +1615,16 @@ private fun FavoritePlaylistList(
                                                 )
                                             )
                                         }
+                                        "neteaseAlbum" -> {
+                                            onNeteaseAlbumClick(
+                                                AlbumSummary(
+                                                    id = favorite.id,
+                                                    name = favorite.name,
+                                                    picUrl = favorite.coverUrl.orEmpty(),
+                                                    size = favorite.trackCount
+                                                )
+                                            )
+                                        }
                                         "youtubeMusic" -> {
                                             val resolvedBrowseId = favorite.browseId
                                                 ?.takeIf { it.isNotBlank() }
@@ -1757,6 +1775,9 @@ private fun FavoritePlaylistList(
 private fun favoriteSourceLabel(source: String): String {
     return when (source) {
         "youtubeMusic" -> "YouTube"
+        "neteaseAlbum" -> "Netease Album"
+        "netease" -> "Netease"
+        "bili" -> "Bilibili"
         else -> source
     }
 }
