@@ -488,6 +488,8 @@ internal object ManagedDownloadStorage {
         downloadFileNameTemplate = normalizeDownloadFileNameTemplate(template)
     }
 
+    internal fun currentDownloadFileNameTemplate(): String? = downloadFileNameTemplate
+
     internal fun currentSnapshotCacheKey(context: Context): String {
         return buildSnapshotCacheKey(context.applicationContext)
     }
@@ -1294,20 +1296,29 @@ internal object ManagedDownloadStorage {
                             input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
                         }
                     } ?: throw IOException("无法打开下载目录输出流")
-                    if (!pendingTarget.renameTo(finalName)) {
+                    if (pendingTarget.renameTo(finalName)) {
                         forgetTreeChildName(root.tree, pendingName)
-                        runCatching { pendingTarget.delete() }
-                        throw IOException("无法提交下载文件: $finalName")
+                        rememberTreeChildName(root.tree, finalName)
+                        pendingTarget.toStoredEntry(
+                            knownName = finalName,
+                            knownSizeBytes = actualSizeBytes,
+                            knownLastModifiedMs = committedAtMs,
+                            knownIsDirectory = false
+                        )
+                            ?: throw IOException("无法读取已写入的下载文件")
+                    } else {
+                        commitTreeAudioAfterRenameFailure(
+                            context = context,
+                            parent = root.tree,
+                            pendingTarget = pendingTarget,
+                            pendingName = pendingName,
+                            finalName = finalName,
+                            mimeType = mimeType,
+                            tempFile = tempFile,
+                            actualSizeBytes = actualSizeBytes,
+                            committedAtMs = committedAtMs
+                        )
                     }
-                    forgetTreeChildName(root.tree, pendingName)
-                    rememberTreeChildName(root.tree, finalName)
-                    pendingTarget.toStoredEntry(
-                        knownName = finalName,
-                        knownSizeBytes = actualSizeBytes,
-                        knownLastModifiedMs = committedAtMs,
-                        knownIsDirectory = false
-                    )
-                        ?: throw IOException("无法读取已写入的下载文件")
                 }
             }
         } finally {
@@ -2222,6 +2233,53 @@ internal object ManagedDownloadStorage {
             parent.createFile(documentCreateMimeType(finalName, mimeType), finalName)
                 ?: throw IOException("无法在下载目录创建文件: $finalName")
             ).also { rememberTreeChildName(parent, finalName) }
+    }
+
+    private fun commitTreeAudioAfterRenameFailure(
+        context: Context,
+        parent: DocumentFile,
+        pendingTarget: DocumentFile,
+        pendingName: String,
+        finalName: String,
+        mimeType: String?,
+        tempFile: File,
+        actualSizeBytes: Long,
+        committedAtMs: Long
+    ): StoredEntry {
+        NPLogger.w(TAG, "SAF 重命名失败，回退为直接写入最终文件: $finalName")
+        return try {
+            val target = parent.createFile(
+                documentCreateMimeType(finalName, mimeTypeFromName(finalName, mimeType)),
+                finalName
+            ) ?: throw IOException("无法在下载目录创建文件: $finalName")
+            val createdName = target.name ?: finalName
+            if (createdName != finalName) {
+                deleteContentReference(context, target.uri.toString(), target.uri)
+                throw IOException("无法提交下载文件: $finalName")
+            }
+
+            try {
+                context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
+                    tempFile.inputStream().use { input ->
+                        input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
+                    }
+                } ?: throw IOException("无法打开下载目录输出流")
+            } catch (error: Throwable) {
+                deleteContentReference(context, target.uri.toString(), target.uri)
+                throw error
+            }
+
+            rememberTreeChildName(parent, finalName)
+            target.toStoredEntry(
+                knownName = finalName,
+                knownSizeBytes = actualSizeBytes,
+                knownLastModifiedMs = committedAtMs,
+                knownIsDirectory = false
+            ) ?: throw IOException("无法读取已写入的下载文件")
+        } finally {
+            deleteContentReference(context, pendingTarget.uri.toString(), pendingTarget.uri)
+            forgetTreeChildName(parent, pendingName)
+        }
     }
 
     internal fun documentCreateMimeType(desiredName: String, mimeType: String): String {

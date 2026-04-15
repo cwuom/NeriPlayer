@@ -780,6 +780,15 @@ object GlobalDownloadManager {
 
     private fun parseDownloadedFileName(fileName: String): Pair<String, String> {
         val nameWithoutExt = fileName.substringBeforeLast('.', fileName)
+        candidateManagedDownloadFileNameTemplates(ManagedDownloadStorage.currentDownloadFileNameTemplate())
+            .asSequence()
+            .mapNotNull { template -> parseManagedDownloadBaseName(nameWithoutExt, template) }
+            .firstOrNull { parsed ->
+                !parsed.title.isNullOrBlank() || !parsed.artist.isNullOrBlank()
+            }
+            ?.let { parsed ->
+                return parsed.artist.orEmpty() to (parsed.title ?: nameWithoutExt)
+            }
         val parts = nameWithoutExt.split(" - ", limit = 2)
         return if (parts.size >= 2) {
             parts[0].trim() to parts[1].trim()

@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.data.local.audioimport
 
 import java.io.File
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import org.junit.Assert.assertEquals
@@ -113,6 +114,61 @@ class LocalAudioImportManagerTest {
         assertEquals(0L, song.durationMs)
         assertEquals(importedFile.absolutePath, song.mediaUri)
         assertEquals(importedFile.absolutePath, song.localFilePath)
+    }
+
+    @Test
+    fun `buildQuickImportedSong applies custom naming template when query metadata is missing`() {
+        val previousTemplate = ManagedDownloadStorage.currentDownloadFileNameTemplate()
+        ManagedDownloadStorage.updateDownloadFileNameTemplate("%album% - %title%")
+        try {
+            val importedFile = tempFolder.newFile("叶惠美 - 晴天.flac")
+
+            val song = LocalAudioImportManager.buildQuickImportedSong(
+                seed = QuickImportedSongSeed(
+                    sourceRef = importedFile.absolutePath,
+                    displayName = importedFile.name,
+                    title = "content://provider/audio/42",
+                    artist = "",
+                    album = "",
+                    durationMs = null,
+                    localFile = importedFile
+                ),
+                unknownArtistLabel = "Unknown Artist"
+            )
+
+            assertEquals("晴天", song.name)
+            assertEquals("叶惠美", song.album)
+            assertEquals("Unknown Artist", song.artist)
+        } finally {
+            ManagedDownloadStorage.updateDownloadFileNameTemplate(previousTemplate)
+        }
+    }
+
+    @Test
+    fun `buildQuickImportedSong does not treat source prefix as artist`() {
+        val previousTemplate = ManagedDownloadStorage.currentDownloadFileNameTemplate()
+        ManagedDownloadStorage.updateDownloadFileNameTemplate("%source% - %artist% - %title%")
+        try {
+            val importedFile = tempFolder.newFile("netease - Mrs. GREEN APPLE - lulu..flac")
+
+            val song = LocalAudioImportManager.buildQuickImportedSong(
+                seed = QuickImportedSongSeed(
+                    sourceRef = importedFile.absolutePath,
+                    displayName = importedFile.name,
+                    title = "lulu.",
+                    artist = "netease",
+                    album = "",
+                    durationMs = null,
+                    localFile = importedFile
+                ),
+                unknownArtistLabel = "Unknown Artist"
+            )
+
+            assertEquals("lulu.", song.name)
+            assertEquals("Mrs. GREEN APPLE", song.artist)
+        } finally {
+            ManagedDownloadStorage.updateDownloadFileNameTemplate(previousTemplate)
+        }
     }
 
     @Test

@@ -5,6 +5,50 @@ import java.io.File
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 
 internal const val DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE = "%source% - %artist% - %title%"
+internal const val LEGACY_DOWNLOAD_FILE_NAME_TEMPLATE = "%artist% - %title%"
+
+internal data class ParsedManagedDownloadFileName(
+    val title: String? = null,
+    val artist: String? = null,
+    val album: String? = null,
+    val source: String? = null,
+    val songId: String? = null,
+    val audioId: String? = null,
+    val subAudioId: String? = null
+)
+
+private enum class ManagedDownloadTemplateField {
+    TITLE,
+    ARTIST,
+    ALBUM,
+    SOURCE,
+    SONG_ID,
+    AUDIO_ID,
+    SUB_AUDIO_ID
+}
+
+private data class ManagedDownloadTemplatePattern(
+    val regex: Regex,
+    val fields: List<ManagedDownloadTemplateField>
+)
+
+private val managedDownloadTemplatePlaceholderMap = linkedMapOf(
+    "%title%" to ManagedDownloadTemplateField.TITLE,
+    "%artist%" to ManagedDownloadTemplateField.ARTIST,
+    "%album%" to ManagedDownloadTemplateField.ALBUM,
+    "%source%" to ManagedDownloadTemplateField.SOURCE,
+    "%id%" to ManagedDownloadTemplateField.SONG_ID,
+    "%audioId%" to ManagedDownloadTemplateField.AUDIO_ID,
+    "%subAudioId%" to ManagedDownloadTemplateField.SUB_AUDIO_ID
+)
+
+private val managedDownloadTemplatePlaceholderRegex = Regex(
+    managedDownloadTemplatePlaceholderMap.keys.joinToString(
+        separator = "|",
+        prefix = "(",
+        postfix = ")"
+    ) { Regex.escape(it) }
+)
 
 internal fun sanitizeManagedDownloadFileName(name: String): String {
     val normalized = Normalizer.normalize(name, Normalizer.Form.NFKD)
@@ -13,6 +57,14 @@ internal fun sanitizeManagedDownloadFileName(name: String): String {
 
 internal fun normalizeDownloadFileNameTemplate(template: String?): String? {
     return template?.trim()?.takeIf { it.isNotEmpty() }
+}
+
+internal fun candidateManagedDownloadFileNameTemplates(activeTemplate: String? = null): List<String> {
+    return linkedSetOf<String>().apply {
+        normalizeDownloadFileNameTemplate(activeTemplate)?.let(::add)
+        add(DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE)
+        add(LEGACY_DOWNLOAD_FILE_NAME_TEMPLATE)
+    }.toList()
 }
 
 internal fun renderManagedDownloadBaseName(
@@ -50,6 +102,36 @@ internal fun renderManagedDownloadBaseName(
         audioId = song.audioId.orEmpty(),
         subAudioId = song.subAudioId.orEmpty(),
         template = template
+    )
+}
+
+internal fun parseManagedDownloadBaseName(
+    baseName: String,
+    template: String? = DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
+): ParsedManagedDownloadFileName? {
+    val normalizedBaseName = baseName.trim().takeIf { it.isNotEmpty() } ?: return null
+    val effectiveTemplate = normalizeDownloadFileNameTemplate(template) ?: DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
+    val pattern = buildManagedDownloadTemplatePattern(effectiveTemplate) ?: return null
+    val match = pattern.regex.matchEntire(normalizedBaseName) ?: return null
+
+    fun fieldValue(field: ManagedDownloadTemplateField): String? {
+        val groupIndex = pattern.fields.indexOf(field)
+        if (groupIndex < 0) {
+            return null
+        }
+        return match.groupValues[groupIndex + 1]
+            .trim()
+            .takeIf { it.isNotBlank() }
+    }
+
+    return ParsedManagedDownloadFileName(
+        title = fieldValue(ManagedDownloadTemplateField.TITLE),
+        artist = fieldValue(ManagedDownloadTemplateField.ARTIST),
+        album = fieldValue(ManagedDownloadTemplateField.ALBUM),
+        source = fieldValue(ManagedDownloadTemplateField.SOURCE),
+        songId = fieldValue(ManagedDownloadTemplateField.SONG_ID),
+        audioId = fieldValue(ManagedDownloadTemplateField.AUDIO_ID),
+        subAudioId = fieldValue(ManagedDownloadTemplateField.SUB_AUDIO_ID)
     )
 }
 
@@ -146,4 +228,40 @@ private fun extractManagedLocalFileName(location: String): String? {
     return normalized.substringAfterLast('/')
         .substringAfterLast(File.separatorChar)
         .takeIf(String::isNotBlank)
+}
+
+private fun buildManagedDownloadTemplatePattern(template: String): ManagedDownloadTemplatePattern? {
+    val matches = managedDownloadTemplatePlaceholderRegex.findAll(template).toList()
+    if (matches.isEmpty()) {
+        return null
+    }
+
+    val fields = mutableListOf<ManagedDownloadTemplateField>()
+    val pattern = StringBuilder("^")
+    var cursor = 0
+    var previousWasPlaceholder = false
+
+    matches.forEach { match ->
+        val literal = template.substring(cursor, match.range.first)
+        if (literal.isEmpty() && previousWasPlaceholder) {
+            return null
+        }
+        pattern.append(Regex.escape(literal))
+
+        val field = managedDownloadTemplatePlaceholderMap[match.value] ?: return null
+        if (field in fields) {
+            return null
+        }
+        fields += field
+        pattern.append("(.*?)")
+        cursor = match.range.last + 1
+        previousWasPlaceholder = true
+    }
+
+    pattern.append(Regex.escape(template.substring(cursor)))
+    pattern.append("$")
+    return ManagedDownloadTemplatePattern(
+        regex = Regex(pattern.toString()),
+        fields = fields.toList()
+    )
 }

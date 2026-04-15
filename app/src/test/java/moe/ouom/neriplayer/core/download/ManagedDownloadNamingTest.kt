@@ -32,6 +32,29 @@ class ManagedDownloadNamingTest {
     }
 
     @Test
+    fun `parseManagedDownloadBaseName respects active custom template`() {
+        val parsed = parseManagedDownloadBaseName(
+            baseName = "叶惠美 - 晴天",
+            template = "%album% - %title%"
+        )
+
+        assertEquals("晴天", parsed?.title)
+        assertEquals("叶惠美", parsed?.album)
+    }
+
+    @Test
+    fun `parseManagedDownloadBaseName keeps source artist title compatibility`() {
+        val parsed = parseManagedDownloadBaseName(
+            baseName = "netease - 周杰伦 - 晴天",
+            template = "%source% - %artist% - %title%"
+        )
+
+        assertEquals("netease", parsed?.source)
+        assertEquals("周杰伦", parsed?.artist)
+        assertEquals("晴天", parsed?.title)
+    }
+
+    @Test
     fun `candidateManagedDownloadBaseNames keeps legacy artist title name after template changes`() {
         val song = SongItem(
             id = 1L,

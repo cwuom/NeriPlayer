@@ -34,6 +34,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.ParsedManagedDownloadFileName
+import moe.ouom.neriplayer.core.download.candidateManagedDownloadFileNameTemplates
+import moe.ouom.neriplayer.core.download.parseManagedDownloadBaseName
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.media.normalizeLocalAlbumIdentity
@@ -303,12 +307,27 @@ object LocalAudioImportManager {
         val fileTitle = resolvedFile.nameWithoutExtension.ifBlank {
             fileName.substringBeforeLast('.', fileName)
         }
-        val safeTitle = baseSong.name
+        val parsedFileName = parseFileNameMetadata(fileName)
+        val resolvedParsedTitle = resolveParsedTitleFallback(
+            currentTitle = baseSong.name,
+            fallbackTitle = fallbackTitle,
+            fileTitle = fileTitle,
+            parsed = parsedFileName
+        )
+        val safeTitle = resolvedParsedTitle ?: baseSong.name
             .takeIf(::isReadableScannedTitle)
             ?: fallbackTitle.takeIf(::isReadableScannedTitle)
             ?: fileTitle
-        val safeArtist = baseSong.artist.takeIf { it.isNotBlank() } ?: fallbackArtist
-        val safeAlbum = baseSong.album.takeIf { it.isNotBlank() } ?: fallbackAlbum
+        val safeArtist = resolveParsedArtistFallback(
+            currentArtist = baseSong.artist,
+            fallbackArtist = fallbackArtist,
+            parsed = parsedFileName
+        ) ?: baseSong.artist.takeIf { it.isNotBlank() } ?: fallbackArtist
+        val safeAlbum = resolveParsedAlbumFallback(
+            currentAlbum = baseSong.album,
+            fallbackAlbum = fallbackAlbum,
+            parsed = parsedFileName
+        ) ?: baseSong.album.takeIf { it.isNotBlank() } ?: fallbackAlbum
 
         return baseSong.copy(
             id = computeStableSongId(source),
@@ -337,17 +356,36 @@ object LocalAudioImportManager {
                 resolvedSource.substringAfterLast(File.separatorChar, resolvedSource)
             }
         }
-        val resolvedTitle = seed.title
+        val parsedFileName = parseFileNameMetadata(resolvedDisplayName)
+        val queriedTitle = seed.title
             ?.trim()
             ?.takeIf(::isReadableQuickImportedTitle)
+        val resolvedParsedTitle = resolveParsedTitleFallback(
+            currentTitle = queriedTitle,
+            fallbackTitle = fallbackTitle,
+            fileTitle = fallbackTitle,
+            parsed = parsedFileName
+        )
+        val resolvedTitle = resolvedParsedTitle
+            ?: queriedTitle
             ?: fallbackTitle
-        val resolvedArtist = seed.artist
+        val queriedArtist = seed.artist
             ?.trim()
             ?.takeIf { it.isNotBlank() }
+        val resolvedArtist = resolveParsedArtistFallback(
+            currentArtist = queriedArtist,
+            fallbackArtist = unknownArtistLabel,
+            parsed = parsedFileName
+        ) ?: queriedArtist
             ?: unknownArtistLabel
+        val resolvedAlbumSeed = resolveParsedAlbumFallback(
+            currentAlbum = seed.album,
+            fallbackAlbum = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            parsed = parsedFileName
+        ) ?: seed.album
         val resolvedAlbum = normalizeLocalAlbumIdentity(
-            album = seed.album,
-            usesFallbackAlbum = seed.album.isNullOrBlank()
+            album = resolvedAlbumSeed,
+            usesFallbackAlbum = resolvedAlbumSeed.isNullOrBlank()
         )
         val stableId = computeStableSongId(resolvedSource)
 
@@ -417,6 +455,97 @@ object LocalAudioImportManager {
         if (trimmed.startsWith("content://", ignoreCase = true)) return false
         if (trimmed.startsWith("file://", ignoreCase = true)) return false
         return true
+    }
+
+    private fun parseFileNameMetadata(displayName: String): ParsedManagedDownloadFileName? {
+        val baseName = displayName
+            .substringBeforeLast('.', displayName)
+            .trim()
+            .takeIf { it.isNotEmpty() }
+            ?: return null
+        return candidateManagedDownloadFileNameTemplates(
+            ManagedDownloadStorage.currentDownloadFileNameTemplate()
+        ).asSequence()
+            .mapNotNull { template -> parseManagedDownloadBaseName(baseName, template) }
+            .firstOrNull { parsed ->
+                !parsed.title.isNullOrBlank() ||
+                    !parsed.artist.isNullOrBlank() ||
+                    !parsed.album.isNullOrBlank()
+            }
+    }
+
+    private fun resolveParsedTitleFallback(
+        currentTitle: String?,
+        fallbackTitle: String,
+        fileTitle: String,
+        parsed: ParsedManagedDownloadFileName?
+    ): String? {
+        val parsedTitle = parsed?.title?.takeIf(::isReadableScannedTitle) ?: return null
+        val normalizedCurrentTitle = normalizeParsedMetadataValue(currentTitle)
+        if (normalizedCurrentTitle.isBlank()) {
+            return parsedTitle
+        }
+
+        val fallbackCandidates = linkedSetOf(fileTitle, fallbackTitle).apply {
+            listOfNotNull(parsed.artist, parsed.title)
+                .takeIf { it.size >= 2 }
+                ?.joinToString(" - ")
+                ?.let(::add)
+            listOfNotNull(parsed.source, parsed.artist, parsed.title)
+                .takeIf { it.size >= 2 }
+                ?.joinToString(" - ")
+                ?.let(::add)
+            listOfNotNull(parsed.album, parsed.title)
+                .takeIf { it.size >= 2 }
+                ?.joinToString(" - ")
+                ?.let(::add)
+        }.map(::normalizeParsedMetadataValue)
+            .filter(String::isNotBlank)
+            .toSet()
+
+        return parsedTitle.takeIf { normalizedCurrentTitle in fallbackCandidates }
+    }
+
+    private fun resolveParsedArtistFallback(
+        currentArtist: String?,
+        fallbackArtist: String,
+        parsed: ParsedManagedDownloadFileName?
+    ): String? {
+        val parsedArtist = parsed?.artist?.takeIf { it.isNotBlank() } ?: return null
+        val normalizedCurrentArtist = normalizeParsedMetadataValue(currentArtist)
+        if (normalizedCurrentArtist.isBlank()) {
+            return parsedArtist
+        }
+        if (normalizedCurrentArtist == normalizeParsedMetadataValue(parsed.source)) {
+            return parsedArtist
+        }
+        return parsedArtist.takeIf {
+            normalizedCurrentArtist == normalizeParsedMetadataValue(fallbackArtist)
+        }
+    }
+
+    private fun resolveParsedAlbumFallback(
+        currentAlbum: String?,
+        fallbackAlbum: String,
+        parsed: ParsedManagedDownloadFileName?
+    ): String? {
+        val parsedAlbum = parsed?.album?.takeIf { it.isNotBlank() } ?: return null
+        val normalizedCurrentAlbum = normalizeParsedMetadataValue(currentAlbum)
+        if (normalizedCurrentAlbum.isBlank()) {
+            return parsedAlbum
+        }
+        return parsedAlbum.takeIf {
+            normalizedCurrentAlbum == normalizeParsedMetadataValue(fallbackAlbum) ||
+                normalizedCurrentAlbum == normalizeParsedMetadataValue(LocalSongSupport.LOCAL_ALBUM_IDENTITY)
+        }
+    }
+
+    private fun normalizeParsedMetadataValue(value: String?): String {
+        return value
+            ?.trim()
+            ?.lowercase()
+            ?.replace(Regex("\\s+"), " ")
+            .orEmpty()
     }
 
     private fun computeStableSongId(source: String): Long {
