@@ -143,6 +143,29 @@ class ManagedDownloadStorageMigrationCompatTest {
     }
 
     @Test
+    fun `documentCreateMimeType keeps exact audio name on SAF providers`() {
+        assertEquals(
+            "application/octet-stream",
+            ManagedDownloadStorage.documentCreateMimeType("Artist - Song.flac", "audio/flac")
+        )
+        assertEquals(
+            "application/octet-stream",
+            ManagedDownloadStorage.documentCreateMimeType(
+                "Artist - Song.flac.npdl_pending.7",
+                "audio/flac"
+            )
+        )
+    }
+
+    @Test
+    fun `documentCreateMimeType keeps exact cover name on SAF providers`() {
+        assertEquals(
+            "application/octet-stream",
+            ManagedDownloadStorage.documentCreateMimeType("Artist - Song.jpg", "image/jpeg")
+        )
+    }
+
+    @Test
     fun `parseDownloadedAudioMetadataJson keeps embedded lyrics for local fallback`() {
         val metadata = ManagedDownloadStorage.parseDownloadedAudioMetadataJson(
             JSONObject().apply {

@@ -2359,6 +2359,16 @@ internal object ManagedDownloadStorage {
             return "application/octet-stream"
         }
         if (
+            extension.isNotBlank() &&
+            (
+                normalizedMimeType.startsWith("audio/", ignoreCase = true) ||
+                    normalizedMimeType.startsWith("image/", ignoreCase = true)
+                )
+        ) {
+            // 有些 SAF 提供方会按 MIME 再补一次后缀，二进制兜底能保住原文件名
+            return "application/octet-stream"
+        }
+        if (
             normalizedMimeType.equals("application/json", ignoreCase = true) &&
             desiredName.endsWith(METADATA_SUFFIX, ignoreCase = true)
         ) {
