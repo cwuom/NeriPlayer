@@ -47,6 +47,20 @@ import java.io.IOException
 
 private const val TAG_PD = "NERI-PlaylistVM"
 
+internal fun resolveNeteaseCollectionCoverUrl(
+    primary: String?,
+    fallback: String? = null
+): String {
+    return normalizeNeteaseCollectionCoverUrl(primary)
+        ?: normalizeNeteaseCollectionCoverUrl(fallback)
+        ?: ""
+}
+
+private fun normalizeNeteaseCollectionCoverUrl(url: String?): String? {
+    val normalized = url?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    return normalized.replaceFirst(Regex("^http://"), "https://")
+}
+
 data class NeteaseCollectionHeader(
     val id: Long,
     val isAlbum: Boolean,//以兼容形式
@@ -212,7 +226,10 @@ class NeteaseCollectionDetailViewModel(application: Application) : AndroidViewMo
                 val raw = withContext(Dispatchers.IO) { client.getAlbumDetail(playlistId) }
                 NPLogger.d(TAG_PD, "detail head=${raw.take(500)}")
 
-                val (header, tracks) = parseDetailFromAlbum(raw)
+                val (header, tracks) = parseDetailFromAlbum(
+                    raw = raw,
+                    coverFallback = album.picUrl
+                )
 
                 _uiState.value = NeteaseCollectionDetailUiState(
                     loading = false,
@@ -298,13 +315,19 @@ class NeteaseCollectionDetailViewModel(application: Application) : AndroidViewMo
         return ParsedDetail(header, list, trackIds)
     }
 
-    private fun parseDetailFromAlbum(raw: String): ParsedDetail {
+    private fun parseDetailFromAlbum(
+        raw: String,
+        coverFallback: String? = null
+    ): ParsedDetail {
         val root = JSONObject(raw)
         val code = root.optInt("code", -1)
         require(code == 200) { getApplication<Application>().getString(R.string.error_api_code, code) }
 
         val al = root.optJSONObject("album") ?: error(getApplication<Application>().getString(R.string.error_missing_node, "album"))
-        val cover = toHttps(al.optString("picUrl", "")) ?: ""
+        val cover = resolveNeteaseCollectionCoverUrl(
+            primary = al.optString("picUrl", ""),
+            fallback = coverFallback
+        )
 
         val header = NeteaseCollectionHeader(
             id = al.optLong("id"),
@@ -350,10 +373,13 @@ class NeteaseCollectionDetailViewModel(application: Application) : AndroidViewMo
                 }
             }
         }
-        val al = t.optJSONObject("al")
+        val al = t.optJSONObject("al") ?: t.optJSONObject("album")
         val albumName = al?.optString("name", "") ?: ""
         val albumId = al?.optLong("id", 0L) ?: 0L
-        val cover = toHttps(al?.optString("picUrl", "")) ?: coverFallback ?: ""
+        val cover = resolveNeteaseCollectionCoverUrl(
+            primary = al?.optString("picUrl", ""),
+            fallback = coverFallback
+        )
         val duration = t.optLong("dt", 0L)
 
         return SongItem(
@@ -363,7 +389,8 @@ class NeteaseCollectionDetailViewModel(application: Application) : AndroidViewMo
             album = "Netease$albumName",
             albumId = albumId,
             durationMs = duration,
-            coverUrl = cover,
+            coverUrl = cover.takeIf { it.isNotBlank() },
+            originalCoverUrl = cover.takeIf { it.isNotBlank() },
             channelId = "netease",
             audioId = id.toString()
         )

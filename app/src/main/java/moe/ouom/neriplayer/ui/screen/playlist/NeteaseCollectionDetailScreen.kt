@@ -639,7 +639,7 @@ fun DetailScreen(
                                         SongRow(
                                             index = index + 1,
                                             song = item,
-                                            showCover = ui.header?.isAlbum != true,
+                                            showCover = ui.header?.isAlbum == false,
                                             selectionMode = selectionMode,
                                             selected = selectedIds.contains(item.id),
                                             onToggleSelect = { toggleSelect(item.id) },
