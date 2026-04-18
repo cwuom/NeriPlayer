@@ -166,6 +166,35 @@ class ManagedDownloadStorageMigrationCompatTest {
     }
 
     @Test
+    fun `resolveTreeStoredName prefers actual SAF display name`() {
+        assertEquals(
+            "Artist - Song (1).flac",
+            ManagedDownloadStorage.resolveTreeStoredName(
+                actualName = "Artist - Song (1).flac",
+                expectedName = "Artist - Song.flac"
+            )
+        )
+    }
+
+    @Test
+    fun `resolveTreeStoredName falls back when SAF display name is missing`() {
+        assertEquals(
+            "Artist - Song.flac",
+            ManagedDownloadStorage.resolveTreeStoredName(
+                actualName = null,
+                expectedName = "Artist - Song.flac"
+            )
+        )
+        assertEquals(
+            "Artist - Song.flac",
+            ManagedDownloadStorage.resolveTreeStoredName(
+                actualName = "",
+                expectedName = "Artist - Song.flac"
+            )
+        )
+    }
+
+    @Test
     fun `parseDownloadedAudioMetadataJson keeps embedded lyrics for local fallback`() {
         val metadata = ManagedDownloadStorage.parseDownloadedAudioMetadataJson(
             JSONObject().apply {

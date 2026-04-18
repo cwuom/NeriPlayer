@@ -1297,10 +1297,11 @@ internal object ManagedDownloadStorage {
                         }
                     } ?: throw IOException("无法打开下载目录输出流")
                     if (pendingTarget.renameTo(finalName)) {
+                        val storedName = pendingTarget.resolvedTreeStoredName(finalName)
                         forgetTreeChildName(root.tree, pendingName)
-                        rememberTreeChildName(root.tree, finalName)
+                        rememberTreeChildName(root.tree, storedName)
                         pendingTarget.toStoredEntry(
-                            knownName = finalName,
+                            knownName = storedName,
                             knownSizeBytes = actualSizeBytes,
                             knownLastModifiedMs = committedAtMs,
                             knownIsDirectory = false
@@ -2280,6 +2281,21 @@ internal object ManagedDownloadStorage {
         )
     }
 
+    internal fun resolveTreeStoredName(actualName: String?, expectedName: String): String {
+        return actualName?.takeIf(String::isNotBlank) ?: expectedName
+    }
+
+    private fun DocumentFile.resolvedTreeStoredName(expectedName: String): String {
+        val resolvedName = resolveTreeStoredName(name, expectedName)
+        if (resolvedName != expectedName) {
+            NPLogger.w(
+                TAG,
+                "SAF 文件名与预期不一致: expected=$expectedName, actual=$resolvedName, uri=$uri"
+            )
+        }
+        return resolvedName
+    }
+
     private fun createRootFile(
         context: Context,
         parent: DocumentFile,
@@ -2302,7 +2318,9 @@ internal object ManagedDownloadStorage {
         return (
             parent.createFile(documentCreateMimeType(finalName, mimeType), finalName)
                 ?: throw IOException("无法在下载目录创建文件: $finalName")
-            ).also { rememberTreeChildName(parent, finalName) }
+            ).also { created ->
+                rememberTreeChildName(parent, created.resolvedTreeStoredName(finalName))
+            }
     }
 
     private fun commitTreeAudioAfterRenameFailure(
@@ -2322,11 +2340,7 @@ internal object ManagedDownloadStorage {
                 documentCreateMimeType(finalName, mimeTypeFromName(finalName, mimeType)),
                 finalName
             ) ?: throw IOException("无法在下载目录创建文件: $finalName")
-            val createdName = target.name ?: finalName
-            if (createdName != finalName) {
-                deleteContentReference(context, target.uri.toString(), target.uri)
-                throw IOException("无法提交下载文件: $finalName")
-            }
+            val storedName = target.resolvedTreeStoredName(finalName)
 
             try {
                 context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
@@ -2339,9 +2353,9 @@ internal object ManagedDownloadStorage {
                 throw error
             }
 
-            rememberTreeChildName(parent, finalName)
+            rememberTreeChildName(parent, storedName)
             target.toStoredEntry(
-                knownName = finalName,
+                knownName = storedName,
                 knownSizeBytes = actualSizeBytes,
                 knownLastModifiedMs = committedAtMs,
                 knownIsDirectory = false
@@ -2401,8 +2415,9 @@ internal object ManagedDownloadStorage {
                 context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
                     copiedBytes = input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
                 } ?: throw IOException("无法写入根目录文件: $displayName")
+                val storedName = target.resolvedTreeStoredName(displayName)
                 target.toStoredEntry(
-                    knownName = displayName,
+                    knownName = storedName,
                     knownSizeBytes = copiedBytes.coerceAtLeast(0L),
                     knownLastModifiedMs = writtenAtMs,
                     knownIsDirectory = false
@@ -2447,9 +2462,10 @@ internal object ManagedDownloadStorage {
                 context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
                     copiedBytes = copyStreamWithProgress(input, output, onProgress)
                 } ?: throw IOException("无法写入根目录文件: $displayName")
+                val storedName = target.resolvedTreeStoredName(displayName)
                 StoredWriteResult(
                     entry = target.toStoredEntry(
-                        knownName = displayName,
+                        knownName = storedName,
                         knownSizeBytes = copiedBytes.coerceAtLeast(0L),
                         knownLastModifiedMs = writtenAtMs,
                         knownIsDirectory = false
@@ -2509,8 +2525,9 @@ internal object ManagedDownloadStorage {
                 context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
                     output.write(bytes)
                 } ?: throw IOException("无法写入目录文件: $displayName")
+                val storedName = target.resolvedTreeStoredName(displayName)
                 target.toStoredEntry(
-                    knownName = displayName,
+                    knownName = storedName,
                     knownSizeBytes = bytes.size.toLong(),
                     knownLastModifiedMs = writtenAtMs,
                     knownIsDirectory = false
@@ -2592,8 +2609,9 @@ internal object ManagedDownloadStorage {
                 context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
                     copiedBytes = input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
                 } ?: throw IOException("无法写入目录文件: $displayName")
+                val storedName = target.resolvedTreeStoredName(displayName)
                 target.toStoredEntry(
-                    knownName = displayName,
+                    knownName = storedName,
                     knownSizeBytes = copiedBytes.coerceAtLeast(0L),
                     knownLastModifiedMs = writtenAtMs,
                     knownIsDirectory = false
@@ -2644,9 +2662,10 @@ internal object ManagedDownloadStorage {
                 context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
                     copiedBytes = copyStreamWithProgress(input, output, onProgress)
                 } ?: throw IOException("无法写入目录文件: $displayName")
+                val storedName = target.resolvedTreeStoredName(displayName)
                 StoredWriteResult(
                     entry = target.toStoredEntry(
-                        knownName = displayName,
+                        knownName = storedName,
                         knownSizeBytes = copiedBytes.coerceAtLeast(0L),
                         knownLastModifiedMs = writtenAtMs,
                         knownIsDirectory = false
@@ -2678,8 +2697,9 @@ internal object ManagedDownloadStorage {
                 context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
                     output.write(encoded)
                 } ?: throw IOException("无法写入元数据文件: $displayName")
+                val storedName = target.resolvedTreeStoredName(displayName)
                 target.toStoredEntry(
-                    knownName = displayName,
+                    knownName = storedName,
                     knownSizeBytes = encoded.size.toLong(),
                     knownLastModifiedMs = writtenAtMs,
                     knownIsDirectory = false
