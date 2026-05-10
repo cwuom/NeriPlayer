@@ -33,3 +33,5 @@ demo
 /build-logic/convention/bin/
 /.cpu-perfetto/
 /.har/
+.claude/
+CLAUDE.md
