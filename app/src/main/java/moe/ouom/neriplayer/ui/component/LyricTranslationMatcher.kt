@@ -5,6 +5,7 @@ import kotlin.math.max
 import kotlin.math.min
 
 private const val TranslationAlignmentToleranceMs = 450L
+private const val TranslationClosestMatchToleranceMs = 1000L
 
 internal fun matchTranslationsToLineIndices(
     lines: List<LyricEntry>,
@@ -34,15 +35,19 @@ internal fun matchTranslationsToLineIndices(
                 )
             } ?: Long.MAX_VALUE
 
+            // 翻译远落后于当前行（超过宽松容差）时才丢弃
             val shouldSkipStaleTranslation = translation.startTimeMs < line.startTimeMs &&
-                currentDistanceMs > toleranceMs
+                currentDistanceMs > TranslationClosestMatchToleranceMs
             if (shouldSkipStaleTranslation) {
                 translationIndex++
                 continue
             }
 
-            val shouldMatchCurrentLine = currentDistanceMs <= toleranceMs &&
-                currentDistanceMs <= nextDistanceMs
+            // 严格匹配：在容差内且离当前行最近
+            // 宽松匹配：翻译在当前行之前但在宽松容差内，且离当前行比下一行近
+            val shouldMatchCurrentLine =
+                (currentDistanceMs <= toleranceMs && currentDistanceMs <= nextDistanceMs) ||
+                (currentDistanceMs <= TranslationClosestMatchToleranceMs && currentDistanceMs <= nextDistanceMs)
             if (shouldMatchCurrentLine) {
                 matchesByIndex[lineIndex] = translation
                 translationIndex++
