@@ -1191,6 +1191,25 @@ internal object ManagedDownloadStorage {
         val snapshot = resolveSnapshotForIndexedLookup(context)
             ?: buildDownloadLibrarySnapshotBlocking(context)
         snapshot.metadataEntriesByAudioName[audio.name]
+            ?: findMetadataByDirectLookup(context, audio)
+    }
+
+    private fun findMetadataByDirectLookup(context: Context, audio: StoredEntry): StoredEntry? {
+        val metadataName = "${audio.name}$METADATA_SUFFIX"
+        return when (val root = resolveRootBlocking(context)) {
+            is RootHandle.FileRoot -> {
+                val metadataFile = File(root.dir, metadataName)
+                if (metadataFile.exists() && metadataFile.isFile) metadataFile.toStoredEntry() else null
+            }
+            is RootHandle.TreeRoot -> {
+                val childNames = cachedTreeChildrenNames(context, root.tree)
+                if (metadataName in childNames) {
+                    root.tree.findFile(metadataName)?.takeIf { it.isFile }?.toStoredEntry()
+                } else {
+                    null
+                }
+            }
+        }
     }
 
     suspend fun saveMetadata(context: Context, audio: StoredEntry, json: String) = withContext(Dispatchers.IO) {

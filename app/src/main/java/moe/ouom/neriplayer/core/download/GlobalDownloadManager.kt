@@ -78,6 +78,8 @@ object GlobalDownloadManager {
     private const val DOWNLOAD_TASK_COMPLETED_RETENTION_MS = 800L
     private const val DOWNLOAD_CATALOG_RECONCILE_DELAY_MS = 1_200L
     private const val DOWNLOAD_CANCEL_SETTLE_TIMEOUT_MS = 5_000L
+    private const val METADATA_WRITE_MAX_ATTEMPTS = 3
+    private const val METADATA_WRITE_RETRY_DELAY_MS = 200L
     internal const val PLAYBACK_METADATA_HYDRATION_DELAY_MS = 1_500L
     internal const val LOCAL_PLAYBACK_METADATA_HYDRATION_DELAY_MS = 4_000L
 
@@ -857,15 +859,25 @@ object GlobalDownloadManager {
             put("durationMs", song.durationMs)
         }
 
-        runCatching {
-            ManagedDownloadStorage.saveMetadata(context, audio, payload.toString())
-            NPLogger.d(
-                TAG,
-                "保存下载 metadata: file=${audio.name}, stableKey=${identity.stableKey()}, lyricPath=$lyricPath, translatedLyricPath=$translatedLyricPath, coverPath=$coverReference"
-            )
-        }.onFailure { error ->
-            NPLogger.w(TAG, "写入下载元数据失败: ${audio.name} - ${error.message}")
+        var lastError: Throwable? = null
+        repeat(METADATA_WRITE_MAX_ATTEMPTS) { attempt ->
+            val result = runCatching {
+                ManagedDownloadStorage.saveMetadata(context, audio, payload.toString())
+            }
+            if (result.isSuccess) {
+                NPLogger.d(
+                    TAG,
+                    "保存下载 metadata: file=${audio.name}, stableKey=${identity.stableKey()}, lyricPath=$lyricPath, translatedLyricPath=$translatedLyricPath, coverPath=$coverReference"
+                )
+                return
+            }
+            lastError = result.exceptionOrNull()
+            if (attempt < METADATA_WRITE_MAX_ATTEMPTS - 1) {
+                NPLogger.w(TAG, "写入下载元数据失败(第${attempt + 1}次): ${audio.name} - ${lastError?.message}")
+                kotlinx.coroutines.delay(METADATA_WRITE_RETRY_DELAY_MS)
+            }
         }
+        NPLogger.e(TAG, "写入下载元数据最终失败: ${audio.name} - ${lastError?.message}", lastError)
     }
 
     private suspend fun readDownloadedMetadata(
@@ -1754,13 +1766,26 @@ object GlobalDownloadManager {
         }
 
         val localDetails = inspectDownloadedAudioDetails(context, audio)
+        if (localDetails == null) {
+            // 无法读取音频标签（常见于 SAF content:// URI），
+            // 通过文件名和文件大小判断是否为有效下载
+            if (audio.sizeBytes > 0L && matchesExpectedDownloadFileName(song, audio)) {
+                NPLogger.d(TAG, "无法读取音频标签但文件名匹配，补写元数据: ${audio.name}")
+                persistDownloadedMetadata(context, audio, song)
+                return audio
+            }
+            NPLogger.w(TAG, "发现无法验证的残缺下载文件，回滚: song=${song.name}, file=${audio.name}")
+            rollbackCancelledDownload(context = context, song = song, storedAudio = audio)
+            return null
+        }
+
         val shouldRepair = shouldRepairMetadataLessManagedDownload(
             expectedTitles = buildExpectedDownloadTitles(song),
             expectedArtists = buildExpectedDownloadArtists(song),
             expectedDurationMs = song.durationMs.coerceAtLeast(0L),
-            actualTitle = localDetails?.originalTitle ?: localDetails?.title,
-            actualArtist = localDetails?.originalArtist ?: localDetails?.artist,
-            actualDurationMs = localDetails?.durationMs ?: 0L
+            actualTitle = localDetails.originalTitle ?: localDetails.title,
+            actualArtist = localDetails.originalArtist ?: localDetails.artist,
+            actualDurationMs = localDetails.durationMs
         )
         if (!shouldRepair) {
             persistDownloadedMetadata(context, audio, song)
@@ -2149,6 +2174,18 @@ object GlobalDownloadManager {
     }.onFailure { error ->
         NPLogger.w(TAG, "读取已下载音频标签失败: ${storedAudio.name} - ${error.message}")
     }.getOrNull()
+
+    private fun matchesExpectedDownloadFileName(
+        song: SongItem,
+        audio: ManagedDownloadStorage.StoredEntry
+    ): Boolean {
+        val baseNames = ManagedDownloadStorage.buildCandidateBaseNames(song)
+        val audioBaseName = audio.nameWithoutExtension
+        val normalizedAudioBaseName = audioBaseName.replace(Regex(" \\(\\d+\\)$"), "")
+        return baseNames.any { candidate ->
+            candidate == audioBaseName || candidate == normalizedAudioBaseName
+        }
+    }
 
     private fun isReferenceOwnedByOtherDownload(
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
