@@ -52,6 +52,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.MoreVert
@@ -178,7 +179,8 @@ fun LibraryScreen(
     onNeteaseAlbumClick: (AlbumSummary) -> Unit = {},
     onYouTubeMusicPlaylistClick: (YouTubeMusicPlaylist) -> Unit = {},
     onBiliPlaylistClick: (BiliPlaylist) -> Unit = {},
-    onOpenRecent: () -> Unit = {}
+    onOpenRecent: () -> Unit = {},
+    onOpenStats: () -> Unit = {}
 ) {
     val vm: LibraryViewModel = viewModel()
     val ui by vm.uiState.collectAsState()
@@ -228,6 +230,12 @@ fun LibraryScreen(
                 scrolledContainerColor = Color.Transparent
             ),
             actions = {
+                HapticIconButton(onClick = onOpenStats) {
+                    Icon(
+                        Icons.Filled.BarChart,
+                        contentDescription = stringResource(R.string.stats_title)
+                    )
+                }
                 HapticIconButton(onClick = onOpenRecent) {
                     Icon(
                         Icons.Outlined.History,

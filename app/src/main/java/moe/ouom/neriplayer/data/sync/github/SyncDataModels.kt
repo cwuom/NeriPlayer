@@ -51,7 +51,8 @@ data class SyncData(
     @ProtoNumber(6) val favoritePlaylists: List<SyncFavoritePlaylist> = emptyList(),
     @ProtoNumber(7) val recentPlays: List<SyncRecentPlay> = emptyList(),
     @ProtoNumber(8) val syncLog: List<SyncLogEntry> = emptyList(),
-    @ProtoNumber(9) val recentPlayDeletions: List<SyncRecentPlayDeletion> = emptyList()
+    @ProtoNumber(9) val recentPlayDeletions: List<SyncRecentPlayDeletion> = emptyList(),
+    @ProtoNumber(10) val playbackStats: List<SyncTrackStat> = emptyList()
 )
 
 /**
@@ -388,3 +389,20 @@ enum class ConflictResolution {
     REMOTE_WINS,
     MANUAL_REQUIRED
 }
+
+@Serializable
+data class SyncTrackStat(
+    @ProtoNumber(1) val identityKey: String,
+    @ProtoNumber(2) val name: String,
+    @ProtoNumber(3) val artist: String,
+    @ProtoNumber(4) val album: String,
+    @ProtoNumber(5) val totalListenMs: Long,
+    @ProtoNumber(6) val playCount: Int,
+    @ProtoNumber(7) val lastPlayedAt: Long,
+    @ProtoNumber(8) val firstPlayedAt: Long,
+    @ProtoNumber(9) val coverUrl: String? = null,
+    @ProtoNumber(10) val durationMs: Long = 0L,
+    @ProtoNumber(11) val mediaUri: String? = null,
+    @ProtoNumber(12) val id: Long = 0L,
+    @ProtoNumber(13) val albumId: Long = 0L
+)

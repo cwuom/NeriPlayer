@@ -1388,6 +1388,25 @@
     <string name="nowplaying_youtube_music">YouTube</string>
     <string name="library_delete_playlist_confirm">确定要删除歌单“%1$s”吗？</string>
 
+
+    <!-- Playback Stats -->
+    <string name="stats_title">播放统计</string>
+    <string name="stats_empty">还没有播放记录\n开始听歌后这里会显示统计数据</string>
+    <string name="stats_total_plays">播放次数</string>
+    <string name="stats_total_time">累计时长</string>
+    <string name="stats_track_count">曲目数</string>
+    <string name="stats_top_tracks">最常播放</string>
+    <string name="stats_play_count_value">%d 次</string>
+    <string name="stats_sort_play_count">按播放次数</string>
+    <string name="stats_sort_listen_time">按累计时长</string>
+    <string name="stats_sort_recent">按最近播放</string>
+    <string name="stats_sort_first_played">按首次播放</string>
+    <string name="stats_clear_title">清空统计数据</string>
+    <string name="stats_clear_message">确定要清空所有播放统计数据吗？此操作不可撤销。</string>
+    <string name="stats_song_first_played">首次播放</string>
+    <string name="stats_song_total_listen">累计收听</string>
+    <string name="stats_song_play_count_label">播放次数</string>
+    <string name="stats_song_no_record">暂无播放记录</string>
     <!-- Bili Playlist / Screen -->
     <string name="bili_loading_favorites">正在加载收藏夹内容…</string>
     <string name="bili_load_failed">加载失败: %s</string>

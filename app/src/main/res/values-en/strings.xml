@@ -1373,6 +1373,25 @@
     <string name="nowplaying_youtube_music">YouTube</string>
     <string name="library_delete_playlist_confirm">Delete playlist \"%1$s\"?</string>
 
+    <!-- Playback Stats -->
+    <string name="stats_title">Playback Stats</string>
+    <string name="stats_empty">No playback data yet\nStart listening to see your stats here</string>
+    <string name="stats_total_plays">Plays</string>
+    <string name="stats_total_time">Listen Time</string>
+    <string name="stats_track_count">Tracks</string>
+    <string name="stats_top_tracks">Most Played</string>
+    <string name="stats_play_count_value">%d plays</string>
+    <string name="stats_sort_play_count">By play count</string>
+    <string name="stats_sort_listen_time">By listen time</string>
+    <string name="stats_sort_recent">By recent</string>
+    <string name="stats_sort_first_played">By first played</string>
+    <string name="stats_clear_title">Clear Stats</string>
+    <string name="stats_clear_message">Are you sure you want to clear all playback statistics? This cannot be undone.</string>
+    <string name="stats_song_first_played">First played</string>
+    <string name="stats_song_total_listen">Total listened</string>
+    <string name="stats_song_play_count_label">Play count</string>
+    <string name="stats_song_no_record">No playback record yet</string>
+
     <!-- Bili Playlist / Screen -->
     <string name="bili_loading_favorites">Loading favorites…</string>
     <string name="bili_load_failed">Load failed: %s</string>

@@ -41,6 +41,7 @@ import moe.ouom.neriplayer.data.history.PlayHistoryRepository
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
 import moe.ouom.neriplayer.util.LanguageManager
 import moe.ouom.neriplayer.util.NPLogger
 import java.io.IOException
@@ -51,6 +52,7 @@ class GitHubSyncManager private constructor(context: Context) {
     private val playlistRepo = LocalPlaylistRepository.getInstance(appContext)
     private val favoriteRepo = FavoritePlaylistRepository.getInstance(appContext)
     private val playHistoryRepo = PlayHistoryRepository.getInstance(appContext)
+    private val playbackStatsRepo = PlaybackStatsRepository.getInstance(appContext)
     private val syncLock = Mutex()
 
     companion object {
@@ -360,6 +362,24 @@ class GitHubSyncManager private constructor(context: Context) {
                 it.copy(mediaUri = LocalSongSupport.sanitizeMediaUriForSync(it.mediaUri))
             }
 
+        val syncPlaybackStats = playbackStatsRepo.statsFlow.value.map { stat ->
+            SyncTrackStat(
+                identityKey = stat.identityKey,
+                name = stat.name,
+                artist = stat.artist,
+                album = stat.album,
+                totalListenMs = stat.totalListenMs,
+                playCount = stat.playCount,
+                lastPlayedAt = stat.lastPlayedAt,
+                firstPlayedAt = stat.firstPlayedAt,
+                coverUrl = stat.coverUrl,
+                durationMs = stat.durationMs,
+                mediaUri = stat.mediaUri,
+                id = stat.id,
+                albumId = stat.albumId
+            )
+        }
+
         return SyncData(
             deviceId = getDeviceId(),
             deviceName = getDeviceName(),
@@ -368,7 +388,8 @@ class GitHubSyncManager private constructor(context: Context) {
             favoritePlaylists = syncFavoritePlaylists,
             recentPlays = syncRecentPlays,
             syncLog = emptyList(),
-            recentPlayDeletions = syncRecentPlayDeletions
+            recentPlayDeletions = syncRecentPlayDeletions,
+            playbackStats = syncPlaybackStats
         )
     }
 
@@ -451,6 +472,10 @@ class GitHubSyncManager private constructor(context: Context) {
             remote = remote.recentPlays,
             deletions = mergedRecentPlayDeletions
         )
+        val mergedPlaybackStats = mergePlaybackStats(
+            local = local.playbackStats,
+            remote = remote.playbackStats
+        )
 
         val mergedData = SyncData(
             deviceId = local.deviceId,
@@ -463,7 +488,8 @@ class GitHubSyncManager private constructor(context: Context) {
                 .distinctBy { it.timestamp }
                 .sortedByDescending { it.timestamp }
                 .take(100),
-            recentPlayDeletions = mergedRecentPlayDeletions
+            recentPlayDeletions = mergedRecentPlayDeletions,
+            playbackStats = mergedPlaybackStats
         )
 
         return MergeResult(
@@ -682,6 +708,36 @@ class GitHubSyncManager private constructor(context: Context) {
             .take(500)
     }
 
+    private fun mergePlaybackStats(
+        local: List<SyncTrackStat>,
+        remote: List<SyncTrackStat>
+    ): List<SyncTrackStat> {
+        val merged = linkedMapOf<String, SyncTrackStat>()
+        for (stat in local + remote) {
+            val existing = merged[stat.identityKey]
+            if (existing == null) {
+                merged[stat.identityKey] = stat
+            } else {
+                merged[stat.identityKey] = SyncTrackStat(
+                    identityKey = stat.identityKey,
+                    name = if (stat.lastPlayedAt >= existing.lastPlayedAt) stat.name else existing.name,
+                    artist = if (stat.lastPlayedAt >= existing.lastPlayedAt) stat.artist else existing.artist,
+                    album = if (stat.lastPlayedAt >= existing.lastPlayedAt) stat.album else existing.album,
+                    totalListenMs = maxOf(stat.totalListenMs, existing.totalListenMs),
+                    playCount = maxOf(stat.playCount, existing.playCount),
+                    lastPlayedAt = maxOf(stat.lastPlayedAt, existing.lastPlayedAt),
+                    firstPlayedAt = minOf(stat.firstPlayedAt, existing.firstPlayedAt),
+                    coverUrl = if (stat.lastPlayedAt >= existing.lastPlayedAt) stat.coverUrl else existing.coverUrl,
+                    durationMs = if (stat.lastPlayedAt >= existing.lastPlayedAt) stat.durationMs else existing.durationMs,
+                    mediaUri = if (stat.lastPlayedAt >= existing.lastPlayedAt) stat.mediaUri else existing.mediaUri,
+                    id = if (stat.lastPlayedAt >= existing.lastPlayedAt) stat.id else existing.id,
+                    albumId = if (stat.lastPlayedAt >= existing.lastPlayedAt) stat.albumId else existing.albumId
+                )
+            }
+        }
+        return merged.values.toList()
+    }
+
     private fun mergeFavoritePlaylist(
         left: SyncFavoritePlaylist,
         right: SyncFavoritePlaylist
@@ -804,6 +860,10 @@ class GitHubSyncManager private constructor(context: Context) {
             }
             val playHistory = mergeLocalOnlyHistory(syncedHistory, localOnlyHistory)
             playHistoryRepo.updateHistory(playHistory)
+        }
+
+        if (sanitizedMergedData.playbackStats.isNotEmpty()) {
+            playbackStatsRepo.applyMergedStats(sanitizedMergedData.playbackStats)
         }
     }
 

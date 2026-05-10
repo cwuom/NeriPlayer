@@ -38,6 +38,12 @@ sealed class Destinations(val route: String, val labelResId: Int) {
             get() = ROUTE
     }
 
+    object PlaybackStats {
+        const val ROUTE = "playback_stats"
+        val route: String
+            get() = ROUTE
+    }
+
     // DEBUG
     data object Debug : Destinations("debug", moe.ouom.neriplayer.R.string.debug_title)
     data object DebugListenTogether : Destinations("debug/listen_together", moe.ouom.neriplayer.R.string.listen_together_title)

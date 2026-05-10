@@ -48,6 +48,7 @@ import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRepository
 import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.history.PlayHistoryRepository
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
+import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
 import moe.ouom.neriplayer.listentogether.ListenTogetherApi
 import moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager
 import moe.ouom.neriplayer.listentogether.ListenTogetherWebSocketClient
@@ -152,6 +153,9 @@ object AppContainer {
 
     val playHistoryRepo by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         PlayHistoryRepository.getInstance(application)
+    }
+    val playbackStatsRepo by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        PlaybackStatsRepository.getInstance(application)
     }
     val playlistUsageRepo by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         PlaylistUsageRepository(application)

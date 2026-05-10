@@ -163,6 +163,7 @@ import moe.ouom.neriplayer.ui.screen.DownloadManagerScreen
 import moe.ouom.neriplayer.ui.screen.DownloadProgressScreen
 import moe.ouom.neriplayer.ui.screen.NowPlayingScreen
 import moe.ouom.neriplayer.ui.screen.RecentScreen
+import moe.ouom.neriplayer.ui.screen.PlaybackStatsScreen
 import moe.ouom.neriplayer.ui.screen.debug.BiliApiProbeScreen
 import moe.ouom.neriplayer.ui.screen.debug.CrashLogListScreen
 import moe.ouom.neriplayer.ui.screen.debug.DebugCrashTestType
@@ -730,6 +731,57 @@ private fun NeriAppContent(
                     AppContainer.playHistoryRepo.record(song)
                 }
             }
+
+        // 播放统计：追踪实际收听时长
+        launch {
+            var trackingSong: SongItem? = null
+            var sessionStartTime = 0L
+            var accumulatedMs = 0L
+            var wasPlaying = false
+
+            fun flushSession() {
+                val song = trackingSong ?: return
+                if (wasPlaying && sessionStartTime > 0L) {
+                    accumulatedMs += System.currentTimeMillis() - sessionStartTime
+                }
+                if (accumulatedMs > 0) {
+                    AppContainer.playbackStatsRepo.recordSession(song, accumulatedMs)
+                }
+                accumulatedMs = 0L
+                sessionStartTime = 0L
+                wasPlaying = false
+            }
+
+            launch {
+                PlayerManager.currentSongFlow.collect { song ->
+                    if (song != null && song.stableKey() != trackingSong?.stableKey()) {
+                        flushSession()
+                        trackingSong = song
+                        if (PlayerManager.isPlayingFlow.value) {
+                            wasPlaying = true
+                            sessionStartTime = System.currentTimeMillis()
+                        }
+                    } else if (song == null) {
+                        flushSession()
+                        trackingSong = null
+                    }
+                }
+            }
+
+            PlayerManager.isPlayingFlow.collect { playing ->
+                if (trackingSong == null) return@collect
+                if (playing && !wasPlaying) {
+                    wasPlaying = true
+                    sessionStartTime = System.currentTimeMillis()
+                } else if (!playing && wasPlaying) {
+                    if (sessionStartTime > 0L) {
+                        accumulatedMs += System.currentTimeMillis() - sessionStartTime
+                    }
+                    wasPlaying = false
+                    sessionStartTime = 0L
+                }
+            }
+        }
     }
 
     LaunchedEffect(storedFollowSystemDark, pendingFollowSystemDark) {
@@ -1316,7 +1368,8 @@ private fun NeriAppContent(
                                     LibraryHostScreen(
                                         onSongClick = ::playSongsAndOpenNowPlaying,
                                         onPlayParts = ::playBiliPartsAndOpenNowPlaying,
-                                        onOpenRecent = { navController.navigate(Destinations.Recent.route) }
+                                        onOpenRecent = { navController.navigate(Destinations.Recent.route) },
+                                        onOpenStats = { navController.navigate(Destinations.PlaybackStats.route) }
                                     )
                                 }
 
@@ -1351,6 +1404,19 @@ private fun NeriAppContent(
                                     popExitTransition = { slideOutVertically(animationSpec = tween(240)) { it } + fadeOut() }
                                 ) {
                                     RecentScreen(
+                                        onBack = { navController.popBackStack() },
+                                        onSongClick = ::playSongsAndOpenNowPlaying
+                                    )
+                                }
+
+                                composable(
+                                    route = Destinations.PlaybackStats.route,
+                                    enterTransition = { slideInVertically(animationSpec = tween(220)) { it } + fadeIn() },
+                                    exitTransition = { fadeOut(animationSpec = tween(160)) },
+                                    popEnterTransition = { slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn() },
+                                    popExitTransition = { slideOutVertically(animationSpec = tween(240)) { it } + fadeOut() }
+                                ) {
+                                    PlaybackStatsScreen(
                                         onBack = { navController.popBackStack() },
                                         onSongClick = ::playSongsAndOpenNowPlaying
                                     )

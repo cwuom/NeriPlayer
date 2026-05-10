@@ -99,6 +99,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SpeakerGroup
+import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FavoriteBorder
@@ -120,6 +121,8 @@ import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -257,6 +260,9 @@ import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.formatDuration
 import moe.ouom.neriplayer.util.offlineCachedImageRequest
 import moe.ouom.neriplayer.util.saveCoverToPictures
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.math.roundToInt
 
 private const val LyricsPageTransitionDurationMs = 300
@@ -1993,6 +1999,81 @@ fun MoreOptionsSheet(
                                 }
                             }
                         )
+                        val trackStat = remember(originalSong) {
+                            AppContainer.playbackStatsRepo.getStatForTrack(originalSong.stableKey())
+                        }
+                        var showStatsDialog by remember { mutableStateOf(false) }
+                        if (trackStat != null) {
+                            ListItem(
+                                headlineContent = { Text(stringResource(R.string.stats_title)) },
+                                leadingContent = { Icon(Icons.Outlined.BarChart, null) },
+                                modifier = Modifier.clickable { showStatsDialog = true }
+                            )
+                        }
+                        if (showStatsDialog && trackStat != null) {
+                            val dateFormat = remember { SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault()) }
+                            val firstPlayedText = remember(trackStat.firstPlayedAt) {
+                                dateFormat.format(Date(trackStat.firstPlayedAt))
+                            }
+                            val totalListenText = remember(trackStat.totalListenMs) {
+                                val totalSeconds = trackStat.totalListenMs / 1000
+                                val hours = totalSeconds / 3600
+                                val minutes = (totalSeconds % 3600) / 60
+                                when {
+                                    hours > 0 -> "${hours}h ${minutes}m"
+                                    minutes > 0 -> "${minutes}m"
+                                    else -> "${totalSeconds}s"
+                                }
+                            }
+                            AlertDialog(
+                                onDismissRequest = { showStatsDialog = false },
+                                icon = { Icon(Icons.Outlined.BarChart, null) },
+                                title = { Text(stringResource(R.string.stats_title)) },
+                                shape = RoundedCornerShape(28.dp),
+                                text = {
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Card(
+                                            shape = RoundedCornerShape(16.dp),
+                                            colors = CardDefaults.cardColors(
+                                                containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.25f)
+                                            )
+                                        ) {
+                                            ListItem(
+                                                headlineContent = { Text(stringResource(R.string.stats_song_first_played)) },
+                                                supportingContent = { Text(firstPlayedText) }
+                                            )
+                                        }
+                                        Card(
+                                            shape = RoundedCornerShape(16.dp),
+                                            colors = CardDefaults.cardColors(
+                                                containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.25f)
+                                            )
+                                        ) {
+                                            ListItem(
+                                                headlineContent = { Text(stringResource(R.string.stats_song_total_listen)) },
+                                                supportingContent = { Text(totalListenText) }
+                                            )
+                                        }
+                                        Card(
+                                            shape = RoundedCornerShape(16.dp),
+                                            colors = CardDefaults.cardColors(
+                                                containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.25f)
+                                            )
+                                        ) {
+                                            ListItem(
+                                                headlineContent = { Text(stringResource(R.string.stats_song_play_count_label)) },
+                                                supportingContent = { Text(stringResource(R.string.stats_play_count_value, trackStat.playCount)) }
+                                            )
+                                        }
+                                    }
+                                },
+                                confirmButton = {
+                                    HapticTextButton(onClick = { showStatsDialog = false }) {
+                                        Text(stringResource(R.string.action_close))
+                                    }
+                                }
+                            )
+                        }
                         ListItem(
                             headlineContent = { Text(stringResource(R.string.listen_together_title)) },
                             leadingContent = { Icon(Icons.Outlined.Headphones, null) },
