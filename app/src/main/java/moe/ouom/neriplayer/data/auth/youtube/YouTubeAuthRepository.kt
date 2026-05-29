@@ -30,6 +30,7 @@ import androidx.security.crypto.MasterKey
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
 
 const val YOUTUBE_MUSIC_ORIGIN: String = "https://music.youtube.com"
@@ -188,8 +189,8 @@ internal fun parseCookieHeader(raw: String): LinkedHashMap<String, String> {
     return result
 }
 
-class YouTubeAuthRepository(context: Context) {
-    private val encryptedPrefs: SharedPreferences
+class YouTubeAuthRepository(private val context: Context) {
+    private var encryptedPrefs: SharedPreferences
     private val _authFlow: MutableStateFlow<YouTubeAuthBundle>
     private val _authHealthFlow: MutableStateFlow<YouTubeAuthHealth>
 
@@ -200,16 +201,7 @@ class YouTubeAuthRepository(context: Context) {
         get() = _authHealthFlow.asStateFlow()
 
     init {
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        encryptedPrefs = EncryptedSharedPreferences.create(
-            context,
-            YOUTUBE_AUTH_PREFS,
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
+        encryptedPrefs = openEncryptedPrefsWithRecovery()
         val initialBundle = loadAuthBundle()
         _authFlow = MutableStateFlow(initialBundle)
         _authHealthFlow = MutableStateFlow(
@@ -267,5 +259,44 @@ class YouTubeAuthRepository(context: Context) {
             return YouTubeAuthBundle()
         }
         return YouTubeAuthBundle.fromJson(raw)
+    }
+
+    private fun openEncryptedPrefsWithRecovery(): SharedPreferences {
+        return runCatching {
+            createEncryptedPrefs()
+        }.getOrElse { error ->
+            NPLogger.w(
+                "NERI-YouTubeAuthRepo",
+                "Failed to open YouTube secure prefs, clearing storage and recreating.",
+                error
+            )
+            clearEncryptedStorage()
+            createEncryptedPrefs()
+        }
+    }
+
+    private fun createEncryptedPrefs(): SharedPreferences {
+        val masterKey = MasterKey.Builder(context)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+        return EncryptedSharedPreferences.create(
+            context,
+            YOUTUBE_AUTH_PREFS,
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+    }
+
+    private fun clearEncryptedStorage() {
+        runCatching {
+            context.deleteSharedPreferences(YOUTUBE_AUTH_PREFS)
+        }.onFailure { error ->
+            NPLogger.w(
+                "NERI-YouTubeAuthRepo",
+                "Failed to delete corrupted YouTube secure prefs file.",
+                error
+            )
+        }
     }
 }

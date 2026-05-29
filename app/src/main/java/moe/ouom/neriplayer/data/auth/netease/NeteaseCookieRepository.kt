@@ -303,9 +303,11 @@ class NeteaseCookieRepository(private val context: Context) {
         encryptedPrefs.edit {
             putString(KEY_NETEASE_AUTH_BUNDLE, migrated.toJson())
         }
-        runBlocking {
-            context.cookieDataStore.edit { prefs ->
-                prefs.remove(CookieKeys.NETEASE_COOKIE_JSON)
+        runCatching {
+            runBlocking {
+                context.cookieDataStore.edit { prefs ->
+                    prefs.remove(CookieKeys.NETEASE_COOKIE_JSON)
+                }
             }
         }
         return migrated

@@ -421,6 +421,8 @@
     <string name="music_search_cover">搜索封面</string>
     <string name="music_auto_fill">自动填充</string>
     <string name="music_auto_fill_hint">从搜索结果自动填充信息</string>
+    <string name="music_auto_fill_custom_title">自定义歌曲名</string>
+    <string name="music_auto_fill_custom_title_hint">输入用于自动填充搜索的歌曲名</string>
     <string name="music_save_changes">保存修改</string>
     <string name="music_info_saved">歌曲信息已保存</string>
     <string name="music_select_result">选择搜索结果</string>

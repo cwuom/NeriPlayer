@@ -49,13 +49,17 @@ data class ThemePreferenceSnapshot(
 fun readThemePreferenceSnapshotSync(context: Context): ThemePreferenceSnapshot {
     readCachedThemePreferenceSnapshot(context)?.let { return it }
 
-    return runBlocking {
-        val prefs = context.dataStore.data.first()
-        ThemePreferenceSnapshot(
-            dynamicColor = prefs[SettingsKeys.DYNAMIC_COLOR] ?: true,
-            forceDark = prefs[SettingsKeys.FORCE_DARK] ?: false,
-            followSystemDark = prefs[SettingsKeys.FOLLOW_SYSTEM_DARK] ?: true
-        )
+    return runCatching {
+        runBlocking {
+            val prefs = context.dataStore.data.first()
+            ThemePreferenceSnapshot(
+                dynamicColor = prefs[SettingsKeys.DYNAMIC_COLOR] ?: true,
+                forceDark = prefs[SettingsKeys.FORCE_DARK] ?: false,
+                followSystemDark = prefs[SettingsKeys.FOLLOW_SYSTEM_DARK] ?: true
+            )
+        }
+    }.getOrElse {
+        ThemePreferenceSnapshot()
     }.also { snapshot ->
         persistThemePreferenceSnapshot(context, snapshot)
     }

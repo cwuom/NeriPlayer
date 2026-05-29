@@ -178,7 +178,9 @@ object PlayerManager {
     internal var stopOnBluetoothDisconnectEnabled = true
     internal var allowMixedPlaybackEnabled = false
 
+    @Volatile
     internal var currentPlaylist: List<SongItem> = emptyList()
+    @Volatile
     internal var currentIndex = -1
 
     /** 记录随机播放历史，支持上一首和跨轮次回退 */
@@ -186,6 +188,7 @@ object PlayerManager {
     internal val shuffleFuture  = mutableListOf<Int>()   // queued next items for shuffle history
     internal var shuffleBag     = mutableListOf<Int>()   // remaining shuffle candidates for current cycle
 
+    @Volatile
     internal var consecutivePlayFailures = 0
     internal const val MAX_CONSECUTIVE_FAILURES = 10
     internal const val MEDIA_URL_STALE_MS = 10 * 60 * 1000L
@@ -287,6 +290,7 @@ object PlayerManager {
 
     internal var playJob: Job? = null
     internal val youtubeStreamWarmupJobs = ConcurrentHashMap<String, Job>()
+    @Volatile
     internal var playbackRequestToken = 0L
     internal var lastHandledTrackEndKey: String? = null
     internal var lastTrackEndHandledAtMs = 0L

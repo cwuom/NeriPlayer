@@ -2846,6 +2846,7 @@ fun EditSongInfoSheet(
         ) {
             HapticTextButton(
                 onClick = {
+                    viewModel.prepareForSearch(songName)
                     viewModel.performSearch()
                     showSearchResults = true
                     focusManager.clearFocus()
@@ -3036,6 +3037,33 @@ fun EditSongInfoSheet(
                         Text(stringResource(R.string.action_cancel))
                     }
                 }
+
+                OutlinedTextField(
+                    value = searchState.keyword,
+                    onValueChange = { viewModel.onKeywordChange(it) },
+                    label = { Text(stringResource(R.string.music_auto_fill_custom_title)) },
+                    placeholder = {
+                        Text(stringResource(R.string.music_auto_fill_custom_title_hint))
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    trailingIcon = {
+                        HapticIconButton(onClick = {
+                            viewModel.performSearch()
+                            focusManager.clearFocus()
+                        }) {
+                            Icon(
+                                Icons.Filled.Search,
+                                contentDescription = stringResource(R.string.cd_search)
+                            )
+                        }
+                    },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = {
+                        viewModel.performSearch()
+                        focusManager.clearFocus()
+                    })
+                )
 
                 // 平台切换
                 androidx.compose.material3.PrimaryTabRow(

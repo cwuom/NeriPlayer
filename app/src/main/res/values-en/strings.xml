@@ -421,6 +421,8 @@
     <string name="music_search_cover">Search Cover</string>
     <string name="music_auto_fill">Auto Fill</string>
     <string name="music_auto_fill_hint">Auto fill info from search results</string>
+    <string name="music_auto_fill_custom_title">Custom song name</string>
+    <string name="music_auto_fill_custom_title_hint">Enter the song name used for auto fill search</string>
     <string name="music_save_changes">Save</string>
     <string name="music_info_saved">Song info saved</string>
     <string name="music_select_result">Select search result</string>

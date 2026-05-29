@@ -125,15 +125,19 @@ data class PlaybackPreferenceSnapshot(
 suspend fun readPlaybackPreferenceSnapshot(context: Context): PlaybackPreferenceSnapshot {
     readCachedPlaybackPreferenceSnapshot(context)?.let { return it }
 
-    return context.dataStore.data.first().toPlaybackPreferenceSnapshot().also { snapshot ->
+    return runCatching {
+        context.dataStore.data.first().toPlaybackPreferenceSnapshot()
+    }.getOrElse {
+        PlaybackPreferenceSnapshot()
+    }.also { snapshot ->
         persistPlaybackPreferenceSnapshot(context, snapshot)
     }
 }
 
 fun readPlaybackPreferenceSnapshotSync(context: Context): PlaybackPreferenceSnapshot {
-    return readPlaybackPreferenceSnapshotCached(context) ?: runBlocking {
-        readPlaybackPreferenceSnapshot(context)
-    }
+    return readPlaybackPreferenceSnapshotCached(context) ?: runCatching {
+        runBlocking { readPlaybackPreferenceSnapshot(context) }
+    }.getOrElse { PlaybackPreferenceSnapshot() }
 }
 
 fun readPlaybackPreferenceSnapshotCached(context: Context): PlaybackPreferenceSnapshot? {

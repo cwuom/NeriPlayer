@@ -139,7 +139,7 @@ internal fun evaluateBiliAuthHealth(
 }
 
 class BiliCookieRepository(private val context: Context) {
-    private val encryptedPrefs: SharedPreferences
+    private var encryptedPrefs: SharedPreferences
     private val _authFlow: MutableStateFlow<BiliAuthBundle>
     private val _cookieFlow: MutableStateFlow<Map<String, String>>
     private val _authHealthFlow: MutableStateFlow<SavedCookieAuthHealth>
@@ -151,16 +151,7 @@ class BiliCookieRepository(private val context: Context) {
         get() = _authHealthFlow.asStateFlow()
 
     init {
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        encryptedPrefs = EncryptedSharedPreferences.create(
-            context,
-            BILI_AUTH_PREFS,
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
+        encryptedPrefs = openEncryptedPrefsWithRecovery()
         val initialBundle = loadAuthBundle()
         _authFlow = MutableStateFlow(initialBundle)
         _cookieFlow = MutableStateFlow(initialBundle.cookies)
@@ -242,9 +233,11 @@ class BiliCookieRepository(private val context: Context) {
         encryptedPrefs.edit {
             putString(KEY_BILI_AUTH_BUNDLE, migrated.toJson())
         }
-        runBlocking {
-            context.biliCookieStore.edit { prefs ->
-                prefs.remove(BiliCookieKeys.COOKIE_JSON)
+        runCatching {
+            runBlocking {
+                context.biliCookieStore.edit { prefs ->
+                    prefs.remove(BiliCookieKeys.COOKIE_JSON)
+                }
             }
         }
         return migrated
@@ -259,5 +252,44 @@ class BiliCookieRepository(private val context: Context) {
             out[key] = obj.optString(key, "")
         }
         return out
+    }
+
+    private fun openEncryptedPrefsWithRecovery(): SharedPreferences {
+        return runCatching {
+            createEncryptedPrefs()
+        }.getOrElse { error ->
+            NPLogger.w(
+                "NERI-BiliCookieRepo",
+                "Failed to open Bili secure prefs, clearing storage and recreating.",
+                error
+            )
+            clearEncryptedStorage()
+            createEncryptedPrefs()
+        }
+    }
+
+    private fun createEncryptedPrefs(): SharedPreferences {
+        val masterKey = MasterKey.Builder(context)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+        return EncryptedSharedPreferences.create(
+            context,
+            BILI_AUTH_PREFS,
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+    }
+
+    private fun clearEncryptedStorage() {
+        runCatching {
+            context.deleteSharedPreferences(BILI_AUTH_PREFS)
+        }.onFailure { error ->
+            NPLogger.w(
+                "NERI-BiliCookieRepo",
+                "Failed to delete corrupted Bili secure prefs file.",
+                error
+            )
+        }
     }
 }

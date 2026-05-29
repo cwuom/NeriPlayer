@@ -58,6 +58,7 @@ import androidx.media.session.MediaButtonReceiver
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import coil.request.ImageRequest
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -331,7 +332,11 @@ class AudioPlayerService : Service() {
 
     private var currentCoverSource: String? = null
     private var currentLargeIcon: Bitmap? = null
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val serviceScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Main.immediate + CoroutineExceptionHandler { _, throwable ->
+            NPLogger.e("NERI-AudioService", "Uncaught coroutine exception in serviceScope", throwable)
+        }
+    )
     private val mediaSessionPlaybackStateThrottler = MediaSessionPlaybackStateThrottler()
     private var allowServiceRestart = true
     private var hasReceivedStartCommand = false
@@ -1095,7 +1100,7 @@ class AudioPlayerService : Service() {
         boxDp: Int = 24,
         glyphDp: Int = 18
     ): IconCompat {
-        val d = AppCompatResources.getDrawable(this, resId)!!.mutate()
+        val d = (AppCompatResources.getDrawable(this, resId) ?: return IconCompat.createWithResource(this, resId)).mutate()
         DrawableCompat.setTintList(d, null)
 
         fun dp2px(dp: Int) = TypedValue.applyDimension(

@@ -55,8 +55,12 @@ data class BootstrapSettingsSnapshot(
 fun readBootstrapSettingsSnapshotSync(context: Context): BootstrapSettingsSnapshot {
     readCachedBootstrapSettingsSnapshot(context)?.let { return it }
 
-    return runBlocking {
-        context.dataStore.data.first().toBootstrapSettingsSnapshot()
+    return runCatching {
+        runBlocking {
+            context.dataStore.data.first().toBootstrapSettingsSnapshot()
+        }
+    }.getOrElse {
+        BootstrapSettingsSnapshot()
     }.also { snapshot ->
         persistBootstrapSettingsSnapshot(context, snapshot)
     }

@@ -101,6 +101,15 @@ object NPLogger {
     }
 
     private fun log(level: Int, tag: String?, message: Any?, tr: Throwable? = null) {
+        // Release 构建中不输出 DEBUG/VERBOSE 级别日志到 logcat，防止敏感信息泄露
+        if (!BuildConfig.DEBUG && (level == Log.DEBUG || level == Log.VERBOSE)) {
+            if (isFileLoggingEnabled && level == Log.DEBUG) {
+                val finalTag = if (tag != null && tag != appTag) "$appTag: $tag" else appTag
+                writeToFile(level, finalTag, formatMessage(message), tr)
+            }
+            return
+        }
+
         val finalTag = if (tag != null && tag != appTag) "$appTag: $tag" else appTag
         val safeTag = ensureLogTag(finalTag)
         val finalMessage = formatMessage(message)
