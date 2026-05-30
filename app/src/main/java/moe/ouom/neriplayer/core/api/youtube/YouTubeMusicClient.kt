@@ -549,9 +549,9 @@ internal object YouTubeMusicParser {
             return null
         }
         return Regex(
-            pattern = "(\\d+)\\s*(?:首歌|首歌曲?|首|曲|集|songs?|tracks?|videos?|episodes?)",
+            pattern = "([0-9][0-9,]*)\\s*(?:首歌|首歌曲?|首|曲|集|songs?|tracks?|videos?|episodes?)",
             option = RegexOption.IGNORE_CASE
-        ).find(normalized)?.groupValues?.getOrNull(1)?.toIntOrNull()
+        ).find(normalized)?.groupValues?.getOrNull(1)?.replace(",", "")?.toIntOrNull()
     }
 
     private fun findLibraryGridRenderer(root: JSONObject): JSONObject? {
@@ -1498,11 +1498,7 @@ internal suspend fun collectYouTubeMusicPlaylistDetail(
     )
     val distinctTracks = tracks.distinctBy { it.videoId }
     val loadedTrackCount = distinctTracks.size.takeIf { it > 0 }
-    val resolvedTrackCount = when {
-        baseDetail.trackCount != null && loadedTrackCount != null -> maxOf(baseDetail.trackCount, loadedTrackCount)
-        baseDetail.trackCount != null -> baseDetail.trackCount
-        else -> loadedTrackCount
-    }
+    val resolvedTrackCount = baseDetail.trackCount ?: loadedTrackCount
     return baseDetail.copy(
         trackCount = resolvedTrackCount,
         tracks = distinctTracks

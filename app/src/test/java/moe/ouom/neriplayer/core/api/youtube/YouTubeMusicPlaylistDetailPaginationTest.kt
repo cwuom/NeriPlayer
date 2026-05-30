@@ -38,42 +38,71 @@ class YouTubeMusicPlaylistDetailPaginationTest {
     }
 
     @Test
-    fun getPlaylistDetail_doesNotReportTrackCountBelowLoadedTracks() = runBlocking {
-        val responses = listOf(
-            initialPageRoot(
-                videoId = "video-1",
-                title = "Song 1",
-                continuation = "token-a",
-                headerTrackCount = 1
-            ),
-            continuationPageRoot(videoId = "video-2", title = "Song 2", continuation = "token-b"),
-            continuationPageRoot(videoId = "video-3", title = "Song 3", continuation = null)
+    fun getPlaylistDetail_usesHeaderTrackCountEvenWhenLoadedTrackCountDiffers() = runBlocking {
+        val highHeaderDetail = collectDetail(
+            responses = listOf(
+                initialPageRoot(
+                    videoId = "video-1",
+                    title = "Song 1",
+                    continuation = null,
+                    headerTrackCountText = "1,033 songs"
+                )
+            )
         )
-        var nextResponse = 0
 
-        val detail = collectYouTubeMusicPlaylistDetail(
+        assertEquals(1, highHeaderDetail.tracks.size)
+        assertEquals(1033, highHeaderDetail.trackCount)
+
+        val lowHeaderDetail = collectDetail(
+            responses = listOf(
+                initialPageRoot(
+                    videoId = "video-1",
+                    title = "Song 1",
+                    continuation = "token-a",
+                    headerTrackCountText = "1 song"
+                ),
+                continuationPageRoot(videoId = "video-2", title = "Song 2", continuation = "token-b"),
+                continuationPageRoot(videoId = "video-3", title = "Song 3", continuation = null)
+            )
+        )
+
+        assertEquals(3, lowHeaderDetail.tracks.size)
+        assertEquals(1, lowHeaderDetail.trackCount)
+
+        val missingHeaderDetail = collectDetail(
+            responses = listOf(
+                initialPageRoot(videoId = "video-1", title = "Song 1", continuation = "token-a"),
+                continuationPageRoot(videoId = "video-2", title = "Song 2", continuation = "token-b"),
+                continuationPageRoot(videoId = "video-3", title = "Song 3", continuation = null)
+            )
+        )
+
+        assertEquals(3, missingHeaderDetail.tracks.size)
+        assertEquals(3, missingHeaderDetail.trackCount)
+    }
+
+    private suspend fun collectDetail(responses: List<JSONObject>): YouTubeMusicPlaylistDetail {
+        var nextResponse = 0
+        return collectYouTubeMusicPlaylistDetail(
             browseId = "VLTEST",
             fallbackTitle = "Fallback",
             fallbackSubtitle = "",
             fallbackCoverUrl = "",
             pageLimit = 10
         ) { responses[nextResponse++] }
-
-        assertEquals(3, detail.tracks.size)
-        assertEquals(3, detail.trackCount)
     }
 
     private fun initialPageRoot(
         videoId: String,
         title: String,
         continuation: String?,
-        headerTrackCount: Int? = null
+        headerTrackCountText: String? = null
     ): JSONObject {
-        val secondSubtitle = headerTrackCount?.let { count ->
+        val secondSubtitle = headerTrackCountText?.let { count ->
             """
             ,
             "secondSubtitle": {
-              "runs": [ { "text": "$count 首歌" } ]
+              "runs": [ { "text": "$count" } ]
             }
             """.trimIndent()
         }.orEmpty()

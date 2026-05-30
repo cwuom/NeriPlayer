@@ -48,6 +48,46 @@ class YouTubeMusicParserTest {
     }
 
     @Test
+    fun parsePlaylistTrackCount_readsHeaderDeclaredPlaylistTotal() {
+        val cases = listOf(
+            "1,033 songs • 7+ hours" to 1033,
+            "1,033 首歌曲 • 超过 7 小时" to 1033,
+            "381 views • 43 tracks • 2 hours, 49 minutes" to 43,
+            "Auto playlist • 2026" to null
+        )
+
+        cases.forEach { (secondSubtitle, expectedCount) ->
+            val root = playlistHeaderRoot(secondSubtitle)
+
+            assertEquals(
+                "Unexpected count for $secondSubtitle",
+                expectedCount,
+                YouTubeMusicParser.parsePlaylistTrackCount(root)
+            )
+        }
+    }
+
+    @Test
+    fun parsePlaylistDetail_usesHeaderDeclaredCommaFormattedTrackCount() {
+        val root = playlistDetailRoot(
+            secondSubtitle = "1,033 songs • 7+ hours",
+            videoId = "video-1",
+            title = "Song 1"
+        )
+
+        val detail = YouTubeMusicParser.parsePlaylistDetail(
+            root = root,
+            browseId = "VLLM",
+            fallbackTitle = "",
+            fallbackSubtitle = "",
+            fallbackCoverUrl = ""
+        )
+
+        assertEquals(1033, detail.trackCount)
+        assertEquals(1, detail.tracks.size)
+    }
+
+    @Test
     fun parsePlaylistTracks_findsShelfRendererBeyondFirstSection() {
         val root = JSONObject(
             """
@@ -463,6 +503,86 @@ class YouTubeMusicParserTest {
                             "contents": [
                               ${playlistItemJson(videoId, title)}
                               ${continuationItemJsonSuffix(continuation)}
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+            """.trimIndent()
+        )
+    }
+
+    private fun playlistHeaderRoot(secondSubtitle: String): JSONObject {
+        return JSONObject(
+            """
+            {
+              "contents": {
+                "twoColumnBrowseResultsRenderer": {
+                  "tabs": [
+                    {
+                      "tabRenderer": {
+                        "content": {
+                          "sectionListRenderer": {
+                            "contents": [
+                              {
+                                "musicResponsiveHeaderRenderer": {
+                                  "title": { "simpleText": "Virtual Playlist" },
+                                  "secondSubtitle": { "simpleText": "$secondSubtitle" }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+            """.trimIndent()
+        )
+    }
+
+    private fun playlistDetailRoot(secondSubtitle: String, videoId: String, title: String): JSONObject {
+        return JSONObject(
+            """
+            {
+              "contents": {
+                "twoColumnBrowseResultsRenderer": {
+                  "tabs": [
+                    {
+                      "tabRenderer": {
+                        "content": {
+                          "sectionListRenderer": {
+                            "contents": [
+                              {
+                                "musicResponsiveHeaderRenderer": {
+                                  "title": { "simpleText": "Virtual Playlist" },
+                                  "secondSubtitle": {
+                                    "runs": [
+                                      { "text": "$secondSubtitle" }
+                                    ]
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  ],
+                  "secondaryContents": {
+                    "sectionListRenderer": {
+                      "contents": [
+                        {
+                          "musicPlaylistShelfRenderer": {
+                            "playlistId": "LM",
+                            "contents": [
+                              ${playlistItemJson(videoId, title)}
                             ]
                           }
                         }
