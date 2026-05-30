@@ -38,7 +38,7 @@ class YouTubeMusicPlaylistDetailPaginationTest {
     }
 
     @Test
-    fun getPlaylistDetail_usesBestAvailableTrackCount() = runBlocking {
+    fun getPlaylistDetail_usesHeaderTrackCountEvenWhenLoadedTrackCountDiffers() = runBlocking {
         val highHeaderDetail = collectDetail(
             responses = listOf(
                 initialPageRoot(
@@ -67,7 +67,7 @@ class YouTubeMusicPlaylistDetailPaginationTest {
         )
 
         assertEquals(3, lowHeaderDetail.tracks.size)
-        assertEquals(3, lowHeaderDetail.trackCount)
+        assertEquals(1, lowHeaderDetail.trackCount)
 
         val missingHeaderDetail = collectDetail(
             responses = listOf(

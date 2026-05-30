@@ -1498,11 +1498,7 @@ internal suspend fun collectYouTubeMusicPlaylistDetail(
     )
     val distinctTracks = tracks.distinctBy { it.videoId }
     val loadedTrackCount = distinctTracks.size.takeIf { it > 0 }
-    val resolvedTrackCount = when {
-        baseDetail.trackCount != null && loadedTrackCount != null -> maxOf(baseDetail.trackCount, loadedTrackCount)
-        baseDetail.trackCount != null -> baseDetail.trackCount
-        else -> loadedTrackCount
-    }
+    val resolvedTrackCount = baseDetail.trackCount ?: loadedTrackCount
     return baseDetail.copy(
         trackCount = resolvedTrackCount,
         tracks = distinctTracks
