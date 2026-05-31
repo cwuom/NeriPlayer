@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.core.player
  * Updated: 2026/3/23
  */
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.Application
 import android.app.Notification
@@ -217,6 +218,7 @@ internal fun shouldSkipFullSyncForLocalPlaybackAction(
     return foregroundStarted && hasItems && hasCurrentSong
 }
 
+@SuppressLint("ObsoleteSdkInt")
 private fun Context.findActivityReadyForDirectServiceStart(): Activity? {
     var current: Context? = this
     while (current is ContextWrapper) {
@@ -982,7 +984,7 @@ class AudioPlayerService : Service() {
         val scheme = parsed?.scheme?.lowercase()
         return when {
             scheme.isNullOrBlank() -> filePathToUriString(raw)
-            scheme == "file" -> parsed?.path?.let(::filePathToUriString) ?: raw
+            scheme == "file" -> parsed.path?.let(::filePathToUriString) ?: raw
             else -> raw
         }
     }
@@ -1000,6 +1002,7 @@ class AudioPlayerService : Service() {
         )
         // 从最近任务移除时不再直接停播，只禁止这次会话后续自动恢复
         if (PlayerManager.hasItems()) {
+            PlayerManager.flushPlaybackStatsBlocking("task_removed")
             PlayerManager.suppressFutureAutoResumeForCurrentSession(forcePersist = true)
             updateNotification()
         }
@@ -1014,6 +1017,7 @@ class AudioPlayerService : Service() {
         )
         isServiceForegroundActive = false
         isServiceInstanceActive = false
+        PlayerManager.flushPlaybackStatsBlocking("service_destroy")
         unregisterReceiver(becomingNoisyReceiver)
         serviceScope.cancel()
         mediaSession.isActive = false
@@ -1030,6 +1034,9 @@ class AudioPlayerService : Service() {
             "NERI-APS",
             "onTrimMemory level=$level ${buildStateSummary()}"
         )
+        if (level >= TRIM_MEMORY_UI_HIDDEN && PlayerManager.hasItems()) {
+            PlayerManager.flushPlaybackStatsBlocking("service_trim_memory_$level")
+        }
     }
 
     override fun onLowMemory() {
@@ -1038,6 +1045,9 @@ class AudioPlayerService : Service() {
             "NERI-APS",
             "onLowMemory ${buildStateSummary()}"
         )
+        if (PlayerManager.hasItems()) {
+            PlayerManager.flushPlaybackStatsBlocking("service_low_memory")
+        }
     }
 
 

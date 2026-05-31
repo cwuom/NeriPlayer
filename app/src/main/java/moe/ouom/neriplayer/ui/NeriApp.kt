@@ -662,7 +662,7 @@ private fun NeriAppContent(
         val exactStartupPlaybackPreferences = withContext(Dispatchers.IO) {
             readPlaybackPreferenceSnapshot(application)
         }
-        val startupRestoreSnapshot = PlayerManager.preloadRestoredStateSnapshot(
+        val startupRestoreSnapshot = preloadRestoredStateSnapshot(
             app = application,
             keepLastPlaybackProgressEnabled =
                 exactStartupPlaybackPreferences.keepLastPlaybackProgress,
@@ -732,56 +732,6 @@ private fun NeriAppContent(
                 }
             }
 
-        // 播放统计：追踪实际收听时长
-        launch {
-            var trackingSong: SongItem? = null
-            var sessionStartTime = 0L
-            var accumulatedMs = 0L
-            var wasPlaying = false
-
-            fun flushSession() {
-                val song = trackingSong ?: return
-                if (wasPlaying && sessionStartTime > 0L) {
-                    accumulatedMs += System.currentTimeMillis() - sessionStartTime
-                }
-                if (accumulatedMs > 0) {
-                    AppContainer.playbackStatsRepo.recordSession(song, accumulatedMs)
-                }
-                accumulatedMs = 0L
-                sessionStartTime = 0L
-                wasPlaying = false
-            }
-
-            launch {
-                PlayerManager.currentSongFlow.collect { song ->
-                    if (song != null && song.stableKey() != trackingSong?.stableKey()) {
-                        flushSession()
-                        trackingSong = song
-                        if (PlayerManager.isPlayingFlow.value) {
-                            wasPlaying = true
-                            sessionStartTime = System.currentTimeMillis()
-                        }
-                    } else if (song == null) {
-                        flushSession()
-                        trackingSong = null
-                    }
-                }
-            }
-
-            PlayerManager.isPlayingFlow.collect { playing ->
-                if (trackingSong == null) return@collect
-                if (playing && !wasPlaying) {
-                    wasPlaying = true
-                    sessionStartTime = System.currentTimeMillis()
-                } else if (!playing && wasPlaying) {
-                    if (sessionStartTime > 0L) {
-                        accumulatedMs += System.currentTimeMillis() - sessionStartTime
-                    }
-                    wasPlaying = false
-                    sessionStartTime = 0L
-                }
-            }
-        }
     }
 
     LaunchedEffect(storedFollowSystemDark, pendingFollowSystemDark) {
@@ -828,7 +778,7 @@ private fun NeriAppContent(
             hasCachedSample = cachedSample != null
         )
         if (warmupDelayMillis > 0L) {
-            kotlinx.coroutines.delay(warmupDelayMillis)
+            delay(warmupDelayMillis)
         }
 
         coverSeedHex = CoverArtColorCache.preload(context, displayCoverUrl)?.seedHex ?: coverSeedHex
