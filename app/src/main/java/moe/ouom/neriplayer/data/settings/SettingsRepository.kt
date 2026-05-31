@@ -59,6 +59,9 @@ class SettingsRepository(private val context: Context) {
     val nowPlayingToolbarDockEnabledFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.NOWPLAYING_TOOLBAR_DOCK_ENABLED] ?: true }
 
+    val nowPlayingKeepScreenOnFlow: Flow<Boolean> =
+        context.dataStore.data.map { it[SettingsKeys.NOWPLAYING_KEEP_SCREEN_ON] ?: true }
+
     val nowPlayingShowTitleFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.NOWPLAYING_SHOW_TITLE] ?: true }
 
@@ -309,6 +312,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setNowPlayingToolbarDockEnabled(enabled: Boolean) {
         context.dataStore.edit { it[SettingsKeys.NOWPLAYING_TOOLBAR_DOCK_ENABLED] = enabled }
+    }
+
+    suspend fun setNowPlayingKeepScreenOn(enabled: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.NOWPLAYING_KEEP_SCREEN_ON] = enabled }
     }
 
     suspend fun setNowPlayingShowTitle(enabled: Boolean) {
