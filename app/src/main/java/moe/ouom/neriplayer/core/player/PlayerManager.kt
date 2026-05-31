@@ -289,6 +289,7 @@ object PlayerManager {
     val playlistsFlow: StateFlow<List<LocalPlaylist>> = _playlistsFlow
 
     internal var playJob: Job? = null
+    internal var currentYouTubePrefetchJob: Job? = null
     internal val youtubeStreamWarmupJobs = ConcurrentHashMap<String, Job>()
     @Volatile
     internal var playbackRequestToken = 0L
@@ -487,6 +488,8 @@ object PlayerManager {
         playbackRequestToken += 1
         playJob?.cancel()
         playJob = null
+        currentYouTubePrefetchJob?.cancel()
+        currentYouTubePrefetchJob = null
         updateResumePlaybackRequested(false)
         restoredShouldResumePlayback = false
         restoredResumePositionMs = 0L

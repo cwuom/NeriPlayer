@@ -369,11 +369,12 @@ internal fun PlayerManager.playAtIndex(
     }
 
     playJob?.cancel()
+    currentYouTubePrefetchJob?.cancel()
+    currentYouTubePrefetchJob = null
     playbackRequestToken += 1
     val requestToken = playbackRequestToken
     clearPendingSeekPosition()
     _playbackPositionMs.value = 0L
-    maybeWarmCurrentAndUpcomingYouTubeMusic(index)
     playJob = ioScope.launch {
         val result = resolveSongUrl(song)
         if (requestToken != playbackRequestToken || !isActive) {
@@ -512,14 +513,6 @@ private fun PlayerManager.maybeAutoMatchBiliMetadata(song: SongItem, requestToke
 
         replaceMetadataFromSearch(latestSong, candidate, isAuto = true)
     }
-}
-
-private fun PlayerManager.maybeWarmCurrentAndUpcomingYouTubeMusic(currentSongIndex: Int) {
-    prefetchYouTubeQueueWindow(
-        playlist = currentPlaylist,
-        startIndex = currentSongIndex,
-        source = "play_at_index"
-    )
 }
 
 private fun PlayerManager.maybeWarmNextYouTubeMusicAfterCurrentResolved() {
@@ -1057,6 +1050,8 @@ internal fun PlayerManager.stopPlaybackPreservingQueueImpl(clearMediaUrl: Boolea
     playbackRequestToken += 1
     playJob?.cancel()
     playJob = null
+    currentYouTubePrefetchJob?.cancel()
+    currentYouTubePrefetchJob = null
     lastHandledTrackEndKey = null
     updateResumePlaybackRequested(false)
     lastAutoTrackAdvanceAtMs = 0L
