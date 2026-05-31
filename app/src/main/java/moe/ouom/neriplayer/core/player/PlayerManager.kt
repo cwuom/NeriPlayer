@@ -77,6 +77,7 @@ import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
 import moe.ouom.neriplayer.core.player.policy.PlaybackCommand
 import moe.ouom.neriplayer.core.player.policy.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.policy.resolvePlaybackSoundConfigForEngine
+import moe.ouom.neriplayer.core.player.policy.resolveExoRepeatMode
 import moe.ouom.neriplayer.core.player.policy.shouldShowPauseButtonForPlaybackControls
 import moe.ouom.neriplayer.core.player.policy.shouldBootstrapPlaybackServiceOnAppLaunch
 import moe.ouom.neriplayer.core.player.policy.shouldRunPlaybackServiceInForeground
@@ -327,6 +328,11 @@ object PlayerManager {
             onTimerExpired = {
                 pause()
                 sleepTimerManager.cancel()
+            },
+            onTimerStateChanged = {
+                if (isPlayerInitialized()) {
+                    syncExoRepeatMode()
+                }
             }
         )
     }
@@ -1123,11 +1129,13 @@ object PlayerManager {
     /**
      */
     internal fun syncExoRepeatMode() {
-        val desired = if (repeatModeSetting == Player.REPEAT_MODE_ONE) {
-            Player.REPEAT_MODE_ONE
-        } else {
-            Player.REPEAT_MODE_OFF
-        }
+        val timerState = sleepTimerManager.timerState.value
+        val shouldLetPlaybackEndForSleepTimer =
+            timerState.isActive && timerState.mode == SleepTimerMode.FINISH_CURRENT
+        val desired = resolveExoRepeatMode(
+            repeatModeSetting = repeatModeSetting,
+            shouldLetPlaybackEndForSleepTimer = shouldLetPlaybackEndForSleepTimer
+        )
         if (player.repeatMode != desired) {
             player.repeatMode = desired
         }

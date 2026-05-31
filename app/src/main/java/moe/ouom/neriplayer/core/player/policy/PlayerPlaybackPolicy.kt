@@ -107,6 +107,20 @@ internal fun resolvePlaybackContinuationStartPlan(
     )
 }
 
+internal fun resolveExoRepeatMode(
+    repeatModeSetting: Int,
+    shouldLetPlaybackEndForSleepTimer: Boolean
+): Int {
+    return if (
+        repeatModeSetting == Player.REPEAT_MODE_ONE &&
+        !shouldLetPlaybackEndForSleepTimer
+    ) {
+        Player.REPEAT_MODE_ONE
+    } else {
+        Player.REPEAT_MODE_OFF
+    }
+}
+
 internal fun shouldForceStartupProtectionFadeOnManualResume(
     isPlayerPrepared: Boolean,
     resumePositionMs: Long,
