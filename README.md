@@ -76,6 +76,9 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
    - 老旧手机（32位系统）请下载 armeabi-v7a
    - x86 / x86_64 仅供模拟器或英特尔设备或 Chromebook 使用，普通用户无需下载
 
+> [!IMPORTANT]
+> Release 渠道目前不是严格的稳定通道。由于高频反馈用户较少，Release 通常是在开发者完成一批功能后手动推送，可能仍包含未完全暴露的问题，请按需选择使用。
+
 ### b. 下载 CI 版本
 1. 前往 [GitHub Action](https://github.com/cwuom/NeriPlayer/actions)
    下载最近一次构建成功的 Artifacts 并解压。
