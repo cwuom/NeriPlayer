@@ -71,8 +71,16 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
 
     private fun triggerSync() {
         runCatching {
-            GitHubSyncWorker.scheduleDelayedSync(app, triggerByUserAction = false)
-            WebDavSyncWorker.scheduleDelayedSync(app, triggerByUserAction = false)
+            GitHubSyncWorker.scheduleDelayedSync(
+                app,
+                triggerByUserAction = false,
+                markMutation = true
+            )
+            WebDavSyncWorker.scheduleDelayedSync(
+                app,
+                triggerByUserAction = false,
+                markMutation = true
+            )
         }
     }
 

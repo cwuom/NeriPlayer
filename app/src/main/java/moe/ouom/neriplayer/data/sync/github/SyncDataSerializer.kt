@@ -247,12 +247,12 @@ object SyncDataSerializer {
     @Serializable
     private data class LegacySyncSong(
         @ProtoNumber(1) val id: Long,
-        @ProtoNumber(2) val name: String,
-        @ProtoNumber(3) val artist: String,
-        @ProtoNumber(4) val album: String,
-        @ProtoNumber(5) val albumId: Long,
-        @ProtoNumber(6) val durationMs: Long,
-        @ProtoNumber(7) val coverUrl: String?,
+        @ProtoNumber(2) val name: String = "",
+        @ProtoNumber(3) val artist: String = "",
+        @ProtoNumber(4) val album: String = "",
+        @ProtoNumber(5) val albumId: Long = 0L,
+        @ProtoNumber(6) val durationMs: Long = 0L,
+        @ProtoNumber(7) val coverUrl: String? = null,
         @ProtoNumber(8) val addedAt: Long = System.currentTimeMillis(),
         @ProtoNumber(9) val matchedLyric: String? = null,
         @ProtoNumber(10) val matchedTranslatedLyric: String? = null,
@@ -316,12 +316,12 @@ object SyncDataSerializer {
     @Serializable
     private data class LegacySyncFavoritePlaylist(
         @ProtoNumber(1) val id: Long,
-        @ProtoNumber(2) val name: String,
-        @ProtoNumber(3) val coverUrl: String?,
-        @ProtoNumber(4) val trackCount: Int,
-        @ProtoNumber(5) val source: String,
-        @ProtoNumber(6) val songs: List<LegacySyncSong>,
-        @ProtoNumber(7) val addedTime: Long
+        @ProtoNumber(2) val name: String = "",
+        @ProtoNumber(3) val coverUrl: String? = null,
+        @ProtoNumber(4) val trackCount: Int = 0,
+        @ProtoNumber(5) val source: String = "",
+        @ProtoNumber(6) val songs: List<LegacySyncSong> = emptyList(),
+        @ProtoNumber(7) val addedTime: Long = 0L
     ) {
         fun toCurrent(): SyncFavoritePlaylist = SyncFavoritePlaylist(
             id = id,

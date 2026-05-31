@@ -1405,11 +1405,19 @@ fun LocalPlaylistDetailScreen(
                         },
                         confirmButton = {
                             HapticTextButton(onClick = {
-                                val songsToRemove = localSongs.filter {
-                                    it.stableKey() in selectedKeysState.value
-                                }
-                                val expectedSongs = localSongs.filterNot { candidate ->
-                                    songsToRemove.any { it.sameIdentityAs(candidate) }
+                                val selectedKeys = selectedKeysState.value
+                                val removeAll = localSongs.isNotEmpty() &&
+                                    selectedKeys.size == localSongs.size &&
+                                    localSongs.all { it.stableKey() in selectedKeys }
+                                var songsToRemove = emptyList<SongItem>()
+                                val expectedSongs = if (removeAll) {
+                                    emptyList()
+                                } else {
+                                    songsToRemove = localSongs.filter {
+                                        it.stableKey() in selectedKeys
+                                    }
+                                    val removeIdentities = songsToRemove.map { it.identity() }.toSet()
+                                    localSongs.filterNot { it.identity() in removeIdentities }
                                 }
                                 pendingOrderIdentities = expectedSongs.map { it.identity() }
                                 blockSync = true
@@ -1419,7 +1427,11 @@ fun LocalPlaylistDetailScreen(
                                 showDeleteMultiConfirm = false
                                 exitSelectionMode()
 
-                                vm.removeSongs(songsToRemove)
+                                if (removeAll) {
+                                    vm.clearSongs()
+                                } else {
+                                    vm.removeSongs(songsToRemove)
+                                }
                             }) { Text(stringResource(R.string.local_playlist_delete_count, count)) }
                         },
                         dismissButton = {
