@@ -7,9 +7,11 @@ import androidx.media3.datasource.cache.CacheDataSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.api.youtube.YouTubePlayableStreamType
+import moe.ouom.neriplayer.core.player.prefetch.YouTubePrefetchRunner
+import moe.ouom.neriplayer.core.player.prefetch.YouTubePrefetchTask
 import moe.ouom.neriplayer.core.player.policy.resolveYouTubeWarmupTargets
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
@@ -19,6 +21,15 @@ private const val YOUTUBE_WARMUP_MIN_PREFETCH_BYTES = 256L * 1024L
 private const val YOUTUBE_WARMUP_FIRST_TRACK_PREFETCH_BYTES = 1536L * 1024L
 private const val YOUTUBE_WARMUP_SECOND_TRACK_PREFETCH_BYTES = 1024L * 1024L
 private const val YOUTUBE_WARMUP_FOLLOWING_TRACK_PREFETCH_BYTES = 512L * 1024L
+private const val YOUTUBE_PREFETCH_MAX_CONCURRENCY = 1
+
+private data class YouTubePrefetchSpec(
+    val videoId: String,
+    val preferredQuality: String,
+    val slot: Int,
+    val windowSize: Int,
+    val source: String
+)
 
 internal fun PlayerManager.prefetchYouTubeQueueWindowImpl(
     playlist: List<SongItem>,
@@ -38,25 +49,27 @@ internal fun PlayerManager.prefetchYouTubeQueueWindowImpl(
         "NERI-PlayerManager",
         "prefetchYouTubeQueueWindow: source=$source, startIndex=$startIndex, ids=${targets.prefetchVideoIds.joinToString()}, preferredQuality=${targets.preferredQuality}"
     )
-    targets.prefetchVideoIds.forEachIndexed { slot, videoId ->
-        scheduleYouTubePlayableAudioWarmup(
+    val specs = targets.prefetchVideoIds.mapIndexed { slot, videoId ->
+        YouTubePrefetchSpec(
             videoId = videoId,
             preferredQuality = targets.preferredQuality,
             slot = slot,
             windowSize = targets.prefetchVideoIds.size,
             source = source
         )
-    }
+    }.associateBy { it.videoId }
+    currentYouTubePrefetchJob?.cancel()
+    currentYouTubePrefetchJob = YouTubePrefetchRunner(
+        task = YouTubePrefetchTask { videoId ->
+            val spec = specs[videoId] ?: return@YouTubePrefetchTask
+            prefetchYouTubePlayableAudio(spec)
+        },
+        maxConcurrency = YOUTUBE_PREFETCH_MAX_CONCURRENCY
+    ).launch(ioScope, targets.prefetchVideoIds)
 }
 
-private fun PlayerManager.scheduleYouTubePlayableAudioWarmup(
-    videoId: String,
-    preferredQuality: String,
-    slot: Int,
-    windowSize: Int,
-    source: String
-) {
-    val cacheKey = computeYouTubeCacheKey(videoId, preferredQuality)
+private suspend fun PlayerManager.prefetchYouTubePlayableAudio(spec: YouTubePrefetchSpec) {
+    val cacheKey = computeYouTubeCacheKey(spec.videoId, spec.preferredQuality)
     if (checkExoPlayerCache(cacheKey)) {
         return
     }
@@ -64,61 +77,63 @@ private fun PlayerManager.scheduleYouTubePlayableAudioWarmup(
     if (existingJob?.isActive == true) {
         return
     }
-    lateinit var createdJob: Job
-    createdJob = ioScope.launch {
-        val startedAtMs = System.currentTimeMillis()
-        try {
-            val playableAudio = youtubeMusicPlaybackRepository.getBestPlayableAudio(
-                videoId = videoId,
-                preferredQualityOverride = preferredQuality,
-                forceRefresh = false,
-                requireDirect = false,
-                preferM4a = false
-            ) ?: return@launch
-            invalidateMismatchedCachedResource(
-                cacheKey = cacheKey,
-                expectedContentLength = playableAudio.contentLength
-            )
-            if (checkExoPlayerCache(cacheKey)) {
-                return@launch
-            }
-            if (playableAudio.streamType != YouTubePlayableStreamType.DIRECT) {
-                NPLogger.d(
-                    "NERI-PlayerManager",
-                    "skip media prefetch for non-direct YouTube stream: videoId=$videoId, type=${playableAudio.streamType}, source=$source"
-                )
-                return@launch
-            }
-            val targetBytes = resolveYouTubeWarmupPrefetchBytes(
-                slot = slot,
-                windowSize = windowSize,
-                contentLength = playableAudio.contentLength
-            )
-            if (targetBytes <= 0L) {
-                return@launch
-            }
-            val prefetchedBytes = prefetchIntoPlayerCache(
-                url = playableAudio.url,
-                cacheKey = cacheKey,
-                targetBytes = targetBytes
-            )
+    val createdJob = currentCoroutineContext()[Job]
+    if (createdJob != null) {
+        youtubeStreamWarmupJobs[cacheKey] = createdJob
+    }
+    val startedAtMs = System.currentTimeMillis()
+    try {
+        val playableAudio = youtubeMusicPlaybackRepository.getBestPlayableAudio(
+            videoId = spec.videoId,
+            preferredQualityOverride = spec.preferredQuality,
+            forceRefresh = false,
+            requireDirect = false,
+            preferM4a = false
+        ) ?: return
+        invalidateMismatchedCachedResource(
+            cacheKey = cacheKey,
+            expectedContentLength = playableAudio.contentLength
+        )
+        if (checkExoPlayerCache(cacheKey)) {
+            return
+        }
+        if (playableAudio.streamType != YouTubePlayableStreamType.DIRECT) {
             NPLogger.d(
                 "NERI-PlayerManager",
-                "YouTube media prefetch finished: videoId=$videoId, cacheKey=$cacheKey, slot=$slot, source=$source, prefetchedBytes=$prefetchedBytes, targetBytes=$targetBytes, contentLength=${playableAudio.contentLength}, elapsedMs=${System.currentTimeMillis() - startedAtMs}"
+                "skip media prefetch for non-direct YouTube stream: videoId=${spec.videoId}, type=${playableAudio.streamType}, source=${spec.source}"
             )
-        } catch (error: Exception) {
-            if (error is CancellationException) {
-                throw error
-            }
-            NPLogger.w(
-                "NERI-PlayerManager",
-                "YouTube media prefetch failed: videoId=$videoId, cacheKey=$cacheKey, slot=$slot, source=$source, error=${error.message}"
-            )
-        } finally {
+            return
+        }
+        val targetBytes = resolveYouTubeWarmupPrefetchBytes(
+            slot = spec.slot,
+            windowSize = spec.windowSize,
+            contentLength = playableAudio.contentLength
+        )
+        if (targetBytes <= 0L) {
+            return
+        }
+        val prefetchedBytes = prefetchIntoPlayerCache(
+            url = playableAudio.url,
+            cacheKey = cacheKey,
+            targetBytes = targetBytes
+        )
+        NPLogger.d(
+            "NERI-PlayerManager",
+            "YouTube media prefetch finished: videoId=${spec.videoId}, cacheKey=$cacheKey, slot=${spec.slot}, source=${spec.source}, prefetchedBytes=$prefetchedBytes, targetBytes=$targetBytes, contentLength=${playableAudio.contentLength}, elapsedMs=${System.currentTimeMillis() - startedAtMs}"
+        )
+    } catch (error: Exception) {
+        if (error is CancellationException) {
+            throw error
+        }
+        NPLogger.w(
+            "NERI-PlayerManager",
+            "YouTube media prefetch failed: videoId=${spec.videoId}, cacheKey=$cacheKey, slot=${spec.slot}, source=${spec.source}, error=${error.message}"
+        )
+    } finally {
+        if (createdJob != null) {
             youtubeStreamWarmupJobs.remove(cacheKey, createdJob)
         }
     }
-    youtubeStreamWarmupJobs[cacheKey] = createdJob
 }
 
 private fun resolveYouTubeWarmupPrefetchBytes(
