@@ -278,6 +278,25 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
         }
     }
 
+    suspend fun clearPlaylistSongs(playlistId: Long) {
+        withContext(Dispatchers.IO) {
+            var changed = false
+            val updated = _playlists.value.map { playlist ->
+                if (playlist.id != playlistId || playlist.songs.isEmpty()) {
+                    playlist
+                } else {
+                    changed = true
+                    playlist.copy(
+                        songs = mutableListOf(),
+                        modifiedAt = System.currentTimeMillis()
+                    )
+                }
+            }
+            if (!changed) return@withContext
+            publish(updated)
+        }
+    }
+
     suspend fun removeSongsFromPlaylistById(playlistId: Long, songIds: List<Long>) {
         withContext(Dispatchers.IO) {
             if (songIds.isEmpty()) return@withContext

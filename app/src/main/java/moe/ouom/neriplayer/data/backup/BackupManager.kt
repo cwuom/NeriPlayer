@@ -30,11 +30,15 @@ import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.data.history.PlayHistoryRepository
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.sync.github.SyncPlaylist
+import moe.ouom.neriplayer.data.sync.github.SyncRecentPlay
+import moe.ouom.neriplayer.data.sync.github.SyncTrackStat
+import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
 import moe.ouom.neriplayer.util.NPLogger
 import java.io.IOException
 import java.io.InputStream
@@ -54,6 +58,7 @@ class BackupManager(private val context: Context) {
         private const val TAG = "BackupManager"
         private const val BACKUP_FILE_PREFIX = "neriplayer_backup"
         private const val BACKUP_FILE_EXTENSION = ".json"
+        private const val MAX_BACKUP_HISTORY_COUNT = 1000
     }
     
     /**
@@ -62,8 +67,10 @@ class BackupManager(private val context: Context) {
     data class BackupData(
         val version: String = "2.0",
         val timestamp: Long = System.currentTimeMillis(),
-        val playlists: List<SyncPlaylist>,
-        val exportDate: String = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.getDefault()).format(Date())
+        val playlists: List<SyncPlaylist>? = emptyList(),
+        val recentPlays: List<SyncRecentPlay>? = emptyList(),
+        val playbackStats: List<SyncTrackStat>? = emptyList(),
+        val exportDate: String? = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.getDefault()).format(Date())
     )
     
     /**
@@ -72,15 +79,27 @@ class BackupManager(private val context: Context) {
     suspend fun exportPlaylists(uri: Uri): Result<String> = withContext(Dispatchers.IO) {
         try {
             val playlistRepo = LocalPlaylistRepository.getInstance(context)
+            val historyRepo = PlayHistoryRepository.getInstance(context)
+            val playbackStatsRepo = PlaybackStatsRepository.getInstance(context)
             val playlists = playlistRepo.playlists.value
 
             // 使用SyncPlaylist转换，确保使用网络地址
             val syncPlaylists = playlists.map { playlist ->
                 SyncPlaylist.fromLocalPlaylist(playlist, System.currentTimeMillis(), context)
             }
+            val recentPlays = historyRepo.historyFlow.value
+                .filter { BackupMetadataMapper.shouldExportHistory(it, context) }
+                .take(MAX_BACKUP_HISTORY_COUNT)
+                .map(BackupMetadataMapper::toSyncRecentPlay)
+            val playbackStats = playbackStatsRepo.statsFlow.value
+                .filter { BackupMetadataMapper.shouldExportTrackStat(it, context) }
+                .map(BackupMetadataMapper::toSyncTrackStat)
 
             val backupData = BackupData(
+                version = "2.1",
                 playlists = syncPlaylists,
+                recentPlays = recentPlays,
+                playbackStats = playbackStats,
                 exportDate = dateFormat.format(Date())
             )
 
@@ -110,19 +129,22 @@ class BackupManager(private val context: Context) {
 
             val json = inputStream.bufferedReader().use { it.readText() }
             val backupData = gson.fromJson<BackupData>(json, object : TypeToken<BackupData>() {}.type)
+            val backupPlaylists = backupData.playlists.orEmpty()
 
-            if (backupData.playlists.isEmpty()) {
+            if (backupPlaylists.isEmpty()) {
                 return@withContext Result.failure(IllegalArgumentException("No playlist data in backup file"))  // Localized
             }
 
             val playlistRepo = LocalPlaylistRepository.getInstance(context)
+            val historyRepo = PlayHistoryRepository.getInstance(context)
+            val playbackStatsRepo = PlaybackStatsRepository.getInstance(context)
             val currentPlaylists = playlistRepo.playlists.value.toMutableList()
 
             var importedCount = 0
             var skippedCount = 0
             var mergedCount = 0
 
-            for (syncPlaylist in backupData.playlists) {
+            for (syncPlaylist in backupPlaylists) {
                 val importedSystemDescriptor = SystemLocalPlaylists.resolve(
                     syncPlaylist.id,
                     syncPlaylist.name,
@@ -195,13 +217,15 @@ class BackupManager(private val context: Context) {
 
             // 更新仓库
             playlistRepo.updatePlaylists(currentPlaylists)
+            importRecentPlays(historyRepo, backupData.recentPlays.orEmpty())
+            importPlaybackStats(playbackStatsRepo, backupData.playbackStats.orEmpty())
 
             val result = ImportResult(
                 importedCount = importedCount,
                 skippedCount = skippedCount,
                 mergedCount = mergedCount,
-                totalCount = backupData.playlists.size,
-                backupDate = backupData.exportDate
+                totalCount = backupPlaylists.size,
+                backupDate = backupData.exportDate ?: dateFormat.format(Date(backupData.timestamp))
             )
 
             NPLogger.d(TAG, context.getString(R.string.backup_import_success_detail, result))
@@ -237,6 +261,34 @@ class BackupManager(private val context: Context) {
             addedSongs = newSongs.size
         )
     }
+
+    private fun importRecentPlays(
+        historyRepo: PlayHistoryRepository,
+        recentPlays: List<SyncRecentPlay>
+    ) {
+        if (recentPlays.isEmpty()) return
+
+        val imported = recentPlays.mapNotNull { BackupMetadataMapper.toPlayedEntry(it, context) }
+        if (imported.isEmpty()) return
+
+        val merged = (imported + historyRepo.historyFlow.value)
+            .sortedByDescending { it.playedAt }
+            .distinctBy { "${it.id}|${it.album}|${it.localFilePath ?: it.mediaUri.orEmpty()}" }
+            .take(MAX_BACKUP_HISTORY_COUNT)
+        historyRepo.updateHistory(merged)
+    }
+
+    private fun importPlaybackStats(
+        playbackStatsRepo: PlaybackStatsRepository,
+        playbackStats: List<SyncTrackStat>
+    ) {
+        val sanitizedStats = playbackStats.mapNotNull {
+            BackupMetadataMapper.sanitizeTrackStat(it, context)
+        }
+        if (sanitizedStats.isNotEmpty()) {
+            playbackStatsRepo.applyMergedStats(sanitizedStats)
+        }
+    }
     
     /**
      * 分析备份文件与当前歌单的差异
@@ -248,13 +300,14 @@ class BackupManager(private val context: Context) {
 
             val json = inputStream.bufferedReader().use { it.readText() }
             val backupData = gson.fromJson<BackupData>(json, object : TypeToken<BackupData>() {}.type)
+            val backupPlaylists = backupData.playlists.orEmpty()
 
             val playlistRepo = LocalPlaylistRepository.getInstance(context)
             val currentPlaylists = playlistRepo.playlists.value
 
             val differences = mutableListOf<PlaylistDifference>()
 
-            for (syncPlaylist in backupData.playlists) {
+            for (syncPlaylist in backupPlaylists) {
                 val syncSystemDescriptor = SystemLocalPlaylists.resolve(
                     syncPlaylist.id,
                     syncPlaylist.name,
@@ -303,7 +356,7 @@ class BackupManager(private val context: Context) {
             }
 
             val analysis = DifferenceAnalysis(
-                backupDate = backupData.exportDate,
+                backupDate = backupData.exportDate ?: dateFormat.format(Date(backupData.timestamp)),
                 differences = differences,
                 totalMissingSongs = differences.sumOf { it.missingSongs }
             )

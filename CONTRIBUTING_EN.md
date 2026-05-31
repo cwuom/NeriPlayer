@@ -37,7 +37,7 @@ Additional notes:
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/cwuom/NeriPlayer.git
+   git clone --recursive https://github.com/cwuom/NeriPlayer.git
    cd NeriPlayer
    ```
 2. Build the Debug version:

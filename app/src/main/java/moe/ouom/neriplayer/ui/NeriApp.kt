@@ -25,6 +25,8 @@ package moe.ouom.neriplayer.ui
 
 import android.app.Activity
 import android.app.Application
+import android.content.Context
+import android.content.ContextWrapper
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.net.Uri
@@ -34,6 +36,7 @@ import android.os.Looper
 import android.view.PixelCopy
 import android.view.View
 import android.view.ViewTreeObserver
+import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.EaseInOutCubic
@@ -221,6 +224,14 @@ private fun SongItem?.resolveUiCoverSource(context: android.content.Context): St
 
 private const val NOW_PLAYING_REMOTE_BLUR_IMAGE_SIZE_PX = 640
 private const val NOW_PLAYING_LOCAL_BLUR_IMAGE_SIZE_PX = 384
+
+private tailrec fun Context.findActivity(): Activity? {
+    return when (this) {
+        is Activity -> this
+        is ContextWrapper -> baseContext.findActivity()
+        else -> null
+    }
+}
 
 private fun resolvedNowPlayingBlurImageSizePx(coverUrl: String?): Int {
     return if (isRemoteImageSource(coverUrl)) {
@@ -558,6 +569,7 @@ private fun NeriAppContent(
     val hapticFeedbackEnabled by repo.hapticFeedbackEnabledFlow.collectAsState(initial = true)
     val showCoverSourceBadge by repo.showCoverSourceBadgeFlow.collectAsState(initial = true)
     val nowPlayingToolbarDockEnabled by repo.nowPlayingToolbarDockEnabledFlow.collectAsState(initial = true)
+    val nowPlayingKeepScreenOn by repo.nowPlayingKeepScreenOnFlow.collectAsState(initial = true)
     val showNowPlayingTitle by repo.nowPlayingShowTitleFlow.collectAsState(initial = true)
     val showNowPlayingProgressQualitySwitch by repo.nowPlayingProgressShowQualitySwitchFlow.collectAsState(initial = true)
     val showNowPlayingProgressAudioCodec by repo.nowPlayingProgressShowAudioCodecFlow.collectAsState(initial = true)
@@ -662,7 +674,7 @@ private fun NeriAppContent(
         val exactStartupPlaybackPreferences = withContext(Dispatchers.IO) {
             readPlaybackPreferenceSnapshot(application)
         }
-        val startupRestoreSnapshot = PlayerManager.preloadRestoredStateSnapshot(
+        val startupRestoreSnapshot = preloadRestoredStateSnapshot(
             app = application,
             keepLastPlaybackProgressEnabled =
                 exactStartupPlaybackPreferences.keepLastPlaybackProgress,
@@ -732,56 +744,6 @@ private fun NeriAppContent(
                 }
             }
 
-        // 播放统计：追踪实际收听时长
-        launch {
-            var trackingSong: SongItem? = null
-            var sessionStartTime = 0L
-            var accumulatedMs = 0L
-            var wasPlaying = false
-
-            fun flushSession() {
-                val song = trackingSong ?: return
-                if (wasPlaying && sessionStartTime > 0L) {
-                    accumulatedMs += System.currentTimeMillis() - sessionStartTime
-                }
-                if (accumulatedMs > 0) {
-                    AppContainer.playbackStatsRepo.recordSession(song, accumulatedMs)
-                }
-                accumulatedMs = 0L
-                sessionStartTime = 0L
-                wasPlaying = false
-            }
-
-            launch {
-                PlayerManager.currentSongFlow.collect { song ->
-                    if (song != null && song.stableKey() != trackingSong?.stableKey()) {
-                        flushSession()
-                        trackingSong = song
-                        if (PlayerManager.isPlayingFlow.value) {
-                            wasPlaying = true
-                            sessionStartTime = System.currentTimeMillis()
-                        }
-                    } else if (song == null) {
-                        flushSession()
-                        trackingSong = null
-                    }
-                }
-            }
-
-            PlayerManager.isPlayingFlow.collect { playing ->
-                if (trackingSong == null) return@collect
-                if (playing && !wasPlaying) {
-                    wasPlaying = true
-                    sessionStartTime = System.currentTimeMillis()
-                } else if (!playing && wasPlaying) {
-                    if (sessionStartTime > 0L) {
-                        accumulatedMs += System.currentTimeMillis() - sessionStartTime
-                    }
-                    wasPlaying = false
-                    sessionStartTime = 0L
-                }
-            }
-        }
     }
 
     LaunchedEffect(storedFollowSystemDark, pendingFollowSystemDark) {
@@ -828,7 +790,7 @@ private fun NeriAppContent(
             hasCachedSample = cachedSample != null
         )
         if (warmupDelayMillis > 0L) {
-            kotlinx.coroutines.delay(warmupDelayMillis)
+            delay(warmupDelayMillis)
         }
 
         coverSeedHex = CoverArtColorCache.preload(context, displayCoverUrl)?.seedHex ?: coverSeedHex
@@ -1037,6 +999,22 @@ private fun NeriAppContent(
             DisposableEffect(showNowPlaying, effectiveAudioReactiveEnabled) {
                 AudioReactive.enabled = showNowPlaying && effectiveAudioReactiveEnabled
                 onDispose { AudioReactive.enabled = false }
+            }
+
+            val activity = remember(context) { context.findActivity() }
+            DisposableEffect(activity, showNowPlaying, nowPlayingKeepScreenOn) {
+                val window = activity?.window
+                val keepScreenOnFlag = WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                val shouldKeepScreenOn = showNowPlaying && nowPlayingKeepScreenOn
+                val wasKeepScreenOn = window?.attributes?.flags?.and(keepScreenOnFlag) == keepScreenOnFlag
+                if (shouldKeepScreenOn) {
+                    window?.addFlags(keepScreenOnFlag)
+                }
+                onDispose {
+                    if (shouldKeepScreenOn && !wasKeepScreenOn) {
+                        window?.clearFlags(keepScreenOnFlag)
+                    }
+                }
             }
 
             Box(modifier = Modifier.fillMaxSize()) {
@@ -1616,6 +1594,10 @@ private fun NeriAppContent(
                                         nowPlayingToolbarDockEnabled = nowPlayingToolbarDockEnabled,
                                         onNowPlayingToolbarDockEnabledChange = { enabled ->
                                             scope.launch { repo.setNowPlayingToolbarDockEnabled(enabled) }
+                                        },
+                                        nowPlayingKeepScreenOn = nowPlayingKeepScreenOn,
+                                        onNowPlayingKeepScreenOnChange = { enabled ->
+                                            scope.launch { repo.setNowPlayingKeepScreenOn(enabled) }
                                         },
                                         showNowPlayingTitle = showNowPlayingTitle,
                                         onShowNowPlayingTitleChange = { enabled ->

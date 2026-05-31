@@ -71,73 +71,131 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
 
     private fun triggerSync() {
         runCatching {
-            GitHubSyncWorker.scheduleDelayedSync(app, triggerByUserAction = false)
-            WebDavSyncWorker.scheduleDelayedSync(app, triggerByUserAction = false)
+            GitHubSyncWorker.scheduleDelayedSync(
+                app,
+                triggerByUserAction = false,
+                markMutation = true
+            )
+            WebDavSyncWorker.scheduleDelayedSync(
+                app,
+                triggerByUserAction = false,
+                markMutation = true
+            )
         }
     }
 
     fun recordSession(song: SongItem, listenedMs: Long) {
         if (listenedMs <= 0) return
         scope.launch {
-            mutex.withLock {
-                val now = System.currentTimeMillis()
-                val key = song.stableKey()
-                val current = _stats.value
-                val existingIndex = current.indexOfFirst { it.identityKey == key }
+            recordSessionInternal(
+                song = song,
+                listenedMs = listenedMs,
+                playCountIncrement = null,
+                scheduleSync = true
+            )
+        }
+    }
 
-                val updated = if (existingIndex >= 0) {
-                    val existing = current[existingIndex]
-                    val newTotalMs = existing.totalListenMs + listenedMs
-                    val prevFullPlays = existing.totalListenMs / maxOf(existing.durationMs, 1L)
-                    val newFullPlays = newTotalMs / maxOf(song.durationMs.takeIf { it > 0 } ?: existing.durationMs, 1L)
-                    val countIncrement = if (listenedMs >= MIN_LISTEN_MS_FOR_PLAY_COUNT ||
-                        newFullPlays > prevFullPlays) 1 else 0
+    suspend fun recordListenDeltaNow(
+        song: SongItem,
+        listenedMs: Long,
+        playCountIncrement: Int,
+        scheduleSync: Boolean = true
+    ) {
+        if (listenedMs <= 0 && playCountIncrement <= 0) return
+        recordSessionInternal(
+            song = song,
+            listenedMs = listenedMs,
+            playCountIncrement = playCountIncrement.coerceAtLeast(0),
+            scheduleSync = scheduleSync
+        )
+    }
 
-                    current.toMutableList().apply {
-                        this[existingIndex] = existing.copy(
-                            name = song.name,
-                            artist = song.artist,
-                            coverUrl = song.coverUrl,
-                            durationMs = song.durationMs.takeIf { it > 0 } ?: existing.durationMs,
-                            totalListenMs = newTotalMs,
-                            playCount = existing.playCount + countIncrement,
-                            lastPlayedAt = now,
-                            mediaUri = song.mediaUri,
-                            localFilePath = song.localFilePath,
-                            localFileName = song.localFileName,
-                            customName = song.customName,
-                            customArtist = song.customArtist,
-                            customCoverUrl = song.customCoverUrl
-                        )
-                    }
-                } else {
-                    val countIncrement = if (listenedMs >= MIN_LISTEN_MS_FOR_PLAY_COUNT) 1 else 0
-                    current + TrackStat(
-                        id = song.id,
+    private suspend fun recordSessionInternal(
+        song: SongItem,
+        listenedMs: Long,
+        playCountIncrement: Int?,
+        scheduleSync: Boolean
+    ) {
+        mutex.withLock {
+            val now = System.currentTimeMillis()
+            val key = song.stableKey()
+            val current = _stats.value
+            val existingIndex = current.indexOfFirst { it.identityKey == key }
+
+            val updated = if (existingIndex >= 0) {
+                val existing = current[existingIndex]
+                val newTotalMs = existing.totalListenMs + listenedMs.coerceAtLeast(0L)
+                val countIncrement = playCountIncrement ?: calculatePlayCountIncrement(
+                    existing = existing,
+                    song = song,
+                    listenedMs = listenedMs,
+                    newTotalMs = newTotalMs
+                )
+
+                current.toMutableList().apply {
+                    this[existingIndex] = existing.copy(
                         name = song.name,
                         artist = song.artist,
-                        album = song.album,
-                        albumId = song.albumId,
                         coverUrl = song.coverUrl,
-                        durationMs = song.durationMs,
-                        totalListenMs = listenedMs,
-                        playCount = countIncrement,
+                        durationMs = song.durationMs.takeIf { it > 0 } ?: existing.durationMs,
+                        totalListenMs = newTotalMs,
+                        playCount = existing.playCount + countIncrement,
                         lastPlayedAt = now,
-                        firstPlayedAt = now,
                         mediaUri = song.mediaUri,
                         localFilePath = song.localFilePath,
                         localFileName = song.localFileName,
                         customName = song.customName,
                         customArtist = song.customArtist,
-                        customCoverUrl = song.customCoverUrl,
-                        identityKey = key
+                        customCoverUrl = song.customCoverUrl
                     )
                 }
+            } else {
+                val countIncrement = playCountIncrement
+                    ?: if (listenedMs >= MIN_LISTEN_MS_FOR_PLAY_COUNT) 1 else 0
+                current + TrackStat(
+                    id = song.id,
+                    name = song.name,
+                    artist = song.artist,
+                    album = song.album,
+                    albumId = song.albumId,
+                    coverUrl = song.coverUrl,
+                    durationMs = song.durationMs,
+                    totalListenMs = listenedMs.coerceAtLeast(0L),
+                    playCount = countIncrement,
+                    lastPlayedAt = now,
+                    firstPlayedAt = now,
+                    mediaUri = song.mediaUri,
+                    localFilePath = song.localFilePath,
+                    localFileName = song.localFileName,
+                    customName = song.customName,
+                    customArtist = song.customArtist,
+                    customCoverUrl = song.customCoverUrl,
+                    identityKey = key
+                )
+            }
 
-                _stats.value = updated
-                persistToDisk(updated)
+            _stats.value = updated
+            persistToDisk(updated)
+            if (scheduleSync) {
                 triggerSync()
             }
+        }
+    }
+
+    private fun calculatePlayCountIncrement(
+        existing: TrackStat,
+        song: SongItem,
+        listenedMs: Long,
+        newTotalMs: Long
+    ): Int {
+        val durationMs = song.durationMs.takeIf { it > 0 } ?: existing.durationMs
+        val prevFullPlays = existing.totalListenMs / maxOf(existing.durationMs, 1L)
+        val newFullPlays = newTotalMs / maxOf(durationMs, 1L)
+        return if (listenedMs >= MIN_LISTEN_MS_FOR_PLAY_COUNT || newFullPlays > prevFullPlays) {
+            1
+        } else {
+            0
         }
     }
 

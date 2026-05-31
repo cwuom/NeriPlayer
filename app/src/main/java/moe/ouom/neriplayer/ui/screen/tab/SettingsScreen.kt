@@ -242,6 +242,8 @@ fun SettingsScreen(
     onShowCoverSourceBadgeChange: (Boolean) -> Unit,
     nowPlayingToolbarDockEnabled: Boolean,
     onNowPlayingToolbarDockEnabledChange: (Boolean) -> Unit,
+    nowPlayingKeepScreenOn: Boolean,
+    onNowPlayingKeepScreenOnChange: (Boolean) -> Unit,
     showNowPlayingTitle: Boolean,
     onShowNowPlayingTitleChange: (Boolean) -> Unit,
     showNowPlayingProgressQualitySwitch: Boolean,
@@ -1320,6 +1322,29 @@ fun SettingsScreen(
                                 Switch(
                                     checked = showNowPlayingTitle,
                                     onCheckedChange = onShowNowPlayingTitleChange
+                                )
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+
+                        ListItem(
+                            modifier = Modifier.settingsItemClickable {
+                                onNowPlayingKeepScreenOnChange(!nowPlayingKeepScreenOn)
+                            },
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Outlined.Brightness4,
+                                    contentDescription = stringResource(R.string.settings_nowplaying_keep_screen_on),
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = { Text(stringResource(R.string.settings_nowplaying_keep_screen_on)) },
+                            supportingContent = { Text(stringResource(R.string.settings_nowplaying_keep_screen_on_desc)) },
+                            trailingContent = {
+                                Switch(
+                                    checked = nowPlayingKeepScreenOn,
+                                    onCheckedChange = onNowPlayingKeepScreenOnChange
                                 )
                             },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
@@ -2590,5 +2615,4 @@ private fun SettingsLoginExpandedContent(
         )
     }
 }
-
 

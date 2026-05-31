@@ -17,7 +17,6 @@ import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.search.SongSearchInfo
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.metadata.applyManualSearchMetadata
 import moe.ouom.neriplayer.core.player.metadata.normalizeCustomMetadataValue
 import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
@@ -57,7 +56,7 @@ internal data class RestoredPlayerStateSnapshot(
     val persistedIndex: Int
 )
 
-private fun PlayerManager.buildPersistedPlaybackState(
+private fun buildPersistedPlaybackState(
     currentIndexSnapshot: Int,
     mediaUrlSnapshot: String?,
     positionMs: Long,
@@ -197,7 +196,7 @@ private fun loadRestoredStateSnapshot(
     }.getOrNull()
 }
 
-internal suspend fun PlayerManager.preloadRestoredStateSnapshot(
+internal suspend fun preloadRestoredStateSnapshot(
     app: Application,
     keepLastPlaybackProgressEnabled: Boolean,
     keepPlaybackModeStateEnabled: Boolean
@@ -224,7 +223,7 @@ internal fun PlayerManager.applyRestoredStateSnapshot(snapshot: RestoredPlayerSt
         )
         currentIndex = -1
         _currentQueueFlow.value = emptyList()
-        _currentSongFlow.value = null
+        setCurrentSongForPlayback(null)
         _currentMediaUrl.value = null
         _currentPlaybackAudioInfo.value = null
         _playbackPositionMs.value = 0L
@@ -237,7 +236,7 @@ internal fun PlayerManager.applyRestoredStateSnapshot(snapshot: RestoredPlayerSt
 
     currentIndex = snapshot.currentIndex
     _currentQueueFlow.value = currentPlaylist
-    _currentSongFlow.value = currentPlaylist.getOrNull(currentIndex)
+    setCurrentSongForPlayback(currentPlaylist.getOrNull(currentIndex))
     _currentMediaUrl.value = snapshot.currentMediaUrl
     repeatModeSetting = snapshot.repeatMode
     syncExoRepeatMode()
@@ -845,7 +844,7 @@ internal suspend fun PlayerManager.updateUserLyricOffsetImpl(
     }
 
     if (isCurrentSong(songToUpdate)) {
-        _currentSongFlow.value = _currentSongFlow.value?.copy(userLyricOffsetMs = newOffset)
+        setCurrentSongForPlayback(_currentSongFlow.value?.copy(userLyricOffsetMs = newOffset))
     }
 
     val latestSong = currentPlaylist.firstOrNull { it.sameIdentityAs(songToUpdate) }
@@ -915,7 +914,7 @@ internal suspend fun PlayerManager.rebaseUserLyricOffsetsForSourceImpl(
             )
         }
     if (rebasedCurrentSong != null) {
-        _currentSongFlow.value = rebasedCurrentSong
+        setCurrentSongForPlayback(rebasedCurrentSong)
     }
 
     withContext(Dispatchers.IO) {
@@ -952,8 +951,10 @@ internal suspend fun PlayerManager.updateSongLyricsImpl(
     }
 
     if (isCurrentSong(songToUpdate)) {
-        _currentSongFlow.value = _currentSongFlow.value?.withUpdatedLyricsPreservingOriginal(
-            newLyrics = newLyrics
+        setCurrentSongForPlayback(
+            _currentSongFlow.value?.withUpdatedLyricsPreservingOriginal(
+                newLyrics = newLyrics
+            )
         )
     }
 
@@ -990,10 +991,11 @@ internal suspend fun PlayerManager.updateSongTranslatedLyricsImpl(
     }
 
     if (isCurrentSong(songToUpdate)) {
-        _currentSongFlow.value =
+        setCurrentSongForPlayback(
             _currentSongFlow.value?.withUpdatedLyricsPreservingOriginal(
                 newTranslatedLyric = newTranslatedLyrics
             )
+        )
     }
 
     val latestSong = currentPlaylist.firstOrNull { it.sameIdentityAs(songToUpdate) }
@@ -1036,9 +1038,11 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
     )
     if (isCurrentSong(songToUpdate)) {
         val beforeUpdate = _currentSongFlow.value?.matchedLyric
-        _currentSongFlow.value = _currentSongFlow.value?.withUpdatedLyricsPreservingOriginal(
-            newLyrics = newLyrics,
-            newTranslatedLyric = newTranslatedLyrics
+        setCurrentSongForPlayback(
+            _currentSongFlow.value?.withUpdatedLyricsPreservingOriginal(
+                newLyrics = newLyrics,
+                newTranslatedLyric = newTranslatedLyrics
+            )
         )
         NPLogger.e(
             "PlayerManager",
@@ -1085,7 +1089,7 @@ private suspend fun PlayerManager.updateSongInAllPlaces(
     }
 
     if (isCurrentSong(originalSong)) {
-        _currentSongFlow.value = updatedSong
+        setCurrentSongForPlayback(updatedSong)
     }
 
     withContext(Dispatchers.IO) {

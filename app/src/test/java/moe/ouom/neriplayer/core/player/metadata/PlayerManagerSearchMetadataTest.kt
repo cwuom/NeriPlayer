@@ -3,7 +3,9 @@ package moe.ouom.neriplayer.core.player.metadata
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlayerManagerSearchMetadataTest {
@@ -95,5 +97,53 @@ class PlayerManagerSearchMetadataTest {
         assertEquals("[00:00.00]新译文", updatedSong.matchedTranslatedLyric)
         assertEquals("[00:00.00]旧原文", updatedSong.originalLyric)
         assertEquals("[00:00.00]旧译文", updatedSong.originalTranslatedLyric)
+    }
+
+    @Test
+    fun `auto lyric matching is allowed only for unmatched youtube music songs`() {
+        val song = SongItem(
+            id = 4L,
+            name = "标题",
+            artist = "歌手",
+            album = "YouTube Music",
+            albumId = 0L,
+            durationMs = 1000L,
+            coverUrl = null
+        )
+
+        assertTrue(shouldAutoMatchExternalLyrics(song, isYouTubeMusicTrack = true))
+        assertFalse(shouldAutoMatchExternalLyrics(song, isYouTubeMusicTrack = false))
+    }
+
+    @Test
+    fun `auto lyric matching skips songs with existing or custom metadata`() {
+        val song = SongItem(
+            id = 5L,
+            name = "标题",
+            artist = "歌手",
+            album = "YouTube Music",
+            albumId = 0L,
+            durationMs = 1000L,
+            coverUrl = null
+        )
+
+        assertFalse(
+            shouldAutoMatchExternalLyrics(
+                song.copy(matchedLyric = "[00:00.00]已有歌词"),
+                isYouTubeMusicTrack = true
+            )
+        )
+        assertFalse(
+            shouldAutoMatchExternalLyrics(
+                song.copy(matchedSongId = "123"),
+                isYouTubeMusicTrack = true
+            )
+        )
+        assertFalse(
+            shouldAutoMatchExternalLyrics(
+                song.copy(customName = "手动标题"),
+                isYouTubeMusicTrack = true
+            )
+        )
     }
 }

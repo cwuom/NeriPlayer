@@ -189,6 +189,12 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
         }
     }
 
+    fun clearSongs() {
+        viewModelScope.launch {
+            repo.clearPlaylistSongs(playlistId)
+        }
+    }
+
     fun delete(onResult: (Boolean) -> Unit) {
         viewModelScope.launch {
             val ok = repo.deletePlaylist(playlistId)
