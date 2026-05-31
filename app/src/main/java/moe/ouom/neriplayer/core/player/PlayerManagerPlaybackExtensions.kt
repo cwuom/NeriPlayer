@@ -15,6 +15,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.api.bili.buildBiliPartSong
 import moe.ouom.neriplayer.core.player.debug.playbackStateName
+import moe.ouom.neriplayer.core.player.metadata.shouldAutoMatchExternalLyrics
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
 import moe.ouom.neriplayer.core.player.policy.PlaybackFailureAdvanceAction
@@ -454,7 +455,7 @@ internal fun PlayerManager.playAtIndex(
                     startPlayerPlaybackWithFade(startPlan)
                 }
                 maybeWarmNextYouTubeMusicAfterCurrentResolved()
-                maybeAutoMatchBiliMetadata(song, requestToken)
+                maybeAutoMatchYouTubeMusicLyrics(song, requestToken)
             }
             SongUrlResult.WaitingForAuthoritativeStream -> {
                 NPLogger.d(
@@ -493,11 +494,8 @@ internal fun PlayerManager.playAtIndex(
     }
 }
 
-private fun PlayerManager.maybeAutoMatchBiliMetadata(song: SongItem, requestToken: Long) {
-    if (!isBiliTrack(song)) return
-    if (song.matchedSongId != null || !song.matchedLyric.isNullOrEmpty()) return
-    if (song.customName != null || song.customArtist != null || song.customCoverUrl != null) return
-
+private fun PlayerManager.maybeAutoMatchYouTubeMusicLyrics(song: SongItem, requestToken: Long) {
+    if (!shouldAutoMatchExternalLyrics(song, isYouTubeMusicTrack(song))) return
     ioScope.launch {
         val currentSong = _currentSongFlow.value ?: return@launch
         if (requestToken != playbackRequestToken || !currentSong.sameIdentityAs(song)) {
