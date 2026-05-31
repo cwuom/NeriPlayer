@@ -15,6 +15,15 @@ internal fun SongItem.withUpdatedLyricsPreservingOriginal(
     )
 }
 
+internal fun shouldAutoMatchExternalLyrics(
+    song: SongItem,
+    isYouTubeMusicTrack: Boolean
+): Boolean {
+    if (!isYouTubeMusicTrack) return false
+    if (song.matchedSongId != null || !song.matchedLyric.isNullOrEmpty()) return false
+    return song.customName == null && song.customArtist == null && song.customCoverUrl == null
+}
+
 internal fun normalizeCustomMetadataValue(
     desiredValue: String?,
     baseValue: String?
