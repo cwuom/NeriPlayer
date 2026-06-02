@@ -3,7 +3,6 @@ package moe.ouom.neriplayer.listentogether
 import android.net.Uri
 import java.net.URI
 import java.net.URLDecoder
-import java.nio.charset.StandardCharsets
 import java.util.UUID
 
 const val DEFAULT_LISTEN_TOGETHER_BASE_URL =
@@ -139,5 +138,5 @@ private fun decodeInviteQuery(rawQuery: String?): Map<String, String> {
 }
 
 private fun decodeInviteQueryComponent(value: String): String {
-    return URLDecoder.decode(value, StandardCharsets.UTF_8)
+    return URLDecoder.decode(value, Charsets.UTF_8.name())
 }

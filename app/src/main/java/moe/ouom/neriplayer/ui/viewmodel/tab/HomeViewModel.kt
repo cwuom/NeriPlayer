@@ -482,9 +482,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     name = obj.optString("name"),
                     artist = artistNames.joinToString(" / "),
                     album = albumObj?.optString("name").orEmpty(),
-                    albumId = 0L,
+                    albumId = albumObj?.optLong("id", 0L) ?: 0L,
                     durationMs = obj.optLong("dt"),
-                    coverUrl = albumObj?.optString("picUrl")?.replace("http://", "https://")
+                    coverUrl = albumObj?.optString("picUrl")?.replace("http://", "https://"),
+                    channelId = "netease",
+                    audioId = obj.optLong("id").toString()
                 )
             )
         }
