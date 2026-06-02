@@ -35,3 +35,7 @@ demo
 /.har/
 .claude/
 CLAUDE.md
+AGENTS.md
+.opencode/
+.codex/
+.agents/
