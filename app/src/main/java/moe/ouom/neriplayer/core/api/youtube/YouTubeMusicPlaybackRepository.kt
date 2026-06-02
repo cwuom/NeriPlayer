@@ -263,7 +263,7 @@ private data class InFlightBootstrapRequest(
     val forceRefresh: Boolean
 )
 
-private data class ChallengeCandidateResult<T>(
+internal data class ChallengeCandidateResult<T>(
     val source: String,
     val value: T?,
     val elapsedMs: Long
@@ -292,17 +292,17 @@ private fun playableAudioMimePreferenceScore(mimeType: String?): Int {
     }
 }
 
-private suspend fun <T> awaitFirstChallengeSuccess(
+internal suspend fun <T> awaitFirstChallengeSuccess(
     candidates: List<Deferred<ChallengeCandidateResult<T>>>
 ): ChallengeCandidateResult<T>? = coroutineScope {
     val pending = candidates.toMutableList()
     while (pending.isNotEmpty()) {
-        val candidate = select<ChallengeCandidateResult<T>> {
+        val (selected, candidate) = select<Pair<Deferred<ChallengeCandidateResult<T>>, ChallengeCandidateResult<T>>> {
             pending.forEach { deferred ->
-                deferred.onAwait { it }
+                deferred.onAwait { deferred to it }
             }
         }
-        pending.removeAll { it.isCompleted }
+        pending.remove(selected)
         if (candidate.value != null) {
             pending.forEach { deferred -> deferred.cancel() }
             return@coroutineScope candidate
