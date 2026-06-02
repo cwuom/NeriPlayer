@@ -126,6 +126,7 @@ private const val PLAYBACK_WARM_AUTH_REFRESH_AGE_MS = 12L * 60L * 60L * 1000L
 
 private const val YOUTUBE_PLAYER_API_FORMAT_VERSION = "2"
 private const val STREAMING_CIPHER_LOG_THRESHOLD_MS = 250L
+private const val YOUTUBE_PLAYBACK_DIAG_PREFIX = "[YT-DIAG-20260530]"
 
 private fun playbackElapsedMs(startedAtMs: Long): Long = System.currentTimeMillis() - startedAtMs
 
@@ -175,6 +176,36 @@ data class YouTubePlayableAudio(
     val bitrateKbps: Int? = null,
     val sampleRateHz: Int? = null
 )
+
+private enum class DirectRangeVerificationStatus {
+    READABLE,
+    NON_PARTIAL_CONTENT,
+    EMPTY_BODY,
+    NO_BYTES_READ,
+    REQUEST_FAILED
+}
+
+private data class DirectRangeVerificationResult(
+    val status: DirectRangeVerificationStatus,
+    val httpCode: Int?,
+    val bytesRead: Long,
+    val elapsedMs: Long
+) {
+    val isReadable: Boolean
+        get() = status == DirectRangeVerificationStatus.READABLE
+}
+
+private fun YouTubePlayableAudio.missingPoTokenDiagnosticMetadata(clientName: String): String {
+    val audioItag = extractStreamQueryParameter(url, "itag")
+        ?.takeIf { it.all(Char::isDigit) }
+        ?: "<unknown>"
+    return "client=$clientName " +
+        "itag=$audioItag " +
+        "mimeType=${mimeType ?: "<unknown>"} " +
+        "bitrate=${bitrateKbps ?: "<unknown>"} " +
+        "sourceKind=$streamType " +
+        "contentLength=${contentLength ?: "<unknown>"}"
+}
 
 internal data class YouTubeAudioMetadata(
     val durationMs: Long = 0L,
@@ -1571,12 +1602,31 @@ class YouTubeMusicPlaybackRepository(
             .orEmpty()
             .ifBlank {
                 if (existingPoToken.isNullOrBlank()) {
-                    if (verifyDirectRangeReadable(streamUrl, buildBootstrapRequestAuth(auth, bootstrap))) {
+                    val verification = verifyDirectRangeReadable(
+                        streamUrl,
+                        buildBootstrapRequestAuth(auth, bootstrap)
+                    )
+                    if (verification.isReadable) {
+                        NPLogger.d(
+                            "YouTubeMusicPlayback",
+                            "$YOUTUBE_PLAYBACK_DIAG_PREFIX missing_pot_webremix_direct_verification " +
+                                "videoId=$videoId ${playableAudio.missingPoTokenDiagnosticMetadata(profile.clientName)} " +
+                                "status=${verification.status} httpCode=${verification.httpCode ?: "<none>"} " +
+                                "bytesRead=${verification.bytesRead} elapsedMs=${verification.elapsedMs} " +
+                                "candidateDecision=accepted"
+                        )
                         return playableAudio
                     }
                     NPLogger.w(
                         "YouTubeMusicPlayback",
-                        "Missing GVS PO token for WEB_REMIX direct stream: videoId=$videoId, elapsedMs=${playbackElapsedMs(startedAtMs)}"
+                        "$YOUTUBE_PLAYBACK_DIAG_PREFIX missing_pot_webremix_direct_verification " +
+                            "videoId=$videoId ${playableAudio.missingPoTokenDiagnosticMetadata(profile.clientName)} " +
+                            "status=${verification.status} httpCode=${verification.httpCode ?: "<none>"} " +
+                            "bytesRead=${verification.bytesRead} elapsedMs=${verification.elapsedMs} " +
+                            "candidateDecision=rejected " +
+                            "fallbackReason=missing_pot_range_verification_failed " +
+                            "fallbackPath=continue_player_clients " +
+                            "branchElapsedMs=${playbackElapsedMs(startedAtMs)}"
                     )
                     return null
                 }
@@ -1595,20 +1645,48 @@ class YouTubeMusicPlaybackRepository(
     private fun verifyDirectRangeReadable(
         streamUrl: String,
         auth: YouTubeAuthBundle
-    ): Boolean {
+    ): DirectRangeVerificationResult {
+        val startedAtMs = System.currentTimeMillis()
         val request = buildYouTubeStreamRequest(streamUrl, auth)
             .newBuilder()
             .header("Range", "bytes=0-0")
             .build()
-        return runCatching {
+        return try {
             okHttpClient.newCall(request).execute().use { response ->
                 if (response.code != 206) {
-                    return@use false
+                    return@use DirectRangeVerificationResult(
+                        status = DirectRangeVerificationStatus.NON_PARTIAL_CONTENT,
+                        httpCode = response.code,
+                        bytesRead = 0L,
+                        elapsedMs = playbackElapsedMs(startedAtMs)
+                    )
                 }
-                val body = response.body ?: return@use false
-                body.source().read(Buffer(), 1L) > 0L
+                val body = response.body ?: return@use DirectRangeVerificationResult(
+                    status = DirectRangeVerificationStatus.EMPTY_BODY,
+                    httpCode = response.code,
+                    bytesRead = 0L,
+                    elapsedMs = playbackElapsedMs(startedAtMs)
+                )
+                val bytesRead = body.source().read(Buffer(), 1L).coerceAtLeast(0L)
+                DirectRangeVerificationResult(
+                    status = if (bytesRead > 0L) {
+                        DirectRangeVerificationStatus.READABLE
+                    } else {
+                        DirectRangeVerificationStatus.NO_BYTES_READ
+                    },
+                    httpCode = response.code,
+                    bytesRead = bytesRead,
+                    elapsedMs = playbackElapsedMs(startedAtMs)
+                )
             }
-        }.getOrDefault(false)
+        } catch (_: Exception) {
+            DirectRangeVerificationResult(
+                status = DirectRangeVerificationStatus.REQUEST_FAILED,
+                httpCode = null,
+                bytesRead = 0L,
+                elapsedMs = playbackElapsedMs(startedAtMs)
+            )
+        }
     }
 
     private fun prefetchWebRemixPoToken(
