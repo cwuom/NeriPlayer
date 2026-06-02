@@ -40,6 +40,22 @@ class ListenTogetherBaseUrlTest {
     }
 
     @Test
+    fun `invite parser decodes encoded inviter`() {
+        val invite = parseListenTogetherInvite(
+            "neriplayer://listen-together/join?roomId=P8BAEV&inviter=Neri%E7%8C%AB"
+        )
+
+        assertEquals("Neri猫", invite?.inviterNickname)
+    }
+
+    @Test
+    fun `invite parser rejects malformed query encoding without throwing`() {
+        assertNull(
+            parseListenTogetherInvite("neriplayer://listen-together/join?roomId=%")
+        )
+    }
+
+    @Test
     fun `invite parser flags invalid custom server`() {
         val invite = parseListenTogetherInvite(
             "neriplayer://listen-together/join?roomId=P8BAEV&baseUrl=example.com"

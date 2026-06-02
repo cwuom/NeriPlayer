@@ -345,7 +345,7 @@ private fun PlayerManager.checkLocalCache(song: SongItem): SongUrlResult? {
 
 internal fun PlayerManager.checkExoPlayerCache(cacheKey: String): Boolean {
     return try {
-    if (!isCacheInitialized()) return false
+        if (!isCacheInitialized()) return false
 
         val cachedSpans = cache.getCachedSpans(cacheKey)
         if (cachedSpans.isEmpty()) return false

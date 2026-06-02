@@ -9,6 +9,7 @@
             android:excludeFromRecents="true" />
         <receiver
             android:name=".testing.DebugCookieImportReceiver"
-            android:exported="true" />
+            android:exported="true"
+            android:permission="android.permission.DUMP" />
     </application>
 </manifest>

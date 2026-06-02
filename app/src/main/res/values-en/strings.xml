@@ -1639,6 +1639,8 @@
     <string name="settings_listen_together_server_custom_desc">A custom Listen Together server is active. Invite links will include the server address.</string>
     <string name="settings_listen_together_server_input_label">Server Address</string>
     <string name="settings_listen_together_server_input_placeholder">Leave empty to use the built-in default server</string>
+    <string name="settings_listen_together_server_input_invalid">Invalid server address. Enter a full http:// or https:// address.</string>
+    <string name="listen_together_invite_server_invalid">The invite contains an invalid server address, so this room cannot be joined.</string>
     <string name="settings_listen_together_server_test">Test Availability</string>
     <string name="settings_listen_together_server_saved">Listen Together server setting saved.</string>
     <string name="settings_listen_together_server_reset_done">Reverted to the built-in default server.</string>

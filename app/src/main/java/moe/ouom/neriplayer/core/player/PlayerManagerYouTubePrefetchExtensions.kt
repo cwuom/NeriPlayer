@@ -1,7 +1,9 @@
 package moe.ouom.neriplayer.core.player
 
 import androidx.core.net.toUri
+import androidx.annotation.OptIn
 import androidx.media3.common.C
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.cache.CacheDataSource
 import kotlinx.coroutines.CancellationException
@@ -159,6 +161,7 @@ private fun resolveYouTubeWarmupPrefetchBytes(
         ?: boostedBytes
 }
 
+@OptIn(UnstableApi::class)
 private suspend fun PlayerManager.prefetchIntoPlayerCache(
     url: String,
     cacheKey: String,
