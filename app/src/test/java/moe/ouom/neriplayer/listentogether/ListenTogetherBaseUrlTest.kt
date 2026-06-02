@@ -17,6 +17,14 @@ class ListenTogetherBaseUrlTest {
     }
 
     @Test
+    fun `configured base url keeps valid cleartext custom server`() {
+        assertEquals(
+            "http://192.168.1.10:8787",
+            configuredListenTogetherBaseUrlOrNull(" http://192.168.1.10:8787/ ")
+        )
+    }
+
+    @Test
     fun `configured base url rejects invalid custom server`() {
         assertNull(configuredListenTogetherBaseUrlOrNull("example.com"))
     }
