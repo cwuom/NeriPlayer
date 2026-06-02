@@ -8,6 +8,7 @@ plugins {
     id("build-logic.android.application")
     id("build-logic.android.compose")
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.ksp)
     id("kotlin-parcelize")
 }
 
@@ -184,6 +185,9 @@ android.applicationVariants.all {
 }
 
 dependencies {
+    implementation(project(":ksp-annotations"))
+    ksp(project(":ksp-processor"))
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.material)

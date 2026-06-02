@@ -31,6 +31,8 @@
             <option value="$PROJECT_DIR$/build-logic" />
             <option value="$PROJECT_DIR$/build-logic/convention" />
             <option value="$PROJECT_DIR$/buildSrc" />
+            <option value="$PROJECT_DIR$/ksp-annotations" />
+            <option value="$PROJECT_DIR$/ksp-processor" />
             <option value="$PROJECT_DIR$/np-submodule/accompanist-lyrics-core" />
             <option value="$PROJECT_DIR$/np-submodule/accompanist-lyrics-ui/src" />
           </set>

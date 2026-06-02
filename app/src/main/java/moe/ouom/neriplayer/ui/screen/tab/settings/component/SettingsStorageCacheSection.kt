@@ -42,7 +42,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material.icons.outlined.SdStorage
 import androidx.compose.material3.AlertDialog
@@ -82,6 +81,9 @@ import moe.ouom.neriplayer.core.download.DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.normalizeDownloadFileNameTemplate
 import moe.ouom.neriplayer.core.download.renderManagedDownloadBaseName
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingsKeys
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingsListItem
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.formatFileSize
 
@@ -159,15 +161,8 @@ internal fun SettingsStorageCacheSection(
                 .fillMaxWidth()
                 .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
         ) {
-            ListItem(
-                leadingContent = {
-                    Icon(
-                        Icons.Outlined.Download,
-                        contentDescription = stringResource(R.string.settings_download_directory),
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                },
-                headlineContent = { Text(stringResource(R.string.settings_download_directory)) },
+            AutoSettingsListItem(
+                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.DOWNLOAD_DIRECTORY_URI),
                 supportingContent = {
                     Column {
                         Text(stringResource(R.string.settings_download_directory_desc))
@@ -204,12 +199,9 @@ internal fun SettingsStorageCacheSection(
                     }
                 },
                 modifier = Modifier
-                    .alpha(if (downloadDirectoryChangeEnabled) 1f else 0.6f)
-                    .settingsItemClickable(
-                        enabled = downloadDirectoryChangeEnabled,
-                        onClick = onPickDownloadDirectory
-                    ),
-                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                    .alpha(if (downloadDirectoryChangeEnabled) 1f else 0.6f),
+                enabled = downloadDirectoryChangeEnabled,
+                onClick = onPickDownloadDirectory
             )
 
             AnimatedVisibility(visible = isCustomDownloadDirectory) {
@@ -235,15 +227,8 @@ internal fun SettingsStorageCacheSection(
                 )
             }
 
-            ListItem(
-                leadingContent = {
-                    Icon(
-                        Icons.Outlined.Download,
-                        contentDescription = stringResource(R.string.settings_download_file_name_format),
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                },
-                headlineContent = { Text(stringResource(R.string.settings_download_file_name_format)) },
+            AutoSettingsListItem(
+                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.DOWNLOAD_FILE_NAME_TEMPLATE),
                 supportingContent = {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(stringResource(R.string.settings_download_file_name_format_desc))
@@ -269,12 +254,12 @@ internal fun SettingsStorageCacheSection(
                         color = MaterialTheme.colorScheme.primary
                     )
                 },
-                modifier = Modifier.settingsItemClickable { showDownloadFileNameDialog = true },
-                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                onClick = { showDownloadFileNameDialog = true }
             )
 
-            ListItem(
-                headlineContent = { Text(stringResource(R.string.settings_cache_limit)) },
+            AutoSettingsListItem(
+                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.MAX_CACHE_SIZE_BYTES),
+                showDefaultIcon = false,
                 supportingContent = {
                     val sizeMb = maxCacheSizeBytes / (1024 * 1024).toFloat()
                     var sliderValue by remember(sizeMb) { mutableFloatStateOf(sizeMb) }
@@ -314,8 +299,7 @@ internal fun SettingsStorageCacheSection(
                             color = MaterialTheme.colorScheme.outline
                         )
                     }
-                },
-                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                }
             )
 
             ListItem(
