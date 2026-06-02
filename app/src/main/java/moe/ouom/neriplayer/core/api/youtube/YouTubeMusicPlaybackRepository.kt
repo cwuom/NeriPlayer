@@ -73,6 +73,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okio.Buffer
 import org.json.JSONArray
 import org.json.JSONObject
 import org.schabi.newpipe.extractor.NewPipe
@@ -1362,6 +1363,7 @@ class YouTubeMusicPlaybackRepository(
                                 playableAudio = parsedDirectPlayableAudio,
                                 profile = profile,
                                 videoId = videoId,
+                                auth = auth,
                                 bootstrap = bootstrap,
                                 forceRefresh = poTokenForceRefresh,
                                 prefetchedPoToken = webRemixPoTokenPrefetch,
@@ -1531,6 +1533,7 @@ class YouTubeMusicPlaybackRepository(
         playableAudio: YouTubePlayableAudio?,
         profile: YouTubePlayerClientProfile,
         videoId: String,
+        auth: YouTubeAuthBundle,
         bootstrap: YouTubePlaybackBootstrap,
         forceRefresh: Boolean,
         prefetchedPoToken: Deferred<String?>? = null,
@@ -1568,6 +1571,9 @@ class YouTubeMusicPlaybackRepository(
             .orEmpty()
             .ifBlank {
                 if (existingPoToken.isNullOrBlank()) {
+                    if (verifyDirectRangeReadable(streamUrl, buildBootstrapRequestAuth(auth, bootstrap))) {
+                        return playableAudio
+                    }
                     NPLogger.w(
                         "YouTubeMusicPlayback",
                         "Missing GVS PO token for WEB_REMIX direct stream: videoId=$videoId, elapsedMs=${playbackElapsedMs(startedAtMs)}"
@@ -1584,6 +1590,25 @@ class YouTubeMusicPlaybackRepository(
         return playableAudio.copy(
             url = replaceStreamQueryParameter(streamUrl, "pot", poToken)
         )
+    }
+
+    private fun verifyDirectRangeReadable(
+        streamUrl: String,
+        auth: YouTubeAuthBundle
+    ): Boolean {
+        val request = buildYouTubeStreamRequest(streamUrl, auth)
+            .newBuilder()
+            .header("Range", "bytes=0-0")
+            .build()
+        return runCatching {
+            okHttpClient.newCall(request).execute().use { response ->
+                if (response.code != 206) {
+                    return@use false
+                }
+                val body = response.body ?: return@use false
+                body.source().read(Buffer(), 1L) > 0L
+            }
+        }.getOrDefault(false)
     }
 
     private fun prefetchWebRemixPoToken(
