@@ -69,6 +69,9 @@ The current focus is not to build a public cloud service, but to integrate onlin
    - For older phones (32-bit systems), download the armeabi-v7a version.
    - x86 / x86_64 versions are intended solely for emulators/Intel devices/Chromebooks.
 
+> [!IMPORTANT]
+> The Release channel is currently not a strictly stable channel. Because the number of high-frequency feedback users is limited, Release builds are usually pushed manually after the developer completes a batch of features, and they may still contain unresolved issues.
+
 ### b. Download CI Version
 1. Go to [GitHub Actions](https://github.com/cwuom/NeriPlayer/actions), download the Artifacts of the latest successful build, and extract it.
 2. Alternatively, visit [NeriPlayer CI Builds](https://t.me/neriplayer_ci).

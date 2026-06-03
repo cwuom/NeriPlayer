@@ -38,7 +38,7 @@
 
 1. 克隆仓库：
    ```bash
-   git clone https://github.com/cwuom/NeriPlayer.git
+   git clone --recursive https://github.com/cwuom/NeriPlayer.git
    cd NeriPlayer
    ```
 2. 构建调试版：

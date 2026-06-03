@@ -39,3 +39,5 @@ AGENTS.md
 .opencode/
 .codex/
 .agents/
+/ksp-annotations/build/
+/ksp-processor/build/

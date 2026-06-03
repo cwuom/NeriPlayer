@@ -30,7 +30,9 @@ internal object CrashLogFiles {
         pid: Int
     ): String {
         val safePrefix = prefix.trim().ifEmpty { "crash" }
-        val timestamp = timestampFormatter.get().format(Date(nowMillis))
+        val formatter = timestampFormatter.get()
+            ?: SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
+        val timestamp = formatter.format(Date(nowMillis))
         return "${safePrefix}_${timestamp}_p${pid}.txt"
     }
 }

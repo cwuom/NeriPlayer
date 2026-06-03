@@ -1,0 +1,116 @@
+package moe.ouom.neriplayer.data.backup
+
+import android.content.Context
+import moe.ouom.neriplayer.data.history.PlayedEntry
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.stats.TrackStat
+import moe.ouom.neriplayer.data.sync.github.SyncRecentPlay
+import moe.ouom.neriplayer.data.sync.github.SyncSong
+import moe.ouom.neriplayer.data.sync.github.SyncTrackStat
+
+internal object BackupMetadataMapper {
+    private const val BACKUP_DEVICE_ID = "manual_backup"
+
+    fun shouldExportHistory(entry: PlayedEntry, context: Context): Boolean {
+        return entry.localFilePath.isNullOrBlank() &&
+            !LocalSongSupport.isLocalSong(entry.album, entry.mediaUri, entry.albumId, context)
+    }
+
+    fun shouldExportTrackStat(stat: TrackStat, context: Context): Boolean {
+        return stat.localFilePath.isNullOrBlank() &&
+            !LocalSongSupport.isLocalSong(stat.album, stat.mediaUri, stat.albumId, context)
+    }
+
+    fun toSyncRecentPlay(entry: PlayedEntry): SyncRecentPlay {
+        return SyncRecentPlay(
+            songId = entry.id,
+            song = SyncSong(
+                id = entry.id,
+                name = entry.name,
+                artist = entry.artist,
+                album = entry.album,
+                albumId = entry.albumId,
+                durationMs = entry.durationMs,
+                coverUrl = entry.coverUrl,
+                mediaUri = LocalSongSupport.sanitizeMediaUriForSync(entry.mediaUri),
+                matchedLyric = entry.matchedLyric,
+                matchedTranslatedLyric = entry.matchedTranslatedLyric,
+                customCoverUrl = entry.customCoverUrl,
+                customName = entry.customName,
+                customArtist = entry.customArtist,
+                originalName = entry.originalName,
+                originalArtist = entry.originalArtist,
+                originalCoverUrl = entry.originalCoverUrl,
+                originalLyric = entry.originalLyric,
+                originalTranslatedLyric = entry.originalTranslatedLyric
+            ),
+            playedAt = entry.playedAt,
+            deviceId = BACKUP_DEVICE_ID
+        )
+    }
+
+    fun toPlayedEntry(syncPlay: SyncRecentPlay, context: Context): PlayedEntry? {
+        val song = syncPlay.song
+        if (LocalSongSupport.isLocalSong(song.album, song.mediaUri, song.albumId, context)) {
+            return null
+        }
+        return PlayedEntry(
+            id = song.id,
+            name = song.name,
+            artist = song.artist,
+            album = song.album,
+            albumId = song.albumId,
+            durationMs = song.durationMs,
+            coverUrl = song.coverUrl,
+            mediaUri = LocalSongSupport.sanitizeMediaUriForSync(song.mediaUri),
+            matchedLyric = song.matchedLyric,
+            matchedTranslatedLyric = song.matchedTranslatedLyric,
+            customCoverUrl = song.customCoverUrl,
+            customName = song.customName,
+            customArtist = song.customArtist,
+            originalName = song.originalName,
+            originalArtist = song.originalArtist,
+            originalCoverUrl = song.originalCoverUrl,
+            originalLyric = song.originalLyric,
+            originalTranslatedLyric = song.originalTranslatedLyric,
+            playedAt = syncPlay.playedAt
+        )
+    }
+
+    fun toSyncTrackStat(stat: TrackStat): SyncTrackStat {
+        return SyncTrackStat(
+            identityKey = stat.identityKey,
+            name = stat.name,
+            artist = stat.artist,
+            album = stat.album,
+            totalListenMs = stat.totalListenMs,
+            playCount = stat.playCount,
+            lastPlayedAt = stat.lastPlayedAt,
+            firstPlayedAt = stat.firstPlayedAt,
+            coverUrl = stat.coverUrl,
+            durationMs = stat.durationMs,
+            mediaUri = LocalSongSupport.sanitizeMediaUriForSync(stat.mediaUri),
+            id = stat.id,
+            albumId = stat.albumId
+        )
+    }
+
+    fun sanitizeTrackStat(stat: SyncTrackStat, context: Context): SyncTrackStat? {
+        if (stat.identityKey.isBlank()) return null
+        if (LocalSongSupport.isLocalSong(stat.album, stat.mediaUri, stat.albumId, context)) {
+            return null
+        }
+        val lastPlayedAt = stat.lastPlayedAt.coerceAtLeast(0L)
+        val firstPlayedAt = stat.firstPlayedAt.coerceAtLeast(0L).let {
+            if (lastPlayedAt > 0L && (it == 0L || it > lastPlayedAt)) lastPlayedAt else it
+        }
+        return stat.copy(
+            totalListenMs = stat.totalListenMs.coerceAtLeast(0L),
+            playCount = stat.playCount.coerceAtLeast(0),
+            lastPlayedAt = lastPlayedAt,
+            firstPlayedAt = firstPlayedAt,
+            durationMs = stat.durationMs.coerceAtLeast(0L),
+            mediaUri = LocalSongSupport.sanitizeMediaUriForSync(stat.mediaUri)
+        )
+    }
+}

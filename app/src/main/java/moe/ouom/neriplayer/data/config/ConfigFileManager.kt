@@ -15,6 +15,7 @@ import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.settings.SettingsKeys
 import moe.ouom.neriplayer.data.settings.ThemePreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.dataStore
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingsBackupKeys
 import moe.ouom.neriplayer.data.settings.persistBootstrapSettingsSnapshot
 import moe.ouom.neriplayer.data.settings.persistPlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.persistThemePreferenceSnapshot
@@ -290,80 +291,21 @@ private fun <K, V> List<Pair<K, V>>.toMap(destination: LinkedHashMap<K, V>): Lin
 }
 
 private val SETTINGS_BOOLEAN_KEYS = listOf(
-    SettingsKeys.DYNAMIC_COLOR,
-    SettingsKeys.FORCE_DARK,
-    SettingsKeys.FOLLOW_SYSTEM_DARK,
-    SettingsKeys.SHOW_COVER_SOURCE_BADGE,
-    SettingsKeys.NOWPLAYING_TOOLBAR_DOCK_ENABLED,
-    SettingsKeys.NOWPLAYING_SHOW_TITLE,
-    SettingsKeys.NOWPLAYING_PROGRESS_SHOW_QUALITY_SWITCH,
-    SettingsKeys.NOWPLAYING_PROGRESS_SHOW_AUDIO_CODEC,
-    SettingsKeys.NOWPLAYING_PROGRESS_SHOW_AUDIO_SPEC,
-    SettingsKeys.SILENT_GITHUB_SYNC_FAILURE,
-    SettingsKeys.DISCLAIMER_ACCEPTED_V2,
-    SettingsKeys.STARTUP_ONBOARDING_COMPLETED,
-    SettingsKeys.KEY_DEV_MODE,
-    SettingsKeys.LYRIC_BLUR_ENABLED,
-    SettingsKeys.ADVANCED_LYRICS_ENABLED,
-    SettingsKeys.ADVANCED_BLUR_ENABLED,
-    SettingsKeys.NOWPLAYING_AUDIO_REACTIVE_ENABLED,
-    SettingsKeys.NOWPLAYING_DYNAMIC_BACKGROUND_ENABLED,
-    SettingsKeys.NOWPLAYING_COVER_BLUR_BACKGROUND_ENABLED,
-    SettingsKeys.BYPASS_PROXY,
-    SettingsKeys.HAPTIC_FEEDBACK_ENABLED,
-    SettingsKeys.SHOW_LYRIC_TRANSLATION,
-    SettingsKeys.AUTO_SHOW_KEYBOARD,
-    SettingsKeys.HOME_CARD_CONTINUE,
-    SettingsKeys.HOME_CARD_TRENDING,
-    SettingsKeys.HOME_CARD_RADAR,
-    SettingsKeys.HOME_CARD_RECOMMENDED,
-    SettingsKeys.PLAYBACK_FADE_IN,
-    SettingsKeys.PLAYBACK_CROSSFADE_NEXT,
-    SettingsKeys.PLAYBACK_EQUALIZER_ENABLED,
-    SettingsKeys.KEEP_LAST_PLAYBACK_PROGRESS,
-    SettingsKeys.KEEP_PLAYBACK_MODE_STATE,
-    SettingsKeys.STOP_ON_BLUETOOTH_DISCONNECT,
-    SettingsKeys.ALLOW_MIXED_PLAYBACK,
-    SettingsKeys.INTERNATIONALIZATION_ENABLED
-)
+    AutoSettingsBackupKeys.booleanKeys
+).flatten()
 
 private val SETTINGS_FLOAT_KEYS = listOf(
-    SettingsKeys.LYRIC_BLUR_AMOUNT,
-    SettingsKeys.NOWPLAYING_COVER_BLUR_AMOUNT,
-    SettingsKeys.NOWPLAYING_COVER_BLUR_DARKEN,
-    SettingsKeys.LYRIC_FONT_SCALE,
-    SettingsKeys.UI_DENSITY_SCALE,
-    SettingsKeys.BACKGROUND_IMAGE_BLUR,
-    SettingsKeys.BACKGROUND_IMAGE_ALPHA,
-    SettingsKeys.PLAYBACK_SPEED,
-    SettingsKeys.PLAYBACK_PITCH
-)
+    AutoSettingsBackupKeys.floatKeys
+).flatten()
 
 private val SETTINGS_INT_KEYS = listOf(
-    SettingsKeys.PLAYBACK_LOUDNESS_GAIN_MB
-)
+    AutoSettingsBackupKeys.intKeys
+).flatten()
 
 private val SETTINGS_LONG_KEYS = listOf(
-    SettingsKeys.CLOUD_MUSIC_LYRIC_DEFAULT_OFFSET_MS,
-    SettingsKeys.QQ_MUSIC_LYRIC_DEFAULT_OFFSET_MS,
-    SettingsKeys.MAX_CACHE_SIZE_BYTES,
-    SettingsKeys.PLAYBACK_FADE_IN_DURATION_MS,
-    SettingsKeys.PLAYBACK_FADE_OUT_DURATION_MS,
-    SettingsKeys.PLAYBACK_CROSSFADE_IN_DURATION_MS,
-    SettingsKeys.PLAYBACK_CROSSFADE_OUT_DURATION_MS
-)
+    AutoSettingsBackupKeys.longKeys
+).flatten()
 
 private val SETTINGS_STRING_KEYS = listOf(
-    SettingsKeys.AUDIO_QUALITY,
-    SettingsKeys.YOUTUBE_AUDIO_QUALITY,
-    SettingsKeys.BILI_AUDIO_QUALITY,
-    SettingsKeys.THEME_SEED_COLOR,
-    SettingsKeys.THEME_COLOR_PALETTE,
-    SettingsKeys.BACKGROUND_IMAGE_URI,
-    SettingsKeys.DOWNLOAD_DIRECTORY_URI,
-    SettingsKeys.DOWNLOAD_DIRECTORY_LABEL,
-    SettingsKeys.DOWNLOAD_FILE_NAME_TEMPLATE,
-    SettingsKeys.DEFAULT_START_DESTINATION,
-    SettingsKeys.PLAYBACK_EQUALIZER_PRESET,
-    SettingsKeys.PLAYBACK_EQUALIZER_CUSTOM_BAND_LEVELS
-)
+    AutoSettingsBackupKeys.stringKeys
+).flatten()

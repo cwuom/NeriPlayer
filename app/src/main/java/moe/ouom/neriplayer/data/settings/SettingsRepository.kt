@@ -41,9 +41,12 @@ import moe.ouom.neriplayer.core.player.model.encodePlaybackEqualizerBandLevels
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackLoudnessGainMb
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackPitch
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import java.util.Locale
 
 class SettingsRepository(private val context: Context) {
+    private val autoSettingsRepository = AutoSettingsRepository(context)
+
     val dynamicColorFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.DYNAMIC_COLOR] ?: true }
 
@@ -54,31 +57,28 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.data.map { it[SettingsKeys.FOLLOW_SYSTEM_DARK] ?: true }
 
     val showCoverSourceBadgeFlow: Flow<Boolean> =
-        context.dataStore.data.map { it[SettingsKeys.SHOW_COVER_SOURCE_BADGE] ?: true }
+        autoSettingsRepository.showCoverSourceBadgeFlow
 
     val nowPlayingToolbarDockEnabledFlow: Flow<Boolean> =
-        context.dataStore.data.map { it[SettingsKeys.NOWPLAYING_TOOLBAR_DOCK_ENABLED] ?: true }
+        autoSettingsRepository.nowPlayingToolbarDockEnabledFlow
+
+    val nowPlayingKeepScreenOnFlow: Flow<Boolean> =
+        autoSettingsRepository.nowPlayingKeepScreenOnFlow
 
     val nowPlayingShowTitleFlow: Flow<Boolean> =
-        context.dataStore.data.map { it[SettingsKeys.NOWPLAYING_SHOW_TITLE] ?: true }
+        autoSettingsRepository.nowPlayingShowTitleFlow
 
     val nowPlayingProgressShowQualitySwitchFlow: Flow<Boolean> =
-        context.dataStore.data.map {
-            it[SettingsKeys.NOWPLAYING_PROGRESS_SHOW_QUALITY_SWITCH] ?: true
-        }
+        autoSettingsRepository.nowPlayingProgressShowQualitySwitchFlow
 
     val nowPlayingProgressShowAudioCodecFlow: Flow<Boolean> =
-        context.dataStore.data.map {
-            it[SettingsKeys.NOWPLAYING_PROGRESS_SHOW_AUDIO_CODEC] ?: true
-        }
+        autoSettingsRepository.nowPlayingProgressShowAudioCodecFlow
 
     val nowPlayingProgressShowAudioSpecFlow: Flow<Boolean> =
-        context.dataStore.data.map {
-            it[SettingsKeys.NOWPLAYING_PROGRESS_SHOW_AUDIO_SPEC] ?: true
-        }
+        autoSettingsRepository.nowPlayingProgressShowAudioSpecFlow
 
     val silentGitHubSyncFailureFlow: Flow<Boolean> =
-        context.dataStore.data.map { it[SettingsKeys.SILENT_GITHUB_SYNC_FAILURE] ?: false }
+        autoSettingsRepository.silentGitHubSyncFailureFlow
 
     val audioQualityFlow: Flow<String> =
         context.dataStore.data.map { it[SettingsKeys.AUDIO_QUALITY] ?: "exhigh" }
@@ -90,7 +90,7 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.data.map { it[SettingsKeys.BILI_AUDIO_QUALITY] ?: "high" }
 
     val devModeEnabledFlow: Flow<Boolean> =
-        context.dataStore.data.map { it[SettingsKeys.KEY_DEV_MODE] ?: false }
+        autoSettingsRepository.devModeEnabledFlow
 
     val themeSeedColorFlow: Flow<String> =
         context.dataStore.data.map { it[SettingsKeys.THEME_SEED_COLOR] ?: ThemeDefaults.DEFAULT_SEED_COLOR_HEX }
@@ -101,10 +101,10 @@ class SettingsRepository(private val context: Context) {
         }
 
     val lyricBlurEnabledFlow: Flow<Boolean> =
-        context.dataStore.data.map { it[SettingsKeys.LYRIC_BLUR_ENABLED] ?: true }
+        autoSettingsRepository.lyricBlurEnabledFlow
 
     val lyricBlurAmountFlow: Flow<Float> =
-        context.dataStore.data.map { it[SettingsKeys.LYRIC_BLUR_AMOUNT] ?: 1.5f }
+        autoSettingsRepository.lyricBlurAmountFlow
 
     val cloudMusicLyricDefaultOffsetMsFlow: Flow<Long> =
         context.dataStore.data.map {
@@ -123,25 +123,25 @@ class SettingsRepository(private val context: Context) {
         }
 
     val advancedLyricsEnabledFlow: Flow<Boolean> =
-        context.dataStore.data.map { it[SettingsKeys.ADVANCED_LYRICS_ENABLED] ?: true }
+        autoSettingsRepository.advancedLyricsEnabledFlow
 
     val advancedBlurEnabledFlow: Flow<Boolean> =
-        context.dataStore.data.map { it[SettingsKeys.ADVANCED_BLUR_ENABLED] ?: true }
+        autoSettingsRepository.advancedBlurEnabledFlow
 
     val nowPlayingAudioReactiveEnabledFlow: Flow<Boolean> =
-        context.dataStore.data.map { it[SettingsKeys.NOWPLAYING_AUDIO_REACTIVE_ENABLED] ?: true }
+        autoSettingsRepository.nowPlayingAudioReactiveEnabledFlow
 
     val nowPlayingDynamicBackgroundEnabledFlow: Flow<Boolean> =
-        context.dataStore.data.map { it[SettingsKeys.NOWPLAYING_DYNAMIC_BACKGROUND_ENABLED] ?: true }
+        autoSettingsRepository.nowPlayingDynamicBackgroundEnabledFlow
 
     val nowPlayingCoverBlurBackgroundEnabledFlow: Flow<Boolean> =
-        context.dataStore.data.map { it[SettingsKeys.NOWPLAYING_COVER_BLUR_BACKGROUND_ENABLED] ?: false }
+        autoSettingsRepository.nowPlayingCoverBlurBackgroundEnabledFlow
 
     val nowPlayingCoverBlurAmountFlow: Flow<Float> =
-        context.dataStore.data.map { it[SettingsKeys.NOWPLAYING_COVER_BLUR_AMOUNT] ?: 1.5f }
+        autoSettingsRepository.nowPlayingCoverBlurAmountFlow
 
     val nowPlayingCoverBlurDarkenFlow: Flow<Float> =
-        context.dataStore.data.map { it[SettingsKeys.NOWPLAYING_COVER_BLUR_DARKEN] ?: 0.2f }
+        autoSettingsRepository.nowPlayingCoverBlurDarkenFlow
 
     val lyricFontScaleFlow: Flow<Float> =
         context.dataStore.data.map {
@@ -149,7 +149,7 @@ class SettingsRepository(private val context: Context) {
         }
 
     val uiDensityScaleFlow: Flow<Float> =
-        context.dataStore.data.map { it[SettingsKeys.UI_DENSITY_SCALE] ?: 1.0f }
+        autoSettingsRepository.uiDensityScaleFlow
 
     val bypassProxyFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.BYPASS_PROXY] ?: true }
@@ -169,13 +169,13 @@ class SettingsRepository(private val context: Context) {
         }
 
     val backgroundImageBlurFlow: Flow<Float> =
-        context.dataStore.data.map { it[SettingsKeys.BACKGROUND_IMAGE_BLUR] ?: 0f }
+        autoSettingsRepository.backgroundImageBlurFlow
 
     val backgroundImageAlphaFlow: Flow<Float> =
-        context.dataStore.data.map { it[SettingsKeys.BACKGROUND_IMAGE_ALPHA] ?: 0.3f }
+        autoSettingsRepository.backgroundImageAlphaFlow
 
     val hapticFeedbackEnabledFlow: Flow<Boolean> =
-        context.dataStore.data.map { it[SettingsKeys.HAPTIC_FEEDBACK_ENABLED] ?: true }
+        autoSettingsRepository.hapticFeedbackEnabledFlow
 
     val disclaimerAcceptedFlow: Flow<Boolean?> =
         flow {
@@ -201,25 +201,25 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.data.map { it[SettingsKeys.MAX_CACHE_SIZE_BYTES] ?: (1024L * 1024 * 1024) }
 
     val showLyricTranslationFlow: Flow<Boolean> =
-        context.dataStore.data.map { it[SettingsKeys.SHOW_LYRIC_TRANSLATION] ?: true }
+        autoSettingsRepository.showLyricTranslationFlow
 
     val defaultStartDestinationFlow: Flow<String> =
-        context.dataStore.data.map { it[SettingsKeys.DEFAULT_START_DESTINATION] ?: "home" }
+        autoSettingsRepository.defaultStartDestinationFlow
 
     val autoShowKeyboardFlow: Flow<Boolean> =
-        context.dataStore.data.map { it[SettingsKeys.AUTO_SHOW_KEYBOARD] ?: false }
+        autoSettingsRepository.autoShowKeyboardFlow
 
     val homeCardContinueFlow: Flow<Boolean> =
-        context.dataStore.data.map { it[SettingsKeys.HOME_CARD_CONTINUE] ?: true }
+        autoSettingsRepository.homeCardContinueFlow
 
     val homeCardTrendingFlow: Flow<Boolean> =
-        context.dataStore.data.map { it[SettingsKeys.HOME_CARD_TRENDING] ?: true }
+        autoSettingsRepository.homeCardTrendingFlow
 
     val homeCardRadarFlow: Flow<Boolean> =
-        context.dataStore.data.map { it[SettingsKeys.HOME_CARD_RADAR] ?: true }
+        autoSettingsRepository.homeCardRadarFlow
 
     val homeCardRecommendedFlow: Flow<Boolean> =
-        context.dataStore.data.map { it[SettingsKeys.HOME_CARD_RECOMMENDED] ?: true }
+        autoSettingsRepository.homeCardRecommendedFlow
 
     val playbackFadeInFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.PLAYBACK_FADE_IN] ?: false }
@@ -304,31 +304,35 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setShowCoverSourceBadge(enabled: Boolean) {
-        context.dataStore.edit { it[SettingsKeys.SHOW_COVER_SOURCE_BADGE] = enabled }
+        autoSettingsRepository.setShowCoverSourceBadge(enabled)
     }
 
     suspend fun setNowPlayingToolbarDockEnabled(enabled: Boolean) {
-        context.dataStore.edit { it[SettingsKeys.NOWPLAYING_TOOLBAR_DOCK_ENABLED] = enabled }
+        autoSettingsRepository.setNowPlayingToolbarDockEnabled(enabled)
+    }
+
+    suspend fun setNowPlayingKeepScreenOn(enabled: Boolean) {
+        autoSettingsRepository.setNowPlayingKeepScreenOn(enabled)
     }
 
     suspend fun setNowPlayingShowTitle(enabled: Boolean) {
-        context.dataStore.edit { it[SettingsKeys.NOWPLAYING_SHOW_TITLE] = enabled }
+        autoSettingsRepository.setNowPlayingShowTitle(enabled)
     }
 
     suspend fun setNowPlayingProgressShowQualitySwitch(enabled: Boolean) {
-        context.dataStore.edit { it[SettingsKeys.NOWPLAYING_PROGRESS_SHOW_QUALITY_SWITCH] = enabled }
+        autoSettingsRepository.setNowPlayingProgressShowQualitySwitch(enabled)
     }
 
     suspend fun setNowPlayingProgressShowAudioCodec(enabled: Boolean) {
-        context.dataStore.edit { it[SettingsKeys.NOWPLAYING_PROGRESS_SHOW_AUDIO_CODEC] = enabled }
+        autoSettingsRepository.setNowPlayingProgressShowAudioCodec(enabled)
     }
 
     suspend fun setNowPlayingProgressShowAudioSpec(enabled: Boolean) {
-        context.dataStore.edit { it[SettingsKeys.NOWPLAYING_PROGRESS_SHOW_AUDIO_SPEC] = enabled }
+        autoSettingsRepository.setNowPlayingProgressShowAudioSpec(enabled)
     }
 
     suspend fun setSilentGitHubSyncFailure(enabled: Boolean) {
-        context.dataStore.edit { it[SettingsKeys.SILENT_GITHUB_SYNC_FAILURE] = enabled }
+        autoSettingsRepository.setSilentGitHubSyncFailure(enabled)
     }
 
     suspend fun setDisclaimerAccepted(accepted: Boolean) {
@@ -355,7 +359,7 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setDevModeEnabled(enabled: Boolean) {
-        context.dataStore.edit { it[SettingsKeys.KEY_DEV_MODE] = enabled }
+        autoSettingsRepository.setDevModeEnabled(enabled)
     }
 
     suspend fun setThemeSeedColor(hex: String) {
@@ -405,11 +409,11 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setLyricBlurEnabled(enabled: Boolean) {
-        context.dataStore.edit { it[SettingsKeys.LYRIC_BLUR_ENABLED] = enabled }
+        autoSettingsRepository.setLyricBlurEnabled(enabled)
     }
 
     suspend fun setLyricBlurAmount(amount: Float) {
-        context.dataStore.edit { it[SettingsKeys.LYRIC_BLUR_AMOUNT] = amount }
+        autoSettingsRepository.setLyricBlurAmount(amount)
     }
 
     suspend fun setCloudMusicLyricDefaultOffsetMs(offsetMs: Long) {
@@ -433,31 +437,31 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setAdvancedLyricsEnabled(enabled: Boolean) {
-        context.dataStore.edit { it[SettingsKeys.ADVANCED_LYRICS_ENABLED] = enabled }
+        autoSettingsRepository.setAdvancedLyricsEnabled(enabled)
     }
 
     suspend fun setAdvancedBlurEnabled(enabled: Boolean) {
-        context.dataStore.edit { it[SettingsKeys.ADVANCED_BLUR_ENABLED] = enabled }
+        autoSettingsRepository.setAdvancedBlurEnabled(enabled)
     }
 
     suspend fun setNowPlayingAudioReactiveEnabled(enabled: Boolean) {
-        context.dataStore.edit { it[SettingsKeys.NOWPLAYING_AUDIO_REACTIVE_ENABLED] = enabled }
+        autoSettingsRepository.setNowPlayingAudioReactiveEnabled(enabled)
     }
 
     suspend fun setNowPlayingDynamicBackgroundEnabled(enabled: Boolean) {
-        context.dataStore.edit { it[SettingsKeys.NOWPLAYING_DYNAMIC_BACKGROUND_ENABLED] = enabled }
+        autoSettingsRepository.setNowPlayingDynamicBackgroundEnabled(enabled)
     }
 
     suspend fun setNowPlayingCoverBlurBackgroundEnabled(enabled: Boolean) {
-        context.dataStore.edit { it[SettingsKeys.NOWPLAYING_COVER_BLUR_BACKGROUND_ENABLED] = enabled }
+        autoSettingsRepository.setNowPlayingCoverBlurBackgroundEnabled(enabled)
     }
 
     suspend fun setNowPlayingCoverBlurAmount(amount: Float) {
-        context.dataStore.edit { it[SettingsKeys.NOWPLAYING_COVER_BLUR_AMOUNT] = amount }
+        autoSettingsRepository.setNowPlayingCoverBlurAmount(amount)
     }
 
     suspend fun setNowPlayingCoverBlurDarken(amount: Float) {
-        context.dataStore.edit { it[SettingsKeys.NOWPLAYING_COVER_BLUR_DARKEN] = amount }
+        autoSettingsRepository.setNowPlayingCoverBlurDarken(amount)
     }
 
     suspend fun setLyricFontScale(scale: Float) {
@@ -465,7 +469,7 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setUiDensityScale(scale: Float) {
-        context.dataStore.edit { it[SettingsKeys.UI_DENSITY_SCALE] = scale }
+        autoSettingsRepository.setUiDensityScale(scale)
     }
 
     suspend fun setBypassProxy(enabled: Boolean) {
@@ -474,7 +478,7 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setHapticFeedbackEnabled(enabled: Boolean) {
-        context.dataStore.edit { it[SettingsKeys.HAPTIC_FEEDBACK_ENABLED] = enabled }
+        autoSettingsRepository.setHapticFeedbackEnabled(enabled)
     }
 
     suspend fun setBackgroundImageUri(uri: String?) {
@@ -500,11 +504,11 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setBackgroundImageBlur(blur: Float) {
-        context.dataStore.edit { it[SettingsKeys.BACKGROUND_IMAGE_BLUR] = blur }
+        autoSettingsRepository.setBackgroundImageBlur(blur)
     }
 
     suspend fun setBackgroundImageAlpha(alpha: Float) {
-        context.dataStore.edit { it[SettingsKeys.BACKGROUND_IMAGE_ALPHA] = alpha }
+        autoSettingsRepository.setBackgroundImageAlpha(alpha)
     }
 
     suspend fun setMaxCacheSizeBytes(bytes: Long) {
@@ -551,31 +555,31 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setShowLyricTranslation(enabled: Boolean) {
-        context.dataStore.edit { it[SettingsKeys.SHOW_LYRIC_TRANSLATION] = enabled }
+        autoSettingsRepository.setShowLyricTranslation(enabled)
     }
 
     suspend fun setDefaultStartDestination(route: String) {
-        context.dataStore.edit { it[SettingsKeys.DEFAULT_START_DESTINATION] = route }
+        autoSettingsRepository.setDefaultStartDestination(route)
     }
 
     suspend fun setAutoShowKeyboard(enabled: Boolean) {
-        context.dataStore.edit { it[SettingsKeys.AUTO_SHOW_KEYBOARD] = enabled }
+        autoSettingsRepository.setAutoShowKeyboard(enabled)
     }
 
     suspend fun setHomeCardContinue(enabled: Boolean) {
-        context.dataStore.edit { it[SettingsKeys.HOME_CARD_CONTINUE] = enabled }
+        autoSettingsRepository.setHomeCardContinue(enabled)
     }
 
     suspend fun setHomeCardTrending(enabled: Boolean) {
-        context.dataStore.edit { it[SettingsKeys.HOME_CARD_TRENDING] = enabled }
+        autoSettingsRepository.setHomeCardTrending(enabled)
     }
 
     suspend fun setHomeCardRadar(enabled: Boolean) {
-        context.dataStore.edit { it[SettingsKeys.HOME_CARD_RADAR] = enabled }
+        autoSettingsRepository.setHomeCardRadar(enabled)
     }
 
     suspend fun setHomeCardRecommended(enabled: Boolean) {
-        context.dataStore.edit { it[SettingsKeys.HOME_CARD_RECOMMENDED] = enabled }
+        autoSettingsRepository.setHomeCardRecommended(enabled)
     }
 
     suspend fun setPlaybackFadeIn(enabled: Boolean) {

@@ -70,7 +70,13 @@ internal fun installYouTubeBackgroundWebViewGuard(
 }
 
 internal fun removeYouTubeBackgroundWebViewGuard(scriptHandler: ScriptHandler?) {
+    if (scriptHandler == null) {
+        return
+    }
+    if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+        return
+    }
     runCatching {
-        scriptHandler?.remove()
+        scriptHandler.remove()
     }
 }

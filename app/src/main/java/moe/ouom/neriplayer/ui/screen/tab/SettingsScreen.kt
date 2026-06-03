@@ -51,7 +51,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.AltRoute
 import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material.icons.outlined.AdsClick
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Brightness4
@@ -59,16 +58,14 @@ import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.FormatSize
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Router
 import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.Subtitles
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Wallpaper
+import androidx.compose.material.icons.outlined.ZoomInMap
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -122,6 +119,12 @@ import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.settings.MAX_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.data.settings.MIN_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.data.settings.background.BackgroundImageStorage
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingsKeys
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingsListItem
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingsScopes
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingsSwitchItems
 import moe.ouom.neriplayer.data.settings.scaledLyricFontSize
 import moe.ouom.neriplayer.listentogether.configuredListenTogetherBaseUrlOrNull
 import moe.ouom.neriplayer.listentogether.isDefaultListenTogetherBaseUrl
@@ -144,7 +147,6 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsPlaybackSect
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsStorageCacheSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.ThemeModeActionButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.ThemeSeedListItem
-import moe.ouom.neriplayer.ui.screen.tab.settings.component.UiScaleListItem
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.maskCookieValue
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.settingsItemClickable
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsGitHubDialogs
@@ -204,8 +206,6 @@ fun SettingsScreen(
     onCloudMusicLyricDefaultOffsetMsChange: (Long) -> Unit,
     qqMusicLyricDefaultOffsetMs: Long,
     onQqMusicLyricDefaultOffsetMsChange: (Long) -> Unit,
-    advancedLyricsEnabled: Boolean,
-    onAdvancedLyricsEnabledChange: (Boolean) -> Unit,
     advancedBlurEnabled: Boolean,
     onAdvancedBlurEnabledChange: (Boolean) -> Unit,
     nowPlayingAudioReactiveEnabled: Boolean,
@@ -236,28 +236,8 @@ fun SettingsScreen(
     backgroundImageAlpha: Float,
     onBackgroundImageAlphaChange: (Float) -> Unit,
     onBackgroundImageAlphaChangeFinished: (Float) -> Unit,
-    hapticFeedbackEnabled: Boolean,
-    onHapticFeedbackEnabledChange: (Boolean) -> Unit,
-    showCoverSourceBadge: Boolean,
-    onShowCoverSourceBadgeChange: (Boolean) -> Unit,
-    nowPlayingToolbarDockEnabled: Boolean,
-    onNowPlayingToolbarDockEnabledChange: (Boolean) -> Unit,
-    showNowPlayingTitle: Boolean,
-    onShowNowPlayingTitleChange: (Boolean) -> Unit,
-    showNowPlayingProgressQualitySwitch: Boolean,
-    onShowNowPlayingProgressQualitySwitchChange: (Boolean) -> Unit,
-    showNowPlayingProgressAudioCodec: Boolean,
-    onShowNowPlayingProgressAudioCodecChange: (Boolean) -> Unit,
-    showNowPlayingProgressAudioSpec: Boolean,
-    onShowNowPlayingProgressAudioSpecChange: (Boolean) -> Unit,
-    silentGitHubSyncFailure: Boolean,
-    onSilentGitHubSyncFailureChange: (Boolean) -> Unit,
-    showLyricTranslation: Boolean,
-    onShowLyricTranslationChange: (Boolean) -> Unit,
     defaultStartDestination: String,
     onDefaultStartDestinationChange: (String) -> Unit,
-    autoShowKeyboard: Boolean,
-    onAutoShowKeyboardChange: (Boolean) -> Unit,
     showHomeContinueCard: Boolean,
     onShowHomeContinueCardChange: (Boolean) -> Unit,
     showHomeTrendingCard: Boolean,
@@ -295,6 +275,7 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val autoSettingsRepository = remember(context) { AutoSettingsRepository(context) }
     val listenTogetherPreferences = remember { AppContainer.listenTogetherPreferences }
     val listenTogetherApi = remember { AppContainer.listenTogetherApi }
     val listenTogetherSessionManager = remember { AppContainer.listenTogetherSessionManager }
@@ -904,9 +885,9 @@ fun SettingsScreen(
             ),
             state = listState
         ) {
-            // 动态取色
             item {
-                ListItem(
+                AutoSettingsListItem(
+                    setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.DYNAMIC_COLOR),
                     leadingContent = {
                         Icon(
                             imageVector = Icons.Outlined.Brightness4,
@@ -914,12 +895,10 @@ fun SettingsScreen(
                             tint = MaterialTheme.colorScheme.onSurface
                         )
                     },
-                    headlineContent = { Text(stringResource(R.string.settings_dynamic_color)) },
-                    supportingContent = { Text(stringResource(R.string.settings_dynamic_color_desc)) },
                     trailingContent = {
                         Switch(checked = dynamicColor, onCheckedChange = onDynamicColorChange)
                     },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                    onClick = { onDynamicColorChange(!dynamicColor) }
                 )
             }
 
@@ -932,24 +911,11 @@ fun SettingsScreen(
                 }
             }
 
-
             item {
-                // 触感反馈
-                ListItem(
-                    leadingContent = {
-                        Icon(
-                            imageVector = Icons.Outlined.AdsClick,
-                            contentDescription = stringResource(R.string.settings_haptic_feedback),
-                            modifier = Modifier.size(24.dp),
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
-                    },
-                    headlineContent = { Text(stringResource(R.string.settings_haptic)) },
-                    supportingContent = { Text(stringResource(R.string.settings_haptic_desc)) },
-                    trailingContent = {
-                        Switch(checked = hapticFeedbackEnabled, onCheckedChange = onHapticFeedbackEnabledChange)
-                    },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                AutoSettingsSwitchItems(
+                    repository = autoSettingsRepository,
+                    scope = scope,
+                    sectionScope = AutoSettingsScopes.general
                 )
             }
 
@@ -1088,10 +1054,8 @@ fun SettingsScreen(
                             .background(Color.Transparent)
                             .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
                     ) {
-                        ListItem(
-                            modifier = Modifier.settingsItemClickable {
-                                showDefaultStartDestinationDialog = true
-                            },
+                        AutoSettingsListItem(
+                            setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.DEFAULT_START_DESTINATION),
                             leadingContent = {
                                 Icon(
                                     imageVector = Icons.Outlined.Home,
@@ -1100,7 +1064,6 @@ fun SettingsScreen(
                                     tint = MaterialTheme.colorScheme.onSurface
                                 )
                             },
-                            headlineContent = { Text(stringResource(R.string.settings_default_start_screen)) },
                             supportingContent = {
                                 Text(
                                     stringResource(
@@ -1109,30 +1072,13 @@ fun SettingsScreen(
                                     )
                                 )
                             },
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                            onClick = { showDefaultStartDestinationDialog = true }
                         )
 
-                        ListItem(
-                            modifier = Modifier.settingsItemClickable {
-                                onAutoShowKeyboardChange(!autoShowKeyboard)
-                            },
-                            leadingContent = {
-                                Icon(
-                                    imageVector = Icons.Outlined.Keyboard,
-                                    contentDescription = stringResource(R.string.settings_auto_show_keyboard),
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
-                            },
-                            headlineContent = { Text(stringResource(R.string.settings_auto_show_keyboard)) },
-                            supportingContent = { Text(stringResource(R.string.settings_auto_show_keyboard_desc)) },
-                            trailingContent = {
-                                Switch(
-                                    checked = autoShowKeyboard,
-                                    onCheckedChange = onAutoShowKeyboardChange
-                                )
-                            },
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        AutoSettingsSwitchItems(
+                            repository = autoSettingsRepository,
+                            scope = scope,
+                            sectionScope = AutoSettingsScopes.personalization
                         )
 
                         Text(
@@ -1285,156 +1231,14 @@ fun SettingsScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        ListItem(
-                            leadingContent = {
-                                Icon(
-                                    imageVector = Icons.Outlined.Info,
-                                    contentDescription = stringResource(R.string.settings_cover_source_badge),
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
-                            },
-                            headlineContent = { Text(stringResource(R.string.settings_cover_source_badge)) },
-                            supportingContent = { Text(stringResource(R.string.settings_cover_source_badge_desc)) },
-                            trailingContent = {
-                                Switch(
-                                    checked = showCoverSourceBadge,
-                                    onCheckedChange = onShowCoverSourceBadgeChange
-                                )
-                            },
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        AutoSettingsSwitchItems(
+                            repository = autoSettingsRepository,
+                            scope = scope,
+                            sectionScope = AutoSettingsScopes.display
                         )
 
-                        ListItem(
-                            leadingContent = {
-                                Icon(
-                                    imageVector = Icons.Outlined.LibraryMusic,
-                                    contentDescription = stringResource(R.string.settings_nowplaying_title),
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
-                            },
-                            headlineContent = { Text(stringResource(R.string.settings_nowplaying_title)) },
-                            supportingContent = { Text(stringResource(R.string.settings_nowplaying_title_desc)) },
-                            trailingContent = {
-                                Switch(
-                                    checked = showNowPlayingTitle,
-                                    onCheckedChange = onShowNowPlayingTitleChange
-                                )
-                            },
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                        )
-
-                        ListItem(
-                            leadingContent = {
-                                Icon(
-                                    imageVector = Icons.Outlined.Home,
-                                    contentDescription = stringResource(R.string.settings_nowplaying_toolbar_dock),
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
-                            },
-                            headlineContent = { Text(stringResource(R.string.settings_nowplaying_toolbar_dock)) },
-                            supportingContent = { Text(stringResource(R.string.settings_nowplaying_toolbar_dock_desc)) },
-                            trailingContent = {
-                                Switch(
-                                    checked = nowPlayingToolbarDockEnabled,
-                                    onCheckedChange = onNowPlayingToolbarDockEnabledChange
-                                )
-                            },
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                        )
-
-                        ListItem(
-                            leadingContent = {
-                                Icon(
-                                    imageVector = Icons.Outlined.Tune,
-                                    contentDescription = stringResource(R.string.settings_nowplaying_progress_quality_switch),
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
-                            },
-                            headlineContent = {
-                                Text(stringResource(R.string.settings_nowplaying_progress_quality_switch))
-                            },
-                            supportingContent = {
-                                Text(stringResource(R.string.settings_nowplaying_progress_quality_switch_desc))
-                            },
-                            trailingContent = {
-                                Switch(
-                                    checked = showNowPlayingProgressQualitySwitch,
-                                    onCheckedChange = onShowNowPlayingProgressQualitySwitchChange
-                                )
-                            },
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                        )
-
-                        ListItem(
-                            leadingContent = {
-                                Icon(
-                                    imageVector = Icons.Outlined.Info,
-                                    contentDescription = stringResource(R.string.settings_nowplaying_progress_audio_codec),
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
-                            },
-                            headlineContent = {
-                                Text(stringResource(R.string.settings_nowplaying_progress_audio_codec))
-                            },
-                            supportingContent = {
-                                Text(stringResource(R.string.settings_nowplaying_progress_audio_codec_desc))
-                            },
-                            trailingContent = {
-                                Switch(
-                                    checked = showNowPlayingProgressAudioCodec,
-                                    onCheckedChange = onShowNowPlayingProgressAudioCodecChange
-                                )
-                            },
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                        )
-
-                        ListItem(
-                            leadingContent = {
-                                Icon(
-                                    imageVector = Icons.Outlined.LibraryMusic,
-                                    contentDescription = stringResource(R.string.settings_nowplaying_progress_audio_spec),
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
-                            },
-                            headlineContent = {
-                                Text(stringResource(R.string.settings_nowplaying_progress_audio_spec))
-                            },
-                            supportingContent = {
-                                Text(stringResource(R.string.settings_nowplaying_progress_audio_spec_desc))
-                            },
-                            trailingContent = {
-                                Switch(
-                                    checked = showNowPlayingProgressAudioSpec,
-                                    onCheckedChange = onShowNowPlayingProgressAudioSpecChange
-                                )
-                            },
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                        )
-
-                        ListItem(
-                            leadingContent = {
-                                Icon(
-                                    imageVector = Icons.Outlined.Subtitles,
-                                    contentDescription = stringResource(R.string.settings_show_lyric_translation),
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
-                            },
-                            headlineContent = { Text(stringResource(R.string.settings_show_lyric_translation)) },
-                            supportingContent = { Text(stringResource(R.string.settings_show_lyric_translation_desc)) },
-                            trailingContent = {
-                                Switch(checked = showLyricTranslation, onCheckedChange = onShowLyricTranslationChange)
-                            },
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                        )
-
-                        ListItem(
+                        AutoSettingsListItem(
+                            setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.LYRIC_FONT_SCALE),
                             leadingContent = {
                                 Icon(
                                     imageVector = Icons.Outlined.FormatSize,
@@ -1443,7 +1247,6 @@ fun SettingsScreen(
                                     tint = MaterialTheme.colorScheme.onSurface
                                 )
                             },
-                            headlineContent = { Text(stringResource(R.string.lyrics_font_size)) },
                             supportingContent = {
                                 var pendingLyricFontScale by remember { mutableFloatStateOf(lyricFontScale) }
                                 LaunchedEffect(lyricFontScale) {
@@ -1476,36 +1279,53 @@ fun SettingsScreen(
                                         fontSize = scaledLyricFontSize(18f, pendingLyricFontScale).sp
                                     )
                                 }
-                            },
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                            }
                         )
                         
-                        UiScaleListItem(currentScale = uiDensityScale, onClick = { showDpiDialog = true })
-
-                        // 选择背景图
-                        ListItem(
-                            modifier = Modifier.settingsItemClickable {
-                                photoPickerLauncher.launch(
-                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        AutoSettingsListItem(
+                            setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.UI_DENSITY_SCALE),
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Outlined.ZoomInMap,
+                                    contentDescription = stringResource(R.string.settings_ui_scale),
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
                                 )
                             },
-                            colors = ListItemDefaults.colors(
-                                containerColor = Color.Transparent
-                            ),
+                            supportingContent = {
+                                Text(stringResource(R.string.settings_ui_scale_current, "%.2f".format(uiDensityScale)))
+                            },
+                            onClick = { showDpiDialog = true }
+                        )
+
+                        AutoSettingsListItem(
+                            setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.BACKGROUND_IMAGE_URI),
                             leadingContent = {
                                 Icon(
                                     imageVector = Icons.Outlined.Wallpaper,
-                                    contentDescription = stringResource(R.string.settings_custom_background)
+                                    contentDescription = stringResource(R.string.settings_custom_background),
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
                                 )
                             },
-                            headlineContent = { Text(stringResource(R.string.background_custom)) },
-                            supportingContent = { Text(if (backgroundImageUri != null) stringResource(R.string.settings_background_change) else stringResource(R.string.settings_background_select)) }
+                            supportingContent = {
+                                Text(
+                                    if (backgroundImageUri != null) {
+                                        stringResource(R.string.settings_background_change)
+                                    } else {
+                                        stringResource(R.string.settings_background_select)
+                                    }
+                                )
+                            },
+                            onClick = {
+                                photoPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            }
                         )
 
-                        // 展开区域
                         LazyAnimatedVisibility(visible = backgroundImageUri != null) {
                                 Column {
-                                    // 清除背景图按钮
                                 TextButton(onClick = {
                                     scope.launch {
                                         BackgroundImageStorage.deleteManagedBackground(
@@ -1518,12 +1338,9 @@ fun SettingsScreen(
                                     Text(stringResource(R.string.background_clear))
                                 }
 
-                                // 模糊度调节
-                                ListItem(
-                                    headlineContent = { Text(stringResource(R.string.background_blur)) },
-                                    colors = ListItemDefaults.colors(
-                                        containerColor = Color.Transparent
-                                    ),
+                                AutoSettingsListItem(
+                                    setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.BACKGROUND_IMAGE_BLUR),
+                                    showDefaultIcon = false,
                                     supportingContent = {
                                         Slider(
                                             value = pendingBackgroundImageBlur,
@@ -1532,17 +1349,14 @@ fun SettingsScreen(
                                                 onBackgroundImageBlurChange(pendingBackgroundImageBlur)
                                                 onBackgroundImageBlurChangeFinished(pendingBackgroundImageBlur)
                                             },
-                                            valueRange = 0f..25f // Coil 的模糊范围
+                                            valueRange = 0f..25f
                                         )
                                     }
                                 )
 
-                                // 透明度调节
-                                ListItem(
-                                    headlineContent = { Text(stringResource(R.string.background_opacity)) },
-                                    colors = ListItemDefaults.colors(
-                                        containerColor = Color.Transparent
-                                    ),
+                                AutoSettingsListItem(
+                                    setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.BACKGROUND_IMAGE_ALPHA),
+                                    showDefaultIcon = false,
                                     supportingContent = {
                                         Slider(
                                             value = pendingBackgroundImageAlpha,
@@ -1568,8 +1382,8 @@ fun SettingsScreen(
                       expanded = motionExpanded,
                       arrowRotation = motionArrowRotation,
                         onExpandedChange = { motionExpanded = it },
-                        advancedLyricsEnabled = advancedLyricsEnabled,
-                        onAdvancedLyricsEnabledChange = onAdvancedLyricsEnabledChange,
+                        autoSettingsRepository = autoSettingsRepository,
+                        scope = scope,
                         advancedBlurEnabled = advancedBlurEnabled,
                         onAdvancedBlurEnabledChange = onAdvancedBlurEnabledChange,
                       nowPlayingAudioReactiveEnabled = nowPlayingAudioReactiveEnabled,
@@ -1626,7 +1440,8 @@ fun SettingsScreen(
                             .background(Color.Transparent)
                             .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
                     ) {
-                        ListItem(
+                        AutoSettingsListItem(
+                            setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.BYPASS_PROXY),
                             leadingContent = {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Outlined.AltRoute,
@@ -1635,12 +1450,10 @@ fun SettingsScreen(
                                     tint = MaterialTheme.colorScheme.onSurface
                                 )
                             },
-                            headlineContent = { Text(stringResource(R.string.settings_bypass_proxy)) },
-                            supportingContent = { Text(stringResource(R.string.settings_bypass_proxy_desc)) },
                             trailingContent = {
                                 Switch(checked = bypassProxy, onCheckedChange = onBypassProxyChange)
                             },
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                            onClick = { onBypassProxyChange(!bypassProxy) }
                         )
                     }
                 }
@@ -1774,8 +1587,8 @@ fun SettingsScreen(
                     onClearImportStatus = backupRestoreVm::clearImportStatus,
                     onClearConfigExportStatus = configTransferVm::clearExportStatus,
                     onClearConfigImportStatus = configTransferVm::clearImportStatus,
-                    silentGitHubSyncFailure = silentGitHubSyncFailure,
-                    onSilentGitHubSyncFailureChange = onSilentGitHubSyncFailureChange,
+                    autoSettingsRepository = autoSettingsRepository,
+                    scope = scope,
                     onOpenGitHubConfig = { showGitHubConfigDialog = true },
                     onOpenClearGitHubConfig = { showClearGitHubConfigDialog = true },
                     onOpenWebDavConfig = { showWebDavConfigDialog = true },
@@ -2590,5 +2403,3 @@ private fun SettingsLoginExpandedContent(
         )
     }
 }
-
-

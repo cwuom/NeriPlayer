@@ -77,6 +77,7 @@ import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
 import moe.ouom.neriplayer.core.player.policy.PlaybackCommand
 import moe.ouom.neriplayer.core.player.policy.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.policy.resolvePlaybackSoundConfigForEngine
+import moe.ouom.neriplayer.core.player.policy.resolveExoRepeatMode
 import moe.ouom.neriplayer.core.player.policy.shouldShowPauseButtonForPlaybackControls
 import moe.ouom.neriplayer.core.player.policy.shouldBootstrapPlaybackServiceOnAppLaunch
 import moe.ouom.neriplayer.core.player.policy.shouldRunPlaybackServiceInForeground
@@ -156,6 +157,8 @@ object PlayerManager {
     internal var neteaseQualityRefreshJob: Job? = null
     internal var youtubeQualityRefreshJob: Job? = null
     internal var biliQualityRefreshJob: Job? = null
+    internal var playbackStatsPersistJob: Job? = null
+    internal val playbackStatsPersistLock = Any()
 
     internal val localRepo: LocalPlaylistRepository
         get() = LocalPlaylistRepository.getInstance(application)
@@ -283,6 +286,7 @@ object PlayerManager {
     internal val playbackEffectsController = PlaybackEffectsController()
     internal val _playbackSoundState = MutableStateFlow(PlaybackSoundState())
     val playbackSoundStateFlow: StateFlow<PlaybackSoundState> = _playbackSoundState
+    internal var playbackStatsTracker = PlaybackStatsTracker()
 
     /** 本地歌单快照，供收藏状态和歌单选择弹窗使用 */
     internal val _playlistsFlow = MutableStateFlow<List<LocalPlaylist>>(emptyList())
@@ -325,6 +329,22 @@ object PlayerManager {
             onTimerExpired = {
                 pause()
                 sleepTimerManager.cancel()
+            },
+            onTimerStateChanged = {
+                if (isPlayerInitialized()) {
+                    syncExoRepeatMode()
+                }
+            }
+        )
+    }
+
+    internal fun setCurrentSongForPlayback(song: SongItem?) {
+        val previousSong = _currentSongFlow.value
+        _currentSongFlow.value = song
+        if (previousSong === song) return
+        persistPlaybackStatsSnapshotAsync(
+            synchronized(playbackStatsTracker) {
+                playbackStatsTracker.onSongChanged(song)
             }
         )
     }
@@ -502,7 +522,7 @@ object PlayerManager {
         _playbackPositionMs.value = 0L
         _currentMediaUrl.value = null
         currentMediaUrlResolvedAtMs = 0L
-        _currentSongFlow.value = null
+        setCurrentSongForPlayback(null)
         _currentQueueFlow.value = emptyList()
         currentPlaylist = emptyList()
         currentIndex = -1
@@ -762,7 +782,7 @@ object PlayerManager {
 
         val currentSong = _currentSongFlow.value
         if (currentSong?.sameIdentityAs(song) == true && currentSong.durationMs <= 0L) {
-            _currentSongFlow.value = currentSong.copy(durationMs = resolvedDurationMs)
+            setCurrentSongForPlayback(currentSong.copy(durationMs = resolvedDurationMs))
             changed = true
         }
 
@@ -1015,14 +1035,110 @@ object PlayerManager {
         lastTrackEndHandledAtMs = 0L
     }
 
+    internal fun markTrackEndHandledForStatsFallback() {
+        lastHandledTrackEndKey = trackEndDeduplicationKey(
+            mediaId = runCatching { player.currentMediaItem?.mediaId }.getOrNull(),
+            fallbackSongKey = _currentSongFlow.value?.stableKey()
+        )
+        lastTrackEndHandledAtMs = SystemClock.elapsedRealtime()
+    }
+
+    internal fun syncPlaybackStatsPlayingState(
+        playing: Boolean,
+        reason: String
+    ) {
+        val snapshot = synchronized(playbackStatsTracker) {
+            playbackStatsTracker.onPlayingChanged(playing)
+        }
+        if (snapshot != null) {
+            NPLogger.d(
+                "NERI-PlayerManager",
+                "syncPlaybackStatsPlayingState: reason=$reason, playing=$playing, song=${snapshot.song.name}, listenedMs=${snapshot.listenedMs}, playCountIncrement=${snapshot.playCountIncrement}"
+            )
+        }
+        persistPlaybackStatsSnapshotAsync(snapshot)
+    }
+
+    internal fun persistPlaybackStatsSnapshotAsync(snapshot: PlaybackStatsSnapshot?) {
+        snapshot ?: return
+        if (!initialized) return
+        synchronized(playbackStatsPersistLock) {
+            val previousJob = playbackStatsPersistJob
+            playbackStatsPersistJob = ioScope.launch {
+                previousJob?.join()
+                recordPlaybackStatsSnapshot(snapshot)
+            }
+        }
+    }
+
+    internal suspend fun recordPlaybackStatsSnapshot(snapshot: PlaybackStatsSnapshot) {
+        AppContainer.playbackStatsRepo.recordListenDeltaNow(
+            song = snapshot.song,
+            listenedMs = snapshot.listenedMs,
+            playCountIncrement = snapshot.playCountIncrement,
+            scheduleSync = snapshot.scheduleSync
+        )
+    }
+
+    internal fun drainPlaybackStatsPersistJobBlocking(reason: String) {
+        if (!initialized) return
+        val pendingJob = synchronized(playbackStatsPersistLock) {
+            playbackStatsPersistJob
+        }
+        if (pendingJob == null || pendingJob.isCompleted) return
+        NPLogger.d(
+            "NERI-PlayerManager",
+            "drainPlaybackStatsPersistJobBlocking: reason=$reason"
+        )
+        moe.ouom.neriplayer.core.player.state.blockingIo {
+            pendingJob.join()
+        }
+        synchronized(playbackStatsPersistLock) {
+            if (playbackStatsPersistJob === pendingJob && pendingJob.isCompleted) {
+                playbackStatsPersistJob = null
+            }
+        }
+    }
+
+    internal fun flushPlaybackStatsBlockingImpl(
+        reason: String,
+        stopTracking: Boolean = false
+    ) {
+        if (!initialized) return
+        drainPlaybackStatsPersistJobBlocking("${reason}_pending")
+        val currentSnapshot = synchronized(playbackStatsTracker) {
+            if (stopTracking) {
+                playbackStatsTracker.onPlayingChanged(false) ?: playbackStatsTracker.flushFinal()
+            } else {
+                playbackStatsTracker.flushFinal()
+            }
+        }
+        if (currentSnapshot != null) {
+            NPLogger.d(
+                "NERI-PlayerManager",
+                "flushPlaybackStatsBlocking: reason=$reason, song=${currentSnapshot.song.name}, listenedMs=${currentSnapshot.listenedMs}, playCountIncrement=${currentSnapshot.playCountIncrement}"
+            )
+            moe.ouom.neriplayer.core.player.state.blockingIo {
+                recordPlaybackStatsSnapshot(currentSnapshot)
+            }
+        }
+        if (stopTracking) {
+            synchronized(playbackStatsTracker) {
+                playbackStatsTracker.onSongChanged(null)
+            }
+        }
+    }
+
     /**
      */
     internal fun syncExoRepeatMode() {
-        val desired = if (repeatModeSetting == Player.REPEAT_MODE_ONE) {
-            Player.REPEAT_MODE_ONE
-        } else {
-            Player.REPEAT_MODE_OFF
-        }
+        val timerState = sleepTimerManager.timerState.value
+        val shouldLetPlaybackEndForSleepTimer =
+            timerState.isActive && timerState.mode == SleepTimerMode.FINISH_CURRENT
+        val desired = resolveExoRepeatMode(
+            repeatModeSetting = repeatModeSetting,
+            shouldLetPlaybackEndForSleepTimer = shouldLetPlaybackEndForSleepTimer
+        )
         if (player.repeatMode != desired) {
             player.repeatMode = desired
         }
@@ -1147,6 +1263,11 @@ internal fun cancelVolumeFade(resetToFull: Boolean = false) =
 
     internal fun handleTrackEndedIfNeeded(source: String) =
         handleTrackEndedIfNeededImpl(source)
+
+    internal fun flushPlaybackStatsBlocking(
+        reason: String,
+        stopTracking: Boolean = false
+    ) = flushPlaybackStatsBlockingImpl(reason, stopTracking)
 
     fun playPlaylist(
         songs: List<SongItem>,

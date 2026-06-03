@@ -17,6 +17,14 @@ class ListenTogetherBaseUrlTest {
     }
 
     @Test
+    fun `configured base url keeps valid cleartext custom server`() {
+        assertEquals(
+            "http://192.168.1.10:8787",
+            configuredListenTogetherBaseUrlOrNull(" http://192.168.1.10:8787/ ")
+        )
+    }
+
+    @Test
     fun `configured base url rejects invalid custom server`() {
         assertNull(configuredListenTogetherBaseUrlOrNull("example.com"))
     }
@@ -37,6 +45,22 @@ class ListenTogetherBaseUrlTest {
 
         assertEquals("https://example.com", invite?.baseUrl)
         assertFalse(invite?.hasInvalidBaseUrl ?: true)
+    }
+
+    @Test
+    fun `invite parser decodes encoded inviter`() {
+        val invite = parseListenTogetherInvite(
+            "neriplayer://listen-together/join?roomId=P8BAEV&inviter=Neri%E7%8C%AB"
+        )
+
+        assertEquals("Neri猫", invite?.inviterNickname)
+    }
+
+    @Test
+    fun `invite parser rejects malformed query encoding without throwing`() {
+        assertNull(
+            parseListenTogetherInvite("neriplayer://listen-together/join?roomId=%")
+        )
     }
 
     @Test

@@ -61,6 +61,10 @@ import androidx.compose.ui.unit.dp
 import kotlin.math.absoluteValue
 import kotlin.math.roundToLong
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingInfo
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingsKeys
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingsListItem
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
 
 @Composable
 internal fun SettingsPlaybackSection(
@@ -110,8 +114,7 @@ internal fun SettingsPlaybackSection(
                 .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
         ) {
             PlaybackSwitchItem(
-                title = stringResource(R.string.settings_playback_fade_in),
-                description = stringResource(R.string.settings_playback_fade_in_desc),
+                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.PLAYBACK_FADE_IN),
                 checked = playbackFadeIn,
                 icon = {
                     Icon(
@@ -145,8 +148,7 @@ internal fun SettingsPlaybackSection(
             }
 
             PlaybackSwitchItem(
-                title = stringResource(R.string.settings_playback_crossfade_next),
-                description = stringResource(R.string.settings_playback_crossfade_next_desc),
+                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.PLAYBACK_CROSSFADE_NEXT),
                 checked = playbackCrossfadeNext,
                 icon = {
                     Icon(
@@ -180,8 +182,7 @@ internal fun SettingsPlaybackSection(
             }
 
             PlaybackSwitchItem(
-                title = stringResource(R.string.settings_keep_last_playback_progress),
-                description = stringResource(R.string.settings_keep_last_playback_progress_desc),
+                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.KEEP_LAST_PLAYBACK_PROGRESS),
                 checked = keepLastPlaybackProgress,
                 icon = {
                     Icon(
@@ -196,8 +197,7 @@ internal fun SettingsPlaybackSection(
             )
 
             PlaybackSwitchItem(
-                title = stringResource(R.string.settings_keep_playback_mode_state),
-                description = stringResource(R.string.settings_keep_playback_mode_state_desc),
+                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.KEEP_PLAYBACK_MODE_STATE),
                 checked = keepPlaybackModeState,
                 icon = {
                     Icon(
@@ -212,8 +212,7 @@ internal fun SettingsPlaybackSection(
             )
 
             PlaybackSwitchItem(
-                title = stringResource(R.string.settings_stop_on_bluetooth_disconnect),
-                description = stringResource(R.string.settings_stop_on_bluetooth_disconnect_desc),
+                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.STOP_ON_BLUETOOTH_DISCONNECT),
                 checked = stopOnBluetoothDisconnect,
                 icon = {
                     Icon(
@@ -228,8 +227,7 @@ internal fun SettingsPlaybackSection(
             )
 
             PlaybackSwitchItem(
-                title = stringResource(R.string.settings_allow_mixed_playback),
-                description = stringResource(R.string.settings_allow_mixed_playback_desc),
+                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.ALLOW_MIXED_PLAYBACK),
                 checked = allowMixedPlayback,
                 icon = {
                     Icon(
@@ -248,25 +246,22 @@ internal fun SettingsPlaybackSection(
 
 @Composable
 private fun PlaybackSwitchItem(
-    title: String,
-    description: String,
+    setting: AutoSettingInfo,
     checked: Boolean,
     icon: @Composable () -> Unit,
     onToggle: () -> Unit,
     onCheckedChange: (Boolean) -> Unit
 ) {
-    ListItem(
-        modifier = Modifier.settingsItemClickable(onClick = onToggle),
+    AutoSettingsListItem(
+        setting = setting,
         leadingContent = icon,
-        headlineContent = { Text(title) },
-        supportingContent = { Text(description) },
         trailingContent = {
             Switch(
                 checked = checked,
                 onCheckedChange = onCheckedChange
             )
         },
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+        onClick = onToggle
     )
 }
 

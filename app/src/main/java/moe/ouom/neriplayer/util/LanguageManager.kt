@@ -27,6 +27,7 @@ package moe.ouom.neriplayer.util
 import android.app.Activity
 import android.content.Context
 import android.content.res.Configuration
+import android.os.Build
 import androidx.core.content.edit
 import moe.ouom.neriplayer.R
 import java.util.Locale
@@ -122,9 +123,9 @@ object LanguageManager {
      * Restart Activity
      */
     fun restartActivity(activity: Activity) {
-        activity.overridePendingTransition(0, 0)
+        activity.applyNoAnimationTransition()
         activity.recreate()
-        activity.overridePendingTransition(0, 0)
+        activity.applyNoAnimationTransition()
     }
 
     /**
@@ -145,4 +146,14 @@ fun LanguageManager.Language.getDisplayName(context: Context): String = when (th
     LanguageManager.Language.CHINESE -> context.getString(R.string.language_display_chinese)
     LanguageManager.Language.ENGLISH -> context.getString(R.string.language_display_english)
     LanguageManager.Language.SYSTEM -> context.getString(R.string.language_display_system)
+}
+
+private fun Activity.applyNoAnimationTransition() {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+        overrideActivityTransition(Activity.OVERRIDE_TRANSITION_CLOSE, 0, 0)
+        overrideActivityTransition(Activity.OVERRIDE_TRANSITION_OPEN, 0, 0)
+        return
+    }
+    @Suppress("DEPRECATION")
+    overridePendingTransition(0, 0)
 }

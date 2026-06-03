@@ -52,7 +52,8 @@ data class SyncData(
     @ProtoNumber(7) val recentPlays: List<SyncRecentPlay> = emptyList(),
     @ProtoNumber(8) val syncLog: List<SyncLogEntry> = emptyList(),
     @ProtoNumber(9) val recentPlayDeletions: List<SyncRecentPlayDeletion> = emptyList(),
-    @ProtoNumber(10) val playbackStats: List<SyncTrackStat> = emptyList()
+    @ProtoNumber(10) val playbackStats: List<SyncTrackStat> = emptyList(),
+    @ProtoNumber(11) val playbackStatsClearedAt: Long = 0L
 )
 
 /**
@@ -99,12 +100,12 @@ data class SyncPlaylist(
 @Serializable
 data class SyncSong(
     @ProtoNumber(1) val id: Long,
-    @ProtoNumber(2) val name: String,
-    @ProtoNumber(3) val artist: String,
-    @ProtoNumber(4) val album: String,
-    @ProtoNumber(5) val albumId: Long,
-    @ProtoNumber(6) val durationMs: Long,
-    @ProtoNumber(7) val coverUrl: String?,
+    @ProtoNumber(2) val name: String = "",
+    @ProtoNumber(3) val artist: String = "",
+    @ProtoNumber(4) val album: String = "",
+    @ProtoNumber(5) val albumId: Long = 0L,
+    @ProtoNumber(6) val durationMs: Long = 0L,
+    @ProtoNumber(7) val coverUrl: String? = null,
     @ProtoNumber(8) val mediaUri: String? = null,
     @ProtoNumber(9) val addedAt: Long = System.currentTimeMillis(),
     @ProtoNumber(10) val matchedLyric: String? = null,
@@ -237,12 +238,12 @@ data class SyncRecentPlayDeletion(
 @Serializable
 data class SyncFavoritePlaylist(
     @ProtoNumber(1) val id: Long,
-    @ProtoNumber(2) val name: String,
-    @ProtoNumber(3) val coverUrl: String?,
-    @ProtoNumber(4) val trackCount: Int,
-    @ProtoNumber(5) val source: String,
-    @ProtoNumber(6) val songs: List<SyncSong>,
-    @ProtoNumber(7) val addedTime: Long,
+    @ProtoNumber(2) val name: String = "",
+    @ProtoNumber(3) val coverUrl: String? = null,
+    @ProtoNumber(4) val trackCount: Int = 0,
+    @ProtoNumber(5) val source: String = "",
+    @ProtoNumber(6) val songs: List<SyncSong> = emptyList(),
+    @ProtoNumber(7) val addedTime: Long = 0L,
     @ProtoNumber(8) val modifiedAt: Long = addedTime,
     @ProtoNumber(9) val isDeleted: Boolean = false,
     @ProtoNumber(10) val sortOrder: Long = addedTime,

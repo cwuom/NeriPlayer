@@ -3,9 +3,9 @@ package moe.ouom.neriplayer.listentogether
 import android.net.Uri
 import java.net.URI
 import java.net.URLDecoder
-import java.nio.charset.StandardCharsets
 import java.util.UUID
 
+private const val UTF_8_CHARSET_NAME = "UTF-8"
 const val DEFAULT_LISTEN_TOGETHER_BASE_URL =
     "https://neriplayer.hancat.work/"
 
@@ -128,16 +128,18 @@ private fun decodeInviteQuery(rawQuery: String?): Map<String, String> {
             val separatorIndex = pair.indexOf('=')
             val rawKey = if (separatorIndex >= 0) pair.substring(0, separatorIndex) else pair
             val rawValue = if (separatorIndex >= 0) pair.substring(separatorIndex + 1) else ""
-            val key = decodeInviteQueryComponent(rawKey).trim()
+            val key = decodeInviteQueryComponent(rawKey)?.trim() ?: return@mapNotNull null
             if (key.isBlank()) {
                 null
             } else {
-                key to decodeInviteQueryComponent(rawValue)
+                decodeInviteQueryComponent(rawValue)?.let { key to it }
             }
         }
         .toMap()
 }
 
-private fun decodeInviteQueryComponent(value: String): String {
-    return URLDecoder.decode(value, StandardCharsets.UTF_8)
+private fun decodeInviteQueryComponent(value: String): String? {
+    return runCatching {
+        URLDecoder.decode(value, UTF_8_CHARSET_NAME)
+    }.getOrNull()
 }

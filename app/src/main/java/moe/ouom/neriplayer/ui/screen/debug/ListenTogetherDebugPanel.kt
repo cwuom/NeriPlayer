@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.debug
 
+import android.content.ClipData
 import android.content.Context
 import android.content.ContextWrapper
 import android.widget.Toast
@@ -53,19 +54,21 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.ClipboardManager
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.Clipboard
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -129,7 +132,8 @@ fun ListenTogetherRoomPanel(
 ) {
     val context = LocalContext.current
     val activity = remember(context) { context.findComponentActivity() }
-    val clipboard = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
+    val clipboardScope = rememberCoroutineScope()
     val sessionManager = remember { AppContainer.listenTogetherSessionManager }
     val preferences = remember { AppContainer.listenTogetherPreferences }
     val sessionState by sessionManager.sessionState.collectAsState()
@@ -272,6 +276,7 @@ fun ListenTogetherRoomPanel(
                     sessionState = sessionState,
                     effectiveBaseUrl = effectiveBaseUrl,
                     clipboard = clipboard,
+                    clipboardScope = clipboardScope,
                     onRunningActionChange = { runningActionResId = it }
                 )
                 if (!isInRoom) {
@@ -317,7 +322,7 @@ fun ListenTogetherRoomPanel(
                                     append(it)
                                 }
                             }
-                            clipboard.setText(AnnotatedString(inviteText))
+                            clipboard.copyText(clipboardScope, inviteText)
                             Toast.makeText(context, context.getString(R.string.listen_together_invite_copied), Toast.LENGTH_SHORT).show()
                         },
                         enabled = !sessionState.roomId.isNullOrBlank()
@@ -472,7 +477,7 @@ fun ListenTogetherRoomPanel(
                                     append(it)
                                 }
                             }
-                            clipboard.setText(AnnotatedString(inviteText))
+                            clipboard.copyText(clipboardScope, inviteText)
                             Toast.makeText(context, context.getString(R.string.listen_together_invite_copied), Toast.LENGTH_SHORT).show()
                         },
                         enabled = !sessionState.roomId.isNullOrBlank(),
@@ -534,7 +539,8 @@ private fun QuickActionSection(
     activity: ComponentActivity?,
     sessionState: moe.ouom.neriplayer.listentogether.ListenTogetherSessionState,
     effectiveBaseUrl: String,
-    clipboard: ClipboardManager,
+    clipboard: Clipboard,
+    clipboardScope: CoroutineScope,
     onRunningActionChange: (Int?) -> Unit
 ) {
     val context = LocalContext.current
@@ -592,7 +598,7 @@ private fun QuickActionSection(
         OutlinedButton(
             onClick = {
                 sessionState.wsUrl?.let {
-                    clipboard.setText(AnnotatedString(it))
+                    clipboard.copyText(clipboardScope, it)
                     Toast.makeText(context, context.getString(R.string.listen_together_debug_ws_url_copied), Toast.LENGTH_SHORT).show()
                 }
             },
@@ -752,6 +758,15 @@ private fun Context.findComponentActivity(): ComponentActivity? = when (this) {
     is ComponentActivity -> this
     is ContextWrapper -> baseContext.findComponentActivity()
     else -> null
+}
+
+private fun Clipboard.copyText(
+    scope: CoroutineScope?,
+    text: String
+) {
+    scope?.launch {
+        setClipEntry(ClipEntry(ClipData.newPlainText("text", text)))
+    }
 }
 
 @Composable

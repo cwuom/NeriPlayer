@@ -200,6 +200,25 @@ private fun hasCachedLocalDownload(song: SongItem): Boolean {
         ManagedDownloadStorage.peekDownloadedAudio(song) != null
 }
 
+internal fun areDisplayedSongKeysSelected(
+    selectedKeys: Set<String>,
+    displayedKeys: Set<String>
+): Boolean {
+    return displayedKeys.isNotEmpty() && displayedKeys.all(selectedKeys::contains)
+}
+
+internal fun toggleDisplayedSongSelection(
+    selectedKeys: Set<String>,
+    displayedKeys: Set<String>
+): Set<String> {
+    if (displayedKeys.isEmpty()) return selectedKeys
+    return if (areDisplayedSongKeysSelected(selectedKeys, displayedKeys)) {
+        selectedKeys - displayedKeys
+    } else {
+        selectedKeys + displayedKeys
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class,
     DelicateCoroutinesApi::class
 )
@@ -459,10 +478,6 @@ fun LocalPlaylistDetailScreen(
                 selectedKeysState.value =
                     if (selectedKeysState.value.contains(songKey)) selectedKeysState.value - songKey
                     else selectedKeysState.value + songKey
-            }
-
-            fun selectAll() {
-                selectedKeysState.value = localSongs.map { it.stableKey() }.toSet()
             }
 
             fun clearSelection() {
@@ -914,8 +929,11 @@ fun LocalPlaylistDetailScreen(
                             )
                         )
                     } else {
-                        val allSelected =
-                            selectedKeysState.value.size == localSongs.size && localSongs.isNotEmpty()
+                        val displayedSongKeys = displayedSongs.map { it.stableKey() }.toSet()
+                        val allSelected = areDisplayedSongKeysSelected(
+                            selectedKeys = selectedKeysState.value,
+                            displayedKeys = displayedSongKeys
+                        )
                         TopAppBar(
                             title = {
                                 Text(
@@ -935,7 +953,14 @@ fun LocalPlaylistDetailScreen(
                                 }
                             },
                             actions = {
-                                HapticIconButton(onClick = { if (allSelected) clearSelection() else selectAll() }) {
+                                HapticIconButton(
+                                    onClick = {
+                                        selectedKeysState.value = toggleDisplayedSongSelection(
+                                            selectedKeys = selectedKeysState.value,
+                                            displayedKeys = displayedSongKeys
+                                        )
+                                    }
+                                ) {
                                     Icon(
                                         imageVector = if (allSelected) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
                                         contentDescription = if (allSelected) stringResource(R.string.action_deselect_all) else stringResource(R.string.action_select_all)
@@ -1405,11 +1430,19 @@ fun LocalPlaylistDetailScreen(
                         },
                         confirmButton = {
                             HapticTextButton(onClick = {
-                                val songsToRemove = localSongs.filter {
-                                    it.stableKey() in selectedKeysState.value
-                                }
-                                val expectedSongs = localSongs.filterNot { candidate ->
-                                    songsToRemove.any { it.sameIdentityAs(candidate) }
+                                val selectedKeys = selectedKeysState.value
+                                val removeAll = localSongs.isNotEmpty() &&
+                                    selectedKeys.size == localSongs.size &&
+                                    localSongs.all { it.stableKey() in selectedKeys }
+                                var songsToRemove = emptyList<SongItem>()
+                                val expectedSongs = if (removeAll) {
+                                    emptyList()
+                                } else {
+                                    songsToRemove = localSongs.filter {
+                                        it.stableKey() in selectedKeys
+                                    }
+                                    val removeIdentities = songsToRemove.map { it.identity() }.toSet()
+                                    localSongs.filterNot { it.identity() in removeIdentities }
                                 }
                                 pendingOrderIdentities = expectedSongs.map { it.identity() }
                                 blockSync = true
@@ -1419,7 +1452,11 @@ fun LocalPlaylistDetailScreen(
                                 showDeleteMultiConfirm = false
                                 exitSelectionMode()
 
-                                vm.removeSongs(songsToRemove)
+                                if (removeAll) {
+                                    vm.clearSongs()
+                                } else {
+                                    vm.removeSongs(songsToRemove)
+                                }
                             }) { Text(stringResource(R.string.local_playlist_delete_count, count)) }
                         },
                         dismissButton = {

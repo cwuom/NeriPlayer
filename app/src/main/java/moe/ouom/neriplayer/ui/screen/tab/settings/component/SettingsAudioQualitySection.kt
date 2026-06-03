@@ -48,6 +48,10 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingInfo
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingsKeys
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingsListItem
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
 import moe.ouom.neriplayer.util.HapticTextButton
 
 @Composable
@@ -92,73 +96,28 @@ internal fun SettingsAudioQualitySection(
                 .background(Color.Transparent)
                 .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
         ) {
-            ListItem(
-                leadingContent = {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_netease_cloud_music),
-                        contentDescription = stringResource(R.string.settings_netease_quality),
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                },
-                headlineContent = { Text(stringResource(R.string.quality_netease_default)) },
-                supportingContent = {
-                    Text(stringResource(R.string.common_label_value_format, qualityLabel, preferredQuality))
-                },
-                modifier = Modifier.settingsItemClickable {
-                    onShowQualityDialogChange(true)
-                },
-                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+            AudioQualityListItem(
+                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.AUDIO_QUALITY),
+                valueLabel = qualityLabel,
+                preferredQuality = preferredQuality,
+                iconRes = R.drawable.ic_netease_cloud_music,
+                onClick = { onShowQualityDialogChange(true) }
             )
 
-            ListItem(
-                leadingContent = {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_youtube),
-                        contentDescription = stringResource(R.string.quality_youtube_default),
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                },
-                headlineContent = { Text(stringResource(R.string.quality_youtube_default)) },
-                supportingContent = {
-                    Text(
-                        stringResource(
-                            R.string.common_label_value_format,
-                            youtubeQualityLabel,
-                            youtubePreferredQuality
-                        )
-                    )
-                },
-                modifier = Modifier.settingsItemClickable {
-                    onShowYouTubeQualityDialogChange(true)
-                },
-                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+            AudioQualityListItem(
+                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.YOUTUBE_AUDIO_QUALITY),
+                valueLabel = youtubeQualityLabel,
+                preferredQuality = youtubePreferredQuality,
+                iconRes = R.drawable.ic_youtube,
+                onClick = { onShowYouTubeQualityDialogChange(true) }
             )
 
-            ListItem(
-                leadingContent = {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_bilibili),
-                        contentDescription = stringResource(R.string.settings_bili_quality),
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                },
-                headlineContent = { Text(stringResource(R.string.quality_bili_default)) },
-                supportingContent = {
-                    Text(
-                        stringResource(
-                            R.string.common_label_value_format,
-                            biliQualityLabel,
-                            biliPreferredQuality
-                        )
-                    )
-                },
-                modifier = Modifier.settingsItemClickable {
-                    onShowBiliQualityDialogChange(true)
-                },
-                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+            AudioQualityListItem(
+                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.BILI_AUDIO_QUALITY),
+                valueLabel = biliQualityLabel,
+                preferredQuality = biliPreferredQuality,
+                iconRes = R.drawable.ic_bilibili,
+                onClick = { onShowBiliQualityDialogChange(true) }
             )
         }
     }
@@ -222,6 +181,31 @@ internal fun SettingsAudioQualitySection(
             }
         )
     }
+}
+
+@Composable
+private fun AudioQualityListItem(
+    setting: AutoSettingInfo,
+    valueLabel: String,
+    preferredQuality: String,
+    iconRes: Int,
+    onClick: () -> Unit
+) {
+    AutoSettingsListItem(
+        setting = setting,
+        leadingContent = {
+            Icon(
+                painter = painterResource(id = iconRes),
+                contentDescription = stringResource(setting.titleRes),
+                modifier = Modifier.size(24.dp),
+                tint = MaterialTheme.colorScheme.onSurface
+            )
+        },
+        supportingContent = {
+            Text(stringResource(R.string.common_label_value_format, valueLabel, preferredQuality))
+        },
+        onClick = onClick
+    )
 }
 
 @Composable

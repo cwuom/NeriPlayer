@@ -376,6 +376,11 @@ fun LyricsScreen(
                 }
             }
             var favOverride by remember(currentSong) { mutableStateOf<Boolean?>(null) }
+            LaunchedEffect(isFavoriteComputed) {
+                if (favOverride == isFavoriteComputed) {
+                    favOverride = null
+                }
+            }
             val isFavorite = favOverride ?: isFavoriteComputed
 
             HapticIconButton(
@@ -1118,4 +1123,3 @@ private fun LyricsProgressSection(
         )
     }
 }
-

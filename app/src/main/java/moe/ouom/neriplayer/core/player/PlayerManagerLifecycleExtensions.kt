@@ -13,7 +13,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BluetoothAudio
 import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.SpeakerGroup
-import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -44,8 +43,8 @@ import moe.ouom.neriplayer.core.player.debug.playbackStateName
 import moe.ouom.neriplayer.core.player.model.AudioDevice
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
-import moe.ouom.neriplayer.core.player.policy.shouldClearResumePlaybackRequestOnPlayWhenReadyPause
 import moe.ouom.neriplayer.core.player.playlist.PlayerFavoritesController
+import moe.ouom.neriplayer.core.player.policy.shouldClearResumePlaybackRequestOnPlayWhenReadyPause
 import moe.ouom.neriplayer.data.settings.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshotSync
 import moe.ouom.neriplayer.util.NPLogger
@@ -77,6 +76,8 @@ internal fun PlayerManager.initializeImpl(
         lastPersistedPlaylistReference = null
         lastPersistedPlaybackState = null
         lastStatePersistAtMs = 0L
+        playbackStatsTracker = PlaybackStatsTracker()
+        playbackStatsPersistJob = null
         val initialPlaybackPreferences =
             startupPlaybackPreferences ?: readPlaybackPreferenceSnapshotSync(app)
         preferredQuality = initialPlaybackPreferences.audioQuality
@@ -254,6 +255,10 @@ internal fun PlayerManager.initializeImpl(
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 _isPlayingFlow.value = isPlaying
+                syncPlaybackStatsPlayingState(
+                    playing = isPlaying,
+                    reason = "exo_is_playing_changed"
+                )
                 if (isPlaying) startProgressUpdates() else stopProgressUpdates()
                 val positionMs = player.currentPosition.coerceAtLeast(0L)
                 val shouldResumePlayback = shouldResumePlaybackSnapshot()
@@ -805,6 +810,8 @@ internal fun PlayerManager.releaseImpl() {
     cancelPendingPauseRequest(resetVolumeToFull = true)
     bluetoothDisconnectPauseJob?.cancel()
     bluetoothDisconnectPauseJob = null
+    flushPlaybackStatsBlocking("release", stopTracking = true)
+    drainPlaybackStatsPersistJobBlocking("release")
     playbackSoundPersistJob?.cancel()
     playbackSoundPersistJob = null
     playJob?.cancel()
@@ -830,7 +837,7 @@ internal fun PlayerManager.releaseImpl() {
     _currentMediaUrl.value = null
     _currentPlaybackAudioInfo.value = null
     currentMediaUrlResolvedAtMs = 0L
-    _currentSongFlow.value = null
+    setCurrentSongForPlayback(null)
     _currentQueueFlow.value = emptyList()
     clearPendingSeekPosition()
     _playbackPositionMs.value = 0L
