@@ -21,10 +21,16 @@ import moe.ouom.neriplayer.core.player.model.SongUrlResult
 import moe.ouom.neriplayer.core.player.policy.PlaybackFailureAdvanceAction
 import moe.ouom.neriplayer.core.player.policy.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.policy.PlaybackStartPlan
+import moe.ouom.neriplayer.core.player.policy.resolvePendingMediaLoadEntryAction
+import moe.ouom.neriplayer.core.player.policy.resolvePendingPauseAction
+import moe.ouom.neriplayer.core.player.policy.resolvePendingPlayAction
+import moe.ouom.neriplayer.core.player.policy.resolvePendingSeekAction
 import moe.ouom.neriplayer.core.player.policy.resolvePlaybackContinuationStartPlan
 import moe.ouom.neriplayer.core.player.policy.resolvePlaybackFailureAdvanceAction
 import moe.ouom.neriplayer.core.player.policy.resolveManagedPlaybackStartPlan
 import moe.ouom.neriplayer.core.player.policy.resolveManualResumePlaybackDecision
+import moe.ouom.neriplayer.core.player.policy.shouldApplyResolvedMedia
+import moe.ouom.neriplayer.core.player.policy.shouldApplyResolvedMediaSideEffects
 import moe.ouom.neriplayer.core.player.policy.shouldPausePlaybackWhenToggling
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
@@ -375,10 +381,10 @@ internal fun PlayerManager.playAtIndex(
     playbackRequestToken += 1
     val requestToken = playbackRequestToken
     clearPendingSeekPosition()
-    _playbackPositionMs.value = 0L
+    enterPendingMediaLoad(resumePositionMs)
     playJob = ioScope.launch {
         val result = resolveSongUrl(song)
-        if (requestToken != playbackRequestToken || !isActive) {
+        if (!shouldApplyResolvedMedia(requestToken, playbackRequestToken) || !isActive) {
             NPLogger.d(
                 "NERI-PlayerManager",
                 "播放请求已过期，跳过本次 URL 解析结果: song=${song.name}, requestToken=$requestToken, currentToken=$playbackRequestToken, active=$isActive"
@@ -388,37 +394,7 @@ internal fun PlayerManager.playAtIndex(
 
         when (result) {
             is SongUrlResult.Success -> {
-                consecutivePlayFailures = 0
-
-                result.noticeMessage?.let { message ->
-                    postPlayerEvent(PlayerEvent.ShowError(message))
-                }
-                maybeUpdateSongDuration(song, result.durationMs ?: 0L)
-                val cacheKey = computeCacheKey(song)
-                NPLogger.d(
-                    "NERI-PlayerManager",
-                    "Using custom cache key: $cacheKey for song: ${song.name}"
-                )
-                invalidateMismatchedCachedResource(
-                    cacheKey = cacheKey,
-                    expectedContentLength = result.expectedContentLength
-                )
-
-                val mediaItem = buildMediaItem(
-                    _currentSongFlow.value ?: song,
-                    result.url,
-                    cacheKey,
-                    result.mimeType
-                )
-
-                _currentMediaUrl.value = result.url
-                _currentPlaybackAudioInfo.value = result.audioInfo
-                currentMediaUrlResolvedAtMs = SystemClock.elapsedRealtime()
-                scheduleStatePersist(
-                    positionMs = resumePositionMs.coerceAtLeast(0L),
-                    shouldResumePlayback = true
-                )
-                if (requestToken != playbackRequestToken || !isActive) {
+                if (!shouldApplyResolvedMedia(requestToken, playbackRequestToken) || !isActive) {
                     NPLogger.d(
                         "NERI-PlayerManager",
                         "播放请求已过期，跳过媒体项装载: song=${song.name}, requestToken=$requestToken, currentToken=$playbackRequestToken, active=$isActive"
@@ -430,14 +406,47 @@ internal fun PlayerManager.playAtIndex(
                     enabled = useTrackTransitionFade,
                     fadeOutDurationMs = playbackCrossfadeOutDurationMs
                 )
-                if (requestToken != playbackRequestToken || !isActive) {
+                if (!shouldApplyResolvedMedia(requestToken, playbackRequestToken) || !isActive) {
                     return@launch
                 }
 
+                var appliedResolvedMedia = false
                 withContext(Dispatchers.Main) {
-                    if (requestToken != playbackRequestToken) {
+                    if (!shouldApplyResolvedMediaSideEffects(
+                            requestGeneration = requestToken,
+                            currentRequestGeneration = playbackRequestToken,
+                            requestActive = true
+                        )
+                    ) {
                         return@withContext
                     }
+                    consecutivePlayFailures = 0
+                    result.noticeMessage?.let { message ->
+                        postPlayerEvent(PlayerEvent.ShowError(message))
+                    }
+                    maybeUpdateSongDuration(song, result.durationMs ?: 0L)
+                    val cacheKey = computeCacheKey(song)
+                    NPLogger.d(
+                        "NERI-PlayerManager",
+                        "Using custom cache key: $cacheKey for song: ${song.name}"
+                    )
+                    invalidateMismatchedCachedResource(
+                        cacheKey = cacheKey,
+                        expectedContentLength = result.expectedContentLength
+                    )
+                    val mediaItem = buildMediaItem(
+                        _currentSongFlow.value ?: song,
+                        result.url,
+                        cacheKey,
+                        result.mimeType
+                    )
+                    _currentMediaUrl.value = result.url
+                    _currentPlaybackAudioInfo.value = result.audioInfo
+                    currentMediaUrlResolvedAtMs = SystemClock.elapsedRealtime()
+                    scheduleStatePersist(
+                        positionMs = resumePositionMs.coerceAtLeast(0L),
+                        shouldResumePlayback = true
+                    )
                     val startPlan = resolveCurrentPlaybackStartPlan(
                         useTrackTransitionFade = useTrackTransitionFade,
                         forceStartupProtectionFade = forceStartupProtectionFade &&
@@ -446,13 +455,27 @@ internal fun PlayerManager.playAtIndex(
                     preparePlayerForManagedStart(startPlan)
                     resetTrackEndDeduplicationState()
                     player.setMediaItem(mediaItem)
+                    loadedMediaRequestToken = requestToken
+                    pendingMediaLoadActive = false
                     syncExoRepeatMode()
-                    if (resumePositionMs > 0L) {
-                        player.seekTo(resumePositionMs)
-                        _playbackPositionMs.value = resumePositionMs
+                    val startPositionMs = pendingSeekPositionOrNull()
+                        ?: resumePositionMs.coerceAtLeast(0L)
+                    if (startPositionMs > 0L) {
+                        player.seekTo(startPositionMs)
+                        _playbackPositionMs.value = startPositionMs
                     }
+                    clearPendingSeekPosition()
                     player.prepare()
-                    startPlayerPlaybackWithFade(startPlan)
+                    if (resumePlaybackRequested) {
+                        startPlayerPlaybackWithFade(startPlan)
+                    } else {
+                        player.playWhenReady = false
+                        player.pause()
+                    }
+                    appliedResolvedMedia = true
+                }
+                if (!appliedResolvedMedia) {
+                    return@launch
                 }
                 maybeWarmNextYouTubeMusicAfterCurrentResolved()
                 maybeAutoMatchYouTubeMusicLyrics(song, requestToken)
@@ -492,6 +515,20 @@ internal fun PlayerManager.playAtIndex(
             }
         }
     }
+}
+
+internal fun PlayerManager.enterPendingMediaLoad(requestedPositionMs: Long) {
+    val action = resolvePendingMediaLoadEntryAction(requestedPositionMs)
+    pendingMediaLoadActive = true
+    pendingMediaLoadPositionMs = action.positionMs
+    if (action.stopProgressUpdates) stopProgressUpdates()
+    cancelVolumeFade(resetToFull = true)
+    if (action.stopPlayer) runCatching { player.stop() }
+    if (action.clearMediaItems) runCatching { player.clearMediaItems() }
+    _isPlayingFlow.value = action.isPlaying
+    _playWhenReadyFlow.value = action.playWhenReady
+    _playerPlaybackStateFlow.value = action.playbackState
+    _playbackPositionMs.value = action.positionMs
 }
 
 private fun PlayerManager.maybeAutoMatchYouTubeMusicLyrics(song: SongItem, requestToken: Long) {
@@ -550,6 +587,23 @@ internal fun PlayerManager.playImpl(
     ensureInitialized()
     if (!initialized) return
     if (shouldBlockLocalRoomControl(commandSource)) return
+    if (isPendingMediaLoadActive() && playJob?.isActive == true) {
+        val action = resolvePendingPlayAction(pendingLoadActive = true)
+        cancelPendingPauseRequest(resetVolumeToFull = true)
+        suppressAutoResumeForCurrentSession = false
+        updateResumePlaybackRequested(action.resumePlaybackRequested)
+        scheduleStatePersist(
+            positionMs = _playbackPositionMs.value,
+            shouldResumePlayback = true
+        )
+        emitPlaybackCommand(
+            type = "PLAY",
+            source = commandSource,
+            positionMs = _playbackPositionMs.value,
+            currentIndex = currentIndex
+        )
+        return
+    }
     val resumeVolumeFromPendingPause = if (
         pendingPauseJob?.isActive == true &&
         isPlayerInitialized()
@@ -691,6 +745,30 @@ internal fun PlayerManager.pauseImpl(
     ensureInitialized()
     if (!initialized) return
     if (shouldBlockLocalRoomControl(commandSource)) return
+    if (isPendingMediaLoadActive()) {
+        val action = resolvePendingPauseAction(
+            pendingLoadActive = true,
+            exposedPositionMs = _playbackPositionMs.value
+        )
+        cancelPendingPauseRequest(resetVolumeToFull = true)
+        updateResumePlaybackRequested(action.resumePlaybackRequested)
+        playbackRequestToken += 1
+        playJob?.cancel()
+        playJob = null
+        _playWhenReadyFlow.value = action.resumePlaybackAfterLoad
+        _isPlayingFlow.value = false
+        scheduleStatePersist(
+            positionMs = action.persistPositionMs,
+            shouldResumePlayback = action.persistShouldResumePlayback
+        )
+        emitPlaybackCommand(
+            type = "PAUSE",
+            source = commandSource,
+            positionMs = action.persistPositionMs,
+            currentIndex = currentIndex
+        )
+        return
+    }
     NPLogger.d(
         "NERI-PlayerManager",
         "pause requested: forcePersist=$forcePersist, source=$commandSource, currentSong=${_currentSongFlow.value?.name}, isPlaying=${player.isPlaying}, playWhenReady=${player.playWhenReady}, stack=[${debugStackHint()}]"
@@ -827,13 +905,21 @@ internal fun PlayerManager.seekToImpl(
     } else {
         clearPendingSeekPosition()
     }
-    player.seekTo(resolvedPositionMs)
+    val pendingSeekAction = resolvePendingSeekAction(
+        pendingLoadActive = isPendingMediaLoadActive(),
+        requestedPositionMs = resolvedPositionMs
+    )
+    pendingSeekAction.pendingSeekPositionMs?.let(::rememberPendingSeekPosition)
+    pendingMediaLoadPositionMs = pendingSeekAction.exposedPositionMs
+    if (pendingSeekAction.seekPlayerNow) {
+        player.seekTo(resolvedPositionMs)
+    }
     synchronized(playbackStatsTracker) {
         playbackStatsTracker.onManualSeek(resolvedPositionMs)
     }
     _playbackPositionMs.value = resolvedPositionMs
     scheduleStatePersist(
-        positionMs = resolvedPositionMs,
+        positionMs = pendingSeekAction.persistPositionMs,
         shouldResumePlayback = shouldResumePlaybackSnapshot()
     )
     emitPlaybackCommand(
@@ -1087,6 +1173,7 @@ internal fun PlayerManager.stopPlaybackPreservingQueueImpl(clearMediaUrl: Boolea
     playbackRequestToken += 1
     playJob?.cancel()
     playJob = null
+    pendingMediaLoadActive = false
     currentYouTubePrefetchJob?.cancel()
     currentYouTubePrefetchJob = null
     lastHandledTrackEndKey = null

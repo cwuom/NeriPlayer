@@ -281,11 +281,16 @@ private suspend fun PlayerManager.applyResolvedMediaItem(
         )
         resetTrackEndDeduplicationState()
         player.setMediaItem(mediaItem)
+        loadedMediaRequestToken = playbackRequestToken
+        pendingMediaLoadActive = false
         syncExoRepeatMode()
-        if (resumePositionMs > 0) {
-            player.seekTo(resumePositionMs)
-            _playbackPositionMs.value = resumePositionMs
+        val startPositionMs = pendingSeekPositionOrNull()
+            ?: resumePositionMs.coerceAtLeast(0L)
+        if (startPositionMs > 0) {
+            player.seekTo(startPositionMs)
+            _playbackPositionMs.value = startPositionMs
         }
+        clearPendingSeekPosition()
         player.prepare()
         player.playWhenReady = resumePlaybackAfterRefresh
         if (resumePlaybackAfterRefresh) {
