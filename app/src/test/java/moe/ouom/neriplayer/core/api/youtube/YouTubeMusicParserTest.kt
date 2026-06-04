@@ -283,6 +283,38 @@ class YouTubeMusicParserTest {
     }
 
     @Test
+    fun parsePlaylistPage_readsInitialPageItemsAndNextPageToken() {
+        val root = createInitialPlaylistPageRoot(
+            videoId = "initial-video",
+            title = "Initial Song",
+            continuation = "initial-next-token"
+        )
+
+        val page = YouTubeMusicParser.parsePlaylistPage(root)
+
+        assertEquals(1, page.tracks.size)
+        assertEquals("initial-video", page.tracks.single().videoId)
+        assertEquals("Initial Song", page.tracks.single().title)
+        assertEquals("initial-next-token", page.continuation)
+    }
+
+    @Test
+    fun parsePlaylistPage_readsContinuationPageItemsAndNextPageToken() {
+        val root = createContinuationPlaylistPageRoot(
+            videoId = "continuation-video",
+            title = "Continuation Song",
+            continuation = "continuation-next-token"
+        )
+
+        val page = YouTubeMusicParser.parsePlaylistPage(root)
+
+        assertEquals(1, page.tracks.size)
+        assertEquals("continuation-video", page.tracks.single().videoId)
+        assertEquals("Continuation Song", page.tracks.single().title)
+        assertEquals("continuation-next-token", page.continuation)
+    }
+
+    @Test
     fun parsePlaylistTracks_findsShelfRendererInPrimarySections() {
         val root = JSONObject(
             """
@@ -411,6 +443,112 @@ class YouTubeMusicParserTest {
         assertEquals("Liked Music", detail.title)
         assertEquals("Autoplay playlist", detail.subtitle)
         assertTrue(detail.coverUrl.endsWith("liked.jpg"))
+    }
+
+    private fun createInitialPlaylistPageRoot(
+        videoId: String,
+        title: String,
+        continuation: String?
+    ): JSONObject {
+        return JSONObject(
+            """
+            {
+              "contents": {
+                "twoColumnBrowseResultsRenderer": {
+                  "secondaryContents": {
+                    "sectionListRenderer": {
+                      "contents": [
+                        {
+                          "musicPlaylistShelfRenderer": {
+                            "contents": [
+                              ${playlistItemJson(videoId, title)}
+                              ${continuationItemJsonSuffix(continuation)}
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+            """.trimIndent()
+        )
+    }
+
+    private fun createContinuationPlaylistPageRoot(
+        videoId: String,
+        title: String,
+        continuation: String?
+    ): JSONObject {
+        return JSONObject(
+            """
+            {
+              "onResponseReceivedActions": [
+                {
+                  "appendContinuationItemsAction": {
+                    "continuationItems": [
+                      ${playlistItemJson(videoId, title)}
+                      ${continuationItemJsonSuffix(continuation)}
+                    ]
+                  }
+                }
+              ]
+            }
+            """.trimIndent()
+        )
+    }
+
+    private fun playlistItemJson(videoId: String, title: String): String {
+        return """
+        {
+          "musicResponsiveListItemRenderer": {
+            "playlistItemData": { "videoId": "$videoId" },
+            "flexColumns": [
+              {
+                "musicResponsiveListItemFlexColumnRenderer": {
+                  "text": { "simpleText": "$title" }
+                }
+              },
+              {
+                "musicResponsiveListItemFlexColumnRenderer": {
+                  "text": { "simpleText": "Artist" }
+                }
+              },
+              {
+                "musicResponsiveListItemFlexColumnRenderer": {
+                  "text": { "simpleText": "Album" }
+                }
+              }
+            ],
+            "fixedColumns": [
+              {
+                "musicResponsiveListItemFixedColumnRenderer": {
+                  "text": { "simpleText": "3:21" }
+                }
+              }
+            ]
+          }
+        }
+        """.trimIndent()
+    }
+
+    private fun continuationItemJsonSuffix(continuation: String?): String {
+        if (continuation.isNullOrBlank()) {
+            return ""
+        }
+        return """
+        ,
+        {
+          "continuationItemRenderer": {
+            "continuationEndpoint": {
+              "continuationCommand": {
+                "token": "$continuation"
+              }
+            }
+          }
+        }
+        """.trimIndent()
     }
 
     @Test

@@ -8,6 +8,7 @@ import kotlinx.coroutines.withTimeout
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.platform.youtube.resolveAuthorizationHeader
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import org.json.JSONObject
@@ -25,6 +26,7 @@ import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import okio.Buffer
+import java.io.IOException
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -1177,6 +1179,411 @@ class YouTubeMusicPlaybackRepositoryTest {
     }
 
     @Test
+    fun getBestPlayableAudio_acceptsMissingPotWebRemixDirectWhenRangeVerificationSucceeds() = runBlocking {
+        val requests = mutableListOf<okhttp3.Request>()
+        val bootstrapHtml = """
+            <html>
+            <script>
+            ytcfg.set({
+              "INNERTUBE_API_KEY":"test-api-key",
+              "INNERTUBE_CLIENT_VERSION":"1.20260321.00.00",
+              "VISITOR_DATA":"visitor-data-123",
+              "jsUrl":"/s/player/test-player/base.js",
+              "SESSION_INDEX":"7",
+              "remoteHost":"13.114.209.29",
+              "STS":20529
+            });
+            </script>
+            </html>
+        """.trimIndent()
+        val webRemixDirectResponse = """
+            {
+              "playabilityStatus":{"status":"OK"},
+              "streamingData":{
+                "adaptiveFormats":[
+                  {
+                    "mimeType":"audio/webm; codecs=\"opus\"",
+                    "url":"https://rr1---sn.googlevideo.com/videoplayback?id=audio-web-remix-missing-pot&source=youtube&c=WEB_REMIX&n=resolved-web&sig=web-signature",
+                    "bitrate":128646,
+                    "audioSampleRate":"48000",
+                    "contentLength":"3586688",
+                    "approxDurationMs":"223041"
+                  }
+                ]
+              },
+              "videoDetails":{"lengthSeconds":"223"}
+            }
+        """.trimIndent()
+        val tvDirectResponse = """
+            {
+              "playabilityStatus":{"status":"OK"},
+              "streamingData":{
+                "adaptiveFormats":[
+                  {
+                    "mimeType":"audio/webm; codecs=\"opus\"",
+                    "url":"https://rr1---sn.googlevideo.com/videoplayback?id=audio-tv-fallback&source=youtube&c=TVHTML5",
+                    "bitrate":128646,
+                    "audioSampleRate":"48000",
+                    "contentLength":"3586688",
+                    "approxDurationMs":"223041"
+                  }
+                ]
+              },
+              "videoDetails":{"lengthSeconds":"223"}
+            }
+        """.trimIndent()
+
+        val client = OkHttpClient.Builder()
+            .addInterceptor(
+                Interceptor { chain ->
+                    val request = chain.request()
+                    requests += request
+                    when {
+                        request.url.host == "rr1---sn.googlevideo.com" -> {
+                            Response.Builder()
+                                .request(request)
+                                .protocol(Protocol.HTTP_1_1)
+                                .code(206)
+                                .message("Partial Content")
+                                .body("x".toResponseBody("application/octet-stream".toMediaType()))
+                                .build()
+                        }
+                        else -> {
+                            val body = when {
+                                request.url.host == "music.youtube.com" && request.url.encodedPath == "/" -> {
+                                    bootstrapHtml to "text/html; charset=utf-8"
+                                }
+                                request.url.encodedPath.contains("/youtubei/v1/player") -> {
+                                    when (request.header("X-YouTube-Client-Name")) {
+                                        "67" -> webRemixDirectResponse to "application/json; charset=utf-8"
+                                        "7" -> tvDirectResponse to "application/json; charset=utf-8"
+                                        else -> """{"playabilityStatus":{"status":"LOGIN_REQUIRED"}}""" to "application/json; charset=utf-8"
+                                    }
+                                }
+                                else -> "{}" to "application/json; charset=utf-8"
+                            }
+                            Response.Builder()
+                                .request(request)
+                                .protocol(Protocol.HTTP_1_1)
+                                .code(200)
+                                .message("OK")
+                                .body(body.first.toResponseBody(body.second.toMediaType()))
+                                .build()
+                        }
+                    }
+                }
+            )
+            .build()
+
+        val authBundle = YouTubeAuthBundle(
+            cookieHeader = "SAPISID=sap-value; SID=sid-value",
+            xGoogAuthUser = "7",
+            userAgent = "RepoUserAgent/1.0"
+        )
+        val poTokenProvider = FakePoTokenProvider(mutableListOf())
+        val playbackRepository = YouTubeMusicPlaybackRepository(
+            okHttpClient = client,
+            authProvider = { authBundle },
+            poTokenProvider = poTokenProvider
+        )
+
+        val playableAudio = playbackRepository.getBestPlayableAudio(
+            videoId = "demo-video",
+            forceRefresh = true
+        )
+
+        assertNotNull(playableAudio)
+        assertEquals(YouTubePlayableStreamType.DIRECT, playableAudio?.streamType)
+        val selectedUrl = playableAudio?.url?.toHttpUrl()
+        assertEquals("rr1---sn.googlevideo.com", selectedUrl?.host)
+        assertEquals("audio-web-remix-missing-pot", selectedUrl?.queryParameter("id"))
+        assertEquals("WEB_REMIX", selectedUrl?.queryParameter("c"))
+        assertNull(selectedUrl?.queryParameter("pot"))
+        assertFalse(selectedUrl?.queryParameter("id") == "audio-tv-fallback")
+        assertEquals(1, requests.count { it.url.host == "rr1---sn.googlevideo.com" })
+        val rangeRequest = requests.single { it.url.host == "rr1---sn.googlevideo.com" }
+        assertEquals("bytes=0-0", rangeRequest.header("Range"))
+        assertEquals(1, requests.count { it.url.encodedPath.contains("/youtubei/v1/player") })
+        assertFalse(
+            requests.any { request ->
+                request.url.encodedPath.contains("/youtubei/v1/player") &&
+                    request.header("X-YouTube-Client-Name") == "7"
+            }
+        )
+        assertTrue(poTokenProvider.forceRefreshCalls.isNotEmpty())
+    }
+
+    @Test
+    fun getBestPlayableAudio_fallsBackWhenMissingPotWebRemixRangeVerificationReturnsForbidden() = runBlocking {
+        val requests = mutableListOf<okhttp3.Request>()
+        val bootstrapHtml = """
+            <html>
+            <script>
+            ytcfg.set({
+              "INNERTUBE_API_KEY":"test-api-key",
+              "INNERTUBE_CLIENT_VERSION":"1.20260321.00.00",
+              "VISITOR_DATA":"visitor-data-123",
+              "jsUrl":"/s/player/test-player/base.js",
+              "SESSION_INDEX":"7",
+              "remoteHost":"13.114.209.29",
+              "STS":20529
+            });
+            </script>
+            </html>
+        """.trimIndent()
+        val webRemixDirectResponse = """
+            {
+              "playabilityStatus":{"status":"OK"},
+              "streamingData":{
+                "adaptiveFormats":[
+                  {
+                    "mimeType":"audio/webm; codecs=\"opus\"",
+                    "url":"https://rr1---sn.googlevideo.com/videoplayback?id=audio-web-remix-forbidden&source=youtube&c=WEB_REMIX&n=resolved-web&sig=web-signature",
+                    "bitrate":128646,
+                    "audioSampleRate":"48000",
+                    "contentLength":"3586688",
+                    "approxDurationMs":"223041"
+                  }
+                ]
+              },
+              "videoDetails":{"lengthSeconds":"223"}
+            }
+        """.trimIndent()
+        val tvDirectResponse = """
+            {
+              "playabilityStatus":{"status":"OK"},
+              "streamingData":{
+                "adaptiveFormats":[
+                  {
+                    "mimeType":"audio/webm; codecs=\"opus\"",
+                    "url":"https://rr1---sn.googlevideo.com/videoplayback?id=audio-tv-fallback&source=youtube&c=TVHTML5",
+                    "bitrate":128646,
+                    "audioSampleRate":"48000",
+                    "contentLength":"3586688",
+                    "approxDurationMs":"223041"
+                  }
+                ]
+              },
+              "videoDetails":{"lengthSeconds":"223"}
+            }
+        """.trimIndent()
+
+        val client = OkHttpClient.Builder()
+            .addInterceptor(
+                Interceptor { chain ->
+                    val request = chain.request()
+                    requests += request
+                    when {
+                        request.url.host == "rr1---sn.googlevideo.com" -> {
+                            Response.Builder()
+                                .request(request)
+                                .protocol(Protocol.HTTP_1_1)
+                                .code(403)
+                                .message("Forbidden")
+                                .body("forbidden".toResponseBody("text/plain".toMediaType()))
+                                .build()
+                        }
+                        else -> {
+                            val body = when {
+                                request.url.host == "music.youtube.com" && request.url.encodedPath == "/" -> {
+                                    bootstrapHtml to "text/html; charset=utf-8"
+                                }
+                                request.url.encodedPath.contains("/youtubei/v1/player") -> {
+                                    when (request.header("X-YouTube-Client-Name")) {
+                                        "67" -> webRemixDirectResponse to "application/json; charset=utf-8"
+                                        "7" -> tvDirectResponse to "application/json; charset=utf-8"
+                                        else -> """{"playabilityStatus":{"status":"LOGIN_REQUIRED"}}""" to "application/json; charset=utf-8"
+                                    }
+                                }
+                                else -> "{}" to "application/json; charset=utf-8"
+                            }
+                            Response.Builder()
+                                .request(request)
+                                .protocol(Protocol.HTTP_1_1)
+                                .code(200)
+                                .message("OK")
+                                .body(body.first.toResponseBody(body.second.toMediaType()))
+                                .build()
+                        }
+                    }
+                }
+            )
+            .build()
+
+        val authBundle = YouTubeAuthBundle(
+            cookieHeader = "SAPISID=sap-value; SID=sid-value",
+            xGoogAuthUser = "7",
+            userAgent = "RepoUserAgent/1.0"
+        )
+        val poTokenProvider = FakePoTokenProvider(mutableListOf())
+        val playbackRepository = YouTubeMusicPlaybackRepository(
+            okHttpClient = client,
+            authProvider = { authBundle },
+            poTokenProvider = poTokenProvider
+        )
+
+        val playableAudio = playbackRepository.getBestPlayableAudio(
+            videoId = "demo-video",
+            forceRefresh = true
+        )
+
+        assertNotNull(playableAudio)
+        assertEquals(YouTubePlayableStreamType.DIRECT, playableAudio?.streamType)
+        val selectedUrl = playableAudio?.url?.toHttpUrl()
+        assertEquals("audio-tv-fallback", selectedUrl?.queryParameter("id"))
+        assertEquals("TVHTML5", selectedUrl?.queryParameter("c"))
+        assertFalse(selectedUrl?.queryParameter("id") == "audio-web-remix-forbidden")
+        assertEquals(1, requests.count { it.url.host == "rr1---sn.googlevideo.com" })
+        val rangeRequest = requests.single { it.url.host == "rr1---sn.googlevideo.com" }
+        assertEquals("bytes=0-0", rangeRequest.header("Range"))
+        val rangeProbeIndex = requests.indexOfFirst { request ->
+            request.url.host == "rr1---sn.googlevideo.com" &&
+                request.header("Range") == "bytes=0-0"
+        }
+        val tvPlayerRequestIndex = requests.indexOfFirst { request ->
+            request.url.encodedPath.contains("/youtubei/v1/player") &&
+                request.header("X-YouTube-Client-Name") == "7"
+        }
+        assertTrue(rangeProbeIndex >= 0)
+        assertTrue(tvPlayerRequestIndex > rangeProbeIndex)
+    }
+
+    @Test
+    fun getBestPlayableAudio_fallsBackWhenMissingPotWebRemixRangeVerificationReadsZeroBytes() = runBlocking {
+        val requests = mutableListOf<okhttp3.Request>()
+        val bootstrapHtml = """
+            <html>
+            <script>
+            ytcfg.set({
+              "INNERTUBE_API_KEY":"test-api-key",
+              "INNERTUBE_CLIENT_VERSION":"1.20260321.00.00",
+              "VISITOR_DATA":"visitor-data-123",
+              "jsUrl":"/s/player/test-player/base.js",
+              "SESSION_INDEX":"7",
+              "remoteHost":"13.114.209.29",
+              "STS":20529
+            });
+            </script>
+            </html>
+        """.trimIndent()
+        val webRemixDirectResponse = """
+            {
+              "playabilityStatus":{"status":"OK"},
+              "streamingData":{
+                "adaptiveFormats":[
+                  {
+                    "mimeType":"audio/webm; codecs=\"opus\"",
+                    "url":"https://rr1---sn.googlevideo.com/videoplayback?id=audio-web-remix-empty-range&source=youtube&c=WEB_REMIX&n=resolved-web&sig=web-signature",
+                    "bitrate":128646,
+                    "audioSampleRate":"48000",
+                    "contentLength":"3586688",
+                    "approxDurationMs":"223041"
+                  }
+                ]
+              },
+              "videoDetails":{"lengthSeconds":"223"}
+            }
+        """.trimIndent()
+        val tvDirectResponse = """
+            {
+              "playabilityStatus":{"status":"OK"},
+              "streamingData":{
+                "adaptiveFormats":[
+                  {
+                    "mimeType":"audio/webm; codecs=\"opus\"",
+                    "url":"https://rr1---sn.googlevideo.com/videoplayback?id=audio-tv-fallback&source=youtube&c=TVHTML5",
+                    "bitrate":128646,
+                    "audioSampleRate":"48000",
+                    "contentLength":"3586688",
+                    "approxDurationMs":"223041"
+                  }
+                ]
+              },
+              "videoDetails":{"lengthSeconds":"223"}
+            }
+        """.trimIndent()
+
+        val client = OkHttpClient.Builder()
+            .addInterceptor(
+                Interceptor { chain ->
+                    val request = chain.request()
+                    requests += request
+                    when {
+                        request.url.host == "rr1---sn.googlevideo.com" -> {
+                            Response.Builder()
+                                .request(request)
+                                .protocol(Protocol.HTTP_1_1)
+                                .code(206)
+                                .message("Partial Content")
+                                .body("".toResponseBody("application/octet-stream".toMediaType()))
+                                .build()
+                        }
+                        else -> {
+                            val body = when {
+                                request.url.host == "music.youtube.com" && request.url.encodedPath == "/" -> {
+                                    bootstrapHtml to "text/html; charset=utf-8"
+                                }
+                                request.url.encodedPath.contains("/youtubei/v1/player") -> {
+                                    when (request.header("X-YouTube-Client-Name")) {
+                                        "67" -> webRemixDirectResponse to "application/json; charset=utf-8"
+                                        "7" -> tvDirectResponse to "application/json; charset=utf-8"
+                                        else -> """{"playabilityStatus":{"status":"LOGIN_REQUIRED"}}""" to "application/json; charset=utf-8"
+                                    }
+                                }
+                                else -> "{}" to "application/json; charset=utf-8"
+                            }
+                            Response.Builder()
+                                .request(request)
+                                .protocol(Protocol.HTTP_1_1)
+                                .code(200)
+                                .message("OK")
+                                .body(body.first.toResponseBody(body.second.toMediaType()))
+                                .build()
+                        }
+                    }
+                }
+            )
+            .build()
+
+        val authBundle = YouTubeAuthBundle(
+            cookieHeader = "SAPISID=sap-value; SID=sid-value",
+            xGoogAuthUser = "7",
+            userAgent = "RepoUserAgent/1.0"
+        )
+        val poTokenProvider = FakePoTokenProvider(mutableListOf())
+        val playbackRepository = YouTubeMusicPlaybackRepository(
+            okHttpClient = client,
+            authProvider = { authBundle },
+            poTokenProvider = poTokenProvider
+        )
+
+        val playableAudio = playbackRepository.getBestPlayableAudio(
+            videoId = "demo-video",
+            forceRefresh = true
+        )
+
+        assertNotNull(playableAudio)
+        assertEquals(YouTubePlayableStreamType.DIRECT, playableAudio?.streamType)
+        val selectedUrl = playableAudio?.url?.toHttpUrl()
+        assertEquals("audio-tv-fallback", selectedUrl?.queryParameter("id"))
+        assertEquals("TVHTML5", selectedUrl?.queryParameter("c"))
+        assertFalse(selectedUrl?.queryParameter("id") == "audio-web-remix-empty-range")
+        assertEquals(1, requests.count { it.url.host == "rr1---sn.googlevideo.com" })
+        val rangeRequest = requests.single { it.url.host == "rr1---sn.googlevideo.com" }
+        assertEquals("bytes=0-0", rangeRequest.header("Range"))
+        val rangeProbeIndex = requests.indexOfFirst { request ->
+            request.url.host == "rr1---sn.googlevideo.com" &&
+                request.header("Range") == "bytes=0-0"
+        }
+        val tvPlayerRequestIndex = requests.indexOfFirst { request ->
+            request.url.encodedPath.contains("/youtubei/v1/player") &&
+                request.header("X-YouTube-Client-Name") == "7"
+        }
+        assertTrue(rangeProbeIndex >= 0)
+        assertTrue(tvPlayerRequestIndex > rangeProbeIndex)
+    }
+
+    @Test
     fun parsePlayableAudio_prefersLowerBitrateForStandardQuality() {
         val root = JSONObject(
             """
@@ -2014,7 +2421,7 @@ class YouTubeMusicPlaybackRepositoryTest {
     }
 
     @Test
-    fun getBestPlayableAudio_slowWebRemixPoTokenFallsBackToTvDirectWithoutWaitingForMint() = runBlocking {
+    fun getBestPlayableAudio_slowWebRemixPoTokenFallsBackToTvDirectWhenRangeVerificationFails() = runBlocking {
         val requests = mutableListOf<okhttp3.Request>()
         val bootstrapHtml = """
             <html>
@@ -2073,26 +2480,39 @@ class YouTubeMusicPlaybackRepositoryTest {
                 Interceptor { chain ->
                     val request = chain.request()
                     requests += request
-                    val body = when {
-                        request.url.host == "music.youtube.com" && request.url.encodedPath == "/" -> {
-                            bootstrapHtml to "text/html; charset=utf-8"
+                    when {
+                        request.url.host == "rr1---sn.googlevideo.com" -> {
+                            Response.Builder()
+                                .request(request)
+                                .protocol(Protocol.HTTP_1_1)
+                                .code(403)
+                                .message("Forbidden")
+                                .body("forbidden".toResponseBody("text/plain".toMediaType()))
+                                .build()
                         }
-                        request.url.encodedPath.contains("/youtubei/v1/player") -> {
-                            when (request.header("X-YouTube-Client-Name")) {
-                                "67" -> webRemixDirectResponse to "application/json; charset=utf-8"
-                                "7" -> tvDirectResponse to "application/json; charset=utf-8"
-                                else -> """{"playabilityStatus":{"status":"ERROR"}}""" to "application/json; charset=utf-8"
+                        else -> {
+                            val body = when {
+                                request.url.host == "music.youtube.com" && request.url.encodedPath == "/" -> {
+                                    bootstrapHtml to "text/html; charset=utf-8"
+                                }
+                                request.url.encodedPath.contains("/youtubei/v1/player") -> {
+                                    when (request.header("X-YouTube-Client-Name")) {
+                                        "67" -> webRemixDirectResponse to "application/json; charset=utf-8"
+                                        "7" -> tvDirectResponse to "application/json; charset=utf-8"
+                                        else -> """{"playabilityStatus":{"status":"ERROR"}}""" to "application/json; charset=utf-8"
+                                    }
+                                }
+                                else -> "{}" to "application/json; charset=utf-8"
                             }
+                            Response.Builder()
+                                .request(request)
+                                .protocol(Protocol.HTTP_1_1)
+                                .code(200)
+                                .message("OK")
+                                .body(body.first.toResponseBody(body.second.toMediaType()))
+                                .build()
                         }
-                        else -> "{}" to "application/json; charset=utf-8"
                     }
-                    Response.Builder()
-                        .request(request)
-                        .protocol(Protocol.HTTP_1_1)
-                        .code(200)
-                        .message("OK")
-                        .body(body.first.toResponseBody(body.second.toMediaType()))
-                        .build()
                 }
             )
             .build()
@@ -2120,20 +2540,158 @@ class YouTubeMusicPlaybackRepositoryTest {
         }
 
         assertNotNull(playableAudio)
-        assertEquals(
-            "https://rr1---sn.googlevideo.com/videoplayback?id=audio-tv-fast&source=youtube&c=TVHTML5",
-            playableAudio?.url
-        )
+        val selectedUrl = playableAudio?.url?.toHttpUrl()
+        assertEquals("audio-tv-fast", selectedUrl?.queryParameter("id"))
+        assertEquals("TVHTML5", selectedUrl?.queryParameter("c"))
+        assertFalse(selectedUrl?.queryParameter("id") == "audio-web-remix-direct")
+        assertEquals(1, requests.count { it.url.host == "rr1---sn.googlevideo.com" })
+        val rangeRequest = requests.single { it.url.host == "rr1---sn.googlevideo.com" }
+        assertEquals("bytes=0-0", rangeRequest.header("Range"))
         assertFalse(poTokenProvider.forceRefreshCalls.any { it })
         val firstWebRemixRequestIndex = requests.indexOfFirst { request ->
             request.url.encodedPath.contains("/youtubei/v1/player") &&
                 request.header("X-YouTube-Client-Name") == "67"
+        }
+        val rangeProbeIndex = requests.indexOfFirst { request ->
+            request.url.host == "rr1---sn.googlevideo.com" &&
+                request.header("Range") == "bytes=0-0"
         }
         val firstTvRequestIndex = requests.indexOfFirst { request ->
             request.url.encodedPath.contains("/youtubei/v1/player") &&
                 request.header("X-YouTube-Client-Name") == "7"
         }
         assertTrue(firstWebRemixRequestIndex in 0 until firstTvRequestIndex)
+        assertTrue(rangeProbeIndex > firstWebRemixRequestIndex)
+        assertTrue(firstTvRequestIndex > rangeProbeIndex)
+    }
+
+    @Test
+    fun getBestPlayableAudio_fallsBackWhenMissingPotWebRemixRangeVerificationThrowsIOException() = runBlocking {
+        val requests = mutableListOf<okhttp3.Request>()
+        val bootstrapHtml = """
+            <html>
+            <script>
+            ytcfg.set({
+              "INNERTUBE_API_KEY":"test-api-key",
+              "INNERTUBE_CLIENT_VERSION":"1.20260321.00.00",
+              "VISITOR_DATA":"visitor-data-123",
+              "jsUrl":"/s/player/test-player/base.js",
+              "SESSION_INDEX":"7",
+              "remoteHost":"13.114.209.29",
+              "STS":20529
+            });
+            </script>
+            </html>
+        """.trimIndent()
+        val webRemixDirectResponse = """
+            {
+              "playabilityStatus":{"status":"OK"},
+              "streamingData":{
+                "adaptiveFormats":[
+                  {
+                    "mimeType":"audio/webm; codecs=\"opus\"",
+                    "url":"https://rr1---sn.googlevideo.com/videoplayback?id=audio-web-remix-io-failure&source=youtube&c=WEB_REMIX&n=resolved-web&sig=web-signature",
+                    "bitrate":128646,
+                    "audioSampleRate":"48000",
+                    "contentLength":"3586688",
+                    "approxDurationMs":"223041"
+                  }
+                ]
+              },
+              "videoDetails":{"lengthSeconds":"223"}
+            }
+        """.trimIndent()
+        val tvDirectResponse = """
+            {
+              "playabilityStatus":{"status":"OK"},
+              "streamingData":{
+                "adaptiveFormats":[
+                  {
+                    "mimeType":"audio/webm; codecs=\"opus\"",
+                    "url":"https://rr1---sn.googlevideo.com/videoplayback?id=audio-tv-fallback&source=youtube&c=TVHTML5",
+                    "bitrate":128646,
+                    "audioSampleRate":"48000",
+                    "contentLength":"3586688",
+                    "approxDurationMs":"223041"
+                  }
+                ]
+              },
+              "videoDetails":{"lengthSeconds":"223"}
+            }
+        """.trimIndent()
+
+        val client = OkHttpClient.Builder()
+            .addInterceptor(
+                Interceptor { chain ->
+                    val request = chain.request()
+                    requests += request
+                    when {
+                        request.url.host == "rr1---sn.googlevideo.com" -> {
+                            throw IOException("range verifier failed")
+                        }
+                        else -> {
+                            val body = when {
+                                request.url.host == "music.youtube.com" && request.url.encodedPath == "/" -> {
+                                    bootstrapHtml to "text/html; charset=utf-8"
+                                }
+                                request.url.encodedPath.contains("/youtubei/v1/player") -> {
+                                    when (request.header("X-YouTube-Client-Name")) {
+                                        "67" -> webRemixDirectResponse to "application/json; charset=utf-8"
+                                        "7" -> tvDirectResponse to "application/json; charset=utf-8"
+                                        else -> """{"playabilityStatus":{"status":"LOGIN_REQUIRED"}}""" to "application/json; charset=utf-8"
+                                    }
+                                }
+                                else -> "{}" to "application/json; charset=utf-8"
+                            }
+                            Response.Builder()
+                                .request(request)
+                                .protocol(Protocol.HTTP_1_1)
+                                .code(200)
+                                .message("OK")
+                                .body(body.first.toResponseBody(body.second.toMediaType()))
+                                .build()
+                        }
+                    }
+                }
+            )
+            .build()
+
+        val authBundle = YouTubeAuthBundle(
+            cookieHeader = "SAPISID=sap-value; SID=sid-value",
+            xGoogAuthUser = "7",
+            userAgent = "RepoUserAgent/1.0"
+        )
+        val poTokenProvider = FakePoTokenProvider(mutableListOf())
+        val playbackRepository = YouTubeMusicPlaybackRepository(
+            okHttpClient = client,
+            authProvider = { authBundle },
+            poTokenProvider = poTokenProvider
+        )
+
+        val playableAudio = playbackRepository.getBestPlayableAudio(
+            videoId = "demo-video",
+            forceRefresh = true
+        )
+
+        assertNotNull(playableAudio)
+        assertEquals(YouTubePlayableStreamType.DIRECT, playableAudio?.streamType)
+        val selectedUrl = playableAudio?.url?.toHttpUrl()
+        assertEquals("audio-tv-fallback", selectedUrl?.queryParameter("id"))
+        assertEquals("TVHTML5", selectedUrl?.queryParameter("c"))
+        assertFalse(selectedUrl?.queryParameter("id") == "audio-web-remix-io-failure")
+        assertEquals(1, requests.count { it.url.host == "rr1---sn.googlevideo.com" })
+        val rangeRequest = requests.single { it.url.host == "rr1---sn.googlevideo.com" }
+        assertEquals("bytes=0-0", rangeRequest.header("Range"))
+        val rangeProbeIndex = requests.indexOfFirst { request ->
+            request.url.host == "rr1---sn.googlevideo.com" &&
+                request.header("Range") == "bytes=0-0"
+        }
+        val tvPlayerRequestIndex = requests.indexOfFirst { request ->
+            request.url.encodedPath.contains("/youtubei/v1/player") &&
+                request.header("X-YouTube-Client-Name") == "7"
+        }
+        assertTrue(rangeProbeIndex >= 0)
+        assertTrue(tvPlayerRequestIndex > rangeProbeIndex)
     }
 
     @Test

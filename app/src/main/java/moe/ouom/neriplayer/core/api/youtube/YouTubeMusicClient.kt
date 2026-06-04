@@ -99,6 +99,11 @@ data class YouTubeMusicPlaylistDetail(
     val tracks: List<YouTubeMusicPlaylistTrack>
 )
 
+internal data class YouTubeMusicPlaylistPage(
+    val tracks: List<YouTubeMusicPlaylistTrack>,
+    val continuation: String? = null
+)
+
 data class YouTubeMusicPlayableAudio(
     val url: String,
     val durationMs: Long,
@@ -425,10 +430,22 @@ internal object YouTubeMusicParser {
     }
 
     fun parsePlaylistTracks(root: JSONObject): List<YouTubeMusicPlaylistTrack> {
-        val contents = findPlaylistShelfRenderer(root)
-            ?.optJSONArray("contents")
-            ?: return emptyList()
+        return parsePlaylistPage(root).tracks
+    }
 
+    fun parsePlaylistPage(root: JSONObject): YouTubeMusicPlaylistPage {
+        val contents = findPlaylistPageItems(root)
+        return YouTubeMusicPlaylistPage(
+            tracks = parsePlaylistTracks(contents),
+            continuation = extractContinuationToken(findPlaylistShelfRenderer(root))
+                ?: extractContinuationTokenFromItems(contents)
+        )
+    }
+
+    private fun parsePlaylistTracks(contents: JSONArray?): List<YouTubeMusicPlaylistTrack> {
+        if (contents == null) {
+            return emptyList()
+        }
         return buildList {
             for (index in 0 until contents.length()) {
                 val renderer = contents.optJSONObject(index)
@@ -491,7 +508,7 @@ internal object YouTubeMusicParser {
     }
 
     fun extractPlaylistContinuation(root: JSONObject): String? {
-        return extractContinuationToken(findPlaylistShelfRenderer(root))
+        return parsePlaylistPage(root).continuation
     }
 
     fun parsePlaylistTrackCount(root: JSONObject): Int? {
@@ -505,9 +522,9 @@ internal object YouTubeMusicParser {
             return headerCount
         }
 
-        val shelf = findPlaylistShelfRenderer(root) ?: return null
-        val pageCount = shelf.optJSONArray("contents")?.length() ?: 0
-        if (pageCount <= 0 || !extractContinuationToken(shelf).isNullOrBlank()) {
+        val page = parsePlaylistPage(root)
+        val pageCount = page.tracks.size
+        if (pageCount <= 0 || !page.continuation.isNullOrBlank()) {
             return null
         }
         return pageCount
@@ -622,6 +639,19 @@ internal object YouTubeMusicParser {
         val continuationContents = root.optJSONObject("continuationContents")
         return continuationContents?.optJSONObject("musicPlaylistShelfContinuation")
             ?: continuationContents?.optJSONObject("musicShelfContinuation")
+    }
+
+    private fun findPlaylistPageItems(root: JSONObject): JSONArray? {
+        findPlaylistShelfRenderer(root)?.optJSONArray("contents")?.let { return it }
+
+        val actions = root.optJSONArray("onResponseReceivedActions") ?: return null
+        for (index in 0 until actions.length()) {
+            actions.optJSONObject(index)
+                ?.optJSONObject("appendContinuationItemsAction")
+                ?.optJSONArray("continuationItems")
+                ?.let { return it }
+        }
+        return null
     }
 
     private fun findHomeShelfContinuationRenderer(root: JSONObject): JSONObject? {
@@ -1126,6 +1156,24 @@ internal object YouTubeMusicParser {
         return null
     }
 
+    private fun extractContinuationTokenFromItems(contents: JSONArray?): String? {
+        if (contents == null) {
+            return null
+        }
+        for (index in 0 until contents.length()) {
+            val token = contents.optJSONObject(index)
+                ?.optJSONObject("continuationItemRenderer")
+                ?.optJSONObject("continuationEndpoint")
+                ?.optJSONObject("continuationCommand")
+                ?.optString("token")
+                .orEmpty()
+            if (token.isNotBlank()) {
+                return token
+            }
+        }
+        return null
+    }
+
     private fun findRequired(source: String, vararg patterns: String): String {
         return findOptional(source, *patterns).ifBlank {
             throw IOException(
@@ -1392,6 +1440,73 @@ internal object YouTubeMusicPlayerParser {
         }
         return fields["url"]?.takeIf { it.isNotBlank() }
     }
+}
+
+internal suspend fun collectYouTubeMusicPlaylistDetail(
+    browseId: String,
+    fallbackTitle: String = "",
+    fallbackSubtitle: String = "",
+    fallbackCoverUrl: String = "",
+    pageLimit: Int = YOUTUBE_MUSIC_CONTINUATION_PAGE_LIMIT,
+    fetchRoot: suspend (JSONObject) -> JSONObject
+): YouTubeMusicPlaylistDetail {
+    var detail: YouTubeMusicPlaylistDetail? = null
+    val tracks = mutableListOf<YouTubeMusicPlaylistTrack>()
+    var continuation: String? = null
+    var page = 0
+
+    while (page < pageLimit) {
+        val payload = if (continuation.isNullOrBlank()) {
+            JSONObject().put("browseId", browseId)
+        } else {
+            JSONObject().put("continuation", continuation)
+        }
+        val root = try {
+            fetchRoot(payload)
+        } catch (error: IOException) {
+            if (page == 0) {
+                throw error
+            }
+            break
+        }
+        if (detail == null) {
+            detail = YouTubeMusicParser.parsePlaylistDetail(
+                root = root,
+                browseId = browseId,
+                fallbackTitle = fallbackTitle,
+                fallbackSubtitle = fallbackSubtitle,
+                fallbackCoverUrl = fallbackCoverUrl
+            )
+        }
+        val playlistPage = YouTubeMusicParser.parsePlaylistPage(root)
+        tracks += playlistPage.tracks
+        continuation = playlistPage.continuation
+        if (continuation.isNullOrBlank()) {
+            break
+        }
+        page++
+    }
+
+    val baseDetail = detail ?: YouTubeMusicPlaylistDetail(
+        browseId = browseId,
+        playlistId = if (browseId.startsWith("VL")) browseId.removePrefix("VL") else browseId,
+        title = fallbackTitle,
+        subtitle = fallbackSubtitle,
+        coverUrl = fallbackCoverUrl,
+        trackCount = null,
+        tracks = emptyList()
+    )
+    val distinctTracks = tracks.distinctBy { it.videoId }
+    val loadedTrackCount = distinctTracks.size.takeIf { it > 0 }
+    val resolvedTrackCount = when {
+        baseDetail.trackCount != null && loadedTrackCount != null -> maxOf(baseDetail.trackCount, loadedTrackCount)
+        baseDetail.trackCount != null -> baseDetail.trackCount
+        else -> loadedTrackCount
+    }
+    return baseDetail.copy(
+        trackCount = resolvedTrackCount,
+        tracks = distinctTracks
+    )
 }
 
 class YouTubeMusicClient(
@@ -1896,59 +2011,17 @@ class YouTubeMusicClient(
         authAutoRefreshManager?.refreshIfNeeded(reason = "playlist_detail", force = false)
         var bootstrap = bootstrap()
         var requestLocale = YouTubeMusicLocaleResolver.preferred()
-        var detail: YouTubeMusicPlaylistDetail? = null
-        val tracks = mutableListOf<YouTubeMusicPlaylistTrack>()
-        var continuation: String? = null
-        var page = 0
-
-        while (page < YOUTUBE_MUSIC_CONTINUATION_PAGE_LIMIT) {
-            val payload = if (continuation.isNullOrBlank()) {
-                JSONObject().put("browseId", browseId)
-            } else {
-                JSONObject().put("continuation", continuation)
-            }
-            val root = try {
+        collectYouTubeMusicPlaylistDetail(
+            browseId = browseId,
+            fallbackTitle = fallbackTitle,
+            fallbackSubtitle = fallbackSubtitle,
+            fallbackCoverUrl = fallbackCoverUrl
+        ) { payload ->
                 val response = postMusicBrowseWithRetry(bootstrap, payload, requestLocale)
                 bootstrap = response.bootstrap
                 requestLocale = response.requestLocale
                 response.root
-            } catch (error: IOException) {
-                if (page == 0) {
-                    throw error
-                }
-                break
-            }
-            if (detail == null) {
-                detail = YouTubeMusicParser.parsePlaylistDetail(
-                    root = root,
-                    browseId = browseId,
-                    fallbackTitle = fallbackTitle,
-                    fallbackSubtitle = fallbackSubtitle,
-                    fallbackCoverUrl = fallbackCoverUrl
-                )
-            }
-            tracks += YouTubeMusicParser.parsePlaylistTracks(root)
-            continuation = YouTubeMusicParser.extractPlaylistContinuation(root)
-            if (continuation.isNullOrBlank()) {
-                break
-            }
-            page++
         }
-
-        val baseDetail = detail ?: YouTubeMusicPlaylistDetail(
-            browseId = browseId,
-            playlistId = if (browseId.startsWith("VL")) browseId.removePrefix("VL") else browseId,
-            title = fallbackTitle,
-            subtitle = fallbackSubtitle,
-            coverUrl = fallbackCoverUrl,
-            trackCount = null,
-            tracks = emptyList()
-        )
-        val distinctTracks = tracks.distinctBy { it.videoId }
-        baseDetail.copy(
-            trackCount = baseDetail.trackCount ?: distinctTracks.size.takeIf { it > 0 },
-            tracks = distinctTracks
-        )
     }
 
     suspend fun getPlayableAudio(videoId: String): YouTubeMusicPlayableAudio = withContext(Dispatchers.IO) {

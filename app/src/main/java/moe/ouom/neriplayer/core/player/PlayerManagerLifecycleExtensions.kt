@@ -43,6 +43,8 @@ import moe.ouom.neriplayer.core.player.debug.playbackStateName
 import moe.ouom.neriplayer.core.player.model.AudioDevice
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
+import moe.ouom.neriplayer.core.player.policy.shouldAcceptPlayerCallback
+import moe.ouom.neriplayer.core.player.policy.shouldExposePlayerCallbackState
 import moe.ouom.neriplayer.core.player.playlist.PlayerFavoritesController
 import moe.ouom.neriplayer.core.player.policy.shouldClearResumePlaybackRequestOnPlayWhenReadyPause
 import moe.ouom.neriplayer.data.settings.PlaybackPreferenceSnapshot
@@ -176,6 +178,19 @@ internal fun PlayerManager.initializeImpl(
             override fun onPlayerError(error: PlaybackException) {
                 NPLogger.e("NERI-Player", "onPlayerError: ${error.errorCodeName}", error)
 
+                if (!shouldAcceptPlayerCallback(
+                        playbackRequestToken,
+                        loadedMediaRequestToken,
+                        isPendingMediaLoadActive()
+                    )
+                ) {
+                    NPLogger.d(
+                        "NERI-PlayerManager",
+                        "Ignoring stale player error during pending media load: requestToken=$playbackRequestToken, loadedToken=$loadedMediaRequestToken, error=${error.errorCodeName}"
+                    )
+                    return
+                }
+
                 val currentUrl = _currentMediaUrl.value
                 val isOfflineCache = currentUrl?.startsWith("http://offline.cache/") == true
 
@@ -244,23 +259,57 @@ internal fun PlayerManager.initializeImpl(
             }
 
             override fun onPlaybackStateChanged(state: Int) {
+                if (!shouldExposePlayerCallbackState(
+                        playbackRequestToken,
+                        loadedMediaRequestToken,
+                        isPendingMediaLoadActive()
+                    )
+                ) {
+                    NPLogger.d(
+                        "NERI-PlayerManager",
+                        "Ignoring stale playback state during pending media load: requestToken=$playbackRequestToken, loadedToken=$loadedMediaRequestToken, state=${playbackStateName(state)}"
+                    )
+                    return
+                }
                 _playerPlaybackStateFlow.value = state
                 if (state == Player.STATE_READY) {
-                    maybeBackfillCurrentSongDurationFromPlayer()
+                    if (shouldAcceptPlayerCallback(
+                            playbackRequestToken,
+                            loadedMediaRequestToken,
+                            isPendingMediaLoadActive()
+                        )
+                    ) {
+                        maybeBackfillCurrentSongDurationFromPlayer()
+                    }
                 }
                 if (state == Player.STATE_ENDED) {
-                    handleTrackEndedIfNeeded(source = "playback_state_changed")
+                    if (shouldAcceptPlayerCallback(
+                            playbackRequestToken,
+                            loadedMediaRequestToken,
+                            isPendingMediaLoadActive()
+                        )
+                    ) {
+                        handleTrackEndedIfNeeded(source = "playback_state_changed")
+                    }
                 }
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (!shouldAcceptPlayerCallback(
+                        playbackRequestToken,
+                        loadedMediaRequestToken,
+                        isPendingMediaLoadActive()
+                    )
+                ) {
+                    return
+                }
                 _isPlayingFlow.value = isPlaying
                 syncPlaybackStatsPlayingState(
                     playing = isPlaying,
                     reason = "exo_is_playing_changed"
                 )
                 if (isPlaying) startProgressUpdates() else stopProgressUpdates()
-                val positionMs = player.currentPosition.coerceAtLeast(0L)
+                val positionMs = resolveDisplayedPlaybackPosition(player.currentPosition)
                 val shouldResumePlayback = shouldResumePlaybackSnapshot()
                 scheduleStatePersist(
                     positionMs = positionMs,
@@ -269,6 +318,18 @@ internal fun PlayerManager.initializeImpl(
             }
 
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                if (!shouldExposePlayerCallbackState(
+                        playbackRequestToken,
+                        loadedMediaRequestToken,
+                        isPendingMediaLoadActive()
+                    )
+                ) {
+                    NPLogger.d(
+                        "NERI-PlayerManager",
+                        "Ignoring stale playWhenReady during pending media load: requestToken=$playbackRequestToken, loadedToken=$loadedMediaRequestToken, playWhenReady=$playWhenReady, reason=${playWhenReadyChangeReasonName(reason)}"
+                    )
+                    return
+                }
                 _playWhenReadyFlow.value = playWhenReady
                 if (!playWhenReady) {
                     NPLogger.d(
@@ -289,7 +350,12 @@ internal fun PlayerManager.initializeImpl(
                 if (
                     !playWhenReady &&
                     reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM &&
-                    player.playbackState == Player.STATE_ENDED
+                    player.playbackState == Player.STATE_ENDED &&
+                    shouldAcceptPlayerCallback(
+                        playbackRequestToken,
+                        loadedMediaRequestToken,
+                        isPendingMediaLoadActive()
+                    )
                 ) {
                     handleTrackEndedIfNeeded(source = "play_when_ready_end_of_item")
                 }
