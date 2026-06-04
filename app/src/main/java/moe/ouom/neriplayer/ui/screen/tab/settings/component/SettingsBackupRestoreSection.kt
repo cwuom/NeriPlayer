@@ -85,6 +85,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingsScopes
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingsSwitchItems
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
 import moe.ouom.neriplayer.ui.viewmodel.ConfigTransferUiState
 import moe.ouom.neriplayer.ui.viewmodel.BackupRestoreUiState
@@ -109,8 +112,8 @@ internal fun SettingsBackupRestoreSection(
     onClearImportStatus: () -> Unit,
     onClearConfigExportStatus: () -> Unit,
     onClearConfigImportStatus: () -> Unit,
-    silentGitHubSyncFailure: Boolean,
-    onSilentGitHubSyncFailureChange: (Boolean) -> Unit,
+    autoSettingsRepository: AutoSettingsRepository,
+    scope: kotlinx.coroutines.CoroutineScope,
     onOpenGitHubConfig: () -> Unit,
     onOpenClearGitHubConfig: () -> Unit,
     onOpenWebDavConfig: () -> Unit,
@@ -482,25 +485,10 @@ internal fun SettingsBackupRestoreSection(
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
 
-                ListItem(
-                    leadingContent = {
-                        Icon(
-                            Icons.Outlined.Error,
-                            contentDescription = stringResource(R.string.github_sync_silent_failure),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
-                    headlineContent = { Text(stringResource(R.string.github_sync_silent_failure)) },
-                    supportingContent = {
-                        Text(stringResource(R.string.github_sync_silent_failure_desc))
-                    },
-                    trailingContent = {
-                        Switch(
-                            checked = silentGitHubSyncFailure,
-                            onCheckedChange = onSilentGitHubSyncFailureChange
-                        )
-                    },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                AutoSettingsSwitchItems(
+                    repository = autoSettingsRepository,
+                    scope = scope,
+                    sectionScope = AutoSettingsScopes.backup
                 )
 
                 HapticTextButton(

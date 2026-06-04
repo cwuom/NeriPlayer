@@ -286,7 +286,11 @@ class BackupManager(private val context: Context) {
             BackupMetadataMapper.sanitizeTrackStat(it, context)
         }
         if (sanitizedStats.isNotEmpty()) {
-            playbackStatsRepo.applyMergedStats(sanitizedStats)
+            playbackStatsRepo.applyMergedStats(
+                syncStats = sanitizedStats,
+                playbackStatsClearedAt = 0L,
+                respectLocalClear = false
+            )
         }
     }
     

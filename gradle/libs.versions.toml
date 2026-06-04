@@ -8,6 +8,7 @@ documentfile = "1.0.1"
 gson = "2.13.1"
 hazeJetpackCompose = "0.7.0"
 kotlin = "2.2.0"
+ksp = "2.2.0-2.0.2"
 kotlinxCoroutines = "1.9.0"
 coreKtx = "1.16.0"
 junit = "4.13.2"
@@ -77,6 +78,7 @@ kotlinx-serialization-protobuf = { module = "org.jetbrains.kotlinx:kotlinx-seria
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "kotlinxCoroutines" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinxCoroutines" }
 kotlin-gradle = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin" }
+ksp-symbol-processing-api = { module = "com.google.devtools.ksp:symbol-processing-api", version.ref = "ksp" }
 material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 androidx-constraintlayout = { group = "androidx.constraintlayout", name = "constraintlayout", version.ref = "constraintlayout" }
 
@@ -106,5 +108,7 @@ androidx-foundation-layout = { group = "androidx.compose.foundation", name = "fo
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
 kotlin-android      = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-jvm          = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-compose      = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+ksp                 = { id = "com.google.devtools.ksp", version.ref = "ksp" }

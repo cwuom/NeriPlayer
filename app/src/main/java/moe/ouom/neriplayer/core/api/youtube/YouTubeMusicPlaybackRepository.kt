@@ -73,6 +73,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okio.Buffer
 import org.json.JSONArray
 import org.json.JSONObject
 import org.schabi.newpipe.extractor.NewPipe
@@ -125,6 +126,7 @@ private const val PLAYBACK_WARM_AUTH_REFRESH_AGE_MS = 12L * 60L * 60L * 1000L
 
 private const val YOUTUBE_PLAYER_API_FORMAT_VERSION = "2"
 private const val STREAMING_CIPHER_LOG_THRESHOLD_MS = 250L
+private const val YOUTUBE_PLAYBACK_DIAG_PREFIX = "[YT-DIAG-20260530]"
 
 private fun playbackElapsedMs(startedAtMs: Long): Long = System.currentTimeMillis() - startedAtMs
 
@@ -174,6 +176,36 @@ data class YouTubePlayableAudio(
     val bitrateKbps: Int? = null,
     val sampleRateHz: Int? = null
 )
+
+private enum class DirectRangeVerificationStatus {
+    READABLE,
+    NON_PARTIAL_CONTENT,
+    EMPTY_BODY,
+    NO_BYTES_READ,
+    REQUEST_FAILED
+}
+
+private data class DirectRangeVerificationResult(
+    val status: DirectRangeVerificationStatus,
+    val httpCode: Int?,
+    val bytesRead: Long,
+    val elapsedMs: Long
+) {
+    val isReadable: Boolean
+        get() = status == DirectRangeVerificationStatus.READABLE
+}
+
+private fun YouTubePlayableAudio.missingPoTokenDiagnosticMetadata(clientName: String): String {
+    val audioItag = extractStreamQueryParameter(url, "itag")
+        ?.takeIf { it.all(Char::isDigit) }
+        ?: "<unknown>"
+    return "client=$clientName " +
+        "itag=$audioItag " +
+        "mimeType=${mimeType ?: "<unknown>"} " +
+        "bitrate=${bitrateKbps ?: "<unknown>"} " +
+        "sourceKind=$streamType " +
+        "contentLength=${contentLength ?: "<unknown>"}"
+}
 
 internal data class YouTubeAudioMetadata(
     val durationMs: Long = 0L,
@@ -231,7 +263,7 @@ private data class InFlightBootstrapRequest(
     val forceRefresh: Boolean
 )
 
-private data class ChallengeCandidateResult<T>(
+internal data class ChallengeCandidateResult<T>(
     val source: String,
     val value: T?,
     val elapsedMs: Long
@@ -260,17 +292,17 @@ private fun playableAudioMimePreferenceScore(mimeType: String?): Int {
     }
 }
 
-private suspend fun <T> awaitFirstChallengeSuccess(
+internal suspend fun <T> awaitFirstChallengeSuccess(
     candidates: List<Deferred<ChallengeCandidateResult<T>>>
 ): ChallengeCandidateResult<T>? = coroutineScope {
     val pending = candidates.toMutableList()
     while (pending.isNotEmpty()) {
-        val candidate = select<ChallengeCandidateResult<T>> {
+        val (selected, candidate) = select<Pair<Deferred<ChallengeCandidateResult<T>>, ChallengeCandidateResult<T>>> {
             pending.forEach { deferred ->
-                deferred.onAwait { it }
+                deferred.onAwait { deferred to it }
             }
         }
-        pending.removeAll { it.isCompleted }
+        pending.remove(selected)
         if (candidate.value != null) {
             pending.forEach { deferred -> deferred.cancel() }
             return@coroutineScope candidate
@@ -1362,6 +1394,7 @@ class YouTubeMusicPlaybackRepository(
                                 playableAudio = parsedDirectPlayableAudio,
                                 profile = profile,
                                 videoId = videoId,
+                                auth = auth,
                                 bootstrap = bootstrap,
                                 forceRefresh = poTokenForceRefresh,
                                 prefetchedPoToken = webRemixPoTokenPrefetch,
@@ -1531,6 +1564,7 @@ class YouTubeMusicPlaybackRepository(
         playableAudio: YouTubePlayableAudio?,
         profile: YouTubePlayerClientProfile,
         videoId: String,
+        auth: YouTubeAuthBundle,
         bootstrap: YouTubePlaybackBootstrap,
         forceRefresh: Boolean,
         prefetchedPoToken: Deferred<String?>? = null,
@@ -1568,9 +1602,31 @@ class YouTubeMusicPlaybackRepository(
             .orEmpty()
             .ifBlank {
                 if (existingPoToken.isNullOrBlank()) {
+                    val verification = verifyDirectRangeReadable(
+                        streamUrl,
+                        buildBootstrapRequestAuth(auth, bootstrap)
+                    )
+                    if (verification.isReadable) {
+                        NPLogger.d(
+                            "YouTubeMusicPlayback",
+                            "$YOUTUBE_PLAYBACK_DIAG_PREFIX missing_pot_webremix_direct_verification " +
+                                "videoId=$videoId ${playableAudio.missingPoTokenDiagnosticMetadata(profile.clientName)} " +
+                                "status=${verification.status} httpCode=${verification.httpCode ?: "<none>"} " +
+                                "bytesRead=${verification.bytesRead} elapsedMs=${verification.elapsedMs} " +
+                                "candidateDecision=accepted"
+                        )
+                        return playableAudio
+                    }
                     NPLogger.w(
                         "YouTubeMusicPlayback",
-                        "Missing GVS PO token for WEB_REMIX direct stream: videoId=$videoId, elapsedMs=${playbackElapsedMs(startedAtMs)}"
+                        "$YOUTUBE_PLAYBACK_DIAG_PREFIX missing_pot_webremix_direct_verification " +
+                            "videoId=$videoId ${playableAudio.missingPoTokenDiagnosticMetadata(profile.clientName)} " +
+                            "status=${verification.status} httpCode=${verification.httpCode ?: "<none>"} " +
+                            "bytesRead=${verification.bytesRead} elapsedMs=${verification.elapsedMs} " +
+                            "candidateDecision=rejected " +
+                            "fallbackReason=missing_pot_range_verification_failed " +
+                            "fallbackPath=continue_player_clients " +
+                            "branchElapsedMs=${playbackElapsedMs(startedAtMs)}"
                     )
                     return null
                 }
@@ -1584,6 +1640,53 @@ class YouTubeMusicPlaybackRepository(
         return playableAudio.copy(
             url = replaceStreamQueryParameter(streamUrl, "pot", poToken)
         )
+    }
+
+    private fun verifyDirectRangeReadable(
+        streamUrl: String,
+        auth: YouTubeAuthBundle
+    ): DirectRangeVerificationResult {
+        val startedAtMs = System.currentTimeMillis()
+        val request = buildYouTubeStreamRequest(streamUrl, auth)
+            .newBuilder()
+            .header("Range", "bytes=0-0")
+            .build()
+        return try {
+            okHttpClient.newCall(request).execute().use { response ->
+                if (response.code != 206) {
+                    return@use DirectRangeVerificationResult(
+                        status = DirectRangeVerificationStatus.NON_PARTIAL_CONTENT,
+                        httpCode = response.code,
+                        bytesRead = 0L,
+                        elapsedMs = playbackElapsedMs(startedAtMs)
+                    )
+                }
+                val body = response.body ?: return@use DirectRangeVerificationResult(
+                    status = DirectRangeVerificationStatus.EMPTY_BODY,
+                    httpCode = response.code,
+                    bytesRead = 0L,
+                    elapsedMs = playbackElapsedMs(startedAtMs)
+                )
+                val bytesRead = body.source().read(Buffer(), 1L).coerceAtLeast(0L)
+                DirectRangeVerificationResult(
+                    status = if (bytesRead > 0L) {
+                        DirectRangeVerificationStatus.READABLE
+                    } else {
+                        DirectRangeVerificationStatus.NO_BYTES_READ
+                    },
+                    httpCode = response.code,
+                    bytesRead = bytesRead,
+                    elapsedMs = playbackElapsedMs(startedAtMs)
+                )
+            }
+        } catch (_: Exception) {
+            DirectRangeVerificationResult(
+                status = DirectRangeVerificationStatus.REQUEST_FAILED,
+                httpCode = null,
+                bytesRead = 0L,
+                elapsedMs = playbackElapsedMs(startedAtMs)
+            )
+        }
     }
 
     private fun prefetchWebRemixPoToken(

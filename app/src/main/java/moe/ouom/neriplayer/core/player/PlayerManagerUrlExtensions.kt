@@ -7,7 +7,9 @@ import android.os.SystemClock
 import androidx.core.net.toUri
 import androidx.media3.common.PlaybackException
 import androidx.media3.datasource.cache.ContentMetadata
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -19,7 +21,15 @@ import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
 import moe.ouom.neriplayer.core.player.model.mergeLocalPlaybackAudioInfoWithRemoteQuality
 import moe.ouom.neriplayer.core.player.policy.PlaybackCommandSource
+import moe.ouom.neriplayer.core.player.policy.RefreshDeferredCompletion
+import moe.ouom.neriplayer.core.player.policy.RefreshRequestSemantics
+import moe.ouom.neriplayer.core.player.policy.RefreshResolverSideEffects
+import moe.ouom.neriplayer.core.player.policy.RefreshResultSideEffects
+import moe.ouom.neriplayer.core.player.policy.RefreshResultKind
+import moe.ouom.neriplayer.core.player.policy.RefreshSideEffectGate
 import moe.ouom.neriplayer.core.player.policy.resolvePlaybackStartPlan
+import moe.ouom.neriplayer.core.player.policy.resolveRefreshApplyAction
+import moe.ouom.neriplayer.core.player.policy.shouldApplyRefreshResult
 import moe.ouom.neriplayer.core.player.url.buildBiliPlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.url.buildLocalPlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.url.buildNeteaseQualityCandidates
@@ -35,7 +45,8 @@ import moe.ouom.neriplayer.util.NPLogger
 
 internal suspend fun PlayerManager.resolveSongUrl(
     song: SongItem,
-    forceRefresh: Boolean = false
+    forceRefresh: Boolean = false,
+    sideEffects: RefreshResolverSideEffects = RefreshResolverSideEffects()
 ): SongUrlResult {
     NPLogger.d(
         "NERI-PlayerManager",
@@ -55,11 +66,13 @@ internal suspend fun PlayerManager.resolveSongUrl(
                 audioInfo = buildLocalPlaybackAudioInfo(song, application)
             )
         }
-        postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(R.string.error_no_play_url)))
+        sideEffects.emitError {
+            postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(R.string.error_no_play_url)))
+        }
         return SongUrlResult.Failure
     }
 
-    val localResult = checkLocalCache(song)
+    val localResult = checkLocalCache(song, sideEffects)
     if (localResult != null) {
         NPLogger.d(
             "NERI-PlayerManager",
@@ -89,10 +102,19 @@ internal suspend fun PlayerManager.resolveSongUrl(
         isYouTubeMusicTrack(song) -> getYouTubeMusicAudioUrl(
             song = song,
             suppressError = hasCachedData,
-            forceRefresh = forceRefresh
+            forceRefresh = forceRefresh,
+            sideEffects = sideEffects
         )
-        isBiliTrack(song) -> getBiliAudioUrl(song, suppressError = hasCachedData)
-        else -> getNeteaseSongUrl(song, suppressError = hasCachedData)
+        isBiliTrack(song) -> getBiliAudioUrl(
+            song = song,
+            suppressError = hasCachedData,
+            sideEffects = sideEffects
+        )
+        else -> getNeteaseSongUrl(
+            song = song,
+            suppressError = hasCachedData,
+            sideEffects = sideEffects
+        )
     }
 
     return if (result is SongUrlResult.Failure && hasCachedData && !isYouTubeMusicTrack(song)) {
@@ -137,6 +159,27 @@ private fun PlayerManager.resumePlaybackFallback(
     }
 }
 
+internal fun PlayerManager.cancelUrlRefreshIfNotReusableForPendingLoad(
+    song: SongItem,
+    resumePositionMs: Long,
+    requestGeneration: Long,
+    commandSource: PlaybackCommandSource
+) {
+    val semantics = buildRefreshRequestSemantics(
+        songKey = computeCacheKey(song),
+        requestGeneration = requestGeneration,
+        resumePositionMs = resumePositionMs,
+        allowFallback = false,
+        reason = "playAtIndex_pending_load",
+        fallbackSeekPositionMs = null,
+        resumePlaybackAfterRefresh = true,
+        resumedPlaybackCommandSource = commandSource
+    )
+    if (urlRefreshController.cancelIfNotReusable(semantics)) {
+        urlRefreshInProgress = false
+    }
+}
+
 internal fun PlayerManager.refreshCurrentSongUrlImpl(
     resumePositionMs: Long,
     allowFallback: Boolean,
@@ -152,23 +195,20 @@ internal fun PlayerManager.refreshCurrentSongUrlImpl(
         "NERI-PlayerManager",
         "refreshCurrentSongUrl: song=${song.name}, resumePositionMs=$resumePositionMs, allowFallback=$allowFallback, reason=$reason, bypassCooldown=$bypassCooldown, resumePlaybackAfterRefresh=$resumePlaybackAfterRefresh, commandSource=$resumedPlaybackCommandSource, stack=[${debugStackHint()}]"
     )
-    if (urlRefreshInProgress) {
-        NPLogger.w(
-            "NERI-PlayerManager",
-            "refreshCurrentSongUrl skipped: another refresh is already running for song=${song.name}"
-        )
-        if (allowFallback) {
-            resumePlaybackFallback(
-                seekPositionMs = fallbackSeekPositionMs,
-                resumePlaybackAfterRefresh = resumePlaybackAfterRefresh
-            )
-        }
-        return
-    }
-
     val cacheKey = computeCacheKey(song)
+    val semantics = buildRefreshRequestSemantics(
+        songKey = cacheKey,
+        requestGeneration = playbackRequestToken,
+        resumePositionMs = resumePositionMs,
+        allowFallback = allowFallback,
+        reason = reason,
+        fallbackSeekPositionMs = fallbackSeekPositionMs,
+        resumePlaybackAfterRefresh = resumePlaybackAfterRefresh,
+        resumedPlaybackCommandSource = resumedPlaybackCommandSource
+    )
     val now = SystemClock.elapsedRealtime()
-    if (!bypassCooldown &&
+    if (urlRefreshController.currentSemantics() == null &&
+        !bypassCooldown &&
         lastUrlRefreshKey == cacheKey &&
         now - lastUrlRefreshAtMs < URL_REFRESH_COOLDOWN_MS
     ) {
@@ -196,63 +236,217 @@ internal fun PlayerManager.refreshCurrentSongUrlImpl(
         return
     }
 
-    urlRefreshInProgress = true
     lastUrlRefreshKey = cacheKey
     lastUrlRefreshAtMs = now
 
-    ioScope.launch {
-        try {
-            NPLogger.d("NERI-PlayerManager", "Refreshing stream url ($reason): $cacheKey")
-            val result = resolveSongUrl(
-                song = song,
-                forceRefresh = isYouTubeMusicTrack(song)
-            )
-            if (result is SongUrlResult.Success &&
-                _currentSongFlow.value?.sameIdentityAs(song) == true
-            ) {
-                maybeUpdateSongDuration(song, result.durationMs ?: 0L)
-                withContext(Dispatchers.Main) {
-                    applyResolvedMediaItem(
-                        _currentSongFlow.value ?: song,
-                        result.url,
-                        result.mimeType,
-                        result.expectedContentLength,
-                        result.audioInfo,
-                        resumePositionMs,
-                        resumePlaybackAfterRefresh
-                    )
-                    consecutivePlayFailures = 0
-                    if (
-                        resumePlaybackAfterRefresh &&
-                        resumedPlaybackCommandSource == PlaybackCommandSource.LOCAL
-                    ) {
-                        emitPlaybackCommand(
-                            type = "PLAY",
-                            source = resumedPlaybackCommandSource,
-                            positionMs = resumePositionMs.coerceAtLeast(0L),
-                            currentIndex = currentIndex
-                        )
-                    }
-                }
-            } else if (allowFallback) {
-                resumePlaybackFallback(
-                    seekPositionMs = fallbackSeekPositionMs,
-                    resumePlaybackAfterRefresh = resumePlaybackAfterRefresh
+    var refreshJob: kotlinx.coroutines.Job? = null
+    var refreshDeferred: CompletableDeferred<SongUrlResult>? = null
+    val start = urlRefreshController.startOrReuse(
+        semantics = semantics,
+        start = {
+            val deferred = CompletableDeferred<SongUrlResult>()
+            refreshDeferred = deferred
+            val job = ioScope.launch(start = CoroutineStart.LAZY) {
+                runRefreshOperation(
+                    semantics = semantics,
+                    song = song,
+                    cacheKey = cacheKey,
+                    deferred = deferred
                 )
-            } else {
-                clearPendingSeekPosition()
-                postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(R.string.player_playback_network_error)))
-                withContext(Dispatchers.Main) {
-                    pause(commandSource = PlaybackCommandSource.REMOTE_SYNC)
-                }
             }
-        } finally {
+            refreshJob = job
+            PlayerManager.UrlRefreshOperation(
+                semantics = semantics,
+                deferred = deferred,
+                job = job
+            )
+        },
+        cancel = {
+            refreshJob?.cancel()
+            refreshDeferred?.let { RefreshDeferredCompletion(it).cancel() }
+        },
+        fallback = {}
+    )
+    if (!start.startedNew) {
+        ioScope.launch {
+            runCatching { start.operation.deferred.await() }
+        }
+        return
+    }
+    if (!urlRefreshController.isCurrent(semantics)) {
+        start.operation.job.cancel()
+        RefreshDeferredCompletion(start.operation.deferred).cancel()
+        return
+    }
+    urlRefreshInProgress = true
+    start.operation.job.start()
+}
+
+private suspend fun PlayerManager.runRefreshOperation(
+    semantics: RefreshRequestSemantics,
+    song: SongItem,
+    cacheKey: String,
+    deferred: CompletableDeferred<SongUrlResult>
+) {
+    try {
+        NPLogger.d("NERI-PlayerManager", "Refreshing stream url (${semantics.reason}): $cacheKey")
+        val result = resolveSongUrl(
+            song = song,
+            forceRefresh = isYouTubeMusicTrack(song),
+            sideEffects = RefreshResolverSideEffects(refreshSideEffectGate(semantics, song))
+        )
+        deferred.complete(result)
+        handleRefreshResult(semantics, song, result)
+    } catch (error: CancellationException) {
+        RefreshDeferredCompletion(deferred).cancel(error)
+    } catch (error: Exception) {
+        RefreshDeferredCompletion(deferred).completeExceptionally(error)
+    } finally {
+        if (urlRefreshController.isCurrent(semantics)) {
+            urlRefreshController.clear(semantics)
             urlRefreshInProgress = false
+        } else {
+            urlRefreshController.clear(semantics)
         }
     }
 }
 
+private suspend fun PlayerManager.handleRefreshResult(
+    semantics: RefreshRequestSemantics,
+    song: SongItem,
+    result: SongUrlResult
+) {
+    val accepted = canApplyRefreshResult(semantics, song)
+    when {
+        result is SongUrlResult.Success -> {
+            val action = resolveRefreshApplyAction(
+                accepted = accepted,
+                resultKind = RefreshResultKind.SUCCESS
+            )
+            val gate = refreshSideEffectGate(semantics, song)
+            if (!action.updateDuration ||
+                !RefreshResultSideEffects(gate).updateDuration {
+                    maybeUpdateSongDuration(song, result.durationMs ?: 0L)
+                }
+            ) return
+            withContext(Dispatchers.Main) {
+                val applied = applyResolvedMediaItem(
+                    gate = gate,
+                    semantics = semantics,
+                    song = _currentSongFlow.value ?: song,
+                    url = result.url,
+                    mimeType = result.mimeType,
+                    expectedContentLength = result.expectedContentLength,
+                    audioInfo = result.audioInfo,
+                    resumePositionMs = semantics.resumePositionMs,
+                    resumePlaybackAfterRefresh = semantics.resumePlaybackAfterRefresh
+                )
+                if (!applied) return@withContext
+                if (!gate.runMutation { consecutivePlayFailures = 0 }) return@withContext
+                if (
+                    semantics.resumePlaybackAfterRefresh &&
+                    semantics.resumedPlaybackCommandSource == PlaybackCommandSource.LOCAL
+                ) {
+                    gate.runMutation {
+                        emitPlaybackCommand(
+                            type = "PLAY",
+                            source = semantics.resumedPlaybackCommandSource,
+                            positionMs = semantics.resumePositionMs.coerceAtLeast(0L),
+                            currentIndex = currentIndex
+                        )
+                    }
+                }
+            }
+        }
+        semantics.allowFallback -> {
+            val action = resolveRefreshApplyAction(
+                accepted = accepted,
+                resultKind = RefreshResultKind.FALLBACK
+            )
+            if (action.fallbackPlayPause) {
+                withContext(Dispatchers.Main) {
+                    val gate = refreshSideEffectGate(semantics, song)
+                    val resolvedSeekPositionMs = semantics.fallbackSeekPositionMs?.coerceAtLeast(0L)
+                    if (resolvedSeekPositionMs != null) {
+                        if (!gate.runMutation {
+                                player.seekTo(resolvedSeekPositionMs)
+                                _playbackPositionMs.value = resolvedSeekPositionMs
+                            }
+                        ) return@withContext
+                    }
+                    gate.runMutation {
+                        player.playWhenReady = semantics.resumePlaybackAfterRefresh
+                        if (semantics.resumePlaybackAfterRefresh) {
+                            player.play()
+                        } else {
+                            player.pause()
+                        }
+                    }
+                }
+            }
+        }
+        else -> {
+            val action = resolveRefreshApplyAction(
+                accepted = accepted,
+                resultKind = RefreshResultKind.FAILURE
+            )
+            if (!action.emitFailureError) return
+            val gate = refreshSideEffectGate(semantics, song)
+            if (!gate.runMutation { clearPendingSeekPosition() }) return
+            if (!gate.runMutation {
+                    postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(R.string.player_playback_network_error)))
+                }
+            ) return
+            withContext(Dispatchers.Main) {
+                refreshSideEffectGate(semantics, song).runMutation {
+                    pause(commandSource = PlaybackCommandSource.REMOTE_SYNC)
+                }
+            }
+        }
+    }
+}
+
+private fun PlayerManager.refreshSideEffectGate(
+    semantics: RefreshRequestSemantics,
+    song: SongItem
+) = RefreshSideEffectGate { canApplyRefreshResult(semantics, song) }
+
+private fun PlayerManager.canApplyRefreshResult(
+    semantics: RefreshRequestSemantics,
+    song: SongItem
+): Boolean {
+    return _currentSongFlow.value?.sameIdentityAs(song) == true &&
+        shouldApplyRefreshResult(
+            owner = semantics,
+            current = semantics.copy(requestGeneration = playbackRequestToken),
+            currentRequestGeneration = playbackRequestToken,
+            ownerActive = urlRefreshController.isCurrent(semantics)
+        )
+}
+
+private fun buildRefreshRequestSemantics(
+    songKey: String,
+    requestGeneration: Long,
+    resumePositionMs: Long,
+    allowFallback: Boolean,
+    reason: String,
+    fallbackSeekPositionMs: Long?,
+    resumePlaybackAfterRefresh: Boolean,
+    resumedPlaybackCommandSource: PlaybackCommandSource?
+) = RefreshRequestSemantics(
+    songKey = songKey,
+    requestGeneration = requestGeneration,
+    resumePositionMs = resumePositionMs.coerceAtLeast(0L),
+    fallbackSeekPositionMs = fallbackSeekPositionMs?.coerceAtLeast(0L),
+    resumePlaybackAfterRefresh = resumePlaybackAfterRefresh,
+    allowFallback = allowFallback,
+    reason = reason,
+    resumedPlaybackCommandSource = resumedPlaybackCommandSource
+)
+
 private suspend fun PlayerManager.applyResolvedMediaItem(
+    gate: RefreshSideEffectGate,
+    semantics: RefreshRequestSemantics,
     song: SongItem,
     url: String,
     mimeType: String?,
@@ -260,43 +454,64 @@ private suspend fun PlayerManager.applyResolvedMediaItem(
     audioInfo: PlaybackAudioInfo?,
     resumePositionMs: Long,
     resumePlaybackAfterRefresh: Boolean
-) {
-    if (_currentSongFlow.value?.sameIdentityAs(song) != true) return
+): Boolean {
+    if (!gate.runMutation {}) return false
 
     val cacheKey = computeCacheKey(song)
     invalidateMismatchedCachedResource(
         cacheKey = cacheKey,
-        expectedContentLength = expectedContentLength
+        expectedContentLength = expectedContentLength,
+        shouldApplyMutation = { gate.runMutation {} }
     )
     val mediaItem = buildMediaItem(song, url, cacheKey, mimeType)
 
-    _currentMediaUrl.value = url
-    _currentPlaybackAudioInfo.value = audioInfo
-    currentMediaUrlResolvedAtMs = SystemClock.elapsedRealtime()
-    persistState()
+    if (!gate.runMutation { _currentMediaUrl.value = url }) return false
+    if (!gate.runMutation { _currentPlaybackAudioInfo.value = audioInfo }) return false
+    if (!gate.runMutation { currentMediaUrlResolvedAtMs = SystemClock.elapsedRealtime() }) return false
+    if (!gate.runSuspendingMutation { persistState() }) return false
 
+    var applied = false
     withContext(Dispatchers.Main) {
-        preparePlayerForManagedStart(
-            resolvePlaybackStartPlan(shouldFadeIn = false, fadeDurationMs = 0L)
-        )
-        resetTrackEndDeduplicationState()
-        player.setMediaItem(mediaItem)
-        syncExoRepeatMode()
-        if (resumePositionMs > 0) {
-            player.seekTo(resumePositionMs)
-            _playbackPositionMs.value = resumePositionMs
+        if (!gate.runMutation {
+                preparePlayerForManagedStart(
+                    resolvePlaybackStartPlan(shouldFadeIn = false, fadeDurationMs = 0L)
+                )
+            }
+        ) return@withContext
+        if (!gate.runMutation { resetTrackEndDeduplicationState() }) return@withContext
+        if (!gate.runMutation { player.setMediaItem(mediaItem) }) return@withContext
+        if (!gate.runMutation { loadedMediaRequestToken = semantics.requestGeneration }) return@withContext
+        if (!gate.runMutation { pendingMediaLoadActive = false }) return@withContext
+        if (!gate.runMutation { syncExoRepeatMode() }) return@withContext
+        val startPositionMs = pendingSeekPositionOrNull()
+            ?: resumePositionMs.coerceAtLeast(0L)
+        if (startPositionMs > 0) {
+            if (!gate.runMutation {
+                    player.seekTo(startPositionMs)
+                    _playbackPositionMs.value = startPositionMs
+                }
+            ) return@withContext
         }
-        player.prepare()
-        player.playWhenReady = resumePlaybackAfterRefresh
-        if (resumePlaybackAfterRefresh) {
-            player.play()
-        } else {
-            player.pause()
-        }
+        if (!gate.runMutation { clearPendingSeekPosition() }) return@withContext
+        if (!gate.runMutation { player.prepare() }) return@withContext
+        if (!gate.runMutation { player.playWhenReady = resumePlaybackAfterRefresh }) return@withContext
+        if (!gate.runMutation {
+                if (resumePlaybackAfterRefresh) {
+                    player.play()
+                } else {
+                    player.pause()
+                }
+            }
+        ) return@withContext
+        applied = true
     }
+    return applied
 }
 
-private fun PlayerManager.checkLocalCache(song: SongItem): SongUrlResult? {
+private fun PlayerManager.checkLocalCache(
+    song: SongItem,
+    sideEffects: RefreshResolverSideEffects = RefreshResolverSideEffects()
+): SongUrlResult? {
     val context = application
     if (!AudioDownloadManager.mayHaveIndexedLocalDownload(context, song)) {
         return null
@@ -307,7 +522,9 @@ private fun PlayerManager.checkLocalCache(song: SongItem): SongUrlResult? {
             "NERI-PlayerManager",
             "checkLocalCache: 命中不可读本地引用，回退远端解析 song=${song.name}, reference=$localReference"
         )
-        GlobalDownloadManager.scanLocalFiles(context, forceRefresh = true)
+        sideEffects.scanLocalFiles {
+            GlobalDownloadManager.scanLocalFiles(context, forceRefresh = true)
+        }
         return null
     }
     val durationMs = if (song.durationMs <= 0L) {
@@ -345,7 +562,7 @@ private fun PlayerManager.checkLocalCache(song: SongItem): SongUrlResult? {
 
 internal fun PlayerManager.checkExoPlayerCache(cacheKey: String): Boolean {
     return try {
-    if (!isCacheInitialized()) return false
+        if (!isCacheInitialized()) return false
 
         val cachedSpans = cache.getCachedSpans(cacheKey)
         if (cachedSpans.isEmpty()) return false
@@ -392,7 +609,8 @@ internal fun PlayerManager.checkExoPlayerCache(cacheKey: String): Boolean {
 
 internal suspend fun PlayerManager.invalidateMismatchedCachedResource(
     cacheKey: String,
-    expectedContentLength: Long?
+    expectedContentLength: Long?,
+    shouldApplyMutation: () -> Boolean = { true }
 ) = withContext(Dispatchers.IO) {
     val expectedLength = expectedContentLength?.takeIf { it > 0L } ?: return@withContext
     if (!isCacheInitialized()) return@withContext
@@ -412,6 +630,7 @@ internal suspend fun PlayerManager.invalidateMismatchedCachedResource(
             "NERI-PlayerManager",
             "缓存疑似预览片段，移除旧缓存以便重新拉取完整资源: key=$cacheKey, cached=$cachedContentLength, expected=$expectedLength"
         )
+        if (!shouldApplyMutation()) return@withContext
         cache.removeResource(cacheKey)
     } catch (e: Exception) {
         NPLogger.w(
@@ -423,7 +642,8 @@ internal suspend fun PlayerManager.invalidateMismatchedCachedResource(
 
 private suspend fun PlayerManager.getNeteaseSongUrl(
     song: SongItem,
-    suppressError: Boolean = false
+    suppressError: Boolean = false,
+    sideEffects: RefreshResolverSideEffects = RefreshResolverSideEffects()
 ): SongUrlResult = withContext(Dispatchers.IO) {
     try {
         val qualityCandidates = buildNeteaseQualityCandidates(preferredQuality)
@@ -496,21 +716,25 @@ private suspend fun PlayerManager.getNeteaseSongUrl(
                 NeteasePlaybackResponseParser.FailureReason.UNKNOWN,
                 null -> R.string.error_no_play_url
             }
-            postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(messageRes)))
+            sideEffects.emitError {
+                postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(messageRes)))
+            }
         }
         SongUrlResult.Failure
     } catch (e: Exception) {
         if (e is CancellationException) throw e
         NPLogger.e("NERI-PlayerManager", "Failed to get url", e)
         if (!suppressError) {
-            postPlayerEvent(
-                PlayerEvent.ShowError(
-                    getLocalizedString(
-                        R.string.player_playback_url_error_detail,
-                        e.message.orEmpty()
+            sideEffects.emitError {
+                postPlayerEvent(
+                    PlayerEvent.ShowError(
+                        getLocalizedString(
+                            R.string.player_playback_url_error_detail,
+                            e.message.orEmpty()
+                        )
                     )
                 )
-            )
+            }
         }
         SongUrlResult.Failure
     }
@@ -518,17 +742,20 @@ private suspend fun PlayerManager.getNeteaseSongUrl(
 
 private suspend fun PlayerManager.getBiliAudioUrl(
     song: SongItem,
-    suppressError: Boolean = false
+    suppressError: Boolean = false,
+    sideEffects: RefreshResolverSideEffects = RefreshResolverSideEffects()
 ): SongUrlResult = withContext(Dispatchers.IO) {
     try {
         val resolved = resolveBiliSong(song, biliClient)
         if (resolved == null || resolved.cid == 0L) {
             if (!suppressError) {
-                postPlayerEvent(
-                    PlayerEvent.ShowError(
-                        getLocalizedString(R.string.player_playback_video_info_unavailable)
+                sideEffects.emitError {
+                    postPlayerEvent(
+                        PlayerEvent.ShowError(
+                            getLocalizedString(R.string.player_playback_video_info_unavailable)
+                        )
                     )
-                )
+                }
             }
             return@withContext SongUrlResult.Failure
         }
@@ -549,7 +776,9 @@ private suspend fun PlayerManager.getBiliAudioUrl(
             )
         } else {
             if (!suppressError) {
-                postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(R.string.error_no_play_url)))
+                sideEffects.emitError {
+                    postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(R.string.error_no_play_url)))
+                }
             }
             SongUrlResult.Failure
         }
@@ -557,14 +786,16 @@ private suspend fun PlayerManager.getBiliAudioUrl(
         if (e is CancellationException) throw e
         NPLogger.e("NERI-PlayerManager", "Failed to get Bili play url", e)
         if (!suppressError) {
-            postPlayerEvent(
-                PlayerEvent.ShowError(
-                    getLocalizedString(
-                        R.string.player_playback_url_error_detail,
-                        e.message.orEmpty()
+            sideEffects.emitError {
+                postPlayerEvent(
+                    PlayerEvent.ShowError(
+                        getLocalizedString(
+                            R.string.player_playback_url_error_detail,
+                            e.message.orEmpty()
+                        )
                     )
                 )
-            )
+            }
         }
         SongUrlResult.Failure
     }
@@ -573,12 +804,15 @@ private suspend fun PlayerManager.getBiliAudioUrl(
 private suspend fun PlayerManager.getYouTubeMusicAudioUrl(
     song: SongItem,
     suppressError: Boolean = false,
-    forceRefresh: Boolean = false
+    forceRefresh: Boolean = false,
+    sideEffects: RefreshResolverSideEffects = RefreshResolverSideEffects()
 ): SongUrlResult = withContext(Dispatchers.IO) {
     val videoId = extractYouTubeMusicVideoId(song.mediaUri)
     if (videoId.isNullOrBlank()) {
         if (!suppressError) {
-            postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(R.string.error_no_play_url)))
+            sideEffects.emitError {
+                postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(R.string.error_no_play_url)))
+            }
         }
         return@withContext SongUrlResult.Failure
     }
@@ -593,7 +827,9 @@ private suspend fun PlayerManager.getYouTubeMusicAudioUrl(
             preferM4a = false
         )?.takeIf { it.url.isNotBlank() }
         if (resolvedPlayableAudio != null) {
-            maybeUpdateSongDuration(song, resolvedPlayableAudio.durationMs)
+            sideEffects.updateDuration {
+                maybeUpdateSongDuration(song, resolvedPlayableAudio.durationMs)
+            }
             NPLogger.d(
                 "NERI-PlayerManager",
                 "Resolved YouTube Music stream: videoId=$videoId, type=${resolvedPlayableAudio.streamType}, mime=${resolvedPlayableAudio.mimeType}, contentLength=${resolvedPlayableAudio.contentLength}, elapsedMs=${System.currentTimeMillis() - resolveStartedAtMs}"
@@ -612,7 +848,9 @@ private suspend fun PlayerManager.getYouTubeMusicAudioUrl(
                 "Resolve YouTube Music stream returned empty: videoId=$videoId, elapsedMs=${System.currentTimeMillis() - resolveStartedAtMs}"
             )
             if (!suppressError) {
-                postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(R.string.error_no_play_url)))
+                sideEffects.emitError {
+                    postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(R.string.error_no_play_url)))
+                }
             }
             SongUrlResult.Failure
         }
@@ -624,14 +862,16 @@ private suspend fun PlayerManager.getYouTubeMusicAudioUrl(
             e
         )
         if (!suppressError) {
-            postPlayerEvent(
-                PlayerEvent.ShowError(
-                    getLocalizedString(
-                        R.string.player_playback_url_error_detail,
-                        e.message.orEmpty()
+            sideEffects.emitError {
+                postPlayerEvent(
+                    PlayerEvent.ShowError(
+                        getLocalizedString(
+                            R.string.player_playback_url_error_detail,
+                            e.message.orEmpty()
+                        )
                     )
                 )
-            )
+            }
         }
         SongUrlResult.Failure
     }

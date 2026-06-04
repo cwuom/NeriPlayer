@@ -412,6 +412,11 @@ fun NowPlayingScreen(
             ?.songs
             ?.any { it.sameIdentityAs(song) } == true
     }
+    LaunchedEffect(isFavoriteComputed) {
+        if (favOverride == isFavoriteComputed) {
+            favOverride = null
+        }
+    }
     val isFavorite = favOverride ?: isFavoriteComputed
 
     val queue by PlayerManager.currentQueueFlow.collectAsState()

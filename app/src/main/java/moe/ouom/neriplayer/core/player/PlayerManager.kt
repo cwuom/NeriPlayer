@@ -40,6 +40,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.cache.Cache
 import androidx.media3.exoplayer.ExoPlayer
 import com.google.gson.Gson
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -70,12 +71,16 @@ import moe.ouom.neriplayer.core.player.model.PlaybackEqualizerPresetId
 import moe.ouom.neriplayer.core.player.model.PlaybackSoundConfig
 import moe.ouom.neriplayer.core.player.model.PlaybackSoundState
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
+import moe.ouom.neriplayer.core.player.model.SongUrlResult
 import moe.ouom.neriplayer.core.player.metadata.NeteaseLyricsCacheEntry
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackLoudnessGainMb
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackPitch
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
 import moe.ouom.neriplayer.core.player.policy.PlaybackCommand
 import moe.ouom.neriplayer.core.player.policy.PlaybackCommandSource
+import moe.ouom.neriplayer.core.player.policy.RefreshInFlightController
+import moe.ouom.neriplayer.core.player.policy.RefreshRequestSemantics
+import moe.ouom.neriplayer.core.player.policy.resolvePendingMediaLoadPosition
 import moe.ouom.neriplayer.core.player.policy.resolvePlaybackSoundConfigForEngine
 import moe.ouom.neriplayer.core.player.policy.resolveExoRepeatMode
 import moe.ouom.neriplayer.core.player.policy.shouldShowPauseButtonForPlaybackControls
@@ -208,6 +213,12 @@ object PlayerManager {
     internal const val MAX_FADE_STEPS = 30
     @Volatile
     internal var urlRefreshInProgress = false
+    internal data class UrlRefreshOperation(
+        val semantics: RefreshRequestSemantics,
+        val deferred: CompletableDeferred<SongUrlResult>,
+        val job: Job
+    )
+    internal val urlRefreshController = RefreshInFlightController<UrlRefreshOperation>()
     @Volatile
     internal var pendingSeekPositionMs: Long = C.TIME_UNSET
     internal var lastUrlRefreshKey: String? = null
@@ -297,6 +308,12 @@ object PlayerManager {
     internal val youtubeStreamWarmupJobs = ConcurrentHashMap<String, Job>()
     @Volatile
     internal var playbackRequestToken = 0L
+    @Volatile
+    internal var loadedMediaRequestToken = 0L
+    @Volatile
+    internal var pendingMediaLoadActive = false
+    @Volatile
+    internal var pendingMediaLoadPositionMs = 0L
     internal var lastHandledTrackEndKey: String? = null
     internal var lastTrackEndHandledAtMs = 0L
     val audioLevelFlow get() = AudioReactive.level
@@ -508,6 +525,7 @@ object PlayerManager {
         playbackRequestToken += 1
         playJob?.cancel()
         playJob = null
+        pendingMediaLoadActive = false
         currentYouTubePrefetchJob?.cancel()
         currentYouTubePrefetchJob = null
         updateResumePlaybackRequested(false)
@@ -546,7 +564,12 @@ object PlayerManager {
     }
 
     internal fun resolveDisplayedPlaybackPosition(actualPositionMs: Long): Long {
-        val actual = actualPositionMs.coerceAtLeast(0L)
+        val actual = resolvePendingMediaLoadPosition(
+            pendingLoadActive = isPendingMediaLoadActive(),
+            requestedPositionMs = pendingMediaLoadPositionMs,
+            livePlayerPositionMs = actualPositionMs
+        )
+        if (isPendingMediaLoadActive()) return actual
         val pending = pendingSeekPositionOrNull() ?: return actual
         return if (kotlin.math.abs(actual - pending) <= PENDING_SEEK_POSITION_TOLERANCE_MS) {
             clearPendingSeekPosition()
@@ -554,6 +577,10 @@ object PlayerManager {
         } else {
             pending
         }
+    }
+
+    internal fun isPendingMediaLoadActive(): Boolean {
+        return pendingMediaLoadActive
     }
 
     internal val gson = Gson()

@@ -14,6 +14,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
+import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatsMergePolicy
+import moe.ouom.neriplayer.data.sync.github.SyncTrackStat
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
@@ -40,15 +42,22 @@ data class TrackStat(
     val identityKey: String
 )
 
+private data class PlaybackStatsMetadata(
+    val clearedAt: Long = 0L
+)
+
 private const val MIN_LISTEN_MS_FOR_PLAY_COUNT = 30_000L
 
 class PlaybackStatsRepository private constructor(private val app: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val gson = Gson()
     private val file: File by lazy { File(app.filesDir, "playback_stats.json") }
+    private val metadataFile: File by lazy { File(app.filesDir, "playback_stats_meta.json") }
     private val mutex = Mutex()
     private val _stats = MutableStateFlow(loadFromDisk())
+    private val _statsClearedAt = MutableStateFlow(loadMetadata().clearedAt)
     val statsFlow: StateFlow<List<TrackStat>> = _stats
+    val statsClearedAtFlow: StateFlow<Long> = _statsClearedAt
 
     private fun loadFromDisk(): List<TrackStat> {
         return try {
@@ -61,11 +70,29 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
         }
     }
 
+    private fun loadMetadata(): PlaybackStatsMetadata {
+        return try {
+            if (!metadataFile.exists()) return PlaybackStatsMetadata()
+            gson.fromJson(metadataFile.readText(), PlaybackStatsMetadata::class.java)
+                ?: PlaybackStatsMetadata()
+        } catch (_: Throwable) {
+            PlaybackStatsMetadata()
+        }
+    }
+
     private fun persistToDisk(list: List<TrackStat>) {
         runCatching {
             file.writeText(gson.toJson(list))
         }.onFailure { error ->
             NPLogger.e("PlaybackStatsRepo", "Failed to persist stats", error)
+        }
+    }
+
+    private fun persistMetadata(clearedAt: Long) {
+        runCatching {
+            metadataFile.writeText(gson.toJson(PlaybackStatsMetadata(clearedAt)))
+        }.onFailure { error ->
+            NPLogger.e("PlaybackStatsRepo", "Failed to persist stats metadata", error)
         }
     }
 
@@ -202,8 +229,11 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
     fun clearAll() {
         scope.launch {
             mutex.withLock {
+                val clearedAt = System.currentTimeMillis()
                 _stats.value = emptyList()
+                _statsClearedAt.value = clearedAt
                 persistToDisk(emptyList())
+                persistMetadata(clearedAt)
                 triggerSync()
             }
         }
@@ -221,11 +251,23 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
         }
     }
 
-    fun applyMergedStats(syncStats: List<moe.ouom.neriplayer.data.sync.github.SyncTrackStat>) {
+    fun applyMergedStats(
+        syncStats: List<SyncTrackStat>,
+        playbackStatsClearedAt: Long,
+        respectLocalClear: Boolean = true
+    ) {
         scope.launch {
             mutex.withLock {
-                val current = _stats.value.associateBy { it.identityKey }.toMutableMap()
-                for (remote in syncStats) {
+                val effectiveClearedAt = if (respectLocalClear) {
+                    maxOf(_statsClearedAt.value, playbackStatsClearedAt)
+                } else {
+                    playbackStatsClearedAt
+                }
+                val current = _stats.value
+                    .filter { shouldKeepLocalAfterClear(it, effectiveClearedAt) }
+                    .associateBy { it.identityKey }
+                    .toMutableMap()
+                for (remote in syncStats.filter { SyncPlaybackStatsMergePolicy.shouldKeepAfterClear(it, effectiveClearedAt) }) {
                     val local = current[remote.identityKey]
                     if (local == null) {
                         current[remote.identityKey] = TrackStat(
@@ -262,6 +304,15 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
                 }
                 val updated = current.values.toList()
                 _stats.value = updated
+                val shouldUpdateClearBarrier = if (respectLocalClear) {
+                    effectiveClearedAt > _statsClearedAt.value
+                } else {
+                    syncStats.isNotEmpty() && effectiveClearedAt != _statsClearedAt.value
+                }
+                if (shouldUpdateClearBarrier) {
+                    _statsClearedAt.value = effectiveClearedAt
+                    persistMetadata(effectiveClearedAt)
+                }
                 persistToDisk(updated)
             }
         }
@@ -269,6 +320,12 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
 
     fun getStatForTrack(identityKey: String): TrackStat? {
         return _stats.value.firstOrNull { it.identityKey == identityKey }
+    }
+
+    private fun shouldKeepLocalAfterClear(stat: TrackStat, playbackStatsClearedAt: Long): Boolean {
+        if (playbackStatsClearedAt <= 0L) return true
+        val firstPlayedAt = stat.firstPlayedAt.takeIf { it > 0L } ?: stat.lastPlayedAt
+        return firstPlayedAt > playbackStatsClearedAt && stat.lastPlayedAt > playbackStatsClearedAt
     }
 
     companion object {

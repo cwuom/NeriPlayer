@@ -52,7 +52,8 @@ data class SyncData(
     @ProtoNumber(7) val recentPlays: List<SyncRecentPlay> = emptyList(),
     @ProtoNumber(8) val syncLog: List<SyncLogEntry> = emptyList(),
     @ProtoNumber(9) val recentPlayDeletions: List<SyncRecentPlayDeletion> = emptyList(),
-    @ProtoNumber(10) val playbackStats: List<SyncTrackStat> = emptyList()
+    @ProtoNumber(10) val playbackStats: List<SyncTrackStat> = emptyList(),
+    @ProtoNumber(11) val playbackStatsClearedAt: Long = 0L
 )
 
 /**

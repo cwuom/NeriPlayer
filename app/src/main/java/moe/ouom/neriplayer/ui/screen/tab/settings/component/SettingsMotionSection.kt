@@ -35,17 +35,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Analytics
-import androidx.compose.material.icons.outlined.AutoAwesome
-import androidx.compose.material.icons.outlined.BlurOn
 import androidx.compose.material.icons.outlined.Bolt
-import androidx.compose.material.icons.outlined.Subtitles
-import androidx.compose.material.icons.outlined.Wallpaper
-import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
@@ -59,20 +50,26 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingInfo
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingsKeys
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingsListItem
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingsScopes
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingsSwitchItems
 
 @Composable
 internal fun SettingsMotionSection(
     expanded: Boolean,
     arrowRotation: Float,
     onExpandedChange: (Boolean) -> Unit,
-    advancedLyricsEnabled: Boolean,
-    onAdvancedLyricsEnabledChange: (Boolean) -> Unit,
+    autoSettingsRepository: AutoSettingsRepository,
+    scope: kotlinx.coroutines.CoroutineScope,
     advancedBlurEnabled: Boolean,
     onAdvancedBlurEnabledChange: (Boolean) -> Unit,
     nowPlayingAudioReactiveEnabled: Boolean,
@@ -165,40 +162,18 @@ internal fun SettingsMotionSection(
                 }
             }
 
-            MotionSwitchItem(
-                title = stringResource(R.string.settings_advanced_lyrics),
-                description = stringResource(R.string.settings_advanced_lyrics_desc),
-                disabledSuffix = null,
-                checked = advancedLyricsEnabled,
-                enabled = true,
-                alpha = 1f,
-                icon = {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_lyrics),
-                        contentDescription = stringResource(R.string.settings_advanced_lyrics),
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                },
-                onToggle = { onAdvancedLyricsEnabledChange(!advancedLyricsEnabled) },
-                onCheckedChange = onAdvancedLyricsEnabledChange
+            AutoSettingsSwitchItems(
+                repository = autoSettingsRepository,
+                scope = scope,
+                sectionScope = AutoSettingsScopes.motion
             )
 
             MotionSwitchItem(
-                title = stringResource(R.string.settings_advanced_blur),
-                description = stringResource(R.string.settings_advanced_blur_desc),
+                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.ADVANCED_BLUR_ENABLED),
                 disabledSuffix = stringResource(R.string.settings_android12_required),
                 checked = advancedBlurAvailable && advancedBlurEnabled,
                 enabled = advancedBlurAvailable,
                 alpha = if (advancedBlurAvailable) 1f else 0.5f,
-                icon = {
-                    Icon(
-                        imageVector = Icons.Outlined.BlurOn,
-                        contentDescription = stringResource(R.string.settings_advanced_blur),
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                },
                 onToggle = {
                     if (advancedBlurAvailable) {
                         onAdvancedBlurEnabledChange(!advancedBlurEnabled)
@@ -212,20 +187,11 @@ internal fun SettingsMotionSection(
             )
 
             MotionSwitchItem(
-                title = stringResource(R.string.settings_nowplaying_cover_blur_background),
-                description = stringResource(R.string.settings_nowplaying_cover_blur_background_desc),
+                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.NOWPLAYING_COVER_BLUR_BACKGROUND_ENABLED),
                 disabledSuffix = stringResource(R.string.settings_android12_required),
                 checked = coverBlurAvailable && nowPlayingCoverBlurBackgroundEnabled,
                 enabled = coverBlurAvailable,
                 alpha = if (coverBlurAvailable) 1f else 0.5f,
-                icon = {
-                    Icon(
-                        imageVector = Icons.Outlined.Wallpaper,
-                        contentDescription = stringResource(R.string.settings_nowplaying_cover_blur_background),
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                },
                 onToggle = {
                     if (coverBlurAvailable) {
                         safeCoverBlurToggle(!nowPlayingCoverBlurBackgroundEnabled)
@@ -237,7 +203,7 @@ internal fun SettingsMotionSection(
             AnimatedVisibility(visible = coverBlurAvailable && nowPlayingCoverBlurBackgroundEnabled) {
                 Column(Modifier.fillMaxWidth()) {
                     SnappedFloatSliderListItem(
-                        title = stringResource(R.string.settings_nowplaying_cover_blur_amount),
+                        setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.NOWPLAYING_COVER_BLUR_AMOUNT),
                         value = nowPlayingCoverBlurAmount.coerceIn(0f, 500f),
                         valueText = { current ->
                             stringResource(R.string.settings_nowplaying_cover_blur_value, current)
@@ -251,7 +217,7 @@ internal fun SettingsMotionSection(
                     Spacer(Modifier.height(4.dp))
 
                     SnappedFloatSliderListItem(
-                        title = stringResource(R.string.settings_nowplaying_cover_blur_darken),
+                        setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.NOWPLAYING_COVER_BLUR_DARKEN),
                         value = nowPlayingCoverBlurDarken.coerceIn(0f, 0.8f),
                         valueText = { current ->
                             stringResource(R.string.settings_nowplaying_cover_blur_darken_value, current)
@@ -264,20 +230,11 @@ internal fun SettingsMotionSection(
             }
 
             MotionSwitchItem(
-                title = stringResource(R.string.settings_nowplaying_audio_reactive),
-                description = stringResource(R.string.settings_nowplaying_audio_reactive_desc),
+                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.NOWPLAYING_AUDIO_REACTIVE_ENABLED),
                 disabledSuffix = stringResource(R.string.settings_android13_required),
                 checked = audioReactiveAvailable && nowPlayingAudioReactiveEnabled,
                 enabled = audioReactiveAvailable,
                 alpha = if (audioReactiveAvailable) 1f else 0.5f,
-                icon = {
-                    Icon(
-                        imageVector = Icons.Outlined.Analytics,
-                        contentDescription = stringResource(R.string.settings_nowplaying_audio_reactive),
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                },
                 onToggle = {
                     if (audioReactiveAvailable) {
                         onNowPlayingAudioReactiveEnabledChange(!nowPlayingAudioReactiveEnabled)
@@ -291,20 +248,11 @@ internal fun SettingsMotionSection(
             )
 
             MotionSwitchItem(
-                title = stringResource(R.string.settings_nowplaying_dynamic_background),
-                description = stringResource(R.string.settings_nowplaying_dynamic_background_desc),
+                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.NOWPLAYING_DYNAMIC_BACKGROUND_ENABLED),
                 disabledSuffix = stringResource(R.string.settings_android13_required),
                 checked = dynamicBackgroundAvailable && nowPlayingDynamicBackgroundEnabled,
                 enabled = dynamicBackgroundAvailable,
                 alpha = if (dynamicBackgroundAvailable) 1f else 0.5f,
-                icon = {
-                    Icon(
-                        imageVector = Icons.Outlined.AutoAwesome,
-                        contentDescription = stringResource(R.string.settings_nowplaying_dynamic_background),
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                },
                 onToggle = {
                     if (dynamicBackgroundAvailable) {
                         onDynamicBackgroundToggle(!nowPlayingDynamicBackgroundEnabled)
@@ -318,9 +266,9 @@ internal fun SettingsMotionSection(
             )
 
             MotionSwitchItem(
-                title = stringResource(R.string.lyrics_blur_effect),
-                description = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    stringResource(R.string.lyrics_blur_desc)
+                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.LYRIC_BLUR_ENABLED),
+                descriptionOverride = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    null
                 } else {
                     stringResource(R.string.lyrics_blur_desc) +
                         " · " +
@@ -330,21 +278,13 @@ internal fun SettingsMotionSection(
                 checked = lyricBlurEnabled,
                 enabled = true,
                 alpha = 1f,
-                icon = {
-                    Icon(
-                        imageVector = Icons.Outlined.Subtitles,
-                        contentDescription = stringResource(R.string.settings_lyrics_blur),
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                },
                 onToggle = { onLyricBlurEnabledChange(!lyricBlurEnabled) },
                 onCheckedChange = onLyricBlurEnabledChange
             )
 
             AnimatedVisibility(visible = lyricBlurEnabled) {
                 SnappedFloatSliderListItem(
-                    title = stringResource(R.string.lyrics_blur_amount),
+                    setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.LYRIC_BLUR_AMOUNT),
                     value = lyricBlurAmount,
                     valueText = { current ->
                         stringResource(R.string.lyrics_blur_current, current)
@@ -360,24 +300,23 @@ internal fun SettingsMotionSection(
 
 @Composable
 private fun MotionSwitchItem(
-    title: String,
-    description: String,
+    setting: AutoSettingInfo,
+    descriptionOverride: String? = null,
     disabledSuffix: String?,
     checked: Boolean,
     enabled: Boolean,
     alpha: Float,
-    icon: @Composable () -> Unit,
     onToggle: () -> Unit,
     onCheckedChange: (Boolean) -> Unit
 ) {
-    ListItem(
+    AutoSettingsListItem(
+        setting = setting,
         modifier = Modifier
-            .settingsItemClickable(onClick = onToggle)
             .alpha(alpha),
-        leadingContent = icon,
-        headlineContent = { Text(title) },
+        enabled = enabled,
         supportingContent = {
             val suffix = disabledSuffix?.takeIf { !enabled }?.let { " · $it" }.orEmpty()
+            val description = descriptionOverride ?: stringResource(setting.descriptionRes)
             Text(description + suffix)
         },
         trailingContent = {
@@ -387,13 +326,13 @@ private fun MotionSwitchItem(
                 enabled = enabled
             )
         },
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+        onClick = onToggle
     )
 }
 
 @Composable
 private fun SnappedFloatSliderListItem(
-    title: String,
+    setting: AutoSettingInfo,
     value: Float,
     valueText: @Composable (Float) -> String,
     valueRange: ClosedFloatingPointRange<Float>,
@@ -409,9 +348,9 @@ private fun SnappedFloatSliderListItem(
         }
     }
 
-    ListItem(
-        headlineContent = { Text(title) },
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+    AutoSettingsListItem(
+        setting = setting,
+        showDefaultIcon = false,
         supportingContent = {
             Column(Modifier.fillMaxWidth()) {
                 Text(

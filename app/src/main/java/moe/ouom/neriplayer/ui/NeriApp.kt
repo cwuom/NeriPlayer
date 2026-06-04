@@ -574,10 +574,8 @@ private fun NeriAppContent(
     val showNowPlayingProgressQualitySwitch by repo.nowPlayingProgressShowQualitySwitchFlow.collectAsState(initial = true)
     val showNowPlayingProgressAudioCodec by repo.nowPlayingProgressShowAudioCodecFlow.collectAsState(initial = true)
     val showNowPlayingProgressAudioSpec by repo.nowPlayingProgressShowAudioSpecFlow.collectAsState(initial = true)
-    val silentGitHubSyncFailure by repo.silentGitHubSyncFailureFlow.collectAsState(initial = false)
     val showLyricTranslation by repo.showLyricTranslationFlow.collectAsState(initial = true)
     val defaultStartDestination by repo.defaultStartDestinationFlow.collectAsState(initial = Destinations.Home.route)
-    val autoShowKeyboard by repo.autoShowKeyboardFlow.collectAsState(initial = false)
     val showHomeContinueCard by repo.homeCardContinueFlow.collectAsState(initial = true)
     val showHomeTrendingCard by repo.homeCardTrendingFlow.collectAsState(initial = true)
     val showHomeRadarCard by repo.homeCardRadarFlow.collectAsState(initial = true)
@@ -1507,10 +1505,6 @@ private fun NeriAppContent(
                                                 }.getOrThrow()
                                             }
                                         },
-                                        advancedLyricsEnabled = advancedLyricsEnabled,
-                                        onAdvancedLyricsEnabledChange = { enabled ->
-                                            scope.launch { repo.setAdvancedLyricsEnabled(enabled) }
-                                        },
                                         advancedBlurEnabled = advancedBlurEnabled,
                                         onAdvancedBlurEnabledChange = { enabled ->
                                             scope.launch { repo.setAdvancedBlurEnabled(enabled) }
@@ -1580,62 +1574,9 @@ private fun NeriAppContent(
                                             pendingBackgroundImageAlpha = alpha
                                             scope.launch { repo.setBackgroundImageAlpha(alpha) }
                                         },
-                                        hapticFeedbackEnabled = hapticFeedbackEnabled,
-                                        onHapticFeedbackEnabledChange = { enabled ->
-                                            scope.launch {
-                                                repo.setHapticFeedbackEnabled(enabled)
-                                                syncHapticFeedbackSetting(enabled)
-                                            }
-                                        },
-                                        showCoverSourceBadge = showCoverSourceBadge,
-                                        onShowCoverSourceBadgeChange = { enabled ->
-                                            scope.launch { repo.setShowCoverSourceBadge(enabled) }
-                                        },
-                                        nowPlayingToolbarDockEnabled = nowPlayingToolbarDockEnabled,
-                                        onNowPlayingToolbarDockEnabledChange = { enabled ->
-                                            scope.launch { repo.setNowPlayingToolbarDockEnabled(enabled) }
-                                        },
-                                        nowPlayingKeepScreenOn = nowPlayingKeepScreenOn,
-                                        onNowPlayingKeepScreenOnChange = { enabled ->
-                                            scope.launch { repo.setNowPlayingKeepScreenOn(enabled) }
-                                        },
-                                        showNowPlayingTitle = showNowPlayingTitle,
-                                        onShowNowPlayingTitleChange = { enabled ->
-                                            scope.launch { repo.setNowPlayingShowTitle(enabled) }
-                                        },
-                                        showNowPlayingProgressQualitySwitch = showNowPlayingProgressQualitySwitch,
-                                        onShowNowPlayingProgressQualitySwitchChange = { enabled ->
-                                            scope.launch {
-                                                repo.setNowPlayingProgressShowQualitySwitch(enabled)
-                                            }
-                                        },
-                                        showNowPlayingProgressAudioCodec = showNowPlayingProgressAudioCodec,
-                                        onShowNowPlayingProgressAudioCodecChange = { enabled ->
-                                            scope.launch {
-                                                repo.setNowPlayingProgressShowAudioCodec(enabled)
-                                            }
-                                        },
-                                        showNowPlayingProgressAudioSpec = showNowPlayingProgressAudioSpec,
-                                        onShowNowPlayingProgressAudioSpecChange = { enabled ->
-                                            scope.launch {
-                                                repo.setNowPlayingProgressShowAudioSpec(enabled)
-                                            }
-                                        },
-                                        silentGitHubSyncFailure = silentGitHubSyncFailure,
-                                        onSilentGitHubSyncFailureChange = { enabled ->
-                                            scope.launch { repo.setSilentGitHubSyncFailure(enabled) }
-                                        },
-                                        showLyricTranslation = showLyricTranslation,
-                                        onShowLyricTranslationChange = { enabled ->
-                                            scope.launch { repo.setShowLyricTranslation(enabled) }
-                                        },
                                         defaultStartDestination = defaultStartDestination,
                                         onDefaultStartDestinationChange = { route ->
                                             scope.launch { repo.setDefaultStartDestination(route) }
-                                        },
-                                        autoShowKeyboard = autoShowKeyboard,
-                                        onAutoShowKeyboardChange = { enabled ->
-                                            scope.launch { repo.setAutoShowKeyboard(enabled) }
                                         },
                                         showHomeContinueCard = showHomeContinueCard,
                                         onShowHomeContinueCardChange = { enabled ->

@@ -378,7 +378,8 @@ class GitHubSyncManager private constructor(context: Context) {
             recentPlays = syncRecentPlays,
             syncLog = emptyList(),
             recentPlayDeletions = syncRecentPlayDeletions,
-            playbackStats = syncPlaybackStats
+            playbackStats = syncPlaybackStats,
+            playbackStatsClearedAt = playbackStatsRepo.statsClearedAtFlow.value
         )
     }
 
@@ -463,8 +464,10 @@ class GitHubSyncManager private constructor(context: Context) {
         )
         val mergedPlaybackStats = mergePlaybackStats(
             local = local.playbackStats,
-            remote = remote.playbackStats
+            remote = remote.playbackStats,
+            playbackStatsClearedAt = maxOf(local.playbackStatsClearedAt, remote.playbackStatsClearedAt)
         )
+        val playbackStatsClearedAt = maxOf(local.playbackStatsClearedAt, remote.playbackStatsClearedAt)
 
         val mergedData = SyncData(
             deviceId = local.deviceId,
@@ -478,7 +481,8 @@ class GitHubSyncManager private constructor(context: Context) {
                 .sortedByDescending { it.timestamp }
                 .take(100),
             recentPlayDeletions = mergedRecentPlayDeletions,
-            playbackStats = mergedPlaybackStats
+            playbackStats = mergedPlaybackStats,
+            playbackStatsClearedAt = playbackStatsClearedAt
         )
 
         return MergeResult(
@@ -673,32 +677,10 @@ class GitHubSyncManager private constructor(context: Context) {
 
     private fun mergePlaybackStats(
         local: List<SyncTrackStat>,
-        remote: List<SyncTrackStat>
+        remote: List<SyncTrackStat>,
+        playbackStatsClearedAt: Long
     ): List<SyncTrackStat> {
-        val merged = linkedMapOf<String, SyncTrackStat>()
-        for (stat in local + remote) {
-            val existing = merged[stat.identityKey]
-            if (existing == null) {
-                merged[stat.identityKey] = stat
-            } else {
-                merged[stat.identityKey] = SyncTrackStat(
-                    identityKey = stat.identityKey,
-                    name = if (stat.lastPlayedAt >= existing.lastPlayedAt) stat.name else existing.name,
-                    artist = if (stat.lastPlayedAt >= existing.lastPlayedAt) stat.artist else existing.artist,
-                    album = if (stat.lastPlayedAt >= existing.lastPlayedAt) stat.album else existing.album,
-                    totalListenMs = maxOf(stat.totalListenMs, existing.totalListenMs),
-                    playCount = maxOf(stat.playCount, existing.playCount),
-                    lastPlayedAt = maxOf(stat.lastPlayedAt, existing.lastPlayedAt),
-                    firstPlayedAt = minOf(stat.firstPlayedAt, existing.firstPlayedAt),
-                    coverUrl = if (stat.lastPlayedAt >= existing.lastPlayedAt) stat.coverUrl else existing.coverUrl,
-                    durationMs = if (stat.lastPlayedAt >= existing.lastPlayedAt) stat.durationMs else existing.durationMs,
-                    mediaUri = if (stat.lastPlayedAt >= existing.lastPlayedAt) stat.mediaUri else existing.mediaUri,
-                    id = if (stat.lastPlayedAt >= existing.lastPlayedAt) stat.id else existing.id,
-                    albumId = if (stat.lastPlayedAt >= existing.lastPlayedAt) stat.albumId else existing.albumId
-                )
-            }
-        }
-        return merged.values.toList()
+        return SyncPlaybackStatsMergePolicy.merge(local, remote, playbackStatsClearedAt)
     }
 
     private fun mergeFavoritePlaylist(
@@ -827,9 +809,10 @@ class GitHubSyncManager private constructor(context: Context) {
             playHistoryRepo.updateHistory(playHistory)
         }
 
-        if (sanitizedMergedData.playbackStats.isNotEmpty()) {
-            playbackStatsRepo.applyMergedStats(sanitizedMergedData.playbackStats)
-        }
+        playbackStatsRepo.applyMergedStats(
+            syncStats = sanitizedMergedData.playbackStats,
+            playbackStatsClearedAt = sanitizedMergedData.playbackStatsClearedAt
+        )
     }
 
     private fun mergeLocalOnlySongs(
@@ -864,7 +847,8 @@ class GitHubSyncManager private constructor(context: Context) {
             recentPlayDeletions = data.recentPlayDeletions.mapNotNull { sanitizeRecentPlayDeletion(it) },
             playbackStats = data.playbackStats.mapNotNull {
                 SyncPlaybackStatMapper.sanitize(it, appContext)
-            }
+            },
+            playbackStatsClearedAt = data.playbackStatsClearedAt.coerceAtLeast(0L)
         )
     }
 
@@ -974,6 +958,7 @@ class GitHubSyncManager private constructor(context: Context) {
 
         val remoteStats = remote.playbackStats.associateBy { it.identityKey }
         val mergedStats = merged.playbackStats.associateBy { it.identityKey }
+        if (remote.playbackStatsClearedAt != merged.playbackStatsClearedAt) return true
         if (remoteStats.keys != mergedStats.keys) return true
         remoteStats.forEach { (key, remoteStat) ->
             val mergedStat = mergedStats[key] ?: return true
