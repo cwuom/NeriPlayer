@@ -40,6 +40,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.cache.Cache
 import androidx.media3.exoplayer.ExoPlayer
 import com.google.gson.Gson
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -70,12 +71,15 @@ import moe.ouom.neriplayer.core.player.model.PlaybackEqualizerPresetId
 import moe.ouom.neriplayer.core.player.model.PlaybackSoundConfig
 import moe.ouom.neriplayer.core.player.model.PlaybackSoundState
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
+import moe.ouom.neriplayer.core.player.model.SongUrlResult
 import moe.ouom.neriplayer.core.player.metadata.NeteaseLyricsCacheEntry
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackLoudnessGainMb
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackPitch
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
 import moe.ouom.neriplayer.core.player.policy.PlaybackCommand
 import moe.ouom.neriplayer.core.player.policy.PlaybackCommandSource
+import moe.ouom.neriplayer.core.player.policy.RefreshInFlightController
+import moe.ouom.neriplayer.core.player.policy.RefreshRequestSemantics
 import moe.ouom.neriplayer.core.player.policy.resolvePendingMediaLoadPosition
 import moe.ouom.neriplayer.core.player.policy.resolvePlaybackSoundConfigForEngine
 import moe.ouom.neriplayer.core.player.policy.resolveExoRepeatMode
@@ -209,6 +213,12 @@ object PlayerManager {
     internal const val MAX_FADE_STEPS = 30
     @Volatile
     internal var urlRefreshInProgress = false
+    internal data class UrlRefreshOperation(
+        val semantics: RefreshRequestSemantics,
+        val deferred: CompletableDeferred<SongUrlResult>,
+        val job: Job
+    )
+    internal val urlRefreshController = RefreshInFlightController<UrlRefreshOperation>()
     @Volatile
     internal var pendingSeekPositionMs: Long = C.TIME_UNSET
     internal var lastUrlRefreshKey: String? = null

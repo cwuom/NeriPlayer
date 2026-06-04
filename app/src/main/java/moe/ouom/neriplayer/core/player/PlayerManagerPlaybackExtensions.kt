@@ -380,6 +380,12 @@ internal fun PlayerManager.playAtIndex(
     currentYouTubePrefetchJob = null
     playbackRequestToken += 1
     val requestToken = playbackRequestToken
+    cancelUrlRefreshIfNotReusableForPendingLoad(
+        song = song,
+        resumePositionMs = resumePositionMs,
+        requestGeneration = requestToken,
+        commandSource = commandSource
+    )
     clearPendingSeekPosition()
     enterPendingMediaLoad(resumePositionMs)
     playJob = ioScope.launch {
