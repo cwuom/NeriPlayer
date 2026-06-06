@@ -105,6 +105,11 @@ internal fun PlayerManager.initializeImpl(
             initialPlaybackPreferences.stopOnBluetoothDisconnect
         allowMixedPlaybackEnabled =
             initialPlaybackPreferences.allowMixedPlayback
+        lyriconEnabled = initialPlaybackPreferences.lyriconEnabled
+        LyriconManager.setEnabled(lyriconEnabled)
+        if (lyriconEnabled && !LyriconManager.isInitialized()) {
+            LyriconManager.initialize(app)
+        }
         playbackSoundConfig = initialPlaybackPreferences.toPlaybackSoundConfig()
         NPLogger.d(
             "NERI-PlayerManager",
@@ -421,11 +426,17 @@ internal fun PlayerManager.initializeImpl(
                 lyriconEnabled = enabled
                 LyriconManager.setEnabled(enabled)
                 if (enabled) {
+                    if (!LyriconManager.isInitialized()) {
+                        LyriconManager.initialize(application)
+                    }
                     syncLyriconSong(_currentSongFlow.value)
                     LyriconManager.setPlaybackState(_isPlayingFlow.value)
                     if (_isPlayingFlow.value) {
                         LyriconManager.setPosition(_playbackPositionMs.value)
                     }
+                } else {
+                    lyriconUpdateJob?.cancel()
+                    lyriconUpdateJob = null
                 }
             }
         }

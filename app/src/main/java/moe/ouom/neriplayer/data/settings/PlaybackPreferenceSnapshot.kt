@@ -63,6 +63,7 @@ private const val PLAYBACK_ALLOW_MIXED_KEY = "allow_mixed_playback"
 private const val PLAYBACK_MAX_CACHE_SIZE_BYTES_KEY = "max_cache_size_bytes"
 private const val PLAYBACK_CLOUD_MUSIC_LYRIC_OFFSET_KEY = "cloud_music_lyric_default_offset_ms"
 private const val PLAYBACK_QQ_MUSIC_LYRIC_OFFSET_KEY = "qq_music_lyric_default_offset_ms"
+private const val PLAYBACK_LYRICON_ENABLED_KEY = "lyricon_enabled"
 private const val DEFAULT_MAX_CACHE_SIZE_BYTES = 1024L * 1024 * 1024
 
 data class PlaybackPreferenceSnapshot(
@@ -87,6 +88,7 @@ data class PlaybackPreferenceSnapshot(
     val allowMixedPlayback: Boolean = false,
     val cloudMusicLyricDefaultOffsetMs: Long = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS,
     val qqMusicLyricDefaultOffsetMs: Long = DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS,
+    val lyriconEnabled: Boolean = false,
     val maxCacheSizeBytes: Long = DEFAULT_MAX_CACHE_SIZE_BYTES
 ) {
     fun sanitized(): PlaybackPreferenceSnapshot {
@@ -212,6 +214,7 @@ internal fun persistPlaybackPreferenceSnapshot(
                     PLAYBACK_QQ_MUSIC_LYRIC_OFFSET_KEY,
                     normalizedSnapshot.qqMusicLyricDefaultOffsetMs
                 )
+                .putBoolean(PLAYBACK_LYRICON_ENABLED_KEY, normalizedSnapshot.lyriconEnabled)
                 .putLong(PLAYBACK_MAX_CACHE_SIZE_BYTES_KEY, normalizedSnapshot.maxCacheSizeBytes)
         }
     }
@@ -249,6 +252,7 @@ internal fun Preferences.toPlaybackPreferenceSnapshot(): PlaybackPreferenceSnaps
         qqMusicLyricDefaultOffsetMs =
             this[SettingsKeys.QQ_MUSIC_LYRIC_DEFAULT_OFFSET_MS]
                 ?: DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS,
+        lyriconEnabled = this[SettingsKeys.LYRICON_ENABLED] ?: false,
         maxCacheSizeBytes =
             this[SettingsKeys.MAX_CACHE_SIZE_BYTES] ?: DEFAULT_MAX_CACHE_SIZE_BYTES
     ).sanitized()
@@ -298,6 +302,7 @@ private fun readCachedPlaybackPreferenceSnapshot(context: Context): PlaybackPref
             PLAYBACK_QQ_MUSIC_LYRIC_OFFSET_KEY,
             DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
         ),
+        lyriconEnabled = prefs.getBoolean(PLAYBACK_LYRICON_ENABLED_KEY, false),
         maxCacheSizeBytes = prefs.getLong(
             PLAYBACK_MAX_CACHE_SIZE_BYTES_KEY,
             DEFAULT_MAX_CACHE_SIZE_BYTES

@@ -225,7 +225,7 @@ dependencies {
     implementation(libs.dec)
     implementation(libs.newpipe.extractor)
     implementation(libs.okhttp)
-    implementation("io.github.proify.lyricon:provider:0.1.66")
+    implementation(libs.lyricon.provider)
 
     implementation(project(":accompanist-lyrics-core"))
     implementation(project(":accompanist-lyrics-ui"))

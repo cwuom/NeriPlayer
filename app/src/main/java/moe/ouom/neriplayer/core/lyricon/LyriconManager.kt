@@ -14,14 +14,14 @@ import moe.ouom.neriplayer.util.NPLogger
 object LyriconManager {
     private var provider: LyriconProvider? = null
     @Volatile
-    private var enabled: Boolean = true
+    private var enabled: Boolean = false
 
     fun initialize(context: Context) {
         if (provider != null) return
         try {
             provider = LyriconFactory.createProvider(context)
             provider?.register()
-            
+
             provider?.service?.addConnectionListener {
                 onConnected { NPLogger.d("LyriconManager", "Connected") }
                 onReconnected { NPLogger.d("LyriconManager", "Reconnected") }
@@ -39,6 +39,8 @@ object LyriconManager {
             setPlaybackState(false)
         }
     }
+
+    fun isInitialized(): Boolean = provider != null
 
     fun setPlaybackState(isPlaying: Boolean) {
         if (!enabled && isPlaying) return
@@ -100,7 +102,7 @@ object LyriconManager {
             )
 
             provider?.player?.setSong(lyriconSong)
-            
+
             // Set translation display if available
             provider?.player?.setDisplayTranslation(translatedLyrics?.isNotEmpty() == true)
 

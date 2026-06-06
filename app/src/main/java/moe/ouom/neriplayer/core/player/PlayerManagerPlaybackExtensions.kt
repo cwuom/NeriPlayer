@@ -354,7 +354,7 @@ internal fun PlayerManager.playAtIndex(
         "playAtIndex: index=$index, song=${song.name}, resumePositionMs=$resumePositionMs, transitionFade=$useTrackTransitionFade, source=$commandSource, forceStartupProtectionFade=$forceStartupProtectionFade, nextToken=${playbackRequestToken + 1}, stack=[${debugStackHint()}]"
     )
     cancelPendingPauseRequest()
-    setCurrentSongForPlayback(song)
+    setCurrentSongForPlayback(song, syncLyricon = false)
     _currentMediaUrl.value = null
     _currentPlaybackAudioInfo.value = null
     currentMediaUrlResolvedAtMs = 0L
@@ -447,6 +447,7 @@ internal fun PlayerManager.playAtIndex(
                         cacheKey,
                         result.mimeType
                     )
+                    syncLyriconSong(song)
                     _currentMediaUrl.value = result.url
                     _currentPlaybackAudioInfo.value = result.audioInfo
                     currentMediaUrlResolvedAtMs = SystemClock.elapsedRealtime()
@@ -926,6 +927,9 @@ internal fun PlayerManager.seekToImpl(
     pendingMediaLoadPositionMs = pendingSeekAction.exposedPositionMs
     if (pendingSeekAction.seekPlayerNow) {
         player.seekTo(resolvedPositionMs)
+    }
+    if (lyriconEnabled) {
+        LyriconManager.setPosition(resolvedPositionMs)
     }
     synchronized(playbackStatsTracker) {
         playbackStatsTracker.onManualSeek(resolvedPositionMs)

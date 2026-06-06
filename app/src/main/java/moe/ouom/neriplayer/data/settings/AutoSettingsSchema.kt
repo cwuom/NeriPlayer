@@ -444,7 +444,7 @@ object AutoSettingsSchema {
         @AutoSetting(
             key = "lyricon_enabled",
             type = SettingValueType.Boolean,
-            defaultBoolean = true,
+            defaultBoolean = false,
             titleRes = "settings_lyricon_enabled",
             descriptionRes = "settings_lyricon_enabled_desc",
             order = 5,

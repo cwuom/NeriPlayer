@@ -445,6 +445,7 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setLyriconEnabled(enabled: Boolean) {
         autoSettingsRepository.setLyriconEnabled(enabled)
+        updatePlaybackPreferenceSnapshot(context) { it.copy(lyriconEnabled = enabled) }
     }
 
     suspend fun setAdvancedBlurEnabled(enabled: Boolean) {

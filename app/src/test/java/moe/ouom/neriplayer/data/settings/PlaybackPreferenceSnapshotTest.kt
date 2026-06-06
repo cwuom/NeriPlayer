@@ -63,6 +63,7 @@ class PlaybackPreferenceSnapshotTest {
         assertTrue(snapshot.keepPlaybackModeState)
         assertFalse(snapshot.allowMixedPlayback)
         assertFalse(snapshot.playbackFadeIn)
+        assertFalse(snapshot.lyriconEnabled)
         assertEquals(1024L * 1024 * 1024, snapshot.maxCacheSizeBytes)
     }
 }

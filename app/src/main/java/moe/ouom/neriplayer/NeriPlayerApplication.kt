@@ -33,6 +33,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.lyricon.LyriconManager
+import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshotSync
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicLibraryGateway
 import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicPlaylistDetail
@@ -89,7 +90,9 @@ class NeriPlayerApplication : Application() {
 
         // 初始化全局下载管理器
         GlobalDownloadManager.initialize(this)
-        LyriconManager.initialize(this)
+        if (readPlaybackPreferenceSnapshotSync(this).lyriconEnabled) {
+            LyriconManager.initialize(this)
+        }
 
         // 设置一个全局 Coil ImageLoader，它使用共享的 OkHttpClient 支持代理绕过
         val imageLoader = ImageLoader.Builder(this)

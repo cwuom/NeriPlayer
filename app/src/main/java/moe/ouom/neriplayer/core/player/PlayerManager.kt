@@ -183,7 +183,7 @@ object PlayerManager {
     internal var playbackCrossfadeInDurationMs = DEFAULT_FADE_DURATION_MS
     internal var playbackCrossfadeOutDurationMs = DEFAULT_FADE_DURATION_MS
     internal var playbackSoundConfig = PlaybackSoundConfig()
-    internal var lyriconEnabled = true
+    internal var lyriconEnabled = false
     internal var keepLastPlaybackProgressEnabled = true
     internal var keepPlaybackModeStateEnabled = true
     internal var stopOnBluetoothDisconnectEnabled = true
@@ -358,11 +358,13 @@ object PlayerManager {
         )
     }
 
-    internal fun setCurrentSongForPlayback(song: SongItem?) {
+    internal fun setCurrentSongForPlayback(song: SongItem?, syncLyricon: Boolean = true) {
         val previousSong = _currentSongFlow.value
         _currentSongFlow.value = song
         if (previousSong === song) return
-        syncLyriconSong(song)
+        if (syncLyricon) {
+            syncLyriconSong(song)
+        }
         persistPlaybackStatsSnapshotAsync(
             synchronized(playbackStatsTracker) {
                 playbackStatsTracker.onSongChanged(song)
@@ -373,11 +375,14 @@ object PlayerManager {
     internal fun syncLyriconSong(song: SongItem?) {
         lyriconUpdateJob?.cancel()
         if (!lyriconEnabled) {
+            lyriconUpdateJob = null
             LyriconManager.setPlaybackState(false)
             return
         }
         if (song == null) {
+            lyriconUpdateJob = null
             LyriconManager.setPlaybackState(false)
+            LyriconManager.setPosition(0L)
             return
         }
         LyriconManager.updateSong(song, lyrics = null, translatedLyrics = null)
