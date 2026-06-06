@@ -2,5 +2,8 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/np-submodule/NeriPlayer-LTW" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/np-submodule/accompanist-lyrics-core" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/np-submodule/accompanist-lyrics-ui" vcs="Git" />
   </component>
 </project>

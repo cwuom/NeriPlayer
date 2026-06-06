@@ -1,4 +1,4 @@
-﻿package moe.ouom.neriplayer.ui.viewmodel
+package moe.ouom.neriplayer.ui.viewmodel
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -24,32 +24,21 @@
  */
 
 import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.google.gson.Gson
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.navigation.compose.rememberNavController
+import moe.ouom.neriplayer.core.api.bili.resolveBiliSong
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.search.SongSearchInfo
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.ui.screen.playlist.NeteaseAlbumDetailScreen
-import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.SearchManager
-import moe.ouom.neriplayer.navigation.Destinations
-import androidx.core.content.ContextCompat
-import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.player.AudioPlayerService
-import moe.ouom.neriplayer.ui.NeriApp
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.R
 
@@ -111,6 +100,51 @@ class NowPlayingViewModel : ViewModel() {
         GlobalDownloadManager.startDownload(context, song)
     }
 
+    fun cancelDownload(songKey: String) {
+        GlobalDownloadManager.cancelDownloadTask(songKey)
+    }
+
+    fun resumeDownload(context: Context, songKey: String) {
+        GlobalDownloadManager.resumeDownloadTask(context, songKey)
+    }
+
+    fun retryDownload(context: Context, song: SongItem) {
+        GlobalDownloadManager.removeDownloadTask(song.stableKey())
+        GlobalDownloadManager.startDownload(context, song)
+    }
+
+    fun setPlaybackSpeed(speed: Float, persist: Boolean = true) {
+        PlayerManager.setPlaybackSpeed(speed, persist)
+    }
+
+    fun setPlaybackPitch(pitch: Float, persist: Boolean = true) {
+        PlayerManager.setPlaybackPitch(pitch, persist)
+    }
+
+    fun setPlaybackLoudnessGain(levelMb: Int, persist: Boolean = true) {
+        PlayerManager.setPlaybackLoudnessGain(levelMb, persist)
+    }
+
+    fun setPlaybackEqualizerEnabled(enabled: Boolean, persist: Boolean = true) {
+        PlayerManager.setPlaybackEqualizerEnabled(enabled, persist)
+    }
+
+    fun selectPlaybackEqualizerPreset(presetId: String, persist: Boolean = true) {
+        PlayerManager.selectPlaybackEqualizerPreset(presetId, persist)
+    }
+
+    fun updatePlaybackEqualizerBandLevel(
+        index: Int,
+        levelMb: Int,
+        persist: Boolean = true
+    ) {
+        PlayerManager.updatePlaybackEqualizerBandLevel(index, levelMb, persist)
+    }
+
+    fun resetPlaybackSoundSettings(persist: Boolean = true) {
+        PlayerManager.resetPlaybackSoundSettings(persist)
+    }
+
     fun fillLyrics(context: Context, song: SongItem, selectedSong: SongSearchInfo, onComplete: (Boolean, String) -> Unit) {
         viewModelScope.launch {
             try {
@@ -118,11 +152,6 @@ class NowPlayingViewModel : ViewModel() {
                 val api = when (platform) {
                     MusicPlatform.CLOUD_MUSIC -> {
                         val client = AppContainer.neteaseClient
-                        if (client == null) {
-                            NPLogger.e("NowPlayingViewModel", "neteaseClient is null")
-                            onComplete(false, context.getString(R.string.music_lyrics_fill_failed))
-                            return@launch
-                        }
                         moe.ouom.neriplayer.core.api.search.CloudMusicSearchApi(client)
                     }
                     MusicPlatform.QQ_MUSIC -> moe.ouom.neriplayer.core.api.search.QQMusicSearchApi()
@@ -176,28 +205,22 @@ class NowPlayingViewModel : ViewModel() {
     fun fetchOriginalInfo(context: Context, originalSong: SongItem, onResult: (Boolean, OriginalSongInfo?, String) -> Unit) {
         viewModelScope.launch {
             try {
-                val isBili = originalSong.album.startsWith("Bilibili")
+                val isBili = originalSong.album.startsWith(PlayerManager.BILI_SOURCE_TAG)
 
-                if (isBili) {
-                    // B站视频：从B站获取原始信息
-                    val appContainer = AppContainer
-                    val videoInfo = appContainer.biliClient.getVideoBasicInfoByAvid(originalSong.id)
+                if (!originalSong.mediaUri.isNullOrBlank()) {
+                    val info = buildLocalOriginalSongInfo(originalSong)
+                    onResult(true, info, context.getString(R.string.music_restore_success))
+                } else if (isBili) {
+                    val resolved = resolveBiliSong(originalSong, AppContainer.biliClient)
+                        ?: throw IllegalStateException("无法解析 B 站视频信息")
 
-                    val parts = originalSong.album.split('|')
-                    val targetCid = if (parts.size > 1) parts[1].toLongOrNull() else null
-                    val pageInfo = if (targetCid != null) {
-                        videoInfo.pages.firstOrNull { it.cid == targetCid }
-                    } else {
-                        videoInfo.pages.firstOrNull()
-                    }
-
-                    val coverUrl = videoInfo.coverUrl.let {
+                    val coverUrl = resolved.videoInfo.coverUrl.let {
                         if (it.startsWith("http://")) it.replaceFirst("http://", "https://") else it
                     }
 
                     val info = OriginalSongInfo(
-                        name = pageInfo?.part ?: videoInfo.title,
-                        artist = videoInfo.ownerName,
+                        name = resolved.pageInfo?.part ?: resolved.videoInfo.title,
+                        artist = resolved.videoInfo.ownerName,
                         coverUrl = coverUrl,
                         shouldClearLyrics = true  // B站音源应该清除歌词
                     )
@@ -232,4 +255,18 @@ class NowPlayingViewModel : ViewModel() {
         }
     }
 
+}
+
+internal fun buildLocalOriginalSongInfo(song: SongItem): NowPlayingViewModel.OriginalSongInfo {
+    val lyric = song.originalLyric ?: song.matchedLyric
+    val translatedLyric = song.originalTranslatedLyric ?: song.matchedTranslatedLyric
+    val shouldClearLyrics = lyric.isNullOrBlank() && translatedLyric.isNullOrBlank()
+    return NowPlayingViewModel.OriginalSongInfo(
+        name = song.originalName ?: song.name,
+        artist = song.originalArtist ?: song.artist,
+        coverUrl = song.originalCoverUrl ?: song.coverUrl,
+        shouldClearLyrics = shouldClearLyrics,
+        lyric = lyric,
+        translatedLyric = translatedLyric
+    )
 }

@@ -1,27 +1,28 @@
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+@file:Suppress("UnstableApiUsage")
+
+import com.android.build.api.variant.FilterConfiguration
+import org.gradle.api.tasks.testing.Test
 import java.util.UUID
 
 plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.kotlin.compose)
-    kotlin("plugin.serialization") version "1.9.23"
+    id("build-logic.android.application")
+    id("build-logic.android.compose")
+    alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.ksp)
     id("kotlin-parcelize")
 }
 
 android {
     namespace = "moe.ouom.neriplayer"
-    compileSdk = 36
-
     val buildUUID = UUID.randomUUID()
+    val buildAllReleaseAbis = (project.findProperty("buildAllReleaseAbis") as String?)?.toBoolean() == true
+    val defaultReleaseAbiFilters = listOf("arm64-v8a")
+    val allReleaseAbiFilters = listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
 
     signingConfigs {
         create("release") {
             val storePath = project.findProperty("KEYSTORE_FILE") as String? ?: "neri.jks"
-            val resolvedStoreFile = file(storePath)
+            val resolvedStoreFile = project.layout.projectDirectory.file(storePath).asFile
 
             if (resolvedStoreFile.exists()) {
                 storeFile = resolvedStoreFile
@@ -47,10 +48,6 @@ android {
 
     defaultConfig {
         applicationId = "moe.ouom.neriplayer"
-        minSdk = 27
-        targetSdk = 36
-        versionCode = getBuildVersionCode()
-        versionName = getBuildVersionName()
 
         buildConfigField("String", "BUILD_UUID", "\"${buildUUID}\"")
         buildConfigField("String", "TAG", "\"[NeriPlayer]\"")
@@ -61,6 +58,19 @@ android {
 
         renderscriptTargetApi = 31
         renderscriptSupportModeEnabled = true
+
+        externalNativeBuild {
+            cmake {
+                cppFlags += listOf(
+                    "-fexceptions",
+                    "-frtti"
+                )
+                arguments += listOf(
+                    "-DANDROID_STL=c++_shared",
+                    "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384"
+                )
+            }
+        }
     }
 
     buildTypes {
@@ -70,6 +80,12 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            if (!buildAllReleaseAbis) {
+                ndk {
+                    // Regular release stays lean; manual release can opt into all ABI splits.
+                    abiFilters += defaultReleaseAbiFilters
+                }
+            }
             signingConfig = if (releaseSigningConfig.storeFile?.exists() == true) {
                 releaseSigningConfig
             } else {
@@ -81,82 +97,110 @@ android {
             )
         }
     }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlin {
-        compilerOptions {
-            jvmTarget.set(JvmTarget.JVM_17)
-        }
-    }
-
     buildFeatures {
-        compose = true
         buildConfig = true
     }
 
-
-}
-
-fun getBuildVersionName(): String {
-    return "${getShortGitRevision()}.${getCurrentDate()}"
-}
-
-private fun getCurrentDate(): String {
-    val sdf = SimpleDateFormat("MMddHHmm", Locale.getDefault())
-    return sdf.format(Date())
-}
-
-
-private fun getShortGitRevision(): String {
-    val command = "git rev-parse --short HEAD"
-    val processBuilder = ProcessBuilder(*command.split(" ").toTypedArray())
-    val process = processBuilder.start()
-
-    val output = process.inputStream.bufferedReader().use { it.readText() }
-    val exitCode = process.waitFor()
-
-    return if (exitCode == 0) {
-        output.trim()
-    } else {
-        "no_commit"
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
+
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
+
+    packaging {
+        dex {
+            // minSdk 28 后 AGP 默认会把 dex 直接存储，恢复 legacy packaging 可显著降低 APK 体积
+            useLegacyPackaging = true
+        }
+        resources {
+            // Compose instrumentation 依赖 kotlinx.coroutines 的 ServiceLoader，
+            // androidTest APK 需要合并同名 service 文件，避免只保留单个实现
+            merges += "META-INF/services/*"
+        }
+    }
+
+    splits {
+        abi {
+            isEnable = buildAllReleaseAbis
+            reset()
+            include(*allReleaseAbiFilters.toTypedArray())
+            isUniversalApk = false
+        }
+    }
+
+    bundle {
+        language {
+            enableSplit = false
+        }
+    }
+
 }
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    exclude("**/com/mocharealm/accompanist/lyrics/ui/utils/String.kt")
+}
+
+tasks.withType<Test>().configureEach {
+    systemProperty(
+        "runNeteaseSmoke",
+        System.getProperty("runNeteaseSmoke") ?: "false"
+    )
+    systemProperty(
+        "runYouTubePlaybackSmoke",
+        System.getProperty("runYouTubePlaybackSmoke") ?: "false"
+    )
+    systemProperty(
+        "youtubeSmokeVideoId",
+        System.getProperty("youtubeSmokeVideoId") ?: ""
+    )
+    systemProperty(
+        "youtubeSmokeForceRefresh",
+        System.getProperty("youtubeSmokeForceRefresh") ?: "false"
+    )
+    systemProperty(
+        "youtubeSmokeCookieFile",
+        System.getProperty("youtubeSmokeCookieFile") ?: ""
+    )
+}
+
 
 android.applicationVariants.all {
     outputs.all {
         if (this is com.android.build.gradle.internal.api.ApkVariantOutputImpl
-            && !this.outputFileName.lowercase().contains("debug")
+            && !outputFileName.lowercase().contains("debug")
         ) {
-            val versionName = project.android.defaultConfig.versionName
-            this.outputFileName = "NeriPlayer-${versionName}.apk"
+            val versionName = project.android.defaultConfig.versionName ?: "dev"
+            val abiName = filters
+                .find { it.filterType == FilterConfiguration.FilterType.ABI.name }
+                ?.identifier
+            val abiSuffix = abiName?.let { "-$it" } ?: ""
+            outputFileName = "NeriPlayer-${versionName}${abiSuffix}.apk"
         }
     }
 }
 
-fun getBuildVersionCode(): Int {
-    val appVerCode: Int by lazy {
-        val versionCode = SimpleDateFormat("yyMMddHH", Locale.ENGLISH).format(Date())
-        println("versionCode: $versionCode")
-        versionCode.toInt()
-    }
-    return appVerCode
-}
-
 dependencies {
+    implementation(project(":ksp-annotations"))
+    ksp(project(":ksp-processor"))
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.constraintlayout)
+    implementation(libs.androidx.documentfile)
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.androidx.foundation.layout)
     debugImplementation(libs.compose.ui.tooling)
+    debugImplementation(libs.compose.ui.test.manifest)
     implementation(libs.compose.material3)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
@@ -165,22 +209,35 @@ dependencies {
     implementation(libs.androidx.foundation)
 
     testImplementation(libs.junit)
+    testImplementation(libs.org.json)
+    testImplementation(libs.mockito.core)
+    testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+    androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation(libs.compose.ui.test.junit4)
+    androidTestImplementation(libs.kotlinx.coroutines.android)
+    androidTestImplementation(libs.kotlinx.coroutines.test)
     implementation(libs.androidx.animation)
     implementation(libs.accompanist.navigation.animation)
     implementation(libs.androidx.datastore.preferences)
 
     implementation(libs.dec)
+    implementation(libs.newpipe.extractor)
     implementation(libs.okhttp)
     implementation("io.github.proify.lyricon:provider:0.1.66")
 
+    implementation(project(":accompanist-lyrics-core"))
+    implementation(project(":accompanist-lyrics-ui"))
+
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.serialization.protobuf)
+    implementation(libs.kotlinx.coroutines.android)
     implementation(libs.coil.compose)
 
     // Media3
     implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.exoplayer.hls)
     implementation(libs.androidx.media3.datasource)
     implementation(libs.androidx.media3.datasource.okhttp)
 
@@ -201,9 +258,15 @@ dependencies {
 
     // Security - 加密存储
     implementation(libs.androidx.security.crypto)
+    implementation(libs.taglib)
 
     // WorkManager - 后台同步
     implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.androidx.javascriptengine)
+
+
+
+    implementation(libs.androidx.webkit)
 
     // 取主题色
     implementation(libs.androidx.palette.ktx)

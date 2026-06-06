@@ -23,3 +23,11 @@ dependencyResolutionManagement {
 
 rootProject.name = "NeriPlayer"
 include(":app")
+include(":ksp-annotations")
+include(":ksp-processor")
+include(":accompanist-lyrics-core")
+include(":accompanist-lyrics-ui")
+includeBuild("build-logic")
+
+project(":accompanist-lyrics-core").projectDir = file("np-submodule/accompanist-lyrics-core")
+project(":accompanist-lyrics-ui").projectDir = file("np-submodule/accompanist-lyrics-ui/src")

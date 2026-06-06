@@ -1,0 +1,23 @@
+<resources>
+    <!-- Selection & Confirmation -->
+    <plurals name="common_selected_count">
+        <item quantity="one">%d selected</item>
+        <item quantity="other">%d selected</item>
+    </plurals>
+    <plurals name="download_selected_count">
+        <item quantity="one">%d song selected</item>
+        <item quantity="other">%d songs selected</item>
+    </plurals>
+    <plurals name="download_delete_selected_confirm">
+        <item quantity="one">Are you sure you want to delete %d selected song? This action cannot be undone.</item>
+        <item quantity="other">Are you sure you want to delete %d selected songs? This action cannot be undone.</item>
+    </plurals>
+    <plurals name="local_playlist_delete_songs_confirm">
+        <item quantity="one">Are you sure you want to remove %d selected song from the playlist?</item>
+        <item quantity="other">Are you sure you want to remove %d selected songs from the playlist?</item>
+    </plurals>
+    <plurals name="library_delete_selected_confirm">
+        <item quantity="one">Delete %d selected playlist? This cannot be undone.</item>
+        <item quantity="other">Delete %d selected playlists? This cannot be undone.</item>
+    </plurals>
+</resources>

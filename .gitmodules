@@ -1,0 +1,9 @@
+[submodule "np-submodule/NeriPlayer-LTW"]
+	path = np-submodule/NeriPlayer-LTW
+	url = https://github.com/TheSmallHanCat/NeriPlayer-LTW
+[submodule "np-submodule/accompanist-lyrics-ui"]
+	path = np-submodule/accompanist-lyrics-ui
+	url = https://github.com/cwuom/accompanist-lyrics-ui
+[submodule "np-submodule/accompanist-lyrics-core"]
+	path = np-submodule/accompanist-lyrics-core
+	url = https://github.com/cwuom/accompanist-lyrics-core

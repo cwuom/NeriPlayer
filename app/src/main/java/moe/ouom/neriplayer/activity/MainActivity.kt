@@ -25,9 +25,18 @@ package moe.ouom.neriplayer.activity
 
 
 import android.Manifest
+import android.annotation.SuppressLint
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Color
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.view.Gravity
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -83,50 +92,124 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.R
 import androidx.core.graphics.drawable.toDrawable
 import androidx.core.graphics.toColorInt
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.core.player.PlayerEvent
+import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.core.player.AudioPlayerService
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.data.SettingsRepository
+import moe.ouom.neriplayer.core.player.canUseDirectPlaybackServiceStart
+import moe.ouom.neriplayer.core.player.model.PlayerEvent
+import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
+import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
+import moe.ouom.neriplayer.data.settings.SettingsRepository
+import moe.ouom.neriplayer.data.settings.readThemePreferenceSnapshotSync
+import moe.ouom.neriplayer.data.sync.webdav.WebDavStorage
+import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
+import moe.ouom.neriplayer.listentogether.DEFAULT_LISTEN_TOGETHER_BASE_URL
+import moe.ouom.neriplayer.listentogether.ListenTogetherInvite
+import moe.ouom.neriplayer.listentogether.configuredListenTogetherBaseUrlOrNull
+import moe.ouom.neriplayer.listentogether.normalizeListenTogetherRoomId
+import moe.ouom.neriplayer.listentogether.parseListenTogetherInvite
+import moe.ouom.neriplayer.listentogether.resolveListenTogetherBaseUrl
 import moe.ouom.neriplayer.ui.NeriApp
+import moe.ouom.neriplayer.ui.onboarding.StartupOnboardingScreen
+import moe.ouom.neriplayer.util.CrashReportStore
+import moe.ouom.neriplayer.util.ExceptionHandler
 import moe.ouom.neriplayer.util.HapticButton
 import moe.ouom.neriplayer.util.HapticTextButton
-import moe.ouom.neriplayer.util.NPLogger
-import moe.ouom.neriplayer.util.ExceptionHandler
 import moe.ouom.neriplayer.util.LanguageManager
-import android.content.Context
+import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.util.NightModeHelper
+import moe.ouom.neriplayer.util.lockPortraitIfPhone
 
-private enum class AppStage { Loading, Disclaimer, Main }
+private enum class AppStage { Loading, Disclaimer, Onboarding, Main }
+
+private data class GitHubSyncWarningState(
+    val hasRepoInfo: Boolean,
+    val hasSyncHistory: Boolean,
+    val isConfigured: Boolean,
+    val isDismissed: Boolean
+)
+
+private data class PendingAudioServiceStart(
+    val requestToken: Long,
+    val source: String,
+    val forceForeground: Boolean
+)
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        private const val STARTUP_SYNC_SCHEDULE_DELAY_MS = 20_000L
+        private const val STARTUP_SYNC_STAGGER_DELAY_MS = 10_000L
+    }
+
     private val settingsRepository by lazy { SettingsRepository(applicationContext) }
+    private var externalAudioImportJob: Job? = null
+    private var externalAudioMetadataHydrationJob: Job? = null
+    private var externalAudioRequestToken = 0L
+    private var pendingExternalAudioServiceStart: PendingAudioServiceStart? = null
+    private val pendingListenTogetherInvite = MutableStateFlow<ListenTogetherInvite?>(null)
+    private val listenTogetherInviteFlow = pendingListenTogetherInvite.asStateFlow()
+    private var lastObservedClipboardInviteSignature: String? = null
+    private var clipboardInviteInspectJob: Job? = null
+    private var hasWindowFocusForClipboardInspection = false
+    private val listenTogetherStatusMessage = MutableStateFlow<String?>(null)
+    private val listenTogetherStatusFlow = listenTogetherStatusMessage.asStateFlow()
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LanguageManager.applyLanguage(newBase))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val startupThemeSnapshot = readThemePreferenceSnapshotSync(this)
+        NightModeHelper.applyNightMode(
+            followSystemDark = startupThemeSnapshot.followSystemDark,
+            forceDark = startupThemeSnapshot.forceDark
+        )
         super.onCreate(savedInstanceState)
+        lockPortraitIfPhone()
         WindowCompat.setDecorFitsSystemWindows(window, false)
+        applyWindowBackground(
+            startupThemeSnapshot.resolveUseDark(
+                systemDark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                    Configuration.UI_MODE_NIGHT_YES
+            )
+        )
 
         setContent {
-            // 初始化日志：在 Application 期也会被调用，重复调用是幂等的
-            val repo = SettingsRepository(this)
-            val devModeEnabled by repo.devModeEnabledFlow.collectAsState(initial = false)
-            NPLogger.init(context = this, enableFileLogging = devModeEnabled)
+            val devModeEnabled by settingsRepository.devModeEnabledFlow.collectAsState(initial = false)
+            LaunchedEffect(devModeEnabled) {
+                // 日志初始化只在配置变更时更新，避免每次根组合重组都触发
+                NPLogger.init(context = this@MainActivity, enableFileLogging = devModeEnabled)
+            }
 
-            val dynamicColor by settingsRepository.dynamicColorFlow.collectAsState(initial = true)
-            val forceDark by settingsRepository.forceDarkFlow.collectAsState(initial = false)
-            val followSystemDark by settingsRepository.followSystemDarkFlow.collectAsState(initial = true)
+            val dynamicColor by settingsRepository.dynamicColorFlow.collectAsState(
+                initial = startupThemeSnapshot.dynamicColor
+            )
+            val forceDark by settingsRepository.forceDarkFlow.collectAsState(
+                initial = startupThemeSnapshot.forceDark
+            )
+            val followSystemDark by settingsRepository.followSystemDarkFlow.collectAsState(
+                initial = startupThemeSnapshot.followSystemDark
+            )
             val disclaimerAcceptedNullable by settingsRepository.disclaimerAcceptedFlow.collectAsState(initial = null)
+            val startupOnboardingCompletedNullable by settingsRepository.startupOnboardingCompletedFlow.collectAsState(initial = null)
 
             val systemDark = isSystemInDarkTheme()
             val useDark = remember(forceDark, followSystemDark, systemDark) {
@@ -146,24 +229,59 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            // GitHub自动同步 - 应用启动时拉取最新数据(异步,不阻塞UI)
-            LaunchedEffect(Unit) {
-                launch {
-                    delay(1000) // 延迟1秒,避免阻塞启动
-                    val storage = moe.ouom.neriplayer.data.github.SecureTokenStorage(this@MainActivity)
-                    if (storage.isConfigured()) {
-                        moe.ouom.neriplayer.data.github.GitHubSyncWorker.syncNow(this@MainActivity)
-                    }
-                }
-            }
-
             NeriTheme(useDark = useDark, useDynamic = dynamicColor) {
-                SideEffect {
-                    applyWindowBackground(useDark)
-                    val controller = WindowInsetsControllerCompat(window, window.decorView)
-                    controller.isAppearanceLightStatusBars = !useDark
-                    controller.isAppearanceLightNavigationBars = !useDark
-                }
+                        val startupScope = rememberCoroutineScope()
+                        val clipboardManager = remember {
+                            getSystemService(ClipboardManager::class.java)
+                        }
+                        var pendingStartupCrashReport by remember {
+                            mutableStateOf<CrashReportStore.PendingCrashReport?>(null)
+                        }
+                        val exportCrashReportLauncher = rememberLauncherForActivityResult(
+                            contract = ActivityResultContracts.CreateDocument("text/plain")
+                        ) { uri: Uri? ->
+                            val report = pendingStartupCrashReport ?: return@rememberLauncherForActivityResult
+                            uri ?: return@rememberLauncherForActivityResult
+                            startupScope.launch(Dispatchers.IO) {
+                                runCatching {
+                                    CrashReportStore.exportCrashReport(
+                                        context = this@MainActivity,
+                                        reportFile = report.file,
+                                        destination = uri
+                                    )
+                                }.onSuccess {
+                                    withContext(Dispatchers.Main) {
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            getString(R.string.log_exported),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                }.onFailure { error ->
+                                    withContext(Dispatchers.Main) {
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            getString(R.string.log_export_failed, error.message),
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                }
+                            }
+                        }
+                        LaunchedEffect(Unit) {
+                            pendingStartupCrashReport = withContext(Dispatchers.IO) {
+                                CrashReportStore.readPendingCrashReport(this@MainActivity)
+                            }
+                        }
+                        LaunchedEffect(Unit) {
+                            handleIncomingIntent(intent)
+                            inspectClipboardForListenTogetherInvite()
+                        }
+                        SideEffect {
+                            val controller = WindowInsetsControllerCompat(window, window.decorView)
+                            controller.isAppearanceLightStatusBars = !useDark
+                            controller.isAppearanceLightNavigationBars = !useDark
+                        }
 
                 // 入场动画状态
                 var playedEntrance by rememberSaveable { mutableStateOf(false) }
@@ -171,7 +289,11 @@ class MainActivity : ComponentActivity() {
 
                 val stage = when (disclaimerAcceptedNullable) {
                     null -> AppStage.Loading
-                    true -> AppStage.Main
+                    true -> when (startupOnboardingCompletedNullable) {
+                        null -> AppStage.Loading
+                        true -> AppStage.Main
+                        false -> AppStage.Onboarding
+                    }
                     false -> AppStage.Disclaimer
                 }
 
@@ -209,6 +331,9 @@ class MainActivity : ComponentActivity() {
                                 onAgree = { scope.launch { settingsRepository.setDisclaimerAccepted(true) } }
                             )
                         }
+                        AppStage.Onboarding -> {
+                            StartupOnboardingScreen()
+                        }
                         AppStage.Main -> {
                             // 弹窗状态管理和事件监听
                             var showDialog by remember { mutableStateOf(false) }
@@ -217,12 +342,32 @@ class MainActivity : ComponentActivity() {
                             var errorTitle by remember { mutableStateOf("") }
                             var errorMessage by remember { mutableStateOf("") }
                             val lifecycleOwner = LocalLifecycleOwner.current
+                            val scope = rememberCoroutineScope()
+                            var joiningInvite by remember { mutableStateOf(false) }
+                            val pendingInvite by listenTogetherInviteFlow.collectAsState()
+                            val listenTogetherStatus by listenTogetherStatusFlow.collectAsState()
+                            val listenTogetherSessionState by AppContainer.listenTogetherSessionManager.sessionState.collectAsState()
+                            val listenTogetherRoomState by AppContainer.listenTogetherSessionManager.roomState.collectAsState()
+                            val isListenTogetherRoomActive = !listenTogetherSessionState.roomId.isNullOrBlank()
+                            var hadActiveListenTogetherRoom by rememberSaveable { mutableStateOf(false) }
+                            var lastShownListenTogetherNotice by rememberSaveable { mutableStateOf<String?>(null) }
+                            val effectiveListenTogetherStatus = when {
+                                joiningInvite -> getString(R.string.listen_together_status_joining)
+                                !listenTogetherStatus.isNullOrBlank() -> listenTogetherStatus
+                                isListenTogetherRoomActive &&
+                                    listenTogetherSessionState.connectionState == moe.ouom.neriplayer.listentogether.ListenTogetherConnectionState.CONNECTING ->
+                                    getString(R.string.listen_together_status_syncing)
+                                isListenTogetherRoomActive -> getString(R.string.listen_together_status_active)
+                                else -> null
+                            }
+                            val showLeaveListenTogetherAction = isListenTogetherRoomActive &&
+                                shouldOfferListenTogetherLeaveAction(dialogMessage)
 
-                            // 初始化异常处理器
+                            // 初始化异常处理器事件监听
                             LaunchedEffect(Unit) {
-                                ExceptionHandler.init(this@MainActivity) { title, message ->
-                                    errorTitle = title
-                                    errorMessage = message
+                                ExceptionHandler.errorEvents.collect { event ->
+                                    errorTitle = event.title
+                                    errorMessage = event.message
                                     showErrorDialog = true
                                 }
                             }
@@ -233,26 +378,26 @@ class MainActivity : ComponentActivity() {
                             LaunchedEffect(lifecycleOwner.lifecycle) {
                                 lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
                                     while (true) {
-                                        val storage = moe.ouom.neriplayer.data.github.SecureTokenStorage(this@MainActivity)
-                                        // 如果有仓库信息但token缺失，或者曾经同步过但现在未配置，显示警告
-                                        val hasRepoInfo = !storage.getRepoOwner().isNullOrEmpty() || !storage.getRepoName().isNullOrEmpty()
-                                        val hasSyncHistory = storage.getLastSyncTime() > 0
-                                        val isConfigured = storage.isConfigured()
-                                        val isDismissed = storage.isTokenWarningDismissed()
+                                        val warningState = loadGitHubSyncWarningState()
+                                        val shouldWarn = (warningState.hasRepoInfo || warningState.hasSyncHistory) &&
+                                            !warningState.isConfigured &&
+                                            !hasShownTokenWarning &&
+                                            !warningState.isDismissed
 
-                                        if ((hasRepoInfo || hasSyncHistory) && !isConfigured && !hasShownTokenWarning && !isDismissed) {
-                                            // 曾经配置过但现在token缺失，显示警告
+                                        if (shouldWarn) {
                                             NPLogger.d("MainActivity", "显示 GitHub 配置警告")
                                             showTokenWarningDialog = true
                                             hasShownTokenWarning = true
-                                        } else if (isConfigured) {
-                                            // 如果重新配置了，重置警告标志和忽略标志
+                                        } else if (warningState.isConfigured) {
                                             hasShownTokenWarning = false
-                                            storage.setTokenWarningDismissed(false)
+                                            if (warningState.isDismissed) {
+                                                withContext(Dispatchers.IO) {
+                                                    moe.ouom.neriplayer.data.sync.github.SecureTokenStorage(this@MainActivity)
+                                                        .setTokenWarningDismissed(false)
+                                                }
+                                            }
                                         }
-
-                                        // 每3秒检查一次
-                                        delay(3000)
+                                        delay(3_000L)
                                     }
                                 }
                             }
@@ -275,6 +420,54 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
 
+                            LaunchedEffect(
+                                listenTogetherSessionState.roomId,
+                                listenTogetherSessionState.connectionState
+                            ) {
+                                updateListenTogetherStatus(
+                                    when {
+                                        listenTogetherSessionState.roomId.isNullOrBlank() -> null
+                                        listenTogetherSessionState.connectionState == moe.ouom.neriplayer.listentogether.ListenTogetherConnectionState.CONNECTING ->
+                                            getString(R.string.listen_together_status_syncing)
+                                        else -> getString(R.string.listen_together_status_active)
+                                    }
+                                )
+                            }
+
+                            LaunchedEffect(isListenTogetherRoomActive) {
+                                when {
+                                    isListenTogetherRoomActive -> hadActiveListenTogetherRoom = true
+                                    hadActiveListenTogetherRoom -> {
+                                        clearListenTogetherInviteCache()
+                                        hadActiveListenTogetherRoom = false
+                                    }
+                                }
+                            }
+
+                            LaunchedEffect(effectiveListenTogetherStatus) {
+                                effectiveListenTogetherStatus?.let(::showListenTogetherStatusToast)
+                            }
+
+                            LaunchedEffect(
+                                listenTogetherSessionState.roomNotice,
+                                listenTogetherRoomState?.version
+                            ) {
+                                val notice = listenTogetherSessionState.roomNotice ?: return@LaunchedEffect
+                                val displayNotice = notice.toListenTogetherDisplayMessage()
+                                if (displayNotice.isBlank()) {
+                                    return@LaunchedEffect
+                                }
+                                val noticeKey = "${listenTogetherRoomState?.version ?: -1L}:$notice"
+                                if (lastShownListenTogetherNotice == noticeKey) {
+                                    return@LaunchedEffect
+                                }
+                                lastShownListenTogetherNotice = noticeKey
+                                showListenTogetherStatusToast(
+                                    message = displayNotice,
+                                    atBottom = true
+                                )
+                            }
+
                             if (showDialog) {
                                 AlertDialog(
                                     onDismissRequest = { showDialog = false },
@@ -284,11 +477,113 @@ class MainActivity : ComponentActivity() {
                                         HapticTextButton(onClick = { showDialog = false }) {
                                             Text(stringResource(R.string.action_confirm))
                                         }
+                                    },
+                                    dismissButton = if (showLeaveListenTogetherAction) {
+                                        {
+                                            HapticTextButton(
+                                                onClick = {
+                                                    AppContainer.listenTogetherSessionManager.leaveRoom()
+                                                    showDialog = false
+                                                }
+                                            ) {
+                                                Text(stringResource(R.string.listen_together_leave_room))
+                                            }
+                                        }
+                                    } else {
+                                        null
                                     }
                                 )
                             }
 
                             // 异常错误弹窗
+                            pendingInvite?.let { invite ->
+                                val inviterNickname = invite.inviterNickname
+                                AlertDialog(
+                                    onDismissRequest = {
+                                        if (!joiningInvite) {
+                                            clearPendingListenTogetherInvite()
+                                        }
+                                    },
+                                    title = { Text(stringResource(R.string.listen_together_join_invite_title)) },
+                                    text = {
+                                        Text(
+                                            if (!inviterNickname.isNullOrBlank()) {
+                                                stringResource(
+                                                    R.string.listen_together_join_invite_message_with_inviter,
+                                                    inviterNickname,
+                                                    invite.roomId
+                                                )
+                                            } else {
+                                                stringResource(
+                                                    R.string.listen_together_join_invite_message,
+                                                    invite.roomId
+                                                )
+                                            }
+                                        )
+                                    },
+                                    confirmButton = {
+                                        HapticTextButton(
+                                            onClick = {
+                                                scope.launch {
+                                                    joiningInvite = true
+                                                    try {
+                                                        val preferences = AppContainer.listenTogetherPreferences
+                                                        val sessionManager = AppContainer.listenTogetherSessionManager
+                                                        updateListenTogetherStatus(getString(R.string.listen_together_status_joining))
+                                                        val configuredCustomBaseUrl =
+                                                            configuredListenTogetherBaseUrlOrNull(
+                                                                preferences.workerBaseUrlInputFlow.first()
+                                                            )
+                                                                ?: configuredListenTogetherBaseUrlOrNull(
+                                                                preferences.workerBaseUrlFlow.first()
+                                                            )
+                                                        val baseUrl = configuredCustomBaseUrl
+                                                            ?: resolveListenTogetherBaseUrl(DEFAULT_LISTEN_TOGETHER_BASE_URL)
+                                                        val userUuid = preferences.getOrCreateUserUuid()
+                                                        val nickname = preferences.getOrCreateNickname()
+                                                        preferences.setWorkerBaseUrl(baseUrl)
+                                                        updateListenTogetherStatus(getString(R.string.listen_together_status_syncing))
+                                                        sessionManager.joinRoom(
+                                                            baseUrl = baseUrl,
+                                                            roomId = invite.roomId,
+                                                            userUuid = userUuid,
+                                                            nickname = nickname
+                                                        )
+                                                        sessionManager.connectWebSocket()
+                                                        clearPendingListenTogetherInvite()
+                                                    } catch (error: Throwable) {
+                                                        updateListenTogetherStatus(null)
+                                                        dialogMessage = (
+                                                            error.message ?: error.javaClass.simpleName
+                                                            ).toListenTogetherDisplayMessage()
+                                                        showDialog = true
+                                                    } finally {
+                                                        joiningInvite = false
+                                                    }
+                                                }
+                                            },
+                                            enabled = !joiningInvite
+                                        ) {
+                                            Text(
+                                                if (joiningInvite) {
+                                                    stringResource(R.string.listen_together_joining_room)
+                                                } else {
+                                                    stringResource(R.string.listen_together_join_room)
+                                                }
+                                            )
+                                        }
+                                    },
+                                    dismissButton = {
+                                        HapticTextButton(
+                                            onClick = { clearPendingListenTogetherInvite() },
+                                            enabled = !joiningInvite
+                                        ) {
+                                            Text(stringResource(R.string.action_cancel))
+                                        }
+                                    }
+                                )
+                            }
+
                             if (showErrorDialog) {
                                 AlertDialog(
                                     onDismissRequest = { showErrorDialog = false },
@@ -324,7 +619,7 @@ class MainActivity : ComponentActivity() {
                                     dismissButton = {
                                         HapticTextButton(
                                             onClick = {
-                                                val storage = moe.ouom.neriplayer.data.github.SecureTokenStorage(this@MainActivity)
+                                                val storage = moe.ouom.neriplayer.data.sync.github.SecureTokenStorage(this@MainActivity)
                                                 storage.setTokenWarningDismissed(true)
                                                 showTokenWarningDialog = false
                                             },
@@ -337,6 +632,7 @@ class MainActivity : ComponentActivity() {
                             }
 
                             NeriApp(
+                                initialThemeSnapshot = startupThemeSnapshot,
                                 onIsDarkChanged = { isDark ->
                                     // 仅调整窗口底色 & 系统栏外观
                                     applyWindowBackground(isDark)
@@ -345,8 +641,47 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+
+                pendingStartupCrashReport?.let { report ->
+                    StartupCrashReportDialog(
+                        report = report,
+                        onCopy = {
+                            startupScope.launch(Dispatchers.IO) {
+                                val fullContent = CrashReportStore.readFullCrashReport(report.file)
+                                    ?: report.previewContent
+                                withContext(Dispatchers.Main) {
+                                    if (fullContent.isNotBlank()) {
+                                        clipboardManager?.setPrimaryClip(
+                                            ClipData.newPlainText("crash_report", fullContent)
+                                        )
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            getString(R.string.log_copied),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    } else {
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            getString(R.string.log_cannot_read),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                }
+                            }
+                        },
+                        onExport = {
+                            exportCrashReportLauncher.launch(report.file.name)
+                        },
+                        onClose = {
+                            CrashReportStore.clearPendingCrashReport(this@MainActivity)
+                            pendingStartupCrashReport = null
+                        }
+                    )
+                }
             }
         }
+
+        scheduleStartupSyncIfNeeded()
     }
 
     @Suppress("DEPRECATION")
@@ -360,9 +695,355 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncomingIntent(intent)
+        scheduleClipboardInviteInspection(immediate = true)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        startPendingExternalAudioServiceIfNeeded()
+        if (hasWindowFocusForClipboardInspection) {
+            scheduleClipboardInviteInspection()
+        }
+    }
+
+    override fun onPause() {
+        clipboardInviteInspectJob?.cancel()
+        super.onPause()
+    }
+
+    override fun onStop() {
+        PlayerManager.flushPlaybackStatsBlocking("activity_stop")
+        super.onStop()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        hasWindowFocusForClipboardInspection = hasFocus
+        if (hasFocus) {
+            startPendingExternalAudioServiceIfNeeded()
+            scheduleClipboardInviteInspection()
+        }
+    }
+
+    private fun handleIncomingIntent(intent: Intent?) {
+        if (handleListenTogetherInviteIntent(intent)) return
+        handleExternalAudioIntent(intent)
+    }
+
+    private fun handleListenTogetherInviteIntent(intent: Intent?): Boolean {
+        val invite = parseListenTogetherInvite(intent?.data) ?: return false
+        presentListenTogetherInvite(invite)
+        setIntent(Intent(this, MainActivity::class.java))
+        return true
+    }
+
+    private fun inspectClipboardForListenTogetherInvite() {
+        val clipboard = getSystemService(ClipboardManager::class.java) ?: return
+        val clipText = clipboard.primaryClip
+            ?.takeIf { it.itemCount > 0 }
+            ?.getItemAt(0)
+            ?.coerceToText(this)
+            ?.toString()
+        val invite = parseListenTogetherInvite(clipText)
+        if (invite == null) {
+            lastObservedClipboardInviteSignature = null
+            return
+        }
+        if (lastObservedClipboardInviteSignature == invite.signature) return
+        lastObservedClipboardInviteSignature = invite.signature
+        presentListenTogetherInvite(invite)
+    }
+
+    private fun scheduleClipboardInviteInspection(immediate: Boolean = false) {
+        clipboardInviteInspectJob?.cancel()
+        clipboardInviteInspectJob = lifecycleScope.launch {
+            if (!immediate) {
+                delay(180)
+            }
+            inspectClipboardForListenTogetherInvite()
+        }
+    }
+
+    private fun clearPendingListenTogetherInvite() {
+        pendingListenTogetherInvite.value = null
+    }
+
+    private fun clearListenTogetherInviteCache() {
+        lastObservedClipboardInviteSignature = null
+        clearPendingListenTogetherInvite()
+    }
+
+    @SuppressLint("ObsoleteSdkInt")
+    private fun startPendingExternalAudioServiceIfNeeded() {
+        val pendingStart = pendingExternalAudioServiceStart ?: return
+        val isDestroyed = Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && isDestroyed
+        if (
+            !canUseDirectPlaybackServiceStart(
+                isFinishing = isFinishing,
+                isDestroyed = isDestroyed,
+                lifecycleState = lifecycle.currentState,
+                hasWindowFocus = hasWindowFocus()
+            )
+        ) {
+            return
+        }
+        if (pendingStart.requestToken != externalAudioRequestToken) {
+            pendingExternalAudioServiceStart = null
+            return
+        }
+        val started = AudioPlayerService.startSyncService(
+            this,
+            pendingStart.source,
+            forceForeground = pendingStart.forceForeground
+        )
+        if (started) {
+            NPLogger.d(
+                "MainActivity",
+                "Retried audio service start after activity resumed: source=${pendingStart.source}"
+            )
+            pendingExternalAudioServiceStart = null
+        }
+    }
+
+    private fun scheduleExternalAudioMetadataHydration(
+        requestToken: Long,
+        quickSong: moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+    ) {
+        externalAudioMetadataHydrationJob?.cancel()
+        externalAudioMetadataHydrationJob = lifecycleScope.launch {
+            delay(1200L)
+            if (requestToken != externalAudioRequestToken) {
+                return@launch
+            }
+            val detailedSong = withContext(Dispatchers.IO) {
+                runCatching {
+                    LocalMediaSupport.inspect(this@MainActivity, quickSong)
+                        ?.let(LocalMediaSupport::toSongItem)
+                }.getOrElse {
+                    NPLogger.w(
+                        "MainActivity",
+                        "External audio metadata hydration skipped: ${it.message}"
+                    )
+                    null
+                }
+            } ?: return@launch
+            if (requestToken != externalAudioRequestToken) {
+                return@launch
+            }
+            PlayerManager.hydrateSongMetadata(
+                originalSong = quickSong,
+                updatedSong = LocalAudioImportManager.mergeImportedSongMetadata(
+                    quickSong = quickSong,
+                    detailedSong = detailedSong
+                )
+            )
+        }
+    }
+
+    private fun updateListenTogetherStatus(message: String?) {
+        listenTogetherStatusMessage.value = message
+    }
+
+    private fun showListenTogetherStatusToast(
+        message: String,
+        atBottom: Boolean = false
+    ) {
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).apply {
+            if (atBottom) {
+                setGravity(Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL, 0, 220)
+            } else {
+                setGravity(Gravity.TOP or Gravity.CENTER_HORIZONTAL, 0, 180)
+            }
+        }.show()
+    }
+
+    private fun scheduleStartupSyncIfNeeded() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            delay(STARTUP_SYNC_SCHEDULE_DELAY_MS)
+            if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                return@launch
+            }
+            val storage = moe.ouom.neriplayer.data.sync.github.SecureTokenStorage(this@MainActivity)
+            val shouldScheduleGitHubSync = storage.isConfigured() && storage.isAutoSyncEnabled()
+            if (shouldScheduleGitHubSync) {
+                moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker.scheduleDelayedSync(
+                    this@MainActivity,
+                    markMutation = false
+                )
+            }
+
+            val webDavStorage = WebDavStorage(this@MainActivity)
+            if (!webDavStorage.isConfigured() || !webDavStorage.isAutoSyncEnabled()) {
+                return@launch
+            }
+            if (shouldScheduleGitHubSync) {
+                delay(STARTUP_SYNC_STAGGER_DELAY_MS)
+                if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                    return@launch
+                }
+            }
+            WebDavSyncWorker.scheduleDelayedSync(
+                this@MainActivity,
+                markMutation = false
+            )
+        }
+    }
+
+    private suspend fun loadGitHubSyncWarningState(): GitHubSyncWarningState = withContext(Dispatchers.IO) {
+        val storage = moe.ouom.neriplayer.data.sync.github.SecureTokenStorage(this@MainActivity)
+        GitHubSyncWarningState(
+            hasRepoInfo = !storage.getRepoOwner().isNullOrEmpty() || !storage.getRepoName().isNullOrEmpty(),
+            hasSyncHistory = storage.getLastSyncTime() > 0,
+            isConfigured = storage.isConfigured(),
+            isDismissed = storage.isTokenWarningDismissed()
+        )
+    }
+
+    private fun shouldOfferListenTogetherLeaveAction(message: String): Boolean {
+        return message == getString(R.string.listen_together_error_controller_offline) ||
+            message == getString(R.string.listen_together_error_unauthorized) ||
+            message == getString(R.string.listen_together_error_room_not_found) ||
+            message == getString(R.string.listen_together_notice_room_closed) ||
+            message == getString(R.string.listen_together_error_reconnecting) ||
+            message == getString(R.string.listen_together_error_rejoining)
+    }
+
+    private fun String.toListenTogetherDisplayMessage(): String {
+        val normalized = trim()
+        val lowered = normalized.lowercase()
+        return when {
+            startsWith("controller_offline:") ->
+                getString(
+                    R.string.listen_together_notice_controller_offline,
+                    substringAfter(':').toLongOrNull() ?: 10L
+                )
+            startsWith("member_joined:") ->
+                getString(R.string.listen_together_notice_member_joined, substringAfter(':'))
+            startsWith("member_left:") ->
+                getString(R.string.listen_together_notice_member_left, substringAfter(':'))
+            normalized == "controller_reconnected" ->
+                getString(R.string.listen_together_notice_controller_reconnected)
+            normalized == "controller_timeout" ||
+                normalized == "room_closed" ||
+                "room closed" in lowered ->
+                getString(R.string.listen_together_notice_room_closed)
+            "unauthorized" in lowered ||
+                "http=401" in lowered ||
+                "(401)" in lowered ->
+                getString(R.string.listen_together_error_unauthorized)
+            "room not initialized" in lowered ||
+                "not found in do" in lowered ->
+                getString(R.string.listen_together_error_room_not_found)
+            "controller offline" in lowered ->
+                getString(R.string.listen_together_error_controller_offline)
+            "member control disabled" in lowered ->
+                getString(R.string.listen_together_error_member_control_disabled)
+            "一起听连接不可用" in normalized ||
+                ("listen together" in lowered && "reconnect" in lowered) ->
+                getString(R.string.listen_together_error_reconnecting)
+            "一起听连接已失效" in normalized ||
+                ("rejoin" in lowered && "room" in lowered) ->
+                getString(R.string.listen_together_error_rejoining)
+            else -> normalized
+        }
+    }
+
+    private fun presentListenTogetherInvite(invite: ListenTogetherInvite) {
+        val currentRoomId = AppContainer.listenTogetherSessionManager.sessionState.value.roomId
+            ?.let(::normalizeListenTogetherRoomId)
+        if (currentRoomId != null && currentRoomId == invite.roomId) {
+            return
+        }
+        if (pendingListenTogetherInvite.value?.signature == invite.signature) return
+        pendingListenTogetherInvite.value = invite
+    }
+
+    private fun handleExternalAudioIntent(intent: Intent?) {
+        val action = intent?.action ?: return
+        val uriList: List<Uri> = when (action) {
+            Intent.ACTION_VIEW -> intent.data?.let(::listOf) ?: emptyList()
+            Intent.ACTION_SEND -> getSharedSingleUri(intent)?.let(::listOf) ?: emptyList()
+            Intent.ACTION_SEND_MULTIPLE -> getSharedMultipleUris(intent)
+            else -> emptyList()
+        }
+        if (uriList.isEmpty()) return
+
+        externalAudioImportJob?.cancel()
+        externalAudioMetadataHydrationJob?.cancel()
+        val requestToken = ++externalAudioRequestToken
+        pendingExternalAudioServiceStart = null
+        setIntent(Intent(this, MainActivity::class.java))
+
+        externalAudioImportJob = lifecycleScope.launch {
+            try {
+                val result = LocalAudioImportManager.importExternalSongs(this@MainActivity, uriList)
+                if (requestToken != externalAudioRequestToken) {
+                    return@launch
+                }
+                if (result.songs.isNotEmpty()) {
+                    PlayerManager.initialize(application)
+                    PlayerManager.playPlaylist(result.songs, startIndex = 0)
+                    result.songs.firstOrNull()?.let { firstSong ->
+                        scheduleExternalAudioMetadataHydration(requestToken, firstSong)
+                    }
+                    // 让播放状态和 mini player 先稳定一帧，再拉起前台服务
+                    delay(16L)
+                    if (requestToken != externalAudioRequestToken) {
+                        return@launch
+                    }
+                    NPLogger.d("MainActivity", "Starting audio service after external audio import")
+                    val serviceStarted = AudioPlayerService.startSyncService(
+                        this@MainActivity,
+                        "external_audio_import",
+                        forceForeground = true
+                    )
+                    if (!serviceStarted) {
+                        pendingExternalAudioServiceStart = PendingAudioServiceStart(
+                            requestToken = requestToken,
+                            source = "external_audio_import",
+                            forceForeground = true
+                        )
+                        NPLogger.w(
+                            "MainActivity",
+                            "Deferred audio service start until activity is resumed"
+                        )
+                    }
+                }
+            } catch (_: CancellationException) {
+                // 只保留最新一次外部唤起请求
+            }
+        }
+    }
+
     override fun onDestroy() {
+        PlayerManager.flushPlaybackStatsBlocking("activity_destroy")
+        clipboardInviteInspectJob?.cancel()
+        externalAudioImportJob?.cancel()
+        externalAudioMetadataHydrationJob?.cancel()
         super.onDestroy()
         ExceptionHandler.cleanup()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun getSharedSingleUri(intent: Intent): Uri? {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+        } else {
+            intent.getParcelableExtra(Intent.EXTRA_STREAM)
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun getSharedMultipleUris(intent: Intent): List<Uri> {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
+        } else {
+            intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM).orEmpty()
+        }
     }
 }
 
@@ -390,11 +1071,85 @@ fun NeriTheme(
     )
 }
 
+@Composable
+private fun StartupCrashReportDialog(
+    report: CrashReportStore.PendingCrashReport,
+    onCopy: () -> Unit,
+    onExport: () -> Unit,
+    onClose: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = { },
+        title = {
+            Text(
+                text = when (report.origin) {
+                    CrashReportStore.CrashOrigin.Jvm ->
+                        stringResource(R.string.startup_crash_report_title_jvm)
+                    CrashReportStore.CrashOrigin.Native ->
+                        stringResource(R.string.startup_crash_report_title_native)
+                    CrashReportStore.CrashOrigin.Unknown ->
+                        stringResource(R.string.startup_crash_report_title)
+                }
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(320.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = stringResource(
+                        R.string.startup_crash_report_desc,
+                        report.file.name
+                    )
+                )
+                if (report.previewTruncated) {
+                    Text(
+                        text = stringResource(R.string.startup_crash_report_truncated),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                Text(
+                    text = if (report.previewContent.isBlank()) {
+                        stringResource(R.string.log_cannot_read)
+                    } else {
+                        report.previewContent
+                    },
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        },
+        confirmButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                HapticTextButton(onClick = onCopy) {
+                    Text(stringResource(R.string.debug_copy_all))
+                }
+                HapticTextButton(onClick = onExport) {
+                    Text(stringResource(R.string.log_export))
+                }
+                HapticTextButton(onClick = onClose) {
+                    Text(stringResource(R.string.action_close))
+                }
+            }
+        },
+        dismissButton = null
+    )
+}
+
 /* --------------------- 免责声明与隐私说明 --------------------- */
 
 @Composable
-fun DisclaimerScreen(onAgree: () -> Unit) {
-    var countdown by remember { mutableIntStateOf(5) }
+fun DisclaimerScreen(
+    onAgree: () -> Unit,
+    initialCountdownSeconds: Int = 5
+) {
+    var countdown by remember(initialCountdownSeconds) {
+        mutableIntStateOf(initialCountdownSeconds.coerceAtLeast(0))
+    }
     LaunchedEffect(Unit) { while (countdown > 0) { delay(1000); countdown-- } }
 
     Surface(
@@ -514,8 +1269,8 @@ fun DisclaimerScreen(onAgree: () -> Unit) {
                     )
                 }
             }
-        }
     }
+}
 }
 
 @Composable private fun SectionTitle(text: String) {

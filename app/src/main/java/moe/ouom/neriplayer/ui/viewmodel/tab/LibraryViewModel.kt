@@ -1,4 +1,4 @@
-﻿package moe.ouom.neriplayer.ui.viewmodel.tab
+package moe.ouom.neriplayer.ui.viewmodel.tab
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -19,15 +19,13 @@
  * along with this software.
  * If not, see <https://www.gnu.org/licenses/>.
  *
- * File: moe.ouom.neriplayer.ui.viewmodel/LibraryViewModel
+ * File: moe.ouom.neriplayer.ui.viewmodel.tab/LibraryViewModel
  * Created: 2025/8/11
  */
 
 import android.app.Application
-import android.os.Parcelable
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.parcelize.Parcelize
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -36,36 +34,28 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicLibraryPlaylist
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.LocalPlaylist
-import moe.ouom.neriplayer.data.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
 import java.io.IOException
 
-/** Bilibili 收藏夹数据模型 */
-@Parcelize
-data class BiliPlaylist(
-    val mediaId: Long,
-    val fid: Long,
-    val mid: Long,
-    val title: String,
-    val count: Int,
-    val coverUrl: String
-) : Parcelable
-
-
 /** 媒体库页面 UI 状态 */
 data class LibraryUiState(
     val localPlaylists: List<LocalPlaylist> = emptyList(),
-    val neteasePlaylists: List<NeteasePlaylist> = emptyList(),
-    val neteaseAlbums: List<NeteaseAlbum> = emptyList(),
+    val neteasePlaylists: List<PlaylistSummary> = emptyList(),
+    val neteaseAlbums: List<AlbumSummary> = emptyList(),
     val neteaseError: String? = null,
+    val youtubeMusicPlaylists: List<YouTubeMusicPlaylist> = emptyList(),
+    val youtubeMusicError: String? = null,
     val biliPlaylists: List<BiliPlaylist> = emptyList(),
     val biliError: String? = null
 )
 
+@Suppress("unused")
 class LibraryViewModel(application: Application) : AndroidViewModel(application) {
     private val localRepo = LocalPlaylistRepository.getInstance(application)
 
@@ -74,6 +64,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     private val biliCookieRepo = AppContainer.biliCookieRepo
     private val biliClient = AppContainer.biliClient
+    private val youtubeAuthRepo = AppContainer.youtubeAuthRepo
+    private val youtubeMusicClient = AppContainer.youtubeMusicClient
 
 
     private val _uiState = MutableStateFlow(
@@ -97,7 +89,10 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 if (!cookies["MUSIC_U"].isNullOrBlank()) {
                     refreshNeteasePlaylists()
                 } else {
-                    _uiState.value = _uiState.value.copy(neteasePlaylists = emptyList())
+                    _uiState.value = _uiState.value.copy(
+                        neteasePlaylists = emptyList(),
+                        neteaseError = null
+                    )
                 }
             }
         }
@@ -109,7 +104,24 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 if (!cookies["MUSIC_U"].isNullOrBlank()) {
                     refreshNeteaseAlbums()
                 } else {
-                    _uiState.value = _uiState.value.copy(neteaseAlbums = emptyList())
+                    _uiState.value = _uiState.value.copy(
+                        neteaseAlbums = emptyList(),
+                        neteaseError = null
+                    )
+                }
+            }
+        }
+
+        // YouTube Music
+        viewModelScope.launch {
+            youtubeAuthRepo.authFlow.collect { bundle ->
+                if (!bundle.hasLoginCookies()) {
+                    _uiState.value = _uiState.value.copy(
+                        youtubeMusicPlaylists = emptyList(),
+                        youtubeMusicError = null
+                    )
+                } else {
+                    refreshYouTubeMusicPlaylists()
                 }
             }
         }
@@ -120,7 +132,10 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 if (!cookies["SESSDATA"].isNullOrBlank()) {
                     refreshBilibili()
                 } else {
-                    _uiState.value = _uiState.value.copy(biliPlaylists = emptyList())
+                    _uiState.value = _uiState.value.copy(
+                        biliPlaylists = emptyList(),
+                        biliError = null
+                    )
                 }
             }
         }
@@ -214,6 +229,30 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun refreshYouTubeMusicPlaylists() {
+        viewModelScope.launch {
+            try {
+                val playlists = withContext(Dispatchers.IO) {
+                    youtubeMusicClient.getLibraryPlaylists()
+                }
+                _uiState.value = _uiState.value.copy(
+                    youtubeMusicPlaylists = playlists.map(::mapYouTubeMusicPlaylist),
+                    youtubeMusicError = null
+                )
+            } catch (e: IOException) {
+                _uiState.value = _uiState.value.copy(
+                    youtubeMusicPlaylists = emptyList(),
+                    youtubeMusicError = e.message
+                )
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    youtubeMusicPlaylists = emptyList(),
+                    youtubeMusicError = e.message
+                )
+            }
+        }
+    }
+
     fun createLocalPlaylist(name: String) {
         viewModelScope.launch { localRepo.createPlaylist(name) }
     }
@@ -230,8 +269,12 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch { localRepo.deletePlaylist(playlistId) }
     }
 
-    private fun parseNeteasePlaylists(raw: String): List<NeteasePlaylist> {
-        val result = mutableListOf<NeteasePlaylist>()
+    fun reorderLocalPlaylists(order: List<Long>) {
+        viewModelScope.launch { localRepo.reorderPlaylists(order) }
+    }
+
+    private fun parseNeteasePlaylists(raw: String): List<PlaylistSummary> {
+        val result = mutableListOf<PlaylistSummary>()
         val root = JSONObject(raw)
         if (root.optInt("code", -1) != 200) return emptyList()
         val arr = root.optJSONArray("playlist") ?: return emptyList()
@@ -244,14 +287,14 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             val playCount = obj.optLong("playCount", 0L)
             val trackCount = obj.optInt("trackCount", 0)
             if (id != 0L && name.isNotBlank()) {
-                result.add(NeteasePlaylist(id, name, cover, playCount, trackCount))
+                result.add(PlaylistSummary(id, name, cover, playCount, trackCount))
             }
         }
         return result
     }
     
-    private fun parseNeteaseAlbums(raw: String): List<NeteaseAlbum> {
-        val result = mutableListOf<NeteaseAlbum>()
+    private fun parseNeteaseAlbums(raw: String): List<AlbumSummary> {
+        val result = mutableListOf<AlbumSummary>()
         val root = JSONObject(raw)
         if (root.optInt("code", -1) != 200) return emptyList()
         val arr = root.optJSONArray("playlist") ?: return emptyList()
@@ -263,9 +306,22 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             val cover = arr.optJSONObject(i)?.optJSONObject("dataInfo")?.optString("picUrl", "")?.replaceFirst("http://", "https://") ?: continue
             val songSize = obj.optInt("size", 0)
             if (id != 0L && name.isNotBlank()) {
-                result.add(NeteaseAlbum(id, name, cover, songSize))
+                result.add(AlbumSummary(id, name, cover, songSize))
             }
         }
         return result
+    }
+
+    private fun mapYouTubeMusicPlaylist(
+        playlist: YouTubeMusicLibraryPlaylist
+    ): YouTubeMusicPlaylist {
+        return YouTubeMusicPlaylist(
+            browseId = playlist.browseId,
+            playlistId = playlist.playlistId,
+            title = playlist.title,
+            subtitle = playlist.subtitle,
+            coverUrl = playlist.coverUrl,
+            trackCount = playlist.trackCount ?: 0
+        )
     }
 }

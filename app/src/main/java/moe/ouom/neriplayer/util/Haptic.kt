@@ -37,7 +37,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.core.content.getSystemService
 
 // 全局触感反馈开关，默认开启
 var hapticFeedbackEnabled: Boolean = true

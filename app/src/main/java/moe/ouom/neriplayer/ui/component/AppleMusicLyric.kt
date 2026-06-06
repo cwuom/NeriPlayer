@@ -28,6 +28,7 @@ import android.os.Build
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -84,10 +85,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
 import kotlin.math.abs
 import kotlin.math.floor
+import kotlin.math.roundToLong
+import moe.ouom.neriplayer.core.player.metadata.normalizeLegacyLrcTimestamps
+
+private const val LYRIC_TIME_SMOOTHING_DURATION_MS = 96
+private const val LYRIC_TIME_SMOOTHING_MAX_DELTA_MS = 240L
 
 @Stable
 data class LyricVisualSpec(
@@ -131,6 +136,18 @@ data class LyricEntry(
     val words: List<WordTiming>? = null
 )
 
+private val NeteaseYrcLineRegex = Regex("""\[\d+,\s*\d+]\(\d+,""")
+
+fun isNeteaseYrc(content: String): Boolean = content.contains(NeteaseYrcLineRegex)
+
+fun parseNeteaseLyricsAuto(content: String): List<LyricEntry> {
+    return if (isNeteaseYrc(content)) {
+        parseNeteaseYrc(content)
+    } else {
+        parseNeteaseLrc(content)
+    }
+}
+
 /**
  * 根据当前时间计算该行的高亮进度（0f..1f），基于字符数进行精确计算
  */
@@ -173,10 +190,52 @@ fun calculateLineProgress(line: LyricEntry, currentTimeMs: Long): Float {
 /** 找到当前时间所在的行索引 */
 fun findCurrentLineIndex(lines: List<LyricEntry>, currentTimeMs: Long): Int {
     if (lines.isEmpty()) return -1
-    for (i in lines.indices) {
-        if (currentTimeMs < lines[i].startTimeMs) return (i - 1).coerceAtLeast(0)
+    var low = 0
+    var high = lines.lastIndex
+    var result = 0
+    while (low <= high) {
+        val mid = (low + high) ushr 1
+        if (lines[mid].startTimeMs <= currentTimeMs) {
+            result = mid
+            low = mid + 1
+        } else {
+            high = mid - 1
+        }
     }
-    return lines.lastIndex
+    return result
+}
+
+internal fun shouldSnapLyricTimeSmoothing(
+    displayedTimeMs: Long,
+    targetTimeMs: Long,
+    maxAnimatedDeltaMs: Long = LYRIC_TIME_SMOOTHING_MAX_DELTA_MS
+): Boolean {
+    val delta = targetTimeMs - displayedTimeMs
+    return delta < 0L || delta > maxAnimatedDeltaMs
+}
+
+@Composable
+private fun rememberSmoothedLyricTimeMs(
+    targetTimeMs: Long
+): Long {
+    val smoothedTime = remember { Animatable(targetTimeMs.toFloat()) }
+
+    LaunchedEffect(targetTimeMs) {
+        val displayedTimeMs = smoothedTime.value.roundToLong()
+        if (shouldSnapLyricTimeSmoothing(displayedTimeMs, targetTimeMs)) {
+            smoothedTime.snapTo(targetTimeMs.toFloat())
+        } else {
+            smoothedTime.animateTo(
+                targetValue = targetTimeMs.toFloat(),
+                animationSpec = tween(
+                    durationMillis = LYRIC_TIME_SMOOTHING_DURATION_MS,
+                    easing = LinearEasing
+                )
+            )
+        }
+    }
+
+    return smoothedTime.value.roundToLong()
 }
 
 /** 上下渐隐 */
@@ -217,27 +276,54 @@ fun AppleMusicLyric(
     translatedLyrics: List<LyricEntry>? = null,
     translationFontSize: TextUnit = 14.sp
 ) {
-    val spec = visualSpec
     val listState = rememberLazyListState()
-    var isUserScrolling by remember { mutableStateOf(false) }
+    var manualClearHoldIndex by remember(lyrics) { mutableStateOf<Int?>(null) }
     var isAutoScrolling by remember { mutableStateOf(false) }
+    var lastUserInteracting by remember { mutableStateOf(false) }
+    val targetLyricTimeMs = (currentTimeMs + lyricOffsetMs).coerceAtLeast(0L)
+    val smoothedLyricTimeMs = rememberSmoothedLyricTimeMs(targetLyricTimeMs)
 
-    val currentIndex = remember(lyrics, currentTimeMs + lyricOffsetMs) {
-        findCurrentLineIndex(lyrics, currentTimeMs + lyricOffsetMs)
+    val currentIndex = remember(lyrics, smoothedLyricTimeMs) {
+        findCurrentLineIndex(lyrics, smoothedLyricTimeMs)
     }
 
-    LaunchedEffect(currentIndex) {
-        if (currentIndex >= 0 && !listState.isScrollInProgress) {
+    LaunchedEffect(currentIndex, lyrics.size) {
+        if (currentIndex in lyrics.indices && !listState.isScrollInProgress) {
             isAutoScrolling = true
-            listState.animateScrollToItem(currentIndex)
-            isAutoScrolling = false
-            isUserScrolling = false
+            try {
+                listState.animateScrollToItem(currentIndex)
+            } finally {
+                // 确保自动滚动被取消或完成后及时复位，避免后续手动滚动无法进入清晰态
+                isAutoScrolling = false
+            }
         }
     }
 
-    LaunchedEffect(listState.isScrollInProgress) {
-        if (listState.isScrollInProgress && !isAutoScrolling) {
-            isUserScrolling = true
+    val isUserInteracting by remember {
+        derivedStateOf { listState.isScrollInProgress && !isAutoScrolling }
+    }
+
+    LaunchedEffect(isUserInteracting, currentIndex) {
+        if (isUserInteracting && !lastUserInteracting && currentIndex >= 0) {
+            manualClearHoldIndex = currentIndex
+        } else if (!isUserInteracting && lastUserInteracting && currentIndex >= 0) {
+            manualClearHoldIndex = currentIndex
+        }
+        lastUserInteracting = isUserInteracting
+    }
+
+    LaunchedEffect(currentIndex, isUserInteracting) {
+        if (!isUserInteracting && manualClearHoldIndex != null && currentIndex != manualClearHoldIndex) {
+            manualClearHoldIndex = null
+        }
+    }
+
+    val shouldUseClearText = isUserInteracting ||
+        (manualClearHoldIndex != null && manualClearHoldIndex == currentIndex)
+    val handleLyricClick: ((LyricEntry) -> Unit)? = onLyricClick?.let { callback ->
+        { line ->
+            manualClearHoldIndex = null
+            callback(line)
         }
     }
 
@@ -257,32 +343,33 @@ fun AppleMusicLyric(
                 .fillMaxSize()
                 .verticalEdgeFade(fadeHeight = 72.dp)
         ) {
-            itemsIndexed(lyrics) { index, line ->
+            itemsIndexed(
+                items = lyrics,
+                key = { _, line -> "${line.startTimeMs}:${line.endTimeMs}:${line.text}" }
+            ) { index, line ->
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = centerPadding / 2, horizontal = 24.dp)
                         .clip(RoundedCornerShape(16.dp))
                         .clickable(
-                            enabled = onLyricClick != null,
-                            onClick = { onLyricClick?.invoke(line) }
+                            enabled = handleLyricClick != null,
+                            onClick = { handleLyricClick?.invoke(line) }
                         )
+                        .animateItem()
                         .widthIn(max = maxTextWidth)
-                        .animateContentSize( // 平滑处理高度变化
+                        .animateContentSize(
                             animationSpec = spring(
                                 dampingRatio = Spring.DampingRatioLowBouncy,
                                 stiffness = Spring.StiffnessLow
                             )
-                        )
-                        .let { modifier ->
-                            if (onLyricClick != null) modifier.clickable { onLyricClick(line) } else modifier
-                        },
+                        ),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     val distance = abs(index - currentIndex)
                     val isActive = index == currentIndex
 
-                    if (isUserScrolling) {
+                    if (shouldUseClearText) {
                         // 滚动时：显示简单文本
                         Text(
                             text = line.text,
@@ -298,7 +385,7 @@ fun AppleMusicLyric(
                     } else {
                         // 播放时：显示带动画的复杂文本
                         val targetScale =
-                            if (isActive) spec.activeScale else scaleForDistance(distance, spec)
+                            if (isActive) visualSpec.activeScale else scaleForDistance(distance, visualSpec)
                         val scale by animateFloatAsState(
                             targetValue = targetScale,
                             animationSpec = spring(
@@ -309,10 +396,10 @@ fun AppleMusicLyric(
                         )
 
                         val tilt =
-                            if (isActive) 0f else if (index < currentIndex) spec.pageTiltDeg else -spec.pageTiltDeg
+                            if (isActive) 0f else if (index < currentIndex) visualSpec.pageTiltDeg else -visualSpec.pageTiltDeg
                         val rotationX by animateFloatAsState(
                             targetValue = tilt,
-                            animationSpec = tween(durationMillis = spec.flipDurationMs),
+                            animationSpec = tween(durationMillis = visualSpec.flipDurationMs),
                             label = "lyric_flip"
                         )
 
@@ -342,12 +429,12 @@ fun AppleMusicLyric(
                         if (isActive) {
                             AppleMusicActiveLine(
                                 line = line,
-                                currentTimeMs = currentTimeMs + lyricOffsetMs,
+                                currentTimeMs = smoothedLyricTimeMs,
                                 activeColor = textColor,
                                 inactiveColor = textColor.copy(alpha = 0.5f),
                                 fontSize = fontSize,
                                 fadeWidth = 12.dp,
-                                spec = spec
+                                spec = visualSpec
                             )
                         } else {
                             var colorStyle = textColor.copy(
@@ -391,19 +478,15 @@ fun AppleMusicLyric(
                     }
 
                     val transText = translatedLyrics?.let { list ->
-                        if (list.isEmpty()) return@let null
-
-                        val targetTime = if (isActive) (currentTimeMs + lyricOffsetMs) else line.startTimeMs
-                        val matchedLine = list.lastOrNull { targetTime >= it.startTimeMs && targetTime < it.endTimeMs }
-                            ?: list.lastOrNull { targetTime >= it.startTimeMs }
-
-                        val tolerance = 1_500L
-                        val isTimeAligned = matchedLine != null &&
-                            matchedLine.startTimeMs >= line.startTimeMs - tolerance
-
-                        if (isTimeAligned) matchedLine?.text else null
+                        // 封面页这里继续沿用重叠优先的老策略
+                        // 一对一重映射会让长句换行时翻译归属切得太硬，视觉上更容易抖
+                        findBestMatchingTranslation(
+                            translations = list,
+                            lineStartMs = line.startTimeMs,
+                            lineEndMs = line.endTimeMs
+                        )?.text
                     }
-                    val shouldShowTranslation = (isUserScrolling || isActive) && !transText.isNullOrBlank()
+                    val shouldShowTranslation = (shouldUseClearText || isActive) && !transText.isNullOrBlank()
 
                     Crossfade(
                         targetState = shouldShowTranslation,
@@ -427,7 +510,7 @@ fun AppleMusicLyric(
                                     softWrap = true
                                 )
                             }
-                        } else { }
+                        }
                     }
                 }
             }
@@ -693,16 +776,45 @@ fun AppleMusicActiveLine(
 
 data class ActiveWord(val range: IntRange, val sustainWeight: Float, val tInWord: Float)
 
+internal data class HeadGlowTarget(
+    val x: Float,
+    val y: Float
+)
+
+internal fun resolveHeadGlowTarget(
+    currentLine: Int,
+    nextLine: Int,
+    currentLineRight: Float,
+    currentLineCenterY: Float,
+    nextCharLeft: Float,
+    nextLineCenterY: Float
+): HeadGlowTarget {
+    return if (nextLine != currentLine) {
+        // 换行时先把高亮头部走到当前行末尾，别在最后一个字时提前切去下一行
+        HeadGlowTarget(
+            x = currentLineRight,
+            y = currentLineCenterY
+        )
+    } else {
+        HeadGlowTarget(
+            x = nextCharLeft,
+            y = nextLineCenterY
+        )
+    }
+}
+
 /**
- * 解析 LRC（逐句）。支持 [mm:ss.SSS] 或 [mm:ss]。
+ * 解析 LRC（逐句）
+ * 支持 [mm:ss.SSS] 或 [mm:ss]
  * 没有逐字信息时，逐字揭示会按整句线性推进
  */
 fun parseNeteaseLrc(lrc: String): List<LyricEntry> {
 //    NPLogger.d("parseLyc-N", lrc)
+    val normalizedLrc = normalizeLegacyLrcTimestamps(lrc)
     val tag = Regex("""\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?]""")
     val timeline = mutableListOf<Pair<Long, String>>()
 
-    lrc.lineSequence().forEach { raw ->
+    normalizedLrc.lineSequence().forEach { raw ->
         val line = raw.trim()
         if (line.isEmpty()) return@forEach
         if (line.startsWith("{") || line.startsWith("}")) return@forEach // 过滤 JSON 段
@@ -764,8 +876,7 @@ private fun DrawScope.drawRadialHeadGlow(
     val nextLine = layout.getLineForOffset(nextIndex)
     val nextLineTop = layout.getLineTop(nextLine)
     val nextLineBottom = layout.getLineBottom(nextLine)
-    val y1 = (nextLineTop + nextLineBottom) * 0.5f
-    val x1 = if (nextLine == currentLine && nextIndex >= layout.getLineEnd(currentLine, true) - 1) {
+    val nextCharLeft = if (nextLine == currentLine && nextIndex >= layout.getLineEnd(currentLine, true) - 1) {
         layout.getLineRight(currentLine)
     } else {
         try {
@@ -774,6 +885,16 @@ private fun DrawScope.drawRadialHeadGlow(
             layout.getHorizontalPosition(nextIndex, true)
         }
     }
+    val headGlowTarget = resolveHeadGlowTarget(
+        currentLine = currentLine,
+        nextLine = nextLine,
+        currentLineRight = layout.getLineRight(currentLine),
+        currentLineCenterY = y0,
+        nextCharLeft = nextCharLeft,
+        nextLineCenterY = (nextLineTop + nextLineBottom) * 0.5f
+    )
+    val x1 = headGlowTarget.x
+    val y1 = headGlowTarget.y
 
     val cx = if (nextLine == currentLine) x0 + (x1 - x0) * fraction else x0
     val cy = if (nextLine == currentLine) y0 + (y1 - y0) * fraction else y0

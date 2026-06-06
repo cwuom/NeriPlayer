@@ -25,12 +25,17 @@ package moe.ouom.neriplayer.util
 
 internal object JsonUtil {
     fun toJson(map: Map<String, Any>): String {
+        return toJsonObject(map)
+    }
+
+    private fun toJsonObject(map: Map<*, *>): String {
         val sb = StringBuilder()
         sb.append("{")
         val it = map.entries.iterator()
         while (it.hasNext()) {
             val (k, v) = it.next()
-            sb.append("\"").append(k).append("\":")
+            sb.append(jsonQuote(k?.toString()))
+            sb.append(":")
             sb.append(toJsonValue(v))
             if (it.hasNext()) sb.append(",")
         }
@@ -42,7 +47,7 @@ internal object JsonUtil {
         null -> "null"
         is String -> jsonQuote(v)
         is Number, is Boolean -> v.toString()
-        is Map<*, *> -> toJson(v as Map<String, Any>)
+        is Map<*, *> -> toJsonObject(v)
         is List<*> -> v.joinToString(prefix = "[", postfix = "]") { toJsonValue(it) }
         else -> jsonQuote(v.toString())
     }

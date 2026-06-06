@@ -41,7 +41,7 @@ fun convertTimestampToDate(timestamp: Long): String {
 }
 
 /**
- * Formats a long duration millis to a human readable string in Chinese.
+ * Formats a long duration millis to a human-readable string in Chinese.
  * Example: 90min -> "1小时30分钟"; 45min -> "45分钟".
  */
 fun formatTotalDuration(context: Context, ms: Long): String {
@@ -49,7 +49,24 @@ fun formatTotalDuration(context: Context, ms: Long): String {
     val totalSec = ms / 1000
     val h = totalSec / 3600
     val m = (totalSec % 3600) / 60
-    return if (h > 0) context.getString(R.string.time_hours_minutes, h, m) else context.getString(R.string.time_minutes_only, m)
+    val resources = context.resources
+    val minuteCount = m.toInt()
+    val minutePart = resources.getQuantityString(
+        R.plurals.time_minutes_only,
+        minuteCount,
+        minuteCount
+    )
+    return if (h > 0) {
+        val hourCount = h.toInt()
+        resources.getQuantityString(
+            R.plurals.time_hours_minutes,
+            hourCount,
+            hourCount,
+            minutePart
+        )
+    } else {
+        minutePart
+    }
 }
 
 /**

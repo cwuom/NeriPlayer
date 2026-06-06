@@ -1,0 +1,48 @@
+<resources>
+    <!-- Media Counts -->
+    <plurals name="download_tasks_count">
+        <item quantity="other">%d 个任务</item>
+    </plurals>
+    <plurals name="sleep_timer_minutes">
+        <item quantity="other">%d 分钟</item>
+    </plurals>
+    <plurals name="lyrics_song_count">
+        <item quantity="other">%d 首</item>
+    </plurals>
+    <plurals name="explore_song_count">
+        <item quantity="other">%d 首</item>
+    </plurals>
+    <plurals name="count_songs_format">
+        <item quantity="other">%d 首</item>
+    </plurals>
+    <plurals name="home_song_count_format">
+        <item quantity="other">%d首</item>
+    </plurals>
+    <plurals name="nowplaying_song_count_format">
+        <item quantity="other">%d 首</item>
+    </plurals>
+    <plurals name="download_scan_failed">
+        <item quantity="other">扫描失败 %d 项</item>
+    </plurals>
+    <plurals name="bili_content_count">
+        <item quantity="other">%d 个内容</item>
+    </plurals>
+    <plurals name="library_song_count">
+        <item quantity="other">%d 首</item>
+    </plurals>
+    <plurals name="library_video_count">
+        <item quantity="other">%d 个视频</item>
+    </plurals>
+    <plurals name="local_playlist_import_audio_success">
+        <item quantity="other">已导入 %d 首本地音频</item>
+    </plurals>
+    <plurals name="local_playlist_import_audio_partial">
+        <item quantity="other">已导入 %1$d 首本地音频，%2$s</item>
+    </plurals>
+    <plurals name="local_playlist_import_audio_failed">
+        <item quantity="other">导入失败，%d 首音频导入失败</item>
+    </plurals>
+    <plurals name="local_playlist_import_audio_failed_summary">
+        <item quantity="other">%d 首音频导入失败</item>
+    </plurals>
+</resources>

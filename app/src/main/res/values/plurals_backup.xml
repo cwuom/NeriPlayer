@@ -1,0 +1,21 @@
+<resources>
+    <!-- Backup & Restore -->
+    <plurals name="playlist_import_count">
+        <item quantity="other">成功导入: %d 个歌单</item>
+    </plurals>
+    <plurals name="playlist_merge_count">
+        <item quantity="other">智能合并: %d 个歌单</item>
+    </plurals>
+    <plurals name="playlist_skip_count">
+        <item quantity="other">跳过重复: %d 个歌单</item>
+    </plurals>
+    <plurals name="playlist_count_format">
+        <item quantity="other">%d 个歌单</item>
+    </plurals>
+    <plurals name="backup_playlist_merged">
+        <item quantity="other">歌单 \'%1$s\' 已合并，新增 %2$d 首歌曲</item>
+    </plurals>
+    <plurals name="backup_playlist_created">
+        <item quantity="other">歌单 \'%1$s\' 已创建，包含 %2$d 首歌曲</item>
+    </plurals>
+</resources>

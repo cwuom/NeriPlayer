@@ -1,4 +1,4 @@
-﻿package moe.ouom.neriplayer.ui.screen.tab
+package moe.ouom.neriplayer.ui.screen.tab
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -37,6 +37,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -66,16 +67,16 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DividerDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeTopAppBar
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -97,6 +98,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -107,29 +109,43 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
-import coil.request.ImageRequest
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.data.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
+import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.local.media.displayAlbum
+import moe.ouom.neriplayer.data.model.displayArtist
+import moe.ouom.neriplayer.data.model.displayCoverUrl
+import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.ExploreUiState
 import moe.ouom.neriplayer.ui.viewmodel.tab.ExploreViewModel
-import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.SearchSource
+import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.util.fastScrollableImageRequest
 import moe.ouom.neriplayer.util.formatDuration
 import moe.ouom.neriplayer.util.performHapticFeedback
 
+private const val SEARCH_INPUT_DEBOUNCE_MS = 300L
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
+@Suppress("AssignedValueIsNeverRead")
 fun ExploreScreen(
     gridState: LazyGridState,
-    onPlay: (NeteasePlaylist) -> Unit,
+    onPlay: (PlaylistSummary) -> Unit,
+    onYouTubeMusicPlaylistClick: (YouTubeMusicPlaylist) -> Unit = {},
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
     onPlayParts: (BiliClient.VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> }
 ) {
@@ -143,9 +159,15 @@ fun ExploreScreen(
     var searchQuery by remember { mutableStateOf("") }
     val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
+    val backgroundImageUri by AppContainer.settingsRepo.backgroundImageUriFlow.collectAsState(initial = null)
 
     val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
     val allLocalPlaylists by repo.playlists.collectAsState(initial = emptyList())
+    val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
+    val favorites by favoriteRepo.favorites.collectAsState()
+    val favoriteKeys = remember(favorites) {
+        favorites.mapTo(mutableSetOf()) { "${it.source}:${it.id}" }
+    }
 
     var showPartsSheet by remember { mutableStateOf(false) }
     var partsInfo by remember { mutableStateOf<BiliClient.VideoBasicInfo?>(null) }
@@ -158,8 +180,34 @@ fun ExploreScreen(
     var showExportSheet by remember { mutableStateOf(false) }
     val exportSheetState = rememberModalBottomSheetState()
 
-    val pagerState = rememberPagerState(pageCount = { SearchSource.entries.size })
+    val isInternational by AppContainer.settingsRepo.internationalizationEnabledFlow
+        .collectAsState(initial = false)
+    val orderedSearchSources = remember(isInternational) {
+        if (isInternational) {
+            listOf(
+                SearchSource.YOUTUBE_MUSIC,
+                SearchSource.NETEASE,
+                SearchSource.BILIBILI
+            )
+        } else {
+            listOf(
+                SearchSource.NETEASE,
+                SearchSource.BILIBILI,
+                SearchSource.YOUTUBE_MUSIC
+            )
+        }
+    }
+    val initialSearchPage = remember(orderedSearchSources, ui.selectedSearchSource) {
+        orderedSearchSources.indexOf(ui.selectedSearchSource).takeIf { it >= 0 } ?: 0
+    }
+    val pagerState = rememberPagerState(
+        initialPage = initialSearchPage,
+        pageCount = { orderedSearchSources.size }
+    )
     val miniPlayerHeight = LocalMiniPlayerHeight.current
+    val tagChipSelectedAlpha = if (backgroundImageUri == null) 1f else 0.86f
+    val tagChipUnselectedAlpha = if (backgroundImageUri == null) 1f else 0.74f
+    val tagChipBorderAlpha = if (backgroundImageUri == null) 1f else 0.58f
 
     fun exitPartsSelection() {
         partsSelectionMode = false
@@ -170,11 +218,35 @@ fun ExploreScreen(
         if (ui.playlists.isEmpty()) vm.loadHighQuality()
     }
 
-    LaunchedEffect(pagerState.currentPage, ui.selectedSearchSource) {
-        val currentSource = SearchSource.entries[pagerState.currentPage]
+    LaunchedEffect(ui.selectedSearchSource, orderedSearchSources) {
+        val targetPage = orderedSearchSources.indexOf(ui.selectedSearchSource)
+            .takeIf { it >= 0 }
+            ?: return@LaunchedEffect
+        if (pagerState.currentPage != targetPage) {
+            pagerState.scrollToPage(targetPage)
+        }
+    }
+
+    LaunchedEffect(pagerState.currentPage, orderedSearchSources, ui.selectedSearchSource) {
+        val currentSource = orderedSearchSources.getOrNull(pagerState.currentPage)
+            ?: return@LaunchedEffect
         if (ui.selectedSearchSource != currentSource) {
             vm.setSearchSource(currentSource)
-            if (searchQuery.isNotEmpty()) vm.search(searchQuery)
+        }
+        if (currentSource == SearchSource.YOUTUBE_MUSIC && ui.ytMusicPlaylists.isEmpty()) {
+            vm.loadYtMusicPlaylists()
+        }
+    }
+
+    // 国际化模式默认跳到 YouTube Music 标签
+    LaunchedEffect(isInternational) {
+        if (isInternational) {
+            if (ui.selectedSearchSource != SearchSource.YOUTUBE_MUSIC) {
+                vm.setSearchSource(SearchSource.YOUTUBE_MUSIC)
+            }
+            if (ui.ytMusicPlaylists.isEmpty()) {
+                vm.loadYtMusicPlaylists()
+            }
         }
     }
 
@@ -197,6 +269,15 @@ fun ExploreScreen(
         }
     }
 
+    LaunchedEffect(searchQuery, ui.selectedSearchSource) {
+        if (searchQuery.isBlank()) {
+            vm.search("")
+            return@LaunchedEffect
+        }
+        delay(SEARCH_INPUT_DEBOUNCE_MS)
+        vm.search(searchQuery)
+    }
+
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     Scaffold(
@@ -208,7 +289,7 @@ fun ExploreScreen(
             LargeTopAppBar(
                 title = { Text(stringResource(R.string.nav_explore)) },
                 scrollBehavior = scrollBehavior,
-                colors = TopAppBarDefaults.largeTopAppBarColors(
+                colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent,
                     scrolledContainerColor = Color.Transparent
                 )
@@ -221,54 +302,53 @@ fun ExploreScreen(
                 .padding(innerPadding)
         ) {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = {
-                        searchQuery = it
-                        vm.search(searchQuery)
-                    },
-                    label = { Text(stringResource(R.string.search_keyword)) },
-                    leadingIcon = { Icon(Icons.Default.Search, "Search") },
-                    trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            HapticIconButton(onClick = {
-                                searchQuery = ""
-                                vm.search("")
-                            }) { Icon(Icons.Default.Clear, "Clear") }
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = {
+                            searchQuery = it
+                        },
+                        label = { Text(stringResource(R.string.search_keyword)) },
+                        leadingIcon = { Icon(Icons.Default.Search, "Search") },
+                        trailingIcon = {
+                            if (searchQuery.isNotEmpty()) {
+                                HapticIconButton(onClick = {
+                                    searchQuery = ""
+                                    vm.search("")
+                                }) { Icon(Icons.Default.Clear, "Clear") }
+                            }
+                        },
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = {
+                            focusManager.clearFocus()
+                        }),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    PrimaryTabRow(
+                        selectedTabIndex = pagerState.currentPage,
+                        containerColor = Color.Transparent,
+                        contentColor = MaterialTheme.colorScheme.primary
+                    ) {
+                        orderedSearchSources.forEachIndexed { index, source ->
+                            Tab(
+                                selected = pagerState.currentPage == index,
+                                onClick = {
+                                    scope.launch {
+                                        pagerState.animateScrollToPage(index)
+                                    }
+                                },
+                                text = { Text(source.displayName) }
+                            )
                         }
-                    },
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = {
-                        focusManager.clearFocus()
-                    }),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(8.dp))
-                PrimaryTabRow(
-                    selectedTabIndex = pagerState.currentPage,
-                    containerColor = Color.Transparent,
-                    contentColor = MaterialTheme.colorScheme.primary
-                ) {
-                    SearchSource.entries.forEachIndexed { index, source ->
-                        Tab(
-                            selected = pagerState.currentPage == index,
-                            onClick = {
-                                scope.launch {
-                                    pagerState.animateScrollToPage(index)
-                                }
-                            },
-                            text = { Text(source.displayName) }
-                        )
                     }
                 }
-            }
 
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize()
             ) { page ->
-                val currentSource = SearchSource.entries[page]
+                val currentSource = orderedSearchSources[page]
                 if (searchQuery.isNotEmpty()) {
                     when {
                         ui.searching -> {
@@ -304,7 +384,18 @@ fun ExploreScreen(
                                     bottom = 16.dp + miniPlayerHeight
                                 )
                             ) {
-                                itemsIndexed(ui.searchResults) { index, song ->
+                                itemsIndexed(
+                                    items = ui.searchResults,
+                                    key = { _, song ->
+                                        listOfNotNull(
+                                            song.channelId,
+                                            song.audioId,
+                                            song.subAudioId,
+                                            song.mediaUri,
+                                            song.id.toString()
+                                        ).joinToString("|")
+                                    }
+                                ) { index, song ->
                                     SongRow(index + 1, song) {
                                         if (song.album == PlayerManager.BILI_SOURCE_TAG) {
                                             scope.launch {
@@ -332,12 +423,30 @@ fun ExploreScreen(
                 } else {
                     when (currentSource) {
                         SearchSource.NETEASE -> {
-                            NeteaseDefaultContent(gridState, ui, tagKeys, tagLabels, vm, onPlay)
+                            NeteaseDefaultContent(
+                                gridState = gridState,
+                                ui = ui,
+                                tagKeys = tagKeys,
+                                tagLabels = tagLabels,
+                                favoriteKeys = favoriteKeys,
+                                vm = vm,
+                                onPlay = onPlay,
+                                tagChipSelectedAlpha = tagChipSelectedAlpha,
+                                tagChipUnselectedAlpha = tagChipUnselectedAlpha,
+                                tagChipBorderAlpha = tagChipBorderAlpha
+                            )
                         }
                         SearchSource.BILIBILI -> {
                             Box(Modifier.fillMaxSize(), Alignment.Center) {
                                 Text(stringResource(R.string.explore_bili_desc), style = MaterialTheme.typography.bodyLarge)
                             }
+                        }
+                        SearchSource.YOUTUBE_MUSIC -> {
+                            YouTubeMusicExploreContent(
+                                ui = ui,
+                                vm = vm,
+                                onClick = onYouTubeMusicPlaylistClick
+                            )
                         }
                     }
                 }
@@ -353,13 +462,26 @@ fun ExploreScreen(
                 showPartsSheet = false
                 exitPartsSelection()
             },
-            sheetState = partsSheetState
+            sheetState = partsSheetState,
+            sheetGesturesEnabled = false
         ) {
-            Column(Modifier.padding(bottom = 12.dp)) {
+            Column(
+                Modifier
+                    .bottomSheetScrollGuard()
+                    .padding(bottom = 12.dp)
+            ) {
                 AnimatedVisibility(visible = partsSelectionMode) {
                     val allSelected = selectedParts.size == currentPartsInfo.pages.size
                     TopAppBar(
-                        title = { Text(stringResource(R.string.common_selected_count, selectedParts.size)) },
+                    title = {
+                        Text(
+                            pluralStringResource(
+                                R.plurals.common_selected_count,
+                                selectedParts.size,
+                                selectedParts.size
+                            )
+                        )
+                    },
                         navigationIcon = {
                             HapticIconButton(onClick = { exitPartsSelection() }) {
                                 Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.explore_exit_selection))
@@ -473,14 +595,21 @@ fun ExploreScreen(
     if (showExportSheet) {
         ModalBottomSheet(
             onDismissRequest = { showExportSheet = false },
-            sheetState = exportSheetState
+            sheetState = exportSheetState,
+            sheetGesturesEnabled = false
         ) {
-            Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+            Column(
+                Modifier
+                    .bottomSheetScrollGuard()
+                    .padding(horizontal = 20.dp, vertical = 12.dp)
+            ) {
                 Text(stringResource(R.string.playlist_export_to_local), style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(8.dp))
 
                 LazyColumn {
-                    itemsIndexed(allLocalPlaylists) { _, pl ->
+                    itemsIndexed(
+                        allLocalPlaylists.filterNot { LocalFilesPlaylist.isSystemPlaylist(it, context) }
+                    ) { _, pl ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -500,7 +629,14 @@ fun ExploreScreen(
                         ) {
                             Text(pl.name, style = MaterialTheme.typography.bodyLarge)
                             Spacer(Modifier.weight(1f))
-                            Text(stringResource(R.string.explore_song_count, pl.songs.size), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(
+                                    pluralStringResource(
+                                        R.plurals.explore_song_count,
+                                        pl.songs.size,
+                                        pl.songs.size
+                                    ),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                         }
                     }
                 }
@@ -554,8 +690,12 @@ private fun NeteaseDefaultContent(
     ui: ExploreUiState,
     tagKeys: List<String>,
     tagLabels: List<String>,
+    favoriteKeys: Set<String>,
     vm: ExploreViewModel,
-    onPlay: (NeteasePlaylist) -> Unit
+    onPlay: (PlaylistSummary) -> Unit,
+    tagChipSelectedAlpha: Float,
+    tagChipUnselectedAlpha: Float,
+    tagChipBorderAlpha: Float
 ) {
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     LazyVerticalGrid(
@@ -581,15 +721,13 @@ private fun NeteaseDefaultContent(
                 ) {
                     displayKeys.forEachIndexed { index, tagKey ->
                         val selected = (ui.selectedTag == tagKey)
-                        FilterChip(
+                        ExploreTagChip(
+                            label = displayLabels[index],
                             selected = selected,
                             onClick = { if (!selected) vm.loadHighQuality(tagKey) },
-                            label = { Text(displayLabels[index]) },
-                            border = FilterChipDefaults.filterChipBorder(
-                                borderColor = MaterialTheme.colorScheme.outline,
-                                selected = selected,
-                                enabled = true
-                            )
+                            selectedAlpha = tagChipSelectedAlpha,
+                            unselectedAlpha = tagChipUnselectedAlpha,
+                            borderAlpha = tagChipBorderAlpha
                         )
                     }
                 }
@@ -598,13 +736,35 @@ private fun NeteaseDefaultContent(
                         Text(if (ui.expanded) stringResource(R.string.explore_collapse) else stringResource(R.string.explore_expand))
                     }
                 }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .padding(horizontal = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (ui.loading) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    }
+                }
             }
         }
-        if (ui.loading) {
+        if (ui.playlists.isNotEmpty()) {
+            items(items = ui.playlists, key = { it.id }) { playlist ->
+                PlaylistCard(
+                    playlist = playlist,
+                    isFavorite = favoriteKeys.contains("netease:${playlist.id}"),
+                    onClick = { onPlay(playlist) }
+                )
+            }
+        } else if (ui.loading) {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                Box(Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 24.dp), Alignment.Center) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 24.dp),
+                    Alignment.Center
+                ) {
                     CircularProgressIndicator()
                 }
             }
@@ -612,13 +772,54 @@ private fun NeteaseDefaultContent(
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Text(ui.error, color = MaterialTheme.colorScheme.error)
             }
-        } else {
-            items(items = ui.playlists, key = { it.id }) { playlist ->
-                PlaylistCard(
-                    playlist = playlist,
-                    onClick = { onPlay(playlist) }
-                )
-            }
+        }
+    }
+}
+
+@Composable
+private fun ExploreTagChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    selectedAlpha: Float,
+    unselectedAlpha: Float,
+    borderAlpha: Float
+) {
+    val containerColor = if (selected) {
+        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = selectedAlpha)
+    } else {
+        MaterialTheme.colorScheme.surface.copy(alpha = unselectedAlpha)
+    }
+    val contentColor = if (selected) {
+        MaterialTheme.colorScheme.onSecondaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+    val borderColor = if (selected) {
+        MaterialTheme.colorScheme.secondary.copy(alpha = borderAlpha)
+    } else {
+        MaterialTheme.colorScheme.outline.copy(alpha = borderAlpha)
+    }
+
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(999.dp),
+        color = containerColor,
+        contentColor = contentColor,
+        border = androidx.compose.foundation.BorderStroke(1.dp, borderColor)
+    ) {
+        Box(
+            modifier = Modifier
+                .height(32.dp)
+                .padding(horizontal = 14.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
@@ -630,6 +831,7 @@ private fun SongRow(
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
+    val coverUrl = song.displayCoverUrl(context)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -651,10 +853,10 @@ private fun SongRow(
             )
         }
 
-        if (!song.coverUrl.isNullOrBlank()) {
+        if (!coverUrl.isNullOrBlank()) {
             AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current).data(song.coverUrl).build(),
-                contentDescription = song.name,
+                model = fastScrollableImageRequest(context, coverUrl, sizePx = 128),
+                contentDescription = song.displayName(),
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .size(48.dp)
@@ -667,15 +869,15 @@ private fun SongRow(
 
         Column(Modifier.weight(1f)) {
             Text(
-                text = song.name,
+                text = song.displayName(),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.titleMedium
             )
             Text(
                 text = listOfNotNull(
-                    song.artist.takeIf { it.isNotBlank() },
-                    song.album.takeIf { it.isNotBlank() }
+                    song.displayArtist().takeIf { it.isNotBlank() },
+                    song.displayAlbum(context).takeIf { it.isNotBlank() }
                 ).joinToString(" · "),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -684,10 +886,124 @@ private fun SongRow(
             )
         }
 
-        Text(
-            text = formatDuration(song.durationMs),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+        if (song.durationMs > 0L) {
+            Text(
+                text = formatDuration(song.durationMs),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun YouTubeMusicExploreContent(
+    ui: ExploreUiState,
+    vm: ExploreViewModel,
+    onClick: (YouTubeMusicPlaylist) -> Unit
+) {
+    val miniPlayerHeight = LocalMiniPlayerHeight.current
+    when {
+        ui.ytMusicPlaylistsLoading -> {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .padding(bottom = miniPlayerHeight),
+                Alignment.Center
+            ) { CircularProgressIndicator() }
+        }
+        ui.ytMusicPlaylistsError != null -> {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .padding(bottom = miniPlayerHeight),
+                Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        ui.ytMusicPlaylistsError!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    HapticTextButton(onClick = { vm.loadYtMusicPlaylists() }) {
+                        Text(stringResource(R.string.action_retry))
+                    }
+                }
+            }
+        }
+        ui.ytMusicPlaylists.isEmpty() -> {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .padding(bottom = miniPlayerHeight),
+                Alignment.Center
+            ) {
+                Text(
+                    stringResource(R.string.explore_tag_youtube_music),
+                    style = MaterialTheme.typography.bodyLarge
+                )
+            }
+        }
+        else -> {
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(120.dp),
+                contentPadding = PaddingValues(
+                    start = 16.dp, end = 16.dp,
+                    top = 8.dp,
+                    bottom = 16.dp + miniPlayerHeight
+                ),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                items(
+                    items = ui.ytMusicPlaylists,
+                    key = { it.browseId }
+                ) { playlist ->
+                    YtMusicExploreCard(playlist = playlist, onClick = { onClick(playlist) })
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun YtMusicExploreCard(
+    playlist: YouTubeMusicPlaylist,
+    onClick: () -> Unit
+) {
+    val context = LocalContext.current
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+    ) {
+        AsyncImage(
+            model = fastScrollableImageRequest(context, playlist.coverUrl, sizePx = 384),
+            contentDescription = playlist.title,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .clip(RoundedCornerShape(12.dp))
         )
+        Column(modifier = Modifier.padding(top = 6.dp, start = 4.dp, end = 4.dp, bottom = 4.dp)) {
+            Text(
+                text = playlist.title,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.titleSmall
+            )
+            if (playlist.subtitle.isNotBlank()) {
+                Text(
+                    text = playlist.subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Clip
+                )
+            }
+        }
     }
 }

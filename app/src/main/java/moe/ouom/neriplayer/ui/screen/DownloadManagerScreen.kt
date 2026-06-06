@@ -1,4 +1,28 @@
-﻿package moe.ouom.neriplayer.ui.screen
+package moe.ouom.neriplayer.ui.screen
+
+/*
+ * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
+ * Copyright (C) 2025-2025 NeriPlayer developers
+ * https://github.com/cwuom/NeriPlayer
+ *
+ * This software is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This software is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this software.
+ * If not, see <https://www.gnu.org/licenses/>.
+ *
+ * File: moe.ouom.neriplayer.ui.screen/DownloadManagerScreen
+ * Updated: 2026/3/23
+ */
+
 
 import android.app.Application
 import androidx.activity.compose.BackHandler
@@ -9,6 +33,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -19,6 +44,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -34,10 +60,13 @@ import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.DownloadManagerViewModel
 import moe.ouom.neriplayer.util.formatDate
 import moe.ouom.neriplayer.util.formatFileSize
+import moe.ouom.neriplayer.util.offlineCachedImageRequest
 import moe.ouom.neriplayer.util.performHapticFeedback
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+@Suppress("AssignedValueIsNeverRead")
 fun DownloadManagerScreen(
     onBack: () -> Unit,
     onOpenDownloadProgress: () -> Unit
@@ -51,24 +80,30 @@ fun DownloadManagerScreen(
             }
         }
     )
+    val miniPlayerHeight = LocalMiniPlayerHeight.current
+    val downloadedSongs by viewModel.downloadedSongs.collectAsState()
 
     LaunchedEffect(Unit) {
-        viewModel.refreshDownloadedSongs()
+        if (viewModel.downloadedSongs.value.isEmpty() && !viewModel.isRefreshing.value) {
+            viewModel.refreshDownloadedSongs()
+        }
     }
 
     var searchQuery by remember { mutableStateOf("") }
     var selectionMode by remember { mutableStateOf(false) }
-    var selectedSongs by remember { mutableStateOf(setOf<Long>()) }
+    var selectedSongKeys by remember { mutableStateOf(setOf<String>()) }
 
     // State for deletion confirmation dialogs
     var showSingleDeleteDialog by remember { mutableStateOf(false) }
     var songToDelete by remember { mutableStateOf<DownloadedSong?>(null) }
     var showMultiDeleteDialog by remember { mutableStateOf(false) }
+    var songsPendingDelete by remember { mutableStateOf<List<DownloadedSong>>(emptyList()) }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Transparent)
+            .padding(bottom = miniPlayerHeight)
     ) {
         // 顶部栏
         TopAppBar(
@@ -87,7 +122,7 @@ fun DownloadManagerScreen(
             },
             navigationIcon = {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.Outlined.ArrowBack, contentDescription = stringResource(R.string.action_back))
+                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(R.string.action_back))
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(
@@ -98,21 +133,27 @@ fun DownloadManagerScreen(
                 if (selectionMode) {
                     // 多选模式下的操作按钮
                     Text(
-                        text = stringResource(R.string.download_selected_count, selectedSongs.size),
+                        text = pluralStringResource(
+                            R.plurals.download_selected_count,
+                            selectedSongKeys.size,
+                            selectedSongKeys.size
+                        ),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(end = 8.dp)
                     )
                     // 全选/取消全选按钮
-                    val downloadedSongs by viewModel.downloadedSongs.collectAsState()
-                    val allSelected = selectedSongs.size == downloadedSongs.size && downloadedSongs.isNotEmpty()
+                    val allSongKeys = remember(downloadedSongs) {
+                        downloadedSongs.map(DownloadedSong::deletionIdentity).toSet()
+                    }
+                    val allSelected = selectedSongKeys.size == allSongKeys.size && allSongKeys.isNotEmpty()
                     IconButton(
                         onClick = {
                             context.performHapticFeedback()
-                            if (allSelected) {
-                                selectedSongs = emptySet()
+                            selectedSongKeys = if (allSelected) {
+                                emptySet()
                             } else {
-                                selectedSongs = downloadedSongs.map { it.id }.toSet()
+                                allSongKeys
                             }
                         }
                     ) {
@@ -124,8 +165,14 @@ fun DownloadManagerScreen(
                     IconButton(
                         onClick = {
                             context.performHapticFeedback()
-                            if (selectedSongs.isNotEmpty()) {
-                                showMultiDeleteDialog = true // Show confirmation dialog
+                            if (selectedSongKeys.isNotEmpty()) {
+                                songsPendingDelete = captureSongsPendingDelete(
+                                    downloadedSongs = downloadedSongs,
+                                    selectedSongKeys = selectedSongKeys
+                                )
+                                if (songsPendingDelete.isNotEmpty()) {
+                                    showMultiDeleteDialog = true
+                                }
                             }
                         }
                     ) {
@@ -134,7 +181,8 @@ fun DownloadManagerScreen(
                     IconButton(
                         onClick = {
                             context.performHapticFeedback()
-                            selectedSongs = emptySet()
+                            songsPendingDelete = emptyList()
+                            selectedSongKeys = emptySet()
                             selectionMode = false
                         }
                     ) {
@@ -171,9 +219,24 @@ fun DownloadManagerScreen(
         )
 
         // 下载统计信息
-        val downloadedSongs by viewModel.downloadedSongs.collectAsState()
         val totalSize = remember(downloadedSongs) {
             downloadedSongs.sumOf { it.fileSize }
+        }
+        LaunchedEffect(downloadedSongs, selectionMode) {
+            if (!selectionMode) {
+                if (selectedSongKeys.isNotEmpty()) {
+                    selectedSongKeys = emptySet()
+                }
+                return@LaunchedEffect
+            }
+            val validKeys = downloadedSongs.mapTo(mutableSetOf(), DownloadedSong::deletionIdentity)
+            val sanitizedKeys = selectedSongKeys.intersect(validKeys)
+            if (sanitizedKeys != selectedSongKeys) {
+                selectedSongKeys = sanitizedKeys
+            }
+            if (sanitizedKeys.isEmpty() && selectedSongKeys.isEmpty()) {
+                selectionMode = false
+            }
         }
 
         Card(
@@ -207,7 +270,7 @@ fun DownloadManagerScreen(
                     )
                 }
 
-                Divider(
+                VerticalDivider(
                     modifier = Modifier
                         .height(32.dp)
                         .width(1.dp),
@@ -252,8 +315,9 @@ fun DownloadManagerScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         fun exitSelectionMode() {
+            songsPendingDelete = emptyList()
             selectionMode = false
-            selectedSongs = emptySet()
+            selectedSongKeys = emptySet()
         }
 
         // 多选优先退出
@@ -264,8 +328,15 @@ fun DownloadManagerScreen(
             viewModel = viewModel,
             searchQuery = searchQuery,
             selectionMode = selectionMode,
-            selectedSongs = selectedSongs,
-            onSelectionChanged = { selectedSongs = it },
+            selectedSongKeys = selectedSongKeys,
+            onSelectionChanged = { selectedSongKeys = it },
+            onSelectionToggle = { selectionKey, selected ->
+                selectedSongKeys = toggleSelectedDownloadSongKeys(
+                    currentSelection = selectedSongKeys,
+                    selectionKey = selectionKey,
+                    selected = selected
+                )
+            },
             onSelectionModeChanged = { selectionMode = it },
             onDeleteRequest = { song ->
                 songToDelete = song
@@ -310,16 +381,26 @@ fun DownloadManagerScreen(
     // Multiple songs delete confirmation dialog
     if (showMultiDeleteDialog) {
         AlertDialog(
-            onDismissRequest = { showMultiDeleteDialog = false },
+            onDismissRequest = {
+                showMultiDeleteDialog = false
+                songsPendingDelete = emptyList()
+            },
             title = { Text(stringResource(R.string.dialog_confirm_delete)) },
-            text = { Text(stringResource(R.string.download_delete_selected_confirm, selectedSongs.size)) },
+            text = {
+                Text(
+                        pluralStringResource(
+                            R.plurals.download_delete_selected_confirm,
+                            songsPendingDelete.size,
+                            songsPendingDelete.size
+                        )
+                )
+            },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        val songsToDelete = viewModel.downloadedSongs.value.filter { selectedSongs.contains(it.id) }
-                        songsToDelete.forEach { viewModel.deleteDownloadedSong(it) }
-
-                        selectedSongs = emptySet()
+                        viewModel.deleteDownloadedSongs(songsPendingDelete)
+                        songsPendingDelete = emptyList()
+                        selectedSongKeys = emptySet()
                         selectionMode = false
                         showMultiDeleteDialog = false
                     }
@@ -329,7 +410,10 @@ fun DownloadManagerScreen(
             },
             dismissButton = {
                 TextButton(
-                    onClick = { showMultiDeleteDialog = false }
+                    onClick = {
+                        showMultiDeleteDialog = false
+                        songsPendingDelete = emptyList()
+                    }
                 ) {
                     Text(stringResource(R.string.action_cancel))
                 }
@@ -343,12 +427,12 @@ private fun DownloadedSongsList(
     viewModel: DownloadManagerViewModel,
     searchQuery: String,
     selectionMode: Boolean,
-    selectedSongs: Set<Long>,
-    onSelectionChanged: (Set<Long>) -> Unit,
+    selectedSongKeys: Set<String>,
+    onSelectionChanged: (Set<String>) -> Unit,
+    onSelectionToggle: (String, Boolean) -> Unit,
     onSelectionModeChanged: (Boolean) -> Unit,
     onDeleteRequest: (DownloadedSong) -> Unit
 ) {
-    val context = LocalContext.current
     val downloadedSongs by viewModel.downloadedSongs.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val miniPlayerHeight = LocalMiniPlayerHeight.current
@@ -359,7 +443,9 @@ private fun DownloadedSongsList(
             downloadedSongs
         } else {
             downloadedSongs.filter { song ->
-                song.name.contains(searchQuery, ignoreCase = true) ||
+                song.displayName().contains(searchQuery, ignoreCase = true) ||
+                        song.displayArtist().contains(searchQuery, ignoreCase = true) ||
+                        song.name.contains(searchQuery, ignoreCase = true) ||
                         song.artist.contains(searchQuery, ignoreCase = true) ||
                         song.album.contains(searchQuery, ignoreCase = true)
             }
@@ -405,24 +491,21 @@ private fun DownloadedSongsList(
                     bottom = 16.dp + miniPlayerHeight
                 ),
             ) {
-                items(filteredSongs, key = { it.id }) { song ->
+                items(filteredSongs, key = { it.deletionIdentity() }) { song ->
                     DownloadedSongItem(
                         song = song,
-                        isSelected = selectedSongs.contains(song.id),
+                        isSelected = selectedSongKeys.contains(song.deletionIdentity()),
                         selectionMode = selectionMode,
-                        onPlay = { viewModel.playDownloadedSong(context, song) },
+                        onPlay = { viewModel.playDownloadedSong(song) },
                         onDelete = { onDeleteRequest(song) },
                         onSelectionChanged = { selected ->
-                            if (selected) {
-                                onSelectionChanged(selectedSongs + song.id)
-                            } else {
-                                onSelectionChanged(selectedSongs - song.id)
-                            }
+                            val selectionKey = song.deletionIdentity()
+                            onSelectionToggle(selectionKey, selected)
                         },
                         onLongClick = {
                             if (!selectionMode) {
                                 onSelectionModeChanged(true)
-                                onSelectionChanged(setOf(song.id))
+                                onSelectionChanged(setOf(song.deletionIdentity()))
                             }
                         }
                     )
@@ -431,13 +514,14 @@ private fun DownloadedSongsList(
         }
 
         if (isRefreshing) {
-            CircularProgressIndicator(
+            LinearProgressIndicator(
                 modifier = Modifier
-                    .size(48.dp)
-                    .background(
-                        MaterialTheme.colorScheme.surface,
-                        RoundedCornerShape(24.dp)
-                    )
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .height(3.dp),
+                trackColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.18f)
             )
         }
     }
@@ -453,6 +537,11 @@ private fun DownloadedSongItem(
     onSelectionChanged: (Boolean) -> Unit,
     onLongClick: () -> Unit
 ) {
+    val context = LocalContext.current
+    val resolvedCover = remember(song.coverPath, song.customCoverUrl, song.coverUrl) {
+        resolveDownloadedSongCoverReference(song)
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -496,10 +585,16 @@ private fun DownloadedSongItem(
             }
 
             // 封面或音乐图标
-            if (song.coverPath != null) {
-                // 显示封面
+            if (!resolvedCover.isNullOrBlank()) {
                 AsyncImage(
-                    model = java.io.File(song.coverPath).toURI().toString(),
+                    model = remember(context, resolvedCover) {
+                        offlineCachedImageRequest(
+                            context = context,
+                            data = resolvedCover,
+                            sizePx = 128,
+                            allowHardware = false
+                        )
+                    },
                     contentDescription = null,
                     modifier = Modifier
                         .size(48.dp)
@@ -532,14 +627,14 @@ private fun DownloadedSongItem(
                 modifier = Modifier.weight(1f)
             ) {
                 Text(
-                    text = song.name,
+                    text = song.displayName(),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = song.artist,
+                    text = song.displayArtist(),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -579,4 +674,43 @@ private fun DownloadedSongItem(
             }
         }
     }
+}
+
+internal fun resolveDownloadedSongCoverReference(song: DownloadedSong): String? {
+    return song.customCoverUrl
+        ?.takeIf(String::isNotBlank)
+        ?: song.coverPath
+            ?.takeIf(String::isNotBlank)
+            ?.let { coverPath ->
+                if (!coverPath.startsWith("/")) {
+                    coverPath
+                } else {
+                    File(coverPath).takeIf(File::exists)?.toURI()?.toString()
+                }
+            }
+        ?: song.coverUrl?.takeIf(String::isNotBlank)
+}
+
+internal fun toggleSelectedDownloadSongKeys(
+    currentSelection: Set<String>,
+    selectionKey: String,
+    selected: Boolean
+): Set<String> {
+    return if (selected) {
+        currentSelection + selectionKey
+    } else {
+        currentSelection - selectionKey
+    }
+}
+
+internal fun captureSongsPendingDelete(
+    downloadedSongs: List<DownloadedSong>,
+    selectedSongKeys: Set<String>
+): List<DownloadedSong> {
+    if (selectedSongKeys.isEmpty()) {
+        return emptyList()
+    }
+    return downloadedSongs
+        .filter { song -> selectedSongKeys.contains(song.deletionIdentity()) }
+        .distinctBy(DownloadedSong::deletionIdentity)
 }

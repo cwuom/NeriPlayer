@@ -23,7 +23,7 @@ package moe.ouom.neriplayer.ui.screen.host
  * Created: 2025/1/17
  */
 
-import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.tween
@@ -37,46 +37,61 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.mapSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
+import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.UsageEntry
+import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
+import moe.ouom.neriplayer.data.playlist.usage.UsageEntry
 import moe.ouom.neriplayer.ui.screen.playlist.BiliPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteaseAlbumDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
+import moe.ouom.neriplayer.ui.screen.playlist.YouTubeMusicPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.tab.HomeScreen
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
-import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
-import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
+import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.util.restoreBiliPlaylist
-import moe.ouom.neriplayer.ui.util.restoreNeteaseAlbum
-import moe.ouom.neriplayer.ui.util.restoreNeteasePlaylist
+import moe.ouom.neriplayer.ui.util.restoreAlbumSummary
+import moe.ouom.neriplayer.ui.util.restorePlaylistSummary
+import moe.ouom.neriplayer.ui.util.restoreYouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.util.toSaveMap
 
 // 用密封类承载四种目标
 private sealed class HomeSelectedItem {
-    data class Netease(val playlist: NeteasePlaylist) : HomeSelectedItem()
-    data class NeteaseAlbumList(val album: NeteaseAlbum) : HomeSelectedItem()
+    data class Netease(val playlist: PlaylistSummary) : HomeSelectedItem()
+    data class NeteaseAlbumList(val album: AlbumSummary) : HomeSelectedItem()
     data class Local(val playlistId: Long) : HomeSelectedItem()
     data class Bili(val playlist: BiliPlaylist) : HomeSelectedItem()
+    data class YouTubeMusic(val playlist: YouTubeMusicPlaylist) : HomeSelectedItem()
 }
 
 @Composable
 fun HomeHostScreen(
+    showContinueCard: Boolean = true,
+    showTrendingCard: Boolean = true,
+    showRadarCard: Boolean = true,
+    showRecommendedCard: Boolean = true,
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> }
 ) {
     var selected by rememberSaveable(stateSaver = homeSelectedItemSaver) {
-        mutableStateOf<HomeSelectedItem?>(null)
+        mutableStateOf(null)
     }
-    BackHandler(enabled = selected != null) { selected = null }
+    PredictiveBackHandler(enabled = selected != null) { progress ->
+        try {
+            progress.collect { }
+            selected = null
+        } catch (_: CancellationException) {
+        }
+    }
 
-    val gridState = remember {
+    val gridState = rememberSaveable(saver = LazyGridState.Saver) {
         LazyGridState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
     }
 
@@ -96,6 +111,10 @@ fun HomeHostScreen(
         ) { current ->
             if (current == null) {
                 HomeScreen(
+                    showContinueCard = showContinueCard,
+                    showTrendingCard = showTrendingCard,
+                    showRadarCard = showRadarCard,
+                    showRecommendedCard = showRecommendedCard,
                     gridState = gridState,
                     onItemClick = { pl ->
                         AppContainer.playlistUsageRepo.recordOpen(
@@ -103,6 +122,18 @@ fun HomeHostScreen(
                             trackCount = pl.trackCount, source = "netease"
                         )
                         selected = HomeSelectedItem.Netease(pl)
+                    },
+                    onYouTubeMusicPlaylistClick = { pl ->
+                        AppContainer.playlistUsageRepo.recordOpen(
+                            id = stableYouTubeMusicId(pl.playlistId.ifBlank { pl.browseId }),
+                            name = pl.title,
+                            picUrl = pl.coverUrl,
+                            trackCount = pl.trackCount,
+                            source = "youtubeMusic",
+                            browseId = pl.browseId,
+                            playlistId = pl.playlistId
+                        )
+                        selected = HomeSelectedItem.YouTubeMusic(pl)
                     },
                     onOpenRecent = { entry ->
                         openRecent(entry) { next -> selected = next }
@@ -145,6 +176,13 @@ fun HomeHostScreen(
                             }
                         )
                     }
+                    is HomeSelectedItem.YouTubeMusic -> {
+                        YouTubeMusicPlaylistDetailScreen(
+                            playlist = current.playlist,
+                            onBack = { selected = null },
+                            onSongClick = onSongClick
+                        )
+                    }
                 }
             }
         }
@@ -154,7 +192,7 @@ fun HomeHostScreen(
 private val homeSelectedItemSaver = mapSaver<HomeSelectedItem?>(
     save = { item ->
         when (item) {
-            null -> emptyMap<String, Any?>()
+            null -> emptyMap()
             is HomeSelectedItem.Local -> hashMapOf(
                 "type" to "local",
                 "playlistId" to item.playlistId
@@ -171,15 +209,20 @@ private val homeSelectedItemSaver = mapSaver<HomeSelectedItem?>(
                 "type" to "bili",
                 "playlist" to item.playlist.toSaveMap()
             )
+            is HomeSelectedItem.YouTubeMusic -> hashMapOf(
+                "type" to "ytmusic",
+                "playlist" to item.playlist.toSaveMap()
+            )
         }
     },
     restore = { saved ->
         when (saved["type"] as? String) {
             null -> null
             "local" -> (saved["playlistId"] as? Number)?.toLong()?.let { HomeSelectedItem.Local(it) }
-            "neteaseAlbum" -> restoreNeteaseAlbum(saved["album"] as? Map<*, *>)?.let { HomeSelectedItem.NeteaseAlbumList(it) }
-            "netease" -> restoreNeteasePlaylist(saved["playlist"] as? Map<*, *>)?.let { HomeSelectedItem.Netease(it) }
+            "neteaseAlbum" -> restoreAlbumSummary(saved["album"] as? Map<*, *>)?.let { HomeSelectedItem.NeteaseAlbumList(it) }
+            "netease" -> restorePlaylistSummary(saved["playlist"] as? Map<*, *>)?.let { HomeSelectedItem.Netease(it) }
             "bili" -> restoreBiliPlaylist(saved["playlist"] as? Map<*, *>)?.let { HomeSelectedItem.Bili(it) }
+            "ytmusic" -> restoreYouTubeMusicPlaylist(saved["playlist"] as? Map<*, *>)?.let { HomeSelectedItem.YouTubeMusic(it) }
             else -> null
         }
     }
@@ -194,7 +237,7 @@ private fun openRecent(
         "netease" -> {
             onSelected(
                 HomeSelectedItem.Netease(
-                    NeteasePlaylist(
+                    PlaylistSummary(
                         id = entry.id,
                         name = entry.name,
                         picUrl = entry.picUrl ?: "",
@@ -207,7 +250,7 @@ private fun openRecent(
         "neteasealbum" -> {
             onSelected(
                 HomeSelectedItem.NeteaseAlbumList(
-                    NeteaseAlbum(
+                    AlbumSummary(
                         id = entry.id,
                         name = entry.name,
                         picUrl = entry.picUrl ?: "",
@@ -229,6 +272,32 @@ private fun openRecent(
                 mid = entry.mid ?: 0L
             )
             onSelected(HomeSelectedItem.Bili(bili))
+        }
+        "youtubemusic" -> {
+            val resolvedBrowseId = entry.browseId
+                ?.takeIf { it.isNotBlank() }
+                ?: entry.playlistId
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { if (it.startsWith("VL")) it else "VL$it" }
+                ?: return
+            onSelected(
+                HomeSelectedItem.YouTubeMusic(
+                    YouTubeMusicPlaylist(
+                        browseId = resolvedBrowseId,
+                        playlistId = entry.playlistId.orEmpty().ifBlank {
+                            if (resolvedBrowseId.startsWith("VL")) {
+                                resolvedBrowseId.removePrefix("VL")
+                            } else {
+                                resolvedBrowseId
+                            }
+                        },
+                        title = entry.name,
+                        subtitle = "",
+                        coverUrl = entry.picUrl ?: "",
+                        trackCount = entry.trackCount
+                    )
+                )
+            )
         }
         else -> {}
     }

@@ -19,7 +19,7 @@ package moe.ouom.neriplayer.ui.component
  * along with this software.
  * If not, see <https://www.gnu.org/licenses/>.
  *
- * File: moe.ouom.neriplayer.ui.components/NeriBottomBar
+ * File: moe.ouom.neriplayer.ui.component/NeriBottomBar
  * Created: 2025/8/8
  */
 
@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -69,8 +70,15 @@ fun NeriBottomBar(
                     onItemSelected(dest)
                 },
                 icon = { Icon(icon, contentDescription = label) },
-                label = { Text(label) },
-                //alwaysShowLabel = alwaysShowLabel,
+                label = {
+                    Text(
+                        text = label,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                },
+                alwaysShowLabel = alwaysShowLabel,
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
                     selectedTextColor = MaterialTheme.colorScheme.onSurface,

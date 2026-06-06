@@ -31,6 +31,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import moe.ouom.neriplayer.BuildConfig
 import moe.ouom.neriplayer.util.NPLogger
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -74,6 +75,7 @@ class QQMusicSearchApi : SearchApi {
 
     companion object {
         private const val TAG = "QQMusicSearchApi"
+        private const val DEBUG_JSON_PREVIEW_MAX_CHARS = 512
     }
 
     private val client: OkHttpClient = AppContainer.sharedOkHttpClient
@@ -121,7 +123,7 @@ class QQMusicSearchApi : SearchApi {
                 .build()
 
             val responseJson = executeRequest(url.toString()) as String
-            NPLogger.d(TAG, "获取歌曲详情的原始 JSON 响应: $responseJson")
+            logDetailResponse(label = url.encodedPath, responseJson = responseJson)
 
             val songInfoJson = JSONObject(responseJson).optJSONObject("songinfo")?.toString()
                 ?: throw IOException("响应中找不到 songinfo 字段")
@@ -146,6 +148,17 @@ class QQMusicSearchApi : SearchApi {
         }
     }
 
+    private fun logDetailResponse(label: String, responseJson: String) {
+        val preview = responseJson
+            .replace(Regex("\\s+"), " ")
+            .take(DEBUG_JSON_PREVIEW_MAX_CHARS)
+        if (BuildConfig.DEBUG) {
+            NPLogger.d(TAG, "获取歌曲详情响应: label=$label, length=${responseJson.length}, preview=$preview")
+            return
+        }
+        NPLogger.d(TAG, "获取歌曲详情响应: labelHash=${label.hashCode()}, length=${responseJson.length}")
+    }
+
     private fun fetchQQMusicLyric(songMid: String): Pair<String?, String?> {
         return try {
             val url = "https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg".toHttpUrl().newBuilder()
@@ -153,6 +166,8 @@ class QQMusicSearchApi : SearchApi {
                 .addQueryParameter("format", "json")
                 .addQueryParameter("inCharset", "utf8")
                 .addQueryParameter("outCharset", "utf-8")
+                .addQueryParameter("nobase64", "1")
+                .addQueryParameter("g_tk", "5381")
                 .build()
 
             val request = Request.Builder().url(url)
@@ -162,23 +177,41 @@ class QQMusicSearchApi : SearchApi {
             val responseJson = executeRequest(request) as String
             val lyricResponse = json.decodeFromString<QQMusicLyricResponse>(responseJson)
 
-            val lyric = if (lyricResponse.lyric != null) {
-                String(Base64.getDecoder().decode(lyricResponse.lyric))
-            } else {
-                null
-            }
+            val lyric = decodeLyricPayload(lyricResponse.lyric)
 
-            val translatedLyric = if (lyricResponse.trans != null) {
-                String(Base64.getDecoder().decode(lyricResponse.trans))
-            } else {
-                null
-            }
+            val translatedLyric = decodeLyricPayload(lyricResponse.trans)
 
             Pair(lyric, translatedLyric)
         } catch (e: Exception) {
             NPLogger.e(TAG, "获取QQ音乐歌词失败", e)
             Pair(null, null)
         }
+    }
+
+    private fun decodeLyricPayload(rawValue: String?): String? {
+        val sanitized = rawValue?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val plainText = htmlUnescape(sanitized)
+        val decoded = decodeBase64Lyric(plainText)
+        return htmlUnescape(decoded ?: plainText)
+    }
+
+    private fun decodeBase64Lyric(value: String): String? {
+        if (value.length % 4 != 0) return null
+        if (!value.matches(Regex("^[A-Za-z0-9+/=\\r\\n]+$"))) return null
+
+        return runCatching {
+            String(Base64.getDecoder().decode(value), Charsets.UTF_8)
+        }.getOrNull()?.takeIf { decoded ->
+            decoded.contains('[') || decoded.contains('\n') || decoded.contains('\r')
+        }
+    }
+
+    private fun htmlUnescape(value: String): String {
+        return value
+            .replace("&#39;", "'")
+            .replace("&apos;", "'")
+            .replace("&quot;", "\"")
+            .replace("&amp;", "&")
     }
 
     @Throws(IOException::class)

@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.screen.debug
  * Created: 2025/8/17
  */
 
+import android.annotation.SuppressLint
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.imePadding
@@ -40,7 +41,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -54,6 +54,7 @@ import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+@SuppressLint("LocalContextResourcesRead")
 fun LogListScreen(
     onBack: () -> Unit,
     onLogFileClick: (String) -> Unit
@@ -94,7 +95,13 @@ fun LogListScreen(
                             }
                             // 更新UI
                             logFilesState.value = emptyList()
-                            snackbarHostState.showSnackbar(context.getString(R.string.log_cleared_count, clearedCount))
+                            snackbarHostState.showSnackbar(
+                                context.resources.getQuantityString(
+                                    R.plurals.log_cleared_count,
+                                    clearedCount,
+                                    clearedCount
+                                )
+                            )
                         }
                     }
                 ) {

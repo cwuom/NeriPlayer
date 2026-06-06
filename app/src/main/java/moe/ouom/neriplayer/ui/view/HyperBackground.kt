@@ -38,9 +38,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.graphics.drawable.toBitmap
-import androidx.core.view.ViewCompat
+import coil.Coil
 import androidx.palette.graphics.Palette
-import coil.ImageLoader
 import coil.request.ImageRequest
 import coil.request.SuccessResult
 import kotlinx.coroutines.Dispatchers
@@ -58,7 +57,8 @@ import kotlin.math.max
 fun HyperBackground(
     modifier: Modifier = Modifier,
     isDark: Boolean,
-    coverUrl: String?
+    coverUrl: String?,
+    refreshKey: Int = 0
 ) {
     val context = LocalContext.current
     val currentIsDark by rememberUpdatedState(isDark)
@@ -91,7 +91,7 @@ fun HyperBackground(
         while (
             !v.isAttachedToWindow ||
             v.parent == null ||
-            !ViewCompat.isLaidOut(v) ||
+            !v.isLaidOut ||
             v.width == 0 || v.height == 0
         ) {
             withFrameNanos { /* just wait next frame */ }
@@ -101,7 +101,7 @@ fun HyperBackground(
     val level by PlayerManager.audioLevelFlow.collectAsState(0f)
     val beat  by PlayerManager.beatImpulseFlow.collectAsState(0f)
 
-    LaunchedEffect(painter, hostView, currentIsDark, coverUrl) {
+    LaunchedEffect(painter, hostView, currentIsDark, coverUrl, refreshKey) {
         if (painter == null || hostView == null) return@LaunchedEffect
         val v = hostView!!
 
@@ -114,7 +114,7 @@ fun HyperBackground(
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !coverUrl.isNullOrBlank()) {
             try {
-                val loader = ImageLoader(context)
+                val loader = Coil.imageLoader(context)
                 val req = ImageRequest.Builder(context)
                     .data(coverUrl)
                     .allowHardware(false) // Palette 需要 software bitmap
@@ -159,7 +159,6 @@ fun HyperBackground(
 
                     fun to01(x: Int) = (x and 0xFF) / 255f
                     fun argbToVec4(c: Int): FloatArray {
-                        val a = to01(c ushr 24)
                         val r = to01(c ushr 16)
                         val g = to01(c ushr 8)
                         val b = to01(c)
@@ -179,10 +178,10 @@ fun HyperBackground(
                         val r = to01(c ushr 16); val g = to01(c ushr 8); val b = to01(c)
                         return (0.2126f*r + 0.7152f*g + 0.0722f*b)
                     }
-                    val L = luma(c1)
+                    val lumaValue = luma(c1)
                     val lightOffset = when {
-                        currentIsDark -> (-0.06f + (0.12f * (L - 0.5f)))  // 暗色下略降亮，偏亮封面就少降一点
-                        else          -> ( 0.08f + (0.10f * (0.5f - L)))  // 亮色下略升亮，偏暗封面就多升一点
+                        currentIsDark -> (-0.06f + (0.12f * (lumaValue - 0.5f)))  // 暗色下略降亮，偏亮封面就少降一点
+                        else          -> ( 0.08f + (0.10f * (0.5f - lumaValue)))  // 亮色下略升亮，偏暗封面就多升一点
                     }.coerceIn(-0.12f, 0.12f)
 
                     val saturateOffset = (if (currentIsDark) 0.24f else 0.16f)

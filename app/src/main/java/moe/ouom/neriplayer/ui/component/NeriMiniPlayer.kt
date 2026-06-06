@@ -1,4 +1,4 @@
-﻿package moe.ouom.neriplayer.ui.component
+package moe.ouom.neriplayer.ui.component
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -19,7 +19,7 @@
  * along with this software.
  * If not, see <https://www.gnu.org/licenses/>.
  *
- * File: moe.ouom.neriplayer.ui.components/NeriMiniPlayer
+ * File: moe.ouom.neriplayer.ui.component/NeriMiniPlayer
  * Created: 2025/8/8
  */
 
@@ -38,6 +38,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -56,7 +57,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -65,8 +65,12 @@ import coil.compose.AsyncImage
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeChild
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.util.fastScrollableImageRequest
 import moe.ouom.neriplayer.util.HapticIconButton
-import moe.ouom.neriplayer.util.offlineCachedImageRequest
+
+object NeriMiniPlayerDefaults {
+    val Height = 64.dp
+}
 
 @Composable
 fun NeriMiniPlayer(
@@ -74,29 +78,30 @@ fun NeriMiniPlayer(
     artist: String,
     coverUrl: String?,
     isPlaying: Boolean,
+    modifier: Modifier = Modifier,
     onPlayPause: () -> Unit,
     onExpand: () -> Unit,
-    onHeightChanged: (height: Int) -> Unit,
-    hazeState: HazeState
+    hazeState: HazeState,
+    enableHaze: Boolean = true
 ) {
     val shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
     val supportsBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    val hazeContainerAlpha = if (supportsBlur && enableHaze) 0.4f else 1f
 
     Card(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(
-                alpha = if (supportsBlur) .4f else 1f
+                alpha = hazeContainerAlpha
             )
         ),
         shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-        modifier = Modifier
+        modifier = modifier
+            .height(NeriMiniPlayerDefaults.Height)
             .padding(start = 16.dp, end = 8.dp)
+            .clip(shape)
             .clickable { onExpand() }
-            .onSizeChanged { size ->
-                onHeightChanged(size.height)
-            }
             .then(
-                if (supportsBlur) Modifier.hazeChild(state = hazeState, shape = shape)
+                if (supportsBlur && enableHaze) Modifier.hazeChild(state = hazeState, shape = shape)
                 else Modifier
             )
     ) {
@@ -116,7 +121,12 @@ fun NeriMiniPlayer(
                 if (coverUrl != null) {
                     val context = LocalContext.current
                     AsyncImage(
-                        model = offlineCachedImageRequest(context, coverUrl),
+                        model = fastScrollableImageRequest(
+                            context = context,
+                            data = coverUrl,
+                            sizePx = 128,
+                            crossfade = false
+                        ),
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier

@@ -1,4 +1,4 @@
-﻿package moe.ouom.neriplayer.ui.viewmodel.tab
+package moe.ouom.neriplayer.ui.viewmodel.tab
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -19,114 +19,192 @@
  * along with this software.
  * If not, see <https://www.gnu.org/licenses/>.
  *
- * File: moe.ouom.neriplayer.ui.viewmodel/HomeViewModel
+ * File: moe.ouom.neriplayer.ui.viewmodel.tab/HomeViewModel
  * Created: 2025/8/10
  */
 
 import android.app.Application
-import android.os.Parcelable
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.parcelize.Parcelize
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeShelf
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.util.LanguageManager
 import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
 import java.io.IOException
 
 private const val TAG = "NERI-HomeVM"
+private const val HOME_SEARCH_HOT_KEYWORD = "热歌"
+private const val HOME_SEARCH_RADAR_KEYWORD = "私人雷达"
+private const val HOME_MAX_FAILURE_BEFORE_WARNING = 3
+private const val HOME_YT_MUSIC_PLAYLIST_LIMIT = 24
+private const val HOME_INITIAL_LOAD_DEFER_MS = 250L
 
-data class HomeUiState(
+private class ApiCodeException(val code: Int) : IllegalStateException("api_code=$code")
+private fun shouldFallbackRecommend(code: Int): Boolean = code == 301 || code == 50000005
+
+data class HomeSectionState<T>(
+    val items: List<T> = emptyList(),
     val loading: Boolean = false,
-    val error: String? = null,
-    val playlists: List<NeteasePlaylist> = emptyList()
+    val error: String? = null
 )
 
-/** UI 使用的精简数据模型 */
-@Parcelize
-data class NeteasePlaylist(
-    val id: Long,
-    val name: String,
-    val picUrl: String,
-    val playCount: Long,
-    val trackCount: Int
-) : Parcelable
-
-@Parcelize
-data class NeteaseAlbum(
-    val id: Long,
-    val name: String,
-    val picUrl: String,
-    val size: Int
-) : Parcelable
+data class HomeUiState(
+    val playlists: HomeSectionState<PlaylistSummary> = HomeSectionState(),
+    val hotSongs: HomeSectionState<SongItem> = HomeSectionState(),
+    val radarSongs: HomeSectionState<SongItem> = HomeSectionState(),
+    val ytMusicPlaylists: HomeSectionState<YouTubeMusicPlaylist> = HomeSectionState(),
+    val ytMusicHomeShelves: HomeSectionState<YouTubeMusicHomeShelf> = HomeSectionState(),
+    val hasLogin: Boolean = false,
+    val internationalizationEnabled: Boolean = false
+)
 
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repo = AppContainer.neteaseCookieRepo
     private val client = AppContainer.neteaseClient
+    private val youtubeAuthRepo = AppContainer.youtubeAuthRepo
 
-    private val _uiState = MutableStateFlow(HomeUiState(loading = true))
+    private val _uiState = MutableStateFlow(
+        HomeUiState(
+            playlists = HomeSectionState(loading = true),
+            hotSongs = HomeSectionState(loading = true),
+            radarSongs = HomeSectionState(loading = true)
+        )
+    )
     val uiState: StateFlow<HomeUiState> = _uiState
 
-    // 首页歌曲推荐：热门热曲 / 私人雷达
-    private val _hotSongsFlow = MutableStateFlow<List<SongItem>>(emptyList())
-    val hotSongsFlow: StateFlow<List<SongItem>> = _hotSongsFlow
+    private var playlistJob: Job? = null
+    private var hotSongsJob: Job? = null
+    private var radarSongsJob: Job? = null
+    private var ytMusicPlaylistJob: Job? = null
+    private var ytMusicHomeFeedJob: Job? = null
+    private var hasRecommendLogin = false
+    private var homeRecommendationsBootstrapped = false
+    private var lastYouTubeAuthFingerprint: String? = null
 
-    private val _radarSongsFlow = MutableStateFlow<List<SongItem>>(emptyList())
-    val radarSongsFlow: StateFlow<List<SongItem>> = _radarSongsFlow
+    private fun localizedAppContext() = LanguageManager.applyLanguage(getApplication())
 
     init {
-        // 登录后自动刷新首页推荐歌单
+        val initialCookies = repo.getCookiesOnce().toMutableMap().apply {
+            putIfAbsent("os", "pc")
+        }
+        hasRecommendLogin = !initialCookies["MUSIC_U"].isNullOrBlank()
+        lastYouTubeAuthFingerprint = buildYouTubeAuthFingerprint(youtubeAuthRepo.getAuthOnce())
+        _uiState.value = _uiState.value.copy(hasLogin = hasRecommendLogin)
+
+        // 观察国际化设置变化，切换推荐源
         viewModelScope.launch {
-            repo.cookieFlow.collect { raw ->
-                val cookies = raw.toMutableMap()
-                if (!cookies.containsKey("os")) cookies["os"] = "pc"
-                NPLogger.d(TAG, "cookieFlow updated: keys=${cookies.keys.joinToString()}")
-                if (!cookies["MUSIC_U"].isNullOrBlank()) {
-                    NPLogger.d(TAG, "Detected login cookie, refreshing recommend")
-                    refreshRecommend()
-                    // 登录后也触发歌曲推荐加载
-                    loadHomeRecommendations()
+            AppContainer.settingsRepo.internationalizationEnabledFlow.collect { enabled ->
+                _uiState.value = _uiState.value.copy(internationalizationEnabled = enabled)
+                if (enabled) {
+                    refreshYtMusicPlaylists()
+                    refreshYtMusicHomeFeed()
                 }
             }
         }
-        // 首次进入拉一次
-        refreshRecommend()
-        loadHomeRecommendations()
+
+        viewModelScope.launch {
+            AppContainer.youtubeAuthRepo.authFlow.drop(1).collect { bundle ->
+                val nextFingerprint = buildYouTubeAuthFingerprint(bundle)
+                if (nextFingerprint == lastYouTubeAuthFingerprint) {
+                    return@collect
+                }
+                lastYouTubeAuthFingerprint = nextFingerprint
+                if (!_uiState.value.internationalizationEnabled) {
+                    return@collect
+                }
+                if (!bundle.hasLoginCookies()) {
+                    _uiState.value = _uiState.value.copy(
+                        ytMusicPlaylists = HomeSectionState(),
+                        ytMusicHomeShelves = HomeSectionState()
+                    )
+                    return@collect
+                }
+                refreshYtMusicPlaylists()
+                refreshYtMusicHomeFeed()
+            }
+        }
+
+        // 登录后自动刷新首页推荐歌单
+        viewModelScope.launch {
+            repo.cookieFlow.drop(1).collect { raw ->
+                val cookies = raw.toMutableMap()
+                if (!cookies.containsKey("os")) cookies["os"] = "pc"
+                NPLogger.d(TAG, "cookieFlow updated: keys=${cookies.keys.joinToString()}")
+                val nextHasLogin = !cookies["MUSIC_U"].isNullOrBlank()
+                val loginChanged = hasRecommendLogin != nextHasLogin
+                hasRecommendLogin = nextHasLogin
+                if (loginChanged) {
+                    _uiState.value = _uiState.value.copy(hasLogin = nextHasLogin)
+                    refreshRecommend()
+                }
+                if (!homeRecommendationsBootstrapped) {
+                    homeRecommendationsBootstrapped = true
+                    loadHomeRecommendations(force = true)
+                }
+            }
+        }
+        viewModelScope.launch {
+            delay(HOME_INITIAL_LOAD_DEFER_MS)
+            refreshRecommend()
+            if (!homeRecommendationsBootstrapped) {
+                homeRecommendationsBootstrapped = true
+                loadHomeRecommendations(force = true)
+            }
+        }
     }
 
     /** 拉首页推荐歌单 */
     fun refreshRecommend() {
-        _uiState.value = _uiState.value.copy(loading = true, error = null)
-        viewModelScope.launch {
-            try {
-                val cookies = withContext(Dispatchers.IO) { repo.getCookiesOnce() }.toMutableMap()
-                if (!cookies.containsKey("os")) cookies["os"] = "pc"
-
-                val raw = withContext(Dispatchers.IO) { client.getRecommendedPlaylists(limit = 30) }
-                val mapped = parseRecommend(raw)
-
-                _uiState.value = HomeUiState(
-                    loading = false,
-                    error = null,
-                    playlists = mapped
-                )
-            } catch (e: IOException) {
-                _uiState.value = HomeUiState(
-                    loading = false,
-                    error = "Network or server error: ${e.message ?: e.javaClass.simpleName}"  // Localized in UI
-                )
-            } catch (e: Exception) {
-                _uiState.value = HomeUiState(
-                    loading = false,
-                    error = "Parse/unknown error: ${e.message ?: e.javaClass.simpleName}"  // Localized in UI
-                )
+        playlistJob?.cancel()
+        val previous = _uiState.value.playlists
+        _uiState.value = _uiState.value.copy(
+            playlists = previous.copy(loading = true, error = null)
+        )
+        playlistJob = viewModelScope.launch {
+            when (val result = fetchWithRetry {
+                val raw = withContext(Dispatchers.IO) {
+                    client.getRecommendedPlaylists(limit = 30, usePersistedCookies = hasRecommendLogin)
+                }
+                try {
+                    parseRecommendOnWorker(raw)
+                } catch (e: ApiCodeException) {
+                    if (hasRecommendLogin && shouldFallbackRecommend(e.code)) {
+                        val fallbackRaw = withContext(Dispatchers.IO) {
+                            client.getRecommendedPlaylists(limit = 30, usePersistedCookies = false)
+                        }
+                        parseRecommendOnWorker(fallbackRaw)
+                    } else {
+                        throw e
+                    }
+                }
+            }) {
+                is RetryLoadResult.Success -> {
+                    _uiState.value = _uiState.value.copy(
+                        playlists = HomeSectionState(items = result.items)
+                    )
+                }
+                is RetryLoadResult.Failure -> {
+                    _uiState.value = _uiState.value.copy(
+                        playlists = _uiState.value.playlists.copy(
+                            loading = false,
+                            error = buildHomeErrorMessage(result.throwable)
+                        )
+                    )
+                }
             }
         }
     }
@@ -136,42 +214,224 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      * - 热门热曲：使用关键词“热歌”搜索 30 首
      * - 私人雷达：使用关键词“私人雷达”搜索 30 首
      */
-    fun loadHomeRecommendations() {
-        // 已经有数据就不重复拉
-        if (_hotSongsFlow.value.isNotEmpty() && _radarSongsFlow.value.isNotEmpty()) return
+    fun loadHomeRecommendations(force: Boolean = false) {
+        val state = _uiState.value
+        if (!force) {
+            val alreadyLoaded =
+                state.hotSongs.items.isNotEmpty() && state.radarSongs.items.isNotEmpty()
+            val loading = state.hotSongs.loading || state.radarSongs.loading
+            if (alreadyLoaded || loading) return
+        }
 
-        viewModelScope.launch {
-            // 热门热曲
-            launch {
-                runCatching {
-                    val raw = withContext(Dispatchers.IO) {
-                        client.searchSongs(keyword = getApplication<Application>().getString(R.string.home_search_hot), limit = 30, offset = 0, type = 1)
-                    }
-                    parseSongs(raw)
-                }.onSuccess { _hotSongsFlow.value = it }
-            }
+        refreshHotSongs()
+        refreshRadarSongs()
+    }
 
-            // 私人雷达
-            launch {
-                runCatching {
-                    val raw = withContext(Dispatchers.IO) {
-                        client.searchSongs(keyword = getApplication<Application>().getString(R.string.home_search_radar), limit = 30, offset = 0, type = 1)
-                    }
-                    parseSongs(raw)
-                }.onSuccess { _radarSongsFlow.value = it }
+    private fun refreshHotSongs() {
+        hotSongsJob?.cancel()
+        val previous = _uiState.value.hotSongs
+        _uiState.value = _uiState.value.copy(
+            hotSongs = previous.copy(loading = true, error = null)
+        )
+        hotSongsJob = viewModelScope.launch {
+            when (val result = fetchWithRetry {
+                val raw = withContext(Dispatchers.IO) {
+                    client.searchSongs(
+                        keyword = HOME_SEARCH_HOT_KEYWORD,
+                        limit = 30,
+                        offset = 0,
+                        type = 1,
+                        usePersistedCookies = false
+                    )
+                }
+                parseSongsOnWorker(raw)
+            }) {
+                is RetryLoadResult.Success -> {
+                    _uiState.value = _uiState.value.copy(
+                        hotSongs = HomeSectionState(items = result.items)
+                    )
+                }
+                is RetryLoadResult.Failure -> {
+                    _uiState.value = _uiState.value.copy(
+                        hotSongs = _uiState.value.hotSongs.copy(
+                            loading = false,
+                            error = buildHomeErrorMessage(result.throwable)
+                        )
+                    )
+                }
             }
         }
     }
 
-    // 解析函数
+    private fun refreshRadarSongs() {
+        radarSongsJob?.cancel()
+        val previous = _uiState.value.radarSongs
+        _uiState.value = _uiState.value.copy(
+            radarSongs = previous.copy(loading = true, error = null)
+        )
+        radarSongsJob = viewModelScope.launch {
+            when (val result = fetchWithRetry {
+                val raw = withContext(Dispatchers.IO) {
+                    client.searchSongs(
+                        keyword = HOME_SEARCH_RADAR_KEYWORD,
+                        limit = 30,
+                        offset = 0,
+                        type = 1,
+                        usePersistedCookies = false
+                    )
+                }
+                parseSongsOnWorker(raw)
+            }) {
+                is RetryLoadResult.Success -> {
+                    _uiState.value = _uiState.value.copy(
+                        radarSongs = HomeSectionState(items = result.items)
+                    )
+                }
+                is RetryLoadResult.Failure -> {
+                    _uiState.value = _uiState.value.copy(
+                        radarSongs = _uiState.value.radarSongs.copy(
+                            loading = false,
+                            error = buildHomeErrorMessage(result.throwable)
+                        )
+                    )
+                }
+            }
+        }
+    }
 
-    private fun parseRecommend(raw: String): List<NeteasePlaylist> {
-        val result = mutableListOf<NeteasePlaylist>()
+    /** 拉取 YouTube Music 歌单 */
+    fun refreshYtMusicPlaylists() {
+        ytMusicPlaylistJob?.cancel()
+        _uiState.value = _uiState.value.copy(
+            ytMusicPlaylists = _uiState.value.ytMusicPlaylists.copy(loading = true, error = null)
+        )
+        ytMusicPlaylistJob = viewModelScope.launch {
+            when (val result = fetchWithRetry {
+                val library = withContext(Dispatchers.IO) {
+                    AppContainer.youtubeMusicClient.getLibraryPlaylists()
+                }
+                library.map { pl ->
+                    YouTubeMusicPlaylist(
+                        browseId = pl.browseId,
+                        playlistId = pl.browseId.removePrefix("VL"),
+                        title = pl.title,
+                        subtitle = pl.subtitle,
+                        coverUrl = pl.coverUrl,
+                        trackCount = pl.trackCount ?: 0
+                    )
+                }.take(HOME_YT_MUSIC_PLAYLIST_LIMIT)
+            }) {
+                is RetryLoadResult.Success -> {
+                    _uiState.value = _uiState.value.copy(
+                        ytMusicPlaylists = HomeSectionState(items = result.items)
+                    )
+                }
+                is RetryLoadResult.Failure -> {
+                    _uiState.value = _uiState.value.copy(
+                        ytMusicPlaylists = _uiState.value.ytMusicPlaylists.copy(
+                            loading = false,
+                            error = buildHomeErrorMessage(result.throwable)
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+
+    /** 拉取 YouTube Music 首页推荐 */
+    fun refreshYtMusicHomeFeed() {
+        ytMusicHomeFeedJob?.cancel()
+        _uiState.value = _uiState.value.copy(
+            ytMusicHomeShelves = _uiState.value.ytMusicHomeShelves.copy(loading = true, error = null)
+        )
+        ytMusicHomeFeedJob = viewModelScope.launch {
+            when (val result = fetchWithRetry {
+                withContext(Dispatchers.IO) {
+                    AppContainer.youtubeMusicClient.getHomeFeed()
+                }
+            }) {
+                is RetryLoadResult.Success -> {
+                    _uiState.value = _uiState.value.copy(
+                        ytMusicHomeShelves = HomeSectionState(items = result.items)
+                    )
+                }
+                is RetryLoadResult.Failure -> {
+                    _uiState.value = _uiState.value.copy(
+                        ytMusicHomeShelves = _uiState.value.ytMusicHomeShelves.copy(
+                            loading = false,
+                            error = buildHomeErrorMessage(result.throwable)
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    private suspend fun <T> fetchWithRetry(
+        fetch: suspend () -> List<T>
+    ): RetryLoadResult<T> {
+        var lastError: Throwable? = null
+        repeat(HOME_MAX_FAILURE_BEFORE_WARNING) {
+            try {
+                return RetryLoadResult.Success(fetch())
+            } catch (e: Throwable) {
+                if (e is CancellationException) throw e
+                lastError = e
+            }
+        }
+        return RetryLoadResult.Failure(lastError ?: IllegalStateException("Unknown error"))
+    }
+
+    private fun buildHomeErrorMessage(error: Throwable): String {
+        val localizedContext = localizedAppContext()
+        return when (error) {
+            is IOException -> localizedContext.getString(
+                R.string.home_error_network,
+                error.message ?: error.javaClass.simpleName
+            )
+            is ApiCodeException -> {
+                if (error.code == 50000005) {
+                    localizedContext.getString(R.string.home_login_required)
+                } else {
+                    localizedContext.getString(R.string.error_api_code, error.code)
+                }
+            }
+            else -> localizedContext.getString(
+                R.string.home_error_unknown,
+                error.message ?: error.javaClass.simpleName
+            )
+        }
+    }
+
+    private suspend fun parseRecommendOnWorker(raw: String): List<PlaylistSummary> =
+        withContext(Dispatchers.Default) {
+            parseRecommend(raw)
+        }
+
+    private suspend fun parseSongsOnWorker(raw: String): List<SongItem> =
+        withContext(Dispatchers.Default) {
+            parseSongs(raw)
+        }
+
+    private fun buildYouTubeAuthFingerprint(bundle: YouTubeAuthBundle): String {
+        val normalized = bundle.normalized()
+        return buildString {
+            append(normalized.cookieHeader)
+            append('|')
+            append(normalized.authorization)
+            append('|')
+            append(normalized.xGoogAuthUser)
+        }
+    }
+
+    private fun parseRecommend(raw: String): List<PlaylistSummary> {
+        val result = mutableListOf<PlaylistSummary>()
         val root = JSONObject(raw)
 
         val code = root.optInt("code", -1)
         if (code != 200) {
-            throw IllegalStateException(getApplication<Application>().getString(R.string.error_api_code, code))
+            throw ApiCodeException(code)
         }
 
         val arr = root.optJSONArray("result") ?: return emptyList()
@@ -186,7 +446,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
             if (id != 0L && name.isNotBlank() && picUrl.isNotBlank()) {
                 result.add(
-                    NeteasePlaylist(
+                    PlaylistSummary(
                         id = id,
                         name = name,
                         picUrl = picUrl,
@@ -203,7 +463,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private fun parseSongs(raw: String): List<SongItem> {
         val list = mutableListOf<SongItem>()
         val root = JSONObject(raw)
-        if (root.optInt("code") != 200) return emptyList()
+        val code = root.optInt("code", -1)
+        if (code != 200) {
+            throw ApiCodeException(code)
+        }
         val songs = root.optJSONObject("result")?.optJSONArray("songs") ?: return emptyList()
         for (i in 0 until songs.length()) {
             val obj = songs.optJSONObject(i) ?: continue
@@ -219,12 +482,19 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     name = obj.optString("name"),
                     artist = artistNames.joinToString(" / "),
                     album = albumObj?.optString("name").orEmpty(),
-                    albumId = 0L,
+                    albumId = albumObj?.optLong("id", 0L) ?: 0L,
                     durationMs = obj.optLong("dt"),
-                    coverUrl = albumObj?.optString("picUrl")?.replace("http://", "https://")
+                    coverUrl = albumObj?.optString("picUrl")?.replace("http://", "https://"),
+                    channelId = "netease",
+                    audioId = obj.optLong("id").toString()
                 )
             )
         }
         return list
+    }
+
+    private sealed interface RetryLoadResult<out T> {
+        data class Success<T>(val items: List<T>) : RetryLoadResult<T>
+        data class Failure(val throwable: Throwable) : RetryLoadResult<Nothing>
     }
 }

@@ -23,7 +23,7 @@ package moe.ouom.neriplayer.ui.screen.host
  * Created: 2025/8/11
  */
 
-import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.tween
@@ -37,24 +37,41 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
+import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
 import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
+import moe.ouom.neriplayer.ui.screen.playlist.YouTubeMusicPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.tab.ExploreScreen
-import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
+import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+
+// 探索页选中项
+private sealed class ExploreSelectedItem {
+    data class Netease(val playlist: PlaylistSummary) : ExploreSelectedItem()
+    data class YouTubeMusic(val playlist: YouTubeMusicPlaylist) : ExploreSelectedItem()
+}
 
 @Composable
 fun ExploreHostScreen(
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
     onPlayParts: (BiliClient.VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> }
 ) {
-    var selected by rememberSaveable { mutableStateOf<NeteasePlaylist?>(null) }
-    BackHandler(enabled = selected != null) { selected = null }
+    var selected by remember { mutableStateOf<ExploreSelectedItem?>(null) }
+    PredictiveBackHandler(enabled = selected != null) { progress ->
+        try {
+            progress.collect { }
+            selected = null
+        } catch (_: CancellationException) {
+        }
+    }
 
     val gridStateSaver: Saver<LazyGridState, *> = LazyGridState.Saver
     val gridState = rememberSaveable(saver = gridStateSaver) {
@@ -83,17 +100,40 @@ fun ExploreHostScreen(
                             id = pl.id, name = pl.name, picUrl = pl.picUrl,
                             trackCount = pl.trackCount, source = "netease"
                         )
-                        selected = pl
+                        selected = ExploreSelectedItem.Netease(pl)
+                    },
+                    onYouTubeMusicPlaylistClick = { pl ->
+                        AppContainer.playlistUsageRepo.recordOpen(
+                            id = stableYouTubeMusicId(pl.playlistId.ifBlank { pl.browseId }),
+                            name = pl.title,
+                            picUrl = pl.coverUrl,
+                            trackCount = pl.trackCount,
+                            source = "youtubeMusic",
+                            browseId = pl.browseId,
+                            playlistId = pl.playlistId
+                        )
+                        selected = ExploreSelectedItem.YouTubeMusic(pl)
                     },
                     onSongClick = onSongClick,
                     onPlayParts = onPlayParts
                 )
             } else {
-                NeteasePlaylistDetailScreen(
-                    playlist = current,
-                    onBack = { selected = null },
-                    onSongClick = onSongClick
-                )
+                when (current) {
+                    is ExploreSelectedItem.Netease -> {
+                        NeteasePlaylistDetailScreen(
+                            playlist = current.playlist,
+                            onBack = { selected = null },
+                            onSongClick = onSongClick
+                        )
+                    }
+                    is ExploreSelectedItem.YouTubeMusic -> {
+                        YouTubeMusicPlaylistDetailScreen(
+                            playlist = current.playlist,
+                            onBack = { selected = null },
+                            onSongClick = onSongClick
+                        )
+                    }
+                }
             }
         }
     }

@@ -25,9 +25,10 @@ package moe.ouom.neriplayer.ui.util
 
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.mapSaver
+import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
-import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseAlbum
-import moe.ouom.neriplayer.ui.viewmodel.tab.NeteasePlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
+import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 
 private const val KEY_ID = "id"
 private const val KEY_NAME = "name"
@@ -41,8 +42,11 @@ private const val KEY_MID = "mid"
 private const val KEY_TITLE = "title"
 private const val KEY_COUNT = "count"
 private const val KEY_COVER_URL = "coverUrl"
+private const val KEY_PLAYLIST_ID = "playlistId"
+private const val KEY_BROWSE_ID = "browseId"
+private const val KEY_SUBTITLE = "subtitle"
 
-val neteasePlaylistSaver: Saver<NeteasePlaylist?, Any> = mapSaver(
+val playlistSummarySaver: Saver<PlaylistSummary?, Any> = mapSaver(
     save = { playlist ->
         playlist?.toSaveMap() ?: emptyMap()
     },
@@ -50,7 +54,7 @@ val neteasePlaylistSaver: Saver<NeteasePlaylist?, Any> = mapSaver(
         if (saved.isEmpty()) {
             null
         } else {
-            restoreNeteasePlaylist(saved)
+            restorePlaylistSummary(saved)
         }
     }
 )
@@ -68,13 +72,13 @@ val biliPlaylistSaver: Saver<BiliPlaylist?, Any> = mapSaver(
     }
 )
 
-fun restoreNeteaseAlbum(map: Map<*, *>?): NeteaseAlbum? {
-    if (map == null || map.isEmpty()) return null
+fun restoreAlbumSummary(map: Map<*, *>?): AlbumSummary? {
+    if (map.isNullOrEmpty()) return null
     val id = (map[KEY_ID] as? Number)?.toLong() ?: return null
     val name = map[KEY_NAME] as? String ?: return null
     val picUrl = map[KEY_PIC_URL] as? String ?: ""
     val size = (map[KEY_TRACK_COUNT] as? Number)?.toInt() ?: 0
-    return NeteaseAlbum(
+    return AlbumSummary(
         id = id,
         name = name,
         picUrl = picUrl,
@@ -82,14 +86,14 @@ fun restoreNeteaseAlbum(map: Map<*, *>?): NeteaseAlbum? {
     )
 }
 
-fun restoreNeteasePlaylist(map: Map<*, *>?): NeteasePlaylist? {
-    if (map == null || map.isEmpty()) return null
+fun restorePlaylistSummary(map: Map<*, *>?): PlaylistSummary? {
+    if (map.isNullOrEmpty()) return null
     val id = (map[KEY_ID] as? Number)?.toLong() ?: return null
     val name = map[KEY_NAME] as? String ?: return null
     val picUrl = map[KEY_PIC_URL] as? String ?: ""
     val playCount = (map[KEY_PLAY_COUNT] as? Number)?.toLong() ?: 0L
     val trackCount = (map[KEY_TRACK_COUNT] as? Number)?.toInt() ?: 0
-    return NeteasePlaylist(
+    return PlaylistSummary(
         id = id,
         name = name,
         picUrl = picUrl,
@@ -99,7 +103,7 @@ fun restoreNeteasePlaylist(map: Map<*, *>?): NeteasePlaylist? {
 }
 
 fun restoreBiliPlaylist(map: Map<*, *>?): BiliPlaylist? {
-    if (map == null || map.isEmpty()) return null
+    if (map.isNullOrEmpty()) return null
     val mediaId = (map[KEY_MEDIA_ID] as? Number)?.toLong() ?: return null
     val fid = (map[KEY_FID] as? Number)?.toLong() ?: 0L
     val mid = (map[KEY_MID] as? Number)?.toLong() ?: 0L
@@ -116,14 +120,34 @@ fun restoreBiliPlaylist(map: Map<*, *>?): BiliPlaylist? {
     )
 }
 
-fun NeteaseAlbum.toSaveMap(): HashMap<String, Any?> = hashMapOf(
+fun restoreYouTubeMusicPlaylist(map: Map<*, *>?): YouTubeMusicPlaylist? {
+    if (map.isNullOrEmpty()) return null
+    val browseId = map[KEY_BROWSE_ID] as? String ?: return null
+    val playlistId = map[KEY_PLAYLIST_ID] as? String ?: return null
+    val title = map[KEY_TITLE] as? String ?: return null
+    val trackCount = (map[KEY_TRACK_COUNT] as? Number)?.toInt()
+        ?: (map[KEY_COUNT] as? Number)?.toInt()
+        ?: 0
+    val coverUrl = map[KEY_COVER_URL] as? String ?: ""
+    val subtitle = map[KEY_SUBTITLE] as? String ?: ""
+    return YouTubeMusicPlaylist(
+        browseId = browseId,
+        playlistId = playlistId,
+        title = title,
+        subtitle = subtitle,
+        coverUrl = coverUrl,
+        trackCount = trackCount
+    )
+}
+
+fun AlbumSummary.toSaveMap(): HashMap<String, Any?> = hashMapOf(
     KEY_ID to id,
     KEY_NAME to name,
     KEY_PIC_URL to picUrl,
     KEY_TRACK_COUNT to size
 )
 
-fun NeteasePlaylist.toSaveMap(): HashMap<String, Any?> = hashMapOf(
+fun PlaylistSummary.toSaveMap(): HashMap<String, Any?> = hashMapOf(
     KEY_ID to id,
     KEY_NAME to name,
     KEY_PIC_URL to picUrl,
@@ -138,4 +162,13 @@ fun BiliPlaylist.toSaveMap(): HashMap<String, Any?> = hashMapOf(
     KEY_TITLE to title,
     KEY_COUNT to count,
     KEY_COVER_URL to coverUrl
+)
+
+fun YouTubeMusicPlaylist.toSaveMap(): HashMap<String, Any?> = hashMapOf(
+    KEY_BROWSE_ID to browseId,
+    KEY_PLAYLIST_ID to playlistId,
+    KEY_TITLE to title,
+    KEY_TRACK_COUNT to trackCount,
+    KEY_COVER_URL to coverUrl,
+    KEY_SUBTITLE to subtitle
 )

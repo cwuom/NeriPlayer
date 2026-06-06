@@ -24,15 +24,22 @@ package moe.ouom.neriplayer
  */
 
 import android.app.Application
-import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.lyricon.LyriconManager
-import moe.ouom.neriplayer.util.LanguageManager
 import coil.Coil
 import coil.ImageLoader
 import coil.disk.DiskCache
 import coil.memory.MemoryCache
 import coil.request.CachePolicy
+import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.lyricon.LyriconManager
+import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
+import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicLibraryGateway
+import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicPlaylistDetail
+import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicTrack
+import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicUiDependencies
+import moe.ouom.neriplayer.util.ExceptionHandler
+import moe.ouom.neriplayer.util.LanguageManager
 
 class NeriPlayerApplication : Application() {
     override fun onCreate() {
@@ -40,15 +47,51 @@ class NeriPlayerApplication : Application() {
 
         // 初始化语言设置
         LanguageManager.init(this)
+        ExceptionHandler.init(this)
 
         AppContainer.initialize(this)
+        ManagedDownloadStorage.initialize(this)
+        YouTubeMusicUiDependencies.libraryGateway = object : YouTubeMusicLibraryGateway {
+            override suspend fun getLibraryPlaylists(): List<YouTubeMusicPlaylist> {
+                return AppContainer.youtubeMusicClient.getLibraryPlaylists().map { playlist ->
+                    YouTubeMusicPlaylist(
+                        browseId = playlist.browseId,
+                        playlistId = playlist.playlistId,
+                        title = playlist.title,
+                        subtitle = playlist.subtitle,
+                        coverUrl = playlist.coverUrl,
+                        trackCount = playlist.trackCount ?: 0
+                    )
+                }
+            }
+
+            override suspend fun getPlaylistDetail(browseId: String): YouTubeMusicPlaylistDetail {
+                val detail = AppContainer.youtubeMusicClient.getPlaylistDetail(browseId)
+                return YouTubeMusicPlaylistDetail(
+                    playlistId = detail.playlistId,
+                    title = detail.title,
+                    subtitle = detail.subtitle,
+                    coverUrl = detail.coverUrl,
+                    trackCount = detail.trackCount ?: detail.tracks.size,
+                    tracks = detail.tracks.map { track ->
+                        YouTubeMusicTrack(
+                            videoId = track.videoId,
+                            name = track.title,
+                            artist = track.artist,
+                            albumName = track.album,
+                            durationMs = track.durationMs,
+                            coverUrl = track.coverUrl
+                        )
+                    }
+                )
+            }
+        }
 
         // 初始化全局下载管理器
         GlobalDownloadManager.initialize(this)
-
         LyriconManager.initialize(this)
 
-        // set a global Coil ImageLoader that uses the shared OkHttpClient honoring proxy bypass
+        // 设置一个全局 Coil ImageLoader，它使用共享的 OkHttpClient 支持代理绕过
         val imageLoader = ImageLoader.Builder(this)
             .okHttpClient { AppContainer.sharedOkHttpClient }
             .respectCacheHeaders(false)
@@ -62,7 +105,7 @@ class NeriPlayerApplication : Application() {
             }
             .memoryCache {
                 MemoryCache.Builder(this)
-                    .maxSizePercent(0.25)
+                    .maxSizePercent(0.12)
                     .build()
             }
             .build()

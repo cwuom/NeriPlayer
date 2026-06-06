@@ -1,4 +1,4 @@
-﻿package moe.ouom.neriplayer.ui.screen.playlist
+package moe.ouom.neriplayer.ui.screen.playlist
 
 /*
  * NeriPlayer - A unified Android player for streaming music and videos from multiple online platforms.
@@ -35,17 +35,21 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
+import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -57,9 +61,11 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.layout.ContentScale
+import android.content.ClipData
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -74,14 +80,18 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.data.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
+import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
+import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.component.BatchDownloadManagerSheet
+import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliPlaylistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
-import moe.ouom.neriplayer.ui.viewmodel.DownloadManagerViewModel
 import moe.ouom.neriplayer.util.HapticIconButton
+import moe.ouom.neriplayer.util.HapticFloatingActionButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.formatDurationSec
@@ -91,7 +101,10 @@ import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.runtime.saveable.rememberSaveable
+import moe.ouom.neriplayer.core.download.countPendingDownloadTasks
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.hasPendingDownloadTasks
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -112,12 +125,14 @@ fun BiliPlaylistDetailScreen(
         }
     )
     val ui by vm.uiState.collectAsState()
+    val currentSong by PlayerManager.currentSongFlow.collectAsState()
+    val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
     // 使用Unit作为key，确保每次进入都重新加载最新数据
     LaunchedEffect(Unit) { vm.start(playlist) }
 
     // 保存最新的header和videos数据，用于在Screen销毁时更新使用记录
     var latestHeader by remember { mutableStateOf<BiliPlaylist?>(null) }
-    var latestVideosSize by remember { mutableStateOf(0) }
+    var latestVideosSize by remember { mutableIntStateOf(0) }
     LaunchedEffect(ui.header, ui.videos.size) {
         ui.header?.let { latestHeader = it }
         latestVideosSize = ui.videos.size
@@ -143,9 +158,31 @@ fun BiliPlaylistDetailScreen(
     // 下载进度
     var showDownloadManager by remember { mutableStateOf(false) }
     val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
+    val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsState()
+    val pendingTaskCount = remember(downloadTasks) { countPendingDownloadTasks(downloadTasks) }
+    val hasDownloadManagerEntry = remember(downloadTasks) { hasPendingDownloadTasks(downloadTasks) }
 
     val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
     val allLocalPlaylists by repo.playlists.collectAsState(initial = emptyList())
+    val playlistSource = "bili"
+    val playlistId = ui.header?.mediaId ?: playlist.mediaId
+    val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
+    val favorites by favoriteRepo.favorites.collectAsState()
+    val isFavorite = remember(favorites, playlistId) {
+        favoriteRepo.isFavorite(playlistId, playlistSource)
+    }
+    LaunchedEffect(isFavorite, ui.header, ui.videos) {
+        if (!isFavorite) return@LaunchedEffect
+        val header = ui.header ?: return@LaunchedEffect
+        favoriteRepo.updateFavoriteMeta(
+            id = header.mediaId,
+            name = header.title,
+            coverUrl = header.coverUrl,
+            trackCount = header.count,
+            source = playlistSource,
+            songs = ui.videos.map { it.toSongItem() }
+        )
+    }
     var selectionMode by remember { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showExportSheet by remember { mutableStateOf(false) }
@@ -190,6 +227,7 @@ fun BiliPlaylistDetailScreen(
             modifier = Modifier.fillMaxSize(),
             color = Color.Transparent
         ) {
+            val miniPlayerHeight = LocalMiniPlayerHeight.current
             Column {
                 if (!selectionMode) {
                     TopAppBar(
@@ -211,7 +249,40 @@ fun BiliPlaylistDetailScreen(
                                 if (!showSearch) searchQuery = ""
                             }) { Icon(Icons.Filled.Search, contentDescription = stringResource(R.string.search_video)) }
 
-                            if (batchDownloadProgress != null) {
+                            // 收藏按钮
+                            HapticIconButton(onClick = {
+                                scope.launch {
+                                    val header = ui.header ?: playlist
+                                    if (isFavorite) {
+                                        favoriteRepo.removeFavorite(playlistId, playlistSource)
+                                    } else {
+                                        favoriteRepo.addFavorite(
+                                            id = playlistId,
+                                            name = header.title,
+                                            coverUrl = header.coverUrl,
+                                            trackCount = header.count,
+                                            source = playlistSource,
+                                            songs = ui.videos.map { it.toSongItem() }
+                                        )
+                                    }
+                                }
+                            }) {
+                                Icon(
+                                    imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                                    contentDescription = if (isFavorite) {
+                                        stringResource(R.string.action_unfavorite)
+                                    } else {
+                                        stringResource(R.string.action_favorite_playlist)
+                                    },
+                                    tint = if (isFavorite) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface
+                                    }
+                                )
+                            }
+
+                            if (hasDownloadManagerEntry) {
                                 HapticIconButton(onClick = { showDownloadManager = true }) {
                                     Icon(
                                         Icons.Outlined.Download,
@@ -230,7 +301,15 @@ fun BiliPlaylistDetailScreen(
                 } else {
                     val allSelected = selectedIds.size == ui.videos.size && ui.videos.isNotEmpty()
                     TopAppBar(
-                        title = { Text(stringResource(R.string.common_selected_count, selectedIds.size)) },
+                    title = {
+                        Text(
+                            pluralStringResource(
+                                R.plurals.common_selected_count,
+                                selectedIds.size,
+                                selectedIds.size
+                            )
+                        )
+                    },
                         navigationIcon = {
                             HapticIconButton(onClick = { exitSelection() }) {
                                 Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.action_exit_multi_select))
@@ -256,8 +335,8 @@ fun BiliPlaylistDetailScreen(
                                             .filter { it.bvid in selectedIds }
                                             .map { it.toSongItem() }
 
+                                        showDownloadManager = true
                                         GlobalDownloadManager.startBatchDownload(context, selectedSongs)
-
                                         exitSelection()
                                     }
                                 },
@@ -290,12 +369,18 @@ fun BiliPlaylistDetailScreen(
                     .fillMaxSize()
                     .windowInsetsPadding(WindowInsets.navigationBars)
                 ) {
-                    val miniPlayerHeight = LocalMiniPlayerHeight.current
+                    val listState = rememberSaveable(playlist.mediaId, saver = LazyListState.Saver) {
+                        LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
+                    }
+                    val activeSong = currentSong
+                    val currentVideoIndex = displayedVideos.indexOfFirst { video ->
+                        activeSong?.album?.startsWith(PlayerManager.BILI_SOURCE_TAG) == true &&
+                            activeSong.id == video.id
+                    }
 
                     LazyColumn(
-                        contentPadding = PaddingValues(
-                            bottom = 24.dp + miniPlayerHeight
-                        ),
+                        state = listState,
+                        contentPadding = PaddingValues(bottom = 24.dp + miniPlayerHeight),
                         modifier = Modifier.fillMaxSize()
                     ) {
                         item {
@@ -345,6 +430,11 @@ fun BiliPlaylistDetailScreen(
                                     VideoRow(
                                         index = index + 1,
                                         video = item,
+                                        isCurrentSong = activeSong?.album?.startsWith(PlayerManager.BILI_SOURCE_TAG) == true &&
+                                            activeSong.id == item.id,
+                                        animatePlayingIndicator = activeSong?.album?.startsWith(PlayerManager.BILI_SOURCE_TAG) == true &&
+                                            activeSong.id == item.id &&
+                                            isPlaying,
                                         selectionMode = selectionMode,
                                         selected = selectedIds.contains(item.bvid),
                                         onToggleSelect = { toggleSelect(item.bvid) },
@@ -378,20 +468,45 @@ fun BiliPlaylistDetailScreen(
                             }
                         }
                     }
+
+                    if (currentVideoIndex >= 0) {
+                        HapticFloatingActionButton(
+                            onClick = {
+                                scope.launch {
+                                    listState.animateScrollToItem(currentVideoIndex + 1)
+                                }
+                            },
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(bottom = 16.dp + miniPlayerHeight, end = 16.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Outlined.PlaylistPlay,
+                                contentDescription = stringResource(R.string.cd_locate_playing)
+                            )
+                        }
+                    }
                 }
             }
 
             if (showExportSheet) {
                 ModalBottomSheet(
                     onDismissRequest = { showExportSheet = false },
-                    sheetState = exportSheetState
+                    sheetState = exportSheetState,
+                    sheetGesturesEnabled = false
                 ) {
-                    Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+                    Column(
+                        Modifier
+                            .bottomSheetScrollGuard()
+                            .padding(horizontal = 20.dp, vertical = 12.dp)
+                    ) {
                         Text(stringResource(R.string.playlist_export_to_local), style = MaterialTheme.typography.titleMedium)
                         Spacer(Modifier.height(8.dp))
 
                         LazyColumn {
-                            itemsIndexed(allLocalPlaylists) { _, pl ->
+                            itemsIndexed(
+                                allLocalPlaylists.filterNot { LocalFilesPlaylist.isSystemPlaylist(it, context) }
+                            ) { _, pl ->
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -419,7 +534,14 @@ fun BiliPlaylistDetailScreen(
                                 ) {
                                     Text(pl.name, style = MaterialTheme.typography.bodyLarge)
                                     Spacer(Modifier.weight(1f))
-                                    Text(stringResource(R.string.explore_song_count, pl.songs.size), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            pluralStringResource(
+                                R.plurals.explore_song_count,
+                                pl.songs.size,
+                                pl.songs.size
+                            ),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                                 }
                             }
                         }
@@ -475,135 +597,25 @@ fun BiliPlaylistDetailScreen(
 
             // 下载管理器
             if (showDownloadManager) {
-                ModalBottomSheet(
-                    onDismissRequest = { showDownloadManager = false }
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(20.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                stringResource(R.string.download_manager),
-                                style = MaterialTheme.typography.titleLarge
-                            )
-                            HapticIconButton(onClick = { showDownloadManager = false }) {
-                                Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.action_close))
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        batchDownloadProgress?.let { progress ->
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                                )
-                            ) {
-                                Column(modifier = Modifier.padding(16.dp)) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            stringResource(R.string.bili_download_progress_format, progress.completedSongs, progress.totalSongs),
-                                            style = MaterialTheme.typography.titleMedium
-                                        )
-                                        HapticTextButton(onClick = { AudioDownloadManager.cancelDownload() }) {
-                                            Text(stringResource(R.string.action_cancel), color = MaterialTheme.colorScheme.error)
-                                        }
-                                    }
-
-                                    if (progress.currentSong.isNotBlank()) {
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                        Text(
-                                            stringResource(R.string.bili_downloading_current, progress.currentSong),
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-
-                                    Spacer(modifier = Modifier.height(12.dp))
-
-                                    Text(
-                                        stringResource(R.string.download_overall_progress, progress.percentage),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    val animatedOverallProgress by animateFloatAsState(
-                                        targetValue = (progress.percentage / 100f).coerceIn(0f, 1f),
-                                        animationSpec = spring(
-                                            dampingRatio = Spring.DampingRatioNoBouncy,
-                                            stiffness = Spring.StiffnessMedium
-                                        ),
-                                        label = "overallProgress"
-                                    )
-                                    LinearProgressIndicator(
-                                        progress = { animatedOverallProgress },
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-
-                                    progress.currentProgress?.let { currentProgress ->
-                                        Spacer(modifier = Modifier.height(12.dp))
-                                        Text(
-                                            stringResource(R.string.download_current_file_progress, currentProgress.percentage, currentProgress.speedBytesPerSec / 1024),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                        val animatedCurrentProgress by animateFloatAsState(
-                                            targetValue = if (currentProgress.totalBytes > 0) {
-                                                (currentProgress.bytesRead.toFloat() / currentProgress.totalBytes).coerceIn(0f, 1f)
-                                            } else 0f,
-                                            animationSpec = spring(
-                                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                                stiffness = Spring.StiffnessMedium
-                                            ),
-                                            label = "currentProgress"
-                                        )
-                                        LinearProgressIndicator(
-                                            progress = { animatedCurrentProgress },
-                                            modifier = Modifier.fillMaxWidth()
-                                        )
-                                    }
-                                }
-                            }
-                        } ?: run {
-                            Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Icon(
-                                    Icons.Outlined.Download,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(64.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Spacer(modifier = Modifier.height(16.dp))
-                                Text(
-                                    stringResource(R.string.download_no_tasks),
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(
-                                    stringResource(R.string.download_select_hint),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    textAlign = TextAlign.Center
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(20.dp))
-                    }
-                }
+                val progress = batchDownloadProgress
+                BatchDownloadManagerSheet(
+                    batchDownloadProgress = progress,
+                    downloadTasks = downloadTasks,
+                    progressSummaryText = if (progress != null) {
+                        stringResource(
+                            R.string.bili_download_progress_format,
+                            progress.completedSongs,
+                            progress.totalSongs
+                        )
+                    } else {
+                        pluralStringResource(
+                            R.plurals.download_tasks_count,
+                            pendingTaskCount,
+                            pendingTaskCount
+                        )
+                    },
+                    onDismiss = { showDownloadManager = false }
+                )
             }
 
             if (showPartsSheet && partsInfo != null) {
@@ -614,13 +626,26 @@ fun BiliPlaylistDetailScreen(
                         showPartsSheet = false
                         exitPartsSelection()
                     },
-                    sheetState = partsSheetState
+                    sheetState = partsSheetState,
+                    sheetGesturesEnabled = false
                 ) {
-                    Column(Modifier.padding(bottom = 12.dp)) {
+                    Column(
+                        Modifier
+                            .bottomSheetScrollGuard()
+                            .padding(bottom = 12.dp)
+                    ) {
                         AnimatedVisibility(visible = partsSelectionMode) {
                             val allSelected = selectedParts.size == currentPartsInfo.pages.size
                             TopAppBar(
-                                title = { Text(stringResource(R.string.common_selected_count, selectedParts.size)) },
+                    title = {
+                        Text(
+                            pluralStringResource(
+                                R.plurals.common_selected_count,
+                                selectedParts.size,
+                                selectedParts.size
+                            )
+                        )
+                    },
                                 navigationIcon = {
                                     HapticIconButton(onClick = { exitPartsSelection() }) {
                                         Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.action_exit_multi_select))
@@ -628,10 +653,10 @@ fun BiliPlaylistDetailScreen(
                                 },
                                 actions = {
                                     HapticIconButton(onClick = {
-                                        if (allSelected) {
-                                            selectedParts = emptySet()
+                                        selectedParts = if (allSelected) {
+                                            emptySet()
                                         } else {
-                                            selectedParts = currentPartsInfo.pages.map { it.page }.toSet()
+                                            currentPartsInfo.pages.map { it.page }.toSet()
                                         }
                                     }) {
                                         Icon(
@@ -802,7 +827,11 @@ private fun Header(playlist: BiliPlaylist, headerData: BiliPlaylist?) {
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                text = stringResource(R.string.bili_content_count, displayData.count),
+                text = pluralStringResource(
+                    R.plurals.bili_content_count,
+                    displayData.count,
+                    displayData.count
+                ),
                 style = MaterialTheme.typography.bodySmall.copy(
                     shadow = Shadow(color = Color.Black.copy(alpha = 0.6f), offset = Offset(2f, 2f), blurRadius = 4f)
                 ),
@@ -817,6 +846,8 @@ private fun Header(playlist: BiliPlaylist, headerData: BiliPlaylist?) {
 private fun VideoRow(
     index: Int,
     video: BiliVideoItem,
+    isCurrentSong: Boolean,
+    animatePlayingIndicator: Boolean,
     selectionMode: Boolean,
     selected: Boolean,
     onToggleSelect: () -> Unit,
@@ -825,7 +856,7 @@ private fun VideoRow(
     snackbarHostState: SnackbarHostState
 ) {
     val context = LocalContext.current
-    val clipboardManager = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     Row(
         modifier = Modifier
@@ -885,11 +916,18 @@ private fun VideoRow(
             )
         }
         Spacer(Modifier.width(8.dp))
-        Text(
-            text = formatDurationSec(video.durationSec),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        if (isCurrentSong) {
+            PlayingIndicator(
+                color = MaterialTheme.colorScheme.primary,
+                animate = animatePlayingIndicator
+            )
+        } else {
+            Text(
+                text = formatDurationSec(video.durationSec),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         
         // 更多操作菜单
         if (!selectionMode) {
@@ -929,8 +967,8 @@ private fun VideoRow(
                         text = { Text(stringResource(R.string.action_copy_song_info)) },
                         onClick = {
                             val songInfo = "${video.title}-${video.uploader}"
-                            clipboardManager.setText(AnnotatedString(songInfo))
                             scope.launch {
+                                clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("text", songInfo)))
                                 snackbarHostState.showSnackbar(context.getString(R.string.toast_copied))
                             }
                             showMoreMenu = false

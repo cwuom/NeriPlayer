@@ -5,25 +5,27 @@ on:
     branches:
       - master
     paths-ignore:
+      - '*.md'
       - '**/*.md'
+      - '*.txt'
       - '**/*.txt'
       - 'renovate.json'
       - '.editorconfig'
       - '.gitignore'
       - '.github/**'
-      - '.github/workflows/**'
       - '.idea/**'
   pull_request:
     branches:
       - master
     paths-ignore:
+      - '*.md'
       - '**/*.md'
+      - '*.txt'
       - '**/*.txt'
       - 'renovate.json'
       - '.editorconfig'
       - '.gitignore'
       - '.github/**'
-      - '.github/workflows/**'
       - '.idea/**'
   workflow_dispatch:
 
@@ -111,22 +113,21 @@ jobs:
         run: |
           echo "Sending $APK_PATH"
           
-          commit_msg="$COMMIT_MSG"
+          safe_commit_msg=$(echo "$COMMIT_MSG" | sed 's/&/&amp;/g; s/</&lt;/g; s/>/&gt;/g')
+          
           commit_author="$COMMIT_AUTHOR"
           commit_url="https://github.com/${REPO}/commit/${SHA}"
           
-          caption="🎉 *检测到新的 GitHub 推送！*
-          *Commit SHA:* \`${SHA}\`
+          caption=" <b>检测到新的 GitHub 推送！</b>
+          <b>Commit SHA:</b> <code>${SHA}</code>
           
-          \`\`\`
-          ${commit_msg}
-          \`\`\`
+          <pre>${safe_commit_msg}</pre>
           
-          *提交者* \`${commit_author}\`
-          [查看详情](${commit_url})"
+          <b>提交者:</b> <code>${commit_author}</code>
+          <a href=\"${commit_url}\">查看详情</a>"
           
           curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" \
             -F chat_id="${CHAT_ID}" \
             -F document=@"${APK_PATH}" \
             -F caption="${caption}" \
-            -F parse_mode=Markdown
+            -F parse_mode=HTML

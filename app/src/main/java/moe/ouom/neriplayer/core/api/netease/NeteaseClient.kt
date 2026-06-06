@@ -42,9 +42,10 @@ import java.util.Locale
 import java.util.zip.GZIPInputStream
 import moe.ouom.neriplayer.util.DynamicProxySelector
 
-class NeteaseClient(bypassProxy: Boolean = true) {
+class NeteaseClient {
     private val okHttpClient: OkHttpClient
     private val cookieStore: MutableMap<String, MutableList<Cookie>> = mutableMapOf()
+    private val cookieLock = Any()
 
     @Volatile
     private var persistedCookies: Map<String, String> = emptyMap()
@@ -54,18 +55,26 @@ class NeteaseClient(bypassProxy: Boolean = true) {
             .cookieJar(object : CookieJar {
                 override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
                     val host = url.host
-                    val list = cookieStore.getOrPut(host) { mutableListOf() }
-                    list.removeAll { c -> cookies.any { it.name == c.name } }
-                    list.addAll(cookies)
+                    synchronized(cookieLock) {
+                        val list = cookieStore.getOrPut(host) { mutableListOf() }
+                        list.removeAll { c -> cookies.any { it.name == c.name } }
+                        list.addAll(cookies)
+                    }
                 }
 
                 override fun loadForRequest(url: HttpUrl): List<Cookie> {
-                    return cookieStore[url.host] ?: emptyList()
+                    return synchronized(cookieLock) {
+                        cookieStore[url.host]?.toList() ?: emptyList()
+                    }
                 }
             })
             // use a dynamic ProxySelector so bypass can be toggled at runtime
             .proxySelector(DynamicProxySelector)
             .build()
+    }
+
+    fun evictConnections() {
+        okHttpClient.connectionPool.evictAll()
     }
 
     /** 是否已登录 */
@@ -84,16 +93,19 @@ class NeteaseClient(bypassProxy: Boolean = true) {
     }
 
     private fun seedCookieJarFromPersisted(host: String) {
-        val list = cookieStore.getOrPut(host) { mutableListOf() }
-        persistedCookies.forEach { (name, value) ->
-            val c = Cookie.Builder()
-                .name(name)
-                .value(value)
-                .domain(host)    // 域 Cookie
-                .path("/")
-                .build()
-            list.removeAll { it.name == name }
-            list.add(c)
+        val snapshot = persistedCookies
+        synchronized(cookieLock) {
+            val list = cookieStore.getOrPut(host) { mutableListOf() }
+            snapshot.forEach { (name, value) ->
+                val c = Cookie.Builder()
+                    .name(name)
+                    .value(value)
+                    .domain(host)    // 域 Cookie
+                    .path("/")
+                    .build()
+                list.removeAll { it.name == name }
+                list.add(c)
+            }
         }
     }
 
@@ -102,20 +114,27 @@ class NeteaseClient(bypassProxy: Boolean = true) {
      * Later occurrences override earlier ones.
      */
     fun getCookies(): Map<String, String> {
-        val result = LinkedHashMap<String, String>()
-        cookieStore.values.forEach { list -> list.forEach { cookie -> result[cookie.name] = cookie.value } }
-        return result
+        return synchronized(cookieLock) {
+            val result = LinkedHashMap<String, String>()
+            cookieStore.values.forEach { list -> list.forEach { cookie -> result[cookie.name] = cookie.value } }
+            result
+        }
     }
 
     fun logout() {
-        cookieStore.clear()
+        synchronized(cookieLock) {
+            cookieStore.clear()
+        }
+        persistedCookies = emptyMap()
     }
 
-    private fun getCookie(name: String): String? = cookieStore.values
-        .asSequence()
-        .flatMap { it.asSequence() }
-        .firstOrNull { it.name == name }
-        ?.value
+    private fun getCsrfCookie(): String? = synchronized(cookieLock) {
+        cookieStore.values
+            .asSequence()
+            .flatMap { it.asSequence() }
+            .firstOrNull { it.name == "__csrf" }
+            ?.value
+    }
 
     private fun buildPersistedCookieHeader(): String? {
         val map = persistedCookies.toMutableMap()
@@ -170,7 +189,11 @@ class NeteaseClient(bypassProxy: Boolean = true) {
 
         // WEAPI 的 csrf_token 优先用持久化 Cookie，再回退本地 CookieJar
         if (mode == CryptoMode.WEAPI) {
-            val csrf = persistedCookies["__csrf"] ?: getCookie("__csrf") ?: ""
+            val csrf = if (usePersistedCookies) {
+                persistedCookies["__csrf"] ?: getCsrfCookie() ?: ""
+            } else {
+                getCsrfCookie() ?: ""
+            }
             reqUrl = requestUrl.newBuilder()
                 .setQueryParameter("csrf_token", csrf)
                 .build()
@@ -193,12 +216,16 @@ class NeteaseClient(bypassProxy: Boolean = true) {
         }
 
         okHttpClient.newCall(builder.build()).execute().use { resp ->
-            val responseBody = resp.body
+            val responseBody = resp.body ?: throw IOException("Empty response body")
             val encoding = resp.header("Content-Encoding")?.lowercase(Locale.getDefault())
             val bytes = when (encoding) {
                 "br"   -> BrotliInputStream(responseBody.byteStream()).use { it.readBytesCompat() }
                 "gzip" -> GZIPInputStream(responseBody.byteStream()).use { it.readBytesCompat() }
                 else   -> responseBody.bytes()
+            }
+            if (!resp.isSuccessful) {
+                val msg = String(bytes, StandardCharsets.UTF_8)
+                throw IOException("HTTP ${resp.code}: $msg")
             }
             return String(bytes, StandardCharsets.UTF_8)
         }
@@ -266,14 +293,23 @@ class NeteaseClient(bypassProxy: Boolean = true) {
 
     // 业务接口
     @Throws(IOException::class)
-    fun getRecommendedPlaylists(limit: Int = 30): String {
+    fun getRecommendedPlaylists(
+        limit: Int = 30,
+        usePersistedCookies: Boolean = true
+    ): String {
         val url = "https://music.163.com/weapi/personalized/playlist"
         val params = mapOf("limit" to limit.toString())
-        return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
+        return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = usePersistedCookies)
     }
 
     @Throws(IOException::class)
-    fun searchSongs(keyword: String, limit: Int = 30, offset: Int = 0, type: Int = 1): String {
+    fun searchSongs(
+        keyword: String,
+        limit: Int = 30,
+        offset: Int = 0,
+        type: Int = 1,
+        usePersistedCookies: Boolean = true
+    ): String {
         val url = "https://music.163.com/weapi/cloudsearch/get/web"
         val params = mutableMapOf<String, Any>(
             "s" to keyword,
@@ -282,7 +318,7 @@ class NeteaseClient(bypassProxy: Boolean = true) {
             "offset" to offset.toString(),
             "total" to "true"
         )
-        return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
+        return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = usePersistedCookies)
     }
 
     /**
@@ -293,21 +329,26 @@ class NeteaseClient(bypassProxy: Boolean = true) {
      * */
     @Throws(IOException::class)
     fun getSongDownloadUrl(songId: Long, level: String = "lossless"): String {
-        fun call(): String {
+        fun call(usePersistedCookies: Boolean): String {
             val params = mutableMapOf<String, Any>(
                 "ids" to "[$songId]",
                 "level" to level,
                 "encodeType" to "flac",
             )
-            return callEApi("/song/enhance/player/url/v1", params, usePersistedCookies = false)
+            return callEApi(
+                "/song/enhance/player/url/v1",
+                params,
+                usePersistedCookies = usePersistedCookies
+            )
         }
 
-        var resp = call()
+        val preferPersistedCookies = hasLogin()
+        var resp = call(usePersistedCookies = preferPersistedCookies)
         return try {
             val code = JSONObject(resp).optInt("code", -1)
             if (code == 301 && hasLogin()) {
                 try { ensureWeapiSession() } catch (_: Exception) {}
-                resp = call()
+                resp = call(usePersistedCookies = true)
             }
             resp
         } catch (_: Exception) {
@@ -321,6 +362,23 @@ class NeteaseClient(bypassProxy: Boolean = true) {
         val params = mutableMapOf<String, Any>(
             "ids" to "[$songId]",
             "br" to bitrate.toString()
+        )
+        return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
+    }
+
+    @Throws(IOException::class)
+    fun getSongDetail(ids: List<Long>): String {
+        require(ids.isNotEmpty()) { "ids must not be empty" }
+        val url = "https://music.163.com/weapi/v3/song/detail"
+        val idsParam = ids.joinToString(",")
+        val detailParam = ids.joinToString(
+            separator = ",",
+            prefix = "[",
+            postfix = "]"
+        ) { id -> """{"id":$id}""" }
+        val params = mapOf(
+            "c" to detailParam,
+            "ids" to "[$idsParam]"
         )
         return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
     }
@@ -383,7 +441,7 @@ class NeteaseClient(bypassProxy: Boolean = true) {
         )
         return request(url, params, CryptoMode.API, "POST", usePersistedCookies = true)
     }
-        
+
     @Throws(IOException::class)
     fun getDjRadioDetail(radioId: Long, n: Int = 100000, s: Int = 8): String {
         val url = "https://music.163.com/api/v6/playlist/detail"
@@ -439,7 +497,7 @@ class NeteaseClient(bypassProxy: Boolean = true) {
                 { "code": 200, "playlists": [${items.joinToString(",")}] }
             """.trimIndent()
         } catch (e: Exception) {
-            """{ "code": 500, "msg": ${jsonQuote(e.stackTraceToString())} }"""
+            """{ "code": 500, "msg": ${jsonQuote(e.message ?: "error")} }"""
         }
     }
 

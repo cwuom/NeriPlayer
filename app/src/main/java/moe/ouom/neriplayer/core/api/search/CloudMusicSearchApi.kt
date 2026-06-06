@@ -31,7 +31,9 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import moe.ouom.neriplayer.BuildConfig
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
+import moe.ouom.neriplayer.core.player.metadata.normalizeLegacyLrcTimestamps
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.core.di.AppContainer
 import okhttp3.OkHttpClient
@@ -57,13 +59,22 @@ import java.io.IOException
 @Serializable private data class CloudMusicSongDetailResponse(val songs: List<CloudMusicSongDetail>)
 @Serializable private data class CloudMusicArtist(val name: String)
 @Serializable private data class CloudMusicAlbum(val name: String, val picUrl: String?)
-@Serializable private data class CloudMusicLyricResponse(val lrc: CloudMusicLrc?, val tlyric: CloudMusicLrc? = null)
-@Serializable private data class CloudMusicLrc(val lyric: String?)
+@Serializable
+private data class CloudMusicLyricResponse(
+    val lrc: CloudMusicLrc?,
+    val tlyric: CloudMusicLrc? = null,
+    val yrc: CloudMusicLrc? = null,
+    val ytlrc: CloudMusicLrc? = null
+)
+
+@Serializable
+private data class CloudMusicLrc(val lyric: String?)
 
 class CloudMusicSearchApi(private val neteaseClient: NeteaseClient) : SearchApi {
 
     companion object {
         private const val TAG = "CloudMusicSearchApi"
+        private const val DEBUG_JSON_PREVIEW_MAX_CHARS = 512
     }
 
     private val client: OkHttpClient = AppContainer.sharedOkHttpClient
@@ -72,8 +83,13 @@ class CloudMusicSearchApi(private val neteaseClient: NeteaseClient) : SearchApi 
     override suspend fun search(keyword: String, page: Int): List<SongSearchInfo> {
         return withContext(Dispatchers.IO) {
             val offset = (page - 1).coerceAtLeast(0) * 20
-            val responseJson = neteaseClient.searchSongs(keyword, limit = 20, offset = offset)
-            logLongJson(TAG, responseJson)
+            val responseJson = neteaseClient.searchSongs(
+                keyword = keyword,
+                limit = 20,
+                offset = offset,
+                usePersistedCookies = false
+            )
+            logResponseSummary(label = "netease-search", json = responseJson)
 
             val searchResponse = json.decodeFromString<CloudMusicSearchResponse>(responseJson)
 
@@ -100,10 +116,16 @@ class CloudMusicSearchApi(private val neteaseClient: NeteaseClient) : SearchApi 
 
             coroutineScope {
                 val lyricDeferred = async {
-                    val lyricUrl = "https://music.163.com/api/song/lyric?id=${id}&lv=-1"
+                    val lyricUrl =
+                        "https://music.163.com/api/song/lyric?id=${id}&lv=-1&tv=-1&rv=-1&yv=-1&ytv=-1&yrv=-1"
                     val lyricJson = executeRequest(lyricUrl) as String
                     val lyricResponse = json.decodeFromString<CloudMusicLyricResponse>(lyricJson)
-                    Pair(lyricResponse.lrc?.lyric, lyricResponse.tlyric?.lyric)
+                    Pair(
+                        lyricResponse.yrc?.lyric?.takeIf { !it.isNullOrBlank() }
+                            ?: lyricResponse.lrc?.lyric?.let(::normalizeLegacyLrcTimestamps),
+                        lyricResponse.ytlrc?.lyric?.takeIf { !it.isNullOrBlank() }
+                            ?: lyricResponse.tlyric?.lyric?.let(::normalizeLegacyLrcTimestamps)
+                    )
                 }
 
                 val (lyric, translatedLyric) = lyricDeferred.await()
@@ -140,25 +162,21 @@ class CloudMusicSearchApi(private val neteaseClient: NeteaseClient) : SearchApi 
                 return body.bytes()
             } else {
                 val jsonString = body.string()
-                NPLogger.d(TAG, "Request URL: $url")
-                logLongJson(TAG, jsonString)
+                logResponseSummary(label = request.url.encodedPath, json = jsonString)
                 return jsonString
             }
         }
     }
 
-    private fun logLongJson(tag: String, json: String) {
-        if (json.length > 3000) {
-            NPLogger.d(tag, "Response JSON (chunk 1): ${json.substring(0, 3000)}")
-            var i = 3000
-            while (i < json.length) {
-                val chunk = json.substring(i, (i + 3000).coerceAtMost(json.length))
-                NPLogger.d(tag, "Response JSON (chunk ${i / 3000 + 1}): $chunk")
-                i += 3000
-            }
-        } else {
-            NPLogger.d(tag, "Response JSON: $json")
+    private fun logResponseSummary(label: String, json: String) {
+        val preview = json
+            .replace(Regex("\\s+"), " ")
+            .take(DEBUG_JSON_PREVIEW_MAX_CHARS)
+        if (BuildConfig.DEBUG) {
+            NPLogger.d(TAG, "Response label=$label, length=${json.length}, preview=$preview")
+            return
         }
+        NPLogger.d(TAG, "Response received: labelHash=${label.hashCode()}, length=${json.length}")
     }
 
     @SuppressLint("DefaultLocale")

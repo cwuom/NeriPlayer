@@ -28,6 +28,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import java.util.Locale
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -58,7 +59,8 @@ data class SleepTimerState(
  */
 class SleepTimerManager(
     private val scope: CoroutineScope,
-    private val onTimerExpired: () -> Unit
+    private val onTimerExpired: () -> Unit,
+    private val onTimerStateChanged: (SleepTimerState) -> Unit = {}
 ) {
     private var timerJob: Job? = null
 
@@ -73,13 +75,15 @@ class SleepTimerManager(
      * @param minutes 倒计时分钟数
      */
     fun startCountdown(minutes: Int) {
-        cancel()
+        cancel(notifyStateChanged = false)
         val totalMillis = minutes * 60 * 1000L
-        _timerState.value = SleepTimerState(
-            isActive = true,
-            mode = SleepTimerMode.COUNTDOWN,
-            remainingMillis = totalMillis,
-            totalMillis = totalMillis
+        updateTimerState(
+            SleepTimerState(
+                isActive = true,
+                mode = SleepTimerMode.COUNTDOWN,
+                remainingMillis = totalMillis,
+                totalMillis = totalMillis
+            )
         )
 
         timerJob = scope.launch {
@@ -91,7 +95,7 @@ class SleepTimerManager(
             }
             if (remaining <= 0) {
                 onTimerExpired()
-                _timerState.value = SleepTimerState()
+                updateTimerState(SleepTimerState())
             }
         }
     }
@@ -100,10 +104,12 @@ class SleepTimerManager(
      * 启动"播放完当前歌曲后停止"模式
      */
     fun startFinishCurrent() {
-        cancel()
-        _timerState.value = SleepTimerState(
-            isActive = true,
-            mode = SleepTimerMode.FINISH_CURRENT
+        cancel(notifyStateChanged = false)
+        updateTimerState(
+            SleepTimerState(
+                isActive = true,
+                mode = SleepTimerMode.FINISH_CURRENT
+            )
         )
     }
 
@@ -111,20 +117,22 @@ class SleepTimerManager(
      * 启动"播放完播放列表后停止"模式
      */
     fun startFinishPlaylist() {
-        cancel()
-        _timerState.value = SleepTimerState(
-            isActive = true,
-            mode = SleepTimerMode.FINISH_PLAYLIST
+        cancel(notifyStateChanged = false)
+        updateTimerState(
+            SleepTimerState(
+                isActive = true,
+                mode = SleepTimerMode.FINISH_PLAYLIST
+            )
         )
     }
 
     /**
      * 取消定时器
      */
-    fun cancel() {
+    fun cancel(notifyStateChanged: Boolean = true) {
         timerJob?.cancel()
         timerJob = null
-        _timerState.value = SleepTimerState()
+        updateTimerState(SleepTimerState(), notifyStateChanged)
     }
 
     /**
@@ -157,8 +165,18 @@ class SleepTimerManager(
         val seconds = totalSeconds % 60
 
         return when {
-            hours > 0 -> String.format("%d:%02d:%02d", hours, minutes, seconds)
-            else -> String.format("%d:%02d", minutes, seconds)
+            hours > 0 -> String.format(Locale.ROOT, "%d:%02d:%02d", hours, minutes, seconds)
+            else -> String.format(Locale.ROOT, "%d:%02d", minutes, seconds)
+        }
+    }
+
+    private fun updateTimerState(
+        state: SleepTimerState,
+        notifyStateChanged: Boolean = true
+    ) {
+        _timerState.value = state
+        if (notifyStateChanged) {
+            onTimerStateChanged(state)
         }
     }
 }

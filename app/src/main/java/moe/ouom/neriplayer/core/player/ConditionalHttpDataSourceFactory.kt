@@ -25,36 +25,48 @@ package moe.ouom.neriplayer.core.player
 
 
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DataSpec
+import androidx.media3.common.C
 import androidx.media3.datasource.HttpDataSource
+import androidx.media3.datasource.DataSpec
+import android.net.Uri
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import moe.ouom.neriplayer.data.BiliCookieRepository
-import android.net.Uri
+import moe.ouom.neriplayer.data.auth.bili.BiliCookieRepository
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRepository
+import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
+import moe.ouom.neriplayer.data.platform.bili.isBiliStreamHost
+import moe.ouom.neriplayer.data.platform.bili.isBiliStreamUrl
+import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeStreamRequestHeaders
+import moe.ouom.neriplayer.data.platform.youtube.isYouTubeGoogleVideoHost
 import moe.ouom.neriplayer.util.NPLogger
 
 /**
  * 自定义的 HttpDataSource.Factory：
- * - 按 host/路径动态注入请求头（B 站拉流需要 Referer/UA/Cookie）
- * - 监听 Cookie 仓库的变化，实时刷新注入的 Cookie 字符串
+ * - 按 host/路径动态注入请求头（B 站 / YouTube 拉流）
+ * - 监听鉴权仓库变化，实时刷新注入的 Cookie 字符串
  */
 @UnstableApi
 class ConditionalHttpDataSourceFactory(
     private val baseFactory: HttpDataSource.Factory,
-    cookieRepo: BiliCookieRepository // 接收 CookieRepository 作为依赖
+    cookieRepo: BiliCookieRepository,
+    youtubeAuthRepo: YouTubeAuthRepository
 ) : HttpDataSource.Factory {
 
     companion object {
         private const val BILI_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
                 "AppleWebKit/537.36 (KHTML, like Gecko) " +
                 "Chrome/124.0.0.0 Safari/537.36"
+        private const val YOUTUBE_WEB_REFERER = "https://www.youtube.com/"
     }
 
     @Volatile
     private var latestCookieHeader: String = ""
+    @Volatile
+    private var latestYouTubeAuth: YouTubeAuthBundle = YouTubeAuthBundle()
     private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
 
     init {
@@ -63,24 +75,32 @@ class ConditionalHttpDataSourceFactory(
                 latestCookieHeader = cookies.entries.joinToString("; ") { "${it.key}=${it.value}" }
             }
         }
+        scope.launch {
+            youtubeAuthRepo.authFlow.collect { auth ->
+                latestYouTubeAuth = auth.normalized()
+            }
+        }
     }
 
     override fun createDataSource(): HttpDataSource {
-        val delegate = baseFactory.createDataSource()
-        return object : HttpDataSource by delegate {
-
-            override fun open(dataSpec: DataSpec): Long {
+        return ConditionalChunkedHttpDataSource(
+            upstreamFactory = baseFactory,
+            transformDataSpec = { dataSpec ->
                 NPLogger.i("createDataSource", dataSpec.uri)
-                val finalSpec = if (shouldInjectBiliHeaders(dataSpec.uri)) {
-                    val headers = buildBiliHeaders(dataSpec.httpRequestHeaders)
-                    dataSpec.buildUpon()
-                        .setHttpRequestHeaders(headers)
-                        .build()
-                } else dataSpec
-
-                return delegate.open(finalSpec)
+                when {
+                    shouldInjectBiliHeaders(dataSpec.uri) -> {
+                        val headers = buildBiliHeaders(dataSpec.httpRequestHeaders)
+                        dataSpec.buildUpon()
+                            .setHttpRequestHeaders(headers)
+                            .build()
+                    }
+                    shouldInjectYouTubeHeaders(dataSpec.uri) -> {
+                        buildYouTubeDataSpec(dataSpec)
+                    }
+                    else -> dataSpec
+                }
             }
-        }
+        )
     }
 
     override fun setDefaultRequestProperties(defaultRequestProperties: Map<String, String>): HttpDataSource.Factory {
@@ -88,12 +108,28 @@ class ConditionalHttpDataSourceFactory(
         return this
     }
 
+    fun close() {
+        scope.cancel()
+    }
+
     /**
      * 是否需要为该 URI 注入 B 站拉流所需的请求头
      */
     private fun shouldInjectBiliHeaders(uri: Uri): Boolean {
-        val host = uri.host ?: return false
-        return host.contains("bilivideo.") || uri.toString().contains("https://upos-hz-")
+        val host = uri.host.orEmpty()
+        return isBiliStreamHost(host) || isBiliStreamUrl(uri.toString())
+    }
+
+    private fun shouldInjectYouTubeHeaders(uri: Uri): Boolean {
+        val host = uri.host?.lowercase() ?: return false
+        if (!isYouTubeGoogleVideoHost(host)) return false
+        val path = uri.path?.lowercase().orEmpty()
+        val rawUrl = uri.toString().lowercase()
+        return rawUrl.contains("source=youtube") ||
+            rawUrl.contains("/api/manifest/") ||
+            path.contains("/playlist/index.m3u8") ||
+            path.contains("/file/seg.ts") ||
+            rawUrl.contains("/videoplayback")
     }
 
     /**
@@ -105,5 +141,52 @@ class ConditionalHttpDataSourceFactory(
         newHeaders["User-Agent"] = BILI_USER_AGENT
         if (latestCookieHeader.isNotBlank()) newHeaders["Cookie"] = latestCookieHeader
         return newHeaders
+    }
+
+    private fun buildYouTubeHeaders(
+        original: Map<String, String>,
+        streamUrl: String
+    ): Map<String, String> {
+        val refererOrigin = original["Referer"].orEmpty()
+            .removeSuffix("/")
+            .ifBlank { latestYouTubeAuth.origin.ifBlank { YOUTUBE_MUSIC_ORIGIN } }
+        return latestYouTubeAuth.buildYouTubeStreamRequestHeaders(
+            original = original,
+            refererOrigin = refererOrigin,
+            streamUrl = streamUrl
+        )
+    }
+
+    private fun buildYouTubeDataSpec(dataSpec: DataSpec): DataSpec {
+        val streamUrl = dataSpec.uri.toString()
+        val headers = buildYouTubeHeaders(
+            original = dataSpec.httpRequestHeaders,
+            streamUrl = streamUrl
+        )
+        if (
+            !YouTubeGoogleVideoRangeSupport.shouldForceExplicitFullRange(streamUrl) ||
+            YouTubeGoogleVideoRangeSupport.hasExplicitRangeHeader(headers)
+        ) {
+            return dataSpec.buildUpon()
+                .setHttpRequestHeaders(headers)
+                .build()
+        }
+        val totalContentLength =
+            YouTubeGoogleVideoRangeSupport.resolveQueryContentLength(streamUrl) ?: return dataSpec
+                .buildUpon()
+                .setHttpRequestHeaders(headers)
+                .build()
+        val rangeHeader = YouTubeGoogleVideoRangeSupport.buildRangeHeader(
+            startPosition = dataSpec.position,
+            requestedLength = dataSpec.length.takeIf { it > 0L } ?: C.LENGTH_UNSET.toLong(),
+            totalContentLength = totalContentLength
+        )
+        return dataSpec.buildUpon()
+            .setHttpRequestHeaders(
+                LinkedHashMap(headers).apply {
+                    put("Range", rangeHeader)
+                }
+            )
+            .build()
     }
 }

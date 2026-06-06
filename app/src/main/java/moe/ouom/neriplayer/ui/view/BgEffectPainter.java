@@ -26,10 +26,10 @@ package moe.ouom.neriplayer.ui.view;
  */
 
 import android.content.Context;
-import android.content.res.Resources;
 import android.graphics.RenderEffect;
 import android.graphics.RuntimeShader;
 import android.os.Build;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.View;
 import android.view.ViewGroup;
@@ -38,67 +38,50 @@ import androidx.annotation.RequiresApi;
 
 import com.google.android.material.appbar.MaterialToolbar;
 
+import org.intellij.lang.annotations.Language;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 
 import moe.ouom.neriplayer.R;
-import moe.ouom.neriplayer.util.NPLogger;
-
 @RequiresApi(api = Build.VERSION_CODES.TIRAMISU)
 public class BgEffectPainter {
+    private static final String TAG = "BgEffectPainter";
     private float[] bound;
-    RuntimeShader mBgRuntimeShader;
-    private final RenderEffect renderEffect;
-    Context mContext;
-    Resources mResources;
+    final RuntimeShader mBgRuntimeShader;
+    final Context mContext;
     private float[] uResolution;
     private float uAnimTime = ((float) System.nanoTime()) / 1.0E9f;
     private float[] uBgBound = {0.0f, 0.4489f, 1.0f, 0.5511f};
-    private final float uTranslateY = 0.0f;
     private float[] uPoints = {0.67f, 0.42f, 1.0f, 0.69f, 0.75f, 1.0f, 0.14f, 0.71f, 0.95f, 0.14f, 0.27f, 0.8f};
     private float[] uColors = {0.57f, 0.76f, 0.98f, 1.0f, 0.98f, 0.85f, 0.68f, 1.0f, 0.98f, 0.75f, 0.93f, 1.0f, 0.73f, 0.7f, 0.98f, 1.0f};
-    private final float uAlphaMulti = 1.0f;
-    private final float uNoiseScale = 1.5f;
-    private final float uPointOffset = 0.1f;
-    private final float uPointRadiusMulti = 1.0f;
     private float uSaturateOffset = 0.2f;
     private float uLightOffset = 0.1f;
-    private final float uAlphaOffset = 0.5f;
-    private final float uShadowColorMulti = 0.3f;
-    private final float uShadowColorOffset = 0.3f;
-    private final float uShadowNoiseScale = 5.0f;
-    private final float uShadowOffset = 0.01f;
     private float uMusicLevel = 0f;
     private float uBeat = 0f;
 
-    public void setFullScreenBound() {
-        float[] full = new float[]{0f, 0f, 1f, 1f};
-        setBound(full);
-    }
 
     public BgEffectPainter(Context context) {
         mContext = context;
-        mResources = context.getResources();
-        String loadShader = loadShader();
+        @Language("AGSL") String loadShader = loadShader();
         mBgRuntimeShader = new RuntimeShader(loadShader);
-        renderEffect = RenderEffect.createRuntimeShaderEffect(mBgRuntimeShader, "uTex");
-        mBgRuntimeShader.setFloatUniform("uTranslateY", uTranslateY);
+        mBgRuntimeShader.setFloatUniform("uTranslateY", 0.0f);
         mBgRuntimeShader.setFloatUniform("uPoints", uPoints);
         mBgRuntimeShader.setFloatUniform("uColors", uColors);
-        mBgRuntimeShader.setFloatUniform("uNoiseScale", uNoiseScale);
-        mBgRuntimeShader.setFloatUniform("uPointOffset", uPointOffset);
-        mBgRuntimeShader.setFloatUniform("uPointRadiusMulti", uPointRadiusMulti);
+        mBgRuntimeShader.setFloatUniform("uNoiseScale", 1.5f);
+        mBgRuntimeShader.setFloatUniform("uPointOffset", 0.1f);
+        mBgRuntimeShader.setFloatUniform("uPointRadiusMulti", 1.0f);
         mBgRuntimeShader.setFloatUniform("uSaturateOffset", uSaturateOffset);
-        mBgRuntimeShader.setFloatUniform("uShadowColorMulti", uShadowColorMulti);
-        mBgRuntimeShader.setFloatUniform("uShadowColorOffset", uShadowColorOffset);
-        mBgRuntimeShader.setFloatUniform("uShadowOffset", uShadowOffset);
+        mBgRuntimeShader.setFloatUniform("uShadowColorMulti", 0.3f);
+        mBgRuntimeShader.setFloatUniform("uShadowColorOffset", 0.3f);
+        mBgRuntimeShader.setFloatUniform("uShadowOffset", 0.01f);
         mBgRuntimeShader.setFloatUniform("uBound", uBgBound);
-        mBgRuntimeShader.setFloatUniform("uAlphaMulti", uAlphaMulti);
+        mBgRuntimeShader.setFloatUniform("uAlphaMulti", 1.0f);
         mBgRuntimeShader.setFloatUniform("uLightOffset", uLightOffset);
-        mBgRuntimeShader.setFloatUniform("uAlphaOffset", uAlphaOffset);
-        mBgRuntimeShader.setFloatUniform("uShadowNoiseScale", uShadowNoiseScale);
+        mBgRuntimeShader.setFloatUniform("uAlphaOffset", 0.5f);
+        mBgRuntimeShader.setFloatUniform("uShadowNoiseScale", 5.0f);
         mBgRuntimeShader.setFloatUniform("uMusicLevel", uMusicLevel);
         mBgRuntimeShader.setFloatUniform("uBeat", uBeat);
     }
@@ -111,7 +94,7 @@ public class BgEffectPainter {
     }
 
     public RenderEffect getRenderEffect() {
-        return renderEffect;
+        return RenderEffect.createRuntimeShaderEffect(mBgRuntimeShader, "uTex");
     }
 
     public void updateMaterials() {
@@ -166,21 +149,6 @@ public class BgEffectPainter {
         setBound(fArr);
     }
 
-    public void setPadLight(float[] fArr) {
-        setLightOffset(0.1f);
-        setSaturateOffset(0.0f);
-        setPoints(new float[]{0.67f, 0.37f, 0.88f, 0.54f, 0.66f, 1.0f, 0.37f, 0.71f, 0.68f, 0.28f, 0.26f, 0.62f});
-        setColors(new float[]{0.57f, 0.76f, 0.98f, 1.0f, 0.98f, 0.85f, 0.68f, 1.0f, 0.98f, 0.75f, 0.93f, 0.95f, 0.73f, 0.7f, 0.98f, 0.9f});
-        setBound(fArr);
-    }
-
-    public void setPadDark(float[] fArr) {
-        setLightOffset(-0.1f);
-        setSaturateOffset(0.2f);
-        setPoints(new float[]{0.55f, 0.42f, 1.0f, 0.56f, 0.75f, 1.0f, 0.4f, 0.59f, 0.71f, 0.43f, 0.09f, 0.75f});
-        setColors(new float[]{0.0f, 0.31f, 0.58f, 1.0f, 0.53f, 0.29f, 0.15f, 1.0f, 0.46f, 0.06f, 0.27f, 1.0f, 0.16f, 0.12f, 0.45f, 1.0f});
-        setBound(fArr);
-    }
 
     public void setResolution(float[] fArr) {
         this.uResolution = fArr;
@@ -188,14 +156,14 @@ public class BgEffectPainter {
 
     private String loadShader() {
         StringBuilder shaderCode = new StringBuilder();
-        try (InputStream is = mContext.getAssets().open("hyper_background_effect.frag");
+        try (InputStream is = mContext.getAssets().open("hyper_background_effect.glsl");
              BufferedReader reader = new BufferedReader(new InputStreamReader(is))) {
             String line;
             while ((line = reader.readLine()) != null) {
                 shaderCode.append(line).append("\n");
             }
         } catch (IOException e) {
-            NPLogger.INSTANCE.e("BgEffectPainter", e);
+            Log.e(TAG, "Failed to load shader asset", e);
         }
         return shaderCode.toString();
     }
@@ -210,14 +178,6 @@ public class BgEffectPainter {
 
     }
 
-    public void showRuntimeShader(Context context, View view) {
-        calcAnimationBound(context, view, null);
-        if (isNightMode(context)) {
-            setPhoneDark(this.bound);
-        } else {
-            setPhoneLight(this.bound);
-        }
-    }
 
     public void calcAnimationBound(Context context, View view, MaterialToolbar actionBar) {
         float heightDp = (float) (416 * 1.3);

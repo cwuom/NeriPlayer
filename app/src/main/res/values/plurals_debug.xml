@@ -1,0 +1,21 @@
+<resources>
+    <!-- Debug & Logs -->
+    <plurals name="debug_youtube_probe_status_home_success">
+        <item quantity="other">Home Feed 请求成功，共 %1$d 个栏目</item>
+    </plurals>
+    <plurals name="debug_youtube_probe_status_library_success">
+        <item quantity="other">媒体库请求成功，共 %1$d 个歌单</item>
+    </plurals>
+    <plurals name="debug_youtube_probe_library_preview_more">
+        <item quantity="other">… 其余 %1$d 个已省略</item>
+    </plurals>
+    <plurals name="debug_page_not_found">
+        <item quantity="other">找不到第 %d P</item>
+    </plurals>
+    <plurals name="crash_log_cleared">
+        <item quantity="other">已清空 %d 个崩溃日志</item>
+    </plurals>
+    <plurals name="log_cleared_count">
+        <item quantity="other">已清空 %d 个日志文件</item>
+    </plurals>
+</resources>
