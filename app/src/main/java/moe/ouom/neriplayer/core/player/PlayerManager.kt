@@ -183,6 +183,7 @@ object PlayerManager {
     internal var playbackCrossfadeInDurationMs = DEFAULT_FADE_DURATION_MS
     internal var playbackCrossfadeOutDurationMs = DEFAULT_FADE_DURATION_MS
     internal var playbackSoundConfig = PlaybackSoundConfig()
+    internal var lyriconEnabled = true
     internal var keepLastPlaybackProgressEnabled = true
     internal var keepPlaybackModeStateEnabled = true
     internal var stopOnBluetoothDisconnectEnabled = true
@@ -371,6 +372,10 @@ object PlayerManager {
 
     internal fun syncLyriconSong(song: SongItem?) {
         lyriconUpdateJob?.cancel()
+        if (!lyriconEnabled) {
+            LyriconManager.setPlaybackState(false)
+            return
+        }
         if (song == null) {
             LyriconManager.setPlaybackState(false)
             return

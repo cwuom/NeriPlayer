@@ -417,6 +417,19 @@ internal fun PlayerManager.initializeImpl(
             }
         }
         ioScope.launch {
+            settingsRepo.lyriconEnabledFlow.collect { enabled ->
+                lyriconEnabled = enabled
+                LyriconManager.setEnabled(enabled)
+                if (enabled) {
+                    syncLyriconSong(_currentSongFlow.value)
+                    LyriconManager.setPlaybackState(_isPlayingFlow.value)
+                    if (_isPlayingFlow.value) {
+                        LyriconManager.setPosition(_playbackPositionMs.value)
+                    }
+                }
+            }
+        }
+        ioScope.launch {
             settingsRepo.playbackFadeInFlow.collect { enabled ->
                 playbackFadeInEnabled = enabled
             }

@@ -13,6 +13,8 @@ import moe.ouom.neriplayer.util.NPLogger
 
 object LyriconManager {
     private var provider: LyriconProvider? = null
+    @Volatile
+    private var enabled: Boolean = true
 
     fun initialize(context: Context) {
         if (provider != null) return
@@ -31,7 +33,15 @@ object LyriconManager {
         }
     }
 
+    fun setEnabled(isEnabled: Boolean) {
+        enabled = isEnabled
+        if (!isEnabled) {
+            setPlaybackState(false)
+        }
+    }
+
     fun setPlaybackState(isPlaying: Boolean) {
+        if (!enabled && isPlaying) return
         try {
             provider?.player?.setPlaybackState(isPlaying)
         } catch (e: Exception) {
@@ -40,6 +50,7 @@ object LyriconManager {
     }
 
     fun setPosition(positionMs: Long) {
+        if (!enabled) return
         try {
             provider?.player?.setPosition(positionMs)
         } catch (e: Exception) {
@@ -48,6 +59,7 @@ object LyriconManager {
     }
 
     fun updateSong(song: SongItem, lyrics: List<LyricEntry>?, translatedLyrics: List<LyricEntry>?) {
+        if (!enabled) return
         try {
             val translationToleranceMs = 1_500L
             val lyriconLyrics = lyrics?.map { entry ->

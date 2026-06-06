@@ -764,7 +764,9 @@ internal fun PlayerManager.pauseImpl(
         playJob = null
         _playWhenReadyFlow.value = action.resumePlaybackAfterLoad
         _isPlayingFlow.value = false
-        LyriconManager.setPlaybackState(false)
+        if (lyriconEnabled) {
+            LyriconManager.setPlaybackState(false)
+        }
         scheduleStatePersist(
             positionMs = action.persistPositionMs,
             shouldResumePlayback = action.persistShouldResumePlayback
@@ -844,7 +846,9 @@ private fun PlayerManager.pauseInternal(forcePersist: Boolean, resetVolumeToFull
     )
     player.playWhenReady = false
     player.pause()
-    LyriconManager.setPlaybackState(false)
+    if (lyriconEnabled) {
+        LyriconManager.setPlaybackState(false)
+    }
     syncPlaybackStatsPlayingState(
         playing = false,
         reason = "pause_internal"
@@ -1130,7 +1134,9 @@ internal fun PlayerManager.startProgressUpdates() {
             } else {
                 positionMs + PLAYBACK_PROGRESS_UPDATE_INTERVAL_MS
             }
-            LyriconManager.setPosition(lyriconPositionMs)
+            if (lyriconEnabled) {
+                LyriconManager.setPosition(lyriconPositionMs)
+            }
             maybePersistPlaybackProgress(positionMs)
             persistPlaybackStatsSnapshotAsync(
                 synchronized(playbackStatsTracker) {
@@ -1203,7 +1209,9 @@ internal fun PlayerManager.stopPlaybackPreservingQueueImpl(clearMediaUrl: Boolea
     runCatching { player.stop() }
     runCatching { player.clearMediaItems() }
     _isPlayingFlow.value = false
-    LyriconManager.setPlaybackState(false)
+    if (lyriconEnabled) {
+        LyriconManager.setPlaybackState(false)
+    }
     _playWhenReadyFlow.value = false
     _playerPlaybackStateFlow.value = Player.STATE_IDLE
     clearPendingSeekPosition()

@@ -442,6 +442,17 @@ object AutoSettingsSchema {
     )
     object motion {
         @AutoSetting(
+            key = "lyricon_enabled",
+            type = SettingValueType.Boolean,
+            defaultBoolean = true,
+            titleRes = "settings_lyricon_enabled",
+            descriptionRes = "settings_lyricon_enabled_desc",
+            order = 5,
+            ui = SettingUiType.Switch
+        )
+        val lyriconEnabled = autoSetting(icon = AutoSettingIcon.Subtitles)
+
+        @AutoSetting(
             key = "advanced_lyrics_enabled",
             type = SettingValueType.Boolean,
             defaultBoolean = true,
