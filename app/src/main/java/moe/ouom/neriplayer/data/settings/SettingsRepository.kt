@@ -125,6 +125,9 @@ class SettingsRepository(private val context: Context) {
     val advancedLyricsEnabledFlow: Flow<Boolean> =
         autoSettingsRepository.advancedLyricsEnabledFlow
 
+    val lyriconEnabledFlow: Flow<Boolean> =
+        autoSettingsRepository.lyriconEnabledFlow
+
     val advancedBlurEnabledFlow: Flow<Boolean> =
         autoSettingsRepository.advancedBlurEnabledFlow
 
@@ -438,6 +441,11 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setAdvancedLyricsEnabled(enabled: Boolean) {
         autoSettingsRepository.setAdvancedLyricsEnabled(enabled)
+    }
+
+    suspend fun setLyriconEnabled(enabled: Boolean) {
+        autoSettingsRepository.setLyriconEnabled(enabled)
+        updatePlaybackPreferenceSnapshot(context) { it.copy(lyriconEnabled = enabled) }
     }
 
     suspend fun setAdvancedBlurEnabled(enabled: Boolean) {

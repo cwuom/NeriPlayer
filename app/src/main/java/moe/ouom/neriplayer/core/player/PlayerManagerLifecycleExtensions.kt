@@ -34,6 +34,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.di.AppContainer.biliCookieRepo
 import moe.ouom.neriplayer.core.di.AppContainer.settingsRepo
+import moe.ouom.neriplayer.core.lyricon.LyriconManager
 import moe.ouom.neriplayer.core.player.audio.isBluetoothOutputType
 import moe.ouom.neriplayer.core.player.audio.isHeadsetLikeOutput
 import moe.ouom.neriplayer.core.player.audio.isWiredOutputType
@@ -104,6 +105,11 @@ internal fun PlayerManager.initializeImpl(
             initialPlaybackPreferences.stopOnBluetoothDisconnect
         allowMixedPlaybackEnabled =
             initialPlaybackPreferences.allowMixedPlayback
+        lyriconEnabled = initialPlaybackPreferences.lyriconEnabled
+        LyriconManager.setEnabled(lyriconEnabled)
+        if (lyriconEnabled && !LyriconManager.isInitialized()) {
+            LyriconManager.initialize(app)
+        }
         playbackSoundConfig = initialPlaybackPreferences.toPlaybackSoundConfig()
         NPLogger.d(
             "NERI-PlayerManager",
@@ -304,6 +310,7 @@ internal fun PlayerManager.initializeImpl(
                     return
                 }
                 _isPlayingFlow.value = isPlaying
+                LyriconManager.setPlaybackState(isPlaying)
                 syncPlaybackStatsPlayingState(
                     playing = isPlaying,
                     reason = "exo_is_playing_changed"
@@ -411,6 +418,25 @@ internal fun PlayerManager.initializeImpl(
                         source = PlaybackAudioSource.BILIBILI,
                         reason = "bili_quality_changed"
                     )
+                }
+            }
+        }
+        ioScope.launch {
+            settingsRepo.lyriconEnabledFlow.collect { enabled ->
+                lyriconEnabled = enabled
+                LyriconManager.setEnabled(enabled)
+                if (enabled) {
+                    if (!LyriconManager.isInitialized()) {
+                        LyriconManager.initialize(application)
+                    }
+                    syncLyriconSong(_currentSongFlow.value)
+                    LyriconManager.setPlaybackState(_isPlayingFlow.value)
+                    if (_isPlayingFlow.value) {
+                        LyriconManager.setPosition(_playbackPositionMs.value)
+                    }
+                } else {
+                    lyriconUpdateJob?.cancel()
+                    lyriconUpdateJob = null
                 }
             }
         }
@@ -882,6 +908,9 @@ internal fun PlayerManager.releaseImpl() {
     playbackSoundPersistJob = null
     playJob?.cancel()
     playJob = null
+    lyriconUpdateJob?.cancel()
+    lyriconUpdateJob = null
+    LyriconManager.setPlaybackState(false)
 
     if (isPlayerInitialized()) {
         runCatching { player.stop() }

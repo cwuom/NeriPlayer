@@ -60,6 +60,7 @@ import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.search.SongSearchInfo
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.di.AppContainer.settingsRepo
+import moe.ouom.neriplayer.core.lyricon.LyriconManager
 import moe.ouom.neriplayer.core.player.model.AudioDevice
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_PITCH
@@ -149,6 +150,7 @@ object PlayerManager {
     internal var ioScope = newIoScope()
     internal var mainScope = newMainScope()
     internal var progressJob: Job? = null
+    internal var lyriconUpdateJob: Job? = null
     internal var volumeFadeJob: Job? = null
     internal var pendingPauseJob: Job? = null
         set(value) {
@@ -181,6 +183,7 @@ object PlayerManager {
     internal var playbackCrossfadeInDurationMs = DEFAULT_FADE_DURATION_MS
     internal var playbackCrossfadeOutDurationMs = DEFAULT_FADE_DURATION_MS
     internal var playbackSoundConfig = PlaybackSoundConfig()
+    internal var lyriconEnabled = false
     internal var keepLastPlaybackProgressEnabled = true
     internal var keepPlaybackModeStateEnabled = true
     internal var stopOnBluetoothDisconnectEnabled = true
@@ -355,15 +358,41 @@ object PlayerManager {
         )
     }
 
-    internal fun setCurrentSongForPlayback(song: SongItem?) {
+    internal fun setCurrentSongForPlayback(song: SongItem?, syncLyricon: Boolean = true) {
         val previousSong = _currentSongFlow.value
         _currentSongFlow.value = song
         if (previousSong === song) return
+        if (syncLyricon) {
+            syncLyriconSong(song)
+        }
         persistPlaybackStatsSnapshotAsync(
             synchronized(playbackStatsTracker) {
                 playbackStatsTracker.onSongChanged(song)
             }
         )
+    }
+
+    internal fun syncLyriconSong(song: SongItem?) {
+        lyriconUpdateJob?.cancel()
+        if (!lyriconEnabled) {
+            lyriconUpdateJob = null
+            LyriconManager.setPlaybackState(false)
+            return
+        }
+        if (song == null) {
+            lyriconUpdateJob = null
+            LyriconManager.setPlaybackState(false)
+            LyriconManager.setPosition(0L)
+            return
+        }
+        LyriconManager.updateSong(song, lyrics = null, translatedLyrics = null)
+        lyriconUpdateJob = ioScope.launch {
+            val lyrics = getLyrics(song)
+            val translatedLyrics = getTranslatedLyrics(song)
+            if (_currentSongFlow.value?.sameIdentityAs(song) == true) {
+                LyriconManager.updateSong(song, lyrics, translatedLyrics)
+            }
+        }
     }
 
     internal fun isApplicationInitialized(): Boolean = this::application.isInitialized

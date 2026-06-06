@@ -707,10 +707,10 @@ class NeteaseClient {
             "id" to songId.toString(),
             "cp" to "false",
             "lv" to 0,
-            "tv" to 0,
+            "tv" to 1,
             "rv" to 0,
-            "yv" to 0,
-            "ytv" to 0,
+            "yv" to 1,
+            "ytv" to 1,
             "yrv" to 0,
         )
 

@@ -14,6 +14,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.api.bili.buildBiliPartSong
+import moe.ouom.neriplayer.core.lyricon.LyriconManager
 import moe.ouom.neriplayer.core.player.debug.playbackStateName
 import moe.ouom.neriplayer.core.player.metadata.shouldAutoMatchExternalLyrics
 import moe.ouom.neriplayer.core.player.model.PlayerEvent
@@ -353,7 +354,7 @@ internal fun PlayerManager.playAtIndex(
         "playAtIndex: index=$index, song=${song.name}, resumePositionMs=$resumePositionMs, transitionFade=$useTrackTransitionFade, source=$commandSource, forceStartupProtectionFade=$forceStartupProtectionFade, nextToken=${playbackRequestToken + 1}, stack=[${debugStackHint()}]"
     )
     cancelPendingPauseRequest()
-    setCurrentSongForPlayback(song)
+    setCurrentSongForPlayback(song, syncLyricon = false)
     _currentMediaUrl.value = null
     _currentPlaybackAudioInfo.value = null
     currentMediaUrlResolvedAtMs = 0L
@@ -446,6 +447,7 @@ internal fun PlayerManager.playAtIndex(
                         cacheKey,
                         result.mimeType
                     )
+                    syncLyriconSong(song)
                     _currentMediaUrl.value = result.url
                     _currentPlaybackAudioInfo.value = result.audioInfo
                     currentMediaUrlResolvedAtMs = SystemClock.elapsedRealtime()
@@ -763,6 +765,9 @@ internal fun PlayerManager.pauseImpl(
         playJob = null
         _playWhenReadyFlow.value = action.resumePlaybackAfterLoad
         _isPlayingFlow.value = false
+        if (lyriconEnabled) {
+            LyriconManager.setPlaybackState(false)
+        }
         scheduleStatePersist(
             positionMs = action.persistPositionMs,
             shouldResumePlayback = action.persistShouldResumePlayback
@@ -842,6 +847,9 @@ private fun PlayerManager.pauseInternal(forcePersist: Boolean, resetVolumeToFull
     )
     player.playWhenReady = false
     player.pause()
+    if (lyriconEnabled) {
+        LyriconManager.setPlaybackState(false)
+    }
     syncPlaybackStatsPlayingState(
         playing = false,
         reason = "pause_internal"
@@ -919,6 +927,9 @@ internal fun PlayerManager.seekToImpl(
     pendingMediaLoadPositionMs = pendingSeekAction.exposedPositionMs
     if (pendingSeekAction.seekPlayerNow) {
         player.seekTo(resolvedPositionMs)
+    }
+    if (lyriconEnabled) {
+        LyriconManager.setPosition(resolvedPositionMs)
     }
     synchronized(playbackStatsTracker) {
         playbackStatsTracker.onManualSeek(resolvedPositionMs)
@@ -1122,6 +1133,14 @@ internal fun PlayerManager.startProgressUpdates() {
                 player.currentPosition.coerceAtLeast(0L)
             )
             _playbackPositionMs.value = positionMs
+            val lyriconPositionMs = if (player.duration > 0L) {
+                (positionMs + PLAYBACK_PROGRESS_UPDATE_INTERVAL_MS).coerceAtMost(player.duration)
+            } else {
+                positionMs + PLAYBACK_PROGRESS_UPDATE_INTERVAL_MS
+            }
+            if (lyriconEnabled) {
+                LyriconManager.setPosition(lyriconPositionMs)
+            }
             maybePersistPlaybackProgress(positionMs)
             persistPlaybackStatsSnapshotAsync(
                 synchronized(playbackStatsTracker) {
@@ -1194,6 +1213,9 @@ internal fun PlayerManager.stopPlaybackPreservingQueueImpl(clearMediaUrl: Boolea
     runCatching { player.stop() }
     runCatching { player.clearMediaItems() }
     _isPlayingFlow.value = false
+    if (lyriconEnabled) {
+        LyriconManager.setPlaybackState(false)
+    }
     _playWhenReadyFlow.value = false
     _playerPlaybackStateFlow.value = Player.STATE_IDLE
     clearPendingSeekPosition()

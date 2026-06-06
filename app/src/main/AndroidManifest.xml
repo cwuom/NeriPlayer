@@ -31,6 +31,10 @@
         android:theme="@style/Theme.NeriPlayer"
         android:name=".NeriPlayerApplication">
 
+        <meta-data android:name="lyricon_module" android:value="true" />
+        <meta-data android:name="lyricon_module_author" android:value="NeriPlayer" />
+        <meta-data android:name="lyricon_module_description" android:value="NeriPlayer Lyricon Provider" />
+
         <activity
             android:name=".activity.MainActivity"
             android:enableOnBackInvokedCallback="true"

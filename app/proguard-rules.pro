@@ -77,6 +77,10 @@
 
 -keep class moe.ouom.neriplayer.** { *; }
 
+# Lyricon provider uses service bindings/model reflection; keep it intact in release builds.
+-keep class io.github.proify.lyricon.** { *; }
+-dontwarn io.github.proify.lyricon.**
+
 # WorkManager - 保留Worker类
 -keep class * extends androidx.work.Worker
 -keep class * extends androidx.work.CoroutineWorker {
