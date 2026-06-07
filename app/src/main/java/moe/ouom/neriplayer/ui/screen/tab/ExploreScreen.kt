@@ -62,10 +62,13 @@ import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DividerDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -115,12 +118,14 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.media.displayAlbum
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
@@ -147,6 +152,9 @@ fun ExploreScreen(
     onPlay: (PlaylistSummary) -> Unit,
     onYouTubeMusicPlaylistClick: (YouTubeMusicPlaylist) -> Unit = {},
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
+    onSongPlayPreservingQueue: (SongItem) -> Unit = {},
+    onSongPlayNext: (SongItem) -> Unit = {},
+    onSongAddToQueueEnd: (SongItem) -> Unit = {},
     onPlayParts: (BiliClient.VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> }
 ) {
     val context = LocalContext.current
@@ -163,6 +171,12 @@ fun ExploreScreen(
 
     val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
     val allLocalPlaylists by repo.playlists.collectAsState(initial = emptyList())
+    val favoriteSongKeys = remember(allLocalPlaylists, context) {
+        FavoritesPlaylist.firstOrNull(allLocalPlaylists, context)
+            ?.songs
+            .orEmpty()
+            .mapTo(mutableSetOf()) { it.stableKey() }
+    }
     val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
     val favorites by favoriteRepo.favorites.collectAsState()
     val favoriteKeys = remember(favorites) {
@@ -396,26 +410,44 @@ fun ExploreScreen(
                                         ).joinToString("|")
                                     }
                                 ) { index, song ->
-                                    SongRow(index + 1, song) {
-                                        if (song.album == PlayerManager.BILI_SOURCE_TAG) {
-                                            scope.launch {
-                                                try {
-                                                    val info = vm.getVideoInfoByAvid(song.id)
-                                                    if (info.pages.size <= 1) {
-                                                        onSongClick(ui.searchResults, index)
-                                                    } else {
-                                                        partsInfo = info
-                                                        clickedSongCoverUrl = song.coverUrl ?: ""
-                                                        showPartsSheet = true
+                                    val isFavoriteSong = favoriteSongKeys.contains(song.stableKey())
+                                    SongRow(
+                                        index = index + 1,
+                                        song = song,
+                                        isFavorite = isFavoriteSong,
+                                        onClick = {
+                                            if (song.album == PlayerManager.BILI_SOURCE_TAG) {
+                                                scope.launch {
+                                                    try {
+                                                        val info = vm.getVideoInfoByAvid(song.id)
+                                                        if (info.pages.size <= 1) {
+                                                            onSongClick(ui.searchResults, index)
+                                                        } else {
+                                                            partsInfo = info
+                                                            clickedSongCoverUrl = song.coverUrl ?: ""
+                                                            showPartsSheet = true
+                                                        }
+                                                    } catch (e: Exception) {
+                                                        NPLogger.e("ExploreScreen", context.getString(R.string.search_error), e)
                                                     }
-                                                } catch (e: Exception) {
-                                                    NPLogger.e("ExploreScreen", context.getString(R.string.search_error), e)
+                                                }
+                                            } else {
+                                                onSongClick(ui.searchResults, index)
+                                            }
+                                        },
+                                        onPlayNow = { onSongPlayPreservingQueue(song) },
+                                        onPlayNext = { onSongPlayNext(song) },
+                                        onAddToQueueEnd = { onSongAddToQueueEnd(song) },
+                                        onToggleFavorite = {
+                                            scope.launch {
+                                                if (isFavoriteSong) {
+                                                    repo.removeFromFavorites(song)
+                                                } else {
+                                                    repo.addToFavorites(song)
                                                 }
                                             }
-                                        } else {
-                                            onSongClick(ui.searchResults, index)
                                         }
-                                    }
+                                    )
                                 }
                             }
                         }
@@ -828,10 +860,16 @@ private fun ExploreTagChip(
 private fun SongRow(
     index: Int,
     song: SongItem,
-    onClick: () -> Unit
+    isFavorite: Boolean,
+    onClick: () -> Unit,
+    onPlayNow: () -> Unit,
+    onPlayNext: () -> Unit,
+    onAddToQueueEnd: () -> Unit,
+    onToggleFavorite: () -> Unit
 ) {
     val context = LocalContext.current
     val coverUrl = song.displayCoverUrl(context)
+    var showMoreMenu by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -892,6 +930,62 @@ private fun SongRow(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+
+        Spacer(Modifier.width(8.dp))
+        Box {
+            HapticIconButton(onClick = { showMoreMenu = true }) {
+                Icon(
+                    imageVector = Icons.Filled.MoreVert,
+                    contentDescription = stringResource(R.string.cd_more_actions),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            DropdownMenu(
+                expanded = showMoreMenu,
+                onDismissRequest = { showMoreMenu = false }
+            ) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.search_result_play_keep_queue)) },
+                    onClick = {
+                        context.performHapticFeedback()
+                        onPlayNow()
+                        showMoreMenu = false
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.local_playlist_play_next)) },
+                    onClick = {
+                        context.performHapticFeedback()
+                        onPlayNext()
+                        showMoreMenu = false
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.search_result_add_to_current_queue)) },
+                    onClick = {
+                        context.performHapticFeedback()
+                        onAddToQueueEnd()
+                        showMoreMenu = false
+                    }
+                )
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            if (isFavorite) {
+                                stringResource(R.string.favorite_remove)
+                            } else {
+                                stringResource(R.string.favorite_add)
+                            }
+                        )
+                    },
+                    onClick = {
+                        context.performHapticFeedback()
+                        onToggleFavorite()
+                        showMoreMenu = false
+                    }
+                )
+            }
         }
     }
 }

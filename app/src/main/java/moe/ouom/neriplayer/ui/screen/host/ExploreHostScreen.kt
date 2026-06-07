@@ -62,6 +62,9 @@ private sealed class ExploreSelectedItem {
 @Composable
 fun ExploreHostScreen(
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
+    onSongPlayPreservingQueue: (SongItem) -> Unit = {},
+    onSongPlayNext: (SongItem) -> Unit = {},
+    onSongAddToQueueEnd: (SongItem) -> Unit = {},
     onPlayParts: (BiliClient.VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> }
 ) {
     var selected by remember { mutableStateOf<ExploreSelectedItem?>(null) }
@@ -115,6 +118,9 @@ fun ExploreHostScreen(
                         selected = ExploreSelectedItem.YouTubeMusic(pl)
                     },
                     onSongClick = onSongClick,
+                    onSongPlayPreservingQueue = onSongPlayPreservingQueue,
+                    onSongPlayNext = onSongPlayNext,
+                    onSongAddToQueueEnd = onSongAddToQueueEnd,
                     onPlayParts = onPlayParts
                 )
             } else {

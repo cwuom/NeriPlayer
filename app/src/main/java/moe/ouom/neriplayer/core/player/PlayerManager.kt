@@ -1408,6 +1408,11 @@ internal fun cancelVolumeFade(resetToFull: Boolean = false) =
         commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
     ) = playFromQueueImpl(index, commandSource)
 
+    fun replaceCurrentInQueueAndPlay(
+        song: SongItem,
+        commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
+    ) = replaceCurrentInQueueAndPlayImpl(song, commandSource)
+
     fun addToQueueNext(song: SongItem) = addToQueueNextImpl(song)
 
     fun addToQueueEnd(song: SongItem) = addToQueueEndImpl(song)

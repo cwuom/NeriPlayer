@@ -536,6 +536,66 @@ internal fun PlayerManager.playFromQueueImpl(
     )
 }
 
+internal fun PlayerManager.replaceCurrentInQueueAndPlayImpl(
+    song: SongItem,
+    commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
+) {
+    ensureInitialized()
+    if (!initialized) return
+
+    if (currentPlaylist.isEmpty() || currentIndex !in currentPlaylist.indices) {
+        NPLogger.d(
+            "NERI-PlayerManager",
+            "replaceCurrentInQueueAndPlay(): queue empty, fallback to playPlaylist, song=${song.name}/${song.id}"
+        )
+        playPlaylist(listOf(song), 0, commandSource)
+        return
+    }
+
+    if (shouldBlockLocalRoomControl(commandSource) ||
+        shouldBlockLocalSongSwitch(song, commandSource)
+    ) {
+        return
+    }
+
+    val oldIndex = currentIndex.coerceIn(currentPlaylist.indices)
+    val newPlaylist = currentPlaylist.toMutableList()
+    val existingIndex = newPlaylist.indexOfFirst { it.sameIdentityAs(song) }
+    val targetIndex = if (existingIndex != -1 && existingIndex != oldIndex) {
+        newPlaylist.removeAt(existingIndex)
+        if (existingIndex < oldIndex) oldIndex - 1 else oldIndex
+    } else {
+        oldIndex
+    }.coerceIn(newPlaylist.indices)
+
+    newPlaylist[targetIndex] = song
+    suppressAutoResumeForCurrentSession = false
+    consecutivePlayFailures = 0
+    currentPlaylist = newPlaylist
+    _currentQueueFlow.value = currentPlaylist
+    currentIndex = targetIndex
+
+    shuffleHistory.clear()
+    shuffleFuture.clear()
+    if (player.shuffleModeEnabled) {
+        rebuildShuffleBag(excludeIndex = currentIndex)
+    } else {
+        shuffleBag.clear()
+    }
+
+    NPLogger.d(
+        "NERI-PlayerManager",
+        "replaceCurrentInQueueAndPlay(): song=${song.name}/${song.id}, existingIndex=$existingIndex, targetIndex=$targetIndex, queueSize=${currentPlaylist.size}, source=$commandSource, stack=[${debugStackHint()}]"
+    )
+    playAtIndex(currentIndex, commandSource = commandSource)
+    emitPlaybackCommand(
+        type = "PLAY_FROM_QUEUE",
+        source = commandSource,
+        queue = currentPlaylist,
+        currentIndex = currentIndex
+    )
+}
+
 internal fun PlayerManager.addToQueueNextImpl(song: SongItem) {
     ensureInitialized()
     if (!initialized) return

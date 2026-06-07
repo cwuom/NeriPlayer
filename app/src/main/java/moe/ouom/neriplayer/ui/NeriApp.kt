@@ -920,6 +920,25 @@ private fun NeriAppContent(
         )
     }
 
+    fun playSongPreservingQueueAndOpenNowPlaying(song: SongItem) {
+        showNowPlaying = true
+        PlayerManager.replaceCurrentInQueueAndPlay(song)
+        scheduleAudioServiceStart(
+            "play_search_result_preserve_queue",
+            true
+        )
+    }
+
+    fun addSongToQueueNextFromSearch(song: SongItem) {
+        PlayerManager.addToQueueNext(song)
+        scheduleAudioServiceStart("search_result_play_next", false)
+    }
+
+    fun addSongToQueueEndFromSearch(song: SongItem) {
+        PlayerManager.addToQueueEnd(song)
+        scheduleAudioServiceStart("search_result_add_to_queue_end", false)
+    }
+
     fun ensureAudioServiceStarted(source: String = "ensure_audio_service_started") {
         NPLogger.d(
             "NERI-App",
@@ -1304,6 +1323,9 @@ private fun NeriAppContent(
                                 ) {
                                     ExploreHostScreen(
                                         onSongClick = ::playSongsAndOpenNowPlaying,
+                                        onSongPlayPreservingQueue = ::playSongPreservingQueueAndOpenNowPlaying,
+                                        onSongPlayNext = ::addSongToQueueNextFromSearch,
+                                        onSongAddToQueueEnd = ::addSongToQueueEndFromSearch,
                                         onPlayParts = ::playBiliPartsAndOpenNowPlaying
                                     )
                                 }
