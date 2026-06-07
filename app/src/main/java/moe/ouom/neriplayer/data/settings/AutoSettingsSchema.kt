@@ -432,7 +432,7 @@ object AutoSettingsSchema {
     /*
      * 动效与歌词运动
      *
-     * 放播放页动效、歌词动效、模糊强度和歌词来源偏移
+     * 放播放页动效、歌词动效和模糊强度
      * 很多开关受 Android 版本或互斥关系影响，所以复杂项只生成元数据，不走通用开关
      */
     @AutoSettingsSection(
@@ -441,17 +441,6 @@ object AutoSettingsSchema {
         order = 60
     )
     object motion {
-        @AutoSetting(
-            key = "lyricon_enabled",
-            type = SettingValueType.Boolean,
-            defaultBoolean = false,
-            titleRes = "settings_lyricon_enabled",
-            descriptionRes = "settings_lyricon_enabled_desc",
-            order = 5,
-            ui = SettingUiType.Switch
-        )
-        val lyriconEnabled = autoSetting(icon = AutoSettingIcon.Subtitles)
-
         @AutoSetting(
             key = "advanced_lyrics_enabled",
             type = SettingValueType.Boolean,
@@ -547,6 +536,30 @@ object AutoSettingsSchema {
             ui = SettingUiType.Custom
         )
         val lyricBlurAmount = Unit
+    }
+
+    /*
+     * 歌词设置
+     *
+     * 放外部词幕适配和各来源默认歌词偏移
+     * 偏移会影响已有歌曲的用户偏移重算，所以保留手写入口
+     */
+    @AutoSettingsSection(
+        titleRes = "settings_lyrics_offset",
+        descriptionRes = "settings_lyrics_offset_expand",
+        order = 65
+    )
+    object lyrics {
+        @AutoSetting(
+            key = "lyricon_enabled",
+            type = SettingValueType.Boolean,
+            defaultBoolean = false,
+            titleRes = "settings_lyricon_enabled",
+            descriptionRes = "settings_lyricon_enabled_desc",
+            order = 10,
+            ui = SettingUiType.Switch
+        )
+        val lyriconEnabled = autoSetting(iconRes = R.drawable.ic_lyricon)
 
         @AutoSetting(
             key = "cloud_music_lyric_default_offset_ms",
@@ -554,7 +567,7 @@ object AutoSettingsSchema {
             defaultLong = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS,
             titleRes = "settings_lyrics_offset_cloud_music",
             descriptionRes = "settings_lyrics_offset_cloud_music_desc",
-            order = 100,
+            order = 20,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
         )
@@ -566,7 +579,7 @@ object AutoSettingsSchema {
             defaultLong = DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS,
             titleRes = "settings_lyrics_offset_qq_music",
             descriptionRes = "settings_lyrics_offset_qq_music_desc",
-            order = 110,
+            order = 30,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
         )

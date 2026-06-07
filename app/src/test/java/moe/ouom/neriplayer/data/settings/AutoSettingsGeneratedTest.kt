@@ -71,6 +71,7 @@ class AutoSettingsGeneratedTest {
         assertEquals("personalization", AutoSettingsSections.personalization)
         assertEquals("display", AutoSettingsSections.display)
         assertEquals("motion", AutoSettingsSections.motion)
+        assertEquals("lyrics", AutoSettingsSections.lyrics)
         assertEquals("network", AutoSettingsSections.network)
         assertEquals("download", AutoSettingsSections.download)
         assertEquals("storage", AutoSettingsSections.storage)
@@ -90,6 +91,7 @@ class AutoSettingsGeneratedTest {
                 AutoSettingsSections.personalization,
                 AutoSettingsSections.display,
                 AutoSettingsSections.motion,
+                AutoSettingsSections.lyrics,
                 AutoSettingsSections.network,
                 AutoSettingsSections.download,
                 AutoSettingsSections.storage,
@@ -121,6 +123,16 @@ class AutoSettingsGeneratedTest {
         assertTrue(
             "display metadata should include generated switch rows",
             displaySettings.any { it.keyName == "show_lyric_translation" && it.ui == SettingUiType.Switch }
+        )
+
+        val lyricsSettings = AutoSettingsMetadata.settingsIn(AutoSettingsSections.lyrics)
+        assertTrue(
+            "lyrics metadata should include Lyricon switch",
+            lyricsSettings.any { it.keyName == "lyricon_enabled" && it.ui == SettingUiType.Switch }
+        )
+        assertTrue(
+            "lyrics metadata should include source offset sliders",
+            lyricsSettings.any { it.keyName == "cloud_music_lyric_default_offset_ms" && it.ui == SettingUiType.Custom }
         )
     }
 
@@ -163,6 +175,10 @@ class AutoSettingsGeneratedTest {
         assertEquals(
             R.drawable.ic_lyrics,
             AutoSettingsSchema.motion.advancedLyricsEnabled.iconRes
+        )
+        assertEquals(
+            R.drawable.ic_lyricon,
+            AutoSettingsSchema.lyrics.lyriconEnabled.iconRes
         )
         assertEquals(
             AutoSettingIcon.Error,

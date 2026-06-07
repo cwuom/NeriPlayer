@@ -19,7 +19,7 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.component
  * along with this software.
  * If not, see <https://www.gnu.org/licenses/>.
  *
- * File: moe.ouom.neriplayer.ui.screen.tab.settings.component/SettingsLyricsOffsetSection
+ * File: moe.ouom.neriplayer.ui.screen.tab.settings.component/SettingsLyricsSection
  * Updated: 2026/4/13
  */
 
@@ -45,10 +45,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CoroutineScope
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.settings.LYRIC_DEFAULT_OFFSET_STEP_MS
 import moe.ouom.neriplayer.data.settings.MAX_LYRIC_DEFAULT_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.MIN_LYRIC_DEFAULT_OFFSET_MS
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingsScopes
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingsSwitchItems
 import kotlin.math.roundToLong
 
 private val LYRIC_OFFSET_SLIDER_STEPS =
@@ -57,10 +61,12 @@ private val LYRIC_OFFSET_SLIDER_STEPS =
 private val LYRIC_OFFSET_STEP_MS_FLOAT = LYRIC_DEFAULT_OFFSET_STEP_MS.toFloat()
 
 @Composable
-internal fun SettingsLyricsOffsetSection(
+internal fun SettingsLyricsSection(
     expanded: Boolean,
     arrowRotation: Float,
     onExpandedChange: (Boolean) -> Unit,
+    autoSettingsRepository: AutoSettingsRepository,
+    scope: CoroutineScope,
     cloudMusicLyricDefaultOffsetMs: Long,
     onCloudMusicLyricDefaultOffsetMsChange: (Long) -> Unit,
     qqMusicLyricDefaultOffsetMs: Long,
@@ -82,6 +88,12 @@ internal fun SettingsLyricsOffsetSection(
                 .fillMaxWidth()
                 .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
         ) {
+            AutoSettingsSwitchItems(
+                repository = autoSettingsRepository,
+                scope = scope,
+                sectionScope = AutoSettingsScopes.lyrics
+            )
+            Spacer(Modifier.height(4.dp))
             LyricsOffsetSliderListItem(
                 title = stringResource(R.string.settings_lyrics_offset_cloud_music),
                 description = stringResource(R.string.settings_lyrics_offset_cloud_music_desc),

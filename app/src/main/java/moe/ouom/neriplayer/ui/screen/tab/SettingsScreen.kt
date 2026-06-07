@@ -141,7 +141,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.component.LazyAnimatedVisibili
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsAudioQualitySection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsBackupRestoreSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsDownloadSection
-import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsLyricsOffsetSection
+import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsLyricsSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsMotionSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsPlaybackSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsStorageCacheSection
@@ -315,11 +315,11 @@ fun SettingsScreen(
     var motionExpanded by rememberSaveable { mutableStateOf(false) }
     val motionArrowRotation by animateFloatAsState(targetValue = if (motionExpanded) 180f else 0f, label = "motion_arrow")
 
-    // 歌词偏移菜单的状态
-    var lyricsOffsetExpanded by rememberSaveable { mutableStateOf(false) }
-    val lyricsOffsetArrowRotation by animateFloatAsState(
-        targetValue = if (lyricsOffsetExpanded) 180f else 0f,
-        label = "lyrics_offset_arrow"
+    // 歌词设置菜单的状态
+    var lyricsSettingsExpanded by rememberSaveable { mutableStateOf(false) }
+    val lyricsSettingsArrowRotation by animateFloatAsState(
+        targetValue = if (lyricsSettingsExpanded) 180f else 0f,
+        label = "lyrics_settings_arrow"
     )
 
     LaunchedEffect(nowPlayingDynamicBackgroundEnabled, nowPlayingCoverBlurBackgroundEnabled) {
@@ -1404,10 +1404,12 @@ fun SettingsScreen(
               }
 
               item {
-                  SettingsLyricsOffsetSection(
-                      expanded = lyricsOffsetExpanded,
-                      arrowRotation = lyricsOffsetArrowRotation,
-                      onExpandedChange = { lyricsOffsetExpanded = it },
+                  SettingsLyricsSection(
+                      expanded = lyricsSettingsExpanded,
+                      arrowRotation = lyricsSettingsArrowRotation,
+                      onExpandedChange = { lyricsSettingsExpanded = it },
+                      autoSettingsRepository = autoSettingsRepository,
+                      scope = scope,
                       cloudMusicLyricDefaultOffsetMs = cloudMusicLyricDefaultOffsetMs,
                       onCloudMusicLyricDefaultOffsetMsChange = onCloudMusicLyricDefaultOffsetMsChange,
                       qqMusicLyricDefaultOffsetMs = qqMusicLyricDefaultOffsetMs,
