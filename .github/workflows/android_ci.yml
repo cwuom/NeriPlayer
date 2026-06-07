@@ -2,7 +2,13 @@ name: NeriPlayer Android CI
 
 on:
   push:
+    paths-ignore:
+      - '**/*.md'
+      - '.github/ISSUE_TEMPLATE/**'
   pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - '.github/ISSUE_TEMPLATE/**'
   workflow_dispatch:
 
 permissions:
@@ -35,7 +41,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Run unit tests and lint
-        run: ./gradlew test lintDebug --warning-mode all --stacktrace
+        run: ./gradlew :app:testDebugUnitTest :app:lintDebug --warning-mode all --stacktrace
 
       - name: Upload Gradle test reports
         if: always()
@@ -83,7 +89,7 @@ jobs:
           arch: x86_64
           profile: pixel_6
           disable-animations: true
-          script: ./gradlew connectedDebugAndroidTest --warning-mode all --stacktrace
+          script: ./gradlew :app:connectedDebugAndroidTest --warning-mode all --stacktrace
 
       - name: Upload Android test reports
         if: always()
@@ -104,6 +110,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+          submodules: recursive
 
       - name: Set up Node.js 20
         uses: actions/setup-node@v4
@@ -152,12 +159,12 @@ jobs:
 
       - name: Build unsigned Release for PR
         if: github.event_name == 'pull_request'
-        run: ./gradlew assembleRelease --warning-mode all --stacktrace
+        run: ./gradlew :app:assembleRelease --warning-mode all --stacktrace
 
       - name: Build signed Release for master
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         run: |
-          ./gradlew assembleRelease \
+          ./gradlew :app:assembleRelease \
             -PKEYSTORE_FILE=neri.jks \
             -PKEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }} \
             -PKEY_ALIAS=key0 \
