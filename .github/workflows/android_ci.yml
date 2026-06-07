@@ -2,37 +2,129 @@ name: NeriPlayer Android CI
 
 on:
   push:
-    branches:
-      - master
-    paths-ignore:
-      - '*.md'
-      - '**/*.md'
-      - '*.txt'
-      - '**/*.txt'
-      - 'renovate.json'
-      - '.editorconfig'
-      - '.gitignore'
-      - '.github/**'
-      - '.idea/**'
   pull_request:
-    branches:
-      - master
-    paths-ignore:
-      - '*.md'
-      - '**/*.md'
-      - '*.txt'
-      - '**/*.txt'
-      - 'renovate.json'
-      - '.editorconfig'
-      - '.gitignore'
-      - '.github/**'
-      - '.idea/**'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  gradle-tests:
+    name: Gradle tests
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, '[skip ci]') }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+
+      - name: Grant execute permission
+        run: chmod +x gradlew
+
+      - name: Run unit tests and lint
+        run: ./gradlew test lintDebug --warning-mode all --stacktrace
+
+      - name: Upload Gradle test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-test-reports
+          path: |
+            **/build/reports/tests/**
+            **/build/test-results/**/*.xml
+            **/build/reports/lint-results-debug.html
+          if-no-files-found: ignore
+
+  android-instrumented-tests:
+    name: Android instrumented tests
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, '[skip ci]') }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+
+      - name: Grant execute permission
+        run: chmod +x gradlew
+
+      - name: Enable KVM
+        run: |
+          sudo sh -c 'echo "KERNEL==\"kvm\", GROUP=\"kvm\", MODE=\"0666\", OPTIONS+=\"static_node=kvm\"" > /etc/udev/rules.d/99-kvm4all.rules'
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run connected Android tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: ./gradlew connectedDebugAndroidTest --warning-mode all --stacktrace
+
+      - name: Upload Android test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-instrumented-test-reports
+          path: |
+            **/build/reports/androidTests/connected/**
+            **/build/outputs/androidTest-results/connected/**
+          if-no-files-found: ignore
+
+  worker-check:
+    name: Worker check
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, '[skip ci]') }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: np-submodule/NeriPlayer-LTW/package-lock.json
+
+      - name: Install Worker dependencies
+        run: npm ci --prefix np-submodule/NeriPlayer-LTW
+
+      - name: Run Worker check
+        run: npm run check --prefix np-submodule/NeriPlayer-LTW
+
   build:
     runs-on: ubuntu-latest
-    if: ${{ !startsWith(github.event.head_commit.message, '[skip ci]') && (github.ref == 'refs/heads/master' || github.event_name == 'pull_request') }}
+    needs:
+      - gradle-tests
+      - android-instrumented-tests
+      - worker-check
+    if: ${{ (github.event_name != 'push' || !startsWith(github.event.head_commit.message, '[skip ci]')) && (github.ref == 'refs/heads/master' || github.event_name == 'pull_request') }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -80,7 +172,11 @@ jobs:
           path: app/build/outputs/apk/release/**/*.apk
 
   upload-telegram:
-    needs: build
+    needs:
+      - gradle-tests
+      - android-instrumented-tests
+      - worker-check
+      - build
     runs-on: ubuntu-latest
     if: ${{ success() && github.ref == 'refs/heads/master' }}
     steps:
