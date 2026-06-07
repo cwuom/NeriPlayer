@@ -110,6 +110,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     private val neteaseRepo = NeteaseCookieRepository(application)
     private var highQualityLoadJob: Job? = null
     private var searchJob: Job? = null
+    private var searchRequestVersion = 0L
 
     private val _uiState = MutableStateFlow(ExploreUiState())
     val uiState: StateFlow<ExploreUiState> = _uiState
@@ -125,8 +126,11 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     /** 设置当前搜索源 */
     fun setSearchSource(source: SearchSource) {
         if (source == _uiState.value.selectedSearchSource) return
+        searchJob?.cancel()
+        invalidateSearchRequest()
         _uiState.value = _uiState.value.copy(
             selectedSearchSource = source,
+            searching = false,
             searchResults = emptyList(), // 切换源时清空结果
             searchError = null
         )
@@ -136,6 +140,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     fun search(keyword: String) {
         if (keyword.isBlank()) {
             searchJob?.cancel()
+            invalidateSearchRequest()
             _uiState.value = _uiState.value.copy(
                 searching = false,
                 searchResults = emptyList(),
@@ -143,17 +148,17 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
             )
             return
         }
-        when (_uiState.value.selectedSearchSource) {
-            SearchSource.NETEASE -> searchNetease(keyword)
-            SearchSource.BILIBILI -> searchBilibili(keyword)
-            SearchSource.YOUTUBE_MUSIC -> searchYouTubeMusic(keyword)
+        val source = _uiState.value.selectedSearchSource
+        val requestVersion = beginSearchRequest()
+        when (source) {
+            SearchSource.NETEASE -> searchNetease(keyword, requestVersion)
+            SearchSource.BILIBILI -> searchBilibili(keyword, requestVersion)
+            SearchSource.YOUTUBE_MUSIC -> searchYouTubeMusic(keyword, requestVersion)
         }
     }
 
     /** 搜索 Bilibili 视频 */
-    private fun searchBilibili(keyword: String) {
-        _uiState.value = _uiState.value.copy(searching = true, searchError = null)
-        searchJob?.cancel()
+    private fun searchBilibili(keyword: String, requestVersion: Long) {
         searchJob = viewModelScope.launch {
             try {
                 val searchPage = withContext(Dispatchers.IO) {
@@ -161,24 +166,54 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                 }
                 // 将B站搜索结果转换为通用的 SongItem
                 val songs = searchPage.items.map { it.toSongItem() }
-                _uiState.value = _uiState.value.copy(
-                    searching = false,
-                    searchError = null,
-                    searchResults = songs
-                )
+                updateSearchStateIfCurrent(requestVersion, SearchSource.BILIBILI) {
+                    it.copy(
+                        searching = false,
+                        searchError = null,
+                        searchResults = songs
+                    )
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    searching = false,
-                    searchError = app.getString(
-                        R.string.error_bilibili_search,
-                        e.message ?: app.getString(R.string.github_sync_failed_message)
-                    ),
-                    searchResults = emptyList()
-                )
+                updateSearchStateIfCurrent(requestVersion, SearchSource.BILIBILI) {
+                    it.copy(
+                        searching = false,
+                        searchError = app.getString(
+                            R.string.error_bilibili_search,
+                            e.message ?: app.getString(R.string.github_sync_failed_message)
+                        ),
+                        searchResults = emptyList()
+                    )
+                }
             }
         }
+    }
+
+    private fun beginSearchRequest(): Long {
+        searchJob?.cancel()
+        val requestVersion = invalidateSearchRequest()
+        _uiState.value = _uiState.value.copy(searching = true, searchError = null)
+        return requestVersion
+    }
+
+    private fun invalidateSearchRequest(): Long {
+        searchRequestVersion += 1
+        return searchRequestVersion
+    }
+
+    private fun isSearchRequestCurrent(requestVersion: Long, source: SearchSource): Boolean {
+        val currentState = _uiState.value
+        return searchRequestVersion == requestVersion && currentState.selectedSearchSource == source
+    }
+
+    private inline fun updateSearchStateIfCurrent(
+        requestVersion: Long,
+        source: SearchSource,
+        transform: (ExploreUiState) -> ExploreUiState
+    ) {
+        if (!isSearchRequestCurrent(requestVersion, source)) return
+        _uiState.value = transform(_uiState.value)
     }
 
     fun toggleExpanded() {
@@ -248,9 +283,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /** 搜索网易云歌曲 */
-    private fun searchNetease(keyword: String) {
-        _uiState.value = _uiState.value.copy(searching = true, searchError = null)
-        searchJob?.cancel()
+    private fun searchNetease(keyword: String, requestVersion: Long) {
         searchJob = viewModelScope.launch {
             try {
                 val raw = withContext(Dispatchers.IO) {
@@ -263,22 +296,26 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                     )
                 }
                 val songs = parseSongs(raw)
-                _uiState.value = _uiState.value.copy(
-                    searching = false,
-                    searchError = null,
-                    searchResults = songs
-                )
+                updateSearchStateIfCurrent(requestVersion, SearchSource.NETEASE) {
+                    it.copy(
+                        searching = false,
+                        searchError = null,
+                        searchResults = songs
+                    )
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    searching = false,
-                    searchError = app.getString(
-                        R.string.error_netease_search,
-                        e.message ?: app.getString(R.string.github_sync_failed_message)
-                    ),
-                    searchResults = emptyList()
-                )
+                updateSearchStateIfCurrent(requestVersion, SearchSource.NETEASE) {
+                    it.copy(
+                        searching = false,
+                        searchError = app.getString(
+                            R.string.error_netease_search,
+                            e.message ?: app.getString(R.string.github_sync_failed_message)
+                        ),
+                        searchResults = emptyList()
+                    )
+                }
             }
         }
     }
@@ -327,9 +364,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /** 搜索 YouTube Music：只返回歌曲结果 */
-    private fun searchYouTubeMusic(keyword: String) {
-        _uiState.value = _uiState.value.copy(searching = true, searchError = null)
-        searchJob?.cancel()
+    private fun searchYouTubeMusic(keyword: String, requestVersion: Long) {
         searchJob = viewModelScope.launch {
             try {
                 val songs = withContext(Dispatchers.IO) {
@@ -338,27 +373,32 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                         limit = 30
                     ).map { it.toSongItem(app) }
                 }
+                if (!isSearchRequestCurrent(requestVersion, SearchSource.YOUTUBE_MUSIC)) return@launch
                 PlayerManager.prefetchYouTubeQueueWindow(
                     playlist = songs,
                     startIndex = 0,
                     source = "yt_search_result_load"
                 )
-                _uiState.value = _uiState.value.copy(
-                    searching = false,
-                    searchError = null,
-                    searchResults = songs
-                )
+                updateSearchStateIfCurrent(requestVersion, SearchSource.YOUTUBE_MUSIC) {
+                    it.copy(
+                        searching = false,
+                        searchError = null,
+                        searchResults = songs
+                    )
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    searching = false,
-                    searchError = app.getString(
-                        R.string.error_youtube_search,
-                        e.message ?: app.getString(R.string.github_sync_failed_message)
-                    ),
-                    searchResults = emptyList()
-                )
+                updateSearchStateIfCurrent(requestVersion, SearchSource.YOUTUBE_MUSIC) {
+                    it.copy(
+                        searching = false,
+                        searchError = app.getString(
+                            R.string.error_youtube_search,
+                            e.message ?: app.getString(R.string.github_sync_failed_message)
+                        ),
+                        searchResults = emptyList()
+                    )
+                }
             }
         }
     }
