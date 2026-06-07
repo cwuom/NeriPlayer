@@ -101,7 +101,7 @@
   - `netease/`：网易云接口与账号能力。
   - `bili/`：Bilibili 搜索、播放信息与音频拉流相关实现。
   - `youtube/`：YouTube Music 客户端（基于 NewPipe Extractor）、
-    播放仓库、PoToken 与 JS Challenge 相关支持。
+    搜索解析、播放仓库、PoToken 与 JS Challenge 相关支持。
   - `search/`：播放页元数据/歌词补全接口，
     当前实现为 `CloudMusicSearchApi` 与 `QQMusicSearchApi`。
   - `lyrics/`：歌词外部来源，当前实现为 `LrcLibClient`。
@@ -143,11 +143,11 @@
 ### 当前能力边界 / Current Boundaries
 
 - `Explore` 当前是**网易精选歌单 + YouTube Music 歌单 +
-  网易/Bilibili/YouTube Music 搜索**（YouTube Music 搜索暂未实现），
+  网易/Bilibili/YouTube Music 按平台独立搜索**，
   Bilibili 还不是完整的发现流页面。
 - `Library` 中的 QQ 音乐入口仍为占位状态，不要按“完整平台已接入”理解。
-- `YouTube Music` 已实现登录、歌单浏览/详情、播放与下载；
-  Explore 中已作为搜索源注册，但搜索功能暂未实现。
+- `YouTube Music` 已实现登录、首页/歌单浏览与详情、Explore 搜索、
+  播放与下载。
 - 下载使用共享 `OkHttpClient` 写入应用专属目录，
   **不是**系统 `DownloadManager`、**不是**前台下载服务，
   当前也**没有断点续传**。

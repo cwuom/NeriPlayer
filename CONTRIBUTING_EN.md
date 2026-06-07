@@ -95,7 +95,7 @@ Security Reminder:
 - `app/src/main/java/moe/ouom/neriplayer/core/api/`
   - `netease/`: NetEase Cloud Music endpoints and account features.
   - `bili/`: Bilibili search, playback metadata, and audio stream extraction.
-  - `youtube/`: YouTube Music client (based on NewPipe Extractor), playback repository, PoToken, and JS Challenge support.
+  - `youtube/`: YouTube Music client (based on NewPipe Extractor), search parsing, playback repository, PoToken, and JS Challenge support.
   - `search/`: Playback metadata/lyrics completion APIs. Current implementations include `CloudMusicSearchApi` and `QQMusicSearchApi`.
   - `lyrics/`: External lyrics sources. Current implementation includes `LrcLibClient`.
 
@@ -130,9 +130,9 @@ Security Reminder:
 
 ### Current Boundaries
 
-- `Explore` currently curates **NetEase playlists, YouTube Music playlists, and search results spanning NetEase, Bilibili, and YouTube Music** (YouTube Music search is currently WIP). Bilibili is not implemented yet as a fully-fledged discovery page.
+- `Explore` currently includes **NetEase playlists, YouTube Music playlists, and platform-specific search for NetEase, Bilibili, and YouTube Music**. Bilibili is not implemented yet as a fully-fledged discovery page.
 - The QQ Music entry in `Library` remains a placeholder. Do not mistake it for a "completely integrated platform".
-- `YouTube Music` already implemented login, playlist browsing/details, playback, and downloading; it's registered as a search module in Explore, but searching remains unimplemented.
+- `YouTube Music` supports login, home/playlist browsing and details, Explore search, playback, and downloads.
 - Downloads utilize a single shared `OkHttpClient` downloading straight into a dedicated directory. This is **not** handled by the system's `DownloadManager` or a persistent foreground downloading service. Moreover, **resume-support is unimplemented**.
 - Streaming cache and permanent downloads are separated: caching leverages `SimpleCache`, while downloads are written to physical local files handled by `AudioDownloadManager`.
 - GitHub Sync only persists metadata; audio caches, files, explicit user cookies, and streaming tokens are systematically skipped.
