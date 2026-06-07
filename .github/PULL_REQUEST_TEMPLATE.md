@@ -15,6 +15,11 @@
 - [ ] 我已阅读并遵循贡献指南 / I have read and followed the contribution guidelines  
 - [ ] 我已在本地测试这些更改 / I have tested these changes locally  
 - [ ] 我已更新相关文档或注释（如适用） / I have updated relevant documentation or comments (if applicable)  
+- [ ] 我确认本次更改没有破坏任何原有逻辑 / I confirm this change does not break existing behavior  
+- [ ] 我确认本次更改保持向下兼容（如适用） / I confirm this change remains backward compatible (if applicable)  
+- [ ] 我已运行必要的构建、测试或静态检查 / I have run the required build, tests, or static checks
+- [ ] 我确认没有提交密钥、Token 或其他敏感信息 / I confirm no secrets, tokens, or other sensitive information were committed  
+- [ ] 涉及 UI 变更时，我已补充截图或录屏（如适用） / I have added screenshots or recordings for UI changes (if applicable)  
 
 ## 其他信息 / Additional Information
 
