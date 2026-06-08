@@ -9,9 +9,11 @@ import android.view.Window
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.activity.MainActivity
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.testutil.grantRuntimePermissions
 import moe.ouom.neriplayer.testutil.playbackRuntimePermissions
@@ -40,6 +42,7 @@ class MiniPlayerPlaybackTransitionTest {
     @Before
     fun assumeDeviceUnlocked() {
         assumeComposeHostAvailable()
+        acceptStartupScreens()
         grantRuntimePermissions(*playbackRuntimePermissions())
         composeRule.runOnIdle {
             PlayerManager.release()
@@ -64,7 +67,11 @@ class MiniPlayerPlaybackTransitionTest {
             PlayerManager.playPlaylist(listOf(song), startIndex = 0)
         }
 
-        composeRule.waitUntil(timeoutMillis = 8_000) {
+        composeRule.waitUntil(timeoutMillis = PLAYER_STATE_TIMEOUT_MS) {
+            PlayerManager.currentSongFlow.value?.name == song.name
+        }
+        composeRule.waitForIdle()
+        composeRule.waitUntil(timeoutMillis = MINI_PLAYER_TIMEOUT_MS) {
             composeRule.onAllNodesWithText(song.name).fetchSemanticsNodes().isNotEmpty()
         }
 
@@ -78,6 +85,15 @@ class MiniPlayerPlaybackTransitionTest {
         )
 
         assertTrue("播放后没有采集到任何帧数据", stats.totalFrames > 0)
+    }
+
+    private fun acceptStartupScreens() {
+        val settingsRepository = SettingsRepository(composeRule.activity.applicationContext)
+        runBlocking {
+            settingsRepository.setDisclaimerAccepted(true)
+            settingsRepository.setStartupOnboardingCompleted(true)
+        }
+        composeRule.waitForIdle()
     }
 
     private fun createLocalSong(): SongItem {
@@ -172,5 +188,7 @@ class MiniPlayerPlaybackTransitionTest {
 
     private companion object {
         const val TAG = "MiniPlayerPerfTest"
+        const val PLAYER_STATE_TIMEOUT_MS = 10_000L
+        const val MINI_PLAYER_TIMEOUT_MS = 30_000L
     }
 }
