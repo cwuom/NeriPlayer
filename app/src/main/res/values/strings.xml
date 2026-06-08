@@ -90,6 +90,9 @@
     <string name="settings_config_importing">正在导入配置文件…</string>
     <string name="settings_config_export_success">配置导出成功</string>
     <string name="settings_config_export_failed">配置导出失败</string>
+    <string name="settings_config_export_warning_title">导出配置前请注意</string>
+    <string name="settings_config_export_warning_message">配置文件包含登录凭证、授权 Cookie、Token 和同步配置，只能用于个人迁移，不能分享给任何人。</string>
+    <string name="settings_config_export_warning_confirm">我已了解，继续导出</string>
     <string name="settings_config_import_success">配置导入完成</string>
     <string name="settings_config_import_failed">配置导入失败</string>
     <string name="settings_config_import_restored_settings">已恢复应用设置 %1$d 项</string>

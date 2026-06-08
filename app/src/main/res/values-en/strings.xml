@@ -90,6 +90,9 @@
     <string name="settings_config_importing">Importing config file…</string>
     <string name="settings_config_export_success">Config export successful</string>
     <string name="settings_config_export_failed">Config export failed</string>
+    <string name="settings_config_export_warning_title">Before exporting config</string>
+    <string name="settings_config_export_warning_message">The config file includes sign-in credentials, auth cookies, tokens, and sync configuration. Use it only for personal migration and never share it with anyone.</string>
+    <string name="settings_config_export_warning_confirm">I understand, export</string>
     <string name="settings_config_import_success">Config import complete</string>
     <string name="settings_config_import_failed">Config import failed</string>
     <string name="settings_config_import_restored_settings">Restored %1$d app settings</string>

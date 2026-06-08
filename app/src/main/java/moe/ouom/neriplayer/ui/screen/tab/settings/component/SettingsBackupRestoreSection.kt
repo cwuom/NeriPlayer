@@ -142,6 +142,7 @@ internal fun SettingsBackupRestoreSection(
         val githubState by githubVm.uiState.collectAsState()
         val webDavState by webDavVm.uiState.collectAsState()
         var showPlayHistoryModeDialog by remember { mutableStateOf(false) }
+        var showConfigExportWarningDialog by remember { mutableStateOf(false) }
         val storage = remember(context) { SecureTokenStorage(context) }
         val currentMode = remember { mutableStateOf(storage.getPlayHistoryUpdateMode()) }
         var dataSaverMode by remember { mutableStateOf(storage.isDataSaverMode()) }
@@ -235,7 +236,11 @@ internal fun SettingsBackupRestoreSection(
                 },
                 headlineContent = { Text(stringResource(R.string.settings_export_config)) },
                 supportingContent = { Text(stringResource(R.string.settings_export_config_desc)) },
-                modifier = Modifier.settingsItemClickable(onClick = onExportConfigClick),
+                modifier = Modifier.settingsItemClickable {
+                    if (!configTransferUiState.isExporting) {
+                        showConfigExportWarningDialog = true
+                    }
+                },
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent)
             )
 
@@ -697,6 +702,38 @@ internal fun SettingsBackupRestoreSection(
                     storage.setPlayHistoryUpdateMode(mode)
                     currentMode.value = mode
                     showPlayHistoryModeDialog = false
+                }
+            )
+        }
+
+        if (showConfigExportWarningDialog) {
+            MiuixSettingsDialog(
+                onDismissRequest = { showConfigExportWarningDialog = false },
+                icon = {
+                    Icon(
+                        imageVector = Icons.Outlined.Error,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                },
+                title = { Text(stringResource(R.string.settings_config_export_warning_title)) },
+                text = { Text(stringResource(R.string.settings_config_export_warning_message)) },
+                confirmButton = {
+                    MiuixSettingsTextButton(
+                        onClick = {
+                            showConfigExportWarningDialog = false
+                            onExportConfigClick()
+                        }
+                    ) {
+                        Text(stringResource(R.string.settings_config_export_warning_confirm))
+                    }
+                },
+                dismissButton = {
+                    MiuixSettingsTextButton(
+                        onClick = { showConfigExportWarningDialog = false }
+                    ) {
+                        Text(stringResource(R.string.action_cancel))
+                    }
                 }
             )
         }
