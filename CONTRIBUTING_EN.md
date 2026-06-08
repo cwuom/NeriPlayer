@@ -2,34 +2,49 @@
 
 ## Contributing to NeriPlayer
 
-Thank you for your interest in contributing to NeriPlayer!
-This document describes the **actual implementation of the Android client** and strives to stay consistent with the source code.
+Thank you for contributing to NeriPlayer.
+This document describes the **current Android client and Listen Together Worker
+implementation**. Keep documentation aligned with the source code and runtime behavior.
 
 ---
 
 ### Scope
 
 - NeriPlayer is a **native Android audio player**, not a public cloud music service.
-- Online source capabilities are currently provided by **NetEase Cloud Music**, **Bilibili**, and **YouTube Music**.
-- Metadata and lyrics completion in the player screen currently utilize **NetEase Cloud Music + QQ Music**.
-- Data is saved locally by default. GitHub sync is an **optional** feature, and it only syncs metadata such as playlists, favorites, and play history (not the actual media files).
+- Online source capabilities mainly come from **NetEase Cloud Music**,
+  **Bilibili**, and **YouTube Music**.
+- Playback metadata and lyrics completion currently use **NetEase + QQ Music**,
+  with LRCLIB available as an external lyrics source.
+- Data is local by default. GitHub / WebDAV sync is **optional** and syncs
+  metadata such as playlists, favorites, recent plays, and playback stats,
+  not media files.
+- The Listen Together server lives in `np-submodule/NeriPlayer-LTW` and is based
+  on Cloudflare Workers and Durable Objects.
 
 ---
 
 ### Development Environment
 
-- **Android Studio**: Latest stable version
-- **compileSdk**: 36
-- **targetSdk**: 36
-- **minSdk**: 28
-- **Java / Kotlin**: Java 17, Kotlin `jvmTarget = 17`
-- **Version Name Format**: `<git_short_hash>.<MMddHHmm>`
-- **Release APK Filename**: `NeriPlayer-<versionName>.apk`
+- **Android Studio**: latest stable version
+- **JDK**: 17
+- **Kotlin**: 2.2.x, JVM target 17
+- **AGP**: 8.13.x
+- **compileSdk / targetSdk / minSdk**: 36 / 36 / 28
+- **NDK**: `27.0.12077973`
+- **CMake**: `3.22.1`
+- **Node.js**: 20, for Listen Together Worker checks
+- **Version name format**: `<git_short_hash>.<MMddHHmm>`
+- **Release APK filename**: `NeriPlayer-<versionName>[-abi].apk`
 
 Additional notes:
 
-- The build script reads the Git short commit hash to generate the version name, so please assure that Git is installed locally.
-- Dependency versions are managed by `gradle/libs.versions.toml` and each module's `build.gradle.kts`.
+- The repository uses Git submodules. Clone with `--recursive`, or run
+  `git submodule update --init --recursive`.
+- The build script reads the Git short commit hash to generate the version name,
+  so Git must be installed locally.
+- Dependency versions are managed by `gradle/libs.versions.toml` and module
+  `build.gradle.kts` files.
+- Only `zh` and `en` resources are kept in the app, via the locale filter in `build-logic`.
 
 ---
 
@@ -40,7 +55,7 @@ Additional notes:
    git clone --recursive https://github.com/cwuom/NeriPlayer.git
    cd NeriPlayer
    ```
-2. Build the Debug version:
+2. Build the Debug APK:
    ```bash
    ./gradlew :app:assembleDebug
    ```
@@ -48,163 +63,283 @@ Additional notes:
    ```bash
    adb install -r app/build/outputs/apk/debug/app-debug.apk
    ```
-4. Upon first launch, the app enters a Disclaimer phase. Devices running Android 13+ will prompt for notification permissions.
-5. For debug access, tap the **version number** 7 times in the Settings page. An independent `Debug` page will appear in the bottom navigation bar.
+4. First launch enters the disclaimer and startup onboarding flow. Android 13+
+   devices request notification permission.
+5. For debugging access, tap the **version number** 7 times in Settings. A
+   standalone `Debug` tab will appear in the bottom navigation bar.
 
 ---
 
 ### Release Build
 
-The release build enables code shrinking and obfuscation by default.
+Release builds enable minification and resource shrinking by default.
+A normal `assembleRelease` builds `arm64-v8a` only. Multi-ABI output requires an
+extra Gradle property.
 
-1. Provide your signing config in `~/.gradle/gradle.properties` or through environment variables:
+1. Provide signing config in `~/.gradle/gradle.properties`, project Gradle
+   properties, or through command-line `-P` properties:
    ```properties
    KEYSTORE_FILE=/absolute/path/to/neri.jks
    KEYSTORE_PASSWORD=your_store_password
    KEY_ALIAS=key0
    KEY_PASSWORD=your_key_password
    ```
-2. Execute the build:
+
+   If `KEYSTORE_FILE` is relative, it is resolved against the `app/` module
+   directory. If no keystore is available locally, the Release build falls back
+   to the debug signing config. This is useful for test installs only and should
+   not be used as an official release artifact.
+
+2. Build the default Release APK:
    ```bash
    ./gradlew :app:assembleRelease
    ```
-3. Artifacts will be generated in `app/build/outputs/apk/release/`, named following this format:
-   ```text
-   NeriPlayer-<git_short_hash>.<MMddHHmm>.apk
+
+3. Build multi-ABI Release APKs:
+   ```bash
+   ./gradlew :app:assembleRelease -PbuildAllReleaseAbis=true
    ```
 
-Security Reminder:
+4. Artifacts are generated in `app/build/outputs/apk/release/`:
+   ```text
+   NeriPlayer-<git_short_hash>.<MMddHHmm>[-abi].apk
+   ```
 
-- Never commit your keystore, passwords, Cookies, Tokens, or any other sensitive info.
-- Do not paste full authorization information in Issues or PRs.
+Security reminders:
+
+- Never commit keystores, passwords, cookies, tokens, or other sensitive data.
+- Do not paste full authorization data in Issues or PRs.
+- Full config export files contain platform auth and sync credentials. Do not
+  attach them publicly.
 
 ---
 
 ### Project Layout
 
+#### Root modules
+
+- `:app`
+  - Main Android application.
+- `:ksp-annotations` / `:ksp-processor`
+  - KSP-generated settings schema, keys, backup allowlists, and UI metadata.
+- `:accompanist-lyrics-core` / `:accompanist-lyrics-ui`
+  - Lyrics parsing and Compose lyrics UI submodules.
+- `build-logic`
+  - Android/Kotlin/Compose convention plugins.
+- `np-submodule/NeriPlayer-LTW`
+  - Listen Together Cloudflare Workers server.
+
+#### Android client key paths
+
 - `app/src/main/java/moe/ouom/neriplayer/NeriPlayerApplication.kt`
-  - The application initialization entry. Handles language settings, crash handling, `AppContainer`, global download manager, and the shared image loader.
+  - Application initialization. Handles language, crash handling, `AppContainer`,
+    Lyricon, global downloads, and the shared image loader.
 
 - `app/src/main/java/moe/ouom/neriplayer/activity/`
-  - `MainActivity.kt`: The main external entry point. Manages the startup flow, disclaimers, external audio imports, and the top-level Compose host.
-  - `NeteaseWebLoginActivity.kt`, `BiliWebLoginActivity.kt`, and `YouTubeWebLoginActivity.kt`: Internal web login pages (not external entry points).
+  - `MainActivity.kt`: the only external entry point. Handles startup, disclaimer,
+    onboarding, external audio imports, Listen Together deep links, and the top-level
+    Compose host.
+  - `NeteaseWebLoginActivity.kt`, `BiliWebLoginActivity.kt`, and
+    `YouTubeWebLoginActivity.kt`: internal web login pages.
 
 - `app/src/main/java/moe/ouom/neriplayer/ui/NeriApp.kt`
-  - Top-level Compose application scaffolding. Handles `NavHost`, dynamic bottom bar, `MiniPlayer`, `Now Playing` overlays, and Debug routing.
+  - Top-level Compose app shell. Handles `NavHost`, dynamic bottom bar, `MiniPlayer`,
+    `Now Playing` overlay, Debug routes, themes, and playback service sync.
+
+- `app/src/main/java/moe/ouom/neriplayer/ui/onboarding/`
+  - First-run onboarding for language, platform accounts, GitHub sync, and personalization.
 
 - `app/src/main/java/moe/ouom/neriplayer/core/api/`
-  - `netease/`: NetEase Cloud Music endpoints and account features.
-  - `bili/`: Bilibili search, playback metadata, and audio stream extraction.
-  - `youtube/`: YouTube Music client (based on NewPipe Extractor), search parsing, playback repository, PoToken, and JS Challenge support.
-  - `search/`: Playback metadata/lyrics completion APIs. Current implementations include `CloudMusicSearchApi` and `QQMusicSearchApi`.
-  - `lyrics/`: External lyrics sources. Current implementation includes `LrcLibClient`.
-
-- `app/src/main/java/moe/ouom/neriplayer/util/SearchManager.kt`
-  - Unified encapsulation for playback metadata matching logic.
-  - Note: This does not share the same backend as the UI search function on the `Explore` page.
+  - `netease/`: NetEase endpoints, crypto, and account capabilities.
+  - `bili/`: Bilibili search, favorites, playback info, and audio stream extraction.
+  - `youtube/`: YouTube Music client based on NewPipe Extractor, home/playlist/search/playback,
+    PoToken, and JS Challenge support.
+  - `search/`: playback metadata/lyrics completion APIs. Current implementations:
+    `CloudMusicSearchApi` and `QQMusicSearchApi`.
+  - `lyrics/`: external lyrics sources. Current implementation: `LrcLibClient`.
 
 - `app/src/main/java/moe/ouom/neriplayer/core/player/`
-  - `PlayerManager.kt`: Unified management layer for Media3 ExoPlayer. Handles stream parsing, playlist queues, caching, state restoration, and fallback mechanisms.
-  - `AudioPlayerService.kt`: Foreground playback service, media session notifications, and media button controls.
-  - `ConditionalHttpDataSourceFactory.kt`: Dynamically appends `Referer`, `User-Agent`, or `Cookie` for specific domains.
-  - `ReactiveRenderersFactory.kt`, `AudioReactive.kt`: Supplies real-time audio energy data for the audio-reactive dynamic backgrounds on the 'Now Playing' screen.
-  - `YouTubeGoogleVideoRangeSupport.kt`, `YouTubeSeekRefreshPolicy.kt`: Specially designed logic to handle Google Video Range requests and playback seek refresh policies during YouTube Music playback.
-  - `SleepTimerManager.kt`: Sleep timer utilities.
-  - `AudioDownloadManager.kt`: The core implementation for audio downloads. Resolves platform streams to obtain direct links and saves them to local storage.
+  - `PlayerManager.kt`: unified Media3 ExoPlayer management, stream resolution, queue,
+    cache, state recovery, retry, and playback policy.
+  - `AudioPlayerService.kt`: foreground playback service, media notification,
+    MediaSession, and media button handling.
+  - `AudioDownloadManager.kt`: resolves platform streams and saves downloads locally.
+  - `PlaybackEffectsController.kt`: speed, pitch, loudness enhancer, and equalizer.
+  - `PlaybackStatsTracker.kt`: playback stats tracking.
+  - `SleepTimerManager.kt`: sleep timer.
+  - `ConditionalHttpDataSourceFactory.kt`: adds platform-specific request headers.
+  - `PlayerManagerNeteaseAutoSourceSwitch.kt`: Bilibili fallback for NetEase
+    tracks that are restricted, have no playable URL, or only return previews.
+  - `YouTubeGoogleVideoRangeSupport.kt`, `YouTubeSeekRefreshPolicy.kt`, and
+    `prefetch/YouTubePrefetchRunner.kt`: YouTube Music playback compatibility policies.
+  - `metadata/`: lyrics, metadata, and external Bluetooth lyrics handling.
 
 - `app/src/main/java/moe/ouom/neriplayer/core/download/`
-  - `GlobalDownloadManager.kt`: Maintains global download tasks and the list of locally downloaded files.
+  - `GlobalDownloadManager.kt`: global download tasks and downloaded song list.
+  - `ManagedDownloadStorage.kt`: app directory / SAF directory, migration, snapshots, and `.nomedia`.
+  - `ManagedDownloadNaming.kt`: filename templates and legacy filename compatibility.
+  - `DownloadedAudioTagWriter.kt`: audio tag writing.
 
 - `app/src/main/java/moe/ouom/neriplayer/data/`
-  - `settings/SettingsStore.kt`: Manages user settings and standard states.
-  - `LocalPlaylistRepository.kt`: Atomic writes for local playlist JSONs.
-  - `BackupManager.kt`: Implements JSON import/export and diff calculation over local configurations.
-  - `LocalAudioImportManager.kt`: Supports external audio imports, scanning internal/external local audio, and copying sidecar files like lyrics/covers.
+  - `settings/`: `DataStore` settings, KSP schema, bootstrap snapshot, theme snapshot,
+    and playback preference snapshot.
+  - `auth/`: NetEase, Bilibili, and YouTube cookie/auth storage and validation.
+  - `local/playlist/`: local playlist JSON atomic writes and system playlist compatibility.
+  - `local/audioimport/`, `local/media/`: local audio import, scanning, metadata reading, and sharing.
+  - `playlist/favorite/`, `playlist/usage/`: favorite playlists and Home continue-listening data.
+  - `history/`, `stats/`: recent plays and playback stats.
+  - `backup/`: playlist JSON backup/import and diff analysis.
+  - `config/`: full app config import/export.
+  - `sync/github/`: GitHub sync, three-way merge, serialization, Data Saver, and secure storage.
+  - `sync/webdav/`: WebDAV sync, remote config, Worker, and WebDAV API.
 
-- `app/src/main/java/moe/ouom/neriplayer/data/sync/github/`
-  - `GitHubSyncManager.kt`: Orchestration and three-way logic merging for syncs.
-  - `GitHubSyncWorker.kt`: Delayed and periodic sync execution based on `WorkManager`.
-  - `SecureTokenStorage.kt`: Safely stores GitHub tokens utilizing local encryption.
+- `app/src/main/java/moe/ouom/neriplayer/listentogether/`
+  - Listen Together protocol, WebSocket client, session management, invites, sync planning,
+    and server URL validation.
+
+- `app/src/main/java/moe/ouom/neriplayer/core/lyricon/`
+  - Lyricon integration for current song, playback state, position,
+    word-level lyrics, and translations.
 
 ---
 
 ### Current Boundaries
 
-- `Explore` currently includes **NetEase playlists, YouTube Music playlists, and platform-specific search for NetEase, Bilibili, and YouTube Music**. Bilibili is not implemented yet as a fully-fledged discovery page.
-- The QQ Music entry in `Library` remains a placeholder. Do not mistake it for a "completely integrated platform".
-- `YouTube Music` supports login, home/playlist browsing and details, Explore search, playback, and downloads.
-- Downloads utilize a single shared `OkHttpClient` downloading straight into a dedicated directory. This is **not** handled by the system's `DownloadManager` or a persistent foreground downloading service. Moreover, **resume-support is unimplemented**.
-- Streaming cache and permanent downloads are separated: caching leverages `SimpleCache`, while downloads are written to physical local files handled by `AudioDownloadManager`.
-- GitHub Sync only persists metadata; audio caches, files, explicit user cookies, and streaming tokens are systematically skipped.
-- Platform cookies, auth bundles, and GitHub tokens are stored via
-  `Android Keystore + EncryptedSharedPreferences`.
-- `DataStore` only keeps regular settings and non-sensitive state.
+- `Explore` is NetEase curated playlists + YouTube Music playlists +
+  platform-specific NetEase/Bilibili/YouTube Music search. It is not mixed search.
+- `Home` mainly shows local continue-listening and NetEase recommendations in the
+  default Chinese mode. International mode prioritizes YouTube Music home shelves.
+- The QQ Music entry in `Library` is still a placeholder and does not represent
+  full platform integration.
+- `Bilibili` supports search, favorites, audio playback, and downloads, but is
+  not a full video discovery or comments client.
+- `YouTube Music` supports login, home/playlist browsing, details, search,
+  playback, and downloads.
+- NetEase playback tries lower qualities when the current quality is unavailable.
+  For restricted, missing-URL, or preview-only tracks, it can auto-match a
+  Bilibili fallback source when enabled.
+- Local "My Favorite Music" can sync recognizable NetEase songs to NetEase
+  Liked Songs. This requires NetEase login and skips unsupported or existing songs.
+- Downloads use a shared `OkHttpClient` and write to the app directory or a SAF
+  directory. They are **not** handled by the system `DownloadManager`, and
+  resume support is **not** implemented.
+- Streaming cache and permanent downloads are separate features: cache uses
+  `SimpleCache`; downloads are written by `AudioDownloadManager` and
+  `ManagedDownloadStorage`.
+- GitHub / WebDAV sync only sync metadata. Audio caches, downloaded files, local
+  media files, cookies, and playback tokens are not synced.
+- Platform cookies/auth data, GitHub tokens, and WebDAV passwords are encrypted
+  with `Android Keystore + EncryptedSharedPreferences`.
+- `DataStore` stores regular settings and non-sensitive state, not platform login credentials.
 
 ---
 
 ### Extension Paths
 
-#### 1. Adding an Explore Search Source
+#### 1. Add an Explore search source
 
-Applies when integrating an external platform to the `Explore` page search functionalities.
+Use this when integrating a new platform into `Explore` search or discovery.
 
-Suggested steps:
+1. Implement a client or repository under `core/api/`.
+2. Add request, pagination, and state mapping in `ExploreViewModel`.
+3. Add platform tabs and result UI in `ExploreScreen` / host screens.
+4. If playback is needed, connect the platform to `PlayerManager` stream resolution.
+5. If downloads are needed, complete `AudioDownloadManager` and download metadata mapping.
 
-1. Draft a client or repository within `core/api/`.
-2. Connect data fetch requests alongside state mappings inside `ExploreViewModel`.
-3. Add UI selectors throughout `ExploreScreen` / the Host layout.
-4. Hook up the backend to `PlayerManager`'s audio-parsing mechanisms if playback functionality is desired.
+#### 2. Add a playback metadata completion source
 
-#### 2. Enhancing Playback Metadata Completion
+Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 
-Applies when trying to patch incomplete cover art, lyrics, and extended track details in lieu of supplementing the overarching `Explore` catalog.
+1. Implement a new `SearchApi` under `core/api/search/`.
+2. Register the singleton in `AppContainer`.
+3. Add routing, matching, and fallback logic in `SearchManager`.
+4. Add `MusicPlatform`, string resources, and debug probes as needed.
 
-Suggested steps:
+#### 3. Add a streaming platform
 
-1. Draft a new `SearchApi` interface iteration underneath `core/api/search/`.
-2. Push your singleton to `AppContainer`.
-3. Create distinct routing and pattern-matching architectures inside `SearchManager`.
-4. Supplement required enums (e.g. `MusicPlatform`) and UI strings according to contextual relevance.
+1. Use `bili/` or `youtube/` as a reference for client and playback repository design.
+2. Extend `ConditionalHttpDataSourceFactory.kt` if special headers are needed.
+3. Add the platform to the `PlayerManager` URL resolution path.
+4. Keep downloads, lyrics, covers, and stats separated from transient streaming cache.
+5. If NetEase Liked Songs sync should support the new source, provide stable
+   NetEase song IDs or a verified mapping and reuse candidate validation in
+   `LocalPlaylistRepository`.
 
-#### 3. Integrating a New Streaming Outlet
+#### 4. Modify NetEase auto source switching
 
-1. Utilize modules akin to `bili/` for designing clients and playback repos.
-2. Adapt customized network Headers across `ConditionalHttpDataSourceFactory.kt`.
-3. Extend the overarching network parsing scope mapped internally throughout `PlayerManager` with your outlet logic.
-4. Exercise diligent functional partitioning ensuring you strictly bypass merging "ephemeral caching" with "persistent file downloading".
+1. The entry point is the NetEase URL resolution flow in `PlayerManagerUrlExtensions.kt`.
+2. Matching and scoring live in `PlayerManagerNeteaseAutoSourceSwitch.kt`.
+3. Auto source switching is only a fallback for restricted, missing-URL, or
+   preview-only NetEase playback. Do not turn it into cross-platform aggregate search.
+4. When changing matching, consider title, artist, video pages, duration
+   tolerance, and cache key stability.
 
-#### 4. Supplementing Preference Toggle Settings
+#### 5. Add a setting
 
-1. Draft corresponding keys, specific Flows, and setter architectures in `data/settings/SettingsStore.kt`.
-2. Amalgamate and propagate them inside `NeriApp.kt`.
-3. Bind UI interactions across `SettingsScreen.kt`.
-4. Extensively recalibrate overarching top-level architectures around `NeriApp.kt` should your new layout disrupt global motifs.
+1. Prefer registering keys, defaults, types, and UI metadata in
+   `data/settings/AutoSettingsSchema.kt`.
+2. Simple switches can use the generated `AutoSettingsRepository` and `AutoSettingsSwitchItems`.
+3. Settings with side effects, mutual exclusion, permissions, or startup snapshot
+   requirements should keep a handwritten setter.
+4. If a setting affects early startup behavior, update the corresponding snapshot:
+   `BootstrapSettingsSnapshot`, `ThemePreferenceSnapshot`, or `PlaybackPreferenceSnapshot`.
+5. UI usually belongs in the matching `SettingsPage` in `SettingsScreen.kt` or
+   under `ui/screen/tab/settings/component/`.
 
-#### 5. Altering GitHub Cloud Alignments
+#### 6. Modify GitHub / WebDAV sync
 
-1. Extrapolate upon the initial tri-directional merge procedures established within `GitHubSyncManager.kt`.
-2. Account for sync targets which invariably persist playlists, favorites, playback chronologies, and deletion histories.
-3. Protect existing behavioral motifs inside `GitHubSyncWorker.kt`. Guard against overriding latency timers, routine executions, validated network checks, or subsequent retry protocols.
-4. Securely route sensitive credentials across `SecureTokenStorage.kt`. Under absolutely no pretense should Tokens regress towards `DataStore` or plain text architectures.
+1. Understand `SyncDataModels.kt` and `SyncDataSerializer.kt` compatibility first.
+2. Sync data includes playlists, favorite playlists, recent plays, deletion records,
+   and playback stats.
+3. Most merge logic lives in `GitHubSyncManager.kt`; WebDAV reuses the same data
+   model and much of the merge behavior.
+4. Do not break the delayed sync, periodic sync, validated-network checks, or retry
+   behavior in `GitHubSyncWorker.kt` / `WebDavSyncWorker.kt`.
+5. Sensitive data must go through `SecureTokenStorage.kt` or `WebDavStorage.kt`.
+   Do not store it in `DataStore` or plaintext JSON.
+
+#### 7. Modify download storage
+
+1. Read `ManagedDownloadStorage.kt`, `ManagedDownloadNaming.kt`, and related unit tests first.
+2. Consider app-managed storage, SAF custom directories, migration, legacy names,
+   metadata files, and `.nomedia`.
+3. Changes to migration or delete semantics must update or add unit tests.
+
+#### 8. Modify Lyricon integration
+
+1. The integration entry point is `core/lyricon/LyriconManager.kt`.
+2. The setting key is `lyricon_enabled`, and playback lifecycle keeps it in sync.
+3. Lyrics use `LyricEntry`; word-level data comes from `WordTiming`, and
+   translations are matched to original lines by timestamp tolerance.
+4. Keep Lyricon, advanced Now Playing lyrics, and external Bluetooth lyrics
+   compatible when changing lyric structures.
+
+#### 9. Modify Listen Together
+
+1. Android client logic is under `listentogether/`.
+2. Server logic is under `np-submodule/NeriPlayer-LTW`.
+3. Protocol field changes must stay compatible across the Android client and Worker,
+   and tests must be updated.
+4. Settings support custom server URLs and availability tests. Do not hard-code a single server.
 
 ---
 
 ### Debugging & Logs
 
-- Enable Developer Mode: Tap the **version number** 7 times under the Settings page.
-- Upon opening, a standalone `Debug` directory will appear on your bottom bar layer.
+- Enable Developer Mode by tapping the **version number** 7 times in Settings.
+- A standalone `Debug` tab appears after enabling it.
+- Regular file logging is enabled only in Developer Mode.
+- Crash logs are written independently by `ExceptionHandler` / `NativeCrashHandler`.
+- The Debug tab contains YouTube, Bili, NetEase, Search, and Listen Together probes,
+  plus regular log and crash log viewers.
 
-Logs instructions:
-- Standard file-level logs operate exclusively only when developer mode is explicitly enabled.
-- Hard Crash files are natively compartmentalized and routed by `ExceptionHandler` independent of any developer constraints.
-
-Conventional commands:
+Common command:
 
 ```bash
 adb logcat | findstr NeriPlayer
 ```
 
-Mac/Linux Alternative:
+Linux / macOS:
 
 ```bash
 adb logcat | grep NeriPlayer
@@ -212,48 +347,67 @@ adb logcat | grep NeriPlayer
 
 ---
 
-### Testing & PR Procedures
+### Testing & PR
 
-Ensure the core minimum validation scopes beforehand:
+Before submitting, consider at least these checks:
 
-1. Successful localized generation via:
+1. Debug build:
    ```bash
    ./gradlew :app:assembleDebug
    ```
-2. For resources, UI layouts, navigation, configurational modifications, or synchronous alignment logic revisions, heavily consider running:
+2. Unit tests:
+   ```bash
+   ./gradlew :app:testDebugUnitTest
+   ```
+3. If you changed resources, UI, navigation, settings, sync, or storage logic:
    ```bash
    ./gradlew :app:lintDebug
    ```
-3. Locate specific isolated tests to `app/src/test/`; funnel UI Compose or distinct device tests onto `app/src/androidTest/`.
-4. Sync structural architectural changes alongside their corresponding documentation adjustments, spanning README scopes, user pipelines, or parameter notes.
+4. If you changed Compose UI, permissions, Activity, or login flows:
+   ```bash
+   ./gradlew :app:connectedDebugAndroidTest
+   ```
+5. If you changed the Listen Together Worker:
+   ```bash
+   npm ci --prefix np-submodule/NeriPlayer-LTW
+   npm run check --prefix np-submodule/NeriPlayer-LTW
+   ```
+6. Add unit tests under `app/src/test/`.
+   Add device or Compose UI tests under `app/src/androidTest/`.
+7. If behavior changes affect README, settings copy, user flows, or sync formats,
+   update documentation in the same PR.
 
-Your PR should inherently exhibit:
-- General motivations / objectives.
-- Targeted implementations.
-- Associated compatibilities / latent risks.
-- Assessment / Execution procedures.
-- Accompanying screenshots or workflow clips for extensive front-end revisions.
+PRs should include:
 
-Avoid committing:
-- APK clusters, signing credentials, or isolated IDE directories.
-- Caches, residual pipelines, error log snapshots, or tentative builds.
-- Cookies, exclusive Token strings, or personal analytics datasets.
+- Motivation
+- Key implementation details
+- Risks and compatibility impact
+- Test steps
+- Screenshots or recordings for UI changes
 
-Try adopting standard Conventional Commit parameters spanning `feat: ...`, `fix: ...`, or `docs: ...`.
+Do not commit:
+
+- APKs, signing files, or local IDE config
+- Caches, logs, or temporary build outputs
+- Auth cookies, tokens, full config backups, or personal data
+
+Commit messages should follow Conventional Commits when possible, for example:
+`feat: ...`, `fix: ...`, or `docs: ...`.
 
 ---
 
 ### Legal & License
 
-- This project has been compiled exclusively within educational parameters; using it for illegal distributions inherently breaches repository policies.
-- This application stands as an Open Source branch running on **GPL-3.0**.
-- You automatically concur with disseminating your personalized modifications around GPL-3.0 architectures by submitting them back.
+- This project is for learning and research purposes only. Do not use it for illegal purposes.
+- This project is licensed under **GPL-3.0**.
+- By submitting contributions, you agree to distribute your changes under GPL-3.0.
 
 ---
 
 ### Communication
 
-- [Issues](https://github.com/cwuom/NeriPlayer/issues): Discrepancies, proposed enhancements, or generalized discourse
-- [README.md](./README_EN.md): Capabilities alongside overarching workflow directives
+- [Issues](https://github.com/cwuom/NeriPlayer/issues): bugs, feature requests, and discussions
+- [README_EN.md](./README_EN.md): features and usage
+- [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md): community code of conduct
 
-Before advancing drastically isolated structural concepts, strictly propose them as comprehensive Issue tickets aiming towards universal alignment.
+If you plan a large structural change, open an Issue first to align direction.
