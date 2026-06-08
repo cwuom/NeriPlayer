@@ -38,6 +38,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
@@ -51,6 +55,26 @@ import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsChoiceRow
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
+
+private const val NETEASE_LOSSLESS_QUALITY = "lossless"
+private const val NETEASE_HIRES_QUALITY = "hires"
+private const val NETEASE_HD_SURROUND_QUALITY = "jyeffect"
+private const val NETEASE_SURROUND_QUALITY = "sky"
+private const val NETEASE_MASTER_QUALITY = "jymaster"
+private const val BILI_DOLBY_QUALITY = "dolby"
+
+private val NETEASE_MEMBER_QUALITIES = setOf(
+    NETEASE_LOSSLESS_QUALITY,
+    NETEASE_HIRES_QUALITY,
+    NETEASE_HD_SURROUND_QUALITY,
+    NETEASE_SURROUND_QUALITY,
+    NETEASE_MASTER_QUALITY
+)
+
+private enum class AudioQualityNotice {
+    NeteaseMemberQuality,
+    BiliDolby
+}
 
 @Composable
 internal fun SettingsAudioQualitySection(
@@ -74,6 +98,8 @@ internal fun SettingsAudioQualitySection(
     showBiliQualityDialog: Boolean,
     onShowBiliQualityDialogChange: (Boolean) -> Unit
 ) {
+    var audioQualityNotice by remember { mutableStateOf<AudioQualityNotice?>(null) }
+
     if (showHeader) {
         ExpandableHeader(
             icon = Icons.Filled.Audiotrack,
@@ -135,16 +161,19 @@ internal fun SettingsAudioQualitySection(
                 "standard" to stringResource(R.string.quality_standard),
                 "higher" to stringResource(R.string.quality_high),
                 "exhigh" to stringResource(R.string.quality_very_high),
-                "lossless" to stringResource(R.string.quality_lossless),
-                "hires" to stringResource(R.string.quality_hires),
-                "jyeffect" to stringResource(R.string.quality_hd_surround),
-                "sky" to stringResource(R.string.quality_surround),
-                "jymaster" to stringResource(R.string.settings_audio_quality_jymaster)
+                NETEASE_LOSSLESS_QUALITY to stringResource(R.string.quality_lossless),
+                NETEASE_HIRES_QUALITY to stringResource(R.string.quality_hires),
+                NETEASE_HD_SURROUND_QUALITY to stringResource(R.string.quality_hd_surround),
+                NETEASE_SURROUND_QUALITY to stringResource(R.string.quality_surround),
+                NETEASE_MASTER_QUALITY to stringResource(R.string.settings_audio_quality_jymaster)
             ),
             onDismiss = { onShowQualityDialogChange(false) },
             onSelect = { level ->
                 onQualityChange(level)
                 onShowQualityDialogChange(false)
+                if (level in NETEASE_MEMBER_QUALITIES && preferredQuality != level) {
+                    audioQualityNotice = AudioQualityNotice.NeteaseMemberQuality
+                }
             }
         )
     }
@@ -172,7 +201,7 @@ internal fun SettingsAudioQualitySection(
             title = stringResource(R.string.quality_bili_default),
             selectedValue = biliPreferredQuality,
             options = listOf(
-                "dolby" to stringResource(R.string.settings_dolby),
+                BILI_DOLBY_QUALITY to stringResource(R.string.settings_dolby),
                 "hires" to stringResource(R.string.quality_hires),
                 "lossless" to stringResource(R.string.quality_lossless),
                 "high" to stringResource(R.string.settings_audio_quality_high),
@@ -183,7 +212,17 @@ internal fun SettingsAudioQualitySection(
             onSelect = { level ->
                 onBiliQualityChange(level)
                 onShowBiliQualityDialogChange(false)
+                if (level == BILI_DOLBY_QUALITY && biliPreferredQuality != level) {
+                    audioQualityNotice = AudioQualityNotice.BiliDolby
+                }
             }
+        )
+    }
+
+    audioQualityNotice?.let { notice ->
+        AudioQualityNoticeDialog(
+            notice = notice,
+            onDismiss = { audioQualityNotice = null }
         )
     }
 }
@@ -238,6 +277,34 @@ private fun QualityOptionsDialog(
         confirmButton = {
             MiuixSettingsTextButton(onClick = onDismiss) {
                 Text(stringResource(R.string.action_close))
+            }
+        }
+    )
+}
+
+@Composable
+private fun AudioQualityNoticeDialog(
+    notice: AudioQualityNotice,
+    onDismiss: () -> Unit
+) {
+    MiuixSettingsDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.dialog_hint)) },
+        text = {
+            Text(
+                stringResource(
+                    when (notice) {
+                        AudioQualityNotice.NeteaseMemberQuality ->
+                            R.string.settings_audio_quality_netease_member_quality_notice
+                        AudioQualityNotice.BiliDolby ->
+                            R.string.settings_audio_quality_bili_dolby_notice
+                    }
+                )
+            )
+        },
+        confirmButton = {
+            MiuixSettingsTextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.action_confirm))
             }
         }
     )

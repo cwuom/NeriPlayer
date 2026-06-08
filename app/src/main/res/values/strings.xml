@@ -431,6 +431,8 @@
     <string name="quality_netease_default">网易云默认音质</string>
     <string name="quality_bili_default">B 站默认音质</string>
     <string name="quality_youtube_default">YouTube 默认音质</string>
+    <string name="settings_audio_quality_netease_member_quality_notice">如果没有会员，切换到无损及以上音质可能导致歌曲无法播放。</string>
+    <string name="settings_audio_quality_bili_dolby_notice">最高规格音质可能导致歌曲无法正确解析（除非歌曲默认支持杜比）。</string>
 
     <!-- Playback Device -->
     <string name="device_speaker">手机扬声器</string>
