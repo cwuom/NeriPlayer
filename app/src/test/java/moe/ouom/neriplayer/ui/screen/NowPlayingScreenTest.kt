@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.ui.screen
 
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import moe.ouom.neriplayer.core.download.DownloadStatus
@@ -50,6 +51,24 @@ class NowPlayingScreenTest {
                 hasLocalDownload = true,
                 currentTask = task
             )
+        )
+    }
+
+    @Test
+    fun `queue item key keeps duplicate songs visible`() {
+        val song = SongItem(
+            id = 1L,
+            name = "Song",
+            artist = "Artist",
+            album = "Album",
+            albumId = 1L,
+            durationMs = 1_000L,
+            coverUrl = null
+        )
+
+        assertNotEquals(
+            buildNowPlayingQueueItemKey(index = 0, song = song),
+            buildNowPlayingQueueItemKey(index = 1, song = song)
         )
     }
 }
