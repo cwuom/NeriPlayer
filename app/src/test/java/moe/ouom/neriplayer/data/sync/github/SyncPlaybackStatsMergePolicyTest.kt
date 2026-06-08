@@ -42,6 +42,27 @@ class SyncPlaybackStatsMergePolicyTest {
     }
 
     @Test
+    fun `clear barrier keeps stats updated after clear even when first play is old`() {
+        val clearedAt = 1_000L
+        val local = trackStat(
+            identityKey = "local-resumed",
+            firstPlayedAt = 100L,
+            lastPlayedAt = 1_200L
+        )
+
+        val merged = SyncPlaybackStatsMergePolicy.merge(
+            local = listOf(local),
+            remote = emptyList(),
+            playbackStatsClearedAt = clearedAt
+        )
+
+        assertEquals(1, merged.size)
+        assertEquals("local-resumed", merged.single().identityKey)
+        assertEquals(1_200L, merged.single().firstPlayedAt)
+        assertEquals(1_200L, merged.single().lastPlayedAt)
+    }
+
+    @Test
     fun `merge without clear barrier keeps larger counters`() {
         val local = trackStat(
             identityKey = "same",

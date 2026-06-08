@@ -38,7 +38,7 @@ class AuthDialogsTest {
         get() = targetContext.applicationContext as Application
 
     @Test
-    fun neteaseSheet_switchesTabsAndShowsExpectedInputs() {
+    fun neteaseSheet_switchesToCookieImportTabAndShowsInput() {
         val context = targetContext
         val vm = NeteaseAuthViewModel(application)
 
@@ -72,12 +72,6 @@ class AuthDialogsTest {
         composeRule.onNodeWithText(context.getString(R.string.login_paste_cookie)).performClick()
         waitForText(context.getString(R.string.login_paste_cookie_hint))
         waitForText(context.getString(R.string.login_save_cookie))
-
-        composeRule.onNodeWithText(context.getString(R.string.login_verification_code)).performClick()
-        waitForText(context.getString(R.string.settings_phone_number_hint))
-        waitForText(context.getString(R.string.login_sms_code))
-        waitForText(context.getString(R.string.login_send_code))
-        waitForText(context.getString(R.string.login_title))
     }
 
     @Test

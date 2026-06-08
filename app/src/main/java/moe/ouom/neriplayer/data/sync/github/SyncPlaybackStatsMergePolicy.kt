@@ -7,7 +7,7 @@ internal object SyncPlaybackStatsMergePolicy {
         playbackStatsClearedAt: Long
     ): List<SyncTrackStat> {
         val merged = linkedMapOf<String, SyncTrackStat>()
-        for (stat in (local + remote).filter { shouldKeepAfterClear(it, playbackStatsClearedAt) }) {
+        for (stat in (local + remote).mapNotNull { normalizeAfterClear(it, playbackStatsClearedAt) }) {
             val existing = merged[stat.identityKey]
             merged[stat.identityKey] = if (existing == null) {
                 stat
@@ -20,8 +20,24 @@ internal object SyncPlaybackStatsMergePolicy {
 
     fun shouldKeepAfterClear(stat: SyncTrackStat, playbackStatsClearedAt: Long): Boolean {
         if (playbackStatsClearedAt <= 0L) return true
-        val firstPlayedAt = stat.firstPlayedAt.takeIf { it > 0L } ?: stat.lastPlayedAt
-        return firstPlayedAt > playbackStatsClearedAt && stat.lastPlayedAt > playbackStatsClearedAt
+        return stat.lastPlayedAt >= playbackStatsClearedAt
+    }
+
+    private fun normalizeAfterClear(
+        stat: SyncTrackStat,
+        playbackStatsClearedAt: Long
+    ): SyncTrackStat? {
+        if (!shouldKeepAfterClear(stat, playbackStatsClearedAt)) return null
+        if (playbackStatsClearedAt <= 0L) return stat
+
+        val normalizedFirstPlayedAt = stat.firstPlayedAt
+            .takeIf { it >= playbackStatsClearedAt && it <= stat.lastPlayedAt }
+            ?: stat.lastPlayedAt
+        return if (normalizedFirstPlayedAt == stat.firstPlayedAt) {
+            stat
+        } else {
+            stat.copy(firstPlayedAt = normalizedFirstPlayedAt)
+        }
     }
 
     private fun mergeStat(existing: SyncTrackStat, stat: SyncTrackStat): SyncTrackStat {
