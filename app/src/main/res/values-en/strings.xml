@@ -101,6 +101,7 @@
     <string name="config_import_warning_netease_cookie">NetEase sign-in data did not pass validation and was skipped</string>
     <string name="config_import_warning_background_image">Custom background image access is unavailable and was skipped</string>
     <string name="config_import_warning_download_directory">Download directory access is unavailable and was skipped</string>
+    <string name="config_import_warning_invalid_setting_values">Some settings were unknown or invalid and were skipped or restored to a safe range</string>
     <string name="playlist_backup_date">Backup date: %s</string>
     <string name="playlist_analyzing">Analyzing differences…</string>
     <string name="playlist_analysis_failed">Analysis failed: %s</string>
@@ -683,6 +684,29 @@
     <string name="startup_crash_report_title_native">Detected previous native crash</string>
     <string name="startup_crash_report_desc">The app crashed during the previous launch. A preview of the crash log is shown below.\nLog file: %1$s</string>
     <string name="startup_crash_report_truncated">The log is long, so only the first 64 KB is shown here. You can copy the full content or export the original file.</string>
+    <string name="safe_mode_title">Safe Mode</string>
+    <string name="safe_mode_subtitle">A crash was detected from the previous launch, so all app components were skipped.</string>
+    <string name="safe_mode_component_lock">Only log viewing, log export, Cookie cleanup, sign-in reset, settings reset, and normal startup recovery are available.</string>
+    <string name="safe_mode_log_preview">Crash log preview</string>
+    <string name="safe_mode_log_file">Log file: %1$s</string>
+    <string name="safe_mode_log_empty">No crash log is available</string>
+    <string name="safe_mode_copy_log">Copy log</string>
+    <string name="safe_mode_export_log">Export log</string>
+    <string name="safe_mode_reset_login">Clear Cookies and reset sign-ins</string>
+    <string name="safe_mode_reset_login_desc">Clears WebView Cookies and the local NetEase, Bili, and YouTube sign-in states.</string>
+    <string name="safe_mode_reset_login_confirm_title">Reset sign-in state?</string>
+    <string name="safe_mode_reset_login_confirm_message">This will clear saved Cookies and web sign-in storage on this device. You will need to sign in again.</string>
+    <string name="safe_mode_reset_login_done">Cookies and sign-in states were reset</string>
+    <string name="safe_mode_reset_login_failed">Reset failed: %1$s</string>
+    <string name="safe_mode_reset_settings">Reset all settings</string>
+    <string name="safe_mode_reset_settings_desc">Restores all app settings to defaults without clearing sign-ins or Cookies.</string>
+    <string name="safe_mode_reset_settings_confirm_title">Reset all settings?</string>
+    <string name="safe_mode_reset_settings_confirm_message">This will clear saved app settings and rebuild startup snapshots. Sign-ins, Cookies, and account data will not be cleared.</string>
+    <string name="safe_mode_reset_settings_done">All settings were reset</string>
+    <string name="safe_mode_reset_settings_failed">Settings reset failed: %1$s</string>
+    <string name="safe_mode_restore_normal">Restore normal startup</string>
+    <string name="safe_mode_restore_normal_desc">Clears this crash marker and enters the full app again. If the issue still exists, safe mode will open again next time.</string>
+    <string name="safe_mode_restore_failed">Restore failed: %1$s</string>
 
     <!-- Errors -->
     <string name="error_network">Network Error</string>

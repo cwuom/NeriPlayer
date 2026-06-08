@@ -66,15 +66,21 @@ object ExceptionHandler {
     
     /**
      * 初始化异常处理器
-     * @param appContext 应用上下文
+     * @param app 应用上下文
+     * @param installNativeCrashHandler 是否安装 native 崩溃处理器
      */
-    fun init(app: Application) {
+    fun init(
+        app: Application,
+        installNativeCrashHandler: Boolean = true
+    ) {
         if (initialized) return
         applicationRef = WeakReference(app)
 
         // 设置崩溃日志文件
         setupCrashLogFile(app)
-        NativeCrashHandler.init(app)
+        if (installNativeCrashHandler) {
+            NativeCrashHandler.init(app)
+        }
 
         // 设置全局未捕获异常处理器
         previousHandler = Thread.getDefaultUncaughtExceptionHandler()

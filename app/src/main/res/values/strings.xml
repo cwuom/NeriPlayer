@@ -101,6 +101,7 @@
     <string name="config_import_warning_netease_cookie">网易云登录信息校验失败，已跳过恢复</string>
     <string name="config_import_warning_background_image">自定义背景图片没有可用读取权限，已跳过恢复</string>
     <string name="config_import_warning_download_directory">下载目录没有可用访问权限，已跳过恢复</string>
+    <string name="config_import_warning_invalid_setting_values">部分设置项不可识别或值不合法，已跳过或恢复到安全范围</string>
     <string name="playlist_backup_date">备份时间: %s</string>
     <string name="playlist_analyzing">正在分析差异…</string>
     <string name="playlist_analysis_failed">分析失败: %s</string>
@@ -683,6 +684,29 @@
     <string name="startup_crash_report_title_native">检测到上次 Native 崩溃</string>
     <string name="startup_crash_report_desc">应用上次启动时发生崩溃，下面是日志预览。\n日志文件：%1$s</string>
     <string name="startup_crash_report_truncated">日志内容较长，这里只显示前 64 KB。你可以复制完整内容或导出原始文件。</string>
+    <string name="safe_mode_title">安全模式</string>
+    <string name="safe_mode_subtitle">检测到上次启动崩溃，已跳过所有应用组件加载。</string>
+    <string name="safe_mode_component_lock">当前只开放日志查看、日志导出、Cookie 清理、登录重置、设置重置和恢复正常启动。</string>
+    <string name="safe_mode_log_preview">崩溃日志预览</string>
+    <string name="safe_mode_log_file">日志文件：%1$s</string>
+    <string name="safe_mode_log_empty">暂无可查看的崩溃日志</string>
+    <string name="safe_mode_copy_log">复制日志</string>
+    <string name="safe_mode_export_log">导出日志</string>
+    <string name="safe_mode_reset_login">清空 Cookie 并重置登录</string>
+    <string name="safe_mode_reset_login_desc">将清除 WebView Cookie，以及网易云、Bili、YouTube 的本地登录状态。</string>
+    <string name="safe_mode_reset_login_confirm_title">确认重置登录状态？</string>
+    <string name="safe_mode_reset_login_confirm_message">此操作会清空本机保存的 Cookie 和网页登录存储，之后需要重新登录。</string>
+    <string name="safe_mode_reset_login_done">Cookie 和登录状态已重置</string>
+    <string name="safe_mode_reset_login_failed">重置失败：%1$s</string>
+    <string name="safe_mode_reset_settings">重置所有设置项</string>
+    <string name="safe_mode_reset_settings_desc">将所有应用设置恢复为默认值，不会清除登录状态和 Cookie。</string>
+    <string name="safe_mode_reset_settings_confirm_title">确认重置所有设置项？</string>
+    <string name="safe_mode_reset_settings_confirm_message">此操作会清空本机保存的应用设置，并重建启动快照。登录状态、Cookie 和账号信息不会被清除。</string>
+    <string name="safe_mode_reset_settings_done">所有设置项已重置</string>
+    <string name="safe_mode_reset_settings_failed">重置设置失败：%1$s</string>
+    <string name="safe_mode_restore_normal">恢复正常启动</string>
+    <string name="safe_mode_restore_normal_desc">清除本次崩溃标记并重新进入完整应用。如果问题仍存在，下次会再次进入安全模式。</string>
+    <string name="safe_mode_restore_failed">恢复失败：%1$s</string>
 
     <!-- Errors -->
     <string name="error_network">网络错误</string>

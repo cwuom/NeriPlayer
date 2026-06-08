@@ -109,6 +109,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.NeriPlayerApplication
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.AudioPlayerService
@@ -118,6 +119,7 @@ import moe.ouom.neriplayer.core.player.model.PlayerEvent
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.settings.SettingsRepository
+import moe.ouom.neriplayer.data.settings.ThemePreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.readThemePreferenceSnapshotSync
 import moe.ouom.neriplayer.data.sync.webdav.WebDavStorage
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
@@ -129,6 +131,7 @@ import moe.ouom.neriplayer.listentogether.parseListenTogetherInvite
 import moe.ouom.neriplayer.listentogether.resolveListenTogetherBaseUrl
 import moe.ouom.neriplayer.ui.NeriApp
 import moe.ouom.neriplayer.ui.onboarding.StartupOnboardingScreen
+import moe.ouom.neriplayer.ui.screen.safemode.SafeModeScreen
 import moe.ouom.neriplayer.util.CrashReportStore
 import moe.ouom.neriplayer.util.ExceptionHandler
 import moe.ouom.neriplayer.util.HapticButton
@@ -136,6 +139,7 @@ import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.LanguageManager
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.NightModeHelper
+import moe.ouom.neriplayer.util.SafeModeManager
 import moe.ouom.neriplayer.util.lockPortraitIfPhone
 
 private enum class AppStage { Loading, Disclaimer, Onboarding, Main }
@@ -171,13 +175,19 @@ class MainActivity : ComponentActivity() {
     private var hasWindowFocusForClipboardInspection = false
     private val listenTogetherStatusMessage = MutableStateFlow<String?>(null)
     private val listenTogetherStatusFlow = listenTogetherStatusMessage.asStateFlow()
+    private var safeModeActive = false
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LanguageManager.applyLanguage(newBase))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        val startupThemeSnapshot = readThemePreferenceSnapshotSync(this)
+        safeModeActive = SafeModeManager.shouldEnterSafeMode(this)
+        val startupThemeSnapshot = if (safeModeActive) {
+            ThemePreferenceSnapshot()
+        } else {
+            readThemePreferenceSnapshotSync(this)
+        }
         NightModeHelper.applyNightMode(
             followSystemDark = startupThemeSnapshot.followSystemDark,
             forceDark = startupThemeSnapshot.forceDark
@@ -191,6 +201,26 @@ class MainActivity : ComponentActivity() {
                     Configuration.UI_MODE_NIGHT_YES
             )
         )
+
+        if (safeModeActive) {
+            setContent {
+                val systemDark = isSystemInDarkTheme()
+                val useDark = remember(systemDark) {
+                    startupThemeSnapshot.resolveUseDark(systemDark = systemDark)
+                }
+                NeriTheme(useDark = useDark, useDynamic = false) {
+                    SideEffect {
+                        val controller = WindowInsetsControllerCompat(window, window.decorView)
+                        controller.isAppearanceLightStatusBars = !useDark
+                        controller.isAppearanceLightNavigationBars = !useDark
+                    }
+                    SafeModeScreen(
+                        onRestoreNormal = ::restoreFromSafeMode
+                    )
+                }
+            }
+            return
+        }
 
         setContent {
             val devModeEnabled by settingsRepository.devModeEnabledFlow.collectAsState(initial = false)
@@ -695,8 +725,30 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun restoreFromSafeMode() {
+        runCatching {
+            (application as? NeriPlayerApplication)?.initializeNormalComponents()
+            SafeModeManager.restoreNormalStartup(this)
+            val restartIntent = Intent(this, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            }
+            startActivity(restartIntent)
+            finish()
+        }.onFailure { error ->
+            Toast.makeText(
+                this,
+                getString(R.string.safe_mode_restore_failed, error.message ?: error.javaClass.simpleName),
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        if (safeModeActive) {
+            setIntent(intent)
+            return
+        }
         setIntent(intent)
         handleIncomingIntent(intent)
         scheduleClipboardInviteInspection(immediate = true)
@@ -704,6 +756,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (safeModeActive) {
+            return
+        }
         startPendingExternalAudioServiceIfNeeded()
         if (hasWindowFocusForClipboardInspection) {
             scheduleClipboardInviteInspection()
@@ -716,12 +771,17 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
-        PlayerManager.flushPlaybackStatsBlocking("activity_stop")
+        if (!safeModeActive) {
+            PlayerManager.flushPlaybackStatsBlocking("activity_stop")
+        }
         super.onStop()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
+        if (safeModeActive) {
+            return
+        }
         hasWindowFocusForClipboardInspection = hasFocus
         if (hasFocus) {
             startPendingExternalAudioServiceIfNeeded()
@@ -1020,7 +1080,9 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        PlayerManager.flushPlaybackStatsBlocking("activity_destroy")
+        if (!safeModeActive) {
+            PlayerManager.flushPlaybackStatsBlocking("activity_destroy")
+        }
         clipboardInviteInspectJob?.cancel()
         externalAudioImportJob?.cancel()
         externalAudioMetadataHydrationJob?.cancel()

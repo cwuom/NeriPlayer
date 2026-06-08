@@ -85,6 +85,32 @@ internal object CrashReportStore {
         }.getOrNull()
     }
 
+    fun hasPendingCrashReport(context: Context): Boolean {
+        val crashDir = ExceptionHandler.resolveCrashDirectory(context) ?: return false
+        val flagFile = File(crashDir, PENDING_STARTUP_CRASH_FLAG)
+        if (!flagFile.exists() || !flagFile.isFile()) {
+            return false
+        }
+
+        return runCatching {
+            val lines = flagFile.readLines()
+            val logFileName = lines.getOrNull(1)?.trim().orEmpty()
+            if (logFileName.isEmpty()) {
+                clearPendingCrashReport(context)
+                return@runCatching false
+            }
+
+            val logFile = File(crashDir, logFileName)
+            val isValid = logFile.exists() && logFile.isFile
+            if (!isValid) {
+                clearPendingCrashReport(context)
+            }
+            isValid
+        }.onFailure { error ->
+            NPLogger.e("CrashReportStore", "Failed to check pending crash report", error)
+        }.getOrDefault(false)
+    }
+
     fun readFullCrashReport(reportFile: File): String? {
         return runCatching {
             if (!reportFile.exists() || !reportFile.isFile()) {
