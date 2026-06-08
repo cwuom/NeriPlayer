@@ -30,7 +30,8 @@ internal sealed class SongUrlResult {
         val mimeType: String? = null,
         val noticeMessage: String? = null,
         val expectedContentLength: Long? = null,
-        val audioInfo: PlaybackAudioInfo? = null
+        val audioInfo: PlaybackAudioInfo? = null,
+        val cacheKeyOverride: String? = null
     ) : SongUrlResult()
 
     object WaitingForAuthoritativeStream : SongUrlResult()

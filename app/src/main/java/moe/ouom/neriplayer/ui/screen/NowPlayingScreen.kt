@@ -205,6 +205,7 @@ import moe.ouom.neriplayer.core.download.shouldHideRemoteDownloadAction
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
+import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import moe.ouom.neriplayer.core.player.model.PlaybackQualityOption
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.isLocalSong
@@ -279,6 +280,35 @@ internal fun shouldHideDownloadActionForSong(
 
 internal fun buildNowPlayingQueueItemKey(index: Int, song: SongItem): String {
     return "$index:${song.stableKey()}"
+}
+
+internal fun resolveNowPlayingPlaybackSourceType(
+    isLocalSong: Boolean,
+    isYouTubeMusicSong: Boolean,
+    isFromNeteaseTag: Boolean,
+    isFromBiliTag: Boolean,
+    currentMediaUrl: String?,
+    playbackAudioSource: PlaybackAudioSource?
+): PlaybackSourceType? {
+    if (isLocalSong) return PlaybackSourceType.LOCAL
+
+    when (playbackAudioSource) {
+        PlaybackAudioSource.NETEASE -> return PlaybackSourceType.NETEASE
+        PlaybackAudioSource.BILIBILI -> return PlaybackSourceType.BILIBILI
+        PlaybackAudioSource.YOUTUBE_MUSIC -> return PlaybackSourceType.YOUTUBE_MUSIC
+        PlaybackAudioSource.LOCAL,
+        null -> Unit
+    }
+
+    if (isYouTubeMusicSong) return PlaybackSourceType.YOUTUBE_MUSIC
+
+    val isFromNeteaseUrl = currentMediaUrl?.contains("music.126.net", ignoreCase = true) == true
+    val isFromBiliUrl = currentMediaUrl?.contains("bilivideo.", ignoreCase = true) == true
+    return when {
+        isFromBiliTag || (!isFromNeteaseTag && isFromBiliUrl) -> PlaybackSourceType.BILIBILI
+        isFromNeteaseTag || (!isFromBiliTag && isFromNeteaseUrl) -> PlaybackSourceType.NETEASE
+        else -> null
+    }
 }
 
 private fun hasCachedLocalDownload(song: SongItem): Boolean {
@@ -385,17 +415,14 @@ fun NowPlayingScreen(
         currentSong?.album?.startsWith(PlayerManager.NETEASE_SOURCE_TAG) == true
     val isFromBiliTag =
         currentSong?.album?.startsWith(PlayerManager.BILI_SOURCE_TAG) == true
-    val isFromNeteaseUrl = currentMediaUrl?.contains("music.126.net", ignoreCase = true) == true
-    val isFromBiliUrl = currentMediaUrl?.contains("bilivideo.", ignoreCase = true) == true
-    val isFromNetease = isFromNeteaseTag || (!isFromBiliTag && isFromNeteaseUrl)
-    val isFromBili = isFromBiliTag || (!isFromNeteaseTag && isFromBiliUrl)
-    val rawPlaybackSourceType = when {
-        currentSong?.isLocalSong() == true -> PlaybackSourceType.LOCAL
-        currentSong?.let { isYouTubeMusicSong(it) } == true -> PlaybackSourceType.YOUTUBE_MUSIC
-        isFromNetease -> PlaybackSourceType.NETEASE
-        isFromBili -> PlaybackSourceType.BILIBILI
-        else -> null
-    }
+    val rawPlaybackSourceType = resolveNowPlayingPlaybackSourceType(
+        isLocalSong = currentSong?.isLocalSong() == true,
+        isYouTubeMusicSong = currentSong?.let { isYouTubeMusicSong(it) } == true,
+        isFromNeteaseTag = isFromNeteaseTag,
+        isFromBiliTag = isFromBiliTag,
+        currentMediaUrl = currentMediaUrl,
+        playbackAudioSource = currentPlaybackAudioInfo?.source
+    )
     val playbackSourceSongKey = currentSong?.let {
         listOf(it.id.toString(), it.album, it.mediaUri.orEmpty(), it.localFilePath.orEmpty())
             .joinToString(separator = "|")
@@ -534,7 +561,6 @@ fun NowPlayingScreen(
         currentSong?.matchedTranslatedLyric,
         currentSong?.originalLyric,
         currentSong?.originalTranslatedLyric,
-        isFromNetease,
         currentMediaUrl
     ) {
         val song = currentSong

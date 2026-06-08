@@ -338,6 +338,7 @@ private suspend fun PlayerManager.handleRefreshResult(
                     mimeType = result.mimeType,
                     expectedContentLength = result.expectedContentLength,
                     audioInfo = result.audioInfo,
+                    cacheKeyOverride = result.cacheKeyOverride,
                     resumePositionMs = semantics.resumePositionMs,
                     resumePlaybackAfterRefresh = semantics.resumePlaybackAfterRefresh
                 )
@@ -452,12 +453,13 @@ private suspend fun PlayerManager.applyResolvedMediaItem(
     mimeType: String?,
     expectedContentLength: Long?,
     audioInfo: PlaybackAudioInfo?,
+    cacheKeyOverride: String?,
     resumePositionMs: Long,
     resumePlaybackAfterRefresh: Boolean
 ): Boolean {
     if (!gate.runMutation {}) return false
 
-    val cacheKey = computeCacheKey(song)
+    val cacheKey = cacheKeyOverride ?: computeCacheKey(song)
     invalidateMismatchedCachedResource(
         cacheKey = cacheKey,
         expectedContentLength = expectedContentLength,
@@ -687,7 +689,6 @@ private suspend fun PlayerManager.getNeteaseSongUrl(
                         )
                         continue
                     }
-                    return@withContext success
                 }
 
                 is NeteasePlaybackResponseParser.PlaybackResult.Failure -> {

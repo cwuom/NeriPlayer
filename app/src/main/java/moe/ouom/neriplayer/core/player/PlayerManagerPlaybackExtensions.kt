@@ -432,7 +432,7 @@ internal fun PlayerManager.playAtIndex(
                         postPlayerEvent(PlayerEvent.ShowError(message))
                     }
                     maybeUpdateSongDuration(song, result.durationMs ?: 0L)
-                    val cacheKey = computeCacheKey(song)
+                    val cacheKey = result.cacheKeyOverride ?: computeCacheKey(song)
                     NPLogger.d(
                         "NERI-PlayerManager",
                         "Using custom cache key: $cacheKey for song: ${song.name}"

@@ -6,6 +6,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import moe.ouom.neriplayer.core.download.DownloadStatus
 import moe.ouom.neriplayer.core.download.DownloadTask
+import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
+import moe.ouom.neriplayer.ui.component.PlaybackSourceType
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 
 class NowPlayingScreenTest {
@@ -70,5 +72,33 @@ class NowPlayingScreenTest {
             buildNowPlayingQueueItemKey(index = 0, song = song),
             buildNowPlayingQueueItemKey(index = 1, song = song)
         )
+    }
+
+    @Test
+    fun `playback source badge uses resolved bili audio source over netease tag`() {
+        val sourceType = resolveNowPlayingPlaybackSourceType(
+            isLocalSong = false,
+            isYouTubeMusicSong = false,
+            isFromNeteaseTag = true,
+            isFromBiliTag = false,
+            currentMediaUrl = "https://m701.music.126.net/demo.mp3",
+            playbackAudioSource = PlaybackAudioSource.BILIBILI
+        )
+
+        assertTrue(sourceType == PlaybackSourceType.BILIBILI)
+    }
+
+    @Test
+    fun `remote local cache does not override original platform badge`() {
+        val sourceType = resolveNowPlayingPlaybackSourceType(
+            isLocalSong = false,
+            isYouTubeMusicSong = false,
+            isFromNeteaseTag = true,
+            isFromBiliTag = false,
+            currentMediaUrl = "content://downloads/demo.flac",
+            playbackAudioSource = PlaybackAudioSource.LOCAL
+        )
+
+        assertTrue(sourceType == PlaybackSourceType.NETEASE)
     }
 }

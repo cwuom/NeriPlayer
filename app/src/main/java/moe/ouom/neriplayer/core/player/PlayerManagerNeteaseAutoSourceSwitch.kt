@@ -5,12 +5,15 @@ import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
 import moe.ouom.neriplayer.core.player.policy.RefreshResolverSideEffects
 import moe.ouom.neriplayer.core.player.url.buildBiliPlaybackAudioInfo
+import moe.ouom.neriplayer.core.player.url.inferBiliQualityKey
+import moe.ouom.neriplayer.data.platform.bili.BiliAudioStreamInfo
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import kotlin.math.absoluteValue
 
 private const val NETEASE_AUTO_SOURCE_SEARCH_LIMIT = 6
 private const val NETEASE_AUTO_SOURCE_MIN_ACCEPT_SCORE = 70
+private val autoSourceCacheKeyUnsafeRegex = Regex("[^A-Za-z0-9_.-]+")
 private val autoSourceNonTextRegex = Regex("[^\\p{L}\\p{N}]+")
 private val autoSourceWhitespaceRegex = Regex("\\s+")
 
@@ -151,8 +154,37 @@ private suspend fun PlayerManager.resolveNeteaseAutoBiliCandidate(
         mimeType = selectedStream.mimeType,
         audioInfo = buildBiliPlaybackAudioInfo(selectedStream, availableStreams) {
             getLocalizedString(it)
-        }
+        },
+        cacheKeyOverride = buildNeteaseAutoBiliCacheKey(
+            bvid = videoInfo.bvid,
+            cid = pageMatch.page.cid,
+            selectedStream = selectedStream
+        )
     )
+}
+
+internal fun buildNeteaseAutoBiliCacheKey(
+    bvid: String,
+    cid: Long,
+    selectedStream: BiliAudioStreamInfo
+): String {
+    val bvidPart = sanitizeNeteaseAutoBiliCacheKeyPart(bvid)
+    val streamPart = selectedStream.id
+        ?.let { "id-$it" }
+        ?: selectedStream.qualityTag
+            ?.trim()
+            ?.lowercase()
+            ?.takeIf { it.isNotBlank() }
+            ?.let { "tag-${sanitizeNeteaseAutoBiliCacheKeyPart(it)}" }
+        ?: "quality-${inferBiliQualityKey(selectedStream)}-${selectedStream.bitrateKbps}"
+    return "bili-auto-$bvidPart-$cid-$streamPart"
+}
+
+private fun sanitizeNeteaseAutoBiliCacheKeyPart(value: String): String {
+    return autoSourceCacheKeyUnsafeRegex
+        .replace(value.trim(), "_")
+        .trim('_')
+        .ifBlank { "unknown" }
 }
 
 private suspend fun PlayerManager.fetchBiliAutoSourceVideoInfo(
