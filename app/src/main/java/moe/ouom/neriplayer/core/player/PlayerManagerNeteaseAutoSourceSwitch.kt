@@ -33,7 +33,7 @@ internal suspend fun PlayerManager.tryResolveNeteaseAutoBiliSource(
 
     val visitedCandidates = mutableSetOf<String>()
     for (query in queries) {
-        val candidates = fetchBiliAutoSourceCandidates(song, query)
+        val candidates = fetchBiliAutoSourceCandidates(song, "$query 无损")
             .sortedByDescending { scoreNeteaseAutoBiliCandidate(song, it) }
             .take(NETEASE_AUTO_SOURCE_SEARCH_LIMIT)
 
