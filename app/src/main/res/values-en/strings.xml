@@ -938,8 +938,10 @@
     <string name="settings_motion_expand">Customize motion effects</string>
     <string name="settings_lyricon_enabled">Lyricon Integration</string>
     <string name="settings_lyricon_enabled_desc">Provide Lyricon with the current song, playback state, position, word-level lyrics, and translations</string>
+    <string name="settings_external_bluetooth_lyrics_enabled">External Bluetooth Lyrics</string>
+    <string name="settings_external_bluetooth_lyrics_enabled_desc">When a Bluetooth device is connected, sync the current lyric line to the device song info area</string>
     <string name="settings_lyrics_offset">Lyrics Settings</string>
-    <string name="settings_lyrics_offset_expand">Adjust Lyricon integration and default lyric offsets</string>
+    <string name="settings_lyrics_offset_expand">Adjust external lyrics, Lyricon integration, and default lyric offsets</string>
     <string name="settings_lyrics_offset_cloud_music">Cloud Music default offset</string>
     <string name="settings_lyrics_offset_cloud_music_desc">Default offset applied when loading Cloud Music lyrics</string>
     <string name="settings_lyrics_offset_qq_music">QQ Music default offset</string>

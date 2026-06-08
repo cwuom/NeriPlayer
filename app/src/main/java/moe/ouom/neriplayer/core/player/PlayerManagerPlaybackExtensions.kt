@@ -931,6 +931,9 @@ internal fun PlayerManager.seekToImpl(
     if (lyriconEnabled) {
         LyriconManager.setPosition(resolvedPositionMs)
     }
+    if (externalBluetoothLyricsEnabled) {
+        updateExternalBluetoothLyricLine(resolvedPositionMs)
+    }
     synchronized(playbackStatsTracker) {
         playbackStatsTracker.onManualSeek(resolvedPositionMs)
     }
@@ -1140,6 +1143,9 @@ internal fun PlayerManager.startProgressUpdates() {
             }
             if (lyriconEnabled) {
                 LyriconManager.setPosition(lyriconPositionMs)
+            }
+            if (externalBluetoothLyricsEnabled) {
+                updateExternalBluetoothLyricLine(positionMs)
             }
             maybePersistPlaybackProgress(positionMs)
             persistPlaybackStatsSnapshotAsync(

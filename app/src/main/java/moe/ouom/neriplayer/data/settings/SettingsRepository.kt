@@ -138,6 +138,9 @@ class SettingsRepository(private val context: Context) {
     val lyriconEnabledFlow: Flow<Boolean> =
         autoSettingsRepository.lyriconEnabledFlow
 
+    val externalBluetoothLyricsEnabledFlow: Flow<Boolean> =
+        autoSettingsRepository.externalBluetoothLyricsEnabledFlow
+
     val advancedBlurEnabledFlow: Flow<Boolean> =
         autoSettingsRepository.advancedBlurEnabledFlow
 
@@ -468,6 +471,10 @@ class SettingsRepository(private val context: Context) {
     suspend fun setLyriconEnabled(enabled: Boolean) {
         autoSettingsRepository.setLyriconEnabled(enabled)
         updatePlaybackPreferenceSnapshot(context) { it.copy(lyriconEnabled = enabled) }
+    }
+
+    suspend fun setExternalBluetoothLyricsEnabled(enabled: Boolean) {
+        autoSettingsRepository.setExternalBluetoothLyricsEnabled(enabled)
     }
 
     suspend fun setAdvancedBlurEnabled(enabled: Boolean) {

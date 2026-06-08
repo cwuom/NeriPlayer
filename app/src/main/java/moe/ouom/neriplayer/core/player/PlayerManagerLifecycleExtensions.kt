@@ -105,6 +105,11 @@ internal fun PlayerManager.initializeImpl(
             initialPlaybackPreferences.stopOnBluetoothDisconnect
         allowMixedPlaybackEnabled =
             initialPlaybackPreferences.allowMixedPlayback
+        cloudMusicLyricDefaultOffsetMs =
+            initialPlaybackPreferences.cloudMusicLyricDefaultOffsetMs
+        qqMusicLyricDefaultOffsetMs =
+            initialPlaybackPreferences.qqMusicLyricDefaultOffsetMs
+        externalBluetoothLyricsEnabled = false
         lyriconEnabled = initialPlaybackPreferences.lyriconEnabled
         LyriconManager.setEnabled(lyriconEnabled)
         if (lyriconEnabled && !LyriconManager.isInitialized()) {
@@ -438,6 +443,24 @@ internal fun PlayerManager.initializeImpl(
                     lyriconUpdateJob?.cancel()
                     lyriconUpdateJob = null
                 }
+            }
+        }
+        ioScope.launch {
+            settingsRepo.externalBluetoothLyricsEnabledFlow.collect { enabled ->
+                externalBluetoothLyricsEnabled = enabled
+                syncExternalBluetoothLyrics(_currentSongFlow.value)
+            }
+        }
+        ioScope.launch {
+            settingsRepo.cloudMusicLyricDefaultOffsetMsFlow.collect { offsetMs ->
+                cloudMusicLyricDefaultOffsetMs = offsetMs
+                updateExternalBluetoothLyricLine(_playbackPositionMs.value)
+            }
+        }
+        ioScope.launch {
+            settingsRepo.qqMusicLyricDefaultOffsetMsFlow.collect { offsetMs ->
+                qqMusicLyricDefaultOffsetMs = offsetMs
+                updateExternalBluetoothLyricLine(_playbackPositionMs.value)
             }
         }
         ioScope.launch {
@@ -910,6 +933,12 @@ internal fun PlayerManager.releaseImpl() {
     playJob = null
     lyriconUpdateJob?.cancel()
     lyriconUpdateJob = null
+    externalBluetoothLyricsLoadJob?.cancel()
+    externalBluetoothLyricsLoadJob = null
+    externalBluetoothLyrics = emptyList()
+    externalBluetoothLyricsSongKey = null
+    externalBluetoothLyricsEnabled = false
+    clearExternalBluetoothLyricLine()
     LyriconManager.setPlaybackState(false)
 
     if (isPlayerInitialized()) {

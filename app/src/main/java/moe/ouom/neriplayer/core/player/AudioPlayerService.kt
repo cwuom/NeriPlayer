@@ -36,13 +36,14 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.media.AudioManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
-import android.os.Build
 import android.os.SystemClock
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
@@ -52,12 +53,14 @@ import androidx.annotation.DrawableRes
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.createBitmap
 import androidx.core.graphics.drawable.DrawableCompat
 import androidx.core.graphics.drawable.IconCompat
 import androidx.core.graphics.drawable.toBitmap
-import androidx.media.session.MediaButtonReceiver
+import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
+import androidx.media.session.MediaButtonReceiver
 import coil.request.ImageRequest
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -70,18 +73,17 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.MainActivity
-import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
+import moe.ouom.neriplayer.core.player.metadata.resolveExternalBluetoothMetadataText
+import moe.ouom.neriplayer.core.player.metadata.shouldUseExternalBluetoothLyrics
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
-import androidx.core.graphics.createBitmap
 import java.io.File
-import android.content.pm.ServiceInfo
-import androidx.core.net.toUri
 
 private data class PlaybackNotificationSnapshot(
     val songKey: String?,
@@ -99,6 +101,8 @@ private data class PlaybackMetadataSnapshot(
     val songKey: String?,
     val title: String,
     val artist: String,
+    val displayTitle: String,
+    val displaySubtitle: String,
     val durationMs: Long,
     val coverSource: String?,
     val largeIconReady: Boolean,
@@ -438,6 +442,16 @@ class AudioPlayerService : Service() {
                 updateMetadata()
                 updatePlaybackState(force = true)
                 updateNotification()
+            }
+        }
+        serviceScope.launch {
+            PlayerManager.externalBluetoothLyricLineFlow.collect {
+                updateMetadata()
+            }
+        }
+        serviceScope.launch {
+            PlayerManager.currentAudioDeviceFlow.collect {
+                updateMetadata()
             }
         }
 
@@ -840,12 +854,26 @@ class AudioPlayerService : Service() {
             requestLargeIconAsync(coverSource)
         }
 
-        val displayTitle = song?.displayName() ?: "NeriPlayer"
-        val displayArtist = song?.displayArtist().orEmpty()
+        val normalTitle = song?.displayName() ?: "NeriPlayer"
+        val normalArtist = song?.displayArtist().orEmpty()
+        val lyricLine = PlayerManager.externalBluetoothLyricLineFlow.value
+        val useBluetoothLyrics = shouldUseExternalBluetoothLyrics(
+            enabled = PlayerManager.externalBluetoothLyricsEnabled,
+            audioDeviceType = PlayerManager.currentAudioDeviceFlow.value?.type,
+            lyricLine = lyricLine
+        )
+        val metadataText = resolveExternalBluetoothMetadataText(
+            normalTitle = normalTitle,
+            normalArtist = normalArtist,
+            lyricLine = lyricLine,
+            useBluetoothLyrics = useBluetoothLyrics
+        )
         val snapshot = PlaybackMetadataSnapshot(
             songKey = song?.stableKey(),
-            title = displayTitle,
-            artist = displayArtist,
+            title = metadataText.title,
+            artist = metadataText.artist,
+            displayTitle = metadataText.displayTitle,
+            displaySubtitle = metadataText.displaySubtitle,
             durationMs = duration,
             coverSource = coverSource,
             largeIconReady = currentLargeIcon != null,
@@ -856,10 +884,13 @@ class AudioPlayerService : Service() {
         lastMetadataSnapshot = snapshot
 
         val metadataBuilder = MediaMetadataCompat.Builder()
-            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, displayTitle)
-            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, displayArtist)
-            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_TITLE, displayTitle)
-            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_SUBTITLE, displayArtist)
+            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, metadataText.title)
+            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, metadataText.artist)
+            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_TITLE, metadataText.displayTitle)
+            .putString(
+                MediaMetadataCompat.METADATA_KEY_DISPLAY_SUBTITLE,
+                metadataText.displaySubtitle
+            )
             .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, duration)
             .putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, currentLargeIcon)
             .putBitmap(MediaMetadataCompat.METADATA_KEY_ART, currentLargeIcon)

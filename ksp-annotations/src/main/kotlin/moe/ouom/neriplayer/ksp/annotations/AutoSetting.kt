@@ -78,6 +78,7 @@ enum class AutoSettingIcon {
     Analytics,
     AutoAwesome,
     BlurOn,
+    BluetoothAudio,
     Brightness4,
     Colorize,
     Download,

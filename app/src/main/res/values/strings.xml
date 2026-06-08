@@ -938,8 +938,10 @@
     <string name="settings_motion_expand">展开以调整动效表现</string>
     <string name="settings_lyricon_enabled">词幕适配</string>
     <string name="settings_lyricon_enabled_desc">向 Lyricon 提供当前歌曲、播放状态、进度、逐字歌词和翻译</string>
+    <string name="settings_external_bluetooth_lyrics_enabled">外接设备蓝牙歌词</string>
+    <string name="settings_external_bluetooth_lyrics_enabled_desc">连接蓝牙设备时，将当前歌词行同步到外接设备的歌曲信息区域</string>
     <string name="settings_lyrics_offset">歌词设置</string>
-    <string name="settings_lyrics_offset_expand">展开以调整词幕适配与歌词默认偏移</string>
+    <string name="settings_lyrics_offset_expand">展开以调整外接歌词、词幕适配与歌词默认偏移</string>
     <string name="settings_lyrics_offset_cloud_music">网易云默认歌词偏移</string>
     <string name="settings_lyrics_offset_cloud_music_desc">设置加载网易云歌词时的基础偏移</string>
     <string name="settings_lyrics_offset_qq_music">QQ 音乐默认歌词偏移</string>

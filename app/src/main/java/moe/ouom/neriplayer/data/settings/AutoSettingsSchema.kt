@@ -661,6 +661,19 @@ object AutoSettingsSchema {
         )
 
         @AutoSetting(
+            key = "external_bluetooth_lyrics_enabled",
+            type = SettingValueType.Boolean,
+            defaultBoolean = false,
+            order = 15,
+            ui = SettingUiType.Switch
+        )
+        val externalBluetoothLyricsEnabled = autoSetting(
+            titleRes = R.string.settings_external_bluetooth_lyrics_enabled,
+            descriptionRes = R.string.settings_external_bluetooth_lyrics_enabled_desc,
+            icon = AutoSettingIcon.BluetoothAudio
+        )
+
+        @AutoSetting(
             key = "cloud_music_lyric_default_offset_ms",
             type = SettingValueType.Long,
             defaultLong = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS,

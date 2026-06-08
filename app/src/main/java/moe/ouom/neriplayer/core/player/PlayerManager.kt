@@ -95,6 +95,8 @@ import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
+import moe.ouom.neriplayer.data.settings.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.settings.DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.listentogether.ListenTogetherChannels
 import moe.ouom.neriplayer.listentogether.buildStableTrackKey
@@ -151,6 +153,7 @@ object PlayerManager {
     internal var mainScope = newMainScope()
     internal var progressJob: Job? = null
     internal var lyriconUpdateJob: Job? = null
+    internal var externalBluetoothLyricsLoadJob: Job? = null
     internal var volumeFadeJob: Job? = null
     internal var pendingPauseJob: Job? = null
         set(value) {
@@ -184,6 +187,9 @@ object PlayerManager {
     internal var playbackCrossfadeOutDurationMs = DEFAULT_FADE_DURATION_MS
     internal var playbackSoundConfig = PlaybackSoundConfig()
     internal var lyriconEnabled = false
+    internal var externalBluetoothLyricsEnabled = false
+    internal var cloudMusicLyricDefaultOffsetMs = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
+    internal var qqMusicLyricDefaultOffsetMs = DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
     internal var keepLastPlaybackProgressEnabled = true
     internal var keepPlaybackModeStateEnabled = true
     internal var stopOnBluetoothDisconnectEnabled = true
@@ -279,7 +285,13 @@ object PlayerManager {
     internal var repeatModeSetting: Int = Player.REPEAT_MODE_OFF
 
     internal val _currentAudioDevice = MutableStateFlow<AudioDevice?>(null)
+    val currentAudioDeviceFlow: StateFlow<AudioDevice?> = _currentAudioDevice
     internal var audioDeviceCallback: AudioDeviceCallback? = null
+
+    internal var externalBluetoothLyricsSongKey: String? = null
+    internal var externalBluetoothLyrics: List<LyricEntry> = emptyList()
+    internal val _externalBluetoothLyricLineFlow = MutableStateFlow<String?>(null)
+    val externalBluetoothLyricLineFlow: StateFlow<String?> = _externalBluetoothLyricLineFlow
 
     internal val _playerEventFlow = MutableSharedFlow<PlayerEvent>()
     val playerEventFlow: SharedFlow<PlayerEvent> = _playerEventFlow.asSharedFlow()
@@ -365,6 +377,7 @@ object PlayerManager {
         if (syncLyricon) {
             syncLyriconSong(song)
         }
+        syncExternalBluetoothLyrics(song)
         persistPlaybackStatsSnapshotAsync(
             synchronized(playbackStatsTracker) {
                 playbackStatsTracker.onSongChanged(song)

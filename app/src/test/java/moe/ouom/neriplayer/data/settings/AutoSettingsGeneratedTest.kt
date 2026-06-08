@@ -61,6 +61,10 @@ class AutoSettingsGeneratedTest {
             "display lyrics switch should be exportable",
             "show_lyric_translation" in booleanKeyNames
         )
+        assertTrue(
+            "external bluetooth lyrics switch should be exportable",
+            "external_bluetooth_lyrics_enabled" in booleanKeyNames
+        )
     }
 
     @Test
@@ -131,6 +135,13 @@ class AutoSettingsGeneratedTest {
             lyricsSettings.any { it.keyName == "lyricon_enabled" && it.ui == SettingUiType.Switch }
         )
         assertTrue(
+            "lyrics metadata should include external bluetooth lyrics switch",
+            lyricsSettings.any {
+                it.keyName == "external_bluetooth_lyrics_enabled" &&
+                    it.ui == SettingUiType.Switch
+            }
+        )
+        assertTrue(
             "lyrics metadata should include source offset sliders",
             lyricsSettings.any { it.keyName == "cloud_music_lyric_default_offset_ms" && it.ui == SettingUiType.Custom }
         )
@@ -179,6 +190,10 @@ class AutoSettingsGeneratedTest {
         assertEquals(
             R.drawable.ic_lyricon,
             AutoSettingsSchema.lyrics.lyriconEnabled.iconRes
+        )
+        assertEquals(
+            AutoSettingIcon.BluetoothAudio,
+            AutoSettingsSchema.lyrics.externalBluetoothLyricsEnabled.icon
         )
         assertEquals(
             AutoSettingIcon.Error,
