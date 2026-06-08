@@ -19,8 +19,6 @@ annotation class AutoSetting(
     val defaultInt: Int = 0,
     val defaultLong: Long = 0L,
     val defaultString: String = "",
-    val titleRes: String = "",
-    val descriptionRes: String = "",
     val section: String = "",
     val order: Int = 0,
     val ui: SettingUiType = SettingUiType.None,
@@ -35,23 +33,42 @@ annotation class AutoSetting(
 @Retention(AnnotationRetention.SOURCE)
 annotation class AutoSettingsSection(
     val key: String = "",
-    val titleRes: String = "",
-    val descriptionRes: String = "",
     val order: Int = 0
 )
 
 data class AutoSettingEntry(
+    val titleRes: Int = 0,
+    val descriptionRes: Int = 0,
     val iconRes: Int = 0,
     val icon: AutoSettingIcon = AutoSettingIcon.None
 )
 
+data class AutoSettingsSectionEntry(
+    val titleRes: Int = 0,
+    val descriptionRes: Int = 0
+)
+
 fun autoSetting(
+    titleRes: Int = 0,
+    descriptionRes: Int = 0,
     iconRes: Int = 0,
     icon: AutoSettingIcon = AutoSettingIcon.None
 ): AutoSettingEntry {
     return AutoSettingEntry(
+        titleRes = titleRes,
+        descriptionRes = descriptionRes,
         iconRes = iconRes,
         icon = icon
+    )
+}
+
+fun autoSettingsSection(
+    titleRes: Int = 0,
+    descriptionRes: Int = 0
+): AutoSettingsSectionEntry {
+    return AutoSettingsSectionEntry(
+        titleRes = titleRes,
+        descriptionRes = descriptionRes
     )
 }
 

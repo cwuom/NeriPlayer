@@ -66,12 +66,12 @@ private class AutoSettingsProcessor(
 
     private fun generate(catalog: CatalogSpec) {
         val switchSettingsMissingTitle = catalog.settings.filter {
-            it.ui == SettingUiType.Switch && it.titleRes.isBlank()
+            it.ui == SettingUiType.Switch && it.entryReference == null
         }
         if (switchSettingsMissingTitle.isNotEmpty()) {
             switchSettingsMissingTitle.forEach { setting ->
                 logger.error(
-                    "@AutoSetting ui=Switch must define titleRes for ${setting.key}",
+                    "@AutoSetting ui=Switch must define autoSetting(titleRes = ...) for ${setting.key}",
                     catalog.declaration
                 )
             }
@@ -144,8 +144,7 @@ private data class CatalogSpec(
 private data class SectionSpec(
     val key: String,
     val propertyName: String,
-    val titleRes: String,
-    val descriptionRes: String,
+    val entryReference: String?,
     val order: Int
 )
 
@@ -158,8 +157,6 @@ private data class SettingSpec(
     val defaultInt: Int,
     val defaultLong: Long,
     val defaultString: String,
-    val titleRes: String,
-    val descriptionRes: String,
     val section: String,
     val order: Int,
     val ui: SettingUiType,
@@ -209,8 +206,7 @@ private fun KSClassDeclaration.collectSectionSpecs(settings: List<SettingSpec>):
             SectionSpec(
                 key = annotation.stringArgument("key").ifBlank { fallbackKey },
                 propertyName = fallbackKey.toSectionPropertyName(),
-                titleRes = annotation.stringArgument("titleRes"),
-                descriptionRes = annotation.stringArgument("descriptionRes"),
+                entryReference = nestedDeclaration.sectionEntryReference(),
                 order = annotation.intArgument("order")
             )
         }
@@ -222,8 +218,7 @@ private fun KSClassDeclaration.collectSectionSpecs(settings: List<SettingSpec>):
             explicitSections[key] ?: SectionSpec(
                 key = key,
                 propertyName = key.toSectionPropertyName(),
-                titleRes = "",
-                descriptionRes = "",
+                entryReference = null,
                 order = Int.MAX_VALUE
             )
         }
@@ -257,8 +252,6 @@ private fun KSPropertyDeclaration.toSettingSpec(sectionHint: String? = null): Se
         defaultInt = annotation.intArgument("defaultInt"),
         defaultLong = annotation.longArgument("defaultLong"),
         defaultString = annotation.stringArgument("defaultString"),
-        titleRes = annotation.stringArgument("titleRes"),
-        descriptionRes = annotation.stringArgument("descriptionRes"),
         section = annotation.stringArgument("section").ifBlank { inferredSection },
         order = annotation.intArgument("order"),
         ui = annotation.enumArgument("ui", SettingUiType.None),
@@ -271,9 +264,21 @@ private fun KSPropertyDeclaration.toSettingSpec(sectionHint: String? = null): Se
     )
 }
 
+private fun KSClassDeclaration.sectionEntryReference(): String? {
+    return declarations
+        .filterIsInstance<KSPropertyDeclaration>()
+        .firstOrNull { it.hasAutoSettingsSectionEntryType() }
+        ?.sourceReference()
+}
+
 private fun KSPropertyDeclaration.hasAutoSettingEntryType(): Boolean {
     return type.resolve().declaration.qualifiedName?.asString() ==
         "moe.ouom.neriplayer.ksp.annotations.AutoSettingEntry"
+}
+
+private fun KSPropertyDeclaration.hasAutoSettingsSectionEntryType(): Boolean {
+    return type.resolve().declaration.qualifiedName?.asString() ==
+        "moe.ouom.neriplayer.ksp.annotations.AutoSettingsSectionEntry"
 }
 
 private fun KSPropertyDeclaration.sourceReference(): String {
@@ -438,7 +443,6 @@ private fun buildMetadataFile(
     return buildString {
         appendGeneratedHeader(packageName)
         appendLine("import androidx.datastore.preferences.core.Preferences")
-        appendLine("import moe.ouom.neriplayer.R")
         appendLine("import moe.ouom.neriplayer.ksp.annotations.AutoSettingIcon")
         appendLine("import moe.ouom.neriplayer.ksp.annotations.SettingAccessMode")
         appendLine("import moe.ouom.neriplayer.ksp.annotations.SettingUiType")
@@ -479,8 +483,8 @@ private fun buildMetadataFile(
             sectionSpecs.joinToString(separator = ",\n") { section ->
                 "        AutoSettingsSectionInfo(" +
                     "key = ${section.key.toLiteral()}, " +
-                    "titleRes = ${section.resourceExpression("titleRes")}, " +
-                    "descriptionRes = ${section.resourceExpression("descriptionRes")}, " +
+                    "titleRes = ${section.titleResExpression()}, " +
+                    "descriptionRes = ${section.descriptionResExpression()}, " +
                     "order = ${section.order}" +
                     ")"
             }
@@ -498,8 +502,8 @@ private fun buildMetadataFile(
                     "valueType = SettingValueType.${setting.valueType.name}, " +
                     "ui = SettingUiType.${setting.ui.name}, " +
                     "access = SettingAccessMode.${setting.access.name}, " +
-                    "titleRes = ${setting.resourceExpression("titleRes")}, " +
-                    "descriptionRes = ${setting.resourceExpression("descriptionRes")}, " +
+                    "titleRes = ${setting.titleResExpression()}, " +
+                    "descriptionRes = ${setting.descriptionResExpression()}, " +
                     "iconRes = ${setting.iconResExpression()}, " +
                     "icon = ${setting.iconExpression()}, " +
                     "order = ${setting.order}, " +
@@ -594,7 +598,6 @@ private fun buildUiFile(packageName: String, settings: List<SettingSpec>): Strin
         appendLine("import androidx.compose.ui.unit.dp")
         appendLine("import kotlinx.coroutines.CoroutineScope")
         appendLine("import kotlinx.coroutines.launch")
-        appendLine("import moe.ouom.neriplayer.R")
         appendLine("import moe.ouom.neriplayer.ksp.annotations.AutoSettingIcon")
         appendLine("import moe.ouom.neriplayer.ui.screen.tab.settings.component.settingsItemClickable")
         appendLine()
@@ -667,8 +670,9 @@ private fun buildUiFile(packageName: String, settings: List<SettingSpec>): Strin
                 appendLine("            val ${setting.valueName} by repository.${setting.flowName}.collectAsState(initial = ${setting.defaultLiteral()})")
                 appendLine("            AutoSettingsSwitchItem(")
                 appendLine("                checked = ${setting.valueName},")
-                appendLine("                titleRes = R.string.${setting.titleRes},")
-                appendLine("                descriptionRes = ${setting.resourceExpression("descriptionRes")},")
+                appendLine("                titleRes = ${setting.titleResExpression()},")
+                appendLine("                fallbackTitle = ${setting.key.toLiteral()},")
+                appendLine("                descriptionRes = ${setting.descriptionResExpression()},")
                 appendLine("                iconPainter = ${setting.iconPainterExpression()},")
                 appendLine("                icon = ${setting.iconExpression()},")
                 appendLine("                onCheckedChange = { value ->")
@@ -716,12 +720,13 @@ private fun buildUiFile(packageName: String, settings: List<SettingSpec>): Strin
         appendLine("private fun AutoSettingsSwitchItem(")
         appendLine("    checked: Boolean,")
         appendLine("    titleRes: Int,")
+        appendLine("    fallbackTitle: String,")
         appendLine("    descriptionRes: Int,")
         appendLine("    iconPainter: Painter?,")
         appendLine("    icon: AutoSettingIcon,")
         appendLine("    onCheckedChange: (Boolean) -> Unit")
         appendLine(") {")
-        appendLine("    val title = stringResource(titleRes)")
+        appendLine("    val title = autoSettingsString(titleRes) ?: fallbackTitle")
         appendLine("    ListItem(")
         appendLine("        modifier = Modifier.settingsItemClickable { onCheckedChange(!checked) },")
         appendLine("        leadingContent = {")
@@ -808,22 +813,20 @@ private fun SettingSpec.iconResExpression(): String {
     return entryReference?.let { reference -> "$reference.iconRes" } ?: "0"
 }
 
-private fun SettingSpec.resourceExpression(propertyName: String): String {
-    val value = when (propertyName) {
-        "titleRes" -> titleRes
-        "descriptionRes" -> descriptionRes
-        else -> ""
-    }
-    return value.takeIf { it.isNotBlank() }?.let { "R.string.$it" } ?: "0"
+private fun SettingSpec.titleResExpression(): String {
+    return entryReference?.let { reference -> "$reference.titleRes" } ?: "0"
 }
 
-private fun SectionSpec.resourceExpression(propertyName: String): String {
-    val value = when (propertyName) {
-        "titleRes" -> titleRes
-        "descriptionRes" -> descriptionRes
-        else -> ""
-    }
-    return value.takeIf { it.isNotBlank() }?.let { "R.string.$it" } ?: "0"
+private fun SettingSpec.descriptionResExpression(): String {
+    return entryReference?.let { reference -> "$reference.descriptionRes" } ?: "0"
+}
+
+private fun SectionSpec.titleResExpression(): String {
+    return entryReference?.let { reference -> "$reference.titleRes" } ?: "0"
+}
+
+private fun SectionSpec.descriptionResExpression(): String {
+    return entryReference?.let { reference -> "$reference.descriptionRes" } ?: "0"
 }
 
 private fun SettingValueType.preferenceKeyFactory(): String {

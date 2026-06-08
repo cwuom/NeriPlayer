@@ -13,6 +13,7 @@ import moe.ouom.neriplayer.ksp.annotations.SettingAccessMode
 import moe.ouom.neriplayer.ksp.annotations.SettingUiType
 import moe.ouom.neriplayer.ksp.annotations.SettingValueType
 import moe.ouom.neriplayer.ksp.annotations.autoSetting
+import moe.ouom.neriplayer.ksp.annotations.autoSettingsSection
 
     /*
      * 设置项统一登记表
@@ -37,22 +38,27 @@ object AutoSettingsSchema {
      * 主题即时切换、首次启动状态和国际化检测有额外副作用，不能让通用 setter 绕过
      */
     @AutoSettingsSection(
-        titleRes = "settings_title",
-        descriptionRes = "settings_restart_hint",
         order = 10
     )
     object general {
+        val metadata = autoSettingsSection(
+            titleRes = R.string.settings_title,
+            descriptionRes = R.string.settings_restart_hint
+        )
+
         @AutoSetting(
             key = "dynamic_color",
             type = SettingValueType.Boolean,
             defaultBoolean = true,
-            titleRes = "settings_dynamic_color",
-            descriptionRes = "settings_dynamic_color_desc",
             order = 10,
             ui = SettingUiType.Switch,
             access = SettingAccessMode.KeyOnly
         )
-        val dynamicColor = autoSetting(icon = AutoSettingIcon.Brightness4)
+        val dynamicColor = autoSetting(
+            titleRes = R.string.settings_dynamic_color,
+            descriptionRes = R.string.settings_dynamic_color_desc,
+            icon = AutoSettingIcon.Brightness4
+        )
 
         @AutoSetting(
             key = "force_dark",
@@ -76,12 +82,14 @@ object AutoSettingsSchema {
             key = "haptic_feedback_enabled",
             type = SettingValueType.Boolean,
             defaultBoolean = true,
-            titleRes = "settings_haptic",
-            descriptionRes = "settings_haptic_desc",
             order = 40,
             ui = SettingUiType.Switch
         )
-        val hapticFeedbackEnabled = autoSetting(icon = AutoSettingIcon.AdsClick)
+        val hapticFeedbackEnabled = autoSetting(
+            titleRes = R.string.settings_haptic,
+            descriptionRes = R.string.settings_haptic_desc,
+            icon = AutoSettingIcon.AdsClick
+        )
 
         @AutoSetting(
             key = "dev_mode_enabled",
@@ -115,12 +123,14 @@ object AutoSettingsSchema {
             key = "internationalization_enabled",
             type = SettingValueType.Boolean,
             defaultBoolean = false,
-            titleRes = "settings_internationalization",
-            descriptionRes = "settings_internationalization_desc",
             order = 80,
             access = SettingAccessMode.KeyOnly
         )
-        val internationalizationEnabled = autoSetting(iconRes = R.drawable.ic_i18n)
+        val internationalizationEnabled = autoSetting(
+            titleRes = R.string.settings_internationalization,
+            descriptionRes = R.string.settings_internationalization_desc,
+            iconRes = R.drawable.ic_i18n
+        )
     }
 
     /*
@@ -130,11 +140,14 @@ object AutoSettingsSchema {
      * 当前主题写入还会更新启动快照或触发页面动画，因此先保留 KeyOnly
      */
     @AutoSettingsSection(
-        titleRes = "settings_theme_color",
-        descriptionRes = "settings_theme_color_desc",
         order = 20
     )
     object theme {
+        val metadata = autoSettingsSection(
+            titleRes = R.string.settings_theme_color,
+            descriptionRes = R.string.settings_theme_color_desc
+        )
+
         @AutoSetting(
             key = "theme_seed_color",
             type = SettingValueType.String,
@@ -162,43 +175,52 @@ object AutoSettingsSchema {
      * 写入后还要同步播放启动快照，所以这里统一标记为 Custom + KeyOnly
      */
     @AutoSettingsSection(
-        titleRes = "settings_audio_quality",
-        descriptionRes = "settings_audio_quality_expand",
         order = 30
     )
     object audioQuality {
+        val metadata = autoSettingsSection(
+            titleRes = R.string.settings_audio_quality,
+            descriptionRes = R.string.settings_audio_quality_expand
+        )
+
         @AutoSetting(
             key = "audio_quality",
             type = SettingValueType.String,
             defaultString = "exhigh",
-            titleRes = "quality_netease_default",
             order = 10,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
         )
-        val audioQuality = autoSetting(iconRes = R.drawable.ic_netease_cloud_music)
+        val audioQuality = autoSetting(
+            titleRes = R.string.quality_netease_default,
+            iconRes = R.drawable.ic_netease_cloud_music
+        )
 
         @AutoSetting(
             key = "youtube_audio_quality",
             type = SettingValueType.String,
             defaultString = "very_high",
-            titleRes = "quality_youtube_default",
             order = 20,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
         )
-        val youtubeAudioQuality = autoSetting(iconRes = R.drawable.ic_youtube)
+        val youtubeAudioQuality = autoSetting(
+            titleRes = R.string.quality_youtube_default,
+            iconRes = R.drawable.ic_youtube
+        )
 
         @AutoSetting(
             key = "bili_audio_quality",
             type = SettingValueType.String,
             defaultString = "high",
-            titleRes = "quality_bili_default",
             order = 30,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
         )
-        val biliAudioQuality = autoSetting(iconRes = R.drawable.ic_bilibili)
+        val biliAudioQuality = autoSetting(
+            titleRes = R.string.quality_bili_default,
+            iconRes = R.drawable.ic_bilibili
+        )
     }
 
     /*
@@ -208,72 +230,82 @@ object AutoSettingsSchema {
      * 复杂首页卡片会根据国际化状态换文案，保留手写 UI 但元数据仍由这里生成
      */
     @AutoSettingsSection(
-        titleRes = "settings_personalization",
-        descriptionRes = "settings_personalization_expand",
         order = 40
     )
     object personalization {
+        val metadata = autoSettingsSection(
+            titleRes = R.string.settings_personalization,
+            descriptionRes = R.string.settings_personalization_expand
+        )
+
         @AutoSetting(
             key = "default_start_destination",
             type = SettingValueType.String,
             defaultString = "home",
-            titleRes = "settings_default_start_screen",
-            descriptionRes = "settings_default_start_screen_desc",
             order = 10,
             ui = SettingUiType.Custom
         )
-        val defaultStartDestination = Unit
+        val defaultStartDestination = autoSetting(
+            titleRes = R.string.settings_default_start_screen,
+            descriptionRes = R.string.settings_default_start_screen_desc
+        )
 
         @AutoSetting(
             key = "auto_show_keyboard",
             type = SettingValueType.Boolean,
             defaultBoolean = false,
-            titleRes = "settings_auto_show_keyboard",
-            descriptionRes = "settings_auto_show_keyboard_desc",
             order = 20,
             ui = SettingUiType.Switch
         )
-        val autoShowKeyboard = autoSetting(icon = AutoSettingIcon.Keyboard)
+        val autoShowKeyboard = autoSetting(
+            titleRes = R.string.settings_auto_show_keyboard,
+            descriptionRes = R.string.settings_auto_show_keyboard_desc,
+            icon = AutoSettingIcon.Keyboard
+        )
 
         @AutoSetting(
             key = "home_card_continue",
             type = SettingValueType.Boolean,
             defaultBoolean = true,
-            titleRes = "player_continue",
             order = 30,
             ui = SettingUiType.Custom
         )
-        val homeCardContinue = Unit
+        val homeCardContinue = autoSetting(
+            titleRes = R.string.player_continue
+        )
 
         @AutoSetting(
             key = "home_card_trending",
             type = SettingValueType.Boolean,
             defaultBoolean = true,
-            titleRes = "settings_home_cards",
             order = 40,
             ui = SettingUiType.Custom
         )
-        val homeCardTrending = Unit
+        val homeCardTrending = autoSetting(
+            titleRes = R.string.settings_home_cards
+        )
 
         @AutoSetting(
             key = "home_card_radar",
             type = SettingValueType.Boolean,
             defaultBoolean = true,
-            titleRes = "settings_home_cards",
             order = 50,
             ui = SettingUiType.Custom
         )
-        val homeCardRadar = Unit
+        val homeCardRadar = autoSetting(
+            titleRes = R.string.settings_home_cards
+        )
 
         @AutoSetting(
             key = "home_card_recommended",
             type = SettingValueType.Boolean,
             defaultBoolean = true,
-            titleRes = "settings_home_cards",
             order = 60,
             ui = SettingUiType.Custom
         )
-        val homeCardRecommended = Unit
+        val homeCardRecommended = autoSetting(
+            titleRes = R.string.settings_home_cards
+        )
     }
 
     /*
@@ -283,150 +315,174 @@ object AutoSettingsSchema {
      * 图片选择和 Slider 需要自定义 UI，但 key、默认值、备份和元数据仍在这里统一登记
      */
     @AutoSettingsSection(
-        titleRes = "settings_display",
-        descriptionRes = "settings_display_desc",
         order = 50
     )
     object display {
+        val metadata = autoSettingsSection(
+            titleRes = R.string.settings_display,
+            descriptionRes = R.string.settings_display_desc
+        )
+
         @AutoSetting(
             key = "show_cover_source_badge",
             type = SettingValueType.Boolean,
             defaultBoolean = true,
-            titleRes = "settings_cover_source_badge",
-            descriptionRes = "settings_cover_source_badge_desc",
             order = 10,
             ui = SettingUiType.Switch
         )
-        val showCoverSourceBadge = autoSetting(icon = AutoSettingIcon.Info)
+        val showCoverSourceBadge = autoSetting(
+            titleRes = R.string.settings_cover_source_badge,
+            descriptionRes = R.string.settings_cover_source_badge_desc,
+            icon = AutoSettingIcon.Info
+        )
 
         @AutoSetting(
             key = "nowplaying_show_title",
             type = SettingValueType.Boolean,
             defaultBoolean = true,
-            titleRes = "settings_nowplaying_title",
-            descriptionRes = "settings_nowplaying_title_desc",
             order = 20,
             ui = SettingUiType.Switch
         )
-        val nowPlayingShowTitle = autoSetting(icon = AutoSettingIcon.LibraryMusic)
+        val nowPlayingShowTitle = autoSetting(
+            titleRes = R.string.settings_nowplaying_title,
+            descriptionRes = R.string.settings_nowplaying_title_desc,
+            icon = AutoSettingIcon.LibraryMusic
+        )
 
         @AutoSetting(
             key = "nowplaying_keep_screen_on",
             type = SettingValueType.Boolean,
             defaultBoolean = true,
-            titleRes = "settings_nowplaying_keep_screen_on",
-            descriptionRes = "settings_nowplaying_keep_screen_on_desc",
             order = 30,
             ui = SettingUiType.Switch
         )
-        val nowPlayingKeepScreenOn = autoSetting(icon = AutoSettingIcon.Brightness4)
+        val nowPlayingKeepScreenOn = autoSetting(
+            titleRes = R.string.settings_nowplaying_keep_screen_on,
+            descriptionRes = R.string.settings_nowplaying_keep_screen_on_desc,
+            icon = AutoSettingIcon.Brightness4
+        )
 
         @AutoSetting(
             key = "nowplaying_toolbar_dock_enabled",
             type = SettingValueType.Boolean,
             defaultBoolean = true,
-            titleRes = "settings_nowplaying_toolbar_dock",
-            descriptionRes = "settings_nowplaying_toolbar_dock_desc",
             order = 40,
             ui = SettingUiType.Switch
         )
-        val nowPlayingToolbarDockEnabled = autoSetting(icon = AutoSettingIcon.Home)
+        val nowPlayingToolbarDockEnabled = autoSetting(
+            titleRes = R.string.settings_nowplaying_toolbar_dock,
+            descriptionRes = R.string.settings_nowplaying_toolbar_dock_desc,
+            icon = AutoSettingIcon.Home
+        )
 
         @AutoSetting(
             key = "nowplaying_progress_show_quality_switch",
             type = SettingValueType.Boolean,
             defaultBoolean = true,
-            titleRes = "settings_nowplaying_progress_quality_switch",
-            descriptionRes = "settings_nowplaying_progress_quality_switch_desc",
             order = 50,
             ui = SettingUiType.Switch
         )
-        val nowPlayingProgressShowQualitySwitch = autoSetting(icon = AutoSettingIcon.Tune)
+        val nowPlayingProgressShowQualitySwitch = autoSetting(
+            titleRes = R.string.settings_nowplaying_progress_quality_switch,
+            descriptionRes = R.string.settings_nowplaying_progress_quality_switch_desc,
+            icon = AutoSettingIcon.Tune
+        )
 
         @AutoSetting(
             key = "nowplaying_progress_show_audio_codec",
             type = SettingValueType.Boolean,
             defaultBoolean = true,
-            titleRes = "settings_nowplaying_progress_audio_codec",
-            descriptionRes = "settings_nowplaying_progress_audio_codec_desc",
             order = 60,
             ui = SettingUiType.Switch
         )
-        val nowPlayingProgressShowAudioCodec = autoSetting(icon = AutoSettingIcon.Info)
+        val nowPlayingProgressShowAudioCodec = autoSetting(
+            titleRes = R.string.settings_nowplaying_progress_audio_codec,
+            descriptionRes = R.string.settings_nowplaying_progress_audio_codec_desc,
+            icon = AutoSettingIcon.Info
+        )
 
         @AutoSetting(
             key = "nowplaying_progress_show_audio_spec",
             type = SettingValueType.Boolean,
             defaultBoolean = true,
-            titleRes = "settings_nowplaying_progress_audio_spec",
-            descriptionRes = "settings_nowplaying_progress_audio_spec_desc",
             order = 70,
             ui = SettingUiType.Switch
         )
-        val nowPlayingProgressShowAudioSpec = autoSetting(icon = AutoSettingIcon.LibraryMusic)
+        val nowPlayingProgressShowAudioSpec = autoSetting(
+            titleRes = R.string.settings_nowplaying_progress_audio_spec,
+            descriptionRes = R.string.settings_nowplaying_progress_audio_spec_desc,
+            icon = AutoSettingIcon.LibraryMusic
+        )
 
         @AutoSetting(
             key = "lyric_font_scale",
             type = SettingValueType.Float,
             defaultFloat = 1.0f,
-            titleRes = "lyrics_font_size",
             order = 80,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
         )
-        val lyricFontScale = Unit
+        val lyricFontScale = autoSetting(
+            titleRes = R.string.lyrics_font_size
+        )
 
         @AutoSetting(
             key = "ui_density_scale",
             type = SettingValueType.Float,
             defaultFloat = 1.0f,
-            titleRes = "settings_ui_scale_dpi",
             order = 90,
             ui = SettingUiType.Custom
         )
-        val uiDensityScale = Unit
+        val uiDensityScale = autoSetting(
+            titleRes = R.string.settings_ui_scale_dpi
+        )
 
         @AutoSetting(
             key = "background_image_uri",
             type = SettingValueType.String,
             defaultString = "",
-            titleRes = "background_custom",
             order = 100,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
         )
-        val backgroundImageUri = Unit
+        val backgroundImageUri = autoSetting(
+            titleRes = R.string.background_custom
+        )
 
         @AutoSetting(
             key = "background_image_blur",
             type = SettingValueType.Float,
             defaultFloat = 0f,
-            titleRes = "background_blur",
             order = 110,
             ui = SettingUiType.Custom
         )
-        val backgroundImageBlur = Unit
+        val backgroundImageBlur = autoSetting(
+            titleRes = R.string.background_blur
+        )
 
         @AutoSetting(
             key = "background_image_alpha",
             type = SettingValueType.Float,
             defaultFloat = 0.3f,
-            titleRes = "background_opacity",
             order = 120,
             ui = SettingUiType.Custom
         )
-        val backgroundImageAlpha = Unit
+        val backgroundImageAlpha = autoSetting(
+            titleRes = R.string.background_opacity
+        )
 
         @AutoSetting(
             key = "show_lyric_translation",
             type = SettingValueType.Boolean,
             defaultBoolean = true,
-            titleRes = "settings_show_lyric_translation",
-            descriptionRes = "settings_show_lyric_translation_desc",
             order = 130,
             ui = SettingUiType.Switch
         )
-        val showLyricTranslation = autoSetting(icon = AutoSettingIcon.Subtitles)
+        val showLyricTranslation = autoSetting(
+            titleRes = R.string.settings_show_lyric_translation,
+            descriptionRes = R.string.settings_show_lyric_translation_desc,
+            icon = AutoSettingIcon.Subtitles
+        )
     }
 
     /*
@@ -436,106 +492,124 @@ object AutoSettingsSchema {
      * 很多开关受 Android 版本或互斥关系影响，所以复杂项只生成元数据，不走通用开关
      */
     @AutoSettingsSection(
-        titleRes = "settings_motion",
-        descriptionRes = "settings_motion_expand",
         order = 60
     )
     object motion {
+        val metadata = autoSettingsSection(
+            titleRes = R.string.settings_motion,
+            descriptionRes = R.string.settings_motion_expand
+        )
+
         @AutoSetting(
             key = "advanced_lyrics_enabled",
             type = SettingValueType.Boolean,
             defaultBoolean = true,
-            titleRes = "settings_advanced_lyrics",
-            descriptionRes = "settings_advanced_lyrics_desc",
             order = 10,
             ui = SettingUiType.Switch
         )
-        val advancedLyricsEnabled = autoSetting(iconRes = R.drawable.ic_lyrics)
+        val advancedLyricsEnabled = autoSetting(
+            titleRes = R.string.settings_advanced_lyrics,
+            descriptionRes = R.string.settings_advanced_lyrics_desc,
+            iconRes = R.drawable.ic_lyrics
+        )
 
         @AutoSetting(
             key = "advanced_blur_enabled",
             type = SettingValueType.Boolean,
             defaultBoolean = true,
-            titleRes = "settings_advanced_blur",
-            descriptionRes = "settings_advanced_blur_desc",
             order = 20,
             ui = SettingUiType.Custom
         )
-        val advancedBlurEnabled = autoSetting(icon = AutoSettingIcon.BlurOn)
+        val advancedBlurEnabled = autoSetting(
+            titleRes = R.string.settings_advanced_blur,
+            descriptionRes = R.string.settings_advanced_blur_desc,
+            icon = AutoSettingIcon.BlurOn
+        )
 
         @AutoSetting(
             key = "nowplaying_audio_reactive_enabled",
             type = SettingValueType.Boolean,
             defaultBoolean = true,
-            titleRes = "settings_nowplaying_audio_reactive",
-            descriptionRes = "settings_nowplaying_audio_reactive_desc",
             order = 30,
             ui = SettingUiType.Custom
         )
-        val nowPlayingAudioReactiveEnabled = autoSetting(icon = AutoSettingIcon.Analytics)
+        val nowPlayingAudioReactiveEnabled = autoSetting(
+            titleRes = R.string.settings_nowplaying_audio_reactive,
+            descriptionRes = R.string.settings_nowplaying_audio_reactive_desc,
+            icon = AutoSettingIcon.Analytics
+        )
 
         @AutoSetting(
             key = "nowplaying_dynamic_background_enabled",
             type = SettingValueType.Boolean,
             defaultBoolean = true,
-            titleRes = "settings_nowplaying_dynamic_background",
-            descriptionRes = "settings_nowplaying_dynamic_background_desc",
             order = 40,
             ui = SettingUiType.Custom
         )
-        val nowPlayingDynamicBackgroundEnabled = autoSetting(icon = AutoSettingIcon.AutoAwesome)
+        val nowPlayingDynamicBackgroundEnabled = autoSetting(
+            titleRes = R.string.settings_nowplaying_dynamic_background,
+            descriptionRes = R.string.settings_nowplaying_dynamic_background_desc,
+            icon = AutoSettingIcon.AutoAwesome
+        )
 
         @AutoSetting(
             key = "nowplaying_cover_blur_background_enabled",
             type = SettingValueType.Boolean,
             defaultBoolean = false,
-            titleRes = "settings_nowplaying_cover_blur_background",
-            descriptionRes = "settings_nowplaying_cover_blur_background_desc",
             order = 50,
             ui = SettingUiType.Custom
         )
-        val nowPlayingCoverBlurBackgroundEnabled = autoSetting(icon = AutoSettingIcon.Wallpaper)
+        val nowPlayingCoverBlurBackgroundEnabled = autoSetting(
+            titleRes = R.string.settings_nowplaying_cover_blur_background,
+            descriptionRes = R.string.settings_nowplaying_cover_blur_background_desc,
+            icon = AutoSettingIcon.Wallpaper
+        )
 
         @AutoSetting(
             key = "nowplaying_cover_blur_amount",
             type = SettingValueType.Float,
             defaultFloat = 1.5f,
-            titleRes = "settings_nowplaying_cover_blur_amount",
             order = 60,
             ui = SettingUiType.Custom
         )
-        val nowPlayingCoverBlurAmount = Unit
+        val nowPlayingCoverBlurAmount = autoSetting(
+            titleRes = R.string.settings_nowplaying_cover_blur_amount
+        )
 
         @AutoSetting(
             key = "nowplaying_cover_blur_darken",
             type = SettingValueType.Float,
             defaultFloat = 0.2f,
-            titleRes = "settings_nowplaying_cover_blur_darken",
             order = 70,
             ui = SettingUiType.Custom
         )
-        val nowPlayingCoverBlurDarken = Unit
+        val nowPlayingCoverBlurDarken = autoSetting(
+            titleRes = R.string.settings_nowplaying_cover_blur_darken
+        )
 
         @AutoSetting(
             key = "lyric_blur_enabled",
             type = SettingValueType.Boolean,
             defaultBoolean = true,
-            titleRes = "lyrics_blur_effect",
-            descriptionRes = "lyrics_blur_desc",
             order = 80,
             ui = SettingUiType.Custom
         )
-        val lyricBlurEnabled = autoSetting(icon = AutoSettingIcon.Subtitles)
+        val lyricBlurEnabled = autoSetting(
+            titleRes = R.string.lyrics_blur_effect,
+            descriptionRes = R.string.lyrics_blur_desc,
+            icon = AutoSettingIcon.Subtitles
+        )
 
         @AutoSetting(
             key = "lyric_blur_amount",
             type = SettingValueType.Float,
             defaultFloat = 1.5f,
-            titleRes = "lyrics_blur_amount",
             order = 90,
             ui = SettingUiType.Custom
         )
-        val lyricBlurAmount = Unit
+        val lyricBlurAmount = autoSetting(
+            titleRes = R.string.lyrics_blur_amount
+        )
     }
 
     /*
@@ -545,45 +619,52 @@ object AutoSettingsSchema {
      * 偏移会影响已有歌曲的用户偏移重算，所以保留手写入口
      */
     @AutoSettingsSection(
-        titleRes = "settings_lyrics_offset",
-        descriptionRes = "settings_lyrics_offset_expand",
         order = 65
     )
     object lyrics {
+        val metadata = autoSettingsSection(
+            titleRes = R.string.settings_lyrics_offset,
+            descriptionRes = R.string.settings_lyrics_offset_expand
+        )
+
         @AutoSetting(
             key = "lyricon_enabled",
             type = SettingValueType.Boolean,
             defaultBoolean = false,
-            titleRes = "settings_lyricon_enabled",
-            descriptionRes = "settings_lyricon_enabled_desc",
             order = 10,
             ui = SettingUiType.Switch
         )
-        val lyriconEnabled = autoSetting(iconRes = R.drawable.ic_lyricon)
+        val lyriconEnabled = autoSetting(
+            titleRes = R.string.settings_lyricon_enabled,
+            descriptionRes = R.string.settings_lyricon_enabled_desc,
+            iconRes = R.drawable.ic_lyricon
+        )
 
         @AutoSetting(
             key = "cloud_music_lyric_default_offset_ms",
             type = SettingValueType.Long,
             defaultLong = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS,
-            titleRes = "settings_lyrics_offset_cloud_music",
-            descriptionRes = "settings_lyrics_offset_cloud_music_desc",
             order = 20,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
         )
-        val cloudMusicLyricDefaultOffsetMs = Unit
+        val cloudMusicLyricDefaultOffsetMs = autoSetting(
+            titleRes = R.string.settings_lyrics_offset_cloud_music,
+            descriptionRes = R.string.settings_lyrics_offset_cloud_music_desc
+        )
 
         @AutoSetting(
             key = "qq_music_lyric_default_offset_ms",
             type = SettingValueType.Long,
             defaultLong = DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS,
-            titleRes = "settings_lyrics_offset_qq_music",
-            descriptionRes = "settings_lyrics_offset_qq_music_desc",
             order = 30,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
         )
-        val qqMusicLyricDefaultOffsetMs = Unit
+        val qqMusicLyricDefaultOffsetMs = autoSetting(
+            titleRes = R.string.settings_lyrics_offset_qq_music,
+            descriptionRes = R.string.settings_lyrics_offset_qq_music_desc
+        )
     }
 
     /*
@@ -593,22 +674,26 @@ object AutoSettingsSchema {
      * 这些值可能在进程早期读取，写入时必须同步 bootstrap snapshot
      */
     @AutoSettingsSection(
-        titleRes = "settings_network",
-        descriptionRes = "settings_network_expand",
         order = 70
     )
     object network {
+        val metadata = autoSettingsSection(
+            titleRes = R.string.settings_network,
+            descriptionRes = R.string.settings_network_expand
+        )
+
         @AutoSetting(
             key = "bypass_proxy",
             type = SettingValueType.Boolean,
             defaultBoolean = true,
-            titleRes = "settings_bypass_proxy",
-            descriptionRes = "settings_bypass_proxy_desc",
             order = 10,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
         )
-        val bypassProxy = Unit
+        val bypassProxy = autoSetting(
+            titleRes = R.string.settings_bypass_proxy,
+            descriptionRes = R.string.settings_bypass_proxy_desc
+        )
     }
 
     /*
@@ -618,44 +703,52 @@ object AutoSettingsSchema {
      * 目录权限、迁移流程和快照同步都必须走手写业务入口
      */
     @AutoSettingsSection(
-        titleRes = "settings_download_management",
-        descriptionRes = "settings_download_expand",
         order = 80
     )
     object download {
+        val metadata = autoSettingsSection(
+            titleRes = R.string.settings_download_management,
+            descriptionRes = R.string.settings_download_expand
+        )
+
         @AutoSetting(
             key = "download_directory_uri",
             type = SettingValueType.String,
             defaultString = "",
-            titleRes = "settings_download_directory",
-            descriptionRes = "settings_download_directory_desc",
             order = 10,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
         )
-        val downloadDirectoryUri = autoSetting(icon = AutoSettingIcon.Download)
+        val downloadDirectoryUri = autoSetting(
+            titleRes = R.string.settings_download_directory,
+            descriptionRes = R.string.settings_download_directory_desc,
+            icon = AutoSettingIcon.Download
+        )
 
         @AutoSetting(
             key = "download_directory_label",
             type = SettingValueType.String,
             defaultString = "",
-            titleRes = "settings_download_directory_current",
             order = 20,
             access = SettingAccessMode.KeyOnly
         )
-        val downloadDirectoryLabel = Unit
+        val downloadDirectoryLabel = autoSetting(
+            titleRes = R.string.settings_download_directory_current
+        )
 
         @AutoSetting(
             key = "download_file_name_template",
             type = SettingValueType.String,
             defaultString = "",
-            titleRes = "settings_download_file_name_format",
-            descriptionRes = "settings_download_file_name_format_desc",
             order = 30,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
         )
-        val downloadFileNameTemplate = autoSetting(icon = AutoSettingIcon.Download)
+        val downloadFileNameTemplate = autoSetting(
+            titleRes = R.string.settings_download_file_name_format,
+            descriptionRes = R.string.settings_download_file_name_format_desc,
+            icon = AutoSettingIcon.Download
+        )
     }
 
     /*
@@ -665,22 +758,26 @@ object AutoSettingsSchema {
      * 缓存容量会影响播放器启动快照，保留手写 setter
      */
     @AutoSettingsSection(
-        titleRes = "settings_storage_cache",
-        descriptionRes = "settings_storage_expand",
         order = 90
     )
     object storage {
+        val metadata = autoSettingsSection(
+            titleRes = R.string.settings_storage_cache,
+            descriptionRes = R.string.settings_storage_expand
+        )
+
         @AutoSetting(
             key = "max_cache_size_bytes",
             type = SettingValueType.Long,
             defaultLong = 1024L * 1024L * 1024L,
-            titleRes = "settings_cache_limit",
-            descriptionRes = "settings_cache_notice",
             order = 10,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
         )
-        val maxCacheSizeBytes = Unit
+        val maxCacheSizeBytes = autoSetting(
+            titleRes = R.string.settings_cache_limit,
+            descriptionRes = R.string.settings_cache_notice
+        )
     }
 
     /*
@@ -690,21 +787,26 @@ object AutoSettingsSchema {
      * token、远端配置和立即同步属于独立存储，不进入 DataStore schema
      */
     @AutoSettingsSection(
-        titleRes = "settings_backup_restore",
-        descriptionRes = "settings_backup_expand",
         order = 100
     )
     object backup {
+        val metadata = autoSettingsSection(
+            titleRes = R.string.settings_backup_restore,
+            descriptionRes = R.string.settings_backup_expand
+        )
+
         @AutoSetting(
             key = "silent_github_sync_failure",
             type = SettingValueType.Boolean,
             defaultBoolean = false,
-            titleRes = "github_sync_silent_failure",
-            descriptionRes = "github_sync_silent_failure_desc",
             order = 10,
             ui = SettingUiType.Switch
         )
-        val silentGitHubSyncFailure = autoSetting(icon = AutoSettingIcon.Error)
+        val silentGitHubSyncFailure = autoSetting(
+            titleRes = R.string.github_sync_silent_failure,
+            descriptionRes = R.string.github_sync_silent_failure_desc,
+            icon = AutoSettingIcon.Error
+        )
     }
 
     /*
@@ -714,191 +816,210 @@ object AutoSettingsSchema {
      * 这些项会写 playback snapshot，不能让通用 setter 直接绕过
      */
     @AutoSettingsSection(
-        titleRes = "settings_playback",
-        descriptionRes = "settings_playback_expand",
         order = 110
     )
     object playback {
+        val metadata = autoSettingsSection(
+            titleRes = R.string.settings_playback,
+            descriptionRes = R.string.settings_playback_expand
+        )
+
         @AutoSetting(
             key = "playback_fade_in",
             type = SettingValueType.Boolean,
             defaultBoolean = false,
-            titleRes = "settings_playback_fade_in",
-            descriptionRes = "settings_playback_fade_in_desc",
             order = 10,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
         )
-        val playbackFadeIn = Unit
+        val playbackFadeIn = autoSetting(
+            titleRes = R.string.settings_playback_fade_in,
+            descriptionRes = R.string.settings_playback_fade_in_desc
+        )
 
         @AutoSetting(
             key = "playback_crossfade_next",
             type = SettingValueType.Boolean,
             defaultBoolean = false,
-            titleRes = "settings_playback_crossfade_next",
-            descriptionRes = "settings_playback_crossfade_next_desc",
             order = 20,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
         )
-        val playbackCrossfadeNext = Unit
+        val playbackCrossfadeNext = autoSetting(
+            titleRes = R.string.settings_playback_crossfade_next,
+            descriptionRes = R.string.settings_playback_crossfade_next_desc
+        )
 
         @AutoSetting(
             key = "playback_fade_in_duration_ms",
             type = SettingValueType.Long,
             defaultLong = 500L,
-            titleRes = "settings_playback_fade_in_duration",
             order = 30,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
         )
-        val playbackFadeInDurationMs = Unit
+        val playbackFadeInDurationMs = autoSetting(
+            titleRes = R.string.settings_playback_fade_in_duration
+        )
 
         @AutoSetting(
             key = "playback_fade_out_duration_ms",
             type = SettingValueType.Long,
             defaultLong = 500L,
-            titleRes = "settings_playback_fade_out_duration",
             order = 40,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
         )
-        val playbackFadeOutDurationMs = Unit
+        val playbackFadeOutDurationMs = autoSetting(
+            titleRes = R.string.settings_playback_fade_out_duration
+        )
 
         @AutoSetting(
             key = "playback_crossfade_in_duration_ms",
             type = SettingValueType.Long,
             defaultLong = 500L,
-            titleRes = "settings_playback_crossfade_in_duration",
             order = 50,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
         )
-        val playbackCrossfadeInDurationMs = Unit
+        val playbackCrossfadeInDurationMs = autoSetting(
+            titleRes = R.string.settings_playback_crossfade_in_duration
+        )
 
         @AutoSetting(
             key = "playback_crossfade_out_duration_ms",
             type = SettingValueType.Long,
             defaultLong = 500L,
-            titleRes = "settings_playback_crossfade_out_duration",
             order = 60,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
         )
-        val playbackCrossfadeOutDurationMs = Unit
+        val playbackCrossfadeOutDurationMs = autoSetting(
+            titleRes = R.string.settings_playback_crossfade_out_duration
+        )
 
         @AutoSetting(
             key = "playback_speed",
             type = SettingValueType.Float,
             defaultFloat = DEFAULT_PLAYBACK_SPEED,
-            titleRes = "player_play",
             order = 70,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
         )
-        val playbackSpeed = Unit
+        val playbackSpeed = autoSetting(
+            titleRes = R.string.player_play
+        )
 
         @AutoSetting(
             key = "playback_pitch",
             type = SettingValueType.Float,
             defaultFloat = DEFAULT_PLAYBACK_PITCH,
-            titleRes = "settings_playback",
             order = 80,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
         )
-        val playbackPitch = Unit
+        val playbackPitch = autoSetting(
+            titleRes = R.string.settings_playback
+        )
 
         @AutoSetting(
             key = "playback_equalizer_enabled",
             type = SettingValueType.Boolean,
             defaultBoolean = false,
-            titleRes = "settings_playback",
             order = 90,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
         )
-        val playbackEqualizerEnabled = Unit
+        val playbackEqualizerEnabled = autoSetting(
+            titleRes = R.string.settings_playback
+        )
 
         @AutoSetting(
             key = "playback_equalizer_preset",
             type = SettingValueType.String,
             defaultString = PlaybackEqualizerPresetId.FLAT,
-            titleRes = "settings_playback",
             order = 100,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
         )
-        val playbackEqualizerPreset = Unit
+        val playbackEqualizerPreset = autoSetting(
+            titleRes = R.string.settings_playback
+        )
 
         @AutoSetting(
             key = "playback_equalizer_custom_band_levels",
             type = SettingValueType.String,
             defaultString = "",
-            titleRes = "settings_playback",
             order = 110,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
         )
-        val playbackEqualizerCustomBandLevels = Unit
+        val playbackEqualizerCustomBandLevels = autoSetting(
+            titleRes = R.string.settings_playback
+        )
 
         @AutoSetting(
             key = "playback_loudness_gain_mb",
             type = SettingValueType.Int,
             defaultInt = DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB,
-            titleRes = "settings_playback",
             order = 120,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
         )
-        val playbackLoudnessGainMb = Unit
+        val playbackLoudnessGainMb = autoSetting(
+            titleRes = R.string.settings_playback
+        )
 
         @AutoSetting(
             key = "keep_last_playback_progress",
             type = SettingValueType.Boolean,
             defaultBoolean = true,
-            titleRes = "settings_keep_last_playback_progress",
-            descriptionRes = "settings_keep_last_playback_progress_desc",
             order = 130,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
         )
-        val keepLastPlaybackProgress = Unit
+        val keepLastPlaybackProgress = autoSetting(
+            titleRes = R.string.settings_keep_last_playback_progress,
+            descriptionRes = R.string.settings_keep_last_playback_progress_desc
+        )
 
         @AutoSetting(
             key = "keep_playback_mode_state",
             type = SettingValueType.Boolean,
             defaultBoolean = true,
-            titleRes = "settings_keep_playback_mode_state",
-            descriptionRes = "settings_keep_playback_mode_state_desc",
             order = 140,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
         )
-        val keepPlaybackModeState = Unit
+        val keepPlaybackModeState = autoSetting(
+            titleRes = R.string.settings_keep_playback_mode_state,
+            descriptionRes = R.string.settings_keep_playback_mode_state_desc
+        )
 
         @AutoSetting(
             key = "stop_on_bluetooth_disconnect",
             type = SettingValueType.Boolean,
             defaultBoolean = true,
-            titleRes = "settings_stop_on_bluetooth_disconnect",
-            descriptionRes = "settings_stop_on_bluetooth_disconnect_desc",
             order = 150,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
         )
-        val stopOnBluetoothDisconnect = Unit
+        val stopOnBluetoothDisconnect = autoSetting(
+            titleRes = R.string.settings_stop_on_bluetooth_disconnect,
+            descriptionRes = R.string.settings_stop_on_bluetooth_disconnect_desc
+        )
 
         @AutoSetting(
             key = "allow_mixed_playback",
             type = SettingValueType.Boolean,
             defaultBoolean = false,
-            titleRes = "settings_allow_mixed_playback",
-            descriptionRes = "settings_allow_mixed_playback_desc",
             order = 160,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
         )
-        val allowMixedPlayback = Unit
+        val allowMixedPlayback = autoSetting(
+            titleRes = R.string.settings_allow_mixed_playback,
+            descriptionRes = R.string.settings_allow_mixed_playback_desc
+        )
     }
 }
