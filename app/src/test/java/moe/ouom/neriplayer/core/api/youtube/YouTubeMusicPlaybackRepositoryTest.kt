@@ -68,6 +68,15 @@ class YouTubeMusicPlaybackRepositoryTest {
         }
     }
 
+    private fun singleGoogleVideoRangeProbe(
+        requests: List<okhttp3.Request>
+    ): okhttp3.Request {
+        return requests.single { request ->
+            request.url.host == "rr1---sn.googlevideo.com" &&
+                request.header("Range") == "bytes=0-0"
+        }
+    }
+
     @Test
     fun parsePlayableAudio_usesApproxDurationMsWhenPresent() {
         val root = JSONObject(
@@ -1433,13 +1442,9 @@ class YouTubeMusicPlaybackRepositoryTest {
         assertEquals("audio-tv-fallback", selectedUrl?.queryParameter("id"))
         assertEquals("TVHTML5", selectedUrl?.queryParameter("c"))
         assertFalse(selectedUrl?.queryParameter("id") == "audio-web-remix-forbidden")
-        assertEquals(1, requests.count { it.url.host == "rr1---sn.googlevideo.com" })
-        val rangeRequest = requests.single { it.url.host == "rr1---sn.googlevideo.com" }
+        val rangeRequest = singleGoogleVideoRangeProbe(requests)
         assertEquals("bytes=0-0", rangeRequest.header("Range"))
-        val rangeProbeIndex = requests.indexOfFirst { request ->
-            request.url.host == "rr1---sn.googlevideo.com" &&
-                request.header("Range") == "bytes=0-0"
-        }
+        val rangeProbeIndex = requests.indexOf(rangeRequest)
         val tvPlayerRequestIndex = requests.indexOfFirst { request ->
             request.url.encodedPath.contains("/youtubei/v1/player") &&
                 request.header("X-YouTube-Client-Name") == "7"
@@ -1568,13 +1573,9 @@ class YouTubeMusicPlaybackRepositoryTest {
         assertEquals("audio-tv-fallback", selectedUrl?.queryParameter("id"))
         assertEquals("TVHTML5", selectedUrl?.queryParameter("c"))
         assertFalse(selectedUrl?.queryParameter("id") == "audio-web-remix-empty-range")
-        assertEquals(1, requests.count { it.url.host == "rr1---sn.googlevideo.com" })
-        val rangeRequest = requests.single { it.url.host == "rr1---sn.googlevideo.com" }
+        val rangeRequest = singleGoogleVideoRangeProbe(requests)
         assertEquals("bytes=0-0", rangeRequest.header("Range"))
-        val rangeProbeIndex = requests.indexOfFirst { request ->
-            request.url.host == "rr1---sn.googlevideo.com" &&
-                request.header("Range") == "bytes=0-0"
-        }
+        val rangeProbeIndex = requests.indexOf(rangeRequest)
         val tvPlayerRequestIndex = requests.indexOfFirst { request ->
             request.url.encodedPath.contains("/youtubei/v1/player") &&
                 request.header("X-YouTube-Client-Name") == "7"
@@ -2544,18 +2545,14 @@ class YouTubeMusicPlaybackRepositoryTest {
         assertEquals("audio-tv-fast", selectedUrl?.queryParameter("id"))
         assertEquals("TVHTML5", selectedUrl?.queryParameter("c"))
         assertFalse(selectedUrl?.queryParameter("id") == "audio-web-remix-direct")
-        assertEquals(1, requests.count { it.url.host == "rr1---sn.googlevideo.com" })
-        val rangeRequest = requests.single { it.url.host == "rr1---sn.googlevideo.com" }
+        val rangeRequest = singleGoogleVideoRangeProbe(requests)
         assertEquals("bytes=0-0", rangeRequest.header("Range"))
         assertFalse(poTokenProvider.forceRefreshCalls.any { it })
         val firstWebRemixRequestIndex = requests.indexOfFirst { request ->
             request.url.encodedPath.contains("/youtubei/v1/player") &&
                 request.header("X-YouTube-Client-Name") == "67"
         }
-        val rangeProbeIndex = requests.indexOfFirst { request ->
-            request.url.host == "rr1---sn.googlevideo.com" &&
-                request.header("Range") == "bytes=0-0"
-        }
+        val rangeProbeIndex = requests.indexOf(rangeRequest)
         val firstTvRequestIndex = requests.indexOfFirst { request ->
             request.url.encodedPath.contains("/youtubei/v1/player") &&
                 request.header("X-YouTube-Client-Name") == "7"
@@ -2679,13 +2676,9 @@ class YouTubeMusicPlaybackRepositoryTest {
         assertEquals("audio-tv-fallback", selectedUrl?.queryParameter("id"))
         assertEquals("TVHTML5", selectedUrl?.queryParameter("c"))
         assertFalse(selectedUrl?.queryParameter("id") == "audio-web-remix-io-failure")
-        assertEquals(1, requests.count { it.url.host == "rr1---sn.googlevideo.com" })
-        val rangeRequest = requests.single { it.url.host == "rr1---sn.googlevideo.com" }
+        val rangeRequest = singleGoogleVideoRangeProbe(requests)
         assertEquals("bytes=0-0", rangeRequest.header("Range"))
-        val rangeProbeIndex = requests.indexOfFirst { request ->
-            request.url.host == "rr1---sn.googlevideo.com" &&
-                request.header("Range") == "bytes=0-0"
-        }
+        val rangeProbeIndex = requests.indexOf(rangeRequest)
         val tvPlayerRequestIndex = requests.indexOfFirst { request ->
             request.url.encodedPath.contains("/youtubei/v1/player") &&
                 request.header("X-YouTube-Client-Name") == "7"

@@ -44,8 +44,6 @@ fun playbackRuntimePermissions(): Array<String> {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         permissions += Manifest.permission.POST_NOTIFICATIONS
         permissions += Manifest.permission.READ_MEDIA_AUDIO
-        permissions += Manifest.permission.READ_MEDIA_IMAGES
-        permissions += Manifest.permission.READ_MEDIA_VIDEO
     } else {
         permissions += Manifest.permission.READ_EXTERNAL_STORAGE
     }
