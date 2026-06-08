@@ -43,6 +43,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.ListenTogetherPreferences
 import moe.ouom.neriplayer.data.auth.bili.BiliCookieRepository
 import moe.ouom.neriplayer.data.auth.netease.NeteaseCookieRepository
+import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthAutoRefreshManager
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRepository
 import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
@@ -120,7 +121,7 @@ internal fun warmYouTubePlaybackIfAuthorized(
     bundle: moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle,
     warmBootstrapAsync: () -> Unit
 ) {
-    if (bundle.hasLoginCookies()) {
+    if (bundle.hasLoginCookies() && !ForegroundWebLoginGuard.isActive) {
         warmBootstrapAsync()
     }
 }
@@ -261,6 +262,12 @@ object AppContainer {
 
     fun launchBackgroundIo(block: suspend CoroutineScope.() -> Unit) = scope.launch(block = block)
 
+    fun pauseYouTubeBackgroundWebWorkForForegroundLogin() {
+        if (!::application.isInitialized) {
+            return
+        }
+        youtubeMusicPlaybackRepository.clearAuthBoundCaches(cancelInFlightPlayableAudio = false)
+    }
 
     fun initialize(app: Application) {
         this.application = app

@@ -15,6 +15,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.platform.youtube.installYouTubeBackgroundWebViewGuard
 import moe.ouom.neriplayer.data.platform.youtube.isTrustedYouTubeLoginHost
 import moe.ouom.neriplayer.data.platform.youtube.removeYouTubeBackgroundWebViewGuard
@@ -200,7 +201,15 @@ class YouTubeAuthAutoRefreshManager(
         if (!auth.hasLoginCookies()) {
             return YouTubeAuthAutoRefreshResult(reason = "no_login_cookies")
         }
+        if (ForegroundWebLoginGuard.isActive) {
+            NPLogger.d(TAG, "refresh skipped reason=$reason gate=${ForegroundWebLoginGuard.SKIP_REASON}")
+            return YouTubeAuthAutoRefreshResult(reason = ForegroundWebLoginGuard.SKIP_REASON)
+        }
         return accessMutex.withLock {
+            if (ForegroundWebLoginGuard.isActive) {
+                NPLogger.d(TAG, "refresh skipped reason=$reason gate=${ForegroundWebLoginGuard.SKIP_REASON}")
+                return@withLock YouTubeAuthAutoRefreshResult(reason = ForegroundWebLoginGuard.SKIP_REASON)
+            }
             val currentAuth = authProvider().normalized()
             val currentHealth = authHealthProvider()
             val now = System.currentTimeMillis()
@@ -438,6 +447,9 @@ class YouTubeAuthAutoRefreshManager(
         activeWebView: WebView,
         url: String
     ): Boolean {
+        if (ForegroundWebLoginGuard.isActive) {
+            return false
+        }
         val deferred = CompletableDeferred<Boolean>()
         capturedHeaders = null
         pendingPageLoad = deferred

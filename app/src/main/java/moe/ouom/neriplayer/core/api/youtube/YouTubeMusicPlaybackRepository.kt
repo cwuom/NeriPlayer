@@ -46,12 +46,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.selects.select
+import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.auth.youtube.isYouTubeAuthRecoverableFailure
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthAutoRefreshManager
 import moe.ouom.neriplayer.data.settings.SettingsRepository
@@ -87,6 +89,7 @@ import org.schabi.newpipe.extractor.stream.StreamInfo
 private const val YOUTUBE_PLAYER_WEB_REMIX_CLIENT_ID = "67"
 private const val YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME = "WEB_REMIX"
 private const val YOUTUBE_PLAYER_WEB_REMIX_CLIENT_VERSION = "1.20260403.09.00"
+private const val YOUTUBE_PLAYBACK_WARM_BOOTSTRAP_START_DELAY_MS = 1_500L
 private const val YOUTUBE_PLAYER_TV_CLIENT_ID = "7"
 private const val YOUTUBE_PLAYER_TV_CLIENT_NAME = "TVHTML5"
 private const val YOUTUBE_PLAYER_TV_CLIENT_VERSION = "7.20260114.12.00"
@@ -985,6 +988,13 @@ class YouTubeMusicPlaybackRepository(
     }
 
     suspend fun warmBootstrap() = withContext(Dispatchers.IO) {
+        if (ForegroundWebLoginGuard.isActive) {
+            NPLogger.d(
+                "YouTubeMusicPlayback",
+                "Warm bootstrap skipped because ${ForegroundWebLoginGuard.SKIP_REASON}"
+            )
+            return@withContext
+        }
         val initialAuth = authProvider().normalized()
         val shouldForceWarmRefresh = evaluateYouTubeAuthHealth(initialAuth).let { health ->
             health.activeCookieKeys.isNotEmpty() &&
@@ -1056,6 +1066,14 @@ class YouTubeMusicPlaybackRepository(
                     lateinit var created: Deferred<Unit>
                     created = inFlightPlayableAudioScope.async(start = CoroutineStart.LAZY) {
                         try {
+                            delay(YOUTUBE_PLAYBACK_WARM_BOOTSTRAP_START_DELAY_MS)
+                            if (ForegroundWebLoginGuard.isActive) {
+                                NPLogger.d(
+                                    "YouTubeMusicPlayback",
+                                    "Warm bootstrap skipped because ${ForegroundWebLoginGuard.SKIP_REASON}"
+                                )
+                                return@async
+                            }
                             warmBootstrap()
                         } finally {
                             synchronized(warmBootstrapLock) {

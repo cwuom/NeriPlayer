@@ -1017,6 +1017,20 @@ object AutoSettingsSchema {
         )
 
         @AutoSetting(
+            key = "netease_auto_source_switch",
+            type = SettingValueType.Boolean,
+            defaultBoolean = true,
+            order = 135,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val neteaseAutoSourceSwitch = autoSetting(
+            titleRes = R.string.settings_netease_auto_source_switch,
+            descriptionRes = R.string.settings_netease_auto_source_switch_desc,
+            iconRes = R.drawable.ic_bilibili
+        )
+
+        @AutoSetting(
             key = "keep_playback_mode_state",
             type = SettingValueType.Boolean,
             defaultBoolean = true,

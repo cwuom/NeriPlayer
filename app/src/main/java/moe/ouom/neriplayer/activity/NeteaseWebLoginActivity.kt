@@ -50,6 +50,8 @@ import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.snackbar.Snackbar
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.auth.web.normalizeNeteaseWebLoginCookies
 import moe.ouom.neriplayer.data.auth.web.shouldAutoCompleteNeteaseWebLogin
 import moe.ouom.neriplayer.util.NPLogger
@@ -75,6 +77,7 @@ class NeteaseWebLoginActivity : ComponentActivity() {
 
     private lateinit var webView: WebView
     private lateinit var toolbar: MaterialToolbar
+    private var foregroundWebLoginToken: AutoCloseable? = null
     private var hasReturned = false
     private var initialCookies: Map<String, String> = emptyMap()
     private val loginCompletionWatcher = WebLoginCompletionWatcher(::maybeReturnIfLoggedIn)
@@ -85,6 +88,8 @@ class NeteaseWebLoginActivity : ComponentActivity() {
         lockPortraitIfPhone()
         enableEdgeToEdge()
         WindowCompat.setDecorFitsSystemWindows(window, false)
+        foregroundWebLoginToken = ForegroundWebLoginGuard.enter("netease")
+        AppContainer.pauseYouTubeBackgroundWebWorkForForegroundLogin()
 
         val root = CoordinatorLayout(this).apply {
             fitsSystemWindows = false
@@ -181,6 +186,8 @@ class NeteaseWebLoginActivity : ComponentActivity() {
             (webView.parent as? ViewGroup)?.removeView(webView)
             webView.destroy()
         }
+        foregroundWebLoginToken?.close()
+        foregroundWebLoginToken = null
         super.onDestroy()
     }
 

@@ -42,6 +42,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.auth.youtube.applyYouTubeWebCookies
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeCookieSupport
@@ -156,12 +157,20 @@ internal class YouTubeWebPoTokenProvider(
         if (!auth.hasLoginCookies()) {
             return
         }
+        if (ForegroundWebLoginGuard.isActive) {
+            NPLogger.d(TAG, "warmSession skipped because ${ForegroundWebLoginGuard.SKIP_REASON}")
+            return
+        }
         if (!accessMutex.tryLock()) {
             NPLogger.d(TAG, "warmSession skipped because provider is busy")
             return
         }
         val startedAtMs = System.currentTimeMillis()
         try {
+            if (ForegroundWebLoginGuard.isActive) {
+                NPLogger.d(TAG, "warmSession skipped because ${ForegroundWebLoginGuard.SKIP_REASON}")
+                return
+            }
             try {
                 ensurePreparedPage(
                     auth = auth,
@@ -200,8 +209,16 @@ internal class YouTubeWebPoTokenProvider(
     ): String? {
         val auth = authProvider().normalized()
         val startedAtMs = System.currentTimeMillis()
+        if (ForegroundWebLoginGuard.isActive) {
+            NPLogger.d(TAG, "GVS PO token skipped because ${ForegroundWebLoginGuard.SKIP_REASON} videoId=$videoId")
+            return null
+        }
         return accessMutex.withLock {
             try {
+                if (ForegroundWebLoginGuard.isActive) {
+                    NPLogger.d(TAG, "GVS PO token skipped because ${ForegroundWebLoginGuard.SKIP_REASON} videoId=$videoId")
+                    return@withLock null
+                }
                 val now = System.currentTimeMillis()
                 val authFingerprint = buildAuthFingerprint(auth)
                 val pageSnapshot = ensurePreparedPage(
@@ -328,6 +345,11 @@ internal class YouTubeWebPoTokenProvider(
         maxAttempts: Int,
         bootstrapUrls: List<String>
     ): WebPoPageSnapshot? {
+        if (ForegroundWebLoginGuard.isActive) {
+            setWebViewActive(active = false)
+            destroyPreparedWebViewAsync()
+            return null
+        }
         val shouldReload = forceRefresh ||
             webView == null ||
             preparedCookieFingerprint != authFingerprint ||

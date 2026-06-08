@@ -602,6 +602,9 @@ private fun NeriAppContent(
     val playbackCrossfadeOutDurationMs by repo.playbackCrossfadeOutDurationMsFlow.collectAsState(initial = 500L)
     val keepLastPlaybackProgress by repo.keepLastPlaybackProgressFlow.collectAsState(initial = true)
     val keepPlaybackModeState by repo.keepPlaybackModeStateFlow.collectAsState(initial = true)
+    val neteaseAutoSourceSwitch by repo.neteaseAutoSourceSwitchFlow.collectAsState(
+        initial = startupPlaybackPreferences.neteaseAutoSourceSwitch
+    )
     val stopOnBluetoothDisconnect by repo.stopOnBluetoothDisconnectFlow.collectAsState(initial = true)
     val usbExclusivePlayback by repo.usbExclusivePlaybackFlow.collectAsState(
         initial = startupPlaybackPreferences.usbExclusivePlayback
@@ -1675,6 +1678,10 @@ private fun NeriAppContent(
                                         keepPlaybackModeState = keepPlaybackModeState,
                                         onKeepPlaybackModeStateChange = { enabled ->
                                             scope.launch { repo.setKeepPlaybackModeState(enabled) }
+                                        },
+                                        neteaseAutoSourceSwitch = neteaseAutoSourceSwitch,
+                                        onNeteaseAutoSourceSwitchChange = { enabled ->
+                                            scope.launch { repo.setNeteaseAutoSourceSwitch(enabled) }
                                         },
                                         stopOnBluetoothDisconnect = stopOnBluetoothDisconnect,
                                         onStopOnBluetoothDisconnectChange = { enabled ->

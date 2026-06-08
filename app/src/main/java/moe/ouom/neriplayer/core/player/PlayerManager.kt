@@ -192,6 +192,7 @@ object PlayerManager {
     internal var qqMusicLyricDefaultOffsetMs = DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
     internal var keepLastPlaybackProgressEnabled = true
     internal var keepPlaybackModeStateEnabled = true
+    internal var neteaseAutoSourceSwitchEnabled = true
     internal var stopOnBluetoothDisconnectEnabled = true
     internal var usbExclusivePlaybackEnabled = false
     internal var allowMixedPlaybackEnabled = false

@@ -8,6 +8,7 @@ import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Router
 import androidx.compose.material.icons.outlined.Settings
@@ -62,6 +63,11 @@ internal enum class SettingsPage(
         titleRes = R.string.settings_playback,
         descriptionRes = R.string.settings_playback_expand,
         icon = Icons.AutoMirrored.Outlined.PlaylistPlay
+    ),
+    PlaybackSource(
+        titleRes = R.string.settings_playback_source,
+        descriptionRes = R.string.settings_playback_source_desc,
+        icon = Icons.Outlined.LibraryMusic
     ),
     AudioQuality(
         titleRes = R.string.settings_audio_quality,

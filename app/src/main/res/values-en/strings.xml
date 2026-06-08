@@ -1064,6 +1064,10 @@
     <string name="settings_playback_crossfade_next_desc">Fade between tracks when moving to the next song</string>
     <string name="settings_playback_crossfade_in_duration">Next Track Fade-in Duration</string>
     <string name="settings_playback_crossfade_out_duration">Current Track Fade-out Duration</string>
+    <string name="settings_playback_source">Playback Source</string>
+    <string name="settings_playback_source_desc">Configure automatic source switching and fallback sources</string>
+    <string name="settings_netease_auto_source_switch">NetEase Auto Source Switch</string>
+    <string name="settings_netease_auto_source_switch_desc">Search Bilibili automatically when a NetEase song is unavailable or only returns a preview clip</string>
     <string name="settings_keep_last_playback_progress">Keep Last Playback Progress</string>
     <string name="settings_keep_last_playback_progress_desc">Remember the current song position after restarting the app</string>
     <string name="settings_keep_playback_mode_state">Keep Playback Mode State</string>

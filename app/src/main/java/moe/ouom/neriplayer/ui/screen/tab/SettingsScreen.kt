@@ -269,6 +269,8 @@ fun SettingsScreen(
     onKeepLastPlaybackProgressChange: (Boolean) -> Unit,
     keepPlaybackModeState: Boolean,
     onKeepPlaybackModeStateChange: (Boolean) -> Unit,
+    neteaseAutoSourceSwitch: Boolean,
+    onNeteaseAutoSourceSwitchChange: (Boolean) -> Unit,
     stopOnBluetoothDisconnect: Boolean,
     onStopOnBluetoothDisconnectChange: (Boolean) -> Unit,
     usbExclusivePlayback: Boolean,
@@ -1174,6 +1176,35 @@ fun SettingsScreen(
                             onUsbExclusivePlaybackChange = onUsbExclusivePlaybackChange,
                             allowMixedPlayback = allowMixedPlayback,
                             onAllowMixedPlaybackChange = onAllowMixedPlaybackChange
+                        )
+                    }
+                }
+
+                SettingsPage.PlaybackSource -> {
+                    miuixSettingsSectionCardItem("${selectedPage.name}:content") {
+                        AutoSettingsListItem(
+                            setting = AutoSettingsMetadata.requireSetting(
+                                AutoSettingsKeys.NETEASE_AUTO_SOURCE_SWITCH
+                            ),
+                            leadingContent = {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_bilibili),
+                                    contentDescription = stringResource(
+                                        R.string.settings_netease_auto_source_switch
+                                    ),
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            trailingContent = {
+                                MiuixSettingsSwitch(
+                                    checked = neteaseAutoSourceSwitch,
+                                    onCheckedChange = onNeteaseAutoSourceSwitchChange
+                                )
+                            },
+                            onClick = {
+                                onNeteaseAutoSourceSwitchChange(!neteaseAutoSourceSwitch)
+                            }
                         )
                     }
                 }

@@ -92,6 +92,8 @@ internal fun PlayerManager.initializeImpl(
             initialPlaybackPreferences.keepLastPlaybackProgress
         keepPlaybackModeStateEnabled =
             initialPlaybackPreferences.keepPlaybackModeState
+        neteaseAutoSourceSwitchEnabled =
+            initialPlaybackPreferences.neteaseAutoSourceSwitch
         playbackFadeInEnabled = initialPlaybackPreferences.playbackFadeIn
         playbackCrossfadeNextEnabled =
             initialPlaybackPreferences.playbackCrossfadeNext
@@ -122,7 +124,7 @@ internal fun PlayerManager.initializeImpl(
         playbackSoundConfig = initialPlaybackPreferences.toPlaybackSoundConfig()
         NPLogger.d(
             "NERI-PlayerManager",
-            "initialize(): prefs quality=$preferredQuality, youtubeQuality=$youtubePreferredQuality, biliQuality=$biliPreferredQuality, keepProgress=$keepLastPlaybackProgressEnabled, keepMode=$keepPlaybackModeStateEnabled, fadeIn=$playbackFadeInEnabled/${playbackFadeInDurationMs}ms, crossfade=$playbackCrossfadeNextEnabled/${playbackCrossfadeInDurationMs}ms, stopOnBluetoothDisconnect=$stopOnBluetoothDisconnectEnabled, usbExclusivePlayback=$usbExclusivePlaybackEnabled, allowMixedPlayback=$allowMixedPlaybackEnabled"
+            "initialize(): prefs quality=$preferredQuality, youtubeQuality=$youtubePreferredQuality, biliQuality=$biliPreferredQuality, keepProgress=$keepLastPlaybackProgressEnabled, keepMode=$keepPlaybackModeStateEnabled, neteaseAutoSourceSwitch=$neteaseAutoSourceSwitchEnabled, fadeIn=$playbackFadeInEnabled/${playbackFadeInDurationMs}ms, crossfade=$playbackCrossfadeNextEnabled/${playbackCrossfadeInDurationMs}ms, stopOnBluetoothDisconnect=$stopOnBluetoothDisconnectEnabled, usbExclusivePlayback=$usbExclusivePlaybackEnabled, allowMixedPlayback=$allowMixedPlaybackEnabled"
         )
         val okHttpClient = AppContainer.sharedOkHttpClient
         val upstreamFactory: HttpDataSource.Factory = OkHttpDataSource.Factory(okHttpClient)
@@ -552,6 +554,11 @@ internal fun PlayerManager.initializeImpl(
                 if (changed && initialized && currentPlaylist.isNotEmpty()) {
                     persistState()
                 }
+            }
+        }
+        ioScope.launch {
+            settingsRepo.neteaseAutoSourceSwitchFlow.collect { enabled ->
+                neteaseAutoSourceSwitchEnabled = enabled
             }
         }
         ioScope.launch {

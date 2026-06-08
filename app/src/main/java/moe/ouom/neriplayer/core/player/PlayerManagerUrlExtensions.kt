@@ -706,6 +706,14 @@ private suspend fun PlayerManager.getNeteaseSongUrl(
             }
         }
 
+        if (previewFallback != null ||
+            lastFailureReason == NeteasePlaybackResponseParser.FailureReason.NO_PERMISSION
+        ) {
+            tryResolveNeteaseAutoBiliSource(song, sideEffects)?.let {
+                return@withContext it
+            }
+        }
+
         previewFallback?.let { return@withContext it }
 
         if (!suppressError) {

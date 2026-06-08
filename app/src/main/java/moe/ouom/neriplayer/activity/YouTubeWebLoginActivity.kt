@@ -53,6 +53,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.auth.web.shouldAutoCompleteYouTubeWebLogin
 import moe.ouom.neriplayer.data.auth.youtube.applyYouTubeWebCookies
 import moe.ouom.neriplayer.data.auth.youtube.clearYouTubeWebCookies
@@ -123,6 +124,7 @@ class YouTubeWebLoginActivity : ComponentActivity() {
 
     private lateinit var webView: WebView
     private val authRepo by lazy { AppContainer.youtubeAuthRepo }
+    private var foregroundWebLoginToken: AutoCloseable? = null
     private var hasReturned = false
     private val loginCompletionWatcher = WebLoginCompletionWatcher(::maybeReturnObservedAuth)
     private val loginVerificationClient by lazy {
@@ -158,6 +160,8 @@ class YouTubeWebLoginActivity : ComponentActivity() {
         lockPortraitIfPhone()
         enableEdgeToEdge()
         WindowCompat.setDecorFitsSystemWindows(window, false)
+        foregroundWebLoginToken = ForegroundWebLoginGuard.enter("youtube")
+        AppContainer.pauseYouTubeBackgroundWebWorkForForegroundLogin()
 
         val root = CoordinatorLayout(this).apply {
             fitsSystemWindows = false
@@ -275,6 +279,8 @@ class YouTubeWebLoginActivity : ComponentActivity() {
             (webView.parent as? ViewGroup)?.removeView(webView)
             webView.destroy()
         }
+        foregroundWebLoginToken?.close()
+        foregroundWebLoginToken = null
         super.onDestroy()
     }
 

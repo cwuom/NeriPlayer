@@ -291,6 +291,9 @@ class SettingsRepository(private val context: Context) {
     val keepPlaybackModeStateFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.KEEP_PLAYBACK_MODE_STATE] ?: true }
 
+    val neteaseAutoSourceSwitchFlow: Flow<Boolean> =
+        context.dataStore.data.map { it[SettingsKeys.NETEASE_AUTO_SOURCE_SWITCH] ?: true }
+
     val stopOnBluetoothDisconnectFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.STOP_ON_BLUETOOTH_DISCONNECT] ?: true }
 
@@ -734,6 +737,13 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { it[SettingsKeys.KEEP_PLAYBACK_MODE_STATE] = enabled }
         updatePlaybackPreferenceSnapshot(context) {
             it.copy(keepPlaybackModeState = enabled)
+        }
+    }
+
+    suspend fun setNeteaseAutoSourceSwitch(enabled: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.NETEASE_AUTO_SOURCE_SWITCH] = enabled }
+        updatePlaybackPreferenceSnapshot(context) {
+            it.copy(neteaseAutoSourceSwitch = enabled)
         }
     }
 

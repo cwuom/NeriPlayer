@@ -1064,6 +1064,10 @@
     <string name="settings_playback_crossfade_next_desc">切换到下一首时使用淡入淡出过渡</string>
     <string name="settings_playback_crossfade_in_duration">下一首淡入时长</string>
     <string name="settings_playback_crossfade_out_duration">当前曲淡出时长</string>
+    <string name="settings_playback_source">播放源</string>
+    <string name="settings_playback_source_desc">配置自动换源与音源兜底策略</string>
+    <string name="settings_netease_auto_source_switch">网易云自动换源</string>
+    <string name="settings_netease_auto_source_switch_desc">网易云歌曲无权限或仅返回试听片段时，自动在哔哩哔哩查找音源</string>
     <string name="settings_keep_last_playback_progress">保留上次播放进度</string>
     <string name="settings_keep_last_playback_progress_desc">应用重启后继续记住当前歌曲的播放进度</string>
     <string name="settings_keep_playback_mode_state">保留播放状态</string>

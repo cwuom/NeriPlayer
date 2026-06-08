@@ -46,6 +46,7 @@ private const val PLAYBACK_YOUTUBE_AUDIO_QUALITY_KEY = "youtube_audio_quality"
 private const val PLAYBACK_BILI_AUDIO_QUALITY_KEY = "bili_audio_quality"
 private const val PLAYBACK_KEEP_PROGRESS_KEY = "keep_last_playback_progress"
 private const val PLAYBACK_KEEP_MODE_STATE_KEY = "keep_playback_mode_state"
+private const val PLAYBACK_NETEASE_AUTO_SOURCE_SWITCH_KEY = "netease_auto_source_switch"
 private const val PLAYBACK_FADE_IN_KEY = "playback_fade_in"
 private const val PLAYBACK_CROSSFADE_NEXT_KEY = "playback_crossfade_next"
 private const val PLAYBACK_FADE_IN_DURATION_KEY = "playback_fade_in_duration_ms"
@@ -73,6 +74,7 @@ data class PlaybackPreferenceSnapshot(
     val biliAudioQuality: String = "high",
     val keepLastPlaybackProgress: Boolean = true,
     val keepPlaybackModeState: Boolean = true,
+    val neteaseAutoSourceSwitch: Boolean = true,
     val playbackFadeIn: Boolean = false,
     val playbackCrossfadeNext: Boolean = false,
     val playbackFadeInDurationMs: Long = 500L,
@@ -176,6 +178,10 @@ internal fun persistPlaybackPreferenceSnapshot(
                 .putString(PLAYBACK_BILI_AUDIO_QUALITY_KEY, normalizedSnapshot.biliAudioQuality)
                 .putBoolean(PLAYBACK_KEEP_PROGRESS_KEY, normalizedSnapshot.keepLastPlaybackProgress)
                 .putBoolean(PLAYBACK_KEEP_MODE_STATE_KEY, normalizedSnapshot.keepPlaybackModeState)
+                .putBoolean(
+                    PLAYBACK_NETEASE_AUTO_SOURCE_SWITCH_KEY,
+                    normalizedSnapshot.neteaseAutoSourceSwitch
+                )
                 .putBoolean(PLAYBACK_FADE_IN_KEY, normalizedSnapshot.playbackFadeIn)
                 .putBoolean(PLAYBACK_CROSSFADE_NEXT_KEY, normalizedSnapshot.playbackCrossfadeNext)
                 .putLong(PLAYBACK_FADE_IN_DURATION_KEY, normalizedSnapshot.playbackFadeInDurationMs)
@@ -232,6 +238,7 @@ internal fun Preferences.toPlaybackPreferenceSnapshot(): PlaybackPreferenceSnaps
         biliAudioQuality = this[SettingsKeys.BILI_AUDIO_QUALITY] ?: "high",
         keepLastPlaybackProgress = this[SettingsKeys.KEEP_LAST_PLAYBACK_PROGRESS] ?: true,
         keepPlaybackModeState = this[SettingsKeys.KEEP_PLAYBACK_MODE_STATE] ?: true,
+        neteaseAutoSourceSwitch = this[SettingsKeys.NETEASE_AUTO_SOURCE_SWITCH] ?: true,
         playbackFadeIn = this[SettingsKeys.PLAYBACK_FADE_IN] ?: false,
         playbackCrossfadeNext = this[SettingsKeys.PLAYBACK_CROSSFADE_NEXT] ?: false,
         playbackFadeInDurationMs = this[SettingsKeys.PLAYBACK_FADE_IN_DURATION_MS] ?: 500L,
@@ -277,6 +284,8 @@ private fun readCachedPlaybackPreferenceSnapshot(context: Context): PlaybackPref
         biliAudioQuality = prefs.getString(PLAYBACK_BILI_AUDIO_QUALITY_KEY, "high") ?: "high",
         keepLastPlaybackProgress = prefs.getBoolean(PLAYBACK_KEEP_PROGRESS_KEY, true),
         keepPlaybackModeState = prefs.getBoolean(PLAYBACK_KEEP_MODE_STATE_KEY, true),
+        neteaseAutoSourceSwitch =
+            prefs.getBoolean(PLAYBACK_NETEASE_AUTO_SOURCE_SWITCH_KEY, true),
         playbackFadeIn = prefs.getBoolean(PLAYBACK_FADE_IN_KEY, false),
         playbackCrossfadeNext = prefs.getBoolean(PLAYBACK_CROSSFADE_NEXT_KEY, false),
         playbackFadeInDurationMs = prefs.getLong(PLAYBACK_FADE_IN_DURATION_KEY, 500L),
