@@ -34,6 +34,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.graphics.toColorInt
+import com.materialkolor.PaletteStyle
+import com.materialkolor.dynamiccolor.ColorSpec
 import com.materialkolor.rememberDynamicColorScheme
 
 private val NeriTypography = Typography()
@@ -44,6 +46,8 @@ fun NeriTheme(
     forceDark: Boolean,
     dynamicColor: Boolean,
     seedColorHex: String,
+    paletteStyle: PaletteStyle = PaletteStyle.TonalSpot,
+    colorSpec: ColorSpec.SpecVersion = ColorSpec.SpecVersion.Default,
     content: @Composable () -> Unit
 ) {
     val context = LocalContext.current
@@ -60,7 +64,12 @@ fun NeriTheme(
         }
         else -> {
             val seed = Color(("#$seedColorHex").toColorInt())
-            rememberDynamicColorScheme(seedColor = seed, isDark = isDark)
+            rememberDynamicColorScheme(
+                seedColor = seed,
+                isDark = isDark,
+                style = paletteStyle,
+                specVersion = colorSpec
+            )
         }
     }
 

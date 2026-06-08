@@ -51,6 +51,10 @@ private class AutoSettingsProcessor(
             processed = true
             return emptyList()
         }
+        if (!validateCatalogOutputs(catalogs.filter { it.settings.isNotEmpty() }, logger)) {
+            processed = true
+            return emptyList()
+        }
 
         catalogs.forEach { catalog ->
             if (catalog.settings.isEmpty()) {
@@ -75,6 +79,9 @@ private class AutoSettingsProcessor(
                     catalog.declaration
                 )
             }
+            return
+        }
+        if (!validateCatalog(catalog, logger)) {
             return
         }
 
@@ -131,6 +138,85 @@ private class AutoSettingsProcessor(
             content = buildUiFile(packageName, catalog.settings)
         )
     }
+}
+
+private fun validateCatalogOutputs(catalogs: List<CatalogSpec>, logger: KSPLogger): Boolean {
+    var valid = true
+
+    fun reportDuplicatePackage(
+        outputName: String,
+        packageName: String,
+        conflictingCatalogs: List<CatalogSpec>
+    ) {
+        if (conflictingCatalogs.size <= 1) return
+        valid = false
+        logger.error(
+            "Multiple @AutoSettingsCatalog declarations generate $outputName in package " +
+                "'$packageName': ${conflictingCatalogs.joinToString { it.declaration.simpleName.asString() }}",
+            conflictingCatalogs.first().declaration
+        )
+    }
+
+    catalogs
+        .groupBy { it.packageName }
+        .forEach { (packageName, duplicates) ->
+            reportDuplicatePackage("AutoSettings* files", packageName, duplicates)
+        }
+
+    catalogs
+        .groupBy { it.settingsKeysPackageName }
+        .forEach { (packageName, duplicates) ->
+            reportDuplicatePackage("SettingsKeys", packageName, duplicates)
+        }
+
+    return valid
+}
+
+private fun validateCatalog(catalog: CatalogSpec, logger: KSPLogger): Boolean {
+    var valid = true
+
+    fun reportDuplicate(
+        valueName: String,
+        duplicateValue: String,
+        settings: List<SettingSpec>
+    ) {
+        if (settings.size <= 1) return
+        valid = false
+        logger.error(
+            "Duplicate @AutoSetting $valueName '$duplicateValue': " +
+                settings.joinToString { it.propertyName },
+            catalog.declaration
+        )
+    }
+
+    catalog.settings
+        .groupBy { it.key }
+        .forEach { (key, settings) -> reportDuplicate("key", key, settings) }
+
+    catalog.settings
+        .groupBy { it.keyName }
+        .forEach { (keyName, settings) -> reportDuplicate("constantName", keyName, settings) }
+
+    catalog.settings
+        .filter { it.canGenerateAccessor }
+        .groupBy { it.valueName }
+        .forEach { (repositoryName, settings) ->
+            reportDuplicate("repositoryName", repositoryName, settings)
+        }
+
+    catalog.sectionSpecs
+        .groupBy { it.propertyName }
+        .filterValues { it.size > 1 }
+        .forEach { (propertyName, sections) ->
+            valid = false
+            logger.error(
+                "Duplicate @AutoSettingsSection property '$propertyName': " +
+                    sections.joinToString { it.key },
+                catalog.declaration
+            )
+        }
+
+    return valid
 }
 
 private data class CatalogSpec(
@@ -235,9 +321,16 @@ private fun KSClassDeclaration.collectSettingSpecs(
         declarations
             .filterIsInstance<KSClassDeclaration>()
             .forEach { nestedDeclaration ->
-                yieldAll(nestedDeclaration.collectSettingSpecs(nestedDeclaration.simpleName.asString()))
+                yieldAll(nestedDeclaration.collectSettingSpecs(nestedDeclaration.sectionKeyHint()))
             }
     }
+}
+
+private fun KSClassDeclaration.sectionKeyHint(): String {
+    val annotation = annotations.firstByName(AutoSettingsSection::class.qualifiedName.orEmpty())
+    return annotation?.stringArgument("key")
+        ?.ifBlank { simpleName.asString() }
+        ?: simpleName.asString()
 }
 
 private fun KSPropertyDeclaration.toSettingSpec(sectionHint: String? = null): SettingSpec? {
@@ -584,7 +677,6 @@ private fun buildUiFile(packageName: String, settings: List<SettingSpec>): Strin
         appendLine("import androidx.compose.material3.ListItem")
         appendLine("import androidx.compose.material3.ListItemDefaults")
         appendLine("import androidx.compose.material3.MaterialTheme")
-        appendLine("import androidx.compose.material3.Switch")
         appendLine("import androidx.compose.material3.Text")
         appendLine("import androidx.compose.runtime.Composable")
         appendLine("import androidx.compose.runtime.collectAsState")
@@ -600,6 +692,7 @@ private fun buildUiFile(packageName: String, settings: List<SettingSpec>): Strin
         appendLine("import kotlinx.coroutines.launch")
         appendLine("import moe.ouom.neriplayer.ksp.annotations.AutoSettingIcon")
         appendLine("import moe.ouom.neriplayer.ui.screen.tab.settings.component.settingsItemClickable")
+        appendLine("import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSwitch")
         appendLine()
         appendLine("@Composable")
         appendLine("fun AutoSettingsListItem(")
@@ -741,7 +834,7 @@ private fun buildUiFile(packageName: String, settings: List<SettingSpec>): Strin
         appendLine("            { Text(stringResource(descriptionRes)) }")
         appendLine("        },")
         appendLine("        trailingContent = {")
-        appendLine("            Switch(checked = checked, onCheckedChange = onCheckedChange)")
+        appendLine("            MiuixSettingsSwitch(checked = checked, onCheckedChange = onCheckedChange)")
         appendLine("        },")
         appendLine("        colors = ListItemDefaults.colors(containerColor = Color.Transparent)")
         appendLine("    )")

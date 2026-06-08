@@ -34,7 +34,6 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -58,7 +57,6 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Upload
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -66,9 +64,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -93,14 +89,18 @@ import moe.ouom.neriplayer.ui.viewmodel.ConfigTransferUiState
 import moe.ouom.neriplayer.ui.viewmodel.BackupRestoreUiState
 import moe.ouom.neriplayer.ui.viewmodel.GitHubSyncViewModel
 import moe.ouom.neriplayer.ui.viewmodel.WebDavSyncViewModel
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsChoiceRow
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSwitch
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.formatSyncTime
-import moe.ouom.neriplayer.util.HapticTextButton
 
 @Composable
 internal fun SettingsBackupRestoreSection(
     expanded: Boolean,
     arrowRotation: Float,
     onExpandedChange: (Boolean) -> Unit,
+    showHeader: Boolean = true,
     currentPlaylistCount: Int,
     backupRestoreUiState: BackupRestoreUiState,
     configTransferUiState: ConfigTransferUiState,
@@ -119,18 +119,20 @@ internal fun SettingsBackupRestoreSection(
     onOpenWebDavConfig: () -> Unit,
     onOpenClearWebDavConfig: () -> Unit
 ) {
-    ExpandableHeader(
-        icon = Icons.Outlined.Backup,
-        title = stringResource(R.string.settings_backup_restore),
-        subtitleCollapsed = stringResource(R.string.settings_backup_expand),
-        subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
-        expanded = expanded,
-        onToggle = { onExpandedChange(!expanded) },
-        arrowRotation = arrowRotation
-    )
+    if (showHeader) {
+        ExpandableHeader(
+            icon = Icons.Outlined.Backup,
+            title = stringResource(R.string.settings_backup_restore),
+            subtitleCollapsed = stringResource(R.string.settings_backup_expand),
+            subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
+            expanded = expanded,
+            onToggle = { onExpandedChange(!expanded) },
+            arrowRotation = arrowRotation
+        )
+    }
 
     LazyAnimatedVisibility(
-        visible = expanded,
+        visible = expanded || !showHeader,
         enter = fadeIn() + expandVertically(),
         exit = fadeOut() + shrinkVertically()
     ) {
@@ -168,7 +170,11 @@ internal fun SettingsBackupRestoreSection(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(Color.Transparent)
-                .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
+                .padding(
+                    start = if (showHeader) 16.dp else 0.dp,
+                    end = if (showHeader) 8.dp else 0.dp,
+                    bottom = if (showHeader) 8.dp else 0.dp
+                )
         ) {
             ListItem(
                 leadingContent = {
@@ -430,7 +436,7 @@ internal fun SettingsBackupRestoreSection(
                     headlineContent = { Text(stringResource(R.string.sync_auto)) },
                     supportingContent = { Text(stringResource(R.string.sync_auto_desc)) },
                     trailingContent = {
-                        Switch(
+                        MiuixSettingsSwitch(
                             checked = githubState.autoSyncEnabled,
                             onCheckedChange = { githubVm.toggleAutoSync(context, it) }
                         )
@@ -466,7 +472,7 @@ internal fun SettingsBackupRestoreSection(
                                 strokeWidth = 2.dp
                             )
                         } else {
-                            HapticTextButton(onClick = { githubVm.performSync(context) }) {
+                            MiuixSettingsTextButton(onClick = { githubVm.performSync(context) }) {
                                 Text(stringResource(R.string.sync_title))
                             }
                         }
@@ -485,7 +491,7 @@ internal fun SettingsBackupRestoreSection(
                     headlineContent = { Text(stringResource(R.string.sync_data_saver)) },
                     supportingContent = { Text(stringResource(R.string.sync_data_saver_desc)) },
                     trailingContent = {
-                        Switch(
+                        MiuixSettingsSwitch(
                             checked = dataSaverMode,
                             onCheckedChange = { enabled ->
                                 if (enabled != dataSaverMode) {
@@ -503,7 +509,7 @@ internal fun SettingsBackupRestoreSection(
                     sectionScope = AutoSettingsScopes.backup
                 )
 
-                HapticTextButton(
+                MiuixSettingsTextButton(
                     onClick = onOpenClearGitHubConfig,
                     modifier = Modifier.padding(start = 16.dp)
                 ) {
@@ -595,7 +601,7 @@ internal fun SettingsBackupRestoreSection(
                     headlineContent = { Text(stringResource(R.string.sync_auto)) },
                     supportingContent = { Text(stringResource(R.string.webdav_auto_sync_desc)) },
                     trailingContent = {
-                        Switch(
+                        MiuixSettingsSwitch(
                             checked = webDavState.autoSyncEnabled,
                             onCheckedChange = { webDavVm.toggleAutoSync(context, it) }
                         )
@@ -631,7 +637,7 @@ internal fun SettingsBackupRestoreSection(
                                 strokeWidth = 2.dp
                             )
                         } else {
-                            HapticTextButton(onClick = { webDavVm.performSync(context) }) {
+                            MiuixSettingsTextButton(onClick = { webDavVm.performSync(context) }) {
                                 Text(stringResource(R.string.sync_title))
                             }
                         }
@@ -639,7 +645,7 @@ internal fun SettingsBackupRestoreSection(
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
 
-                HapticTextButton(
+                MiuixSettingsTextButton(
                     onClick = onOpenClearWebDavConfig,
                     modifier = Modifier.padding(start = 16.dp)
                 ) {
@@ -696,14 +702,14 @@ internal fun SettingsBackupRestoreSection(
         }
 
         if (pendingDataSaverMode != null) {
-            AlertDialog(
+            MiuixSettingsDialog(
                 onDismissRequest = { pendingDataSaverMode = null },
                 title = { Text(stringResource(R.string.sync_data_saver_warning_title)) },
                 text = { Text(stringResource(R.string.sync_data_saver_warning_message)) },
                 confirmButton = {
-                    HapticTextButton(
+                    MiuixSettingsTextButton(
                         onClick = {
-                            val enabled = pendingDataSaverMode ?: return@HapticTextButton
+                            val enabled = pendingDataSaverMode ?: return@MiuixSettingsTextButton
                             dataSaverMode = enabled
                             storage.setDataSaverMode(enabled)
                             pendingDataSaverMode = null
@@ -713,7 +719,7 @@ internal fun SettingsBackupRestoreSection(
                     }
                 },
                 dismissButton = {
-                    HapticTextButton(onClick = { pendingDataSaverMode = null }) {
+                    MiuixSettingsTextButton(onClick = { pendingDataSaverMode = null }) {
                         Text(stringResource(R.string.action_cancel))
                     }
                 }
@@ -760,7 +766,7 @@ private fun ResultStatusCard(
             headlineContent = { Text(title) },
             supportingContent = { Text(message) },
             trailingContent = {
-                HapticTextButton(onClick = onClose) {
+                MiuixSettingsTextButton(onClick = onClose) {
                     Text(
                         stringResource(R.string.action_close),
                         color = MaterialTheme.colorScheme.primary
@@ -833,7 +839,7 @@ private fun PlayHistoryModeDialog(
     onDismiss: () -> Unit,
     onSelect: (SecureTokenStorage.PlayHistoryUpdateMode) -> Unit
 ) {
-    AlertDialog(
+    MiuixSettingsDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.sync_history_frequency)) },
         text = {
@@ -864,7 +870,7 @@ private fun PlayHistoryModeDialog(
             }
         },
         confirmButton = {
-            HapticTextButton(onClick = onDismiss) {
+            MiuixSettingsTextButton(onClick = onDismiss) {
                 Text(stringResource(R.string.action_close))
             }
         }
@@ -878,21 +884,10 @@ private fun PlayHistoryModeOption(
     description: String,
     onClick: () -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        RadioButton(selected = selected, onClick = onClick)
-        Column(modifier = Modifier.padding(start = 8.dp)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            Text(
-                text = description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
+    MiuixSettingsChoiceRow(
+        title = title,
+        subtitle = description,
+        selected = selected,
+        onClick = onClick
+    )
 }

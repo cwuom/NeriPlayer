@@ -38,11 +38,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.PrimaryTabRow
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -60,10 +57,13 @@ import moe.ouom.neriplayer.activity.BiliWebLoginActivity
 import moe.ouom.neriplayer.activity.YouTubeWebLoginActivity
 import moe.ouom.neriplayer.ui.component.bottomSheetDragBlocker
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.InlineMessage
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSegmentedTabs
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthViewModel
 import moe.ouom.neriplayer.ui.viewmodel.auth.YouTubeAuthViewModel
-import moe.ouom.neriplayer.util.HapticButton
-import moe.ouom.neriplayer.util.HapticTextButton
 
 @Composable
 internal fun SettingsBiliAuthDialogs(
@@ -297,31 +297,27 @@ private fun TwoTabCookieLoginSheet(
                     )
                 }
 
-                PrimaryTabRow(selectedTabIndex = selectedTab) {
-                    Tab(
-                        selected = selectedTab == 0,
-                        onClick = { selectedTab = 0 },
-                        text = { Text(stringResource(R.string.login_browser)) }
-                    )
-                    Tab(
-                        selected = selectedTab == 1,
-                        onClick = { selectedTab = 1 },
-                        text = { Text(stringResource(R.string.login_paste_cookie)) }
-                    )
-                }
+                MiuixSettingsSegmentedTabs(
+                    labels = listOf(
+                        stringResource(R.string.login_browser),
+                        stringResource(R.string.login_paste_cookie)
+                    ),
+                    selectedIndex = selectedTab,
+                    onSelectedIndexChange = { selectedTab = it }
+                )
 
                 Spacer(Modifier.height(12.dp))
 
                 when (selectedTab) {
                     0 -> {
                         browserHintContent()
-                        HapticButton(onClick = onBrowserLogin) {
+                        MiuixSettingsButton(onClick = onBrowserLogin) {
                             Text(stringResource(R.string.login_start_browser))
                         }
                     }
 
                     else -> {
-                        androidx.compose.material3.OutlinedTextField(
+                        MiuixSettingsTextField(
                             value = rawCookie,
                             onValueChange = { rawCookie = it },
                             label = { Text(cookieLabel) },
@@ -330,7 +326,7 @@ private fun TwoTabCookieLoginSheet(
                             modifier = Modifier.fillMaxWidth()
                         )
                         Spacer(Modifier.height(8.dp))
-                        HapticButton(onClick = { onSaveCookie(rawCookie) }) {
+                        MiuixSettingsButton(onClick = { onSaveCookie(rawCookie) }) {
                             Text(stringResource(R.string.login_save_cookie))
                         }
                     }
@@ -348,17 +344,17 @@ internal fun SavedCookieActionDialog(
     onContinueLogin: () -> Unit,
     onLogout: () -> Unit
 ) {
-    AlertDialog(
+    MiuixSettingsDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = { Text(message) },
         confirmButton = {
-            HapticTextButton(onClick = onContinueLogin) {
+            MiuixSettingsTextButton(onClick = onContinueLogin) {
                 Text(stringResource(R.string.settings_saved_cookie_continue))
             }
         },
         dismissButton = {
-            HapticTextButton(onClick = onLogout) {
+            MiuixSettingsTextButton(onClick = onLogout) {
                 Text(stringResource(R.string.settings_saved_cookie_logout))
             }
         }

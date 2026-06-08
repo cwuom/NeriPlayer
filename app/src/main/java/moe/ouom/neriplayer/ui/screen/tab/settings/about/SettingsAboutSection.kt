@@ -34,6 +34,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -48,106 +49,138 @@ internal fun LazyListScope.settingsAboutSection(
     onOpenGitHubRepo: () -> Unit
 ) {
     item {
-        ListItem(
-            leadingContent = {
-                Icon(
-                    imageVector = Icons.Outlined.Info,
-                    contentDescription = stringResource(R.string.settings_about),
-                    tint = MaterialTheme.colorScheme.onSurface
-                )
-            },
-            headlineContent = {
-                Text(
-                    text = stringResource(R.string.nav_about),
-                    style = MaterialTheme.typography.titleMedium
-                )
-            },
-            supportingContent = { Text(stringResource(R.string.about_app_footer)) },
-            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+        SettingsAboutContent(
+            devModeEnabled = devModeEnabled,
+            onVersionClick = onVersionClick,
+            onOpenGitHubRepo = onOpenGitHubRepo
         )
     }
+}
 
-    item {
-        ListItem(
-            leadingContent = {
-                Icon(
-                    imageVector = Icons.Outlined.Verified,
-                    contentDescription = stringResource(R.string.settings_build_uuid),
-                    tint = MaterialTheme.colorScheme.onSurface
-                )
-            },
-            headlineContent = {
-                Text(
-                    text = stringResource(R.string.settings_build_uuid),
-                    style = MaterialTheme.typography.titleMedium
-                )
-            },
-            supportingContent = { Text(BuildConfig.BUILD_UUID) },
-            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-        )
-    }
+@Composable
+internal fun SettingsAboutContent(
+    devModeEnabled: Boolean,
+    onVersionClick: () -> Unit,
+    onOpenGitHubRepo: () -> Unit
+) {
+    SettingsAboutIntroItem()
+    SettingsBuildUuidItem()
+    SettingsVersionItem(
+        devModeEnabled = devModeEnabled,
+        onVersionClick = onVersionClick
+    )
+    SettingsBuildTimeItem()
+    SettingsGitHubItem(onOpenGitHubRepo = onOpenGitHubRepo)
+}
 
-    item {
-        ListItem(
-            leadingContent = {
-                Icon(
-                    imageVector = Icons.Outlined.Update,
-                    contentDescription = stringResource(R.string.settings_version),
-                    tint = MaterialTheme.colorScheme.onSurface
-                )
-            },
-            headlineContent = {
-                Text(
-                    text = stringResource(R.string.common_version),
-                    style = MaterialTheme.typography.titleMedium
-                )
-            },
-            supportingContent = {
-                val suffix = if (devModeEnabled) {
-                    " (${stringResource(R.string.settings_version_debug_suffix)})"
-                } else {
-                    ""
-                }
-                Text("${BuildConfig.VERSION_NAME}$suffix")
-            },
-            modifier = androidx.compose.ui.Modifier.settingsItemClickable(onClick = onVersionClick),
-            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-        )
-    }
+@Composable
+private fun SettingsAboutIntroItem() {
+    ListItem(
+        leadingContent = {
+            Icon(
+                imageVector = Icons.Outlined.Info,
+                contentDescription = stringResource(R.string.settings_about),
+                tint = MaterialTheme.colorScheme.onSurface
+            )
+        },
+        headlineContent = {
+            Text(
+                text = stringResource(R.string.nav_about),
+                style = MaterialTheme.typography.titleMedium
+            )
+        },
+        supportingContent = { Text(stringResource(R.string.about_app_footer)) },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+    )
+}
 
-    item {
-        ListItem(
-            leadingContent = {
-                Icon(
-                    imageVector = Icons.Outlined.Timer,
-                    contentDescription = stringResource(R.string.settings_build_time),
-                    tint = MaterialTheme.colorScheme.onSurface
-                )
-            },
-            headlineContent = {
-                Text(
-                    text = stringResource(R.string.common_build_time),
-                    style = MaterialTheme.typography.titleMedium
-                )
-            },
-            supportingContent = { Text(convertTimestampToDate(BuildConfig.BUILD_TIMESTAMP)) },
-            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-        )
-    }
+@Composable
+private fun SettingsBuildUuidItem() {
+    ListItem(
+        leadingContent = {
+            Icon(
+                imageVector = Icons.Outlined.Verified,
+                contentDescription = stringResource(R.string.settings_build_uuid),
+                tint = MaterialTheme.colorScheme.onSurface
+            )
+        },
+        headlineContent = {
+            Text(
+                text = stringResource(R.string.settings_build_uuid),
+                style = MaterialTheme.typography.titleMedium
+            )
+        },
+        supportingContent = { Text(BuildConfig.BUILD_UUID) },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+    )
+}
 
-    item {
-        ListItem(
-            leadingContent = {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_github),
-                    contentDescription = stringResource(R.string.common_github),
-                    tint = MaterialTheme.colorScheme.onSurface
-                )
-            },
-            headlineContent = { Text(stringResource(R.string.common_github)) },
-            supportingContent = { Text(stringResource(R.string.settings_github_repo_url)) },
-            modifier = androidx.compose.ui.Modifier.settingsItemClickable(onClick = onOpenGitHubRepo),
-            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-        )
-    }
+@Composable
+private fun SettingsVersionItem(
+    devModeEnabled: Boolean,
+    onVersionClick: () -> Unit
+) {
+    ListItem(
+        leadingContent = {
+            Icon(
+                imageVector = Icons.Outlined.Update,
+                contentDescription = stringResource(R.string.settings_version),
+                tint = MaterialTheme.colorScheme.onSurface
+            )
+        },
+        headlineContent = {
+            Text(
+                text = stringResource(R.string.common_version),
+                style = MaterialTheme.typography.titleMedium
+            )
+        },
+        supportingContent = {
+            val suffix = if (devModeEnabled) {
+                " (${stringResource(R.string.settings_version_debug_suffix)})"
+            } else {
+                ""
+            }
+            Text("${BuildConfig.VERSION_NAME}$suffix")
+        },
+        modifier = androidx.compose.ui.Modifier.settingsItemClickable(onClick = onVersionClick),
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+    )
+}
+
+@Composable
+private fun SettingsBuildTimeItem() {
+    ListItem(
+        leadingContent = {
+            Icon(
+                imageVector = Icons.Outlined.Timer,
+                contentDescription = stringResource(R.string.settings_build_time),
+                tint = MaterialTheme.colorScheme.onSurface
+            )
+        },
+        headlineContent = {
+            Text(
+                text = stringResource(R.string.common_build_time),
+                style = MaterialTheme.typography.titleMedium
+            )
+        },
+        supportingContent = { Text(convertTimestampToDate(BuildConfig.BUILD_TIMESTAMP)) },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+    )
+}
+
+@Composable
+private fun SettingsGitHubItem(onOpenGitHubRepo: () -> Unit) {
+    ListItem(
+        leadingContent = {
+            Icon(
+                painter = painterResource(id = R.drawable.ic_github),
+                contentDescription = stringResource(R.string.common_github),
+                tint = MaterialTheme.colorScheme.onSurface
+            )
+        },
+        headlineContent = { Text(stringResource(R.string.common_github)) },
+        supportingContent = { Text(stringResource(R.string.settings_github_repo_url)) },
+        modifier = androidx.compose.ui.Modifier.settingsItemClickable(onClick = onOpenGitHubRepo),
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+    )
 }

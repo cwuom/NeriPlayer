@@ -54,31 +54,35 @@ import moe.ouom.neriplayer.core.download.countPendingDownloadTasks
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.hasActiveDownloadTasks
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
-import moe.ouom.neriplayer.util.HapticTextButton
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 
 @Composable
 internal fun SettingsDownloadSection(
     expanded: Boolean,
     arrowRotation: Float,
     onExpandedChange: (Boolean) -> Unit,
+    showHeader: Boolean = true,
     onNavigateToDownloadManager: () -> Unit
 ) {
-    ExpandableHeader(
-        icon = Icons.Outlined.Download,
-        title = stringResource(R.string.settings_download_management),
-        subtitleCollapsed = stringResource(R.string.settings_download_expand),
-        subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
-        expanded = expanded,
-        onToggle = { onExpandedChange(!expanded) },
-        arrowRotation = arrowRotation
-    )
+    if (showHeader) {
+        ExpandableHeader(
+            icon = Icons.Outlined.Download,
+            title = stringResource(R.string.settings_download_management),
+            subtitleCollapsed = stringResource(R.string.settings_download_expand),
+            subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
+            expanded = expanded,
+            onToggle = { onExpandedChange(!expanded) },
+            arrowRotation = arrowRotation
+        )
+    }
 
     LazyAnimatedVisibility(
-        visible = expanded,
+        visible = expanded || !showHeader,
         enter = fadeIn() + expandVertically(),
         exit = fadeOut() + shrinkVertically()
     ) {
         SettingsDownloadExpandedContent(
+            indentContent = showHeader,
             onNavigateToDownloadManager = onNavigateToDownloadManager
         )
     }
@@ -86,6 +90,7 @@ internal fun SettingsDownloadSection(
 
 @Composable
 private fun SettingsDownloadExpandedContent(
+    indentContent: Boolean,
     onNavigateToDownloadManager: () -> Unit
 ) {
     val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
@@ -98,7 +103,11 @@ private fun SettingsDownloadExpandedContent(
         modifier = Modifier
             .fillMaxWidth()
             .background(Color.Transparent)
-            .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
+            .padding(
+                start = if (indentContent) 16.dp else 0.dp,
+                end = if (indentContent) 8.dp else 0.dp,
+                bottom = if (indentContent) 8.dp else 0.dp
+            )
     ) {
         if (visibleProgress != null || pendingTaskCount > 0) {
             ListItem(
@@ -131,7 +140,7 @@ private fun SettingsDownloadExpandedContent(
                 },
                 trailingContent = {
                     if (pendingTaskCount > 0) {
-                        HapticTextButton(
+                        MiuixSettingsTextButton(
                             onClick = { GlobalDownloadManager.cancelAllDownloadTasks() },
                             enabled = hasActiveTasks
                         ) {

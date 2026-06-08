@@ -5,10 +5,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -23,9 +21,11 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.sync.webdav.WebDavStorage
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
 import moe.ouom.neriplayer.ui.viewmodel.WebDavSyncViewModel
-import moe.ouom.neriplayer.util.HapticButton
-import moe.ouom.neriplayer.util.HapticTextButton
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 
@@ -65,7 +65,7 @@ internal fun SettingsWebDavDialogs(
             }
         }
 
-        AlertDialog(
+        MiuixSettingsDialog(
             onDismissRequest = { onShowWebDavConfigDialogChange(false) },
             title = { Text(stringResource(R.string.webdav_sync_title)) },
             text = {
@@ -78,7 +78,7 @@ internal fun SettingsWebDavDialogs(
                         text = stringResource(R.string.webdav_sync_desc),
                         style = MaterialTheme.typography.bodyMedium
                     )
-                    OutlinedTextField(
+                    MiuixSettingsTextField(
                         value = serverUrl,
                         onValueChange = { serverUrl = it },
                         label = { Text(stringResource(R.string.webdav_server_url_label)) },
@@ -86,7 +86,7 @@ internal fun SettingsWebDavDialogs(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    OutlinedTextField(
+                    MiuixSettingsTextField(
                         value = username,
                         onValueChange = { username = it },
                         label = { Text(stringResource(R.string.webdav_username_label)) },
@@ -94,7 +94,7 @@ internal fun SettingsWebDavDialogs(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    OutlinedTextField(
+                    MiuixSettingsTextField(
                         value = password,
                         onValueChange = { password = it },
                         label = { Text(stringResource(R.string.webdav_password_label)) },
@@ -102,7 +102,7 @@ internal fun SettingsWebDavDialogs(
                         visualTransformation = PasswordVisualTransformation(),
                         modifier = Modifier.fillMaxWidth()
                     )
-                    OutlinedTextField(
+                    MiuixSettingsTextField(
                         value = basePath,
                         onValueChange = { basePath = it },
                         label = { Text(stringResource(R.string.webdav_base_path_label)) },
@@ -116,9 +116,9 @@ internal fun SettingsWebDavDialogs(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-            },
+        },
             confirmButton = {
-                HapticButton(
+                MiuixSettingsButton(
                     onClick = {
                         webDavVm.validateAndSaveConfiguration(
                             context = context,
@@ -140,7 +140,7 @@ internal fun SettingsWebDavDialogs(
                 }
             },
             dismissButton = {
-                HapticTextButton(onClick = { onShowWebDavConfigDialogChange(false) }) {
+                MiuixSettingsTextButton(onClick = { onShowWebDavConfigDialogChange(false) }) {
                     Text(stringResource(R.string.action_cancel))
                 }
             }
@@ -148,12 +148,12 @@ internal fun SettingsWebDavDialogs(
     }
 
     if (showClearWebDavConfigDialog) {
-        AlertDialog(
+        MiuixSettingsDialog(
             onDismissRequest = { onShowClearWebDavConfigDialogChange(false) },
             title = { Text(stringResource(R.string.sync_clear_config)) },
             text = { Text(stringResource(R.string.webdav_clear_config_desc)) },
             confirmButton = {
-                HapticTextButton(
+                MiuixSettingsTextButton(
                     onClick = {
                         webDavVm.clearConfiguration(context)
                         onShowClearWebDavConfigDialogChange(false)
@@ -166,7 +166,7 @@ internal fun SettingsWebDavDialogs(
                 }
             },
             dismissButton = {
-                HapticTextButton(onClick = { onShowClearWebDavConfigDialogChange(false) }) {
+                MiuixSettingsTextButton(onClick = { onShowClearWebDavConfigDialogChange(false) }) {
                     Text(stringResource(R.string.action_cancel))
                 }
             }

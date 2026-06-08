@@ -100,6 +100,16 @@ class SettingsRepository(private val context: Context) {
             parseColorPalette(prefs[SettingsKeys.THEME_COLOR_PALETTE])
         }
 
+    val themePaletteStyleFlow: Flow<String> =
+        context.dataStore.data.map {
+            ThemeDefaults.normalizePaletteStyle(it[SettingsKeys.THEME_PALETTE_STYLE])
+        }
+
+    val themeColorSpecFlow: Flow<String> =
+        context.dataStore.data.map {
+            ThemeDefaults.normalizeColorSpec(it[SettingsKeys.THEME_COLOR_SPEC])
+        }
+
     val lyricBlurEnabledFlow: Flow<Boolean> =
         autoSettingsRepository.lyricBlurEnabledFlow
 
@@ -367,6 +377,18 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setThemeSeedColor(hex: String) {
         context.dataStore.edit { it[SettingsKeys.THEME_SEED_COLOR] = hex }
+    }
+
+    suspend fun setThemePaletteStyle(style: String) {
+        context.dataStore.edit {
+            it[SettingsKeys.THEME_PALETTE_STYLE] = ThemeDefaults.normalizePaletteStyle(style)
+        }
+    }
+
+    suspend fun setThemeColorSpec(spec: String) {
+        context.dataStore.edit {
+            it[SettingsKeys.THEME_COLOR_SPEC] = ThemeDefaults.normalizeColorSpec(spec)
+        }
     }
 
 

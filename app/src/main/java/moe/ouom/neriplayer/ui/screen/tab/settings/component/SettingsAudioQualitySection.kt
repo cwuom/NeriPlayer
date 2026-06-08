@@ -34,11 +34,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Audiotrack
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -52,13 +48,16 @@ import moe.ouom.neriplayer.data.settings.generated.AutoSettingInfo
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsKeys
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsListItem
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
-import moe.ouom.neriplayer.util.HapticTextButton
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsChoiceRow
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 
 @Composable
 internal fun SettingsAudioQualitySection(
     expanded: Boolean,
     arrowRotation: Float,
     onExpandedChange: (Boolean) -> Unit,
+    showHeader: Boolean = true,
     qualityLabel: String,
     preferredQuality: String,
     onQualityChange: (String) -> Unit,
@@ -75,18 +74,20 @@ internal fun SettingsAudioQualitySection(
     showBiliQualityDialog: Boolean,
     onShowBiliQualityDialogChange: (Boolean) -> Unit
 ) {
-    ExpandableHeader(
-        icon = Icons.Filled.Audiotrack,
-        title = stringResource(R.string.settings_audio_quality),
-        subtitleCollapsed = stringResource(R.string.settings_audio_quality_expand),
-        subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
-        expanded = expanded,
-        onToggle = { onExpandedChange(!expanded) },
-        arrowRotation = arrowRotation
-    )
+    if (showHeader) {
+        ExpandableHeader(
+            icon = Icons.Filled.Audiotrack,
+            title = stringResource(R.string.settings_audio_quality),
+            subtitleCollapsed = stringResource(R.string.settings_audio_quality_expand),
+            subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
+            expanded = expanded,
+            onToggle = { onExpandedChange(!expanded) },
+            arrowRotation = arrowRotation
+        )
+    }
 
     LazyAnimatedVisibility(
-        visible = expanded,
+        visible = expanded || !showHeader,
         enter = fadeIn() + expandVertically(),
         exit = fadeOut() + shrinkVertically()
     ) {
@@ -94,7 +95,11 @@ internal fun SettingsAudioQualitySection(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(Color.Transparent)
-                .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
+                .padding(
+                    start = if (showHeader) 16.dp else 0.dp,
+                    end = if (showHeader) 8.dp else 0.dp,
+                    bottom = if (showHeader) 8.dp else 0.dp
+                )
         ) {
             AudioQualityListItem(
                 setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.AUDIO_QUALITY),
@@ -216,33 +221,22 @@ private fun QualityOptionsDialog(
     onDismiss: () -> Unit,
     onSelect: (String) -> Unit
 ) {
-    AlertDialog(
+    MiuixSettingsDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
             Column {
                 options.forEach { (level, label) ->
-                    ListItem(
-                        headlineContent = { Text(label) },
-                        trailingContent = {
-                            if (level == selectedValue) {
-                                Icon(
-                                    imageVector = Icons.Filled.Check,
-                                    contentDescription = stringResource(R.string.common_selected),
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        },
-                        modifier = Modifier.settingsItemClickable {
-                            onSelect(level)
-                        },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                    MiuixSettingsChoiceRow(
+                        title = label,
+                        selected = level == selectedValue,
+                        onClick = { onSelect(level) }
                     )
                 }
             }
         },
         confirmButton = {
-            HapticTextButton(onClick = onDismiss) {
+            MiuixSettingsTextButton(onClick = onDismiss) {
                 Text(stringResource(R.string.action_close))
             }
         }

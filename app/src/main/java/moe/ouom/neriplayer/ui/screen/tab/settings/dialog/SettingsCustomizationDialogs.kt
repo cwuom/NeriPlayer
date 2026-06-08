@@ -46,14 +46,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -75,7 +70,11 @@ import androidx.core.graphics.toColorInt
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.settings.ThemeDefaults
 import moe.ouom.neriplayer.ui.component.HsvPicker
-import moe.ouom.neriplayer.util.HapticTextButton
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsOutlinedButton
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import java.util.Locale
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
@@ -90,7 +89,7 @@ internal fun ColorPickerDialog(
 ) {
     var pickedHex by remember(currentHex) { mutableStateOf(currentHex.uppercase(Locale.ROOT)) }
 
-    AlertDialog(
+    MiuixSettingsDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.settings_select_color)) },
         text = {
@@ -146,7 +145,7 @@ internal fun ColorPickerDialog(
                             modifier = Modifier.fillMaxWidth(),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            OutlinedButton(
+                            MiuixSettingsOutlinedButton(
                                 onClick = { onAddColor(pickedHex) },
                                 enabled = !existsInPalette && !ThemeDefaults.PRESET_SET.contains(pickedHex),
                                 modifier = Modifier.fillMaxWidth()
@@ -159,7 +158,7 @@ internal fun ColorPickerDialog(
                                     fontSize = 13.sp
                                 )
                             }
-                            Button(
+                            MiuixSettingsButton(
                                 onClick = { onColorSelected(pickedHex) },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
@@ -178,7 +177,7 @@ internal fun ColorPickerDialog(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            OutlinedButton(
+                            MiuixSettingsOutlinedButton(
                                 onClick = { onAddColor(pickedHex) },
                                 enabled = !existsInPalette && !ThemeDefaults.PRESET_SET.contains(pickedHex),
                                 modifier = Modifier.weight(1f)
@@ -191,7 +190,7 @@ internal fun ColorPickerDialog(
                                     fontSize = 13.sp
                                 )
                             }
-                            Button(
+                            MiuixSettingsButton(
                                 onClick = { onColorSelected(pickedHex) },
                                 modifier = Modifier.weight(1f)
                             ) {
@@ -220,9 +219,10 @@ internal fun ColorPickerDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_close))
-            }
+            MiuixSettingsTextButton(
+                onClick = onDismiss,
+                text = { Text(stringResource(R.string.action_close)) }
+            )
         }
     )
 }
@@ -295,7 +295,7 @@ internal fun DpiSettingDialog(
 ) {
     var sliderValue by remember(currentScale) { mutableFloatStateOf(currentScale) }
 
-    AlertDialog(
+    MiuixSettingsDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.settings_ui_scale)) },
         text = {
@@ -306,7 +306,7 @@ internal fun DpiSettingDialog(
                     fontFamily = FontFamily.Monospace
                 )
                 Spacer(Modifier.height(8.dp))
-                Slider(
+                MiuixSettingsSlider(
                     value = sliderValue,
                     onValueChange = { sliderValue = it },
                     valueRange = 0.6f..1.2f,
@@ -321,18 +321,21 @@ internal fun DpiSettingDialog(
             }
         },
         confirmButton = {
-            HapticTextButton(onClick = { onApply(sliderValue) }) {
-                Text(stringResource(R.string.action_apply))
-            }
+            MiuixSettingsTextButton(
+                onClick = { onApply(sliderValue) },
+                text = { Text(stringResource(R.string.action_apply)) }
+            )
         },
         dismissButton = {
             Row {
-                HapticTextButton(onClick = { sliderValue = 1.0f }) {
-                    Text(stringResource(R.string.action_reset))
-                }
-                HapticTextButton(onClick = onDismiss) {
-                    Text(stringResource(R.string.action_cancel))
-                }
+                MiuixSettingsTextButton(
+                    onClick = { sliderValue = 1.0f },
+                    text = { Text(stringResource(R.string.action_reset)) }
+                )
+                MiuixSettingsTextButton(
+                    onClick = onDismiss,
+                    text = { Text(stringResource(R.string.action_cancel)) }
+                )
             }
         }
     )

@@ -30,7 +30,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -39,9 +38,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.collectAsStateWithLifecycleCompat
 import moe.ouom.neriplayer.ui.viewmodel.debug.NeteaseAuthViewModel
-import moe.ouom.neriplayer.util.HapticButton
 
 @Composable
 internal fun NeteaseLoginContent(vm: NeteaseAuthViewModel) {
@@ -50,7 +50,7 @@ internal fun NeteaseLoginContent(vm: NeteaseAuthViewModel) {
     Column {
         Spacer(modifier = Modifier.height(12.dp))
 
-        OutlinedTextField(
+        MiuixSettingsTextField(
             value = state.phone,
             onValueChange = vm::onPhoneChange,
             label = { Text(stringResource(R.string.settings_phone_number_hint)) },
@@ -61,7 +61,7 @@ internal fun NeteaseLoginContent(vm: NeteaseAuthViewModel) {
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        OutlinedTextField(
+        MiuixSettingsTextField(
             value = state.captcha,
             onValueChange = vm::onCaptchaChange,
             label = { Text(stringResource(R.string.login_sms_code)) },
@@ -72,7 +72,7 @@ internal fun NeteaseLoginContent(vm: NeteaseAuthViewModel) {
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        HapticButton(
+        MiuixSettingsButton(
             enabled = !state.sending && state.countdownSec <= 0,
             onClick = vm::askConfirmSendCaptcha
         ) {
@@ -93,7 +93,7 @@ internal fun NeteaseLoginContent(vm: NeteaseAuthViewModel) {
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        HapticButton(
+        MiuixSettingsButton(
             enabled = state.captcha.isNotEmpty() && !state.loggingIn,
             onClick = { vm.loginByCaptcha(countryCode = "86") }
         ) {

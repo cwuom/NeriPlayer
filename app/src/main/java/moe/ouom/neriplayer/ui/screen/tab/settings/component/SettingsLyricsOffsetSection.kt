@@ -33,7 +33,6 @@ import androidx.compose.material.icons.outlined.Subtitles
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -53,6 +52,7 @@ import moe.ouom.neriplayer.data.settings.MIN_LYRIC_DEFAULT_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsScopes
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsSwitchItems
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
 import kotlin.math.roundToLong
 
 private val LYRIC_OFFSET_SLIDER_STEPS =
@@ -65,6 +65,7 @@ internal fun SettingsLyricsSection(
     expanded: Boolean,
     arrowRotation: Float,
     onExpandedChange: (Boolean) -> Unit,
+    showHeader: Boolean = true,
     autoSettingsRepository: AutoSettingsRepository,
     scope: CoroutineScope,
     cloudMusicLyricDefaultOffsetMs: Long,
@@ -72,21 +73,27 @@ internal fun SettingsLyricsSection(
     qqMusicLyricDefaultOffsetMs: Long,
     onQqMusicLyricDefaultOffsetMsChange: (Long) -> Unit
 ) {
-    ExpandableHeader(
-        icon = Icons.Outlined.Subtitles,
-        title = stringResource(R.string.settings_lyrics_offset),
-        subtitleCollapsed = stringResource(R.string.settings_lyrics_offset_expand),
-        subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
-        expanded = expanded,
-        onToggle = { onExpandedChange(!expanded) },
-        arrowRotation = arrowRotation
-    )
+    if (showHeader) {
+        ExpandableHeader(
+            icon = Icons.Outlined.Subtitles,
+            title = stringResource(R.string.settings_lyrics_offset),
+            subtitleCollapsed = stringResource(R.string.settings_lyrics_offset_expand),
+            subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
+            expanded = expanded,
+            onToggle = { onExpandedChange(!expanded) },
+            arrowRotation = arrowRotation
+        )
+    }
 
-    LazyAnimatedVisibility(visible = expanded) {
+    LazyAnimatedVisibility(visible = expanded || !showHeader) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
+                .padding(
+                    start = if (showHeader) 16.dp else 0.dp,
+                    end = if (showHeader) 8.dp else 0.dp,
+                    bottom = if (showHeader) 8.dp else 0.dp
+                )
         ) {
             AutoSettingsSwitchItems(
                 repository = autoSettingsRepository,
@@ -145,7 +152,7 @@ private fun LyricsOffsetSliderListItem(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(4.dp))
-                Slider(
+                MiuixSettingsSlider(
                     value = pendingOffset.toFloat(),
                     onValueChange = { candidate ->
                         pendingOffset = ((candidate / LYRIC_OFFSET_STEP_MS_FLOAT).roundToLong()

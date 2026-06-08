@@ -44,16 +44,11 @@ import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material.icons.outlined.SdStorage
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -84,7 +79,12 @@ import moe.ouom.neriplayer.core.download.renderManagedDownloadBaseName
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsKeys
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsListItem
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
-import moe.ouom.neriplayer.util.HapticTextButton
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsCheckbox
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsOutlinedButton
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
 import moe.ouom.neriplayer.util.formatFileSize
 
 @Composable
@@ -92,6 +92,7 @@ internal fun SettingsStorageCacheSection(
     expanded: Boolean,
     arrowRotation: Float,
     onExpandedChange: (Boolean) -> Unit,
+    showHeader: Boolean = true,
     currentDownloadDirectorySummary: String,
     isCustomDownloadDirectory: Boolean,
     downloadDirectoryChangeEnabled: Boolean,
@@ -141,25 +142,31 @@ internal fun SettingsStorageCacheSection(
     )
     val canApplyDownloadFileNameTemplate = effectiveTemplate != currentSavedTemplate
 
-    ExpandableHeader(
-        icon = Icons.Outlined.SdStorage,
-        title = stringResource(R.string.settings_storage_cache),
-        subtitleCollapsed = stringResource(R.string.settings_storage_expand),
-        subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
-        expanded = expanded,
-        onToggle = { onExpandedChange(!expanded) },
-        arrowRotation = arrowRotation
-    )
+    if (showHeader) {
+        ExpandableHeader(
+            icon = Icons.Outlined.SdStorage,
+            title = stringResource(R.string.settings_storage_cache),
+            subtitleCollapsed = stringResource(R.string.settings_storage_expand),
+            subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
+            expanded = expanded,
+            onToggle = { onExpandedChange(!expanded) },
+            arrowRotation = arrowRotation
+        )
+    }
 
     LazyAnimatedVisibility(
-        visible = expanded,
+        visible = expanded || !showHeader,
         enter = fadeIn() + expandVertically(),
         exit = fadeOut() + shrinkVertically()
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
+                .padding(
+                    start = if (showHeader) 16.dp else 0.dp,
+                    end = if (showHeader) 8.dp else 0.dp,
+                    bottom = if (showHeader) 8.dp else 0.dp
+                )
         ) {
             AutoSettingsListItem(
                 setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.DOWNLOAD_DIRECTORY_URI),
@@ -191,7 +198,7 @@ internal fun SettingsStorageCacheSection(
                     }
                 },
                 trailingContent = {
-                    HapticTextButton(
+                    MiuixSettingsTextButton(
                         onClick = onPickDownloadDirectory,
                         enabled = downloadDirectoryChangeEnabled
                     ) {
@@ -279,7 +286,7 @@ internal fun SettingsStorageCacheSection(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Slider(
+                        MiuixSettingsSlider(
                             value = sliderValue,
                             onValueChange = { sliderValue = it },
                             onValueChangeFinished = {
@@ -307,7 +314,7 @@ internal fun SettingsStorageCacheSection(
                 supportingContent = { Text(stringResource(R.string.settings_clear_cache_desc)) },
                 trailingContent = {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(
+                        MiuixSettingsOutlinedButton(
                             enabled = !isStorageDetailsLoading,
                             onClick = {
                                 onShowStorageDetailsChange(true)
@@ -327,7 +334,7 @@ internal fun SettingsStorageCacheSection(
                             Text(stringResource(R.string.action_details))
                         }
 
-                        OutlinedButton(onClick = { onShowClearCacheDialogChange(true) }) {
+                        MiuixSettingsOutlinedButton(onClick = { onShowClearCacheDialogChange(true) }) {
                             Icon(
                                 Icons.Outlined.DeleteForever,
                                 contentDescription = null,
@@ -344,7 +351,7 @@ internal fun SettingsStorageCacheSection(
     }
 
     if (showStorageDetails) {
-        AlertDialog(
+        MiuixSettingsDialog(
             onDismissRequest = { onShowStorageDetailsChange(false) },
             title = { Text(stringResource(R.string.storage_details_title)) },
             text = {
@@ -401,7 +408,7 @@ internal fun SettingsStorageCacheSection(
             },
             confirmButton = {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    HapticTextButton(
+                    MiuixSettingsTextButton(
                         onClick = {
                             runCatching {
                                 val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
@@ -412,7 +419,7 @@ internal fun SettingsStorageCacheSection(
                     ) {
                         Text(stringResource(R.string.storage_open_system_settings))
                     }
-                    HapticTextButton(onClick = { onShowStorageDetailsChange(false) }) {
+                    MiuixSettingsTextButton(onClick = { onShowStorageDetailsChange(false) }) {
                         Text(stringResource(R.string.action_close))
                     }
                 }
@@ -421,7 +428,7 @@ internal fun SettingsStorageCacheSection(
     }
 
     if (showClearCacheDialog) {
-        AlertDialog(
+        MiuixSettingsDialog(
             onDismissRequest = { onShowClearCacheDialogChange(false) },
             title = { Text(stringResource(R.string.settings_confirm_clear_cache)) },
             text = {
@@ -449,7 +456,7 @@ internal fun SettingsStorageCacheSection(
                 }
             },
             confirmButton = {
-                HapticTextButton(
+                MiuixSettingsTextButton(
                     onClick = {
                         onClearCacheClick(clearAudioCache, clearImageCache)
                         onShowClearCacheDialogChange(false)
@@ -467,7 +474,7 @@ internal fun SettingsStorageCacheSection(
                 }
             },
             dismissButton = {
-                HapticTextButton(onClick = { onShowClearCacheDialogChange(false) }) {
+                MiuixSettingsTextButton(onClick = { onShowClearCacheDialogChange(false) }) {
                     Text(stringResource(R.string.action_cancel))
                 }
             }
@@ -475,13 +482,13 @@ internal fun SettingsStorageCacheSection(
     }
 
     if (showDownloadFileNameDialog) {
-        AlertDialog(
+        MiuixSettingsDialog(
             onDismissRequest = { showDownloadFileNameDialog = false },
             title = { Text(stringResource(R.string.settings_download_file_name_format)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(stringResource(R.string.settings_download_file_name_format_desc))
-                    OutlinedTextField(
+                    MiuixSettingsTextField(
                         value = pendingDownloadFileNameTemplate,
                         onValueChange = { pendingDownloadFileNameTemplate = it },
                         modifier = Modifier.fillMaxWidth(),
@@ -506,7 +513,7 @@ internal fun SettingsStorageCacheSection(
                 }
             },
             confirmButton = {
-                HapticTextButton(
+                MiuixSettingsTextButton(
                     onClick = {
                         onDownloadFileNameTemplateChange(
                             normalizeDownloadFileNameTemplate(pendingDownloadFileNameTemplate)
@@ -520,7 +527,7 @@ internal fun SettingsStorageCacheSection(
             },
             dismissButton = {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    HapticTextButton(
+                    MiuixSettingsTextButton(
                         onClick = {
                             pendingDownloadFileNameTemplate = DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
                             onDownloadFileNameTemplateChange(null)
@@ -530,7 +537,7 @@ internal fun SettingsStorageCacheSection(
                     ) {
                         Text(stringResource(R.string.action_reset))
                     }
-                    HapticTextButton(onClick = { showDownloadFileNameDialog = false }) {
+                    MiuixSettingsTextButton(onClick = { showDownloadFileNameDialog = false }) {
                         Text(stringResource(R.string.action_cancel))
                     }
                 }
@@ -553,7 +560,7 @@ private fun CacheTypeRow(
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Checkbox(
+        MiuixSettingsCheckbox(
             checked = checked,
             onCheckedChange = onCheckedChange
         )

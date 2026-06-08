@@ -23,7 +23,6 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.component
  * Updated: 2026/3/23
  */
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -45,8 +44,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -65,12 +62,15 @@ import moe.ouom.neriplayer.data.settings.generated.AutoSettingInfo
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsKeys
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsListItem
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSwitch
 
 @Composable
 internal fun SettingsPlaybackSection(
     expanded: Boolean,
     arrowRotation: Float,
     onExpandedChange: (Boolean) -> Unit,
+    showHeader: Boolean = true,
     playbackFadeIn: Boolean,
     onPlaybackFadeInChange: (Boolean) -> Unit,
     playbackCrossfadeNext: Boolean,
@@ -92,18 +92,20 @@ internal fun SettingsPlaybackSection(
     allowMixedPlayback: Boolean,
     onAllowMixedPlaybackChange: (Boolean) -> Unit
 ) {
-    ExpandableHeader(
-        icon = Icons.AutoMirrored.Outlined.PlaylistPlay,
-        title = stringResource(R.string.settings_playback),
-        subtitleCollapsed = stringResource(R.string.settings_playback_expand),
-        subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
-        expanded = expanded,
-        onToggle = { onExpandedChange(!expanded) },
-        arrowRotation = arrowRotation
-    )
+    if (showHeader) {
+        ExpandableHeader(
+            icon = Icons.AutoMirrored.Outlined.PlaylistPlay,
+            title = stringResource(R.string.settings_playback),
+            subtitleCollapsed = stringResource(R.string.settings_playback_expand),
+            subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
+            expanded = expanded,
+            onToggle = { onExpandedChange(!expanded) },
+            arrowRotation = arrowRotation
+        )
+    }
 
     LazyAnimatedVisibility(
-        visible = expanded,
+        visible = expanded || !showHeader,
         enter = fadeIn() + expandVertically(),
         exit = fadeOut() + shrinkVertically()
     ) {
@@ -111,7 +113,11 @@ internal fun SettingsPlaybackSection(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(Color.Transparent)
-                .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
+                .padding(
+                    start = if (showHeader) 16.dp else 0.dp,
+                    end = if (showHeader) 8.dp else 0.dp,
+                    bottom = if (showHeader) 8.dp else 0.dp
+                )
         ) {
             PlaybackSwitchItem(
                 setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.PLAYBACK_FADE_IN),
@@ -128,7 +134,7 @@ internal fun SettingsPlaybackSection(
                 onCheckedChange = onPlaybackFadeInChange
             )
 
-            AnimatedVisibility(visible = playbackFadeIn) {
+            LazyAnimatedVisibility(visible = playbackFadeIn) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -162,7 +168,7 @@ internal fun SettingsPlaybackSection(
                 onCheckedChange = onPlaybackCrossfadeNextChange
             )
 
-            AnimatedVisibility(visible = playbackCrossfadeNext) {
+            LazyAnimatedVisibility(visible = playbackCrossfadeNext) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -256,7 +262,7 @@ private fun PlaybackSwitchItem(
         setting = setting,
         leadingContent = icon,
         trailingContent = {
-            Switch(
+            MiuixSettingsSwitch(
                 checked = checked,
                 onCheckedChange = onCheckedChange
             )
@@ -292,7 +298,7 @@ private fun DurationSliderListItem(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Slider(
+                MiuixSettingsSlider(
                     value = pendingDurationSeconds,
                     onValueChange = { pendingDurationSeconds = it },
                     onValueChangeFinished = {

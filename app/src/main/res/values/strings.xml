@@ -167,12 +167,39 @@
 
     <!-- Settings -->
     <string name="settings_title">设置</string>
+    <string name="settings_general">通用</string>
+    <string name="settings_general_desc">语言、触感和全局行为</string>
+    <string name="settings_theme">主题设置</string>
+    <string name="settings_theme_desc">深浅色、动态取色和主题调色</string>
     <string name="settings_theme_color">主题色</string>
     <string name="settings_theme_color_desc">选择一个你喜欢的颜色作为主色调</string>
+    <string name="settings_theme_palette_hint">关闭动态取色后会使用这里选择的主题色，也可以把常用颜色加入取色盘。</string>
     <string name="settings_dynamic_color">动态取色</string>
     <string name="settings_dynamic_color_desc">跟随封面主题色</string>
     <string name="settings_theme_toggle_dark">切换到深色主题</string>
     <string name="settings_theme_toggle_light">切换到浅色主题</string>
+    <string name="settings_theme_mode">深浅色模式</string>
+    <string name="settings_theme_mode_desc">快速切换浅色和深色</string>
+    <string name="settings_theme_mode_light">浅色</string>
+    <string name="settings_theme_mode_dark">深色</string>
+    <string name="settings_theme_palette_style">色彩风格</string>
+    <string name="settings_theme_palette_style_desc">切换 Material Kolor 的调色风格，动态封面取色和自定义主题色都会使用。</string>
+    <string name="settings_theme_color_spec">色彩空间</string>
+    <string name="settings_theme_color_spec_desc">选择 Material 色彩规范版本，2025 更鲜明，2021 更稳定。</string>
+    <string name="settings_theme_color_spec_2021">2021</string>
+    <string name="settings_theme_color_spec_2025">2025</string>
+    <string name="settings_theme_style_tonal_spot">柔和色点</string>
+    <string name="settings_theme_style_tonal_spot_desc">接近 Android 默认动态色，平衡耐看。</string>
+    <string name="settings_theme_style_neutral">低饱和</string>
+    <string name="settings_theme_style_neutral_desc">减少彩度，页面更克制。</string>
+    <string name="settings_theme_style_vibrant">鲜明</string>
+    <string name="settings_theme_style_vibrant_desc">主色更亮更突出。</string>
+    <string name="settings_theme_style_expressive">表现力</string>
+    <string name="settings_theme_style_expressive_desc">色相更跳跃，适合个性化主题。</string>
+    <string name="settings_theme_style_monochrome">单色</string>
+    <string name="settings_theme_style_monochrome_desc">接近黑白灰，弱化主题色。</string>
+    <string name="settings_theme_style_fidelity">忠实取色</string>
+    <string name="settings_theme_style_fidelity_desc">更贴近你选择的种子色。</string>
     <string name="settings_force_dark">强制深色</string>
     <string name="settings_force_dark_desc">不跟随系统时可手动指定</string>
     <string name="settings_cover_source_badge">封面显示歌曲来源</string>
@@ -191,6 +218,7 @@
     <string name="settings_nowplaying_progress_audio_spec_desc">显示在进度条上方，包括采样率、位深、码率</string>
     <string name="settings_haptic">触感反馈</string>
     <string name="settings_haptic_desc">开启后点击按钮时会有震动反馈</string>
+    <string name="settings_accounts_desc">管理网易云、Bili 和 YouTube 登录状态</string>
     <string name="settings_personalization">个性化</string>
     <string name="settings_audio_quality">音质设置</string>
     <string name="settings_audio_quality_expand">展开以配置音质选项</string>
@@ -220,6 +248,7 @@
     <string name="settings_audio_cache_desc">已缓存的音乐文件</string>
     <string name="settings_image_cache">图片缓存</string>
     <string name="settings_image_cache_desc">封面、头像等图片</string>
+    <string name="settings_about_desc">版本信息、项目主页和开发者模式</string>
 
     <!-- Storage Details -->
     <string name="storage_details_title">存储占用详情</string>

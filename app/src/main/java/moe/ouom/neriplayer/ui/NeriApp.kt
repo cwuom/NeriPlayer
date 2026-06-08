@@ -120,6 +120,8 @@ import coil.request.CachePolicy
 import coil.request.ImageRequest
 import coil.size.Precision
 import com.google.gson.Gson
+import com.materialkolor.PaletteStyle
+import com.materialkolor.dynamiccolor.ColorSpec
 import dev.chrisbanes.haze.HazeDefaults
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeStyle
@@ -543,6 +545,18 @@ private fun NeriAppContent(
     val devModeEnabled by repo.devModeEnabledFlow.collectAsState(initial = false)
     val themeSeedColor by repo.themeSeedColorFlow.collectAsState(initial = ThemeDefaults.DEFAULT_SEED_COLOR_HEX)
     val themeColorPalette by repo.themeColorPaletteFlow.collectAsState(initial = ThemeDefaults.PRESET_COLORS)
+    val themePaletteStyleValue by repo.themePaletteStyleFlow.collectAsState(
+        initial = ThemeDefaults.DEFAULT_PALETTE_STYLE
+    )
+    val themeColorSpecValue by repo.themeColorSpecFlow.collectAsState(
+        initial = ThemeDefaults.DEFAULT_COLOR_SPEC
+    )
+    val themePaletteStyle = remember(themePaletteStyleValue) {
+        PaletteStyle.valueOf(ThemeDefaults.normalizePaletteStyle(themePaletteStyleValue))
+    }
+    val themeColorSpec = remember(themeColorSpecValue) {
+        ColorSpec.SpecVersion.valueOf(ThemeDefaults.normalizeColorSpec(themeColorSpecValue))
+    }
     val lyricBlurEnabled by repo.lyricBlurEnabledFlow.collectAsState(initial = true)
     val lyricBlurAmount by repo.lyricBlurAmountFlow.collectAsState(initial = 1.5f)
     val cloudMusicLyricDefaultOffsetMs by repo.cloudMusicLyricDefaultOffsetMsFlow
@@ -979,7 +993,9 @@ private fun NeriAppContent(
             followSystemDark = followSystemDark,
             forceDark = forceDark,
             dynamicColor = useSystemDynamic,
-            seedColorHex = effectiveSeedHex
+            seedColorHex = effectiveSeedHex,
+            paletteStyle = themePaletteStyle,
+            colorSpec = themeColorSpec
         ) {
             val navController = rememberNavController()
             val backEntry by navController.currentBackStackEntryAsState()
@@ -1471,6 +1487,14 @@ private fun NeriAppContent(
                                         themeColorPalette = themeColorPalette,
                                         onAddColorToPalette = { hex -> scope.launch { repo.addThemePaletteColor(hex) } },
                                         onRemoveColorFromPalette = { hex -> scope.launch { repo.removeThemePaletteColor(hex) } },
+                                        themePaletteStyle = themePaletteStyleValue,
+                                        onThemePaletteStyleChange = { style ->
+                                            scope.launch { repo.setThemePaletteStyle(style) }
+                                        },
+                                        themeColorSpec = themeColorSpecValue,
+                                        onThemeColorSpecChange = { spec ->
+                                            scope.launch { repo.setThemeColorSpec(spec) }
+                                        },
                                         devModeEnabled = devModeEnabled,
                                         onDevModeChange = { enabled -> scope.launch { repo.setDevModeEnabled(enabled) } },
                                         lyricBlurEnabled = lyricBlurEnabled,
@@ -1894,7 +1918,9 @@ private fun NeriAppContent(
                         followSystemDark = false,
                         forceDark = true,
                         dynamicColor = useSystemDynamic,
-                        seedColorHex = effectiveSeedHex
+                        seedColorHex = effectiveSeedHex,
+                        paletteStyle = themePaletteStyle,
+                        colorSpec = themeColorSpec
                     ) {
                         BackHandler { showNowPlaying = false }
 

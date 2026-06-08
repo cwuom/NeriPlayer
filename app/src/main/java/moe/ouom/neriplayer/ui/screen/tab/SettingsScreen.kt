@@ -27,32 +27,33 @@ import android.content.Intent
 import android.net.Uri
 import android.text.format.Formatter
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.contract.ActivityResultContracts.CreateDocument
 import androidx.activity.result.contract.ActivityResultContracts.OpenDocument
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.expandVertically
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.AltRoute
-import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.outlined.Bolt
-import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Brightness4
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.FormatSize
@@ -61,28 +62,16 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.RestartAlt
-import androidx.compose.material.icons.outlined.Router
 import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material.icons.outlined.ZoomInMap
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -99,7 +88,8 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -116,6 +106,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.settings.ThemeDefaults
 import moe.ouom.neriplayer.data.settings.MAX_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.data.settings.MIN_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.data.settings.background.BackgroundImageStorage
@@ -129,14 +120,11 @@ import moe.ouom.neriplayer.data.settings.scaledLyricFontSize
 import moe.ouom.neriplayer.listentogether.configuredListenTogetherBaseUrlOrNull
 import moe.ouom.neriplayer.listentogether.isDefaultListenTogetherBaseUrl
 import moe.ouom.neriplayer.listentogether.resolveListenTogetherBaseUrl
-import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.LanguageSettingItem
-import moe.ouom.neriplayer.util.HapticTextButton
-import moe.ouom.neriplayer.ui.screen.tab.settings.about.settingsAboutSection
+import moe.ouom.neriplayer.ui.screen.tab.settings.about.SettingsAboutContent
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsBiliAuthDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsNeteaseAuthDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsYouTubeAuthDialogs
-import moe.ouom.neriplayer.ui.screen.tab.settings.component.ExpandableHeader
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.LazyAnimatedVisibility
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsAudioQualitySection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsBackupRestoreSection
@@ -152,6 +140,20 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.component.settingsItemClickabl
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsGitHubDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsPreferenceDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsWebDavDialogs
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsChoiceRow
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsOutlinedButton
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSegmentedTabs
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSwitch
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsDetailScaffold
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsHeader
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsHomeScaffold
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsPageItem
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsPage
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.miuixSettingsSectionCardItem
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.collectAsStateWithLifecycleCompat
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.formatSyncTime
 import moe.ouom.neriplayer.ui.viewmodel.BackupRestoreViewModel
@@ -176,7 +178,6 @@ private data class PendingDownloadDirectoryChange(
             !ManagedDownloadStorage.areEquivalentDirectoryUris(previousUri, targetUri)
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 @Suppress("AssignedValueIsNeverRead")
 fun SettingsScreen(
@@ -198,6 +199,10 @@ fun SettingsScreen(
     themeColorPalette: List<String>,
     onAddColorToPalette: (String) -> Unit,
     onRemoveColorFromPalette: (String) -> Unit,
+    themePaletteStyle: String,
+    onThemePaletteStyleChange: (String) -> Unit,
+    themeColorSpec: String,
+    onThemeColorSpecChange: (String) -> Unit,
     lyricBlurEnabled: Boolean,
     onLyricBlurEnabledChange: (Boolean) -> Unit,
     lyricBlurAmount: Float,
@@ -302,26 +307,6 @@ fun SettingsScreen(
     val internationalEnabled by AppContainer.settingsRepo.internationalizationEnabledFlow
         .collectAsState(initial = false)
 
-    // 登录菜单的状态
-    var loginExpanded by rememberSaveable { mutableStateOf(false) }
-    // 仅用于示意展开箭头的旋转，后续可复用至 ExpandableHeader 的 arrowRotation 入参
-    val arrowRotation by animateFloatAsState(targetValue = if (loginExpanded) 180f else 0f, label = "arrow")
-
-    // 个性化菜单的状态
-    var personalizationExpanded by rememberSaveable { mutableStateOf(false) }
-    val personalizationArrowRotation by animateFloatAsState(targetValue = if (personalizationExpanded) 180f else 0f, label = "personalization_arrow")
-
-    // 动效设置菜单的状态
-    var motionExpanded by rememberSaveable { mutableStateOf(false) }
-    val motionArrowRotation by animateFloatAsState(targetValue = if (motionExpanded) 180f else 0f, label = "motion_arrow")
-
-    // 歌词设置菜单的状态
-    var lyricsSettingsExpanded by rememberSaveable { mutableStateOf(false) }
-    val lyricsSettingsArrowRotation by animateFloatAsState(
-        targetValue = if (lyricsSettingsExpanded) 180f else 0f,
-        label = "lyrics_settings_arrow"
-    )
-
     LaunchedEffect(nowPlayingDynamicBackgroundEnabled, nowPlayingCoverBlurBackgroundEnabled) {
         if (nowPlayingCoverBlurBackgroundEnabled) {
             if (nowPlayingDynamicBackgroundEnabled) {
@@ -335,36 +320,8 @@ fun SettingsScreen(
         }
     }
 
-    // 网络配置菜单的状态
-    var networkExpanded by rememberSaveable { mutableStateOf(false) }
-    val networkArrowRotation by animateFloatAsState(targetValue = if (networkExpanded) 180f else 0f, label = "network_arrow")
-
-    var listenTogetherExpanded by rememberSaveable { mutableStateOf(false) }
-    val listenTogetherArrowRotation by animateFloatAsState(
-        targetValue = if (listenTogetherExpanded) 180f else 0f,
-        label = "listen_together_arrow"
-    )
-
-    // 音质设置菜单的状态
-    var audioQualityExpanded by rememberSaveable { mutableStateOf(false) }
-    val audioQualityArrowRotation by animateFloatAsState(targetValue = if (audioQualityExpanded) 180f else 0f, label = "audio_quality_arrow")
-
-    // 播放设置菜单的状态
-    var playbackExpanded by rememberSaveable { mutableStateOf(false) }
-    val playbackArrowRotation by animateFloatAsState(targetValue = if (playbackExpanded) 180f else 0f, label = "playback_arrow")
-
-    // 下载管理菜单的状态
-    var downloadManagerExpanded by rememberSaveable { mutableStateOf(false) }
-    val downloadManagerArrowRotation by animateFloatAsState(targetValue = if (downloadManagerExpanded) 180f else 0f, label = "download_manager_arrow")
-
-    // 备份与恢复菜单的状态
-    var backupRestoreExpanded by rememberSaveable { mutableStateOf(false) }
-    val backupRestoreArrowRotation by animateFloatAsState(targetValue = if (backupRestoreExpanded) 180f else 0f, label = "backup_restore_arrow")
-
     // 缓存设置的状态
     var showClearCacheDialog by remember { mutableStateOf(false) }
-    var cacheExpanded by rememberSaveable { mutableStateOf(false) }
-    val cacheArrowRotation by animateFloatAsState(targetValue = if (cacheExpanded) 180f else 0f, label = "backup_restore_arrow")
 
     // 缓存类型选择状态
     var clearAudioCache by remember { mutableStateOf(true) }
@@ -837,17 +794,49 @@ fun SettingsScreen(
     }
 
 
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    var activeSettingsPage by rememberSaveable { mutableStateOf<SettingsPage?>(null) }
+    val detailListStates = remember {
+        SettingsPage.entries.associateWith { LazyListState() }
+    }
 
-    Scaffold(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Transparent)
-            .nestedScroll(scrollBehavior.nestedScrollConnection),
-        containerColor = Color.Transparent,
-        contentColor = Color.Transparent,
-        topBar = {
-            LargeTopAppBar(
+    BackHandler(enabled = activeSettingsPage != null) {
+        activeSettingsPage = null
+    }
+
+    AnimatedContent(
+        targetState = activeSettingsPage,
+        label = "settings_page_switch",
+        transitionSpec = {
+            if (initialState == null && targetState != null) {
+                (
+                    slideInHorizontally(
+                        animationSpec = tween(280, easing = FastOutSlowInEasing),
+                        initialOffsetX = { it / 4 }
+                    ) + fadeIn(animationSpec = tween(220, delayMillis = 40))
+                    ) togetherWith (
+                    slideOutHorizontally(
+                        animationSpec = tween(220, easing = FastOutSlowInEasing),
+                        targetOffsetX = { -it / 10 }
+                    ) + fadeOut(animationSpec = tween(140))
+                    )
+            } else {
+                (
+                    slideInHorizontally(
+                        animationSpec = tween(240, easing = FastOutSlowInEasing),
+                        initialOffsetX = { -it / 8 }
+                    ) + fadeIn(animationSpec = tween(180, delayMillis = 30))
+                    ) togetherWith (
+                    slideOutHorizontally(
+                        animationSpec = tween(260, easing = FastOutSlowInEasing),
+                        targetOffsetX = { it / 3 }
+                    ) + fadeOut(animationSpec = tween(160))
+                    )
+            }.using(SizeTransform(clip = false))
+        }
+    ) { selectedPage ->
+        if (selectedPage == null) {
+            MiuixSettingsHomeScaffold(
+                listState = listState,
                 title = {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -859,589 +848,282 @@ fun SettingsScreen(
                             onToggleRequest = onThemeToggleRequest
                         )
                     }
-                },
-                scrollBehavior = scrollBehavior,
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Transparent,
-                    scrolledContainerColor = Color.Transparent,
-                    navigationIconContentColor = Color.Unspecified,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface,
-                    actionIconContentColor = Color.Unspecified
-                )
-            )
-        }
-    ) { innerPadding ->
-        val miniPlayerHeight = LocalMiniPlayerHeight.current
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Transparent)
-                .padding(innerPadding),
-            contentPadding = PaddingValues(
-                start = 8.dp,
-                end = 8.dp,
-                top = 8.dp,
-                bottom = 8.dp + miniPlayerHeight
-            ),
-            state = listState
-        ) {
-            item {
-                AutoSettingsListItem(
-                    setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.DYNAMIC_COLOR),
-                    leadingContent = {
-                        Icon(
-                            imageVector = Icons.Outlined.Brightness4,
-                            contentDescription = stringResource(R.string.settings_dynamic_color),
-                            tint = MaterialTheme.colorScheme.onSurface
+                }
+            ) {
+                SettingsPage.entries.forEach { page ->
+                    item(key = page.name) {
+                        MiuixSettingsPageItem(
+                            page = page,
+                            onClick = { activeSettingsPage = page },
+                            modifier = Modifier.animateItem()
                         )
-                    },
-                    trailingContent = {
-                        Switch(checked = dynamicColor, onCheckedChange = onDynamicColorChange)
-                    },
-                    onClick = { onDynamicColorChange(!dynamicColor) }
-                )
-            }
-
-            item {
-                LazyAnimatedVisibility(visible = !dynamicColor) { // 仅在关闭系统动态取色时显示
-                    ThemeSeedListItem(
-                        seedColorHex = seedColorHex,
-                        onClick = { showColorPickerDialog = true }
-                    )
+                    }
                 }
             }
+        } else {
+            MiuixSettingsDetailScaffold(
+                title = stringResource(selectedPage.titleRes),
+                onBack = { activeSettingsPage = null },
+                listState = detailListStates.getValue(selectedPage)
+            ) {
+                item(key = "${selectedPage.name}:header") {
+                    MiuixSettingsHeader(
+                        icon = selectedPage.icon,
+                        title = stringResource(selectedPage.titleRes),
+                        description = stringResource(selectedPage.descriptionRes),
+                        modifier = Modifier.animateItem()
+                    )
+                }
 
-            item {
-                AutoSettingsSwitchItems(
-                    repository = autoSettingsRepository,
-                    scope = scope,
-                    sectionScope = AutoSettingsScopes.general
-                )
-            }
-
-            // 语言设置
-            item {
-                LanguageSettingItem(onBeforeRestart = onBeforeLanguageRestart)
-            }
-
-            // 国际化开关
-            item {
-                var checking by remember { mutableStateOf(false) }
-
-                ListItem(
-                    leadingContent = {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_i18n),
-                            contentDescription = stringResource(R.string.settings_internationalization),
-                            modifier = Modifier.size(24.dp),
-                            tint = MaterialTheme.colorScheme.onSurface
+                when (selectedPage) {
+                SettingsPage.General -> {
+                    miuixSettingsSectionCardItem("${selectedPage.name}:content") {
+                        AutoSettingsSwitchItems(
+                            repository = autoSettingsRepository,
+                            scope = scope,
+                            sectionScope = AutoSettingsScopes.general
                         )
-                    },
-                    headlineContent = { Text(stringResource(R.string.settings_internationalization)) },
-                    supportingContent = {
-                        Text(
-                            if (checking) stringResource(R.string.settings_internationalization_checking)
-                            else stringResource(R.string.settings_internationalization_desc)
-                        )
-                    },
-                    trailingContent = {
-                        Switch(
-                            checked = internationalEnabled,
-                            enabled = !checking,
-                            onCheckedChange = { enabled ->
-                                if (!enabled) {
-                                    scope.launch {
-                                        AppContainer.settingsRepo.setInternationalizationEnabled(false)
+                        LanguageSettingItem(onBeforeRestart = onBeforeLanguageRestart)
+                        var checking by remember { mutableStateOf(false) }
+
+                        ListItem(
+                            leadingContent = {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_i18n),
+                                    contentDescription = stringResource(R.string.settings_internationalization),
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            headlineContent = { Text(stringResource(R.string.settings_internationalization)) },
+                            supportingContent = {
+                                Text(
+                                    if (checking) {
+                                        stringResource(R.string.settings_internationalization_checking)
+                                    } else {
+                                        stringResource(R.string.settings_internationalization_desc)
                                     }
-                                } else {
-                                    checking = true
-                                    scope.launch {
-                                        try {
-                                            // 尝试获取歌单列表检测 YouTube Music 可访问性
-                                            AppContainer.youtubeMusicClient.getLibraryPlaylists()
-                                            AppContainer.settingsRepo.setInternationalizationEnabled(true)
-                                        } catch (_: Exception) {
-                                            inlineMsg = context.getString(R.string.settings_internationalization_unavailable)
-                                        } finally {
-                                            checking = false
+                                )
+                            },
+                            trailingContent = {
+                                MiuixSettingsSwitch(
+                                    checked = internationalEnabled,
+                                    enabled = !checking,
+                                    onCheckedChange = { enabled ->
+                                        if (!enabled) {
+                                            scope.launch {
+                                                AppContainer.settingsRepo.setInternationalizationEnabled(false)
+                                            }
+                                        } else {
+                                            checking = true
+                                            scope.launch {
+                                                try {
+                                                    AppContainer.youtubeMusicClient.getLibraryPlaylists()
+                                                    AppContainer.settingsRepo.setInternationalizationEnabled(true)
+                                                } catch (_: Exception) {
+                                                    inlineMsg = context.getString(
+                                                        R.string.settings_internationalization_unavailable
+                                                    )
+                                                } finally {
+                                                    checking = false
+                                                }
+                                            }
                                         }
                                     }
-                                }
-                            }
+                                )
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
-                    },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                )
-            }
-
-            // 登录三方平台
-            item {
-                ExpandableHeader(
-                    icon = Icons.Filled.AccountCircle,
-                    title = stringResource(R.string.settings_login_platforms),
-                    subtitleCollapsed = stringResource(R.string.settings_login_platforms_expand),
-                    subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
-                    expanded = loginExpanded,
-                    onToggle = { loginExpanded = !loginExpanded },
-                    arrowRotation = arrowRotation
-                )
-            }
-
-            // 展开区域
-            item {
-                LazyAnimatedVisibility(
-                    visible = loginExpanded,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
-                ) {
-                    SettingsLoginExpandedContent(
-                        biliVm = biliVm,
-                        youtubeVm = youtubeVm,
-                        neteaseVm = neteaseVm,
-                        onOpenBiliSheet = { tab ->
-                            inlineMsg = null
-                            biliSheetInitialTab = tab
-                            showBiliSheet = true
-                        },
-                        onOpenBiliSavedCookieDialog = {
-                            inlineMsg = null
-                            showBiliSavedCookieDialog = true
-                        },
-                        onOpenYouTubeSavedCookieDialog = {
-                            inlineMsg = null
-                            showYouTubeSavedCookieDialog = true
-                        },
-                        onOpenNeteaseSavedCookieDialog = {
-                            inlineMsg = null
-                            showNeteaseSavedCookieDialog = true
-                        },
-                        onOpenYouTubeSheet = {
-                            inlineMsg = null
-                            youtubeSheetInitialTab = 0
-                            showYouTubeSheet = true
-                        },
-                        onOpenNeteaseSheet = {
-                            inlineMsg = null
-                            neteaseSheetInitialTab = 0
-                            showNeteaseSheet = true
-                        }
-                    )
+                    }
                 }
-            }
 
-            item {
-                ExpandableHeader(
-                    icon = Icons.Outlined.Tune,
-                    title = stringResource(R.string.settings_personalization),
-                    subtitleCollapsed = stringResource(R.string.settings_personalization_expand),
-                    subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
-                    expanded = personalizationExpanded,
-                    onToggle = { personalizationExpanded = !personalizationExpanded },
-                    arrowRotation = personalizationArrowRotation
-                )
-            }
-
-              // 展开区域
-              item {
-                  LazyAnimatedVisibility(
-                      visible = personalizationExpanded,
-                      enter = fadeIn() + expandVertically(),
-                      exit = fadeOut() + shrinkVertically()
-                  ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color.Transparent)
-                            .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
-                    ) {
+                SettingsPage.Theme -> {
+                    miuixSettingsSectionCardItem("${selectedPage.name}:content") {
+                        ThemeModeSelectorListItem(
+                            isDarkTheme = isDarkTheme,
+                            onThemeToggleRequest = onThemeToggleRequest
+                        )
                         AutoSettingsListItem(
-                            setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.DEFAULT_START_DESTINATION),
+                            setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.DYNAMIC_COLOR),
                             leadingContent = {
                                 Icon(
-                                    imageVector = Icons.Outlined.Home,
-                                    contentDescription = stringResource(R.string.settings_default_start_screen),
-                                    modifier = Modifier.size(24.dp),
+                                    imageVector = Icons.Outlined.Brightness4,
+                                    contentDescription = stringResource(R.string.settings_dynamic_color),
                                     tint = MaterialTheme.colorScheme.onSurface
                                 )
                             },
-                            supportingContent = {
-                                Text(
-                                    stringResource(
-                                        R.string.settings_default_start_screen_desc,
-                                        defaultStartDestinationLabel
-                                    )
-                                )
+                            trailingContent = {
+                                MiuixSettingsSwitch(checked = dynamicColor, onCheckedChange = onDynamicColorChange)
                             },
-                            onClick = { showDefaultStartDestinationDialog = true }
+                            onClick = { onDynamicColorChange(!dynamicColor) }
                         )
-
-                        AutoSettingsSwitchItems(
-                            repository = autoSettingsRepository,
-                            scope = scope,
-                            sectionScope = AutoSettingsScopes.personalization
+                        ThemePaletteStyleSelector(
+                            selectedStyle = themePaletteStyle,
+                            onStyleChange = onThemePaletteStyleChange
                         )
-
+                        ThemeColorSpecSelector(
+                            selectedSpec = themeColorSpec,
+                            onSpecChange = onThemeColorSpecChange
+                        )
+                        ThemeSeedListItem(
+                            seedColorHex = seedColorHex,
+                            onClick = { showColorPickerDialog = true }
+                        )
                         Text(
-                            text = stringResource(R.string.settings_home_cards),
-                            modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp),
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = stringResource(homeCardsDescriptionRes),
+                            text = stringResource(R.string.settings_theme_palette_hint),
                             modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+                }
 
-                        ListItem(
-                            modifier = Modifier.settingsItemClickable {
-                                onShowHomeContinueCardChange(!showHomeContinueCard)
+                SettingsPage.Accounts -> {
+                    miuixSettingsSectionCardItem("${selectedPage.name}:content") {
+                        SettingsLoginExpandedContent(
+                            biliVm = biliVm,
+                            youtubeVm = youtubeVm,
+                            neteaseVm = neteaseVm,
+                            onOpenBiliSheet = { tab ->
+                                inlineMsg = null
+                                biliSheetInitialTab = tab
+                                showBiliSheet = true
                             },
-                            leadingContent = {
-                                Icon(
-                                    imageVector = Icons.Outlined.History,
-                                    contentDescription = stringResource(R.string.player_continue),
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
+                            onOpenBiliSavedCookieDialog = {
+                                inlineMsg = null
+                                showBiliSavedCookieDialog = true
                             },
-                            headlineContent = { Text(stringResource(R.string.player_continue)) },
-                            trailingContent = {
-                                Switch(
-                                    checked = showHomeContinueCard,
-                                    onCheckedChange = onShowHomeContinueCardChange
-                                )
+                            onOpenYouTubeSavedCookieDialog = {
+                                inlineMsg = null
+                                showYouTubeSavedCookieDialog = true
                             },
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                        )
-
-                        ListItem(
-                            modifier = Modifier.settingsItemClickable {
-                                onShowHomeTrendingCardChange(!showHomeTrendingCard)
+                            onOpenNeteaseSavedCookieDialog = {
+                                inlineMsg = null
+                                showNeteaseSavedCookieDialog = true
                             },
-                            leadingContent = {
-                                Icon(
-                                    imageVector = Icons.Outlined.Bolt,
-                                    contentDescription = stringResource(homeTrendingLabelRes),
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
+                            onOpenYouTubeSheet = {
+                                inlineMsg = null
+                                youtubeSheetInitialTab = 0
+                                showYouTubeSheet = true
                             },
-                            headlineContent = { Text(stringResource(homeTrendingLabelRes)) },
-                            supportingContent = homeTrendingSupportingRes?.let { resId ->
-                                {
-                                    Text(
-                                        text = stringResource(resId),
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            },
-                            trailingContent = {
-                                Switch(
-                                    checked = showHomeTrendingCard,
-                                    onCheckedChange = onShowHomeTrendingCardChange
-                                )
-                            },
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                        )
-
-                        ListItem(
-                            modifier = Modifier.settingsItemClickable {
-                                onShowHomeRadarCardChange(!showHomeRadarCard)
-                            },
-                            leadingContent = {
-                                Icon(
-                                    imageVector = if (internationalEnabled) {
-                                        Icons.Outlined.Explore
-                                    } else {
-                                        Icons.Outlined.Search
-                                    },
-                                    contentDescription = stringResource(homeRadarLabelRes),
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
-                            },
-                            headlineContent = { Text(stringResource(homeRadarLabelRes)) },
-                            supportingContent = homeRadarSupportingRes?.let { resId ->
-                                {
-                                    Text(
-                                        text = stringResource(resId),
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            },
-                            trailingContent = {
-                                Switch(
-                                    checked = showHomeRadarCard,
-                                    onCheckedChange = onShowHomeRadarCardChange
-                                )
-                            },
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                        )
-
-                        ListItem(
-                            modifier = Modifier.settingsItemClickable {
-                                onShowHomeRecommendedCardChange(!showHomeRecommendedCard)
-                            },
-                            leadingContent = {
-                                Icon(
-                                    imageVector = Icons.Outlined.LibraryMusic,
-                                    contentDescription = stringResource(homeRecommendedLabelRes),
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
-                            },
-                            headlineContent = { Text(stringResource(homeRecommendedLabelRes)) },
-                            supportingContent = homeRecommendedSupportingRes?.let { resId ->
-                                {
-                                    Text(
-                                        text = stringResource(resId),
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            },
-                            trailingContent = {
-                                Switch(
-                                    checked = showHomeRecommendedCard,
-                                    onCheckedChange = onShowHomeRecommendedCardChange
-                                )
-                            },
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                        )
-
-                        LazyAnimatedVisibility(visible = !homeStartAvailable) {
-                            Text(
-                                text = stringResource(R.string.settings_home_hidden_notice),
-                                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-
-                        Text(
-                            text = stringResource(R.string.settings_display),
-                            modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp),
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = stringResource(R.string.settings_display_desc),
-                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        AutoSettingsSwitchItems(
-                            repository = autoSettingsRepository,
-                            scope = scope,
-                            sectionScope = AutoSettingsScopes.display
-                        )
-
-                        AutoSettingsListItem(
-                            setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.LYRIC_FONT_SCALE),
-                            leadingContent = {
-                                Icon(
-                                    imageVector = Icons.Outlined.FormatSize,
-                                    contentDescription = stringResource(R.string.settings_lyrics_font_size),
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
-                            },
-                            supportingContent = {
-                                var pendingLyricFontScale by remember { mutableFloatStateOf(lyricFontScale) }
-                                LaunchedEffect(lyricFontScale) {
-                                    if ((pendingLyricFontScale - lyricFontScale).absoluteValue > 0.001f) {
-                                        pendingLyricFontScale = lyricFontScale
-                                    }
-                                }
-
-                                Column(Modifier.fillMaxWidth()) {
-                                    Text(
-                                        text = stringResource(R.string.settings_lyrics_font_current, (pendingLyricFontScale * 100).roundToInt()),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    Slider(
-                                        value = pendingLyricFontScale,
-                                        onValueChange = { pendingLyricFontScale = it },
-                                        onValueChangeFinished = {
-                                            onLyricFontScaleChange(pendingLyricFontScale)
-                                        },
-                                        valueRange = MIN_LYRIC_FONT_SCALE..MAX_LYRIC_FONT_SCALE,
-                                        steps = 10
-                                    )
-                                    Text(
-                                        text = stringResource(R.string.settings_lyrics_sample),
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(top = 4.dp),
-                                        textAlign = TextAlign.Center,
-                                        fontSize = scaledLyricFontSize(18f, pendingLyricFontScale).sp
-                                    )
-                                }
+                            onOpenNeteaseSheet = {
+                                inlineMsg = null
+                                neteaseSheetInitialTab = 0
+                                showNeteaseSheet = true
                             }
                         )
-                        
-                        AutoSettingsListItem(
-                            setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.UI_DENSITY_SCALE),
-                            leadingContent = {
-                                Icon(
-                                    imageVector = Icons.Outlined.ZoomInMap,
-                                    contentDescription = stringResource(R.string.settings_ui_scale),
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
-                            },
-                            supportingContent = {
-                                Text(stringResource(R.string.settings_ui_scale_current, "%.2f".format(uiDensityScale)))
-                            },
-                            onClick = { showDpiDialog = true }
-                        )
+                    }
+                }
 
-                        AutoSettingsListItem(
-                            setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.BACKGROUND_IMAGE_URI),
-                            leadingContent = {
-                                Icon(
-                                    imageVector = Icons.Outlined.Wallpaper,
-                                    contentDescription = stringResource(R.string.settings_custom_background),
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
-                            },
-                            supportingContent = {
-                                Text(
-                                    if (backgroundImageUri != null) {
-                                        stringResource(R.string.settings_background_change)
-                                    } else {
-                                        stringResource(R.string.settings_background_select)
-                                    }
-                                )
-                            },
-                            onClick = {
+                SettingsPage.Personalization -> {
+                    miuixSettingsSectionCardItem("${selectedPage.name}:content") {
+                        SettingsPersonalizationPageContent(
+                            autoSettingsRepository = autoSettingsRepository,
+                            scope = scope,
+                            defaultStartDestinationLabel = defaultStartDestinationLabel,
+                            onOpenDefaultStartDestination = { showDefaultStartDestinationDialog = true },
+                            internationalEnabled = internationalEnabled,
+                            homeCardsDescriptionRes = homeCardsDescriptionRes,
+                            homeTrendingLabelRes = homeTrendingLabelRes,
+                            homeRadarLabelRes = homeRadarLabelRes,
+                            homeRecommendedLabelRes = homeRecommendedLabelRes,
+                            homeTrendingSupportingRes = homeTrendingSupportingRes,
+                            homeRadarSupportingRes = homeRadarSupportingRes,
+                            homeRecommendedSupportingRes = homeRecommendedSupportingRes,
+                            homeStartAvailable = homeStartAvailable,
+                            showHomeContinueCard = showHomeContinueCard,
+                            onShowHomeContinueCardChange = onShowHomeContinueCardChange,
+                            showHomeTrendingCard = showHomeTrendingCard,
+                            onShowHomeTrendingCardChange = onShowHomeTrendingCardChange,
+                            showHomeRadarCard = showHomeRadarCard,
+                            onShowHomeRadarCardChange = onShowHomeRadarCardChange,
+                            showHomeRecommendedCard = showHomeRecommendedCard,
+                            onShowHomeRecommendedCardChange = onShowHomeRecommendedCardChange,
+                            lyricFontScale = lyricFontScale,
+                            onLyricFontScaleChange = onLyricFontScaleChange,
+                            uiDensityScale = uiDensityScale,
+                            onOpenDpiDialog = { showDpiDialog = true },
+                            backgroundImageUri = backgroundImageUri,
+                            onPickBackgroundImage = {
                                 photoPickerLauncher.launch(
                                     PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                                 )
+                            },
+                            onClearBackgroundImage = {
+                                scope.launch {
+                                    BackgroundImageStorage.deleteManagedBackground(
+                                        context = context,
+                                        uriString = backgroundImageUri
+                                    )
+                                    onBackgroundImageChange(null)
+                                }
+                            },
+                            pendingBackgroundImageBlur = pendingBackgroundImageBlur,
+                            onPendingBackgroundImageBlurChange = { pendingBackgroundImageBlur = it },
+                            onBackgroundImageBlurCommit = {
+                                onBackgroundImageBlurChange(pendingBackgroundImageBlur)
+                                onBackgroundImageBlurChangeFinished(pendingBackgroundImageBlur)
+                            },
+                            pendingBackgroundImageAlpha = pendingBackgroundImageAlpha,
+                            onPendingBackgroundImageAlphaChange = {
+                                pendingBackgroundImageAlpha = it
+                                onBackgroundImageAlphaChange(it)
+                            },
+                            onBackgroundImageAlphaCommit = {
+                                onBackgroundImageAlphaChangeFinished(pendingBackgroundImageAlpha)
                             }
                         )
+                    }
+                }
 
-                        LazyAnimatedVisibility(visible = backgroundImageUri != null) {
-                                Column {
-                                TextButton(onClick = {
-                                    scope.launch {
-                                        BackgroundImageStorage.deleteManagedBackground(
-                                            context = context,
-                                            uriString = backgroundImageUri
-                                        )
-                                        onBackgroundImageChange(null)
-                                    }
-                                }) {
-                                    Text(stringResource(R.string.background_clear))
-                                }
+                SettingsPage.Motion -> {
+                    miuixSettingsSectionCardItem("${selectedPage.name}:content") {
+                        SettingsMotionSection(
+                            expanded = true,
+                            arrowRotation = 0f,
+                            onExpandedChange = {},
+                            showHeader = false,
+                            autoSettingsRepository = autoSettingsRepository,
+                            scope = scope,
+                            advancedBlurEnabled = advancedBlurEnabled,
+                            onAdvancedBlurEnabledChange = onAdvancedBlurEnabledChange,
+                            nowPlayingAudioReactiveEnabled = nowPlayingAudioReactiveEnabled,
+                            onNowPlayingAudioReactiveEnabledChange = onNowPlayingAudioReactiveEnabledChange,
+                            nowPlayingDynamicBackgroundEnabled = nowPlayingDynamicBackgroundEnabled,
+                            onNowPlayingDynamicBackgroundEnabledChange = onNowPlayingDynamicBackgroundEnabledChange,
+                            nowPlayingCoverBlurBackgroundEnabled = nowPlayingCoverBlurBackgroundEnabled,
+                            onNowPlayingCoverBlurBackgroundEnabledChange = onNowPlayingCoverBlurBackgroundEnabledChange,
+                            nowPlayingCoverBlurAmount = nowPlayingCoverBlurAmount,
+                            onNowPlayingCoverBlurAmountChange = onNowPlayingCoverBlurAmountChange,
+                            nowPlayingCoverBlurDarken = nowPlayingCoverBlurDarken,
+                            onNowPlayingCoverBlurDarkenChange = onNowPlayingCoverBlurDarkenChange,
+                            lyricBlurEnabled = lyricBlurEnabled,
+                            onLyricBlurEnabledChange = onLyricBlurEnabledChange,
+                            lyricBlurAmount = lyricBlurAmount,
+                            onLyricBlurAmountChange = onLyricBlurAmountChange
+                        )
+                    }
+                }
 
-                                AutoSettingsListItem(
-                                    setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.BACKGROUND_IMAGE_BLUR),
-                                    showDefaultIcon = false,
-                                    supportingContent = {
-                                        Slider(
-                                            value = pendingBackgroundImageBlur,
-                                            onValueChange = { pendingBackgroundImageBlur = it },
-                                            onValueChangeFinished = {
-                                                onBackgroundImageBlurChange(pendingBackgroundImageBlur)
-                                                onBackgroundImageBlurChangeFinished(pendingBackgroundImageBlur)
-                                            },
-                                            valueRange = 0f..25f
-                                        )
-                                    }
-                                )
+                SettingsPage.Lyrics -> {
+                    miuixSettingsSectionCardItem("${selectedPage.name}:content") {
+                        SettingsLyricsSection(
+                            expanded = true,
+                            arrowRotation = 0f,
+                            onExpandedChange = {},
+                            showHeader = false,
+                            autoSettingsRepository = autoSettingsRepository,
+                            scope = scope,
+                            cloudMusicLyricDefaultOffsetMs = cloudMusicLyricDefaultOffsetMs,
+                            onCloudMusicLyricDefaultOffsetMsChange = onCloudMusicLyricDefaultOffsetMsChange,
+                            qqMusicLyricDefaultOffsetMs = qqMusicLyricDefaultOffsetMs,
+                            onQqMusicLyricDefaultOffsetMsChange = onQqMusicLyricDefaultOffsetMsChange
+                        )
+                    }
+                }
 
-                                AutoSettingsListItem(
-                                    setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.BACKGROUND_IMAGE_ALPHA),
-                                    showDefaultIcon = false,
-                                    supportingContent = {
-                                        Slider(
-                                            value = pendingBackgroundImageAlpha,
-                                            onValueChange = {
-                                                pendingBackgroundImageAlpha = it
-                                                onBackgroundImageAlphaChange(it)
-                                            },
-                                            onValueChangeFinished = {
-                                                onBackgroundImageAlphaChangeFinished(pendingBackgroundImageAlpha)
-                                            },
-                                            valueRange = 0.1f..1.0f
-                                        )
-                                    }
-                                )
-                            }
-                        }
-                      }
-                  }
-              }
-
-              item {
-                  SettingsMotionSection(
-                      expanded = motionExpanded,
-                      arrowRotation = motionArrowRotation,
-                        onExpandedChange = { motionExpanded = it },
-                        autoSettingsRepository = autoSettingsRepository,
-                        scope = scope,
-                        advancedBlurEnabled = advancedBlurEnabled,
-                        onAdvancedBlurEnabledChange = onAdvancedBlurEnabledChange,
-                      nowPlayingAudioReactiveEnabled = nowPlayingAudioReactiveEnabled,
-                      onNowPlayingAudioReactiveEnabledChange = onNowPlayingAudioReactiveEnabledChange,
-                      nowPlayingDynamicBackgroundEnabled = nowPlayingDynamicBackgroundEnabled,
-                      onNowPlayingDynamicBackgroundEnabledChange = onNowPlayingDynamicBackgroundEnabledChange,
-                      nowPlayingCoverBlurBackgroundEnabled = nowPlayingCoverBlurBackgroundEnabled,
-                      onNowPlayingCoverBlurBackgroundEnabledChange = onNowPlayingCoverBlurBackgroundEnabledChange,
-                      nowPlayingCoverBlurAmount = nowPlayingCoverBlurAmount,
-                      onNowPlayingCoverBlurAmountChange = onNowPlayingCoverBlurAmountChange,
-                      nowPlayingCoverBlurDarken = nowPlayingCoverBlurDarken,
-                      onNowPlayingCoverBlurDarkenChange = onNowPlayingCoverBlurDarkenChange,
-                      lyricBlurEnabled = lyricBlurEnabled,
-                      onLyricBlurEnabledChange = onLyricBlurEnabledChange,
-                      lyricBlurAmount = lyricBlurAmount,
-                      onLyricBlurAmountChange = onLyricBlurAmountChange
-                  )
-              }
-
-              item {
-                  SettingsLyricsSection(
-                      expanded = lyricsSettingsExpanded,
-                      arrowRotation = lyricsSettingsArrowRotation,
-                      onExpandedChange = { lyricsSettingsExpanded = it },
-                      autoSettingsRepository = autoSettingsRepository,
-                      scope = scope,
-                      cloudMusicLyricDefaultOffsetMs = cloudMusicLyricDefaultOffsetMs,
-                      onCloudMusicLyricDefaultOffsetMsChange = onCloudMusicLyricDefaultOffsetMsChange,
-                      qqMusicLyricDefaultOffsetMs = qqMusicLyricDefaultOffsetMs,
-                      onQqMusicLyricDefaultOffsetMsChange = onQqMusicLyricDefaultOffsetMsChange
-                  )
-              }
-
-              item {
-                  ExpandableHeader(
-                      icon = Icons.Outlined.Router,
-                      title = stringResource(R.string.settings_network),
-                    subtitleCollapsed = stringResource(R.string.settings_network_expand),
-                    subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
-                    expanded = networkExpanded,
-                    onToggle = { networkExpanded = !networkExpanded },
-                    arrowRotation = networkArrowRotation
-                )
-            }
-
-            // 展开区域
-            item {
-                LazyAnimatedVisibility(
-                    visible = networkExpanded,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color.Transparent)
-                            .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
-                    ) {
+                SettingsPage.Network -> {
+                    miuixSettingsSectionCardItem("${selectedPage.name}:content") {
                         AutoSettingsListItem(
                             setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.BYPASS_PROXY),
                             leadingContent = {
@@ -1453,216 +1135,218 @@ fun SettingsScreen(
                                 )
                             },
                             trailingContent = {
-                                Switch(checked = bypassProxy, onCheckedChange = onBypassProxyChange)
+                                MiuixSettingsSwitch(checked = bypassProxy, onCheckedChange = onBypassProxyChange)
                             },
                             onClick = { onBypassProxyChange(!bypassProxy) }
                         )
                     }
                 }
-            }
 
-
-            item {
-                SettingsPlaybackSection(
-                    expanded = playbackExpanded,
-                    arrowRotation = playbackArrowRotation,
-                    onExpandedChange = { playbackExpanded = it },
-                    playbackFadeIn = playbackFadeIn,
-                    onPlaybackFadeInChange = onPlaybackFadeInChange,
-                    playbackCrossfadeNext = playbackCrossfadeNext,
-                    onPlaybackCrossfadeNextChange = onPlaybackCrossfadeNextChange,
-                    playbackFadeInDurationMs = playbackFadeInDurationMs,
-                    onPlaybackFadeInDurationMsChange = onPlaybackFadeInDurationMsChange,
-                    playbackFadeOutDurationMs = playbackFadeOutDurationMs,
-                    onPlaybackFadeOutDurationMsChange = onPlaybackFadeOutDurationMsChange,
-                    playbackCrossfadeInDurationMs = playbackCrossfadeInDurationMs,
-                    onPlaybackCrossfadeInDurationMsChange = onPlaybackCrossfadeInDurationMsChange,
-                    playbackCrossfadeOutDurationMs = playbackCrossfadeOutDurationMs,
-                    onPlaybackCrossfadeOutDurationMsChange = onPlaybackCrossfadeOutDurationMsChange,
-                    keepLastPlaybackProgress = keepLastPlaybackProgress,
-                    onKeepLastPlaybackProgressChange = onKeepLastPlaybackProgressChange,
-                    keepPlaybackModeState = keepPlaybackModeState,
-                    onKeepPlaybackModeStateChange = onKeepPlaybackModeStateChange,
-                    stopOnBluetoothDisconnect = stopOnBluetoothDisconnect,
-                    onStopOnBluetoothDisconnectChange = onStopOnBluetoothDisconnectChange,
-                    allowMixedPlayback = allowMixedPlayback,
-                    onAllowMixedPlaybackChange = onAllowMixedPlaybackChange
-                )
-            }
-
-
-            item {
-                SettingsAudioQualitySection(
-                    expanded = audioQualityExpanded,
-                    arrowRotation = audioQualityArrowRotation,
-                    onExpandedChange = { audioQualityExpanded = it },
-                    qualityLabel = qualityLabel,
-                    preferredQuality = preferredQuality,
-                    onQualityChange = onQualityChange,
-                    youtubeQualityLabel = youtubeQualityLabel,
-                    youtubePreferredQuality = youtubePreferredQuality,
-                    onYouTubeQualityChange = onYouTubeQualityChange,
-                    biliQualityLabel = biliQualityLabel,
-                    biliPreferredQuality = biliPreferredQuality,
-                    onBiliQualityChange = onBiliQualityChange,
-                    showQualityDialog = showQualityDialog,
-                    onShowQualityDialogChange = { showQualityDialog = it },
-                    showYouTubeQualityDialog = showYouTubeQualityDialog,
-                    onShowYouTubeQualityDialogChange = { showYouTubeQualityDialog = it },
-                    showBiliQualityDialog = showBiliQualityDialog,
-                    onShowBiliQualityDialogChange = { showBiliQualityDialog = it }
-                )
-            }
-
-            item {
-                SettingsStorageCacheSection(
-                    expanded = cacheExpanded,
-                    arrowRotation = cacheArrowRotation,
-                    onExpandedChange = { cacheExpanded = it },
-                    currentDownloadDirectorySummary = downloadDirectorySummary,
-                    isCustomDownloadDirectory = !downloadDirectoryUri.isNullOrBlank(),
-                    downloadDirectoryChangeEnabled = downloadDirectoryChangeEnabled,
-                    onPickDownloadDirectory = {
-                        if (!guardDownloadDirectoryChange()) {
-                            downloadDirectoryLauncher.launch(null)
-                        }
-                    },
-                    onResetDownloadDirectory = resetDownloadDirectory,
-                    downloadFileNameTemplate = downloadFileNameTemplate,
-                    onDownloadFileNameTemplateChange = onDownloadFileNameTemplateChange,
-                    maxCacheSizeBytes = maxCacheSizeBytes,
-                    onMaxCacheSizeBytesChange = onMaxCacheSizeBytesChange,
-                    showStorageDetails = showStorageDetails,
-                    onShowStorageDetailsChange = { showStorageDetails = it },
-                    storageDetails = storageDetails,
-                    onStorageDetailsChange = { storageDetails = it },
-                    showClearCacheDialog = showClearCacheDialog,
-                    onShowClearCacheDialogChange = { showClearCacheDialog = it },
-                    clearAudioCache = clearAudioCache,
-                    onClearAudioCacheChange = { clearAudioCache = it },
-                    clearImageCache = clearImageCache,
-                    onClearImageCacheChange = { clearImageCache = it },
-                    onClearCacheClick = onClearCacheClick
-                )
-            }
-
-            item {
-                SettingsDownloadSection(
-                    expanded = downloadManagerExpanded,
-                    arrowRotation = downloadManagerArrowRotation,
-                    onExpandedChange = { downloadManagerExpanded = it },
-                    onNavigateToDownloadManager = onNavigateToDownloadManager
-                )
-            }
-
-            item {
-                SettingsBackupRestoreSection(
-                    expanded = backupRestoreExpanded,
-                    arrowRotation = backupRestoreArrowRotation,
-                    onExpandedChange = { backupRestoreExpanded = it },
-                    currentPlaylistCount = localPlaylists.size,
-                    backupRestoreUiState = backupRestoreUiState,
-                    configTransferUiState = configTransferUiState,
-                    onExportClick = {
-                        if (!backupRestoreUiState.isExporting) {
-                            backupRestoreVm.initialize(context)
-                            exportPlaylistLauncher.launch(backupRestoreVm.generateBackupFileName())
-                        }
-                    },
-                    onImportClick = {
-                        if (!backupRestoreUiState.isImporting) {
-                            importPlaylistLauncher.launch(arrayOf("*/*"))
-                        }
-                    },
-                    onExportConfigClick = {
-                        if (!configTransferUiState.isExporting) {
-                            configTransferVm.initialize(context)
-                            exportConfigLauncher.launch(configTransferVm.generateConfigFileName())
-                        }
-                    },
-                    onImportConfigClick = {
-                        if (!configTransferUiState.isImporting) {
-                            importConfigLauncher.launch(arrayOf("*/*"))
-                        }
-                    },
-                    onClearExportStatus = backupRestoreVm::clearExportStatus,
-                    onClearImportStatus = backupRestoreVm::clearImportStatus,
-                    onClearConfigExportStatus = configTransferVm::clearExportStatus,
-                    onClearConfigImportStatus = configTransferVm::clearImportStatus,
-                    autoSettingsRepository = autoSettingsRepository,
-                    scope = scope,
-                    onOpenGitHubConfig = { showGitHubConfigDialog = true },
-                    onOpenClearGitHubConfig = { showClearGitHubConfigDialog = true },
-                    onOpenWebDavConfig = { showWebDavConfigDialog = true },
-                    onOpenClearWebDavConfig = { showClearWebDavConfigDialog = true }
-                )
-            }
-
-            item {
-                ExpandableHeader(
-                    icon = Icons.Outlined.Cloud,
-                    title = stringResource(R.string.listen_together_title),
-                    subtitleCollapsed = stringResource(R.string.settings_listen_together_expand),
-                    subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
-                    expanded = listenTogetherExpanded,
-                    onToggle = { listenTogetherExpanded = !listenTogetherExpanded },
-                    arrowRotation = listenTogetherArrowRotation
-                )
-            }
-
-            item {
-                LazyAnimatedVisibility(
-                    visible = listenTogetherExpanded,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
-                ) {
-                    ListenTogetherSettingsSection(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color.Transparent)
-                            .padding(start = 16.dp, end = 8.dp, bottom = 8.dp),
-                        isUsingDefaultServer = listenTogetherServerInput.isBlank() ||
-                            configuredListenTogetherBaseUrlOrNull(listenTogetherServerInput)?.let(
-                                ::isDefaultListenTogetherBaseUrl
-                            ) == true,
-                        isInRoom = !listenTogetherSessionState.roomId.isNullOrBlank(),
-                        testing = listenTogetherServerTesting,
-                        testMessage = listenTogetherServerTestMessage,
-                        onOpenServerDialog = {
-                            listenTogetherServerTestMessage = null
-                            showListenTogetherServerDialog = true
-                        },
-                        onResetIdentity = {
-                            if (listenTogetherSessionState.roomId.isNullOrBlank()) {
-                                showListenTogetherResetUuidDialog = true
-                            }
-                        }
-                    )
-                }
-            }
-            settingsAboutSection(
-                devModeEnabled = devModeEnabled,
-                onVersionClick = {
-                    if (!devModeEnabled) {
-                        versionTapCount++
-                        if (versionTapCount >= 7) {
-                            onDevModeChange(true)
-                            inlineMsg = context.getString(R.string.debug_mode_opened)
-                            versionTapCount = 0
-                        }
-                    } else {
-                        inlineMsg = context.getString(R.string.debug_mode_enabled)
+                SettingsPage.Playback -> {
+                    miuixSettingsSectionCardItem("${selectedPage.name}:content") {
+                        SettingsPlaybackSection(
+                            expanded = true,
+                            arrowRotation = 0f,
+                            onExpandedChange = {},
+                            showHeader = false,
+                            playbackFadeIn = playbackFadeIn,
+                            onPlaybackFadeInChange = onPlaybackFadeInChange,
+                            playbackCrossfadeNext = playbackCrossfadeNext,
+                            onPlaybackCrossfadeNextChange = onPlaybackCrossfadeNextChange,
+                            playbackFadeInDurationMs = playbackFadeInDurationMs,
+                            onPlaybackFadeInDurationMsChange = onPlaybackFadeInDurationMsChange,
+                            playbackFadeOutDurationMs = playbackFadeOutDurationMs,
+                            onPlaybackFadeOutDurationMsChange = onPlaybackFadeOutDurationMsChange,
+                            playbackCrossfadeInDurationMs = playbackCrossfadeInDurationMs,
+                            onPlaybackCrossfadeInDurationMsChange = onPlaybackCrossfadeInDurationMsChange,
+                            playbackCrossfadeOutDurationMs = playbackCrossfadeOutDurationMs,
+                            onPlaybackCrossfadeOutDurationMsChange = onPlaybackCrossfadeOutDurationMsChange,
+                            keepLastPlaybackProgress = keepLastPlaybackProgress,
+                            onKeepLastPlaybackProgressChange = onKeepLastPlaybackProgressChange,
+                            keepPlaybackModeState = keepPlaybackModeState,
+                            onKeepPlaybackModeStateChange = onKeepPlaybackModeStateChange,
+                            stopOnBluetoothDisconnect = stopOnBluetoothDisconnect,
+                            onStopOnBluetoothDisconnectChange = onStopOnBluetoothDisconnectChange,
+                            allowMixedPlayback = allowMixedPlayback,
+                            onAllowMixedPlaybackChange = onAllowMixedPlaybackChange
+                        )
                     }
-                },
-                onOpenGitHubRepo = {
-                    val intent = Intent(
-                        Intent.ACTION_VIEW,
-                        "https://github.com/cwuom/NeriPlayer".toUri()
-                    )
-                    context.startActivity(intent)
                 }
-            )
+
+                SettingsPage.AudioQuality -> {
+                    miuixSettingsSectionCardItem("${selectedPage.name}:content") {
+                        SettingsAudioQualitySection(
+                            expanded = true,
+                            arrowRotation = 0f,
+                            onExpandedChange = {},
+                            showHeader = false,
+                            qualityLabel = qualityLabel,
+                            preferredQuality = preferredQuality,
+                            onQualityChange = onQualityChange,
+                            youtubeQualityLabel = youtubeQualityLabel,
+                            youtubePreferredQuality = youtubePreferredQuality,
+                            onYouTubeQualityChange = onYouTubeQualityChange,
+                            biliQualityLabel = biliQualityLabel,
+                            biliPreferredQuality = biliPreferredQuality,
+                            onBiliQualityChange = onBiliQualityChange,
+                            showQualityDialog = showQualityDialog,
+                            onShowQualityDialogChange = { showQualityDialog = it },
+                            showYouTubeQualityDialog = showYouTubeQualityDialog,
+                            onShowYouTubeQualityDialogChange = { showYouTubeQualityDialog = it },
+                            showBiliQualityDialog = showBiliQualityDialog,
+                            onShowBiliQualityDialogChange = { showBiliQualityDialog = it }
+                        )
+                    }
+                }
+
+                SettingsPage.Storage -> {
+                    miuixSettingsSectionCardItem("${selectedPage.name}:content") {
+                        SettingsStorageCacheSection(
+                            expanded = true,
+                            arrowRotation = 0f,
+                            onExpandedChange = {},
+                            showHeader = false,
+                            currentDownloadDirectorySummary = downloadDirectorySummary,
+                            isCustomDownloadDirectory = !downloadDirectoryUri.isNullOrBlank(),
+                            downloadDirectoryChangeEnabled = downloadDirectoryChangeEnabled,
+                            onPickDownloadDirectory = {
+                                if (!guardDownloadDirectoryChange()) {
+                                    downloadDirectoryLauncher.launch(null)
+                                }
+                            },
+                            onResetDownloadDirectory = resetDownloadDirectory,
+                            downloadFileNameTemplate = downloadFileNameTemplate,
+                            onDownloadFileNameTemplateChange = onDownloadFileNameTemplateChange,
+                            maxCacheSizeBytes = maxCacheSizeBytes,
+                            onMaxCacheSizeBytesChange = onMaxCacheSizeBytesChange,
+                            showStorageDetails = showStorageDetails,
+                            onShowStorageDetailsChange = { showStorageDetails = it },
+                            storageDetails = storageDetails,
+                            onStorageDetailsChange = { storageDetails = it },
+                            showClearCacheDialog = showClearCacheDialog,
+                            onShowClearCacheDialogChange = { showClearCacheDialog = it },
+                            clearAudioCache = clearAudioCache,
+                            onClearAudioCacheChange = { clearAudioCache = it },
+                            clearImageCache = clearImageCache,
+                            onClearImageCacheChange = { clearImageCache = it },
+                            onClearCacheClick = onClearCacheClick
+                        )
+                    }
+                }
+
+                SettingsPage.Downloads -> {
+                    miuixSettingsSectionCardItem("${selectedPage.name}:content") {
+                        SettingsDownloadSection(
+                            expanded = true,
+                            arrowRotation = 0f,
+                            onExpandedChange = {},
+                            showHeader = false,
+                            onNavigateToDownloadManager = onNavigateToDownloadManager
+                        )
+                    }
+                }
+
+                SettingsPage.Backup -> {
+                    miuixSettingsSectionCardItem("${selectedPage.name}:content") {
+                        SettingsBackupRestoreSection(
+                            expanded = true,
+                            arrowRotation = 0f,
+                            onExpandedChange = {},
+                            showHeader = false,
+                            currentPlaylistCount = localPlaylists.size,
+                            backupRestoreUiState = backupRestoreUiState,
+                            configTransferUiState = configTransferUiState,
+                            onExportClick = {
+                                if (!backupRestoreUiState.isExporting) {
+                                    backupRestoreVm.initialize(context)
+                                    exportPlaylistLauncher.launch(backupRestoreVm.generateBackupFileName())
+                                }
+                            },
+                            onImportClick = {
+                                if (!backupRestoreUiState.isImporting) {
+                                    importPlaylistLauncher.launch(arrayOf("*/*"))
+                                }
+                            },
+                            onExportConfigClick = {
+                                if (!configTransferUiState.isExporting) {
+                                    configTransferVm.initialize(context)
+                                    exportConfigLauncher.launch(configTransferVm.generateConfigFileName())
+                                }
+                            },
+                            onImportConfigClick = {
+                                if (!configTransferUiState.isImporting) {
+                                    importConfigLauncher.launch(arrayOf("*/*"))
+                                }
+                            },
+                            onClearExportStatus = backupRestoreVm::clearExportStatus,
+                            onClearImportStatus = backupRestoreVm::clearImportStatus,
+                            onClearConfigExportStatus = configTransferVm::clearExportStatus,
+                            onClearConfigImportStatus = configTransferVm::clearImportStatus,
+                            autoSettingsRepository = autoSettingsRepository,
+                            scope = scope,
+                            onOpenGitHubConfig = { showGitHubConfigDialog = true },
+                            onOpenClearGitHubConfig = { showClearGitHubConfigDialog = true },
+                            onOpenWebDavConfig = { showWebDavConfigDialog = true },
+                            onOpenClearWebDavConfig = { showClearWebDavConfigDialog = true }
+                        )
+                    }
+                }
+
+                SettingsPage.ListenTogether -> {
+                    miuixSettingsSectionCardItem("${selectedPage.name}:content") {
+                        ListenTogetherSettingsSection(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color.Transparent),
+                            isUsingDefaultServer = listenTogetherServerInput.isBlank() ||
+                                configuredListenTogetherBaseUrlOrNull(listenTogetherServerInput)?.let(
+                                    ::isDefaultListenTogetherBaseUrl
+                                ) == true,
+                            isInRoom = !listenTogetherSessionState.roomId.isNullOrBlank(),
+                            testing = listenTogetherServerTesting,
+                            testMessage = listenTogetherServerTestMessage,
+                            onOpenServerDialog = {
+                                listenTogetherServerTestMessage = null
+                                showListenTogetherServerDialog = true
+                            },
+                            onResetIdentity = {
+                                if (listenTogetherSessionState.roomId.isNullOrBlank()) {
+                                    showListenTogetherResetUuidDialog = true
+                                }
+                            }
+                        )
+                    }
+                }
+
+                SettingsPage.About -> {
+                    miuixSettingsSectionCardItem("${selectedPage.name}:content") {
+                        SettingsAboutContent(
+                            devModeEnabled = devModeEnabled,
+                            onVersionClick = {
+                                if (!devModeEnabled) {
+                                    versionTapCount++
+                                    if (versionTapCount >= 7) {
+                                        onDevModeChange(true)
+                                        inlineMsg = context.getString(R.string.debug_mode_opened)
+                                        versionTapCount = 0
+                                    }
+                                } else {
+                                    inlineMsg = context.getString(R.string.debug_mode_enabled)
+                                }
+                            },
+                            onOpenGitHubRepo = {
+                                val intent = Intent(
+                                    Intent.ACTION_VIEW,
+                                    "https://github.com/cwuom/NeriPlayer".toUri()
+                                )
+                                context.startActivity(intent)
+                            }
+                        )
+                    }
+                }
+            }
         }
+    }
     }
 
     SettingsNeteaseAuthDialogs(
@@ -1758,12 +1442,12 @@ fun SettingsScreen(
     )
 
     if (showListenTogetherResetUuidDialog) {
-        AlertDialog(
+        MiuixSettingsDialog(
             onDismissRequest = { showListenTogetherResetUuidDialog = false },
             title = { Text(stringResource(R.string.listen_together_reset_uuid)) },
             text = { Text(stringResource(R.string.listen_together_reset_uuid_confirm)) },
             confirmButton = {
-                HapticTextButton(
+                MiuixSettingsTextButton(
                     onClick = {
                         scope.launch {
                             listenTogetherPreferences.resetUserUuid()
@@ -1780,14 +1464,14 @@ fun SettingsScreen(
                 }
             },
             dismissButton = {
-                HapticTextButton(onClick = { showListenTogetherResetUuidDialog = false }) {
+                MiuixSettingsTextButton(onClick = { showListenTogetherResetUuidDialog = false }) {
                     Text(stringResource(R.string.action_cancel))
                 }
             }
         )
     }
     if (showListenTogetherServerDialog) {
-        AlertDialog(
+        MiuixSettingsDialog(
             onDismissRequest = {
                 if (!listenTogetherServerTesting) {
                     showListenTogetherServerDialog = false
@@ -1809,7 +1493,7 @@ fun SettingsScreen(
                             stringResource(R.string.settings_listen_together_server_custom_desc)
                         }
                     )
-                    OutlinedTextField(
+                    MiuixSettingsTextField(
                         value = listenTogetherServerInput,
                         onValueChange = {
                             listenTogetherServerInput = it
@@ -1841,7 +1525,7 @@ fun SettingsScreen(
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(
+                        MiuixSettingsOutlinedButton(
                             onClick = {
                                 scope.launch {
                                     val normalizedCustomServer =
@@ -1877,7 +1561,7 @@ fun SettingsScreen(
                         ) {
                             Text(stringResource(R.string.settings_listen_together_server_test))
                         }
-                        TextButton(
+                        MiuixSettingsTextButton(
                             onClick = {
                                 listenTogetherServerInput = ""
                                 listenTogetherServerTestMessage = context.getString(
@@ -1892,7 +1576,7 @@ fun SettingsScreen(
                 }
             },
             confirmButton = {
-                HapticTextButton(
+                MiuixSettingsTextButton(
                     onClick = {
                         scope.launch {
                             val normalizedInput =
@@ -1921,7 +1605,7 @@ fun SettingsScreen(
                 }
             },
             dismissButton = {
-                HapticTextButton(
+                MiuixSettingsTextButton(
                     onClick = {
                         showListenTogetherServerDialog = false
                         listenTogetherServerInput = listenTogetherWorkerBaseUrlInput
@@ -1950,7 +1634,7 @@ fun SettingsScreen(
     )
 
     pendingDownloadDirectoryChange?.let { pendingChange ->
-        AlertDialog(
+        MiuixSettingsDialog(
             onDismissRequest = {
                 pendingDownloadDirectoryChange = null
                 if (pendingChange.releaseTargetPermissionOnCancel) {
@@ -1970,7 +1654,7 @@ fun SettingsScreen(
                 )
             },
             confirmButton = {
-                TextButton(
+                MiuixSettingsTextButton(
                     enabled = downloadDirectoryChangeEnabled,
                     onClick = {
                         if (
@@ -1980,7 +1664,7 @@ fun SettingsScreen(
                             )
                         ) {
                             pendingDownloadDirectoryChange = null
-                            return@TextButton
+                            return@MiuixSettingsTextButton
                         }
                         pendingDownloadDirectoryChange = null
                         scope.launch {
@@ -2034,7 +1718,7 @@ fun SettingsScreen(
                 }
             },
             dismissButton = {
-                TextButton(
+                MiuixSettingsTextButton(
                     enabled = downloadDirectoryChangeEnabled,
                     onClick = {
                         if (
@@ -2044,7 +1728,7 @@ fun SettingsScreen(
                             )
                         ) {
                             pendingDownloadDirectoryChange = null
-                            return@TextButton
+                            return@MiuixSettingsTextButton
                         }
                         pendingDownloadDirectoryChange = null
                         scope.launch {
@@ -2113,7 +1797,7 @@ fun SettingsScreen(
             ?.let { fileName ->
                 context.getString(R.string.settings_download_directory_migrating_current, fileName)
             }
-        AlertDialog(
+        MiuixSettingsDialog(
             onDismissRequest = {},
             title = { Text(stringResource(R.string.settings_download_directory_migrating)) },
             text = {
@@ -2146,6 +1830,434 @@ fun SettingsScreen(
         )
     }
 
+}
+
+private data class ThemeOption(
+    val value: String,
+    val labelRes: Int,
+    val descriptionRes: Int
+)
+
+@Composable
+private fun ThemeModeSelectorListItem(
+    isDarkTheme: Boolean,
+    onThemeToggleRequest: (Offset, Float) -> Unit
+) {
+    var tabsTopLeftInWindow by remember { mutableStateOf(Offset.Zero) }
+    var tabsWidthPx by remember { mutableFloatStateOf(0f) }
+    var tabsHeightPx by remember { mutableFloatStateOf(0f) }
+    val selectedIndex = if (isDarkTheme) 1 else 0
+
+    ListItem(
+        leadingContent = {
+            Icon(
+                imageVector = Icons.Outlined.Brightness4,
+                contentDescription = stringResource(R.string.settings_theme_mode),
+                modifier = Modifier.size(24.dp),
+                tint = MaterialTheme.colorScheme.onSurface
+            )
+        },
+        headlineContent = { Text(stringResource(R.string.settings_theme_mode)) },
+        supportingContent = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(R.string.settings_theme_mode_desc))
+                MiuixSettingsSegmentedTabs(
+                    modifier = Modifier.onGloballyPositioned { coordinates ->
+                        tabsTopLeftInWindow = coordinates.positionInWindow()
+                        tabsWidthPx = coordinates.size.width.toFloat()
+                        tabsHeightPx = coordinates.size.height.toFloat()
+                    },
+                    labels = listOf(
+                        stringResource(R.string.settings_theme_mode_light),
+                        stringResource(R.string.settings_theme_mode_dark)
+                    ),
+                    selectedIndex = selectedIndex,
+                    onSelectedIndexChange = { index ->
+                        if (index != selectedIndex) {
+                            val tabWidth = tabsWidthPx / 2f
+                            val origin = if (tabWidth > 0f && tabsHeightPx > 0f) {
+                                tabsTopLeftInWindow + Offset(
+                                    x = tabWidth * (index + 0.5f),
+                                    y = tabsHeightPx / 2f
+                                )
+                            } else {
+                                Offset.Zero
+                            }
+                            onThemeToggleRequest(origin, 1f)
+                        }
+                    }
+                )
+            }
+        },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+    )
+}
+
+@Composable
+private fun ThemePaletteStyleSelector(
+    selectedStyle: String,
+    onStyleChange: (String) -> Unit
+) {
+    val normalizedStyle = ThemeDefaults.normalizePaletteStyle(selectedStyle)
+    val options = listOf(
+        ThemeOption("TonalSpot", R.string.settings_theme_style_tonal_spot, R.string.settings_theme_style_tonal_spot_desc),
+        ThemeOption("Neutral", R.string.settings_theme_style_neutral, R.string.settings_theme_style_neutral_desc),
+        ThemeOption("Vibrant", R.string.settings_theme_style_vibrant, R.string.settings_theme_style_vibrant_desc),
+        ThemeOption("Expressive", R.string.settings_theme_style_expressive, R.string.settings_theme_style_expressive_desc),
+        ThemeOption("Monochrome", R.string.settings_theme_style_monochrome, R.string.settings_theme_style_monochrome_desc),
+        ThemeOption("Fidelity", R.string.settings_theme_style_fidelity, R.string.settings_theme_style_fidelity_desc)
+    )
+
+    Text(
+        text = stringResource(R.string.settings_theme_palette_style),
+        modifier = Modifier.padding(start = 16.dp, top = 10.dp, bottom = 2.dp),
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.onSurface
+    )
+    Text(
+        text = stringResource(R.string.settings_theme_palette_style_desc),
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 6.dp),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    options.forEach { option ->
+        MiuixSettingsChoiceRow(
+            title = stringResource(option.labelRes),
+            subtitle = stringResource(option.descriptionRes),
+            selected = normalizedStyle == option.value,
+            onClick = { onStyleChange(option.value) }
+        )
+    }
+}
+
+@Composable
+private fun ThemeColorSpecSelector(
+    selectedSpec: String,
+    onSpecChange: (String) -> Unit
+) {
+    val normalizedSpec = ThemeDefaults.normalizeColorSpec(selectedSpec)
+    val options = listOf(
+        ThemeDefaults.COLOR_SPECS[0] to stringResource(R.string.settings_theme_color_spec_2021),
+        ThemeDefaults.COLOR_SPECS[1] to stringResource(R.string.settings_theme_color_spec_2025)
+    )
+
+    ListItem(
+        headlineContent = { Text(stringResource(R.string.settings_theme_color_spec)) },
+        supportingContent = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(R.string.settings_theme_color_spec_desc))
+                MiuixSettingsSegmentedTabs(
+                    labels = options.map { it.second },
+                    selectedIndex = options.indexOfFirst { it.first == normalizedSpec }.coerceAtLeast(0),
+                    onSelectedIndexChange = { index -> onSpecChange(options[index].first) }
+                )
+            }
+        },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+    )
+}
+
+@Composable
+private fun SettingsPersonalizationPageContent(
+    autoSettingsRepository: AutoSettingsRepository,
+    scope: kotlinx.coroutines.CoroutineScope,
+    defaultStartDestinationLabel: String,
+    onOpenDefaultStartDestination: () -> Unit,
+    internationalEnabled: Boolean,
+    homeCardsDescriptionRes: Int,
+    homeTrendingLabelRes: Int,
+    homeRadarLabelRes: Int,
+    homeRecommendedLabelRes: Int,
+    homeTrendingSupportingRes: Int?,
+    homeRadarSupportingRes: Int?,
+    homeRecommendedSupportingRes: Int?,
+    homeStartAvailable: Boolean,
+    showHomeContinueCard: Boolean,
+    onShowHomeContinueCardChange: (Boolean) -> Unit,
+    showHomeTrendingCard: Boolean,
+    onShowHomeTrendingCardChange: (Boolean) -> Unit,
+    showHomeRadarCard: Boolean,
+    onShowHomeRadarCardChange: (Boolean) -> Unit,
+    showHomeRecommendedCard: Boolean,
+    onShowHomeRecommendedCardChange: (Boolean) -> Unit,
+    lyricFontScale: Float,
+    onLyricFontScaleChange: (Float) -> Unit,
+    uiDensityScale: Float,
+    onOpenDpiDialog: () -> Unit,
+    backgroundImageUri: String?,
+    onPickBackgroundImage: () -> Unit,
+    onClearBackgroundImage: () -> Unit,
+    pendingBackgroundImageBlur: Float,
+    onPendingBackgroundImageBlurChange: (Float) -> Unit,
+    onBackgroundImageBlurCommit: () -> Unit,
+    pendingBackgroundImageAlpha: Float,
+    onPendingBackgroundImageAlphaChange: (Float) -> Unit,
+    onBackgroundImageAlphaCommit: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.Transparent),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        AutoSettingsListItem(
+            setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.DEFAULT_START_DESTINATION),
+            leadingContent = {
+                Icon(
+                    imageVector = Icons.Outlined.Home,
+                    contentDescription = stringResource(R.string.settings_default_start_screen),
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            supportingContent = {
+                Text(
+                    stringResource(
+                        R.string.settings_default_start_screen_desc,
+                        defaultStartDestinationLabel
+                    )
+                )
+            },
+            onClick = onOpenDefaultStartDestination
+        )
+
+        AutoSettingsSwitchItems(
+            repository = autoSettingsRepository,
+            scope = scope,
+            sectionScope = AutoSettingsScopes.personalization
+        )
+
+        Text(
+            text = stringResource(R.string.settings_home_cards),
+            modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp),
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Text(
+            text = stringResource(homeCardsDescriptionRes),
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        SettingsHomeCardSwitch(
+            title = stringResource(R.string.player_continue),
+            icon = Icons.Outlined.History,
+            checked = showHomeContinueCard,
+            onCheckedChange = onShowHomeContinueCardChange
+        )
+
+        SettingsHomeCardSwitch(
+            title = stringResource(homeTrendingLabelRes),
+            description = homeTrendingSupportingRes?.let { stringResource(it) },
+            icon = Icons.Outlined.Bolt,
+            checked = showHomeTrendingCard,
+            onCheckedChange = onShowHomeTrendingCardChange
+        )
+
+        SettingsHomeCardSwitch(
+            title = stringResource(homeRadarLabelRes),
+            description = homeRadarSupportingRes?.let { stringResource(it) },
+            icon = if (internationalEnabled) Icons.Outlined.Explore else Icons.Outlined.Search,
+            checked = showHomeRadarCard,
+            onCheckedChange = onShowHomeRadarCardChange
+        )
+
+        SettingsHomeCardSwitch(
+            title = stringResource(homeRecommendedLabelRes),
+            description = homeRecommendedSupportingRes?.let { stringResource(it) },
+            icon = Icons.Outlined.LibraryMusic,
+            checked = showHomeRecommendedCard,
+            onCheckedChange = onShowHomeRecommendedCardChange
+        )
+
+        LazyAnimatedVisibility(visible = !homeStartAvailable) {
+            Text(
+                text = stringResource(R.string.settings_home_hidden_notice),
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        Text(
+            text = stringResource(R.string.settings_display),
+            modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp),
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Text(
+            text = stringResource(R.string.settings_display_desc),
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        AutoSettingsSwitchItems(
+            repository = autoSettingsRepository,
+            scope = scope,
+            sectionScope = AutoSettingsScopes.display
+        )
+
+        AutoSettingsListItem(
+            setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.LYRIC_FONT_SCALE),
+            leadingContent = {
+                Icon(
+                    imageVector = Icons.Outlined.FormatSize,
+                    contentDescription = stringResource(R.string.settings_lyrics_font_size),
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            supportingContent = {
+                var pendingLyricFontScale by remember { mutableFloatStateOf(lyricFontScale) }
+                LaunchedEffect(lyricFontScale) {
+                    if ((pendingLyricFontScale - lyricFontScale).absoluteValue > 0.001f) {
+                        pendingLyricFontScale = lyricFontScale
+                    }
+                }
+
+                Column(Modifier.fillMaxWidth()) {
+                    Text(
+                        text = stringResource(
+                            R.string.settings_lyrics_font_current,
+                            (pendingLyricFontScale * 100).roundToInt()
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    MiuixSettingsSlider(
+                        value = pendingLyricFontScale,
+                        onValueChange = { pendingLyricFontScale = it },
+                        onValueChangeFinished = {
+                            onLyricFontScaleChange(pendingLyricFontScale)
+                        },
+                        valueRange = MIN_LYRIC_FONT_SCALE..MAX_LYRIC_FONT_SCALE,
+                        steps = 10
+                    )
+                    Text(
+                        text = stringResource(R.string.settings_lyrics_sample),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp),
+                        textAlign = TextAlign.Center,
+                        fontSize = scaledLyricFontSize(18f, pendingLyricFontScale).sp
+                    )
+                }
+            }
+        )
+
+        AutoSettingsListItem(
+            setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.UI_DENSITY_SCALE),
+            leadingContent = {
+                Icon(
+                    imageVector = Icons.Outlined.ZoomInMap,
+                    contentDescription = stringResource(R.string.settings_ui_scale),
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            supportingContent = {
+                Text(stringResource(R.string.settings_ui_scale_current, "%.2f".format(uiDensityScale)))
+            },
+            onClick = onOpenDpiDialog
+        )
+
+        AutoSettingsListItem(
+            setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.BACKGROUND_IMAGE_URI),
+            leadingContent = {
+                Icon(
+                    imageVector = Icons.Outlined.Wallpaper,
+                    contentDescription = stringResource(R.string.settings_custom_background),
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            supportingContent = {
+                Text(
+                    if (backgroundImageUri != null) {
+                        stringResource(R.string.settings_background_change)
+                    } else {
+                        stringResource(R.string.settings_background_select)
+                    }
+                )
+            },
+            onClick = onPickBackgroundImage
+        )
+
+        LazyAnimatedVisibility(visible = backgroundImageUri != null) {
+            Column {
+                MiuixSettingsTextButton(onClick = onClearBackgroundImage) {
+                    Text(stringResource(R.string.background_clear))
+                }
+
+                AutoSettingsListItem(
+                    setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.BACKGROUND_IMAGE_BLUR),
+                    showDefaultIcon = false,
+                    supportingContent = {
+                        MiuixSettingsSlider(
+                            value = pendingBackgroundImageBlur,
+                            onValueChange = onPendingBackgroundImageBlurChange,
+                            onValueChangeFinished = onBackgroundImageBlurCommit,
+                            valueRange = 0f..25f
+                        )
+                    }
+                )
+
+                AutoSettingsListItem(
+                    setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.BACKGROUND_IMAGE_ALPHA),
+                    showDefaultIcon = false,
+                    supportingContent = {
+                        MiuixSettingsSlider(
+                            value = pendingBackgroundImageAlpha,
+                            onValueChange = onPendingBackgroundImageAlphaChange,
+                            onValueChangeFinished = onBackgroundImageAlphaCommit,
+                            valueRange = 0.1f..1.0f
+                        )
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsHomeCardSwitch(
+    title: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    description: String? = null
+) {
+    ListItem(
+        modifier = Modifier.settingsItemClickable {
+            onCheckedChange(!checked)
+        },
+        leadingContent = {
+            Icon(
+                imageVector = icon,
+                contentDescription = title,
+                modifier = Modifier.size(24.dp),
+                tint = MaterialTheme.colorScheme.onSurface
+            )
+        },
+        headlineContent = { Text(title) },
+        supportingContent = description?.let { text ->
+            {
+                Text(
+                    text = text,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        trailingContent = {
+            MiuixSettingsSwitch(
+                checked = checked,
+                onCheckedChange = onCheckedChange
+            )
+        },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+    )
 }
 
 @Composable

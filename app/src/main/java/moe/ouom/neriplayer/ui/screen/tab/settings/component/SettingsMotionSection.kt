@@ -24,7 +24,6 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.component
  */
 
 import android.os.Build
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -38,8 +37,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -62,12 +59,15 @@ import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsScopes
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsSwitchItems
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSwitch
 
 @Composable
 internal fun SettingsMotionSection(
     expanded: Boolean,
     arrowRotation: Float,
     onExpandedChange: (Boolean) -> Unit,
+    showHeader: Boolean = true,
     autoSettingsRepository: AutoSettingsRepository,
     scope: kotlinx.coroutines.CoroutineScope,
     advancedBlurEnabled: Boolean,
@@ -87,18 +87,20 @@ internal fun SettingsMotionSection(
     lyricBlurAmount: Float,
     onLyricBlurAmountChange: (Float) -> Unit
 ) {
-    ExpandableHeader(
-        icon = Icons.Outlined.Bolt,
-        title = stringResource(R.string.settings_motion),
-        subtitleCollapsed = stringResource(R.string.settings_motion_expand),
-        subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
-        expanded = expanded,
-        onToggle = { onExpandedChange(!expanded) },
-        arrowRotation = arrowRotation
-    )
+    if (showHeader) {
+        ExpandableHeader(
+            icon = Icons.Outlined.Bolt,
+            title = stringResource(R.string.settings_motion),
+            subtitleCollapsed = stringResource(R.string.settings_motion_expand),
+            subtitleExpanded = stringResource(R.string.settings_login_platforms_collapse),
+            expanded = expanded,
+            onToggle = { onExpandedChange(!expanded) },
+            arrowRotation = arrowRotation
+        )
+    }
 
     LazyAnimatedVisibility(
-        visible = expanded,
+        visible = expanded || !showHeader,
         enter = fadeIn() + expandVertically(),
         exit = fadeOut() + shrinkVertically()
     ) {
@@ -106,7 +108,11 @@ internal fun SettingsMotionSection(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(Color.Transparent)
-                .padding(start = 16.dp, end = 8.dp, bottom = 8.dp)
+                .padding(
+                    start = if (showHeader) 16.dp else 0.dp,
+                    end = if (showHeader) 8.dp else 0.dp,
+                    bottom = if (showHeader) 8.dp else 0.dp
+                )
         ) {
             val coverBlurAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
             val advancedBlurAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
@@ -200,7 +206,7 @@ internal fun SettingsMotionSection(
                 onCheckedChange = safeCoverBlurToggle
             )
 
-            AnimatedVisibility(visible = coverBlurAvailable && nowPlayingCoverBlurBackgroundEnabled) {
+            LazyAnimatedVisibility(visible = coverBlurAvailable && nowPlayingCoverBlurBackgroundEnabled) {
                 Column(Modifier.fillMaxWidth()) {
                     SnappedFloatSliderListItem(
                         setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.NOWPLAYING_COVER_BLUR_AMOUNT),
@@ -282,7 +288,7 @@ internal fun SettingsMotionSection(
                 onCheckedChange = onLyricBlurEnabledChange
             )
 
-            AnimatedVisibility(visible = lyricBlurEnabled) {
+            LazyAnimatedVisibility(visible = lyricBlurEnabled) {
                 SnappedFloatSliderListItem(
                     setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.LYRIC_BLUR_AMOUNT),
                     value = lyricBlurAmount,
@@ -320,7 +326,7 @@ private fun MotionSwitchItem(
             Text(description + suffix)
         },
         trailingContent = {
-            Switch(
+            MiuixSettingsSwitch(
                 checked = checked,
                 onCheckedChange = onCheckedChange,
                 enabled = enabled
@@ -358,7 +364,7 @@ private fun SnappedFloatSliderListItem(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Slider(
+                MiuixSettingsSlider(
                     value = pendingValue,
                     onValueChange = { changed ->
                         pendingValue = snapStep

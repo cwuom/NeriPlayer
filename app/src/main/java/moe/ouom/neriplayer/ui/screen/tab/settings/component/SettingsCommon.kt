@@ -138,8 +138,10 @@ internal fun ExpandableHeader(
 @Composable
 internal fun LazyAnimatedVisibility(
     visible: Boolean,
-    enter: EnterTransition = fadeIn() + expandVertically(),
-    exit: ExitTransition = fadeOut() + shrinkVertically(),
+    enter: EnterTransition = fadeIn(tween(180, easing = FastOutSlowInEasing)) +
+        expandVertically(tween(240, easing = FastOutSlowInEasing)),
+    exit: ExitTransition = fadeOut(tween(120, easing = FastOutSlowInEasing)) +
+        shrinkVertically(tween(200, easing = FastOutSlowInEasing)),
     content: @Composable () -> Unit
 ) {
     var restoredVisibleState by rememberSaveable { mutableStateOf(visible) }

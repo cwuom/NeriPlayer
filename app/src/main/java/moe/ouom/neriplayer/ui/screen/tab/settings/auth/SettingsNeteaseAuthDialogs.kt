@@ -39,11 +39,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.PrimaryTabRow
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -61,9 +58,12 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.NeteaseWebLoginActivity
 import moe.ouom.neriplayer.ui.component.bottomSheetDragBlocker
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.InlineMessage
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSegmentedTabs
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
 import moe.ouom.neriplayer.ui.viewmodel.debug.NeteaseAuthViewModel
-import moe.ouom.neriplayer.util.HapticButton
-import moe.ouom.neriplayer.util.HapticTextButton
 import org.json.JSONObject
 
 @Composable
@@ -105,12 +105,12 @@ internal fun SettingsNeteaseAuthDialogs(
     }
 
     if (showConfirmDialog) {
-        AlertDialog(
+        MiuixSettingsDialog(
             onDismissRequest = onDismissConfirmDialog,
             title = { Text(stringResource(R.string.login_confirm_send_code)) },
             text = { Text(stringResource(R.string.login_send_code_to, confirmPhoneMasked ?: "")) },
             confirmButton = {
-                HapticTextButton(
+                MiuixSettingsTextButton(
                     onClick = {
                         onDismissConfirmDialog()
                         vm.sendCaptcha(ctcode = "86")
@@ -120,7 +120,7 @@ internal fun SettingsNeteaseAuthDialogs(
                 }
             },
             dismissButton = {
-                HapticTextButton(
+                MiuixSettingsTextButton(
                     onClick = {
                         onDismissConfirmDialog()
                         onInlineMsgChange(context.getString(R.string.sync_send_cancelled))
@@ -134,7 +134,7 @@ internal fun SettingsNeteaseAuthDialogs(
 
     if (showSheet) {
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        var selectedTab by remember(initialTab) { mutableIntStateOf(initialTab) }
+        var selectedTab by remember(initialTab) { mutableIntStateOf(initialTab.coerceIn(0, 1)) }
         var rawCookie by remember { mutableStateOf("") }
         val launchBrowserLogin: () -> Unit = onBrowserLogin?.let { injectedBrowserLogin ->
             {
@@ -188,23 +188,14 @@ internal fun SettingsNeteaseAuthDialogs(
                         )
                     }
 
-                    PrimaryTabRow(selectedTabIndex = selectedTab) {
-                        Tab(
-                            selected = selectedTab == 0,
-                            onClick = { selectedTab = 0 },
-                            text = { Text(stringResource(R.string.login_browser)) }
-                        )
-                        Tab(
-                            selected = selectedTab == 1,
-                            onClick = { selectedTab = 1 },
-                            text = { Text(stringResource(R.string.login_paste_cookie)) }
-                        )
-                        Tab(
-                            selected = selectedTab == 2,
-                            onClick = { selectedTab = 2 },
-                            text = { Text(stringResource(R.string.login_verification_code)) }
-                        )
-                    }
+                    MiuixSettingsSegmentedTabs(
+                        labels = listOf(
+                            stringResource(R.string.login_browser),
+                            stringResource(R.string.login_paste_cookie)
+                        ),
+                        selectedIndex = selectedTab,
+                        onSelectedIndexChange = { selectedTab = it }
+                    )
 
                     Spacer(Modifier.height(12.dp))
 
@@ -216,13 +207,13 @@ internal fun SettingsNeteaseAuthDialogs(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(Modifier.height(12.dp))
-                            HapticButton(onClick = launchBrowserLogin) {
+                            MiuixSettingsButton(onClick = launchBrowserLogin) {
                                 Text(stringResource(R.string.login_start_browser))
                             }
                         }
 
                         1 -> {
-                            androidx.compose.material3.OutlinedTextField(
+                            MiuixSettingsTextField(
                                 value = rawCookie,
                                 onValueChange = { rawCookie = it },
                                 label = { Text(stringResource(R.string.login_paste_cookie_hint)) },
@@ -231,7 +222,7 @@ internal fun SettingsNeteaseAuthDialogs(
                                 modifier = Modifier.fillMaxWidth()
                             )
                             Spacer(Modifier.height(8.dp))
-                            HapticButton(
+                            MiuixSettingsButton(
                                 onClick = {
                                     if (rawCookie.isBlank()) {
                                         onInlineMsgChange(context.getString(R.string.settings_cookie_input_hint))
@@ -243,8 +234,6 @@ internal fun SettingsNeteaseAuthDialogs(
                                 Text(stringResource(R.string.login_save_cookie))
                             }
                         }
-
-                        else -> NeteaseLoginContent(vm = vm)
                     }
                 }
             }
@@ -266,7 +255,7 @@ internal fun CookieTextDialog(
     cookieText: String,
     onDismiss: () -> Unit
 ) {
-    AlertDialog(
+    MiuixSettingsDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
@@ -282,7 +271,7 @@ internal fun CookieTextDialog(
             }
         },
         confirmButton = {
-            HapticTextButton(onClick = onDismiss) {
+            MiuixSettingsTextButton(onClick = onDismiss) {
                 Text(stringResource(R.string.action_ok))
             }
         }

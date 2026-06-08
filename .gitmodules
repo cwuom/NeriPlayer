@@ -7,3 +7,6 @@
 [submodule "np-submodule/accompanist-lyrics-core"]
 	path = np-submodule/accompanist-lyrics-core
 	url = https://github.com/cwuom/accompanist-lyrics-core
+[submodule "np-submodule/miuix"]
+	path = np-submodule/miuix
+	url = https://github.com/cwuom/miuix

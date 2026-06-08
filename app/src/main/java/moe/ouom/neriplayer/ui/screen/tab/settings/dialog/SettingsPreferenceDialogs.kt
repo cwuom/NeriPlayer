@@ -23,17 +23,13 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.dialog
  * Updated: 2026/3/23
  */
 
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.util.HapticTextButton
-import moe.ouom.neriplayer.ui.screen.tab.settings.component.settingsItemClickable
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsChoiceRow
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 
 @Composable
 internal fun SettingsPreferenceDialogs(
@@ -55,7 +51,7 @@ internal fun SettingsPreferenceDialogs(
     onUiDensityScaleChange: (Float) -> Unit
 ) {
     if (showDefaultStartDestinationDialog) {
-        AlertDialog(
+        MiuixSettingsDialog(
             onDismissRequest = { onShowDefaultStartDestinationDialogChange(false) },
             title = { Text(stringResource(R.string.settings_default_start_screen)) },
             text = {
@@ -67,27 +63,22 @@ internal fun SettingsPreferenceDialogs(
                         "settings" to stringResource(R.string.nav_settings)
                     )
                     options.forEach { (route, label) ->
-                        ListItem(
-                            headlineContent = { Text(label) },
-                            trailingContent = {
-                                RadioButton(
-                                    selected = route == effectiveDefaultStartDestination,
-                                    onClick = null
-                                )
-                            },
-                            modifier = androidx.compose.ui.Modifier.settingsItemClickable {
+                        MiuixSettingsChoiceRow(
+                            title = label,
+                            selected = route == effectiveDefaultStartDestination,
+                            onClick = {
                                 onDefaultStartDestinationChange(route)
                                 onShowDefaultStartDestinationDialogChange(false)
-                            },
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                            }
                         )
                     }
                 }
             },
             confirmButton = {
-                HapticTextButton(onClick = { onShowDefaultStartDestinationDialogChange(false) }) {
-                    Text(stringResource(R.string.action_close))
-                }
+                MiuixSettingsTextButton(
+                    onClick = { onShowDefaultStartDestinationDialogChange(false) },
+                    text = { Text(stringResource(R.string.action_close)) }
+                )
             }
         )
     }

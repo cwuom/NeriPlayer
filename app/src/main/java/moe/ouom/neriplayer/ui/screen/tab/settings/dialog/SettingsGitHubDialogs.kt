@@ -33,13 +33,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -55,9 +51,12 @@ import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.lifecycle.viewmodel.compose.viewModel
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsButton
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsChoiceRow
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
+import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
 import moe.ouom.neriplayer.ui.viewmodel.GitHubSyncViewModel
-import moe.ouom.neriplayer.util.HapticButton
-import moe.ouom.neriplayer.util.HapticTextButton
 
 @Composable
 internal fun SettingsGitHubDialogs(
@@ -80,7 +79,7 @@ internal fun SettingsGitHubDialogs(
         var useExistingRepo by remember { mutableStateOf(false) }
         var existingRepoName by remember { mutableStateOf("") }
 
-        AlertDialog(
+        MiuixSettingsDialog(
             onDismissRequest = { onShowGitHubConfigDialogChange(false) },
             title = { Text(stringResource(R.string.sync_config)) },
             text = {
@@ -94,7 +93,7 @@ internal fun SettingsGitHubDialogs(
                         style = MaterialTheme.typography.titleSmall
                     )
                     Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
+                    MiuixSettingsTextField(
                         value = githubToken,
                         onValueChange = { githubToken = it },
                         label = { Text(stringResource(R.string.settings_github_token_label)) },
@@ -108,7 +107,7 @@ internal fun SettingsGitHubDialogs(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    TextButton(
+                    MiuixSettingsTextButton(
                         onClick = {
                             val intent = Intent(
                                 Intent.ACTION_VIEW,
@@ -128,16 +127,14 @@ internal fun SettingsGitHubDialogs(
                         )
                         Spacer(Modifier.height(8.dp))
 
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(
-                                selected = !useExistingRepo,
-                                onClick = { useExistingRepo = false }
-                            )
-                            Text(stringResource(R.string.sync_create_new_repo))
-                        }
+                        MiuixSettingsChoiceRow(
+                            title = stringResource(R.string.sync_create_new_repo),
+                            selected = !useExistingRepo,
+                            onClick = { useExistingRepo = false }
+                        )
 
                         if (!useExistingRepo) {
-                            OutlinedTextField(
+                            MiuixSettingsTextField(
                                 value = githubRepoName,
                                 onValueChange = { githubRepoName = it },
                                 label = { Text(stringResource(R.string.sync_repo_name)) },
@@ -146,16 +143,14 @@ internal fun SettingsGitHubDialogs(
                             )
                         }
 
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(
-                                selected = useExistingRepo,
-                                onClick = { useExistingRepo = true }
-                            )
-                            Text(stringResource(R.string.sync_use_existing_repo))
-                        }
+                        MiuixSettingsChoiceRow(
+                            title = stringResource(R.string.sync_use_existing_repo),
+                            selected = useExistingRepo,
+                            onClick = { useExistingRepo = true }
+                        )
 
                         if (useExistingRepo) {
-                            OutlinedTextField(
+                            MiuixSettingsTextField(
                                 value = existingRepoName,
                                 onValueChange = { existingRepoName = it },
                                 label = { Text(stringResource(R.string.sync_repo_full_name)) },
@@ -166,10 +161,10 @@ internal fun SettingsGitHubDialogs(
                         }
                     }
                 }
-            },
+        },
             confirmButton = {
                 if (!githubState.tokenValid) {
-                    HapticButton(
+                    MiuixSettingsButton(
                         onClick = { githubVm.validateToken(context, githubToken) },
                         enabled = githubToken.isNotBlank() && !githubState.isValidating
                     ) {
@@ -183,7 +178,7 @@ internal fun SettingsGitHubDialogs(
                         Text(stringResource(R.string.sync_verify_token))
                     }
                 } else {
-                    HapticButton(
+                    MiuixSettingsButton(
                         onClick = {
                             if (useExistingRepo) {
                                 githubVm.useExistingRepository(context, existingRepoName)
@@ -206,7 +201,7 @@ internal fun SettingsGitHubDialogs(
                 }
             },
             dismissButton = {
-                HapticTextButton(onClick = { onShowGitHubConfigDialogChange(false) }) {
+                MiuixSettingsTextButton(onClick = { onShowGitHubConfigDialogChange(false) }) {
                     Text(stringResource(R.string.action_cancel))
                 }
             }
@@ -214,12 +209,12 @@ internal fun SettingsGitHubDialogs(
     }
 
     if (showClearGitHubConfigDialog) {
-        AlertDialog(
+        MiuixSettingsDialog(
             onDismissRequest = { onShowClearGitHubConfigDialogChange(false) },
             title = { Text(stringResource(R.string.sync_clear_config)) },
             text = { Text(stringResource(R.string.sync_clear_config_desc)) },
             confirmButton = {
-                HapticTextButton(
+                MiuixSettingsTextButton(
                     onClick = {
                         githubVm.clearConfiguration(context)
                         onShowClearGitHubConfigDialogChange(false)
@@ -232,7 +227,7 @@ internal fun SettingsGitHubDialogs(
                 }
             },
             dismissButton = {
-                HapticTextButton(onClick = { onShowClearGitHubConfigDialogChange(false) }) {
+                MiuixSettingsTextButton(onClick = { onShowClearGitHubConfigDialogChange(false) }) {
                     Text(stringResource(R.string.action_cancel))
                 }
             }

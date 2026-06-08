@@ -167,12 +167,39 @@
 
     <!-- Settings -->
     <string name="settings_title">Settings</string>
+    <string name="settings_general">General</string>
+    <string name="settings_general_desc">Language, haptics, and global behavior</string>
+    <string name="settings_theme">Theme</string>
+    <string name="settings_theme_desc">Dark mode, dynamic color, and accent colors</string>
     <string name="settings_theme_color">Theme Color</string>
     <string name="settings_theme_color_desc">Choose your favorite color</string>
+    <string name="settings_theme_palette_hint">When dynamic color is off, this accent color is used. You can also save frequent colors to the palette.</string>
     <string name="settings_dynamic_color">Dynamic Color</string>
     <string name="settings_dynamic_color_desc">Follow cover theme color</string>
     <string name="settings_theme_toggle_dark">Switch to dark theme</string>
     <string name="settings_theme_toggle_light">Switch to light theme</string>
+    <string name="settings_theme_mode">Theme mode</string>
+    <string name="settings_theme_mode_desc">Quickly switch light and dark mode.</string>
+    <string name="settings_theme_mode_light">Light</string>
+    <string name="settings_theme_mode_dark">Dark</string>
+    <string name="settings_theme_palette_style">Color style</string>
+    <string name="settings_theme_palette_style_desc">Switch the Material Kolor palette style for cover colors and custom accent colors.</string>
+    <string name="settings_theme_color_spec">Color spec</string>
+    <string name="settings_theme_color_spec_desc">Choose the Material color spec version. 2025 is more expressive, 2021 is more stable.</string>
+    <string name="settings_theme_color_spec_2021">2021</string>
+    <string name="settings_theme_color_spec_2025">2025</string>
+    <string name="settings_theme_style_tonal_spot">Tonal Spot</string>
+    <string name="settings_theme_style_tonal_spot_desc">Balanced and close to Android dynamic color defaults.</string>
+    <string name="settings_theme_style_neutral">Neutral</string>
+    <string name="settings_theme_style_neutral_desc">Lower saturation for a calmer interface.</string>
+    <string name="settings_theme_style_vibrant">Vibrant</string>
+    <string name="settings_theme_style_vibrant_desc">Brighter and more prominent primary colors.</string>
+    <string name="settings_theme_style_expressive">Expressive</string>
+    <string name="settings_theme_style_expressive_desc">More playful hue shifts for personalized themes.</string>
+    <string name="settings_theme_style_monochrome">Monochrome</string>
+    <string name="settings_theme_style_monochrome_desc">Close to black, white, and gray.</string>
+    <string name="settings_theme_style_fidelity">Fidelity</string>
+    <string name="settings_theme_style_fidelity_desc">Stays closer to the selected seed color.</string>
     <string name="settings_force_dark">Force Dark Mode</string>
     <string name="settings_force_dark_desc">Manually specify when not following system</string>
     <string name="settings_cover_source_badge">Show song source on cover</string>
@@ -191,6 +218,7 @@
     <string name="settings_nowplaying_progress_audio_spec_desc">Shown above the progress bar, including sample rate, bit depth, and bitrate</string>
     <string name="settings_haptic">Haptic Feedback</string>
     <string name="settings_haptic_desc">Vibrate on button press</string>
+    <string name="settings_accounts_desc">Manage NetEase, Bili, and YouTube sign-in states</string>
     <string name="settings_personalization">Personalization</string>
     <string name="settings_audio_quality">Audio Quality</string>
     <string name="settings_audio_quality_expand">Configure audio quality</string>
@@ -220,6 +248,7 @@
     <string name="settings_audio_cache_desc">Cached music files</string>
     <string name="settings_image_cache">Image Cache</string>
     <string name="settings_image_cache_desc">Covers, avatars, etc.</string>
+    <string name="settings_about_desc">Version, project home, and developer mode</string>
 
     <!-- Storage Details -->
     <string name="storage_details_title">Storage Details</string>

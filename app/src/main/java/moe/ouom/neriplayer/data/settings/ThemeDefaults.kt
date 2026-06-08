@@ -27,6 +27,20 @@ import java.util.Locale
 
 object ThemeDefaults {
     const val DEFAULT_SEED_COLOR_HEX = "0061A4"
+    const val DEFAULT_PALETTE_STYLE = "TonalSpot"
+    const val DEFAULT_COLOR_SPEC = "SPEC_2021"
+    val PALETTE_STYLES = listOf(
+        "TonalSpot",
+        "Neutral",
+        "Vibrant",
+        "Expressive",
+        "Rainbow",
+        "FruitSalad",
+        "Monochrome",
+        "Fidelity",
+        "Content"
+    )
+    val COLOR_SPECS = listOf("SPEC_2021", "SPEC_2025")
     val PRESET_COLORS = listOf(
         "0061A4",
         "6750A4",
@@ -38,4 +52,14 @@ object ThemeDefaults {
         "E65100"
     )
     val PRESET_SET = PRESET_COLORS.map { it.uppercase(Locale.ROOT) }.toSet()
+
+    fun normalizePaletteStyle(value: String?): String {
+        return PALETTE_STYLES.firstOrNull { it.equals(value, ignoreCase = true) }
+            ?: DEFAULT_PALETTE_STYLE
+    }
+
+    fun normalizeColorSpec(value: String?): String {
+        return COLOR_SPECS.firstOrNull { it.equals(value, ignoreCase = true) }
+            ?: DEFAULT_COLOR_SPEC
+    }
 }

@@ -166,6 +166,26 @@ object AutoSettingsSchema {
             access = SettingAccessMode.KeyOnly
         )
         val themeColorPalette = Unit
+
+        @AutoSetting(
+            key = "theme_palette_style",
+            type = SettingValueType.String,
+            defaultString = ThemeDefaults.DEFAULT_PALETTE_STYLE,
+            constantName = "THEME_PALETTE_STYLE",
+            order = 30,
+            access = SettingAccessMode.KeyOnly
+        )
+        val themePaletteStyle = Unit
+
+        @AutoSetting(
+            key = "theme_color_spec",
+            type = SettingValueType.String,
+            defaultString = ThemeDefaults.DEFAULT_COLOR_SPEC,
+            constantName = "THEME_COLOR_SPEC",
+            order = 40,
+            access = SettingAccessMode.KeyOnly
+        )
+        val themeColorSpec = Unit
     }
 
     /*
