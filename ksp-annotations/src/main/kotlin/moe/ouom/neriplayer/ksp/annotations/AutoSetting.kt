@@ -79,6 +79,7 @@ enum class AutoSettingIcon {
     AutoAwesome,
     BlurOn,
     Brightness4,
+    Colorize,
     Download,
     Error,
     Home,

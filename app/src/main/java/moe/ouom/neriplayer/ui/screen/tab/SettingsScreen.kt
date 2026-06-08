@@ -55,6 +55,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.AltRoute
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Brightness4
+import androidx.compose.material.icons.outlined.Colorize
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.FormatSize
 import androidx.compose.material.icons.outlined.History
@@ -947,7 +948,7 @@ fun SettingsScreen(
                             setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.DYNAMIC_COLOR),
                             leadingContent = {
                                 Icon(
-                                    imageVector = Icons.Outlined.Brightness4,
+                                    imageVector = Icons.Outlined.Colorize,
                                     contentDescription = stringResource(R.string.settings_dynamic_color),
                                     tint = MaterialTheme.colorScheme.onSurface
                                 )

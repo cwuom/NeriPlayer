@@ -57,7 +57,7 @@ object AutoSettingsSchema {
         val dynamicColor = autoSetting(
             titleRes = R.string.settings_dynamic_color,
             descriptionRes = R.string.settings_dynamic_color_desc,
-            icon = AutoSettingIcon.Brightness4
+            icon = AutoSettingIcon.Colorize
         )
 
         @AutoSetting(
