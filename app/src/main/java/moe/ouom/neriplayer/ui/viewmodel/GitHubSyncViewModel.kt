@@ -44,11 +44,14 @@ class GitHubSyncViewModel : ViewModel() {
     private var syncManager: GitHubSyncManager? = null
 
     fun initialize(context: Context) {
+        val appContext = context.applicationContext
         if (storage == null) {
-            storage = SecureTokenStorage(context)
-            syncManager = GitHubSyncManager.getInstance(context)
+            storage = SecureTokenStorage(appContext)
+            syncManager = GitHubSyncManager.getInstance(appContext)
             loadConfiguration()
+            return
         }
+        loadConfiguration()
     }
 
     /**

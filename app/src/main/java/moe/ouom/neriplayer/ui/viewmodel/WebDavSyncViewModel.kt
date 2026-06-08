@@ -25,11 +25,14 @@ class WebDavSyncViewModel : ViewModel() {
     private var syncManager: WebDavSyncManager? = null
 
     fun initialize(context: Context) {
+        val appContext = context.applicationContext
         if (storage == null) {
-            storage = WebDavStorage(context)
-            syncManager = WebDavSyncManager.getInstance(context)
+            storage = WebDavStorage(appContext)
+            syncManager = WebDavSyncManager.getInstance(appContext)
             loadConfiguration()
+            return
         }
+        loadConfiguration()
     }
 
     private fun loadConfiguration() {

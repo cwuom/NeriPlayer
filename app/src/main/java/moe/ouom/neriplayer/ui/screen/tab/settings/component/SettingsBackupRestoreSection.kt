@@ -151,6 +151,18 @@ internal fun SettingsBackupRestoreSection(
         LaunchedEffect(webDavVm, context) {
             webDavVm.initialize(context)
         }
+        LaunchedEffect(
+            configTransferUiState.isImporting,
+            configTransferUiState.lastImportSuccess
+        ) {
+            if (!configTransferUiState.isImporting && configTransferUiState.lastImportSuccess == true) {
+                githubVm.initialize(context)
+                webDavVm.initialize(context)
+                currentMode.value = storage.getPlayHistoryUpdateMode()
+                dataSaverMode = storage.isDataSaverMode()
+                pendingDataSaverMode = null
+            }
+        }
 
         Column(
             modifier = Modifier

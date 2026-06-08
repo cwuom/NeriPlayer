@@ -21,8 +21,10 @@ import moe.ouom.neriplayer.data.settings.persistPlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.persistThemePreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.toBootstrapSettingsSnapshot
 import moe.ouom.neriplayer.data.settings.toPlaybackPreferenceSnapshot
+import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.sync.webdav.WebDavStorage
+import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.util.LanguageManager
 import moe.ouom.neriplayer.util.NPLogger
 
@@ -93,8 +95,11 @@ class ConfigFileManager(private val context: Context) {
             }
 
             val restoredAuthCount = restoreAuth(payload, warnings)
-            SecureTokenStorage(context).restore(payload.gitHubSync)
-            WebDavStorage(context).restore(payload.webDavSync)
+            val gitHubStorage = SecureTokenStorage(context)
+            val webDavStorage = WebDavStorage(context)
+            gitHubStorage.restore(payload.gitHubSync)
+            webDavStorage.restore(payload.webDavSync)
+            reconcileSyncWorkers(gitHubStorage, webDavStorage)
 
             Result.success(
                 AppConfigImportResult(
@@ -181,6 +186,23 @@ class ConfigFileManager(private val context: Context) {
         }
 
         return restoredCount
+    }
+
+    private fun reconcileSyncWorkers(
+        gitHubStorage: SecureTokenStorage,
+        webDavStorage: WebDavStorage
+    ) {
+        if (gitHubStorage.isConfigured() && gitHubStorage.isAutoSyncEnabled()) {
+            GitHubSyncWorker.schedulePeriodicSync(context)
+        } else {
+            GitHubSyncWorker.cancelAllSync(context)
+        }
+
+        if (webDavStorage.isConfigured() && webDavStorage.isAutoSyncEnabled()) {
+            WebDavSyncWorker.schedulePeriodicSync(context)
+        } else {
+            WebDavSyncWorker.cancelAllSync(context)
+        }
     }
 
     private fun sanitizePortableSettings(
