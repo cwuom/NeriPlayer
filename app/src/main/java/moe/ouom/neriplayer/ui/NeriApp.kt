@@ -603,6 +603,9 @@ private fun NeriAppContent(
     val keepLastPlaybackProgress by repo.keepLastPlaybackProgressFlow.collectAsState(initial = true)
     val keepPlaybackModeState by repo.keepPlaybackModeStateFlow.collectAsState(initial = true)
     val stopOnBluetoothDisconnect by repo.stopOnBluetoothDisconnectFlow.collectAsState(initial = true)
+    val usbExclusivePlayback by repo.usbExclusivePlaybackFlow.collectAsState(
+        initial = startupPlaybackPreferences.usbExclusivePlayback
+    )
     val allowMixedPlayback by repo.allowMixedPlaybackFlow.collectAsState(initial = false)
     val maxCacheSizeBytes by repo.maxCacheSizeBytesFlow.collectAsState(
         initial = startupPlaybackPreferences.maxCacheSizeBytes
@@ -1676,6 +1679,10 @@ private fun NeriAppContent(
                                         stopOnBluetoothDisconnect = stopOnBluetoothDisconnect,
                                         onStopOnBluetoothDisconnectChange = { enabled ->
                                             scope.launch { repo.setStopOnBluetoothDisconnect(enabled) }
+                                        },
+                                        usbExclusivePlayback = usbExclusivePlayback,
+                                        onUsbExclusivePlaybackChange = { enabled ->
+                                            scope.launch { repo.setUsbExclusivePlayback(enabled) }
                                         },
                                         allowMixedPlayback = allowMixedPlayback,
                                         onAllowMixedPlaybackChange = { enabled ->

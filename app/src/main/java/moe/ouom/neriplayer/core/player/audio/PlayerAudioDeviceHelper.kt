@@ -9,10 +9,16 @@ internal fun isBluetoothOutputType(type: Int): Boolean {
                 type == AudioDeviceInfo.TYPE_BLE_SPEAKER))
 }
 
+internal fun isUsbOutputType(type: Int): Boolean {
+    return type == AudioDeviceInfo.TYPE_USB_DEVICE ||
+        type == AudioDeviceInfo.TYPE_USB_ACCESSORY ||
+        type == AudioDeviceInfo.TYPE_USB_HEADSET
+}
+
 internal fun isWiredOutputType(type: Int): Boolean {
     return type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
         type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
-        type == AudioDeviceInfo.TYPE_USB_HEADSET
+        isUsbOutputType(type)
 }
 
 internal fun isHeadsetLikeOutput(type: Int): Boolean {

@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BluetoothAudio
 import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.SpeakerGroup
+import androidx.compose.material.icons.filled.Usb
 import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -37,6 +38,7 @@ import moe.ouom.neriplayer.core.di.AppContainer.settingsRepo
 import moe.ouom.neriplayer.core.lyricon.LyriconManager
 import moe.ouom.neriplayer.core.player.audio.isBluetoothOutputType
 import moe.ouom.neriplayer.core.player.audio.isHeadsetLikeOutput
+import moe.ouom.neriplayer.core.player.audio.isUsbOutputType
 import moe.ouom.neriplayer.core.player.audio.isWiredOutputType
 import moe.ouom.neriplayer.core.player.audio.requiresDisconnectConfirmation
 import moe.ouom.neriplayer.core.player.debug.playWhenReadyChangeReasonName
@@ -103,6 +105,8 @@ internal fun PlayerManager.initializeImpl(
             initialPlaybackPreferences.playbackCrossfadeOutDurationMs
         stopOnBluetoothDisconnectEnabled =
             initialPlaybackPreferences.stopOnBluetoothDisconnect
+        usbExclusivePlaybackEnabled =
+            initialPlaybackPreferences.usbExclusivePlayback
         allowMixedPlaybackEnabled =
             initialPlaybackPreferences.allowMixedPlayback
         cloudMusicLyricDefaultOffsetMs =
@@ -118,7 +122,7 @@ internal fun PlayerManager.initializeImpl(
         playbackSoundConfig = initialPlaybackPreferences.toPlaybackSoundConfig()
         NPLogger.d(
             "NERI-PlayerManager",
-            "initialize(): prefs quality=$preferredQuality, youtubeQuality=$youtubePreferredQuality, biliQuality=$biliPreferredQuality, keepProgress=$keepLastPlaybackProgressEnabled, keepMode=$keepPlaybackModeStateEnabled, fadeIn=$playbackFadeInEnabled/${playbackFadeInDurationMs}ms, crossfade=$playbackCrossfadeNextEnabled/${playbackCrossfadeInDurationMs}ms, stopOnBluetoothDisconnect=$stopOnBluetoothDisconnectEnabled, allowMixedPlayback=$allowMixedPlaybackEnabled"
+            "initialize(): prefs quality=$preferredQuality, youtubeQuality=$youtubePreferredQuality, biliQuality=$biliPreferredQuality, keepProgress=$keepLastPlaybackProgressEnabled, keepMode=$keepPlaybackModeStateEnabled, fadeIn=$playbackFadeInEnabled/${playbackFadeInDurationMs}ms, crossfade=$playbackCrossfadeNextEnabled/${playbackCrossfadeInDurationMs}ms, stopOnBluetoothDisconnect=$stopOnBluetoothDisconnectEnabled, usbExclusivePlayback=$usbExclusivePlaybackEnabled, allowMixedPlayback=$allowMixedPlaybackEnabled"
         )
         val okHttpClient = AppContainer.sharedOkHttpClient
         val upstreamFactory: HttpDataSource.Factory = OkHttpDataSource.Factory(okHttpClient)
@@ -169,6 +173,7 @@ internal fun PlayerManager.initializeImpl(
         _playbackSoundState.value = playbackEffectsController.attachPlayer(player)
         applyPlaybackSoundConfig(playbackSoundConfig, persist = false)
         applyAudioFocusPolicy()
+        applyUsbExclusivePlaybackPolicy()
         _playWhenReadyFlow.value = player.playWhenReady
         _playerPlaybackStateFlow.value = player.playbackState
 
@@ -555,6 +560,12 @@ internal fun PlayerManager.initializeImpl(
             }
         }
         ioScope.launch {
+            settingsRepo.usbExclusivePlaybackFlow.collect { enabled ->
+                usbExclusivePlaybackEnabled = enabled
+                applyUsbExclusivePlaybackPolicy()
+            }
+        }
+        ioScope.launch {
             settingsRepo.allowMixedPlaybackFlow.collect { enabled ->
                 allowMixedPlaybackEnabled = enabled
                 applyAudioFocusPolicy()
@@ -784,6 +795,7 @@ private fun PlayerManager.handleDeviceChange(audioManager: AudioManager) {
     val previousDevice = _currentAudioDevice.value
     val newDevice = getCurrentAudioDevice(audioManager)
     _currentAudioDevice.value = newDevice
+    applyUsbExclusivePlaybackPolicy()
     NPLogger.d(
         "NERI-PlayerManager",
         "handleDeviceChange(): ${previousDevice?.type}:${previousDevice?.name} -> ${newDevice.type}:${newDevice.name}, isPlaying=${_isPlayingFlow.value}"
@@ -859,6 +871,10 @@ private fun PlayerManager.schedulePauseForBluetoothDisconnect(
 
 private fun PlayerManager.getCurrentAudioDevice(audioManager: AudioManager): AudioDevice {
     val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+    val usbDevice = devices.firstOrNull { isUsbOutputType(it.type) }
+    if (usbExclusivePlaybackEnabled && usbDevice != null) {
+        return toUsbAudioDevice(usbDevice)
+    }
     val bluetoothDevice = devices.firstOrNull { isBluetoothOutputType(it.type) }
     if (bluetoothDevice != null) {
         return try {
@@ -878,6 +894,9 @@ private fun PlayerManager.getCurrentAudioDevice(audioManager: AudioManager): Aud
     }
     val wiredHeadset = devices.firstOrNull { isWiredOutputType(it.type) }
     if (wiredHeadset != null) {
+        if (isUsbOutputType(wiredHeadset.type)) {
+            return toUsbAudioDevice(wiredHeadset)
+        }
         return AudioDevice(
             getLocalizedString(R.string.device_wired_headset),
             wiredHeadset.type,
@@ -889,6 +908,42 @@ private fun PlayerManager.getCurrentAudioDevice(audioManager: AudioManager): Aud
         AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
         Icons.Default.SpeakerGroup
     )
+}
+
+private fun PlayerManager.applyUsbExclusivePlaybackPolicy() {
+    if (!isPlayerInitialized()) return
+    val audioManager = application.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    val preferredDevice = if (usbExclusivePlaybackEnabled) {
+        findPreferredUsbOutputDevice(audioManager)
+    } else {
+        null
+    }
+    mainScope.launch {
+        if (!isPlayerInitialized()) return@launch
+        player.setPreferredAudioDevice(preferredDevice)
+        NPLogger.d(
+            "NERI-PlayerManager",
+            "applyUsbExclusivePlaybackPolicy(): enabled=$usbExclusivePlaybackEnabled, target=${preferredDevice.describeForLog()}"
+        )
+    }
+}
+
+private fun findPreferredUsbOutputDevice(audioManager: AudioManager): AudioDeviceInfo? {
+    return audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+        .firstOrNull { isUsbOutputType(it.type) }
+}
+
+private fun PlayerManager.toUsbAudioDevice(device: AudioDeviceInfo): AudioDevice {
+    return AudioDevice(
+        name = device.productName.toString()
+            .ifBlank { getLocalizedString(R.string.device_usb_audio) },
+        type = device.type,
+        icon = Icons.Default.Usb
+    )
+}
+
+private fun AudioDeviceInfo?.describeForLog(): String {
+    return this?.let { "${it.type}:${it.productName}" } ?: "none"
 }
 
 private fun PlayerManager.shouldPauseForImmediateOutputDisconnect(

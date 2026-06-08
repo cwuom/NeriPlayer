@@ -1043,10 +1043,23 @@ object AutoSettingsSchema {
         )
 
         @AutoSetting(
-            key = "allow_mixed_playback",
+            key = "usb_exclusive_playback",
             type = SettingValueType.Boolean,
             defaultBoolean = false,
             order = 160,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val usbExclusivePlayback = autoSetting(
+            titleRes = R.string.settings_usb_exclusive_playback,
+            descriptionRes = R.string.settings_usb_exclusive_playback_desc
+        )
+
+        @AutoSetting(
+            key = "allow_mixed_playback",
+            type = SettingValueType.Boolean,
+            defaultBoolean = false,
+            order = 170,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
         )

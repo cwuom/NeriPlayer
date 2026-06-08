@@ -193,6 +193,7 @@ object PlayerManager {
     internal var keepLastPlaybackProgressEnabled = true
     internal var keepPlaybackModeStateEnabled = true
     internal var stopOnBluetoothDisconnectEnabled = true
+    internal var usbExclusivePlaybackEnabled = false
     internal var allowMixedPlaybackEnabled = false
 
     @Volatile

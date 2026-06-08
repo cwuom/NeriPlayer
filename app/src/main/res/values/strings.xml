@@ -436,6 +436,7 @@
     <string name="device_speaker">手机扬声器</string>
     <string name="device_wired_headset">有线耳机</string>
     <string name="device_bluetooth_headset">蓝牙耳机</string>
+    <string name="device_usb_audio">USB 音频设备</string>
     <string name="device_bluetooth">蓝牙设备</string>
     <string name="device_playback">播放设备</string>
 
@@ -1069,6 +1070,8 @@
     <string name="settings_keep_playback_mode_state_desc">应用重启后恢复单曲循环、列表循环和随机播放状态</string>
     <string name="settings_stop_on_bluetooth_disconnect">蓝牙断开自动停止</string>
     <string name="settings_stop_on_bluetooth_disconnect_desc">蓝牙设备断开时自动暂停播放</string>
+    <string name="settings_usb_exclusive_playback">USB 独占播放</string>
+    <string name="settings_usb_exclusive_playback_desc">连接 USB DAC 或耳机时优先固定到 USB 输出，断开后暂停播放</string>
     <string name="settings_allow_mixed_playback">允许与其他应用同时播放</string>
     <string name="settings_allow_mixed_playback_desc">不占用音频焦点，允许与其他应用同时播放</string>
     <string name="settings_lyrics_blur">歌词模糊</string>

@@ -40,6 +40,7 @@ import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.Usb
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -89,6 +90,8 @@ internal fun SettingsPlaybackSection(
     onKeepPlaybackModeStateChange: (Boolean) -> Unit,
     stopOnBluetoothDisconnect: Boolean,
     onStopOnBluetoothDisconnectChange: (Boolean) -> Unit,
+    usbExclusivePlayback: Boolean,
+    onUsbExclusivePlaybackChange: (Boolean) -> Unit,
     allowMixedPlayback: Boolean,
     onAllowMixedPlaybackChange: (Boolean) -> Unit
 ) {
@@ -230,6 +233,21 @@ internal fun SettingsPlaybackSection(
                 },
                 onToggle = { onStopOnBluetoothDisconnectChange(!stopOnBluetoothDisconnect) },
                 onCheckedChange = onStopOnBluetoothDisconnectChange
+            )
+
+            PlaybackSwitchItem(
+                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.USB_EXCLUSIVE_PLAYBACK),
+                checked = usbExclusivePlayback,
+                icon = {
+                    Icon(
+                        imageVector = Icons.Outlined.Usb,
+                        contentDescription = stringResource(R.string.settings_usb_exclusive_playback),
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                },
+                onToggle = { onUsbExclusivePlaybackChange(!usbExclusivePlayback) },
+                onCheckedChange = onUsbExclusivePlaybackChange
             )
 
             PlaybackSwitchItem(

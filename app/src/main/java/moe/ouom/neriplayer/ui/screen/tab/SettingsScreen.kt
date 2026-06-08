@@ -271,6 +271,8 @@ fun SettingsScreen(
     onKeepPlaybackModeStateChange: (Boolean) -> Unit,
     stopOnBluetoothDisconnect: Boolean,
     onStopOnBluetoothDisconnectChange: (Boolean) -> Unit,
+    usbExclusivePlayback: Boolean,
+    onUsbExclusivePlaybackChange: (Boolean) -> Unit,
     allowMixedPlayback: Boolean,
     onAllowMixedPlaybackChange: (Boolean) -> Unit,
     onNavigateToDownloadManager: () -> Unit = {},
@@ -1168,6 +1170,8 @@ fun SettingsScreen(
                             onKeepPlaybackModeStateChange = onKeepPlaybackModeStateChange,
                             stopOnBluetoothDisconnect = stopOnBluetoothDisconnect,
                             onStopOnBluetoothDisconnectChange = onStopOnBluetoothDisconnectChange,
+                            usbExclusivePlayback = usbExclusivePlayback,
+                            onUsbExclusivePlaybackChange = onUsbExclusivePlaybackChange,
                             allowMixedPlayback = allowMixedPlayback,
                             onAllowMixedPlaybackChange = onAllowMixedPlaybackChange
                         )

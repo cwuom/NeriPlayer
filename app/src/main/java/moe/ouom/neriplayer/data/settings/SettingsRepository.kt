@@ -294,6 +294,9 @@ class SettingsRepository(private val context: Context) {
     val stopOnBluetoothDisconnectFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.STOP_ON_BLUETOOTH_DISCONNECT] ?: true }
 
+    val usbExclusivePlaybackFlow: Flow<Boolean> =
+        context.dataStore.data.map { it[SettingsKeys.USB_EXCLUSIVE_PLAYBACK] ?: false }
+
     val allowMixedPlaybackFlow: Flow<Boolean> =
         context.dataStore.data.map { it[SettingsKeys.ALLOW_MIXED_PLAYBACK] ?: false }
 
@@ -738,6 +741,13 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { it[SettingsKeys.STOP_ON_BLUETOOTH_DISCONNECT] = enabled }
         updatePlaybackPreferenceSnapshot(context) {
             it.copy(stopOnBluetoothDisconnect = enabled)
+        }
+    }
+
+    suspend fun setUsbExclusivePlayback(enabled: Boolean) {
+        context.dataStore.edit { it[SettingsKeys.USB_EXCLUSIVE_PLAYBACK] = enabled }
+        updatePlaybackPreferenceSnapshot(context) {
+            it.copy(usbExclusivePlayback = enabled)
         }
     }
 

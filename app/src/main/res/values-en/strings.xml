@@ -436,6 +436,7 @@
     <string name="device_speaker">Speaker</string>
     <string name="device_wired_headset">Wired</string>
     <string name="device_bluetooth_headset">Bluetooth</string>
+    <string name="device_usb_audio">USB audio</string>
     <string name="device_bluetooth">Bluetooth</string>
     <string name="device_playback">Playback Device</string>
 
@@ -1069,6 +1070,8 @@
     <string name="settings_keep_playback_mode_state_desc">Restore repeat and shuffle state after restarting the app</string>
     <string name="settings_stop_on_bluetooth_disconnect">Stop On Bluetooth Disconnect</string>
     <string name="settings_stop_on_bluetooth_disconnect_desc">Pause playback when a Bluetooth device disconnects</string>
+    <string name="settings_usb_exclusive_playback">USB Exclusive Playback</string>
+    <string name="settings_usb_exclusive_playback_desc">Prefer USB audio output when a USB DAC or headset is connected, and pause after disconnect</string>
     <string name="settings_allow_mixed_playback">Allow Mixed Playback</string>
     <string name="settings_allow_mixed_playback_desc">Do not take audio focus so other apps can play</string>
     <string name="settings_lyrics_blur">Blur</string>
