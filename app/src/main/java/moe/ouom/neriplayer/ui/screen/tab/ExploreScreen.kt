@@ -186,7 +186,7 @@ fun ExploreScreen(
     var showPartsSheet by remember { mutableStateOf(false) }
     var partsInfo by remember { mutableStateOf<BiliClient.VideoBasicInfo?>(null) }
     var clickedSongCoverUrl by remember { mutableStateOf("") }
-    val partsSheetState = rememberModalBottomSheetState()
+    val partsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     var partsSelectionMode by remember { mutableStateOf(false) }
     var selectedParts by remember { mutableStateOf<Set<Int>>(emptySet()) }

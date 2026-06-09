@@ -192,7 +192,7 @@ fun BiliPlaylistDetailScreen(
 
     var showPartsSheet by remember { mutableStateOf(false) }
     var partsInfo by remember { mutableStateOf<BiliClient.VideoBasicInfo?>(null) }
-    val partsSheetState = rememberModalBottomSheetState()
+    val partsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     fun toggleSelect(id: String) {
         selectedIds = if (selectedIds.contains(id)) selectedIds - id else selectedIds + id
