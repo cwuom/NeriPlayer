@@ -54,6 +54,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -61,6 +62,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Home
@@ -71,6 +73,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -102,6 +106,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.createBitmap
@@ -200,6 +205,7 @@ import moe.ouom.neriplayer.util.NativeCrashHandler
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.adjustedAccentColorArgb
 import moe.ouom.neriplayer.util.isRemoteImageSource
+import moe.ouom.neriplayer.util.rememberOfflineModeState
 import moe.ouom.neriplayer.util.syncHapticFeedbackSetting
 import kotlin.coroutines.resume
 import kotlin.math.abs
@@ -486,6 +492,24 @@ private fun NowPlayingAccentBackdrop(
 }
 
 @Composable
+private fun OfflineModeBottomBanner() {
+    Surface(
+        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.92f),
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+    ) {
+        Text(
+            text = stringResource(R.string.offline_mode_bottom_hint),
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+        )
+    }
+}
+
+@Composable
 fun NeriApp(
     initialThemeSnapshot: ThemePreferenceSnapshot = ThemePreferenceSnapshot(),
     onIsDarkChanged: (Boolean) -> Unit = {}
@@ -524,6 +548,7 @@ private fun NeriAppContent(
     onIsDarkChanged: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
+    val offlineMode by rememberOfflineModeState()
     val rootView = LocalView.current
     val repo = remember { AppContainer.settingsRepo }
     val application = remember(context) { context.applicationContext as Application }
@@ -1133,7 +1158,7 @@ private fun NeriAppContent(
                                     .fillMaxWidth()
                                     .clipToBounds()
                             ) {
-                                NeriBottomBar(
+                                Column(
                                     modifier = Modifier
                                         .align(Alignment.BottomCenter)
                                         .onSizeChanged { size ->
@@ -1147,22 +1172,30 @@ private fun NeriAppContent(
                                                     .toFloat()
                                             alpha = bottomBarVisibilityProgress
                                         }
-                                        .then(bottomBarHazeModifier),
-                                    selectAlpha = selectAlpha,
-                                    items = bottomBarItems,
-                                    currentDestination = backEntry?.destination,
-                                    onItemSelected = { dest ->
-                                        if (currentRoute != dest.route) {
-                                            navController.navigate(dest.route) {
-                                                popUpTo(navController.graph.startDestinationId) {
-                                                    saveState = true
+                                        .then(bottomBarHazeModifier)
+                                ) {
+                                    AnimatedVisibility(visible = offlineMode) {
+                                        OfflineModeBottomBanner()
+                                    }
+
+                                    NeriBottomBar(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        selectAlpha = selectAlpha,
+                                        items = bottomBarItems,
+                                        currentDestination = backEntry?.destination,
+                                        onItemSelected = { dest ->
+                                            if (currentRoute != dest.route) {
+                                                navController.navigate(dest.route) {
+                                                    popUpTo(navController.graph.startDestinationId) {
+                                                        saveState = true
+                                                    }
+                                                    launchSingleTop = true
+                                                    restoreState = true
                                                 }
-                                                launchSingleTop = true
-                                                restoreState = true
                                             }
                                         }
-                                    }
-                                )
+                                    )
+                                }
                             }
                         }
                     ) { innerPadding ->
@@ -1230,6 +1263,7 @@ private fun NeriAppContent(
                                         showTrendingCard = showHomeTrendingCard,
                                         showRadarCard = showHomeRadarCard,
                                         showRecommendedCard = showHomeRecommendedCard,
+                                        offlineMode = offlineMode,
                                         onSongClick = ::playSongsAndOpenNowPlaying
                                     )
                                 }
@@ -1344,6 +1378,7 @@ private fun NeriAppContent(
                                     }
                                 ) {
                                     ExploreHostScreen(
+                                        offlineMode = offlineMode,
                                         onSongClick = ::playSongsAndOpenNowPlaying,
                                         onSongPlayPreservingQueue = ::playSongPreservingQueueAndOpenNowPlaying,
                                         onSongPlayNext = ::addSongToQueueNextFromSearch,

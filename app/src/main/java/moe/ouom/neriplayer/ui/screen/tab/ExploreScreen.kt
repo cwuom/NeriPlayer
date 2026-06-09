@@ -149,6 +149,7 @@ private const val SEARCH_INPUT_DEBOUNCE_MS = 300L
 @Suppress("AssignedValueIsNeverRead")
 fun ExploreScreen(
     gridState: LazyGridState,
+    offlineMode: Boolean = false,
     onPlay: (PlaylistSummary) -> Unit,
     onYouTubeMusicPlaylistClick: (YouTubeMusicPlaylist) -> Unit = {},
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
@@ -158,6 +159,11 @@ fun ExploreScreen(
     onPlayParts: (BiliClient.VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> }
 ) {
     val context = LocalContext.current
+    if (offlineMode) {
+        ExploreOfflineContent()
+        return
+    }
+
     val vm: ExploreViewModel = viewModel(
         factory = viewModelFactory {
             initializer { ExploreViewModel(context.applicationContext as Application) }
@@ -710,6 +716,55 @@ fun ExploreScreen(
                     ) { Text(stringResource(R.string.playlist_create_and_export)) }
                 }
                 Spacer(Modifier.height(12.dp))
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ExploreOfflineContent() {
+    val miniPlayerHeight = LocalMiniPlayerHeight.current
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
+    Scaffold(
+        modifier = Modifier
+            .fillMaxSize()
+            .nestedScroll(scrollBehavior.nestedScrollConnection),
+        containerColor = Color.Transparent,
+        topBar = {
+            LargeTopAppBar(
+                title = { Text(stringResource(R.string.nav_explore)) },
+                scrollBehavior = scrollBehavior,
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent,
+                    scrolledContainerColor = Color.Transparent
+                )
+            )
+        }
+    ) { innerPadding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(start = 32.dp, end = 32.dp, bottom = miniPlayerHeight),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.offline_mode_title),
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                    textAlign = TextAlign.Center
+                )
+                Text(
+                    text = stringResource(R.string.explore_offline_disabled),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
             }
         }
     }

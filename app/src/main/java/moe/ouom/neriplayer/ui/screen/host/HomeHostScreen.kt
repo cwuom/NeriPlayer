@@ -79,6 +79,7 @@ fun HomeHostScreen(
     showTrendingCard: Boolean = true,
     showRadarCard: Boolean = true,
     showRecommendedCard: Boolean = true,
+    offlineMode: Boolean = false,
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> }
 ) {
     var selected by rememberSaveable(stateSaver = homeSelectedItemSaver) {
@@ -116,6 +117,7 @@ fun HomeHostScreen(
                     showTrendingCard = showTrendingCard,
                     showRadarCard = showRadarCard,
                     showRecommendedCard = showRecommendedCard,
+                    offlineMode = offlineMode,
                     gridState = gridState,
                     onItemClick = { pl ->
                         AppContainer.playlistUsageRepo.recordOpen(

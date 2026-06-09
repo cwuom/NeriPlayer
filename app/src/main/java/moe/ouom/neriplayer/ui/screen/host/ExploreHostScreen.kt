@@ -35,6 +35,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,6 +62,7 @@ private sealed class ExploreSelectedItem {
 
 @Composable
 fun ExploreHostScreen(
+    offlineMode: Boolean = false,
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
     onSongPlayPreservingQueue: (SongItem) -> Unit = {},
     onSongPlayNext: (SongItem) -> Unit = {},
@@ -68,6 +70,12 @@ fun ExploreHostScreen(
     onPlayParts: (BiliClient.VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> }
 ) {
     var selected by remember { mutableStateOf<ExploreSelectedItem?>(null) }
+    LaunchedEffect(offlineMode) {
+        if (offlineMode) {
+            selected = null
+        }
+    }
+
     PredictiveBackHandler(enabled = selected != null) { progress ->
         try {
             progress.collect { }
@@ -98,6 +106,7 @@ fun ExploreHostScreen(
             if (current == null) {
                 ExploreScreen(
                     gridState = gridState,
+                    offlineMode = offlineMode,
                     onPlay = { pl ->
                         AppContainer.playlistUsageRepo.recordOpen(
                             id = pl.id, name = pl.name, picUrl = pl.picUrl,

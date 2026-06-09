@@ -809,6 +809,7 @@
 
     <!-- Explore -->
     <string name="explore_bili_desc">Discover more exciting videos on Bilibili</string>
+    <string name="explore_offline_disabled">Explore requires a network connection and will be re-enabled automatically when the network is restored.</string>
 
     <!-- Recent -->
     <string name="recent_clear_confirm">Are you sure you want to clear all recent play history? This action cannot be undone.</string>
@@ -1420,6 +1421,9 @@
     <string name="home_title_brand_wave">NeriPlayer~</string>
     <string name="home_title_brand_call">Hey, NeriPlayer</string>
     <string name="home_all_cards_hidden">All home cards are hidden. Re-enable them in Settings.</string>
+    <string name="home_offline_no_continue">Offline mode only shows Continue Playing. Nothing is available yet.</string>
+    <string name="offline_mode_title">Offline Mode</string>
+    <string name="offline_mode_bottom_hint">Currently in offline mode</string>
 
     <!-- Library / Screen -->
     <string name="library_tab_local">Local</string>

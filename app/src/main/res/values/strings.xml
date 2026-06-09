@@ -809,6 +809,7 @@
 
     <!-- Explore -->
     <string name="explore_bili_desc">在 Bilibili 中发现更多精彩视频</string>
+    <string name="explore_offline_disabled">探索需要网络连接，恢复网络后会自动启用。</string>
 
     <!-- Recent -->
     <string name="recent_clear_confirm">确定要清空全部最近播放记录吗？此操作不可恢复。</string>
@@ -1435,6 +1436,9 @@
     <string name="home_title_brand_wave">音理音理~</string>
     <string name="home_title_brand_call">NeriPlayer</string>
     <string name="home_all_cards_hidden">首页卡片已全部隐藏，可在设置中重新开启。</string>
+    <string name="home_offline_no_continue">脱机模式下仅显示继续播放，暂无可显示内容。</string>
+    <string name="offline_mode_title">脱机模式</string>
+    <string name="offline_mode_bottom_hint">当前处于脱机模式</string>
 
     <!-- Library / Screen -->
     <string name="library_tab_local">本地</string>

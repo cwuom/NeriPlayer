@@ -143,6 +143,7 @@ fun HomeScreen(
     showTrendingCard: Boolean = true,
     showRadarCard: Boolean = true,
     showRecommendedCard: Boolean = true,
+    offlineMode: Boolean = false,
     onItemClick: (PlaylistSummary) -> Unit = {},
     onYouTubeMusicPlaylistClick: (YouTubeMusicPlaylist) -> Unit = {},
     gridState: LazyGridState,
@@ -206,8 +207,30 @@ fun HomeScreen(
     val scope = rememberCoroutineScope()
     val showContinue = showContinueCard && usage.isNotEmpty()
     val isInternational = ui.internationalizationEnabled
+    val showOnlineFeeds = !offlineMode
+    var wasOffline by remember { mutableStateOf(offlineMode) }
+
+    LaunchedEffect(offlineMode, isInternational) {
+        vm.setOfflineMode(offlineMode)
+        if (offlineMode) {
+            wasOffline = true
+            return@LaunchedEffect
+        }
+
+        if (!wasOffline) return@LaunchedEffect
+
+        wasOffline = false
+        if (isInternational) {
+            vm.refreshYtMusicPlaylists()
+            vm.refreshYtMusicHomeFeed()
+        } else {
+            vm.refreshRecommend()
+            vm.loadHomeRecommendations(force = true)
+        }
+    }
+
     val hasVisibleSections =
-        showContinue || showTrendingCard || showRadarCard || showRecommendedCard || isInternational
+        showContinue || (showOnlineFeeds && (showTrendingCard || showRadarCard || showRecommendedCard || isInternational))
 
     Box(Modifier.fillMaxSize()) {
         Column(
@@ -220,6 +243,7 @@ fun HomeScreen(
                 title = { Text(appBarTitle) },
                 actions = {
                     HapticIconButton(
+                        enabled = !offlineMode,
                         onClick = {
                             if (isInternational) {
                                 vm.refreshYtMusicPlaylists()
@@ -260,7 +284,11 @@ fun HomeScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = stringResource(R.string.home_all_cards_hidden),
+                            text = if (offlineMode) {
+                                stringResource(R.string.home_offline_no_continue)
+                            } else {
+                                stringResource(R.string.home_all_cards_hidden)
+                            },
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -298,220 +326,222 @@ fun HomeScreen(
                         }
                     }
 
-                    if (isInternational) {
-                        if (showTrendingCard && ytmSections.guessYouLike != null) {
-                            addYouTubeMusicSongShelfSection(
-                                shelf = ytmSections.guessYouLike,
-                                icon = Icons.Outlined.Bolt,
-                                title = guessYouLikeTitle,
-                                onSongClick = onSongClick
-                            )
-                        }
-
-                        if (showRadarCard && ytmSections.dailyDiscover != null) {
-                            addYouTubeMusicSongShelfSection(
-                                shelf = ytmSections.dailyDiscover,
-                                icon = Icons.Outlined.Explore,
-                                title = dailyDiscoverTitle,
-                                onSongClick = onSongClick
-                            )
-                        }
-
-                        if (showRecommendedCard) {
-                            item(span = { GridItemSpan(maxLineSpan) }) {
-                                SectionHeader(
-                                    icon = Icons.Outlined.Star,
-                                    title = moreRecommendationsTitle
+                    if (showOnlineFeeds) {
+                        if (isInternational) {
+                            if (showTrendingCard && ytmSections.guessYouLike != null) {
+                                addYouTubeMusicSongShelfSection(
+                                    shelf = ytmSections.guessYouLike,
+                                    icon = Icons.Outlined.Bolt,
+                                    title = guessYouLikeTitle,
+                                    onSongClick = onSongClick
                                 )
                             }
 
-                            when {
-                                ui.ytMusicPlaylists.items.isNotEmpty() -> {
-                                    items(
-                                        items = ui.ytMusicPlaylists.items,
-                                        key = { it.browseId }
-                                    ) { playlist ->
-                                        YtMusicPlaylistCard(
-                                            playlist = playlist,
-                                            isFavorite = favoriteKeys.contains("youtubeMusic:${playlist.favoriteId()}"),
-                                            onClick = { onYouTubeMusicPlaylistClick(playlist) },
-                                            onShowSnackbar = { message ->
-                                                scope.launch {
-                                                    snackbarHostState.showSnackbar(message)
-                                                }
-                                            }
-                                        )
-                                    }
-                                }
-                                ui.ytMusicPlaylists.loading -> {
-                                    item(span = { GridItemSpan(maxLineSpan) }) {
-                                        SectionLoadingState(homeLoadingText)
-                                    }
-                                }
-                                ui.ytMusicPlaylists.error != null -> {
-                                    item(span = { GridItemSpan(maxLineSpan) }) {
-                                        SectionErrorState(detail = ui.ytMusicPlaylists.error ?: "")
-                                    }
-                                }
+                            if (showRadarCard && ytmSections.dailyDiscover != null) {
+                                addYouTubeMusicSongShelfSection(
+                                    shelf = ytmSections.dailyDiscover,
+                                    icon = Icons.Outlined.Explore,
+                                    title = dailyDiscoverTitle,
+                                    onSongClick = onSongClick
+                                )
                             }
 
-                            when {
-                                ytmSections.remaining.any { shelf ->
-                                    shelf.shouldRenderAsSongShelf() || shelf.hasRenderablePlaylistItems()
-                                } -> {
-                                    ytmSections.remaining.forEach { shelf ->
-                                        if (shelf.shouldRenderAsSongShelf()) {
-                                            addYouTubeMusicSongShelfSection(
-                                                shelf = shelf,
-                                                icon = Icons.Outlined.Explore,
-                                                title = shelf.title,
-                                                onSongClick = onSongClick
-                                            )
-                                        } else {
-                                            val playlistItems = shelf.items.filter { it.isPlaylistItem() }
-                                            if (playlistItems.isEmpty()) {
-                                                return@forEach
-                                            }
-                                            item(span = { GridItemSpan(maxLineSpan) }) {
-                                                SectionHeader(
-                                                    icon = Icons.Outlined.Explore,
-                                                    title = shelf.title
-                                                )
-                                            }
-                                            items(
-                                                items = playlistItems,
-                                                key = { shelf.title + it.title + it.browseId + it.videoId }
-                                            ) { homeItem ->
-                                                YtMusicHomeItemCard(
-                                                    item = homeItem,
-                                                    isFavorite = homeItem.toPlaylist()
-                                                        ?.favoriteId()
-                                                        ?.let { favoriteKeys.contains("youtubeMusic:$it") } == true,
-                                                    onClick = {
-                                                        val playlist = homeItem.toPlaylist()
-                                                        if (playlist != null) {
-                                                            onYouTubeMusicPlaylistClick(playlist)
-                                                        } else if (homeItem.videoId.isNotBlank()) {
-                                                            val songs = listOfNotNull(
-                                                                homeItem.toPlayableSongItem(shelf.title)
-                                                            )
-                                                            if (songs.isNotEmpty()) {
-                                                                onSongClick(songs, 0)
-                                                            }
-                                                        }
-                                                    },
-                                                    onShowSnackbar = { message ->
-                                                        scope.launch {
-                                                            snackbarHostState.showSnackbar(message)
-                                                        }
+                            if (showRecommendedCard) {
+                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                    SectionHeader(
+                                        icon = Icons.Outlined.Star,
+                                        title = moreRecommendationsTitle
+                                    )
+                                }
+
+                                when {
+                                    ui.ytMusicPlaylists.items.isNotEmpty() -> {
+                                        items(
+                                            items = ui.ytMusicPlaylists.items,
+                                            key = { it.browseId }
+                                        ) { playlist ->
+                                            YtMusicPlaylistCard(
+                                                playlist = playlist,
+                                                isFavorite = favoriteKeys.contains("youtubeMusic:${playlist.favoriteId()}"),
+                                                onClick = { onYouTubeMusicPlaylistClick(playlist) },
+                                                onShowSnackbar = { message ->
+                                                    scope.launch {
+                                                        snackbarHostState.showSnackbar(message)
                                                     }
-                                                )
-                                            }
+                                                }
+                                            )
+                                        }
+                                    }
+                                    ui.ytMusicPlaylists.loading -> {
+                                        item(span = { GridItemSpan(maxLineSpan) }) {
+                                            SectionLoadingState(homeLoadingText)
+                                        }
+                                    }
+                                    ui.ytMusicPlaylists.error != null -> {
+                                        item(span = { GridItemSpan(maxLineSpan) }) {
+                                            SectionErrorState(detail = ui.ytMusicPlaylists.error ?: "")
                                         }
                                     }
                                 }
-                                ui.ytMusicHomeShelves.loading -> {
-                                    item(span = { GridItemSpan(maxLineSpan) }) {
-                                        SectionLoadingState(homeLoadingText)
-                                    }
-                                }
-                                ui.ytMusicHomeShelves.error != null -> {
-                                    item(span = { GridItemSpan(maxLineSpan) }) {
-                                        SectionErrorState(detail = ui.ytMusicHomeShelves.error ?: "")
-                                    }
-                                }
-                            }
-                        }
 
-                        if (!hasVisibleYtMusicFeed && (showTrendingCard || showRadarCard || showRecommendedCard)) {
-                            when {
-                                ui.ytMusicHomeShelves.loading -> {
-                                    item(span = { GridItemSpan(maxLineSpan) }) {
-                                        SectionLoadingState(homeLoadingText)
-                                    }
-                                }
-                                ui.ytMusicHomeShelves.error != null -> {
-                                    item(span = { GridItemSpan(maxLineSpan) }) {
-                                        SectionErrorState(detail = ui.ytMusicHomeShelves.error ?: "")
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        if (showTrendingCard) {
-                            item(span = { GridItemSpan(maxLineSpan) }) {
-                                SectionHeader(
-                                    icon = Icons.Outlined.Bolt,
-                                    title = stringResource(R.string.recommend_trending)
-                                )
-                            }
-                            sectionContent(
-                                section = ui.hotSongs,
-                                loadingText = homeLoadingText,
-                                errorDetail = ui.hotSongs.error
-                            ) {
-                                item(span = { GridItemSpan(maxLineSpan) }) {
-                                    ResponsiveSongPagerList(
-                                        songs = ui.hotSongs.items,
-                                        onSongClick = onSongClick
-                                    )
-                                }
-                            }
-                        }
-
-                        if (showRadarCard) {
-                            item(span = { GridItemSpan(maxLineSpan) }) {
-                                SectionHeader(
-                                    icon = Icons.Outlined.Radar,
-                                    title = stringResource(R.string.recommend_radar)
-                                )
-                            }
-                            sectionContent(
-                                section = ui.radarSongs,
-                                loadingText = homeLoadingText,
-                                errorDetail = ui.radarSongs.error
-                            ) {
-                                item(span = { GridItemSpan(maxLineSpan) }) {
-                                    ResponsiveSongPagerList(
-                                        songs = ui.radarSongs.items,
-                                        onSongClick = onSongClick
-                                    )
-                                }
-                            }
-                        }
-
-                        if (showRecommendedCard) {
-                            item(span = { GridItemSpan(maxLineSpan) }) {
-                                SectionHeader(
-                                    icon = Icons.Outlined.Star,
-                                    title = stringResource(R.string.recommend_for_you)
-                                )
-                            }
-                            when {
-                                ui.playlists.items.isNotEmpty() -> {
-                                    items(items = ui.playlists.items, key = { it.id }) { item ->
-                                        PlaylistCard(
-                                            playlist = item,
-                                            isFavorite = favoriteKeys.contains("netease:${item.id}"),
-                                            onClick = { onItemClick(item) },
-                                            onShowSnackbar = { message ->
-                                                scope.launch {
-                                                    snackbarHostState.showSnackbar(message)
+                                when {
+                                    ytmSections.remaining.any { shelf ->
+                                        shelf.shouldRenderAsSongShelf() || shelf.hasRenderablePlaylistItems()
+                                    } -> {
+                                        ytmSections.remaining.forEach { shelf ->
+                                            if (shelf.shouldRenderAsSongShelf()) {
+                                                addYouTubeMusicSongShelfSection(
+                                                    shelf = shelf,
+                                                    icon = Icons.Outlined.Explore,
+                                                    title = shelf.title,
+                                                    onSongClick = onSongClick
+                                                )
+                                            } else {
+                                                val playlistItems = shelf.items.filter { it.isPlaylistItem() }
+                                                if (playlistItems.isEmpty()) {
+                                                    return@forEach
+                                                }
+                                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                                    SectionHeader(
+                                                        icon = Icons.Outlined.Explore,
+                                                        title = shelf.title
+                                                    )
+                                                }
+                                                items(
+                                                    items = playlistItems,
+                                                    key = { shelf.title + it.title + it.browseId + it.videoId }
+                                                ) { homeItem ->
+                                                    YtMusicHomeItemCard(
+                                                        item = homeItem,
+                                                        isFavorite = homeItem.toPlaylist()
+                                                            ?.favoriteId()
+                                                            ?.let { favoriteKeys.contains("youtubeMusic:$it") } == true,
+                                                        onClick = {
+                                                            val playlist = homeItem.toPlaylist()
+                                                            if (playlist != null) {
+                                                                onYouTubeMusicPlaylistClick(playlist)
+                                                            } else if (homeItem.videoId.isNotBlank()) {
+                                                                val songs = listOfNotNull(
+                                                                    homeItem.toPlayableSongItem(shelf.title)
+                                                                )
+                                                                if (songs.isNotEmpty()) {
+                                                                    onSongClick(songs, 0)
+                                                                }
+                                                            }
+                                                        },
+                                                        onShowSnackbar = { message ->
+                                                            scope.launch {
+                                                                snackbarHostState.showSnackbar(message)
+                                                            }
+                                                        }
+                                                    )
                                                 }
                                             }
+                                        }
+                                    }
+                                    ui.ytMusicHomeShelves.loading -> {
+                                        item(span = { GridItemSpan(maxLineSpan) }) {
+                                            SectionLoadingState(homeLoadingText)
+                                        }
+                                    }
+                                    ui.ytMusicHomeShelves.error != null -> {
+                                        item(span = { GridItemSpan(maxLineSpan) }) {
+                                            SectionErrorState(detail = ui.ytMusicHomeShelves.error ?: "")
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (!hasVisibleYtMusicFeed && (showTrendingCard || showRadarCard || showRecommendedCard)) {
+                                when {
+                                    ui.ytMusicHomeShelves.loading -> {
+                                        item(span = { GridItemSpan(maxLineSpan) }) {
+                                            SectionLoadingState(homeLoadingText)
+                                        }
+                                    }
+                                    ui.ytMusicHomeShelves.error != null -> {
+                                        item(span = { GridItemSpan(maxLineSpan) }) {
+                                            SectionErrorState(detail = ui.ytMusicHomeShelves.error ?: "")
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            if (showTrendingCard) {
+                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                    SectionHeader(
+                                        icon = Icons.Outlined.Bolt,
+                                        title = stringResource(R.string.recommend_trending)
+                                    )
+                                }
+                                sectionContent(
+                                    section = ui.hotSongs,
+                                    loadingText = homeLoadingText,
+                                    errorDetail = ui.hotSongs.error
+                                ) {
+                                    item(span = { GridItemSpan(maxLineSpan) }) {
+                                        ResponsiveSongPagerList(
+                                            songs = ui.hotSongs.items,
+                                            onSongClick = onSongClick
                                         )
                                     }
                                 }
+                            }
 
-                                ui.playlists.loading -> {
+                            if (showRadarCard) {
+                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                    SectionHeader(
+                                        icon = Icons.Outlined.Radar,
+                                        title = stringResource(R.string.recommend_radar)
+                                    )
+                                }
+                                sectionContent(
+                                    section = ui.radarSongs,
+                                    loadingText = homeLoadingText,
+                                    errorDetail = ui.radarSongs.error
+                                ) {
                                     item(span = { GridItemSpan(maxLineSpan) }) {
-                                        SectionLoadingState(homeLoadingText)
+                                        ResponsiveSongPagerList(
+                                            songs = ui.radarSongs.items,
+                                            onSongClick = onSongClick
+                                        )
                                     }
                                 }
+                            }
 
-                                ui.playlists.error != null -> {
-                                    item(span = { GridItemSpan(maxLineSpan) }) {
-                                        SectionErrorState(detail = ui.playlists.error ?: "")
+                            if (showRecommendedCard) {
+                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                    SectionHeader(
+                                        icon = Icons.Outlined.Star,
+                                        title = stringResource(R.string.recommend_for_you)
+                                    )
+                                }
+                                when {
+                                    ui.playlists.items.isNotEmpty() -> {
+                                        items(items = ui.playlists.items, key = { it.id }) { item ->
+                                            PlaylistCard(
+                                                playlist = item,
+                                                isFavorite = favoriteKeys.contains("netease:${item.id}"),
+                                                onClick = { onItemClick(item) },
+                                                onShowSnackbar = { message ->
+                                                    scope.launch {
+                                                        snackbarHostState.showSnackbar(message)
+                                                    }
+                                                }
+                                            )
+                                        }
+                                    }
+
+                                    ui.playlists.loading -> {
+                                        item(span = { GridItemSpan(maxLineSpan) }) {
+                                            SectionLoadingState(homeLoadingText)
+                                        }
+                                    }
+
+                                    ui.playlists.error != null -> {
+                                        item(span = { GridItemSpan(maxLineSpan) }) {
+                                            SectionErrorState(detail = ui.playlists.error ?: "")
+                                        }
                                     }
                                 }
                             }

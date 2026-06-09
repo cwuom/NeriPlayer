@@ -94,6 +94,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private var hasRecommendLogin = false
     private var homeRecommendationsBootstrapped = false
     private var lastYouTubeAuthFingerprint: String? = null
+    private var offlineMode = false
 
     private fun localizedAppContext() = LanguageManager.applyLanguage(getApplication())
 
@@ -167,8 +168,34 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun setOfflineMode(enabled: Boolean) {
+        if (offlineMode == enabled) return
+
+        offlineMode = enabled
+        if (!enabled) return
+
+        cancelHomeNetworkJobs()
+        _uiState.value = _uiState.value.copy(
+            playlists = _uiState.value.playlists.copy(loading = false, error = null),
+            hotSongs = _uiState.value.hotSongs.copy(loading = false, error = null),
+            radarSongs = _uiState.value.radarSongs.copy(loading = false, error = null),
+            ytMusicPlaylists = _uiState.value.ytMusicPlaylists.copy(loading = false, error = null),
+            ytMusicHomeShelves = _uiState.value.ytMusicHomeShelves.copy(loading = false, error = null)
+        )
+    }
+
+    private fun cancelHomeNetworkJobs() {
+        playlistJob?.cancel()
+        hotSongsJob?.cancel()
+        radarSongsJob?.cancel()
+        ytMusicPlaylistJob?.cancel()
+        ytMusicHomeFeedJob?.cancel()
+    }
+
     /** 拉首页推荐歌单 */
     fun refreshRecommend() {
+        if (offlineMode) return
+
         playlistJob?.cancel()
         val previous = _uiState.value.playlists
         _uiState.value = _uiState.value.copy(
@@ -215,6 +242,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
      * - 私人雷达：使用关键词“私人雷达”搜索 30 首
      */
     fun loadHomeRecommendations(force: Boolean = false) {
+        if (offlineMode) return
+
         val state = _uiState.value
         if (!force) {
             val alreadyLoaded =
@@ -228,6 +257,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun refreshHotSongs() {
+        if (offlineMode) return
+
         hotSongsJob?.cancel()
         val previous = _uiState.value.hotSongs
         _uiState.value = _uiState.value.copy(
@@ -264,6 +295,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun refreshRadarSongs() {
+        if (offlineMode) return
+
         radarSongsJob?.cancel()
         val previous = _uiState.value.radarSongs
         _uiState.value = _uiState.value.copy(
@@ -301,6 +334,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     /** 拉取 YouTube Music 歌单 */
     fun refreshYtMusicPlaylists() {
+        if (offlineMode) return
+
         ytMusicPlaylistJob?.cancel()
         _uiState.value = _uiState.value.copy(
             ytMusicPlaylists = _uiState.value.ytMusicPlaylists.copy(loading = true, error = null)
@@ -341,6 +376,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     /** 拉取 YouTube Music 首页推荐 */
     fun refreshYtMusicHomeFeed() {
+        if (offlineMode) return
+
         ytMusicHomeFeedJob?.cancel()
         _uiState.value = _uiState.value.copy(
             ytMusicHomeShelves = _uiState.value.ytMusicHomeShelves.copy(loading = true, error = null)
