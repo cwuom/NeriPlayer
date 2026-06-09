@@ -114,6 +114,7 @@ import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylistKind
 import moe.ouom.neriplayer.ui.viewmodel.tab.LibraryViewModel
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
@@ -332,6 +333,7 @@ fun LibraryScreen(
 
                         LibraryTab.BILI -> BiliPlaylistList(
                             playlists = ui.biliPlaylists,
+                            error = ui.biliError,
                             listState = biliListState,
                             onClick = onBiliPlaylistClick
                         )
@@ -574,10 +576,30 @@ private fun YouTubeMusicPlaylistList(
 @Composable
 private fun BiliPlaylistList(
     playlists: List<BiliPlaylist>,
+    error: String?,
     listState: LazyListState,
     onClick: (BiliPlaylist) -> Unit
 ) {
     val miniPlayerHeight = LocalMiniPlayerHeight.current
+    val createdLabel = stringResource(R.string.library_bili_created_favorite)
+    val collectedLabel = stringResource(R.string.library_bili_collected_favorite)
+    val collectionLabel = stringResource(R.string.library_bili_collection)
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    val filteredPlaylists = remember(
+        playlists,
+        searchQuery,
+        createdLabel,
+        collectedLabel,
+        collectionLabel
+    ) {
+        filterBiliPlaylists(
+            playlists = playlists,
+            query = searchQuery,
+            createdLabel = createdLabel,
+            collectedLabel = collectedLabel,
+            collectionLabel = collectionLabel
+        )
+    }
 
     LazyColumn(
         state = listState,
@@ -586,10 +608,101 @@ private fun BiliPlaylistList(
         modifier = Modifier.fillMaxSize()
     ) {
         val cardShape = RoundedCornerShape(12.dp)
+        item(key = "bili_playlist_search") {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                placeholder = { Text(stringResource(R.string.library_bili_search_hint)) },
+                singleLine = true
+            )
+        }
+        if (playlists.isNotEmpty() && filteredPlaylists.isEmpty()) {
+            item {
+                Card(
+                    shape = cardShape,
+                    colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                    modifier = Modifier
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .clip(cardShape)
+                ) {
+                    ListItem(
+                        headlineContent = {
+                            Text(
+                                text = stringResource(R.string.library_bili_search_empty),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        supportingContent = {
+                            Text(
+                                text = stringResource(R.string.library_bili_search_empty_hint),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        leadingContent = {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(56.dp)
+                            )
+                        }
+                    )
+                }
+            }
+        } else if (filteredPlaylists.isEmpty()) {
+            item {
+                Card(
+                    shape = cardShape,
+                    colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                    modifier = Modifier
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .clip(cardShape)
+                ) {
+                    ListItem(
+                        headlineContent = {
+                            Text(
+                                text = error ?: stringResource(R.string.library_bili_empty),
+                                color = if (error != null) {
+                                    MaterialTheme.colorScheme.error
+                                } else {
+                                    Color.Unspecified
+                                }
+                            )
+                        },
+                        supportingContent = {
+                            Text(
+                                text = stringResource(R.string.library_bili_hint),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        leadingContent = {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(56.dp)
+                            )
+                        }
+                    )
+                }
+            }
+        }
         items(
-            items = playlists,
-            key = { it.mediaId }
+            items = filteredPlaylists,
+            key = { "${it.kind}:${it.mediaId}" }
         ) { pl ->
+            val kindLabel = when (pl.kind) {
+                BiliPlaylistKind.CREATED_FAVORITE -> stringResource(R.string.library_bili_created_favorite)
+                BiliPlaylistKind.COLLECTED_FAVORITE -> stringResource(R.string.library_bili_collected_favorite)
+                BiliPlaylistKind.COLLECTION -> stringResource(R.string.library_bili_collection)
+            }
             Card(
                 shape = cardShape,
                 colors = CardDefaults.cardColors(
@@ -605,8 +718,11 @@ private fun BiliPlaylistList(
                 ListItem(
                     headlineContent = { Text(pl.title) },
                     supportingContent = {
+                        val countText = pluralStringResource(R.plurals.library_video_count, pl.count, pl.count)
                         Text(
-                            pluralStringResource(R.plurals.library_video_count, pl.count, pl.count),
+                            listOf(kindLabel, pl.subtitle, countText)
+                                .filter { it.isNotBlank() }
+                                .joinToString(" · "),
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     },
@@ -1280,6 +1396,10 @@ private fun NeteasePlaylistList(
 ) {
     val context = LocalContext.current
     val miniPlayerHeight = LocalMiniPlayerHeight.current
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    val filteredPlaylists = remember(playlists, searchQuery) {
+        filterNeteasePlaylists(playlists, searchQuery)
+    }
 
     LazyColumn(
         state = listState,
@@ -1288,8 +1408,84 @@ private fun NeteasePlaylistList(
         modifier = Modifier.fillMaxSize()
     ) {
         val cardShape = RoundedCornerShape(12.dp)
+        item(key = "netease_playlist_search") {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                placeholder = { Text(stringResource(R.string.library_netease_search_hint)) },
+                singleLine = true
+            )
+        }
+        if (playlists.isNotEmpty() && filteredPlaylists.isEmpty()) {
+            item {
+                Card(
+                    shape = cardShape,
+                    colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                    modifier = Modifier
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .clip(cardShape)
+                ) {
+                    ListItem(
+                        headlineContent = {
+                            Text(stringResource(R.string.library_netease_search_empty))
+                        },
+                        supportingContent = {
+                            Text(
+                                stringResource(R.string.library_netease_search_empty_hint),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        leadingContent = {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(56.dp)
+                            )
+                        }
+                    )
+                }
+            }
+        } else if (filteredPlaylists.isEmpty()) {
+            item {
+                Card(
+                    shape = cardShape,
+                    colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                    modifier = Modifier
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .clip(cardShape)
+                ) {
+                    ListItem(
+                        headlineContent = {
+                            Text(stringResource(R.string.library_netease_playlist_empty))
+                        },
+                        supportingContent = {
+                            Text(
+                                stringResource(R.string.library_netease_search_hint),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        leadingContent = {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(56.dp)
+                            )
+                        }
+                    )
+                }
+            }
+        }
         items(
-            items = playlists,
+            items = filteredPlaylists,
             key = { it.id }
         ) { pl ->
             Card(
@@ -1342,6 +1538,10 @@ private fun NeteaseAlbumList(
     onClick: (AlbumSummary) -> Unit
 ) {
     val miniPlayerHeight = LocalMiniPlayerHeight.current
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    val filteredAlbums = remember(playlists, searchQuery) {
+        filterNeteaseAlbums(playlists, searchQuery)
+    }
 
     LazyColumn(
         state = listState,
@@ -1350,8 +1550,84 @@ private fun NeteaseAlbumList(
         modifier = Modifier.fillMaxSize()
     ) {
         val cardShape = RoundedCornerShape(12.dp)
+        item(key = "netease_album_search") {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                placeholder = { Text(stringResource(R.string.library_netease_search_hint)) },
+                singleLine = true
+            )
+        }
+        if (playlists.isNotEmpty() && filteredAlbums.isEmpty()) {
+            item {
+                Card(
+                    shape = cardShape,
+                    colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                    modifier = Modifier
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .clip(cardShape)
+                ) {
+                    ListItem(
+                        headlineContent = {
+                            Text(stringResource(R.string.library_netease_search_empty))
+                        },
+                        supportingContent = {
+                            Text(
+                                stringResource(R.string.library_netease_search_empty_hint),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        leadingContent = {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(56.dp)
+                            )
+                        }
+                    )
+                }
+            }
+        } else if (filteredAlbums.isEmpty()) {
+            item {
+                Card(
+                    shape = cardShape,
+                    colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                    modifier = Modifier
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .clip(cardShape)
+                ) {
+                    ListItem(
+                        headlineContent = {
+                            Text(stringResource(R.string.library_netease_album_empty))
+                        },
+                        supportingContent = {
+                            Text(
+                                stringResource(R.string.library_netease_search_hint),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        leadingContent = {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(56.dp)
+                            )
+                        }
+                    )
+                }
+            }
+        }
         items(
-            items = playlists,
+            items = filteredAlbums,
             key = { it.id }
         ) { pl ->
             Card(

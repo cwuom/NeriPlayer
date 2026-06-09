@@ -26,6 +26,7 @@ package moe.ouom.neriplayer.core.api.bili
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -79,8 +80,11 @@ class BiliClient(
 
         // 收藏夹
         private const val FAV_FOLDER_CREATED_LIST_ALL = "https://api.bilibili.com/x/v3/fav/folder/created/list-all"
+        private const val FAV_FOLDER_CREATED_LIST = "https://api.bilibili.com/x/v3/fav/folder/created/list"
+        private const val FAV_FOLDER_COLLECTED_LIST = "https://api.bilibili.com/x/v3/fav/folder/collected/list"
         private const val FAV_FOLDER_INFO = "https://api.bilibili.com/x/v3/fav/folder/info"
         private const val FAV_RESOURCE_LIST = "https://api.bilibili.com/x/v3/fav/resource/list"
+        private const val COLLECTION_ARCHIVES_URL = "https://api.bilibili.com/x/polymer/web-space/seasons_archives_list"
         private const val PAGELIST_URL = "https://api.bilibili.com/x/player/pagelist"
 
         /** 默认 UA（Web） */
@@ -121,6 +125,18 @@ class BiliClient(
 
         /** 空音轨结果的重试基础等待 */
         private const val EMPTY_AUDIO_RETRY_DELAY_MS = 250L
+
+        /** 收藏夹接口最大稳定分页尺寸 */
+        private const val FAV_FOLDER_PAGE_SIZE = 20
+
+        /** 收藏夹内容接口文档定义的最大分页尺寸 */
+        private const val FAV_CONTENT_PAGE_SIZE = 20
+
+        /** 合集内容接口默认分页尺寸 */
+        private const val COLLECTION_ARCHIVE_PAGE_SIZE = 30
+
+        /** 控制 B 站分页接口并发，避免大量收藏夹时被限流 */
+        private const val MAX_PARALLEL_PAGE_REQUESTS = 6
 
         /** WebTicket HMAC key */
         private const val WEB_TICKET_KEY = "XgwSnGZ1p"
@@ -290,7 +306,11 @@ class BiliClient(
         val count: Int,
         val likeCount: Long?,
         val playCount: Long?,
-        val collectCount: Long?
+        val collectCount: Long?,
+        val upperName: String = "",
+        val attr: Int = 0,
+        val state: Int = 0,
+        val itemType: Int = 11
     )
 
     data class FavResourceItem(
@@ -312,6 +332,36 @@ class BiliClient(
         val info: FavFolder,
         val items: List<FavResourceItem>,
         val hasMore: Boolean
+    )
+
+    data class CollectionMeta(
+        val seasonId: Long,
+        val mid: Long,
+        val title: String,
+        val coverUrl: String,
+        val description: String,
+        val total: Int
+    )
+
+    data class CollectionArchiveItem(
+        val aid: Long,
+        val bvid: String,
+        val title: String,
+        val coverUrl: String,
+        val durationSec: Int,
+        val pubdate: Long?,
+        val play: Long?
+    )
+
+    data class CollectionArchivePage(
+        val meta: CollectionMeta,
+        val items: List<CollectionArchiveItem>,
+        val hasMore: Boolean
+    )
+
+    private data class FavFolderListResult(
+        val count: Int,
+        val folders: List<FavFolder>
     )
 
     // 对外 API //
@@ -554,26 +604,28 @@ class BiliClient(
     /** 获取指定用户创建的所有收藏夹（公开 + 登录可见私密） */
     suspend fun getUserCreatedFavFolders(upMid: Long): List<FavFolder> =
         withContext(Dispatchers.IO) {
-            val jo = getJson(FAV_FOLDER_CREATED_LIST_ALL, mapOf("up_mid" to upMid.toString()))
-            val data = jo.optJSONObject("data") ?: JSONObject()
-            val list = data.optJSONArray("list") ?: JSONArray()
-            val out = ArrayList<FavFolder>(list.length())
-            for (i in 0 until list.length()) {
-                val o = list.optJSONObject(i) ?: continue
-                out += FavFolder(
-                    mediaId = o.optLong("id"),
-                    fid = o.optLong("fid"),
-                    mid = o.optLong("mid"),
-                    title = o.optString("title"),
-                    coverUrl = ensureHttps(o.optString("cover")),
-                    intro = o.optString("intro"),
-                    count = o.optInt("media_count"),
-                    likeCount = o.optJSONObject("cnt_info")?.optLong("thumb_up"),
-                    playCount = o.optJSONObject("cnt_info")?.optLong("play"),
-                    collectCount = o.optJSONObject("cnt_info")?.optLong("collect")
-                )
+            val listAll = fetchCreatedFavFoldersListAll(upMid)
+            if (listAll.count <= listAll.folders.size) {
+                return@withContext listAll.folders
             }
-            out
+
+            val paged = runCatching { fetchCreatedFavFoldersByPage(upMid, listAll.count) }
+                .onFailure { error ->
+                    NPLogger.w(
+                        TAG,
+                        "Paged created fav folder fallback failed, use list-all result: mid=$upMid",
+                        error
+                    )
+                }
+                .getOrDefault(emptyList())
+
+            mergeFavFolders(listAll.folders, paged)
+        }
+
+    /** 获取用户收藏/订阅的他人收藏夹，platform=web 时 B 站也会混入已收藏的视频合集 */
+    suspend fun getUserCollectedFavFolders(upMid: Long): List<FavFolder> =
+        withContext(Dispatchers.IO) {
+            fetchCollectedFavFoldersByPage(upMid)
         }
 
     /** 获取收藏夹元信息 */
@@ -592,7 +644,11 @@ class BiliClient(
                 count = o.optInt("media_count"),
                 likeCount = cnt?.optLong("thumb_up"),
                 playCount = cnt?.optLong("play"),
-                collectCount = cnt?.optLong("collect")
+                collectCount = cnt?.optLong("collect"),
+                upperName = o.optJSONObject("upper")?.optString("name").orEmpty(),
+                attr = o.optInt("attr"),
+                state = o.optInt("state"),
+                itemType = o.optInt("type", 11)
             )
         }
 
@@ -631,7 +687,11 @@ class BiliClient(
             count = info.optInt("media_count"),
             likeCount = info.optJSONObject("cnt_info")?.optLong("thumb_up"),
             playCount = info.optJSONObject("cnt_info")?.optLong("play"),
-            collectCount = info.optJSONObject("cnt_info")?.optLong("collect")
+            collectCount = info.optJSONObject("cnt_info")?.optLong("collect"),
+            upperName = info.optJSONObject("upper")?.optString("name").orEmpty(),
+            attr = info.optInt("attr"),
+            state = info.optInt("state"),
+            itemType = info.optInt("type", 11)
         )
 
         val medias = data.optJSONArray("medias") ?: JSONArray()
@@ -669,36 +729,220 @@ class BiliClient(
      * 获取收藏夹内所有内容
      */
     suspend fun getAllFavFolderItems(mediaId: Long): List<FavResourceItem> = withContext(Dispatchers.IO) {
-        val folderInfo = getFavFolderInfo(mediaId)
-        val totalCount = folderInfo.count
-        if (totalCount == 0) {
-            return@withContext emptyList()
+        val firstPage = getFavFolderContents(mediaId, page = 1, pageSize = FAV_CONTENT_PAGE_SIZE)
+        val totalCount = firstPage.info.count
+        if (!firstPage.hasMore || totalCount <= firstPage.items.size) {
+            return@withContext firstPage.items
         }
 
-        val pageSize = 20
-        val totalPages = (totalCount + pageSize - 1) / pageSize
-
-        // 并发请求所有分页
-        val deferredPages = (1..totalPages).map { page ->
-            async {
-                try {
-                    // 将页码与请求结果配对，以便后续排序
-                    page to getFavFolderContents(mediaId, page = page, pageSize = pageSize).items
-                } catch (e: Exception) {
-                    NPLogger.e(TAG, "Failed to fetch page $page for mediaId $mediaId", e)
-                    page to emptyList() // 出错时返回空列表，但页码保留
-                }
-            }
+        val totalPages = (totalCount + FAV_CONTENT_PAGE_SIZE - 1) / FAV_CONTENT_PAGE_SIZE
+        val restPages = fetchPagesInChunks(2..totalPages) { page ->
+            getFavFolderContents(mediaId, page = page, pageSize = FAV_CONTENT_PAGE_SIZE).items
         }
 
-        // 等待所有请求完成
-        val pageResults = deferredPages.awaitAll()
-
-        // 按页码从小到大排序，然后展开并合并列表
-        pageResults.sortedBy { it.first }.flatMap { it.second }
+        (firstPage.items + restPages.flatten())
+            .distinctBy { "${it.type}:${it.id}:${it.bvid.orEmpty()}" }
     }
 
+    /** 获取合集内容分页 */
+    suspend fun getCollectionArchives(
+        mid: Long,
+        seasonId: Long,
+        page: Int = 1,
+        pageSize: Int = COLLECTION_ARCHIVE_PAGE_SIZE,
+        sortReverse: Boolean = false
+    ): CollectionArchivePage = withContext(Dispatchers.IO) {
+        val params = mapOf(
+            "mid" to mid.toString(),
+            "season_id" to seasonId.toString(),
+            "sort_reverse" to sortReverse.toString(),
+            "page_num" to page.toString(),
+            "page_size" to pageSize.toString(),
+            "web_location" to "333.999"
+        )
+        val jo = getJsonWbi(COLLECTION_ARCHIVES_URL, params)
+        val data = jo.optJSONObject("data") ?: JSONObject()
+        val metaObj = data.optJSONObject("meta") ?: JSONObject()
+        val pageObj = data.optJSONObject("page") ?: JSONObject()
+        val total = pageObj.optInt("total", metaObj.optInt("total"))
+        val meta = CollectionMeta(
+            seasonId = metaObj.optLong("season_id", seasonId),
+            mid = metaObj.optLong("mid", mid),
+            title = metaObj.optString("name"),
+            coverUrl = ensureHttps(metaObj.optString("cover")),
+            description = metaObj.optString("description"),
+            total = total
+        )
+
+        val archives = data.optJSONArray("archives") ?: JSONArray()
+        val items = ArrayList<CollectionArchiveItem>(archives.length())
+        for (i in 0 until archives.length()) {
+            val archive = archives.optJSONObject(i) ?: continue
+            val stat = archive.optJSONObject("stat") ?: JSONObject()
+            items += CollectionArchiveItem(
+                aid = archive.optLong("aid"),
+                bvid = archive.optString("bvid"),
+                title = archive.optString("title"),
+                coverUrl = ensureHttps(archive.optString("pic")),
+                durationSec = archive.optInt("duration"),
+                pubdate = archive.optLongOrNull("pubdate"),
+                play = stat.optLongOrNull("view")
+            )
+        }
+
+        CollectionArchivePage(
+            meta = meta,
+            items = items,
+            hasMore = page * pageSize < total
+        )
+    }
+
+    /** 获取合集内所有视频 */
+    suspend fun getAllCollectionArchives(mid: Long, seasonId: Long): List<CollectionArchiveItem> =
+        withContext(Dispatchers.IO) {
+            val firstPage = getCollectionArchives(mid = mid, seasonId = seasonId, page = 1)
+            val totalCount = firstPage.meta.total
+            if (!firstPage.hasMore || totalCount <= firstPage.items.size) {
+                return@withContext firstPage.items
+            }
+
+            val totalPages = (totalCount + COLLECTION_ARCHIVE_PAGE_SIZE - 1) / COLLECTION_ARCHIVE_PAGE_SIZE
+            val restPages = fetchPagesInChunks(2..totalPages) { page ->
+                getCollectionArchives(
+                    mid = mid,
+                    seasonId = seasonId,
+                    page = page,
+                    pageSize = COLLECTION_ARCHIVE_PAGE_SIZE
+                ).items
+            }
+
+            (firstPage.items + restPages.flatten())
+                .distinctBy { it.bvid.ifBlank { it.aid.toString() } }
+        }
+
     // 内部实现 //
+
+    private suspend fun fetchCreatedFavFoldersListAll(upMid: Long): FavFolderListResult {
+        val jo = getJson(
+            FAV_FOLDER_CREATED_LIST_ALL,
+            mapOf(
+                "up_mid" to upMid.toString(),
+                "web_location" to "333.1387"
+            )
+        )
+        val data = jo.optJSONObject("data") ?: JSONObject()
+        return parseFavFolderListResult(data)
+    }
+
+    private suspend fun fetchCreatedFavFoldersByPage(
+        upMid: Long,
+        expectedCount: Int
+    ): List<FavFolder> {
+        val totalPages = max(1, (expectedCount + FAV_FOLDER_PAGE_SIZE - 1) / FAV_FOLDER_PAGE_SIZE)
+        return fetchPagesInChunks(1..totalPages) { page ->
+            val jo = getJson(
+                FAV_FOLDER_CREATED_LIST,
+                mapOf(
+                    "up_mid" to upMid.toString(),
+                    "pn" to page.toString(),
+                    "ps" to FAV_FOLDER_PAGE_SIZE.toString(),
+                    "web_location" to "333.1387"
+                )
+            )
+            parseFavFolderListResult(jo.optJSONObject("data") ?: JSONObject()).folders
+        }.flatten()
+    }
+
+    private suspend fun fetchCollectedFavFoldersByPage(upMid: Long): List<FavFolder> {
+        val out = ArrayList<FavFolder>()
+        var page = 1
+        var expectedCount = Int.MAX_VALUE
+
+        while (out.size < expectedCount) {
+            val jo = getJson(
+                FAV_FOLDER_COLLECTED_LIST,
+                mapOf(
+                    "up_mid" to upMid.toString(),
+                    "pn" to page.toString(),
+                    "ps" to FAV_FOLDER_PAGE_SIZE.toString(),
+                    "platform" to "web"
+                )
+            )
+            val result = parseFavFolderListResult(jo.optJSONObject("data") ?: JSONObject())
+            expectedCount = result.count.takeIf { it > 0 } ?: out.size + result.folders.size
+            if (result.folders.isEmpty()) break
+
+            out += result.folders
+            page += 1
+        }
+
+        return out.distinctBy { "${it.itemType}:${it.mediaId}" }
+    }
+
+    private fun parseFavFolderListResult(data: JSONObject): FavFolderListResult {
+        val list = data.optJSONArray("list") ?: JSONArray()
+        val out = ArrayList<FavFolder>(list.length())
+        for (i in 0 until list.length()) {
+            val item = list.optJSONObject(i) ?: continue
+            out += parseFavFolder(item)
+        }
+        return FavFolderListResult(
+            count = data.optInt("count", out.size),
+            folders = out
+        )
+    }
+
+    private fun parseFavFolder(o: JSONObject): FavFolder {
+        val cnt = o.optJSONObject("cnt_info")
+        val upper = o.optJSONObject("upper")
+        val collectionId = o.optLong("season_id", o.optLong("series_id", 0L))
+        val mediaId = o.optLong("id", collectionId)
+        val fallbackType = if (collectionId != 0L) 21 else 11
+        return FavFolder(
+            mediaId = mediaId,
+            fid = o.optLong("fid", collectionId),
+            mid = o.optLong("mid").takeIf { it != 0L } ?: upper?.optLong("mid") ?: 0L,
+            title = o.optString("title").ifBlank { o.optString("name") },
+            coverUrl = ensureHttps(o.optString("cover")),
+            intro = o.optString("intro", o.optString("description")),
+            count = o.optInt("media_count", o.optInt("total")),
+            likeCount = cnt?.optLong("thumb_up"),
+            playCount = cnt?.optLong("play"),
+            collectCount = cnt?.optLong("collect"),
+            upperName = upper?.optString("name").orEmpty(),
+            attr = o.optInt("attr"),
+            state = o.optInt("state"),
+            itemType = o.optInt("type", fallbackType)
+        )
+    }
+
+    private fun mergeFavFolders(
+        primary: List<FavFolder>,
+        fallback: List<FavFolder>
+    ): List<FavFolder> {
+        return (primary + fallback)
+            .filter { it.mediaId != 0L && it.title.isNotBlank() }
+            .distinctBy { it.mediaId }
+    }
+
+    private suspend fun <T> fetchPagesInChunks(
+        pages: IntRange,
+        fetch: suspend (Int) -> T
+    ): List<T> = coroutineScope {
+        pages
+            .chunked(MAX_PARALLEL_PAGE_REQUESTS)
+            .flatMap { chunk ->
+                chunk.map { page ->
+                    async {
+                        runCatching { fetch(page) }
+                            .onFailure { error ->
+                                NPLogger.e(TAG, "Failed to fetch Bili page $page", error)
+                            }
+                            .getOrNull()
+                    }
+                }.awaitAll().filterNotNull()
+            }
+    }
 
     private fun MutableMap<String, String>.putCommonParams(opts: PlayOptions) {
         opts.qn?.let { put("qn", it.toString()) }

@@ -26,6 +26,7 @@ package moe.ouom.neriplayer.ui.util
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.mapSaver
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
+import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylistKind
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
@@ -42,6 +43,7 @@ private const val KEY_MID = "mid"
 private const val KEY_TITLE = "title"
 private const val KEY_COUNT = "count"
 private const val KEY_COVER_URL = "coverUrl"
+private const val KEY_KIND = "kind"
 private const val KEY_PLAYLIST_ID = "playlistId"
 private const val KEY_BROWSE_ID = "browseId"
 private const val KEY_SUBTITLE = "subtitle"
@@ -110,13 +112,19 @@ fun restoreBiliPlaylist(map: Map<*, *>?): BiliPlaylist? {
     val title = map[KEY_TITLE] as? String ?: return null
     val count = (map[KEY_COUNT] as? Number)?.toInt() ?: 0
     val coverUrl = map[KEY_COVER_URL] as? String ?: ""
+    val kind = (map[KEY_KIND] as? String)
+        ?.let { runCatching { BiliPlaylistKind.valueOf(it) }.getOrNull() }
+        ?: BiliPlaylistKind.CREATED_FAVORITE
+    val subtitle = map[KEY_SUBTITLE] as? String ?: ""
     return BiliPlaylist(
         mediaId = mediaId,
         fid = fid,
         mid = mid,
         title = title,
         count = count,
-        coverUrl = coverUrl
+        coverUrl = coverUrl,
+        kind = kind,
+        subtitle = subtitle
     )
 }
 
@@ -161,7 +169,9 @@ fun BiliPlaylist.toSaveMap(): HashMap<String, Any?> = hashMapOf(
     KEY_MID to mid,
     KEY_TITLE to title,
     KEY_COUNT to count,
-    KEY_COVER_URL to coverUrl
+    KEY_COVER_URL to coverUrl,
+    KEY_KIND to kind.name,
+    KEY_SUBTITLE to subtitle
 )
 
 fun YouTubeMusicPlaylist.toSaveMap(): HashMap<String, Any?> = hashMapOf(

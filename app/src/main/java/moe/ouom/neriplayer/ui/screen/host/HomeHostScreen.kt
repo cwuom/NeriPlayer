@@ -55,6 +55,7 @@ import moe.ouom.neriplayer.ui.screen.tab.HomeScreen
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylistKind
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.util.restoreBiliPlaylist
@@ -263,13 +264,17 @@ private fun openRecent(
             onSelected(HomeSelectedItem.Local(entry.id))
         }
         "bili" -> {
+            val kind = entry.subtype
+                ?.let { runCatching { BiliPlaylistKind.valueOf(it) }.getOrNull() }
+                ?: BiliPlaylistKind.CREATED_FAVORITE
             val bili = BiliPlaylist(
                 mediaId = entry.id,
                 title = entry.name,
                 coverUrl = entry.picUrl ?: "",
                 count = entry.trackCount,
                 fid = entry.fid ?: 0L,
-                mid = entry.mid ?: 0L
+                mid = entry.mid ?: 0L,
+                kind = kind
             )
             onSelected(HomeSelectedItem.Bili(bili))
         }

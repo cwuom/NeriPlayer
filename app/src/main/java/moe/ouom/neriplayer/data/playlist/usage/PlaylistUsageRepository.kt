@@ -51,6 +51,7 @@ data class UsageEntry(
     val mid: Long? = null,
     val browseId: String? = null,
     val playlistId: String? = null,
+    val subtype: String? = null,
 )
 
 class PlaylistUsageRepository(private val app: Context) {
@@ -108,10 +109,11 @@ class PlaylistUsageRepository(private val app: Context) {
         source: String,
         browseId: String? = null,
         playlistId: String? = null,
+        subtype: String? = null,
         now: Long = System.currentTimeMillis()
     ) {
         val data = _flow.value.toMutableList()
-        val idx = data.indexOfFirst { it.id == id && it.source == source }
+        val idx = data.indexOfFirst { it.id == id && it.source == source && it.subtype == subtype }
         if (idx >= 0) {
             val old = data[idx]
             old.copy(
@@ -122,6 +124,7 @@ class PlaylistUsageRepository(private val app: Context) {
                 mid = mid,
                 browseId = browseId,
                 playlistId = playlistId,
+                subtype = subtype,
                 lastOpened = now,
                 openCount = old.openCount + 1
             ).also { data[idx] = it }
@@ -138,7 +141,8 @@ class PlaylistUsageRepository(private val app: Context) {
                     fid = fid,
                     mid = mid,
                     browseId = browseId,
-                    playlistId = playlistId
+                    playlistId = playlistId,
+                    subtype = subtype
                 )
             )
         }
@@ -157,10 +161,11 @@ class PlaylistUsageRepository(private val app: Context) {
         mid: Long = 0,
         source: String,
         browseId: String? = null,
-        playlistId: String? = null
+        playlistId: String? = null,
+        subtype: String? = null
     ) {
         val data = _flow.value.toMutableList()
-        val idx = data.indexOfFirst { it.id == id && it.source == source }
+        val idx = data.indexOfFirst { it.id == id && it.source == source && it.subtype == subtype }
         if (idx >= 0) {
             val old = data[idx]
             data[idx] = old.copy(
@@ -170,7 +175,8 @@ class PlaylistUsageRepository(private val app: Context) {
                 fid = fid,
                 mid = mid,
                 browseId = browseId ?: old.browseId,
-                playlistId = playlistId ?: old.playlistId
+                playlistId = playlistId ?: old.playlistId,
+                subtype = subtype ?: old.subtype
             )
             _flow.value = data
             saveAsync(data)

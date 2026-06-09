@@ -214,7 +214,8 @@ fun LibraryHostScreen(
                                 trackCount = playlist.count,
                                 source = "bili",
                                 mid = playlist.mid,
-                                fid = playlist.fid
+                                fid = playlist.fid,
+                                subtype = playlist.kind.name
                             )
                         },
                         onOpenRecent = onOpenRecent,

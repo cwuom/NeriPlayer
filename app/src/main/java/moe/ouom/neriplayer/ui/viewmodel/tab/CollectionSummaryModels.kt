@@ -51,7 +51,13 @@ data class AlbumSummary(
     val size: Int
 ) : Parcelable
 
-/** Bilibili 收藏夹摘要模型 */
+enum class BiliPlaylistKind {
+    CREATED_FAVORITE,
+    COLLECTED_FAVORITE,
+    COLLECTION
+}
+
+/** Bilibili 收藏夹 / 合集摘要模型 */
 @Parcelize
 data class BiliPlaylist(
     val mediaId: Long,
@@ -59,5 +65,7 @@ data class BiliPlaylist(
     val mid: Long,
     val title: String,
     val count: Int,
-    val coverUrl: String
+    val coverUrl: String,
+    val kind: BiliPlaylistKind = BiliPlaylistKind.CREATED_FAVORITE,
+    val subtitle: String = ""
 ) : Parcelable

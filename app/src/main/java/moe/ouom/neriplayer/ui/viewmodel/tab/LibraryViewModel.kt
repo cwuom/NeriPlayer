@@ -29,11 +29,13 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicLibraryPlaylist
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
@@ -42,6 +44,9 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
 import java.io.IOException
+
+private const val BILI_DETAIL_BATCH_SIZE = 6
+private const val BILI_RESOURCE_TYPE_COLLECTION = 21
 
 /** 媒体库页面 UI 状态 */
 data class LibraryUiState(
@@ -149,39 +154,37 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                     _uiState.value = _uiState.value.copy(biliError = getApplication<Application>().getString(R.string.error_get_user_id))
                     return@launch
                 }
-                val rawList = withContext(Dispatchers.IO) { biliClient.getUserCreatedFavFolders(mid) }
-
-                // 并发获取每个收藏夹的详细信息
                 val mapped = withContext(Dispatchers.IO) {
-                    rawList.map { folder ->
-                        async {
-                            try {
-                                val folderInfo = biliClient.getFavFolderInfo(folder.mediaId)
-                                BiliPlaylist(
-                                    mediaId = folderInfo.mediaId,
-                                    fid = folderInfo.fid,
-                                    mid = folderInfo.mid,
-                                    title = folderInfo.title,
-                                    count = folderInfo.count,
-                                    coverUrl = folderInfo.coverUrl.replace("http://", "https://")
-                                )
-                            } catch (e: Exception) {
-                                // 获取详情失败，使用原始数据并提供一个空的封面URL
-                                NPLogger.e("LibraryViewModel-Bili", getApplication<Application>().getString(R.string.music_get_detail_failed), e)
-                                BiliPlaylist(
-                                    mediaId = folder.mediaId,
-                                    fid = folder.fid,
-                                    mid = folder.mid,
-                                    title = folder.title,
-                                    count = folder.count,
-                                    coverUrl = ""
+                    val created = async { biliClient.getUserCreatedFavFolders(mid) }
+                    val collected = async {
+                        runCatching { biliClient.getUserCollectedFavFolders(mid) }
+                            .onFailure { error ->
+                                NPLogger.w(
+                                    "LibraryViewModel-Bili",
+                                    "Failed to fetch collected fav folders",
+                                    error
                                 )
                             }
-                        }
-                    }.awaitAll()
+                            .getOrDefault(emptyList())
+                    }
+
+                    val createdPlaylists = mapBiliFolders(
+                        folders = created.await(),
+                        kind = BiliPlaylistKind.CREATED_FAVORITE,
+                        currentMid = mid
+                    )
+                    val collectedPlaylists = mapBiliFolders(
+                        folders = collected.await(),
+                        kind = BiliPlaylistKind.COLLECTED_FAVORITE,
+                        currentMid = mid
+                    )
+
+                    (createdPlaylists + collectedPlaylists)
+                        .filter { it.mediaId != 0L && it.title.isNotBlank() }
+                        .distinctBy { "${it.kind}:${it.mediaId}" }
                 }
 
-                NPLogger.d("LibraryViewModel-Bili",mapped)
+                NPLogger.d("LibraryViewModel-Bili", mapped)
 
                 _uiState.value = _uiState.value.copy(biliPlaylists = mapped, biliError = null)
             } catch (e: IOException) {
@@ -190,6 +193,64 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 _uiState.value = _uiState.value.copy(biliError = e.message)
             }
         }
+    }
+
+    private suspend fun mapBiliFolders(
+        folders: List<BiliClient.FavFolder>,
+        kind: BiliPlaylistKind,
+        currentMid: Long
+    ): List<BiliPlaylist> = coroutineScope {
+        folders
+            .filter { it.state == 0 && it.mediaId != 0L }
+            .chunked(BILI_DETAIL_BATCH_SIZE)
+            .flatMap { batch ->
+                batch.map { folder ->
+                    async(Dispatchers.IO) {
+                        mapBiliFolder(folder, kind, currentMid)
+                    }
+                }.awaitAll()
+            }
+            .filterNotNull()
+    }
+
+    private suspend fun mapBiliFolder(
+        folder: BiliClient.FavFolder,
+        kind: BiliPlaylistKind,
+        currentMid: Long
+    ): BiliPlaylist? {
+        val resolvedKind = when {
+            folder.itemType == BILI_RESOURCE_TYPE_COLLECTION -> BiliPlaylistKind.COLLECTION
+            else -> kind
+        }
+
+        val detail = if (resolvedKind == BiliPlaylistKind.COLLECTION) {
+            null
+        } else {
+            runCatching { biliClient.getFavFolderInfo(folder.mediaId) }
+                .onFailure { error ->
+                    NPLogger.e(
+                        "LibraryViewModel-Bili",
+                        getApplication<Application>().getString(R.string.music_get_detail_failed),
+                        error
+                    )
+                }
+                .getOrNull()
+        }
+        val source = detail ?: folder
+        val ownerLabel = source.upperName.ifBlank {
+            if (source.mid != 0L && source.mid != currentMid) source.mid.toString() else ""
+        }
+
+        return BiliPlaylist(
+            mediaId = source.mediaId,
+            fid = source.fid,
+            mid = source.mid,
+            title = source.title.takeIf { it.isNotBlank() } ?: return null,
+            count = source.count,
+            coverUrl = source.coverUrl.replace("http://", "https://"),
+            kind = resolvedKind,
+            subtitle = ownerLabel
+        )
     }
 
 

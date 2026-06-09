@@ -36,8 +36,12 @@ import kotlinx.parcelize.Parcelize
 import moe.ouom.neriplayer.core.api.bili.buildBiliPartSong
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylistKind
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import java.io.IOException
+
+private const val BILI_RESOURCE_TYPE_VIDEO = 2
+private const val BILI_RESOURCE_TYPE_COLLECTION = 21
 
 /** Bilibili 视频条目数据模型 */
 @Parcelize
@@ -98,28 +102,18 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(loading = true, error = null)
             try {
-                val items = withContext(Dispatchers.IO) {
-                    client.getAllFavFolderItems(mediaId)
-                }
-
-                val videos = items.mapNotNull {
-                    // 仅保留视频类型的内容
-                    if (it.type == 2) {
-                        BiliVideoItem(
-                            id = it.id,
-                            bvid = it.bvid ?: "",
-                            title = it.title,
-                            uploader = it.upperName,
-                            coverUrl = it.coverUrl.replaceFirst("http://", "https://"),
-                            durationSec = it.durationSec
-                        )
-                    } else {
-                        null
+                val header = uiState.value.header ?: return@launch
+                val videos = withContext(Dispatchers.IO) {
+                    when (header.kind) {
+                        BiliPlaylistKind.COLLECTION -> loadCollectionVideos(header)
+                        BiliPlaylistKind.CREATED_FAVORITE,
+                        BiliPlaylistKind.COLLECTED_FAVORITE -> loadFavoriteFolderVideos(header)
                     }
                 }
 
                 _uiState.value = _uiState.value.copy(
                     loading = false,
+                    header = header.copy(count = videos.size),
                     videos = videos
                 )
 
@@ -135,6 +129,56 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
                 )
             }
         }
+    }
+
+    private suspend fun loadFavoriteFolderVideos(playlist: BiliPlaylist): List<BiliVideoItem> {
+        val items = client.getAllFavFolderItems(playlist.mediaId)
+        val videos = ArrayList<BiliVideoItem>(items.size)
+        for (item in items) {
+            when (item.type) {
+                BILI_RESOURCE_TYPE_VIDEO -> item.toVideoItem()?.let(videos::add)
+                BILI_RESOURCE_TYPE_COLLECTION -> {
+                    val collectionVideos = runCatching {
+                        client.getAllCollectionArchives(mid = item.upperMid, seasonId = item.id)
+                    }.getOrDefault(emptyList())
+                    collectionVideos.mapTo(videos) { archive ->
+                        archive.toVideoItem(uploader = item.upperName.ifBlank { item.title })
+                    }
+                }
+            }
+        }
+        return videos.distinctBy { it.bvid.ifBlank { it.id.toString() } }
+    }
+
+    private suspend fun loadCollectionVideos(playlist: BiliPlaylist): List<BiliVideoItem> {
+        if (playlist.mid == 0L) return emptyList()
+        return client.getAllCollectionArchives(mid = playlist.mid, seasonId = playlist.mediaId)
+            .map { archive ->
+                archive.toVideoItem(uploader = playlist.subtitle.ifBlank { playlist.title })
+            }
+    }
+
+    private fun BiliClient.FavResourceItem.toVideoItem(): BiliVideoItem? {
+        val resolvedBvid = bvid?.takeIf { it.isNotBlank() } ?: return null
+        return BiliVideoItem(
+            id = id,
+            bvid = resolvedBvid,
+            title = title,
+            uploader = upperName,
+            coverUrl = coverUrl.replaceFirst("http://", "https://"),
+            durationSec = durationSec
+        )
+    }
+
+    private fun BiliClient.CollectionArchiveItem.toVideoItem(uploader: String): BiliVideoItem {
+        return BiliVideoItem(
+            id = aid,
+            bvid = bvid,
+            title = title,
+            uploader = uploader,
+            coverUrl = coverUrl.replaceFirst("http://", "https://"),
+            durationSec = durationSec
+        )
     }
 
     /**

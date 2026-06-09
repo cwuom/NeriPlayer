@@ -128,7 +128,7 @@ fun BiliPlaylistDetailScreen(
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
     val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
     // 使用Unit作为key，确保每次进入都重新加载最新数据
-    LaunchedEffect(Unit) { vm.start(playlist) }
+    LaunchedEffect(playlist.mediaId, playlist.kind) { vm.start(playlist) }
 
     // 保存最新的header和videos数据，用于在Screen销毁时更新使用记录
     var latestHeader by remember { mutableStateOf<BiliPlaylist?>(null) }
@@ -149,7 +149,8 @@ fun BiliPlaylistDetailScreen(
                     trackCount = latestVideosSize,
                     fid = header.fid,
                     mid = header.mid,
-                    source = "bili"
+                    source = "bili",
+                    subtype = header.kind.name
                 )
             }
         }
@@ -369,7 +370,7 @@ fun BiliPlaylistDetailScreen(
                     .fillMaxSize()
                     .windowInsetsPadding(WindowInsets.navigationBars)
                 ) {
-                    val listState = rememberSaveable(playlist.mediaId, saver = LazyListState.Saver) {
+                    val listState = rememberSaveable(playlist.kind.name, playlist.mediaId, saver = LazyListState.Saver) {
                         LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
                     }
                     val activeSong = currentSong
@@ -426,7 +427,10 @@ fun BiliPlaylistDetailScreen(
                                 }
                             }
                             else -> {
-                                itemsIndexed(displayedVideos, key = { _, it -> it.id }) { index, item ->
+                                itemsIndexed(
+                                    displayedVideos,
+                                    key = { _, it -> it.bvid.ifBlank { it.id.toString() } }
+                                ) { index, item ->
                                     VideoRow(
                                         index = index + 1,
                                         video = item,

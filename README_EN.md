@@ -195,11 +195,12 @@ For release build and signing details, see
 ## Platform Status
 
 - **NetEase Cloud Music**:
-  login, search, curated playlists, albums, playback, downloads, lyrics, and
-  playback metadata completion, auto source switching for restricted playback,
-  plus syncing local favorites to NetEase Liked Songs.
+  login, song search, curated playlists, albums, playlist/album list search,
+  playback, downloads, lyrics, playback metadata completion, auto source switching
+  for restricted playback, plus syncing local favorites to NetEase Liked Songs.
 - **Bilibili**:
-  login, search, favorites, multi-part video-to-audio playback, and downloads.
+  login, video search, favorites, collections, favorite/collection list search,
+  multi-part video-to-audio playback, and downloads.
   It is not a full video discovery or comments client.
 - **YouTube Music**:
   login, home/playlist browsing, playlist details, search, playback, downloads,
@@ -429,7 +430,7 @@ NeriPlayer also supports storing the same sync data in a WebDAV remote file.
 ### Limitations
 
 - Downloads do not rely on the system download service and do not support resume.
-- Bilibili mainly provides search, favorites, and audio playback. It is not a
+- Bilibili mainly provides video search, favorites, collections, and audio playback. It is not a
   full video discovery client.
 - QQ Music is only a playback metadata/lyrics completion source.
 - GitHub/WebDAV sync is not end-to-end encrypted. Full config export files may
