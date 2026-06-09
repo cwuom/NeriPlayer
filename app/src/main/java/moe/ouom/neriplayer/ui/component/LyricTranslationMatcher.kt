@@ -34,18 +34,38 @@ internal fun matchTranslationsToLineIndices(
                     lineEndMs = nextLine.endTimeMs
                 )
             } ?: Long.MAX_VALUE
+            val currentOverlapMs = calculateIntervalOverlapMs(
+                firstStartMs = line.startTimeMs,
+                firstEndMs = normalizeExclusiveEndTime(line.startTimeMs, line.endTimeMs),
+                secondStartMs = translation.startTimeMs,
+                secondEndMs = normalizeExclusiveEndTime(translation.startTimeMs, translation.endTimeMs)
+            )
+            val nextOverlapMs = lines.getOrNull(lineIndex + 1)?.let { nextLine ->
+                calculateIntervalOverlapMs(
+                    firstStartMs = nextLine.startTimeMs,
+                    firstEndMs = normalizeExclusiveEndTime(nextLine.startTimeMs, nextLine.endTimeMs),
+                    secondStartMs = translation.startTimeMs,
+                    secondEndMs = normalizeExclusiveEndTime(translation.startTimeMs, translation.endTimeMs)
+                )
+            } ?: 0L
 
-            // 翻译远落后于当前行（超过宽松容差）时才丢弃
+            // 翻译远早于当前行且没有重叠时才丢弃
             val shouldSkipStaleTranslation = translation.startTimeMs < line.startTimeMs &&
-                currentDistanceMs > TranslationClosestMatchToleranceMs
+                currentDistanceMs > TranslationClosestMatchToleranceMs &&
+                currentOverlapMs <= 0L
             if (shouldSkipStaleTranslation) {
                 translationIndex++
                 continue
             }
 
+            // 先看真实播放区间，避免翻译提前一两秒时被误判为上一句
+            val shouldMatchByOverlap = currentOverlapMs > 0L &&
+                currentOverlapMs >= nextOverlapMs
+
             // 严格匹配：在容差内且离当前行最近
             // 宽松匹配：翻译在当前行之前但在宽松容差内，且离当前行比下一行近
             val shouldMatchCurrentLine =
+                shouldMatchByOverlap ||
                 (currentDistanceMs <= toleranceMs && currentDistanceMs <= nextDistanceMs) ||
                 (currentDistanceMs <= TranslationClosestMatchToleranceMs && currentDistanceMs <= nextDistanceMs)
             if (shouldMatchCurrentLine) {

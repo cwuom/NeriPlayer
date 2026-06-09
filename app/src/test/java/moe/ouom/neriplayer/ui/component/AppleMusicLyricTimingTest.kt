@@ -101,6 +101,23 @@ class AppleMusicLyricTimingTest {
     }
 
     @Test
+    fun `matchTranslationsToLineIndices keeps early overlapping translation on current line`() {
+        val lyrics = listOf(
+            LyricEntry(text = "The road gets cold", startTimeMs = 68_020L, endTimeMs = 70_480L),
+            LyricEntry(text = "There's no spring in the middle this year", startTimeMs = 70_510L, endTimeMs = 75_250L)
+        )
+        val translations = listOf(
+            LyricEntry(text = "踽踽独行 长路孤冷", startTimeMs = 66_440L, endTimeMs = 70_600L),
+            LyricEntry(text = "已然初夏 春光还迟迟未来", startTimeMs = 70_600L, endTimeMs = 75_390L)
+        )
+
+        val matchedTranslations = matchTranslationsToLineIndices(lyrics, translations)
+
+        assertEquals("踽踽独行 长路孤冷", matchedTranslations[0]?.text)
+        assertEquals("已然初夏 春光还迟迟未来", matchedTranslations[1]?.text)
+    }
+
+    @Test
     fun `resolveHeadGlowTarget keeps glow on current line when next char wraps`() {
         val target = resolveHeadGlowTarget(
             currentLine = 0,
