@@ -462,14 +462,21 @@ object AudioDownloadManager {
         partialSidecarReferencesBySongKey.remove(songKey)
     }
 
-    private fun buildSharedCoverLookupKeys(song: SongItem): List<String> {
+    internal fun buildSharedCoverLookupKeys(song: SongItem): List<String> {
+        val remoteCoverKeys = buildRemoteCoverLookupKeys(song)
         return linkedSetOf<String>().apply {
-            song.customCoverUrl?.trim()?.takeIf(String::isNotBlank)?.let { add("url:$it") }
-            song.coverUrl?.trim()?.takeIf(String::isNotBlank)?.let { add("url:$it") }
-            song.originalCoverUrl?.trim()?.takeIf(String::isNotBlank)?.let { add("url:$it") }
-            if (song.customCoverUrl.isNullOrBlank()) {
+            remoteCoverKeys.forEach { add("url:$it") }
+            if (remoteCoverKeys.isEmpty()) {
                 song.identity().album.takeIf(String::isNotBlank)?.let { add("album:$it") }
             }
+        }.toList()
+    }
+
+    private fun buildRemoteCoverLookupKeys(song: SongItem): List<String> {
+        return linkedSetOf<String>().apply {
+            song.customCoverUrl?.trim()?.takeIf(String::isNotBlank)?.let(::add)
+            song.coverUrl?.trim()?.takeIf(String::isNotBlank)?.let(::add)
+            song.originalCoverUrl?.trim()?.takeIf(String::isNotBlank)?.let(::add)
         }.toList()
     }
 
@@ -2410,6 +2417,5 @@ internal fun resolveVisibleDownloadFileName(
         ?.takeIf(String::isNotBlank)
         ?: fallbackTempFileName
 }
-
 
 

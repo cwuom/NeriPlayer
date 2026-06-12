@@ -105,6 +105,46 @@ class AudioDownloadManagerTest {
     }
 
     @Test
+    fun `shared cover lookup does not use album key when song has explicit cover url`() {
+        val song = SongItem(
+            id = 1L,
+            name = "Song",
+            artist = "Artist",
+            album = "NeteaseAlbum",
+            albumId = 1L,
+            durationMs = 1_000L,
+            coverUrl = "https://example.com/cover.jpg",
+            originalCoverUrl = "https://example.com/original.jpg"
+        )
+
+        assertEquals(
+            listOf(
+                "url:https://example.com/cover.jpg",
+                "url:https://example.com/original.jpg"
+            ),
+            AudioDownloadManager.buildSharedCoverLookupKeys(song)
+        )
+    }
+
+    @Test
+    fun `shared cover lookup keeps album fallback only when cover urls are missing`() {
+        val song = SongItem(
+            id = 1L,
+            name = "Song",
+            artist = "Artist",
+            album = "NeteaseAlbum",
+            albumId = 1L,
+            durationMs = 1_000L,
+            coverUrl = null
+        )
+
+        assertEquals(
+            listOf("album:netease"),
+            AudioDownloadManager.buildSharedCoverLookupKeys(song)
+        )
+    }
+
+    @Test
     fun `transfer size completeness accepts unknown sizes and rejects truncated payloads`() {
         assertTrue(AudioDownloadManager.isTransferSizeComplete(null, 128L))
         assertTrue(AudioDownloadManager.isTransferSizeComplete(0L, 128L))

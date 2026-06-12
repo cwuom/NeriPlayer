@@ -342,6 +342,65 @@ class ManagedDownloadStorageSnapshotCacheTest {
     }
 
     @Test
+    fun `reusable cover lookup skips album fallback when requested song has explicit cover url`() {
+        val audioEntry = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Song A.flac",
+            reference = "/music/Artist - Song A.flac",
+            mediaUri = "file:///music/Artist%20-%20Song%20A.flac",
+            localFilePath = "/music/Artist - Song A.flac",
+            sizeBytes = 1024L,
+            lastModifiedMs = 99L
+        )
+        val coverEntry = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Song A.jpg",
+            reference = "/music/Covers/Artist - Song A.jpg",
+            mediaUri = "file:///music/Covers/Artist%20-%20Song%20A.jpg",
+            localFilePath = "/music/Covers/Artist - Song A.jpg",
+            sizeBytes = 64L,
+            lastModifiedMs = 120L
+        )
+        val snapshot = ManagedDownloadStorage.DownloadLibrarySnapshot(
+            audioEntries = listOf(audioEntry),
+            audioEntriesByLookupKey = mapOf(audioEntry.reference to audioEntry),
+            metadataEntriesByAudioName = emptyMap(),
+            metadataByAudioName = mapOf(
+                audioEntry.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                    stableKey = "stable-a",
+                    songId = 1L,
+                    identityAlbum = "netease",
+                    name = "Song A",
+                    artist = "Artist",
+                    coverUrl = "https://example.com/first-cover.jpg",
+                    coverPath = coverEntry.reference
+                )
+            ),
+            audioEntriesWithoutMetadata = emptyList(),
+            audioEntriesByStableKey = emptyMap(),
+            audioEntriesBySongId = emptyMap(),
+            audioEntriesByMediaUri = emptyMap(),
+            audioEntriesByRemoteTrackKey = emptyMap(),
+            coverEntriesByName = mapOf(coverEntry.name to coverEntry),
+            lyricEntriesByName = emptyMap(),
+            knownReferences = setOf(audioEntry.reference, coverEntry.reference)
+        )
+
+        val reusableCover = ManagedDownloadStorage.findReusableCoverReference(
+            snapshot = snapshot,
+            song = SongItem(
+                id = 2L,
+                name = "Song B",
+                artist = "Artist",
+                album = "NeteaseAlbum",
+                albumId = 1L,
+                durationMs = 1_000L,
+                coverUrl = "https://example.com/second-cover.jpg"
+            )
+        )
+
+        assertNull(reusableCover)
+    }
+
+    @Test
     fun `reusable cover lookup skips album fallback when existing metadata uses custom cover`() {
         val audioEntry = ManagedDownloadStorage.StoredEntry(
             name = "Artist - Song A.flac",

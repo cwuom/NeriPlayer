@@ -1569,7 +1569,7 @@ internal object ManagedDownloadStorage {
             song.originalCoverUrl?.trim()?.takeIf(String::isNotBlank)?.let(::add)
         }
         val identityAlbum = song.identity().album.takeIf(String::isNotBlank)
-        val allowAlbumFallback = song.customCoverUrl.isNullOrBlank()
+        val allowAlbumFallback = remoteCoverKeys.isEmpty()
 
         return snapshot.metadataByAudioName.asSequence()
             .filter { (audioName, _) -> audioName != excludedAudioName }
