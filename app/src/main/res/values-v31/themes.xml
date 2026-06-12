@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Base.Theme.NeriPlayer" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#FFFFFFFF</item>
+        <item name="android:forceDarkAllowed">false</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowDisablePreview">true</item>
+        <item name="android:windowSplashScreenBackground">#FFFFFFFF</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_neriplayer_splash</item>
+    </style>
+</resources>
