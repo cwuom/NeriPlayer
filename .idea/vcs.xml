@@ -5,5 +5,6 @@
     <mapping directory="$PROJECT_DIR$/np-submodule/NeriPlayer-LTW" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/np-submodule/accompanist-lyrics-core" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/np-submodule/accompanist-lyrics-ui" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/np-submodule/miuix" vcs="Git" />
   </component>
 </project>

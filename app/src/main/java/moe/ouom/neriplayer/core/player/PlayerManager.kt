@@ -336,15 +336,15 @@ object PlayerManager {
     val audioLevelFlow get() = AudioReactive.level
     val beatImpulseFlow get() = AudioReactive.beat
 
-    var biliRepo = AppContainer.biliPlaybackRepository
-    var biliClient = AppContainer.biliClient
-    var neteaseClient = AppContainer.neteaseClient
-    var youtubeMusicPlaybackRepository = AppContainer.youtubeMusicPlaybackRepository
-    var youtubeMusicClient = AppContainer.youtubeMusicClient
+    val biliRepo by lazy { AppContainer.biliPlaybackRepository }
+    val biliClient by lazy { AppContainer.biliClient }
+    val neteaseClient by lazy { AppContainer.neteaseClient }
+    val youtubeMusicPlaybackRepository by lazy { AppContainer.youtubeMusicPlaybackRepository }
+    val youtubeMusicClient by lazy { AppContainer.youtubeMusicClient }
 
-    val cloudMusicSearchApi = AppContainer.cloudMusicSearchApi
-    val qqMusicSearchApi = AppContainer.qqMusicSearchApi
-    var lrcLibClient = AppContainer.lrcLibClient
+    val cloudMusicSearchApi by lazy { AppContainer.cloudMusicSearchApi }
+    val qqMusicSearchApi by lazy { AppContainer.qqMusicSearchApi }
+    val lrcLibClient by lazy { AppContainer.lrcLibClient }
 
     // YouTube Music 歌词缓存，避免短时间内重复请求
     internal val ytMusicLyricsCache = android.util.LruCache<String, List<LyricEntry>>(20)

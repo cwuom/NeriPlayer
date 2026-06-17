@@ -83,6 +83,7 @@ import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
+import moe.ouom.neriplayer.util.SafeModeManager
 import java.io.File
 
 private data class PlaybackNotificationSnapshot(
@@ -285,6 +286,10 @@ class AudioPlayerService : Service() {
             source: String,
             forceForeground: Boolean = false
         ): Boolean {
+            if (SafeModeManager.shouldEnterSafeMode(context)) {
+                NPLogger.w("NERI-APS", "Skip sync service start while safe mode is active: source=$source")
+                return false
+            }
             val nowElapsedRealtime = SystemClock.elapsedRealtime()
             if (
                 shouldSkipRedundantSyncServiceStart(
@@ -409,6 +414,14 @@ class AudioPlayerService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        if (SafeModeManager.shouldEnterSafeMode(this)) {
+            isServiceInstanceActive = false
+            isServiceForegroundActive = false
+            allowServiceRestart = false
+            NPLogger.w("NERI-APS", "onCreate ignored because safe mode is active")
+            stopSelf()
+            return
+        }
         isServiceInstanceActive = true
         NPLogger.d("NERI-APS", "onCreate begin ${buildStateSummary()}")
         val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
@@ -1049,10 +1062,15 @@ class AudioPlayerService : Service() {
         isServiceForegroundActive = false
         isServiceInstanceActive = false
         PlayerManager.flushPlaybackStatsBlocking("service_destroy")
-        unregisterReceiver(becomingNoisyReceiver)
+        if (this::becomingNoisyReceiver.isInitialized) {
+            runCatching { unregisterReceiver(becomingNoisyReceiver) }
+                .onFailure { NPLogger.w("NERI-APS", "unregisterReceiver failed during destroy", it) }
+        }
         serviceScope.cancel()
-        mediaSession.isActive = false
-        mediaSession.release()
+        if (this::mediaSession.isInitialized) {
+            mediaSession.isActive = false
+            mediaSession.release()
+        }
         if (!allowServiceRestart || !PlayerManager.hasItems()) {
             PlayerManager.release()
         }
