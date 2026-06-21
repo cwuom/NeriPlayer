@@ -453,6 +453,11 @@ internal fun PlayerManager.initializeImpl(
             }
         }
         ioScope.launch {
+            settingsRepo.statusBarLyricsEnabledFlow.collect { enabled ->
+                statusBarLyricsEnable = enabled
+            }
+        }
+        ioScope.launch {
             settingsRepo.externalBluetoothLyricsEnabledFlow.collect { enabled ->
                 externalBluetoothLyricsEnabled = enabled
                 syncExternalBluetoothLyrics(_currentSongFlow.value)

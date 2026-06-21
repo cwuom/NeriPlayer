@@ -110,3 +110,6 @@
 -dontwarn java.beans.**
 -dontwarn javax.script.**
 -dontwarn org.mozilla.javascript.**
+
+
+-keep class com.hchen.superlyricapi.* {*;}

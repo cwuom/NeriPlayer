@@ -192,6 +192,10 @@ class AutoSettingsGeneratedTest {
             AutoSettingsSchema.lyrics.lyriconEnabled.iconRes
         )
         assertEquals(
+            R.drawable.ic_lyricon,
+            AutoSettingsSchema.lyrics.statusBarLyrics.iconRes
+        )
+        assertEquals(
             AutoSettingIcon.BluetoothAudio,
             AutoSettingsSchema.lyrics.externalBluetoothLyricsEnabled.icon
         )

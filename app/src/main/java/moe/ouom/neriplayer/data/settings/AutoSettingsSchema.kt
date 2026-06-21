@@ -661,6 +661,19 @@ object AutoSettingsSchema {
         )
 
         @AutoSetting(
+            key = "status_bar_lyrics_enabled",
+            type = SettingValueType.Boolean,
+            defaultBoolean = false,
+            order = 13,
+            ui = SettingUiType.Switch
+        )
+        val statusBarLyrics = autoSetting(
+            titleRes = R.string.settings_status_bar_lyrics_title,
+            descriptionRes = R.string.settings_status_bar_lyrics_summary,
+            iconRes = R.drawable.ic_lyricon
+        )
+
+        @AutoSetting(
             key = "external_bluetooth_lyrics_enabled",
             type = SettingValueType.Boolean,
             defaultBoolean = false,
