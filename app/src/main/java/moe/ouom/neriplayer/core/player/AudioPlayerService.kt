@@ -906,6 +906,9 @@ class AudioPlayerService : Service() {
             )
             .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, duration)
             .putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, currentLargeIcon)
+            .putBitmap(MediaMetadataCompat.METADATA_KEY_ART, currentLargeIcon)
+            .putBitmap(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON, currentLargeIcon)
+
         // Do not set local URIs to METADATA_KEY_ALBUM_ART_URI, as it may prompt the System UI
         // to attempt loading them directly (which can fail due to permission issues) and
         // override the bitmap we already provided via METADATA_KEY_ALBUM_ART
