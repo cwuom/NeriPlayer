@@ -270,4 +270,6 @@ dependencies {
 
     // 取主题色
     implementation(libs.androidx.palette.ktx)
+
+    implementation(libs.superlyricapi)
 }

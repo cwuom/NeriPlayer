@@ -38,6 +38,7 @@ paletteKtx = "1.0.0"
 reorderable = "0.9.6"
 foundationLayout = "1.9.0"
 securityCrypto = "1.1.0"
+superlyricapi = "3.4"
 taglib = "1.0.5"
 uiGraphics = "1.9.0"
 workRuntimeKtx = "2.11.0"
@@ -60,6 +61,7 @@ androidx-media3-exoplayer = { module = "androidx.media3:media3-exoplayer", versi
 androidx-media3-exoplayer-hls = { module = "androidx.media3:media3-exoplayer-hls", version.ref = "media3ExoplayerHls" }
 androidx-palette-ktx = { module = "androidx.palette:palette-ktx", version.ref = "paletteKtx" }
 androidx-security-crypto = { module = "androidx.security:security-crypto", version.ref = "securityCrypto" }
+superlyricapi = { module = "com.github.HChenX:SuperLyricApi", version.ref = "superlyricapi" }
 taglib = { module = "io.github.kyant0:taglib", version.ref = "taglib" }
 androidx-ui-graphics = { module = "androidx.compose.ui:ui-graphics", version.ref = "uiGraphics" }
 androidx-work-runtime-ktx = { module = "androidx.work:work-runtime-ktx", version.ref = "workRuntimeKtx" }

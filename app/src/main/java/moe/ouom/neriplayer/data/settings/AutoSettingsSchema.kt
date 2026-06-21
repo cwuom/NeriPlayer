@@ -655,8 +655,8 @@ object AutoSettingsSchema {
             ui = SettingUiType.Switch
         )
         val lyriconEnabled = autoSetting(
-            titleRes = R.string.settings_lyricon_enabled,
-            descriptionRes = R.string.settings_lyricon_enabled_desc,
+            titleRes = R.string.settings_lyric_api_enabled,
+            descriptionRes = R.string.settings_lyric_api_enabled_desc,
             iconRes = R.drawable.ic_lyricon
         )
 

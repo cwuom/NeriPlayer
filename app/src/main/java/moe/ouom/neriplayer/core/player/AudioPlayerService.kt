@@ -906,9 +906,6 @@ class AudioPlayerService : Service() {
             )
             .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, duration)
             .putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, currentLargeIcon)
-            .putBitmap(MediaMetadataCompat.METADATA_KEY_ART, currentLargeIcon)
-            .putBitmap(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON, currentLargeIcon)
-
         // Do not set local URIs to METADATA_KEY_ALBUM_ART_URI, as it may prompt the System UI
         // to attempt loading them directly (which can fail due to permission issues) and
         // override the bitmap we already provided via METADATA_KEY_ALBUM_ART
@@ -1010,6 +1007,11 @@ class AudioPlayerService : Service() {
                         updateNotification()
                     }
                 }
+
+                NPLogger.d(
+                    "NERI-APS",
+                    "cover bitmap=${bmp.width}x${bmp.height}, bytes=${bmp.byteCount / 1024 / 1024}MB"
+                )
             } catch (e: Exception) {
                 NPLogger.d("NERI-APS", "Cover load failed: ${e.message}")
             }
