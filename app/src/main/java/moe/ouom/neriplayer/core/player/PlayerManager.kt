@@ -187,6 +187,7 @@ object PlayerManager {
     internal var playbackCrossfadeOutDurationMs = DEFAULT_FADE_DURATION_MS
     internal var playbackSoundConfig = PlaybackSoundConfig()
     internal var lyriconEnabled = false
+    internal var statusBarLyricsEnable = false
     internal var externalBluetoothLyricsEnabled = false
     internal var cloudMusicLyricDefaultOffsetMs = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
     internal var qqMusicLyricDefaultOffsetMs = DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS

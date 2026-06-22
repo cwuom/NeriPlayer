@@ -138,6 +138,9 @@ class SettingsRepository(private val context: Context) {
     val lyriconEnabledFlow: Flow<Boolean> =
         autoSettingsRepository.lyriconEnabledFlow
 
+    val statusBarLyricsEnabledFlow : Flow<Boolean> =
+        autoSettingsRepository.statusBarLyricsFlow
+
     val externalBluetoothLyricsEnabledFlow: Flow<Boolean> =
         autoSettingsRepository.externalBluetoothLyricsEnabledFlow
 

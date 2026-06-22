@@ -110,3 +110,10 @@
 -dontwarn java.beans.**
 -dontwarn javax.script.**
 -dontwarn org.mozilla.javascript.**
+
+# 防止编译及运行错误
+-keep class com.hchen.superlyricapi.** { *;}
+-dontwarn android.os.ServiceManager
+
+# 避免 kotlin.reflect 内部反射崩溃
+-keepattributes *Annotation*

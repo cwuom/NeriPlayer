@@ -68,11 +68,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.MainActivity
+import moe.ouom.neriplayer.core.player.PlayerManager.externalBluetoothLyricLineFlow
+import moe.ouom.neriplayer.core.player.PlayerManager.externalBluetoothLyrics
+import moe.ouom.neriplayer.core.player.PlayerManager.statusBarLyricsEnable
 import moe.ouom.neriplayer.core.player.metadata.resolveExternalBluetoothMetadataText
 import moe.ouom.neriplayer.core.player.metadata.shouldUseExternalBluetoothLyrics
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
@@ -513,6 +519,13 @@ class AudioPlayerService : Service() {
             }
         }
 
+        externalBluetoothLyricLineFlow
+            .filterNotNull()
+            .onEach { lyric ->
+                if (statusBarLyricsEnable && PlayerManager.handleAudioBecomingNoisy()) { updateNotification() }
+            }
+            .launchIn(serviceScope)
+
         becomingNoisyReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 if (intent.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
@@ -731,6 +744,12 @@ class AudioPlayerService : Service() {
         builder.addAction(R.drawable.round_skip_next_24, getString(R.string.player_next), nextIntent)
 
         builder.setContentTitle(song?.displayName() ?: "NeriPlayer")
+        //魅族状态栏歌词设置这个
+        if (statusBarLyricsEnable) {
+            if (externalBluetoothLyricLineFlow.value != "" && externalBluetoothLyricLineFlow.value != null && externalBluetoothLyricLineFlow.value != "null") {
+                builder.setTicker(externalBluetoothLyricLineFlow.value.toString())
+            }
+        }
 
         val timerState = PlayerManager.sleepTimerManager.timerState.value
         val contentText = if (timerState.isActive) {
@@ -753,7 +772,17 @@ class AudioPlayerService : Service() {
 
         currentLargeIcon?.let { builder.setLargeIcon(it) }
 
-        return builder.build()
+        return builder.build().apply {
+            if (statusBarLyricsEnable) {
+                val FLAG_ALWAYS_SHOW_TICKER = 0x01000000
+                val FLAG_ONLY_UPDATE_TICKER = 0x02000000
+                // Keep the status bar lyrics scrolling
+                flags = flags.or(FLAG_ALWAYS_SHOW_TICKER)
+                // Only update the ticker (lyrics), and do not update other properties
+                flags = flags.or(FLAG_ONLY_UPDATE_TICKER)
+            }
+            }
+
     }
 
     private fun buildBootstrapNotification(): Notification {
@@ -801,7 +830,7 @@ class AudioPlayerService : Service() {
         updateNotification()
     }
 
-    /** 鏋勫缓鎸囧悜鏈?Service 鐨?PendingIntent */
+    /** 构建指向本 Service 的 PendingIntent */
     private fun servicePendingIntent(action: String, requestCode: Int): PendingIntent {
         return PendingIntent.getService(
             this,
@@ -1010,6 +1039,11 @@ class AudioPlayerService : Service() {
                         updateNotification()
                     }
                 }
+
+                NPLogger.d(
+                    "NERI-APS",
+                    "cover bitmap=${bmp.width}x${bmp.height}, bytes=${bmp.byteCount / 1024 / 1024}MB"
+                )
             } catch (e: Exception) {
                 NPLogger.d("NERI-APS", "Cover load failed: ${e.message}")
             }
