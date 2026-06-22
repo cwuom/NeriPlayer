@@ -68,7 +68,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
@@ -516,6 +519,13 @@ class AudioPlayerService : Service() {
             }
         }
 
+        externalBluetoothLyricLineFlow
+            .filterNotNull()
+            .onEach { lyric ->
+                if (statusBarLyricsEnable && PlayerManager.handleAudioBecomingNoisy()) { updateNotification() }
+            }
+            .launchIn(serviceScope)
+
         becomingNoisyReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 if (intent.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
@@ -736,7 +746,9 @@ class AudioPlayerService : Service() {
         builder.setContentTitle(song?.displayName() ?: "NeriPlayer")
         //魅族状态栏歌词设置这个
         if (statusBarLyricsEnable) {
-            builder.setTicker(externalBluetoothLyricLineFlow.value.toString())
+            if (externalBluetoothLyricLineFlow.value != "" && externalBluetoothLyricLineFlow.value != null && externalBluetoothLyricLineFlow.value != "null") {
+                builder.setTicker(externalBluetoothLyricLineFlow.value.toString())
+            }
         }
 
         val timerState = PlayerManager.sleepTimerManager.timerState.value
