@@ -455,6 +455,7 @@ internal fun PlayerManager.initializeImpl(
         ioScope.launch {
             settingsRepo.statusBarLyricsEnabledFlow.collect { enabled ->
                 statusBarLyricsEnable = enabled
+                syncExternalBluetoothLyrics(_currentSongFlow.value)
             }
         }
         ioScope.launch {
@@ -1005,6 +1006,7 @@ internal fun PlayerManager.releaseImpl() {
     externalBluetoothLyrics = emptyList()
     externalBluetoothLyricsSongKey = null
     externalBluetoothLyricsEnabled = false
+    statusBarLyricsEnable = false
     clearExternalBluetoothLyricLine()
     LyriconManager.setPlaybackState(false)
 

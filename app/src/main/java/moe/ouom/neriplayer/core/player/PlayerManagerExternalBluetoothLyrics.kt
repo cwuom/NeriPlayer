@@ -15,7 +15,7 @@ internal fun PlayerManager.syncExternalBluetoothLyrics(song: SongItem?) {
     externalBluetoothLyricsSongKey = song?.stableKey()
     clearExternalBluetoothLyricLine()
 
-    if (!externalBluetoothLyricsEnabled || song == null) {
+    if (!shouldProvideExternalLyricLine() || song == null) {
         return
     }
 
@@ -32,7 +32,7 @@ internal fun PlayerManager.syncExternalBluetoothLyrics(song: SongItem?) {
             .getOrDefault(emptyList())
 
         val currentSong = _currentSongFlow.value
-        if (!externalBluetoothLyricsEnabled || currentSong?.sameIdentityAs(song) != true) {
+        if (!shouldProvideExternalLyricLine() || currentSong?.sameIdentityAs(song) != true) {
             return@launch
         }
 
@@ -43,7 +43,7 @@ internal fun PlayerManager.syncExternalBluetoothLyrics(song: SongItem?) {
 }
 
 internal fun PlayerManager.updateExternalBluetoothLyricLine(positionMs: Long) {
-    if (!externalBluetoothLyricsEnabled) {
+    if (!shouldProvideExternalLyricLine()) {
         clearExternalBluetoothLyricLine()
         return
     }
@@ -75,4 +75,8 @@ internal fun PlayerManager.clearExternalBluetoothLyricLine() {
     if (_externalBluetoothLyricLineFlow.value != null) {
         _externalBluetoothLyricLineFlow.value = null
     }
+}
+
+private fun PlayerManager.shouldProvideExternalLyricLine(): Boolean {
+    return externalBluetoothLyricsEnabled || statusBarLyricsEnable
 }

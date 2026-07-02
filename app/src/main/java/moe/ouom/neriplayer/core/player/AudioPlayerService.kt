@@ -68,16 +68,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.filterNotNull
-import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.MainActivity
 import moe.ouom.neriplayer.core.player.PlayerManager.externalBluetoothLyricLineFlow
-import moe.ouom.neriplayer.core.player.PlayerManager.externalBluetoothLyrics
 import moe.ouom.neriplayer.core.player.PlayerManager.statusBarLyricsEnable
 import moe.ouom.neriplayer.core.player.metadata.resolveExternalBluetoothMetadataText
 import moe.ouom.neriplayer.core.player.metadata.shouldUseExternalBluetoothLyrics
@@ -519,12 +515,13 @@ class AudioPlayerService : Service() {
             }
         }
 
-        externalBluetoothLyricLineFlow
-            .filterNotNull()
-            .onEach { lyric ->
-                if (statusBarLyricsEnable && PlayerManager.handleAudioBecomingNoisy()) { updateNotification() }
+        serviceScope.launch {
+            externalBluetoothLyricLineFlow.collect {
+                if (statusBarLyricsEnable) {
+                    updateNotification()
+                }
             }
-            .launchIn(serviceScope)
+        }
 
         becomingNoisyReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
@@ -744,11 +741,10 @@ class AudioPlayerService : Service() {
         builder.addAction(R.drawable.round_skip_next_24, getString(R.string.player_next), nextIntent)
 
         builder.setContentTitle(song?.displayName() ?: "NeriPlayer")
-        //魅族状态栏歌词设置这个
-        if (statusBarLyricsEnable) {
-            if (externalBluetoothLyricLineFlow.value != "" && externalBluetoothLyricLineFlow.value != null && externalBluetoothLyricLineFlow.value != "null") {
-                builder.setTicker(externalBluetoothLyricLineFlow.value.toString())
-            }
+        val statusBarLyricLine = externalBluetoothLyricLineFlow.value
+            ?.takeIf { it.isNotBlank() && it != "null" }
+        if (statusBarLyricsEnable && statusBarLyricLine != null) {
+            builder.setTicker(statusBarLyricLine)
         }
 
         val timerState = PlayerManager.sleepTimerManager.timerState.value
@@ -776,12 +772,11 @@ class AudioPlayerService : Service() {
             if (statusBarLyricsEnable) {
                 val FLAG_ALWAYS_SHOW_TICKER = 0x01000000
                 val FLAG_ONLY_UPDATE_TICKER = 0x02000000
-                // Keep the status bar lyrics scrolling
+                // 魅族状态栏歌词依赖这两个私有通知标记
                 flags = flags.or(FLAG_ALWAYS_SHOW_TICKER)
-                // Only update the ticker (lyrics), and do not update other properties
                 flags = flags.or(FLAG_ONLY_UPDATE_TICKER)
             }
-            }
+        }
 
     }
 

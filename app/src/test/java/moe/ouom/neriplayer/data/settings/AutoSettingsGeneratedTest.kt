@@ -135,6 +135,14 @@ class AutoSettingsGeneratedTest {
             lyricsSettings.any { it.keyName == "lyricon_enabled" && it.ui == SettingUiType.Switch }
         )
         assertTrue(
+            "lyrics metadata should include status bar lyrics switch",
+            lyricsSettings.any {
+                it.keyName == "status_bar_lyrics_enabled" &&
+                    it.valueType == SettingValueType.Boolean &&
+                    it.ui == SettingUiType.Switch
+            }
+        )
+        assertTrue(
             "lyrics metadata should include external bluetooth lyrics switch",
             lyricsSettings.any {
                 it.keyName == "external_bluetooth_lyrics_enabled" &&

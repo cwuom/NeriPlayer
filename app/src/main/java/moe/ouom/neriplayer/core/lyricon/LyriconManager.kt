@@ -14,21 +14,22 @@ import io.github.proify.lyricon.provider.service.addConnectionListener
 import moe.ouom.neriplayer.ui.component.LyricEntry
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
-import kotlin.collections.getOrNull
 
 object LyriconManager {
     private var provider: LyriconProvider? = null
     @Volatile
     private var enabled: Boolean = false
     private var lastLyricIndex: Int = -1
-    private var lyrics : List<LyricEntry>? = null
-    private var translatedLyrics :List<LyricEntry>? = null
+    private var lyrics: List<LyricEntry>? = null
+    private var translatedLyrics: List<LyricEntry>? = null
     private var currentSong: SongItem? = null
 
     fun initialize(context: Context) {
         if (provider != null) return
         try {
-            if (SuperLyricHelper.isAvailable()) { SuperLyricHelper.registerPublisher(); }
+            if (SuperLyricHelper.isAvailable()) {
+                SuperLyricHelper.registerPublisher()
+            }
             provider = LyriconFactory.createProvider(context)
             provider?.register()
 
@@ -47,6 +48,7 @@ object LyriconManager {
     fun setEnabled(isEnabled: Boolean) {
         enabled = isEnabled
         if (!isEnabled) {
+            resetSuperLyricState()
             setPlaybackState(false)
         }
     }
@@ -79,6 +81,7 @@ object LyriconManager {
             LyriconManager.lyrics = lyrics
             LyriconManager.translatedLyrics = translatedLyrics
             currentSong = song
+            lastLyricIndex = -1
             val lyriconLyrics = lyrics?.map { entry ->
                 val words = if (entry.words != null) {
                     var currentIndex = 0
@@ -118,7 +121,7 @@ object LyriconManager {
 
             provider?.player?.setSong(lyriconSong)
 
-            // Set translation display if available
+            // 有翻译时才让第三方歌词组件展示翻译
             provider?.player?.setDisplayTranslation(translatedLyrics?.isNotEmpty() == true)
 
         } catch (e: Exception) {
@@ -126,9 +129,7 @@ object LyriconManager {
         }
     }
 
-
     private fun updateSuperLyric(positionMs: Long) {
-
         try {
             if (!SuperLyricHelper.isAvailable()) return
 
@@ -139,10 +140,9 @@ object LyriconManager {
                 it.startTimeMs <= positionMs
             }
 
-            // 没有匹配歌词
             if (index < 0) return
 
-            // 避免重复发送
+            // 避免同一句歌词被进度轮询重复发送
             if (index == lastLyricIndex) return
 
             lastLyricIndex = index
@@ -199,5 +199,12 @@ object LyriconManager {
         } catch (e: Exception) {
             NPLogger.e("LyriconManager", "updateSuperLyric failed", e)
         }
+    }
+
+    private fun resetSuperLyricState() {
+        lastLyricIndex = -1
+        lyrics = null
+        translatedLyrics = null
+        currentSong = null
     }
 }
