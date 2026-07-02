@@ -67,12 +67,14 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material.icons.outlined.ZoomInMap
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -180,6 +182,7 @@ private data class PendingDownloadDirectoryChange(
             !ManagedDownloadStorage.areEquivalentDirectoryUris(previousUri, targetUri)
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 @Suppress("AssignedValueIsNeverRead")
 fun SettingsScreen(
@@ -801,6 +804,8 @@ fun SettingsScreen(
 
 
     var activeSettingsPage by rememberSaveable { mutableStateOf<SettingsPage?>(null) }
+    val homeTopAppBarState = rememberTopAppBarState()
+    val detailTopAppBarStates = SettingsPage.entries.associateWith { rememberTopAppBarState() }
     val detailListStates = remember {
         SettingsPage.entries.associateWith { LazyListState() }
     }
@@ -811,6 +816,7 @@ fun SettingsScreen(
 
     AnimatedContent(
         targetState = activeSettingsPage,
+        modifier = Modifier.fillMaxSize(),
         label = "settings_page_switch",
         transitionSpec = {
             if (initialState == null && targetState != null) {
@@ -843,6 +849,7 @@ fun SettingsScreen(
         if (selectedPage == null) {
             MiuixSettingsHomeScaffold(
                 listState = listState,
+                topAppBarState = homeTopAppBarState,
                 title = {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -870,7 +877,8 @@ fun SettingsScreen(
             MiuixSettingsDetailScaffold(
                 title = stringResource(selectedPage.titleRes),
                 onBack = { activeSettingsPage = null },
-                listState = detailListStates.getValue(selectedPage)
+                listState = detailListStates.getValue(selectedPage),
+                topAppBarState = detailTopAppBarStates.getValue(selectedPage)
             ) {
                 item(key = "${selectedPage.name}:header") {
                     MiuixSettingsHeader(

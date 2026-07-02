@@ -30,6 +30,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,11 +52,12 @@ private val MiuixPageRowPadding = PaddingValues(horizontal = 16.dp, vertical = 1
 @Composable
 internal fun MiuixSettingsHomeScaffold(
     listState: LazyListState,
+    topAppBarState: TopAppBarState,
     title: @Composable () -> Unit,
     modifier: Modifier = Modifier,
     content: LazyListScope.() -> Unit
 ) {
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(topAppBarState)
     val miniPlayerHeight = LocalMiniPlayerHeight.current
 
     Scaffold(
@@ -192,10 +194,11 @@ internal fun MiuixSettingsDetailScaffold(
     title: String,
     onBack: () -> Unit,
     listState: LazyListState,
+    topAppBarState: TopAppBarState,
     modifier: Modifier = Modifier,
     content: LazyListScope.() -> Unit
 ) {
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(topAppBarState)
     val miniPlayerHeight = LocalMiniPlayerHeight.current
 
     Scaffold(
