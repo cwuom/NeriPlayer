@@ -114,6 +114,8 @@ private data class PlaybackMetadataSnapshot(
 internal const val MEDIA_SESSION_STOP_SOURCE = "media_session_stop"
 internal const val PLAY_SONGS_AND_OPEN_NOW_PLAYING_SOURCE = "play_songs_and_open_now_playing"
 private const val PLAYBACK_STATE_PROGRESS_BUCKET_MS = 250L
+private const val MEDIA_ARTWORK_SIZE_PX = 1024
+private const val NOTIFICATION_ARTWORK_SIZE_PX = 256
 
 internal fun isLocalPlaybackCommandSyncSource(
     source: String,
@@ -344,7 +346,8 @@ class AudioPlayerService : Service() {
     private lateinit var mediaSession: MediaSessionCompat
 
     private var currentCoverSource: String? = null
-    private var currentLargeIcon: Bitmap? = null
+    private var currentMediaArtwork: Bitmap? = null
+    private var currentNotificationLargeIcon: Bitmap? = null
     private val serviceScope = CoroutineScope(
         SupervisorJob() + Dispatchers.Main.immediate + CoroutineExceptionHandler { _, throwable ->
             NPLogger.e("NERI-AudioService", "Uncaught coroutine exception in serviceScope", throwable)
@@ -766,7 +769,7 @@ class AudioPlayerService : Service() {
         }
         builder.setContentText(contentText)
 
-        currentLargeIcon?.let { builder.setLargeIcon(it) }
+        currentNotificationLargeIcon?.let { builder.setLargeIcon(it) }
 
         return builder.build().apply {
             if (statusBarLyricsEnable) {
@@ -875,7 +878,7 @@ class AudioPlayerService : Service() {
             isPlaybackControlPlaying = PlayerManager.playbackControlPlayingFlow.value,
             isFavorite = isFavoriteSong(song),
             requiresInteractiveFavoriteConfirmation = requiresInteractiveFavoriteConfirmation(song),
-            largeIconReady = currentLargeIcon != null,
+            largeIconReady = currentNotificationLargeIcon != null,
             coverSource = currentCoverSource,
         )
     }
@@ -887,7 +890,8 @@ class AudioPlayerService : Service() {
 
         if (coverSource != currentCoverSource) {
             currentCoverSource = coverSource
-            currentLargeIcon = null
+            currentMediaArtwork = null
+            currentNotificationLargeIcon = null
             requestLargeIconAsync(coverSource)
         }
 
@@ -913,7 +917,7 @@ class AudioPlayerService : Service() {
             displaySubtitle = metadataText.displaySubtitle,
             durationMs = duration,
             coverSource = coverSource,
-            largeIconReady = currentLargeIcon != null,
+            largeIconReady = currentMediaArtwork != null,
         )
         if (snapshot == lastMetadataSnapshot) {
             return
@@ -929,9 +933,9 @@ class AudioPlayerService : Service() {
                 metadataText.displaySubtitle
             )
             .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, duration)
-            .putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, currentLargeIcon)
-            .putBitmap(MediaMetadataCompat.METADATA_KEY_ART, currentLargeIcon)
-            .putBitmap(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON, currentLargeIcon)
+            .putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, currentMediaArtwork)
+            .putBitmap(MediaMetadataCompat.METADATA_KEY_ART, currentMediaArtwork)
+            .putBitmap(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON, currentMediaArtwork)
 
         // Do not set local URIs to METADATA_KEY_ALBUM_ART_URI, as it may prompt the System UI
         // to attempt loading them directly (which can fail due to permission issues) and
@@ -1011,7 +1015,8 @@ class AudioPlayerService : Service() {
 
     private fun requestLargeIconAsync(url: String?) {
         if (url.isNullOrBlank()) {
-            currentLargeIcon = null
+            currentMediaArtwork = null
+            currentNotificationLargeIcon = null
             updateNotification()
             return
         }
@@ -1022,14 +1027,16 @@ class AudioPlayerService : Service() {
                 val request = ImageRequest.Builder(appCtx)
                     .data(url)
                     .allowHardware(false)
-                    .size(256)
+                    .size(MEDIA_ARTWORK_SIZE_PX)
                     .build()
                 val result = loader.execute(request)
                 val drawable = result.drawable ?: return@launch
                 val bmp = drawable.toBitmap()
+                val notificationBmp = bmp.scaledToMaxDimension(NOTIFICATION_ARTWORK_SIZE_PX)
                 withContext(Dispatchers.Main) {
                     if (url == currentCoverSource) {
-                        currentLargeIcon = bmp
+                        currentMediaArtwork = bmp
+                        currentNotificationLargeIcon = notificationBmp
                         updateMetadata()
                         updateNotification()
                     }
@@ -1043,6 +1050,18 @@ class AudioPlayerService : Service() {
                 NPLogger.d("NERI-APS", "Cover load failed: ${e.message}")
             }
         }
+    }
+
+    private fun Bitmap.scaledToMaxDimension(maxDimensionPx: Int): Bitmap {
+        val longestSide = maxOf(width, height)
+        if (longestSide <= maxDimensionPx) {
+            return this
+        }
+
+        val scale = maxDimensionPx.toFloat() / longestSide
+        val scaledWidth = (width * scale).toInt().coerceAtLeast(1)
+        val scaledHeight = (height * scale).toInt().coerceAtLeast(1)
+        return Bitmap.createScaledBitmap(this, scaledWidth, scaledHeight, true)
     }
 
     private fun SongItem?.effectiveCoverSource(): String? {
