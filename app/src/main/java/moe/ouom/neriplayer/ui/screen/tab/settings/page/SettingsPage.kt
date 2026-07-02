@@ -100,3 +100,27 @@ internal enum class SettingsPage(
         icon = Icons.Outlined.Info
     )
 }
+
+internal val SettingsHomePageGroups: List<List<SettingsPage>> = listOf(
+    listOf(SettingsPage.Accounts),
+    listOf(
+        SettingsPage.Playback,
+        SettingsPage.PlaybackSource,
+        SettingsPage.AudioQuality,
+        SettingsPage.Downloads,
+        SettingsPage.Storage
+    ),
+    listOf(
+        SettingsPage.General,
+        SettingsPage.Theme,
+        SettingsPage.Personalization,
+        SettingsPage.Motion,
+        SettingsPage.Lyrics,
+        SettingsPage.Network
+    ),
+    listOf(
+        SettingsPage.Backup,
+        SettingsPage.ListenTogether,
+        SettingsPage.About
+    )
+)

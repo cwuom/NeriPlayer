@@ -152,8 +152,9 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsDetailScaffold
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsHeader
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsHomeScaffold
-import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsPageItem
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsPageGroupCard
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsPage
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsHomePageGroups
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.miuixSettingsSectionCardItem
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.collectAsStateWithLifecycleCompat
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.formatSyncTime
@@ -855,11 +856,11 @@ fun SettingsScreen(
                     }
                 }
             ) {
-                SettingsPage.entries.forEach { page ->
-                    item(key = page.name) {
-                        MiuixSettingsPageItem(
-                            page = page,
-                            onClick = { activeSettingsPage = page },
+                SettingsHomePageGroups.forEachIndexed { groupIndex, pages ->
+                    item(key = "settings_group_$groupIndex") {
+                        MiuixSettingsPageGroupCard(
+                            pages = pages,
+                            onPageClick = { page -> activeSettingsPage = page },
                             modifier = Modifier.animateItem()
                         )
                     }
