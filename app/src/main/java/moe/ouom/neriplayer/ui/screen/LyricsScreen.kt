@@ -145,6 +145,7 @@ fun LyricsScreen(
     lyricFontScale: Float,
     onLyricFontScaleChange: (Float) -> Unit,
     onEnterAlbum: (AlbumSummary) -> Unit,
+    onOpenCurrentNeteaseArtist: () -> Unit = {},
     onNavigateBack: () -> Unit,
     onSeekTo: (Long) -> Unit,
     advancedLyricsEnabled: Boolean = true,
@@ -341,7 +342,7 @@ fun LyricsScreen(
                             )
                             .clip(RoundedCornerShape(6.dp))
                             .combinedClickable(
-                                onClick = {},
+                                onClick = onOpenCurrentNeteaseArtist,
                                 onLongClick = { showArtistMenu = true }
                             )
                     )

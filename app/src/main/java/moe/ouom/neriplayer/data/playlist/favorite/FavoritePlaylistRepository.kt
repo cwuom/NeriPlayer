@@ -40,6 +40,8 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import java.io.File
 
+const val FAVORITE_SOURCE_NETEASE_ARTIST = "neteaseArtist"
+
 data class FavoritePlaylist(
     val id: Long,
     val name: String,

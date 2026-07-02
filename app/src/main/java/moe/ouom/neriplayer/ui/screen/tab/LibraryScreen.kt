@@ -52,6 +52,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DragHandle
@@ -72,6 +73,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryScrollableTabRow
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
@@ -105,6 +107,8 @@ import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.data.playlist.favorite.FAVORITE_SOURCE_NETEASE_ARTIST
+import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylist
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
@@ -113,6 +117,7 @@ import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.viewmodel.artist.NeteaseArtistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylistKind
@@ -139,6 +144,9 @@ enum class LibraryTab(val labelResId: Int) {
     BILI(R.string.library_tab_bilibili),
     QQMUSIC(R.string.library_tab_qqmusic)
 }
+
+private const val FAVORITE_CATEGORY_PLAYLIST = 0
+private const val FAVORITE_CATEGORY_ARTIST = 1
 
 private fun libraryTabDisplayOrder(isInternational: Boolean): List<LibraryTab> {
     return if (isInternational) {
@@ -189,6 +197,7 @@ fun LibraryScreen(
     onLocalPlaylistClick: (LocalPlaylist) -> Unit = {},
     onNeteasePlaylistClick: (PlaylistSummary) -> Unit = {},
     onNeteaseAlbumClick: (AlbumSummary) -> Unit = {},
+    onNeteaseArtistClick: (NeteaseArtistSummary) -> Unit = {},
     onYouTubeMusicPlaylistClick: (YouTubeMusicPlaylist) -> Unit = {},
     onBiliPlaylistClick: (BiliPlaylist) -> Unit = {},
     onOpenRecent: () -> Unit = {},
@@ -340,6 +349,7 @@ fun LibraryScreen(
                             listState = favoriteListState,
                             onNeteasePlaylistClick = onNeteasePlaylistClick,
                             onNeteaseAlbumClick = onNeteaseAlbumClick,
+                            onNeteaseArtistClick = onNeteaseArtistClick,
                             onBiliPlaylistClick = onBiliPlaylistClick,
                             onYouTubeMusicPlaylistClick = onYouTubeMusicPlaylistClick
                         )
@@ -1702,11 +1712,13 @@ private fun NeteaseAlbumList(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 private fun FavoritePlaylistList(
     listState: LazyListState,
     onNeteasePlaylistClick: (PlaylistSummary) -> Unit,
     onNeteaseAlbumClick: (AlbumSummary) -> Unit,
+    onNeteaseArtistClick: (NeteaseArtistSummary) -> Unit,
     onBiliPlaylistClick: (BiliPlaylist) -> Unit,
     onYouTubeMusicPlaylistClick: (YouTubeMusicPlaylist) -> Unit
 ) {
@@ -1716,11 +1728,25 @@ private fun FavoritePlaylistList(
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     val scope = rememberCoroutineScope()
     var sortMode by rememberSaveable { mutableStateOf(false) }
+    var selectedFavoriteCategory by rememberSaveable { mutableStateOf(FAVORITE_CATEGORY_PLAYLIST) }
     var selectedKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showDeleteSelectedConfirm by rememberSaveable { mutableStateOf(false) }
-    val reorderableFavorites = remember { mutableStateListOf<moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylist>() }
+    val reorderableFavorites = remember { mutableStateListOf<FavoritePlaylist>() }
+    val playlistFavorites = remember(favorites) {
+        favorites.filterNot { it.source == FAVORITE_SOURCE_NETEASE_ARTIST }
+    }
+    val artistFavorites = remember(favorites) {
+        favorites.filter { it.source == FAVORITE_SOURCE_NETEASE_ARTIST }
+    }
+    val visibleFavorites = remember(playlistFavorites, artistFavorites, selectedFavoriteCategory) {
+        if (selectedFavoriteCategory == FAVORITE_CATEGORY_ARTIST) {
+            artistFavorites
+        } else {
+            playlistFavorites
+        }
+    }
 
-    fun favoriteKey(favorite: moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylist): String {
+    fun favoriteKey(favorite: FavoritePlaylist): String {
         return "${favorite.source}:${favorite.id}"
     }
 
@@ -1740,18 +1766,18 @@ private fun FavoritePlaylistList(
 
     BackHandler(enabled = sortMode) { exitEditMode() }
 
-    LaunchedEffect(favorites) {
+    LaunchedEffect(visibleFavorites) {
         reorderableFavorites.clear()
-        reorderableFavorites.addAll(favorites)
-        val validKeys = favorites.map(::favoriteKey).toSet()
+        reorderableFavorites.addAll(visibleFavorites)
+        val validKeys = visibleFavorites.map(::favoriteKey).toSet()
         selectedKeys = selectedKeys.intersect(validKeys)
-        if (sortMode && favorites.isEmpty()) {
+        if (sortMode && visibleFavorites.isEmpty()) {
             exitEditMode()
         }
     }
 
-    LaunchedEffect(sortMode) {
-        if (sortMode && favorites.isNotEmpty()) {
+    LaunchedEffect(sortMode, visibleFavorites) {
+        if (sortMode && visibleFavorites.isNotEmpty()) {
             listState.scrollToItem(0)
         }
     }
@@ -1789,6 +1815,57 @@ private fun FavoritePlaylistList(
             .reorderable(reorderState)
     ) {
         val cardShape = RoundedCornerShape(12.dp)
+        item(key = "favorite_category_tabs") {
+            Card(
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 6.dp)
+            ) {
+                PrimaryTabRow(
+                    selectedTabIndex = selectedFavoriteCategory,
+                    containerColor = Color.Transparent,
+                    contentColor = MaterialTheme.colorScheme.primary
+                ) {
+                    Tab(
+                        selected = selectedFavoriteCategory == FAVORITE_CATEGORY_PLAYLIST,
+                        onClick = {
+                            if (selectedFavoriteCategory != FAVORITE_CATEGORY_PLAYLIST) {
+                                selectedFavoriteCategory = FAVORITE_CATEGORY_PLAYLIST
+                                exitEditMode()
+                            }
+                        },
+                        text = { Text(stringResource(R.string.library_favorite_tab_playlists)) },
+                        icon = {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                contentDescription = null
+                            )
+                        }
+                    )
+                    Tab(
+                        selected = selectedFavoriteCategory == FAVORITE_CATEGORY_ARTIST,
+                        onClick = {
+                            if (selectedFavoriteCategory != FAVORITE_CATEGORY_ARTIST) {
+                                selectedFavoriteCategory = FAVORITE_CATEGORY_ARTIST
+                                exitEditMode()
+                            }
+                        },
+                        text = { Text(stringResource(R.string.library_favorite_tab_artists)) },
+                        icon = {
+                            Icon(
+                                imageVector = Icons.Filled.AccountCircle,
+                                contentDescription = null
+                            )
+                        }
+                    )
+                }
+            }
+        }
         if (sortMode) {
             item(key = "favorite_sort_mode_header") {
                 val allSelected =
@@ -1856,7 +1933,7 @@ private fun FavoritePlaylistList(
                 }
             }
         }
-        if (favorites.isEmpty()) {
+        if (visibleFavorites.isEmpty()) {
             item {
                 Card(
                     shape = cardShape,
@@ -1868,11 +1945,28 @@ private fun FavoritePlaylistList(
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                         .clip(cardShape)
                 ) {
+                    val isArtistCategory = selectedFavoriteCategory == FAVORITE_CATEGORY_ARTIST
                     ListItem(
-                        headlineContent = { Text(stringResource(R.string.playlist_no_favorite)) },
+                        headlineContent = {
+                            Text(
+                                stringResource(
+                                    if (isArtistCategory) {
+                                        R.string.library_no_favorite_artist
+                                    } else {
+                                        R.string.playlist_no_favorite
+                                    }
+                                )
+                            )
+                        },
                         supportingContent = {
                             Text(
-                                stringResource(R.string.playlist_favorite_hint),
+                                stringResource(
+                                    if (isArtistCategory) {
+                                        R.string.library_favorite_artist_hint
+                                    } else {
+                                        R.string.playlist_favorite_hint
+                                    }
+                                ),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         },
@@ -1881,7 +1975,11 @@ private fun FavoritePlaylistList(
                         ),
                         leadingContent = {
                             Icon(
-                                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                imageVector = if (isArtistCategory) {
+                                    Icons.Filled.AccountCircle
+                                } else {
+                                    Icons.AutoMirrored.Filled.QueueMusic
+                                },
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(56.dp)
@@ -1939,6 +2037,14 @@ private fun FavoritePlaylistList(
                                                     name = favorite.name,
                                                     picUrl = favorite.coverUrl.orEmpty(),
                                                     size = favorite.trackCount
+                                                )
+                                            )
+                                        }
+                                        FAVORITE_SOURCE_NETEASE_ARTIST -> {
+                                            onNeteaseArtistClick(
+                                                NeteaseArtistSummary(
+                                                    id = favorite.id,
+                                                    name = favorite.name
                                                 )
                                             )
                                         }
@@ -2019,7 +2125,11 @@ private fun FavoritePlaylistList(
                                     )
                                 } else {
                                     Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                        imageVector = if (favorite.source == FAVORITE_SOURCE_NETEASE_ARTIST) {
+                                            Icons.Filled.AccountCircle
+                                        } else {
+                                            Icons.AutoMirrored.Filled.QueueMusic
+                                        },
                                         contentDescription = null,
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.size(56.dp)
@@ -2089,12 +2199,14 @@ private fun FavoritePlaylistList(
     }
 }
 
+@Composable
 private fun favoriteSourceLabel(source: String): String {
     return when (source) {
         "youtubeMusic" -> "YouTube"
         "neteaseAlbum" -> "Netease Album"
         "netease" -> "Netease"
         "bili" -> "Bilibili"
+        FAVORITE_SOURCE_NETEASE_ARTIST -> stringResource(R.string.library_favorite_source_artist)
         else -> source
     }
 }

@@ -47,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.CancellationException
+import moe.ouom.neriplayer.ui.screen.artist.NeteaseArtistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteaseAlbumDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
@@ -54,6 +55,7 @@ import moe.ouom.neriplayer.ui.screen.playlist.BiliPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.YouTubeMusicPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.tab.LibraryTab
 import moe.ouom.neriplayer.ui.screen.tab.LibraryScreen
+import moe.ouom.neriplayer.ui.viewmodel.artist.NeteaseArtistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
@@ -79,6 +81,13 @@ sealed class LibrarySelectedItem : Parcelable {
     @Parcelize
     data class NeteaseAlbum(val album: AlbumSummary) : LibrarySelectedItem()
     @Parcelize
+    data class NeteaseArtist(val artist: NeteaseArtistSummary) : LibrarySelectedItem()
+    @Parcelize
+    data class NeteaseArtistAlbum(
+        val artist: NeteaseArtistSummary,
+        val album: AlbumSummary
+    ) : LibrarySelectedItem()
+    @Parcelize
     data class Bili(val playlist: BiliPlaylist) : LibrarySelectedItem()
     @Parcelize
     data class YouTubeMusic(val playlist: YouTubeMusicPlaylist) : LibrarySelectedItem()
@@ -97,10 +106,16 @@ fun LibraryHostScreen(
     // 保存当前选中的标签页类型，避免国际化切换后索引错位
     var selectedTab by rememberSaveable { mutableStateOf(LibraryTab.LOCAL) }
     val libraryStateHolder = rememberSaveableStateHolder()
+    fun closeSelectedDetail() {
+        selected = when (val current = selected) {
+            is LibrarySelectedItem.NeteaseArtistAlbum -> LibrarySelectedItem.NeteaseArtist(current.artist)
+            else -> null
+        }
+    }
     PredictiveBackHandler(enabled = selected != null) { progress ->
         try {
             progress.collect { }
-            selected = null
+            closeSelectedDetail()
         } catch (_: CancellationException) {
         }
     }
@@ -193,6 +208,9 @@ fun LibraryHostScreen(
                                 source = "neteaseAlbum"
                             )
                         },
+                        onNeteaseArtistClick = { artist ->
+                            selected = LibrarySelectedItem.NeteaseArtist(artist)
+                        },
                         onYouTubeMusicPlaylistClick = { playlist ->
                             selected = LibrarySelectedItem.YouTubeMusic(playlist)
                             AppContainer.playlistUsageRepo.recordOpen(
@@ -246,6 +264,25 @@ fun LibraryHostScreen(
                             onSongClick = onSongClick
                         )
                     }
+                    is LibrarySelectedItem.NeteaseArtist -> {
+                        libraryStateHolder.SaveableStateProvider("netease_artist_${current.artist.id}") {
+                            NeteaseArtistDetailScreen(
+                                artist = current.artist,
+                                onBack = { selected = null },
+                                onSongClick = onSongClick,
+                                onAlbumClick = { album ->
+                                    selected = LibrarySelectedItem.NeteaseArtistAlbum(current.artist, album)
+                                }
+                            )
+                        }
+                    }
+                    is LibrarySelectedItem.NeteaseArtistAlbum -> {
+                        NeteaseAlbumDetailScreen(
+                            onBack = { selected = LibrarySelectedItem.NeteaseArtist(current.artist) },
+                            onSongClick = onSongClick,
+                            album = current.album
+                        )
+                    }
                     is LibrarySelectedItem.YouTubeMusic -> {
                         YouTubeMusicPlaylistDetailScreen(
                             playlist = current.playlist,
@@ -285,6 +322,17 @@ private val librarySelectedItemSaver = mapSaver<LibrarySelectedItem?>(
                 "type" to "netease",
                 "playlist" to item.playlist.toSaveMap()
             )
+            is LibrarySelectedItem.NeteaseArtist -> hashMapOf(
+                "type" to "neteaseArtist",
+                "artistId" to item.artist.id,
+                "artistName" to item.artist.name
+            )
+            is LibrarySelectedItem.NeteaseArtistAlbum -> hashMapOf(
+                "type" to "neteaseArtistAlbum",
+                "artistId" to item.artist.id,
+                "artistName" to item.artist.name,
+                "album" to item.album.toSaveMap()
+            )
             is LibrarySelectedItem.Bili -> hashMapOf(
                 "type" to "bili",
                 "playlist" to item.playlist.toSaveMap()
@@ -301,9 +349,31 @@ private val librarySelectedItemSaver = mapSaver<LibrarySelectedItem?>(
             "local" -> (saved["playlistId"] as? Number)?.toLong()?.let { LibrarySelectedItem.Local(it) }
             "neteaseAlbum" -> restoreAlbumSummary(saved["album"] as? Map<*, *>)?.let { LibrarySelectedItem.NeteaseAlbum(it) }
             "netease" -> restorePlaylistSummary(saved["playlist"] as? Map<*, *>)?.let { LibrarySelectedItem.Netease(it) }
+            "neteaseArtist" -> restoreNeteaseArtistSummary(
+                id = (saved["artistId"] as? Number)?.toLong(),
+                name = saved["artistName"] as? String
+            )?.let { LibrarySelectedItem.NeteaseArtist(it) }
+            "neteaseArtistAlbum" -> {
+                val artist = restoreNeteaseArtistSummary(
+                    id = (saved["artistId"] as? Number)?.toLong(),
+                    name = saved["artistName"] as? String
+                )
+                val album = restoreAlbumSummary(saved["album"] as? Map<*, *>)
+                if (artist != null && album != null) {
+                    LibrarySelectedItem.NeteaseArtistAlbum(artist, album)
+                } else {
+                    null
+                }
+            }
             "bili" -> restoreBiliPlaylist(saved["playlist"] as? Map<*, *>)?.let { LibrarySelectedItem.Bili(it) }
             "ytmusic" -> restoreYouTubeMusicPlaylist(saved["playlist"] as? Map<*, *>)?.let { LibrarySelectedItem.YouTubeMusic(it) }
             else -> null
         }
     }
 )
+
+private fun restoreNeteaseArtistSummary(id: Long?, name: String?): NeteaseArtistSummary? {
+    val resolvedId = id?.takeIf { it > 0L } ?: return null
+    val resolvedName = name?.takeIf { it.isNotBlank() } ?: return null
+    return NeteaseArtistSummary(id = resolvedId, name = resolvedName)
+}

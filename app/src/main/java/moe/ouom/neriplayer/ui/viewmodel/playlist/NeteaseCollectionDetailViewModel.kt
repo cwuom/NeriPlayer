@@ -39,6 +39,8 @@ import kotlinx.parcelize.Parcelize
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.ui.viewmodel.artist.NeteaseArtistSummary
+import moe.ouom.neriplayer.ui.viewmodel.artist.parseNeteaseArtistSummaries
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.util.NPLogger
@@ -99,7 +101,8 @@ data class SongItem(
     val audioId: String? = null,
     val subAudioId: String? = null,
     val playlistContextId: String? = null,
-    val streamUrl: String? = null
+    val streamUrl: String? = null,
+    val neteaseArtists: List<NeteaseArtistSummary> = emptyList()
 ) : Parcelable
 
 data class NeteaseCollectionDetailUiState(
@@ -363,16 +366,8 @@ class NeteaseCollectionDetailViewModel(application: Application) : AndroidViewMo
         val name = t.optString("name", "")
         if (id == 0L || name.isBlank()) return null
 
-        val ar = t.optJSONArray("ar")
-        val artist = buildString {
-            if (ar != null) {
-                for (j in 0 until ar.length()) {
-                    val a = ar.optJSONObject(j)?.optString("name") ?: continue
-                    if (isNotEmpty()) append(" / ")
-                    append(a)
-                }
-            }
-        }
+        val artistItems = parseNeteaseArtistSummaries(t.optJSONArray("ar"))
+        val artist = artistItems.joinToString(" / ") { it.name }
         val al = t.optJSONObject("al") ?: t.optJSONObject("album")
         val albumName = al?.optString("name", "") ?: ""
         val albumId = al?.optLong("id", 0L) ?: 0L
@@ -392,7 +387,8 @@ class NeteaseCollectionDetailViewModel(application: Application) : AndroidViewMo
             coverUrl = cover.takeIf { it.isNotBlank() },
             originalCoverUrl = cover.takeIf { it.isNotBlank() },
             channelId = "netease",
-            audioId = id.toString()
+            audioId = id.toString(),
+            neteaseArtists = artistItems
         )
     }
 

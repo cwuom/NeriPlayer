@@ -15,6 +15,12 @@
     <plurals name="count_songs_format">
         <item quantity="other">%d 首</item>
     </plurals>
+    <plurals name="artist_song_count">
+        <item quantity="other">%d 首歌曲</item>
+    </plurals>
+    <plurals name="artist_album_count">
+        <item quantity="other">%d 张专辑</item>
+    </plurals>
     <plurals name="home_song_count_format">
         <item quantity="other">%d首</item>
     </plurals>

@@ -523,14 +523,19 @@ object PlayerManager {
 
     internal fun applyAudioFocusPolicy() {
         if (!::player.isInitialized) return
+        runPlayerActionOnMainThread {
+            applyAudioFocusPolicyOnMainThread()
+        }
+    }
+
+    internal fun applyAudioFocusPolicyOnMainThread() {
+        if (!::player.isInitialized) return
         val handleFocus = !allowMixedPlaybackEnabled
         val attributes = AudioAttributes.Builder()
             .setUsage(C.USAGE_MEDIA)
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .build()
-        mainScope.launch {
-            player.setAudioAttributes(attributes, handleFocus)
-        }
+        player.setAudioAttributes(attributes, handleFocus)
     }
 
     internal fun isPreparedInPlayer(): Boolean =

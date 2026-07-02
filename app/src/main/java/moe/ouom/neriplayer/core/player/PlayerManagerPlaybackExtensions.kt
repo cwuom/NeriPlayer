@@ -148,6 +148,7 @@ internal fun PlayerManager.startPlayerPlaybackWithFade(plan: PlaybackStartPlan) 
     )
     runPlayerActionOnMainThread {
         if (!isPlayerInitialized()) return@runPlayerActionOnMainThread
+        applyAudioFocusPolicyOnMainThread()
         player.volume = plan.initialVolume
         player.playWhenReady = true
         player.play()

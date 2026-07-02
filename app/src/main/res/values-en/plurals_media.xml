@@ -20,6 +20,14 @@
         <item quantity="one">%d song</item>
         <item quantity="other">%d songs</item>
     </plurals>
+    <plurals name="artist_song_count">
+        <item quantity="one">%d song</item>
+        <item quantity="other">%d songs</item>
+    </plurals>
+    <plurals name="artist_album_count">
+        <item quantity="one">%d album</item>
+        <item quantity="other">%d albums</item>
+    </plurals>
     <plurals name="home_song_count_format">
         <item quantity="one">%d song</item>
         <item quantity="other">%d songs</item>

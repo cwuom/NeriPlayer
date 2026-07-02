@@ -183,6 +183,7 @@ import moe.ouom.neriplayer.ui.screen.debug.LogListScreen
 import moe.ouom.neriplayer.ui.screen.debug.NeteaseApiProbeScreen
 import moe.ouom.neriplayer.ui.screen.debug.SearchApiProbeScreen
 import moe.ouom.neriplayer.ui.screen.debug.YouTubeApiProbeScreen
+import moe.ouom.neriplayer.ui.screen.artist.NeteaseArtistDetailScreen
 import moe.ouom.neriplayer.ui.screen.host.ExploreHostScreen
 import moe.ouom.neriplayer.ui.screen.host.HomeHostScreen
 import moe.ouom.neriplayer.ui.screen.host.LibraryHostScreen
@@ -194,6 +195,7 @@ import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
 import moe.ouom.neriplayer.ui.theme.NeriTheme
 import moe.ouom.neriplayer.ui.view.HyperBackground
 import moe.ouom.neriplayer.ui.viewmodel.debug.LogViewerScreen
+import moe.ouom.neriplayer.ui.viewmodel.artist.NeteaseArtistSummary
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
@@ -1317,6 +1319,35 @@ private fun NeriAppContent(
                                         onSongClick = ::playSongsAndOpenNowPlaying
                                     )
                                 }
+
+                                composable(
+                                    route = Destinations.NeteaseArtistDetail.route,
+                                    arguments = listOf(navArgument("artistJson") {
+                                        type = NavType.StringType
+                                    }),
+                                    enterTransition = {
+                                        slideInVertically(animationSpec = tween(220)) { it } + fadeIn()
+                                    },
+                                    exitTransition = { fadeOut(animationSpec = tween(160)) },
+                                    popEnterTransition = {
+                                        slideInVertically(animationSpec = tween(200)) { full -> -full / 6 } + fadeIn()
+                                    },
+                                    popExitTransition = {
+                                        slideOutVertically(animationSpec = tween(240)) { it } + fadeOut()
+                                    }
+                                ) { backStackEntry ->
+                                    val artistJson = backStackEntry.arguments?.getString("artistJson")
+                                    val artist = Gson().fromJson(artistJson, NeteaseArtistSummary::class.java)
+                                    NeteaseArtistDetailScreen(
+                                        artist = artist,
+                                        onBack = { navController.popBackStack() },
+                                        onSongClick = ::playSongsAndOpenNowPlaying,
+                                        onAlbumClick = { album ->
+                                            val json = Uri.encode(Gson().toJson(album))
+                                            navController.navigate("netease_album_detail/$json")
+                                        }
+                                    )
+                                }
                                 
                                 composable(
                                     route = Destinations.BiliPlaylistDetail.route,
@@ -2180,6 +2211,29 @@ private fun NeriAppContent(
                                     onEnterAlbum = { album ->
                                         val json = Uri.encode(Gson().toJson(album))
                                         navController.navigate("netease_album_detail/$json")
+                                    },
+                                    onEnterArtist = enterArtist@ { artist ->
+                                        val json = Uri.encode(Gson().toJson(artist))
+                                        val currentEntry = navController.currentBackStackEntry
+                                        val currentIsArtist =
+                                            currentEntry?.destination?.route == Destinations.NeteaseArtistDetail.route
+                                        val currentArtist = currentEntry
+                                            ?.arguments
+                                            ?.getString("artistJson")
+                                            ?.let {
+                                                runCatching {
+                                                    Gson().fromJson(it, NeteaseArtistSummary::class.java)
+                                                }.getOrNull()
+                                            }
+                                        if (currentArtist?.id == artist.id) {
+                                            return@enterArtist
+                                        }
+                                        if (currentIsArtist) {
+                                            navController.popBackStack()
+                                        }
+                                        navController.navigate("netease_artist_detail/$json") {
+                                            launchSingleTop = true
+                                        }
                                     },
                                     lyricBlurEnabled = lyricBlurEnabled,
                                     lyricBlurAmount = lyricBlurAmount,

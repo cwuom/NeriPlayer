@@ -152,6 +152,7 @@ private fun PlayerManager.resumePlaybackFallback(
         }
         player.playWhenReady = resumePlaybackAfterRefresh
         if (resumePlaybackAfterRefresh) {
+            applyAudioFocusPolicyOnMainThread()
             player.play()
         } else {
             player.pause()
@@ -378,6 +379,7 @@ private suspend fun PlayerManager.handleRefreshResult(
                     gate.runMutation {
                         player.playWhenReady = semantics.resumePlaybackAfterRefresh
                         if (semantics.resumePlaybackAfterRefresh) {
+                            applyAudioFocusPolicyOnMainThread()
                             player.play()
                         } else {
                             player.pause()
@@ -499,6 +501,7 @@ private suspend fun PlayerManager.applyResolvedMediaItem(
         if (!gate.runMutation { player.playWhenReady = resumePlaybackAfterRefresh }) return@withContext
         if (!gate.runMutation {
                 if (resumePlaybackAfterRefresh) {
+                    applyAudioFocusPolicyOnMainThread()
                     player.play()
                 } else {
                     player.pause()

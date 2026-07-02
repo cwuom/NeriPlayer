@@ -430,7 +430,55 @@ class NeteaseClient {
         )
         return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
     }
-    
+
+    @Throws(IOException::class)
+    fun getArtistDetail(artistId: Long): String {
+        val url = "https://music.163.com/api/artist/head/info/get"
+        val params = mapOf("id" to artistId.toString())
+        return request(url, params, CryptoMode.API, "POST", usePersistedCookies = true)
+    }
+
+    @Throws(IOException::class)
+    fun getArtistDynamic(artistId: Long): String {
+        val url = "https://music.163.com/api/artist/detail/dynamic"
+        val params = mapOf("id" to artistId.toString())
+        return request(url, params, CryptoMode.API, "POST", usePersistedCookies = true)
+    }
+
+    @Throws(IOException::class)
+    fun getArtistSongs(
+        artistId: Long,
+        order: String = "hot",
+        offset: Int = 0,
+        limit: Int = 50
+    ): String {
+        val url = "https://music.163.com/api/v1/artist/songs"
+        val params = mapOf(
+            "id" to artistId.toString(),
+            "private_cloud" to "true",
+            "work_type" to "1",
+            "order" to order,
+            "offset" to offset.toString(),
+            "limit" to limit.toString()
+        )
+        return request(url, params, CryptoMode.API, "POST", usePersistedCookies = true)
+    }
+
+    @Throws(IOException::class)
+    fun getArtistAlbums(
+        artistId: Long,
+        offset: Int = 0,
+        limit: Int = 30
+    ): String {
+        val url = "https://music.163.com/api/artist/albums/$artistId"
+        val params = mapOf(
+            "limit" to limit.toString(),
+            "offset" to offset.toString(),
+            "total" to "true"
+        )
+        return request(url, params, CryptoMode.API, "POST", usePersistedCookies = true)
+    }
+
     @Throws(IOException::class)
     fun getPlaylistDetail(playlistId: Long, n: Int = 100000, s: Int = 8): String {
         val url = "https://music.163.com/api/v6/playlist/detail"

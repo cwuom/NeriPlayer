@@ -60,6 +60,9 @@ sealed class Destinations(val route: String, val labelResId: Int) {
     // 网易云专辑详情路由
     data object NeteaseAlbumDetail : Destinations("netease_album_detail/{playlistJson}", moe.ouom.neriplayer.R.string.common_album_detail)
 
+    // 网易云歌手详情路由
+    data object NeteaseArtistDetail : Destinations("netease_artist_detail/{artistJson}", moe.ouom.neriplayer.R.string.artist_detail)
+
     // B 站收藏夹详情路由
     data object BiliPlaylistDetail : Destinations("bili_playlist_detail/{playlistJson}", moe.ouom.neriplayer.R.string.playlist_detail)
 

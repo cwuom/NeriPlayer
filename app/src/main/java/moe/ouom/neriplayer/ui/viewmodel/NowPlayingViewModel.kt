@@ -26,10 +26,12 @@ package moe.ouom.neriplayer.ui.viewmodel
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.api.bili.resolveBiliSong
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.search.SongSearchInfo
@@ -39,8 +41,11 @@ import moe.ouom.neriplayer.util.SearchManager
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.ui.viewmodel.artist.NeteaseArtistSummary
+import moe.ouom.neriplayer.ui.viewmodel.artist.parseNeteaseArtistSummaries
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.R
+import org.json.JSONObject
 
 data class ManualSearchState(
     val keyword: String = "",
@@ -111,6 +116,39 @@ class NowPlayingViewModel : ViewModel() {
     fun retryDownload(context: Context, song: SongItem) {
         GlobalDownloadManager.removeDownloadTask(song.stableKey())
         GlobalDownloadManager.startDownload(context, song)
+    }
+
+    fun resolveNeteaseArtists(
+        song: SongItem,
+        onResult: (List<NeteaseArtistSummary>) -> Unit,
+        onError: (Throwable) -> Unit = {}
+    ) {
+        val cachedArtists = song.neteaseArtists.orEmpty()
+            .filter { it.id > 0L && it.name.isNotBlank() }
+        if (cachedArtists.isNotEmpty()) {
+            onResult(cachedArtists)
+            return
+        }
+
+        val songId = song.matchedSongId?.toLongOrNull()?.takeIf { it > 0L }
+            ?: song.audioId?.toLongOrNull()?.takeIf { it > 0L }
+            ?: song.id.takeIf { it > 0L }
+        if (songId == null) {
+            onResult(emptyList())
+            return
+        }
+
+        viewModelScope.launch {
+            runCatching {
+                val raw = withContext(Dispatchers.IO) {
+                    AppContainer.neteaseClient.getSongDetail(listOf(songId))
+                }
+                parseNeteaseArtistsFromSongDetail(raw)
+            }.onSuccess(onResult).onFailure { error ->
+                NPLogger.e("NowPlayingViewModel", "解析网易云歌手失败", error)
+                onError(error)
+            }
+        }
     }
 
     fun setPlaybackSpeed(speed: Float, persist: Boolean = true) {
@@ -255,6 +293,13 @@ class NowPlayingViewModel : ViewModel() {
         }
     }
 
+}
+
+private fun parseNeteaseArtistsFromSongDetail(raw: String): List<NeteaseArtistSummary> {
+    val root = JSONObject(raw)
+    if (root.optInt("code", -1) != 200) return emptyList()
+    val song = root.optJSONArray("songs")?.optJSONObject(0) ?: return emptyList()
+    return parseNeteaseArtistSummaries(song.optJSONArray("ar"))
 }
 
 internal fun buildLocalOriginalSongInfo(song: SongItem): NowPlayingViewModel.OriginalSongInfo {

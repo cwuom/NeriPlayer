@@ -131,6 +131,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -252,6 +253,7 @@ import moe.ouom.neriplayer.ui.component.resolveStoredLyricText
 import moe.ouom.neriplayer.ui.component.toEditableLyricsText
 import moe.ouom.neriplayer.ui.screen.debug.ListenTogetherRoomPanel
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
+import moe.ouom.neriplayer.ui.viewmodel.artist.NeteaseArtistSummary
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.util.HapticFilledIconButton
@@ -372,6 +374,7 @@ private data class LoadedLyricsState(
 fun NowPlayingScreen(
     onNavigateUp: () -> Unit,
     onEnterAlbum: (AlbumSummary) -> Unit,
+    onEnterArtist: (NeteaseArtistSummary) -> Unit = {},
     lyricBlurEnabled: Boolean,
     lyricBlurAmount: Float,
     lyricFontScale: Float,
@@ -554,6 +557,48 @@ fun NowPlayingScreen(
     var rawLyricsText by remember(currentSong?.id) { mutableStateOf<String?>(null) }
     var rawTranslatedLyricsText by remember(currentSong?.id) { mutableStateOf<String?>(null) }
     val nowPlayingViewModel: NowPlayingViewModel = viewModel()
+    var artistPickerCandidates by remember { mutableStateOf<List<NeteaseArtistSummary>>(emptyList()) }
+    var resolvingArtistNavigation by remember { mutableStateOf(false) }
+
+    fun openResolvedArtist(artist: NeteaseArtistSummary) {
+        onEnterArtist(artist)
+        onNavigateUp()
+    }
+
+    fun openArtistCandidates(artists: List<NeteaseArtistSummary>) {
+        val distinctArtists = artists.distinctBy { it.id }
+        when (distinctArtists.size) {
+            0 -> screenScope.launch {
+                snackbarHostState.showSnackbar(context.getString(R.string.artist_not_available))
+            }
+            1 -> openResolvedArtist(distinctArtists.first())
+            else -> artistPickerCandidates = distinctArtists
+        }
+    }
+
+    val openCurrentNeteaseArtist: () -> Unit = {
+        val song = currentSong
+        if (song == null || !isNeteaseArtistNavigationSource(song)) {
+            screenScope.launch {
+                snackbarHostState.showSnackbar(context.getString(R.string.artist_not_available))
+            }
+        } else if (!resolvingArtistNavigation) {
+            resolvingArtistNavigation = true
+            nowPlayingViewModel.resolveNeteaseArtists(
+                song = song,
+                onResult = { artists ->
+                    resolvingArtistNavigation = false
+                    openArtistCandidates(artists)
+                },
+                onError = {
+                    resolvingArtistNavigation = false
+                    screenScope.launch {
+                        snackbarHostState.showSnackbar(context.getString(R.string.artist_not_available))
+                    }
+                }
+            )
+        }
+    }
 
     LaunchedEffect(
         currentSong?.id,
@@ -767,6 +812,7 @@ fun NowPlayingScreen(
                             lyricBlurAmount = lyricBlurAmount,
                             lyricFontScale = lyricFontScale,
                             onEnterAlbum = onEnterAlbum,
+                            onOpenCurrentNeteaseArtist = openCurrentNeteaseArtist,
                             onLyricFontScaleChange = onLyricFontScaleChange,
                             onNavigateBack = { showLyricsScreen = false },
                             onSeekTo = { position -> PlayerManager.seekTo(position) },
@@ -1090,7 +1136,7 @@ fun NowPlayingScreen(
                                         )
                                         .clip(RoundedCornerShape(8.dp))
                                         .combinedClickable(
-                                            onClick = {},
+                                            onClick = openCurrentNeteaseArtist,
                                             onLongClick = { showArtistMenu = true }
                                         )
                                 )
@@ -1471,6 +1517,17 @@ fun NowPlayingScreen(
                 }
             }
 
+            if (artistPickerCandidates.isNotEmpty()) {
+                NeteaseArtistPickerSheet(
+                    artists = artistPickerCandidates,
+                    onDismiss = { artistPickerCandidates = emptyList() },
+                    onSelect = { artist ->
+                        artistPickerCandidates = emptyList()
+                        openResolvedArtist(artist)
+                    }
+                )
+            }
+
             // 播放队列弹窗
             if (showQueueSheet) {
                 val initialIndex = (currentIndexInDisplay - 4).coerceAtLeast(0)
@@ -1706,6 +1763,65 @@ fun getCurrentAudioDevice(audioManager: AudioManager, context: Context): Pair<St
         devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET || it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES }
     if (wiredHeadset != null) return Pair(context.getString(R.string.nowplaying_wired_headset), Icons.Default.Headset)
     return Pair(context.getString(R.string.nowplaying_phone_speaker), Icons.Default.SpeakerGroup)
+}
+
+private fun isNeteaseArtistNavigationSource(song: SongItem): Boolean {
+    val hasCachedArtists = song.neteaseArtists.orEmpty().any { it.id > 0L && it.name.isNotBlank() }
+    val hasNeteaseCover = listOfNotNull(
+        song.coverUrl,
+        song.originalCoverUrl,
+        song.customCoverUrl
+    ).any { it.contains("music.126.net", ignoreCase = true) }
+    val isManagedNeteaseDownload = song.id > 0L && listOfNotNull(
+        song.localFileName,
+        song.localFilePath,
+        song.mediaUri
+    ).any { reference ->
+        reference.contains("netease -", ignoreCase = true) ||
+            reference.contains("netease%20-", ignoreCase = true)
+    }
+    return song.channelId == "netease" ||
+        song.album.startsWith(PlayerManager.NETEASE_SOURCE_TAG) ||
+        song.mediaUri?.contains("music.163.com", ignoreCase = true) == true ||
+        song.matchedLyricSource == MusicPlatform.CLOUD_MUSIC ||
+        hasCachedArtists ||
+        hasNeteaseCover ||
+        isManagedNeteaseDownload
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NeteaseArtistPickerSheet(
+    artists: List<NeteaseArtistSummary>,
+    onDismiss: () -> Unit,
+    onSelect: (NeteaseArtistSummary) -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface
+    ) {
+        Column(
+            modifier = Modifier
+                .bottomSheetScrollGuard()
+                .windowInsetsPadding(WindowInsets.navigationBars)
+                .padding(bottom = 16.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.artist_choose_title),
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
+            )
+            artists.forEach { artist ->
+                ListItem(
+                    headlineContent = { Text(artist.name) },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    modifier = Modifier.clickable { onSelect(artist) }
+                )
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

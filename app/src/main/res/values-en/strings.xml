@@ -121,6 +121,25 @@
     <string name="action_copy_song_info">Copy Song Info</string>
     <string name="toast_copied">Copied</string>
 
+    <!-- Artist -->
+    <string name="artist_detail">Artist Details</string>
+    <string name="artist_follow">Follow</string>
+    <string name="artist_followed">Following</string>
+    <string name="artist_tab_songs">Songs</string>
+    <string name="artist_tab_albums">Albums</string>
+    <string name="artist_choose_title">Choose Artist</string>
+    <string name="artist_not_available">No NetEase artist info is available for this song</string>
+    <string name="artist_load_failed">Failed to load artist: %s</string>
+    <string name="artist_follow_failed">Follow action failed: %s</string>
+    <string name="artist_songs_empty">No songs</string>
+    <string name="artist_albums_empty">No albums</string>
+    <string name="artist_load_more">Load More</string>
+    <string name="library_favorite_tab_playlists">Playlists</string>
+    <string name="library_favorite_tab_artists">Artists</string>
+    <string name="library_no_favorite_artist">No followed artists</string>
+    <string name="library_favorite_artist_hint">Tap Follow on an artist page, and the artist will appear here</string>
+    <string name="library_favorite_source_artist">Artist</string>
+
     <!-- Download -->
     <string name="download_title">Downloads</string>
     <string name="download_manager">Download Manager</string>

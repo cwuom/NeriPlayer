@@ -121,6 +121,25 @@
     <string name="action_copy_song_info">复制歌曲信息</string>
     <string name="toast_copied">已复制</string>
 
+    <!-- Artist -->
+    <string name="artist_detail">歌手详情</string>
+    <string name="artist_follow">关注</string>
+    <string name="artist_followed">已关注</string>
+    <string name="artist_tab_songs">歌曲</string>
+    <string name="artist_tab_albums">专辑</string>
+    <string name="artist_choose_title">选择歌手</string>
+    <string name="artist_not_available">这首歌没有可打开的网易云歌手信息</string>
+    <string name="artist_load_failed">歌手页加载失败：%s</string>
+    <string name="artist_follow_failed">关注操作失败：%s</string>
+    <string name="artist_songs_empty">暂无歌曲</string>
+    <string name="artist_albums_empty">暂无专辑</string>
+    <string name="artist_load_more">加载更多</string>
+    <string name="library_favorite_tab_playlists">歌单</string>
+    <string name="library_favorite_tab_artists">歌手</string>
+    <string name="library_no_favorite_artist">暂无关注的歌手</string>
+    <string name="library_favorite_artist_hint">在歌手详情页点击关注，歌手会保存在这里</string>
+    <string name="library_favorite_source_artist">歌手</string>
+
     <!-- Download -->
     <string name="download_title">下载管理</string>
     <string name="download_manager">下载管理器</string>

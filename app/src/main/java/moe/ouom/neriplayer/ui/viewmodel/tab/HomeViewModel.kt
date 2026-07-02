@@ -40,6 +40,7 @@ import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeShelf
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import moe.ouom.neriplayer.ui.viewmodel.artist.parseNeteaseArtistSummaries
 import moe.ouom.neriplayer.util.LanguageManager
 import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONObject
@@ -507,23 +508,20 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val songs = root.optJSONObject("result")?.optJSONArray("songs") ?: return emptyList()
         for (i in 0 until songs.length()) {
             val obj = songs.optJSONObject(i) ?: continue
-            val artistsArr = obj.optJSONArray("ar")
-            val artistNames =
-                if (artistsArr != null) (0 until artistsArr.length())
-                    .mapNotNull { artistsArr.optJSONObject(it)?.optString("name") }
-                else emptyList()
+            val artistItems = parseNeteaseArtistSummaries(obj.optJSONArray("ar"))
             val albumObj = obj.optJSONObject("al")
             list.add(
                 SongItem(
                     id = obj.optLong("id"),
                     name = obj.optString("name"),
-                    artist = artistNames.joinToString(" / "),
+                    artist = artistItems.joinToString(" / ") { it.name },
                     album = albumObj?.optString("name").orEmpty(),
                     albumId = albumObj?.optLong("id", 0L) ?: 0L,
                     durationMs = obj.optLong("dt"),
                     coverUrl = albumObj?.optString("picUrl")?.replace("http://", "https://"),
                     channelId = "netease",
-                    audioId = obj.optLong("id").toString()
+                    audioId = obj.optLong("id").toString(),
+                    neteaseArtists = artistItems
                 )
             )
         }
