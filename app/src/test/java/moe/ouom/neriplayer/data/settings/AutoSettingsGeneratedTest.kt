@@ -200,7 +200,7 @@ class AutoSettingsGeneratedTest {
             AutoSettingsSchema.lyrics.lyriconEnabled.iconRes
         )
         assertEquals(
-            R.drawable.ic_lyricon,
+            R.drawable.ic_statusbar,
             AutoSettingsSchema.lyrics.statusBarLyrics.iconRes
         )
         assertEquals(

@@ -730,6 +730,9 @@ fun LyricsScreen(
 
             // 添加到歌单按钮
             var showAddSheet by remember { mutableStateOf(false) }
+            val addSheetState = androidx.compose.material3.rememberModalBottomSheetState(
+                skipPartiallyExpanded = true
+            )
             HapticIconButton(onClick = { showAddSheet = true },
                 modifier = Modifier.then(
                 if (sharedTransitionScope != null && animatedContentScope != null) {
@@ -878,6 +881,7 @@ fun LyricsScreen(
                 }
                 androidx.compose.material3.ModalBottomSheet(
                     onDismissRequest = { showAddSheet = false },
+                    sheetState = addSheetState,
                     sheetGesturesEnabled = false
                 ) {
                     androidx.compose.foundation.lazy.LazyColumn(

@@ -471,7 +471,7 @@ fun NowPlayingScreen(
     var showSongNameMenu by remember { mutableStateOf(false) }
     var showArtistMenu by remember { mutableStateOf(false) }
     var showQualitySwitchDialog by remember { mutableStateOf(false) }
-    val addSheetState = rememberModalBottomSheetState()
+    val addSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val queueSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     // Snackbar状态
