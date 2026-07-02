@@ -113,6 +113,7 @@ import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.playlist.usage.UsageEntry
+import moe.ouom.neriplayer.data.playlist.usage.usageKey
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeMusicMediaUri
 import moe.ouom.neriplayer.data.local.media.displayAlbum
 import moe.ouom.neriplayer.data.model.displayArtist
@@ -1144,12 +1145,12 @@ private fun ContinueSection(items: List<UsageEntry>, onClick: (UsageEntry) -> Un
             contentPadding = PaddingValues(horizontal = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            items(items, key = { it.source + ":" + it.id }) { entry ->
+            items(items, key = UsageEntry::usageKey) { entry ->
                 ContinueCard(
                     entry = entry,
                     onClick = { onClick(entry) },
                     onRemove = {
-                        AppContainer.playlistUsageRepo.removeEntry(entry.id, entry.source)
+                        AppContainer.playlistUsageRepo.removeEntry(entry.id, entry.source, entry.subtype)
                     }
                 )
             }

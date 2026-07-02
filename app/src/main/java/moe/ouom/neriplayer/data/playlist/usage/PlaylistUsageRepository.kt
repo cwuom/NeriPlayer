@@ -54,6 +54,42 @@ data class UsageEntry(
     val subtype: String? = null,
 )
 
+internal fun playlistUsageKey(source: String, id: Long, subtype: String?): String = buildString {
+    append(source)
+    append(':')
+    append(id)
+    subtype?.trim()?.takeIf { it.isNotEmpty() }?.let {
+        append(':')
+        append(it)
+    }
+}
+
+internal fun UsageEntry.usageKey(): String = playlistUsageKey(source, id, subtype)
+
+private val usageEntryComparator = Comparator<UsageEntry> { left, right ->
+    when {
+        left.lastOpened != right.lastOpened -> right.lastOpened.compareTo(left.lastOpened)
+        left.openCount != right.openCount -> right.openCount.compareTo(left.openCount)
+        else -> left.id.compareTo(right.id)
+    }
+}
+
+internal fun normalizeUsageEntries(list: List<UsageEntry>): List<UsageEntry> {
+    return list
+        .groupBy(UsageEntry::usageKey)
+        .map { (_, duplicates) -> mergeDuplicateUsageEntries(duplicates) }
+        .sortedWith(usageEntryComparator)
+        .take(100)
+}
+
+private fun mergeDuplicateUsageEntries(entries: List<UsageEntry>): UsageEntry {
+    val latest = entries.sortedWith(usageEntryComparator).first()
+    val mergedOpenCount = entries.sumOf(UsageEntry::openCount)
+        .coerceAtLeast(latest.openCount)
+    return latest.takeIf { it.openCount == mergedOpenCount }
+        ?: latest.copy(openCount = mergedOpenCount)
+}
+
 class PlaylistUsageRepository(private val app: Context) {
     companion object {
         const val SOURCE_LOCAL = "local"
@@ -62,13 +98,6 @@ class PlaylistUsageRepository(private val app: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val gson = Gson()
     private val file: File by lazy { File(app.filesDir, "playlist_usage.json") }
-    private val usageEntryComparator = Comparator<UsageEntry> { left, right ->
-        when {
-            left.lastOpened != right.lastOpened -> right.lastOpened.compareTo(left.lastOpened)
-            left.openCount != right.openCount -> right.openCount.compareTo(left.openCount)
-            else -> left.id.compareTo(right.id)
-        }
-    }
     private val _flow = MutableStateFlow(load())
     val frequentPlaylistsFlow: StateFlow<List<UsageEntry>> = _flow
 
@@ -86,17 +115,11 @@ class PlaylistUsageRepository(private val app: Context) {
             emptyList()
         }
 
-        return normalizeEntries(list)
+        return normalizeUsageEntries(list)
     }
 
     private fun saveAsync(list: List<UsageEntry>) {
         scope.launch { runCatching { file.writeText(gson.toJson(list)) } }
-    }
-
-    private fun normalizeEntries(list: List<UsageEntry>): List<UsageEntry> {
-        return list
-            .sortedWith(usageEntryComparator)
-            .take(100)
     }
 
     fun recordOpen(
@@ -113,7 +136,8 @@ class PlaylistUsageRepository(private val app: Context) {
         now: Long = System.currentTimeMillis()
     ) {
         val data = _flow.value.toMutableList()
-        val idx = data.indexOfFirst { it.id == id && it.source == source && it.subtype == subtype }
+        val targetKey = playlistUsageKey(source, id, subtype)
+        val idx = data.indexOfFirst { it.usageKey() == targetKey }
         if (idx >= 0) {
             val old = data[idx]
             old.copy(
@@ -146,7 +170,7 @@ class PlaylistUsageRepository(private val app: Context) {
                 )
             )
         }
-        val out = normalizeEntries(data)
+        val out = normalizeUsageEntries(data)
         _flow.value = out
         saveAsync(out)
     }
@@ -165,7 +189,8 @@ class PlaylistUsageRepository(private val app: Context) {
         subtype: String? = null
     ) {
         val data = _flow.value.toMutableList()
-        val idx = data.indexOfFirst { it.id == id && it.source == source && it.subtype == subtype }
+        val targetKey = playlistUsageKey(source, id, subtype)
+        val idx = data.indexOfFirst { it.usageKey() == targetKey }
         if (idx >= 0) {
             val old = data[idx]
             data[idx] = old.copy(
@@ -178,8 +203,9 @@ class PlaylistUsageRepository(private val app: Context) {
                 playlistId = playlistId ?: old.playlistId,
                 subtype = subtype ?: old.subtype
             )
-            _flow.value = data
-            saveAsync(data)
+            val out = normalizeUsageEntries(data)
+            _flow.value = out
+            saveAsync(out)
         }
     }
 
@@ -227,16 +253,18 @@ class PlaylistUsageRepository(private val app: Context) {
 
         if (!changed) return
 
-        val out = normalizeEntries(updated)
+        val out = normalizeUsageEntries(updated)
         _flow.value = out
         saveAsync(out)
     }
 
     /** 从继续播放列表中移除指定项 */
-    fun removeEntry(id: Long, source: String) {
+    fun removeEntry(id: Long, source: String, subtype: String? = null) {
         val data = _flow.value.toMutableList()
-        data.removeAll { it.id == id && it.source == source }
-        _flow.value = data
-        saveAsync(data)
+        val targetKey = playlistUsageKey(source, id, subtype)
+        data.removeAll { it.usageKey() == targetKey }
+        val out = normalizeUsageEntries(data)
+        _flow.value = out
+        saveAsync(out)
     }
 }
