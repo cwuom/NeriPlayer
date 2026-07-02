@@ -113,7 +113,6 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.hasPendingDownloadTasks
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
-import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.sameIdentityAs
@@ -121,6 +120,7 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
+import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.playlist.YouTubeMusicPlaylistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
@@ -155,7 +155,8 @@ import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
 fun YouTubeMusicPlaylistDetailScreen(
     playlist: YouTubeMusicPlaylist,
     onBack: () -> Unit = {},
-    onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> }
+    onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
+    offlineMode: Boolean = false
 ) {
     val context = LocalContext.current
     val viewModel: YouTubeMusicPlaylistDetailViewModel = viewModel(
@@ -489,7 +490,8 @@ fun YouTubeMusicPlaylistDetailScreen(
                     item {
                         YouTubeMusicHeroHeader(
                             playlist = resolvedPlaylist,
-                            trackCount = resolvedTrackCount
+                            trackCount = resolvedTrackCount,
+                            offlineMode = offlineMode
                         )
                     }
 
@@ -571,7 +573,8 @@ fun YouTubeMusicPlaylistDetailScreen(
                                                 context.getString(R.string.download_starting, song.displayName())
                                             )
                                         }
-                                    }
+                                    },
+                                    offlineMode = offlineMode
                                 )
                             }
                         }
@@ -719,7 +722,8 @@ fun YouTubeMusicPlaylistDetailScreen(
 @Composable
 private fun YouTubeMusicHeroHeader(
     playlist: YouTubeMusicPlaylist,
-    trackCount: Int
+    trackCount: Int,
+    offlineMode: Boolean
 ) {
     val context = LocalContext.current
     val coverModel = playlist.coverUrl.takeUnless { it.isBlank() } ?: "about:blank"
@@ -731,7 +735,11 @@ private fun YouTubeMusicHeroHeader(
             .height(280.dp)
     ) {
         AsyncImage(
-            model = offlineCachedImageRequest(context, coverModel),
+            model = offlineCachedImageRequest(
+                context = context,
+                data = coverModel,
+                offlineMode = offlineMode
+            ),
             contentDescription = playlist.title,
             contentScale = ContentScale.Crop,
             modifier = Modifier
@@ -899,7 +907,8 @@ private fun YouTubeMusicSongRow(
     onClick: () -> Unit,
     onPlayNext: () -> Unit,
     onAddToQueueEnd: () -> Unit,
-    onDownload: () -> Unit
+    onDownload: () -> Unit,
+    offlineMode: Boolean
 ) {
     val context = LocalContext.current
     val clipboard = LocalClipboard.current
@@ -941,7 +950,7 @@ private fun YouTubeMusicSongRow(
             }
         }
 
-        val coverModel = song.displayCoverUrl(context).takeUnless { it.isNullOrBlank() }
+        val coverModel = rememberSongDisplayCoverUrl(song).takeUnless { it.isNullOrBlank() }
         val displayName = song.displayName()
         val displayArtist = song.displayArtist()
         if (!coverModel.isNullOrBlank()) {
@@ -955,7 +964,11 @@ private fun YouTubeMusicSongRow(
                     )
             ) {
                 AsyncImage(
-                    model = offlineCachedImageRequest(context, coverModel),
+                    model = offlineCachedImageRequest(
+                        context = context,
+                        data = coverModel,
+                        offlineMode = offlineMode
+                    ),
                     contentDescription = displayName,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()

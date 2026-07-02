@@ -98,7 +98,8 @@ fun LibraryHostScreen(
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
     onPlayParts: (BiliClient.VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> },
     onOpenRecent: () -> Unit,
-    onOpenStats: () -> Unit = {}
+    onOpenStats: () -> Unit = {},
+    offlineMode: Boolean = false
 ) {
     var selected by rememberSaveable(stateSaver = librarySelectedItemSaver) {
         mutableStateOf(null)
@@ -178,6 +179,7 @@ fun LibraryHostScreen(
                         youtubeMusicListState = youtubeMusicListState,
                         biliListState = biliListState,
                         qqMusicListState = qqMusicListState,
+                        offlineMode = offlineMode,
                         onLocalPlaylistClick = { playlist ->
                             selected = LibrarySelectedItem.Local(playlist.id)
                             AppContainer.playlistUsageRepo.recordOpen(
@@ -247,21 +249,24 @@ fun LibraryHostScreen(
                             playlistId = current.playlistId,
                             onBack = { selected = null },
                             onDeleted = { selected = null },
-                            onSongClick = onSongClick
+                            onSongClick = onSongClick,
+                            offlineMode = offlineMode
                         )
                     }
                     is LibrarySelectedItem.NeteaseAlbum -> {
                         NeteaseAlbumDetailScreen(
                             onBack = { selected = null },
                             onSongClick = onSongClick,
-                            album = current.album
+                            album = current.album,
+                            offlineMode = offlineMode
                         )
                     }
                     is LibrarySelectedItem.Netease -> {
                         NeteasePlaylistDetailScreen(
                             playlist = current.playlist,
                             onBack = { selected = null },
-                            onSongClick = onSongClick
+                            onSongClick = onSongClick,
+                            offlineMode = offlineMode
                         )
                     }
                     is LibrarySelectedItem.NeteaseArtist -> {
@@ -270,6 +275,7 @@ fun LibraryHostScreen(
                                 artist = current.artist,
                                 onBack = { selected = null },
                                 onSongClick = onSongClick,
+                                offlineMode = offlineMode,
                                 onAlbumClick = { album ->
                                     selected = LibrarySelectedItem.NeteaseArtistAlbum(current.artist, album)
                                 }
@@ -280,14 +286,16 @@ fun LibraryHostScreen(
                         NeteaseAlbumDetailScreen(
                             onBack = { selected = LibrarySelectedItem.NeteaseArtist(current.artist) },
                             onSongClick = onSongClick,
-                            album = current.album
+                            album = current.album,
+                            offlineMode = offlineMode
                         )
                     }
                     is LibrarySelectedItem.YouTubeMusic -> {
                         YouTubeMusicPlaylistDetailScreen(
                             playlist = current.playlist,
                             onBack = { selected = null },
-                            onSongClick = onSongClick
+                            onSongClick = onSongClick,
+                            offlineMode = offlineMode
                         )
                     }
                     is LibrarySelectedItem.Bili -> {
@@ -297,7 +305,8 @@ fun LibraryHostScreen(
                             onPlayAudio = { videos, index ->
                                 PlayerManager.playBiliVideoAsAudio(videos, index)
                             },
-                            onPlayParts = onPlayParts
+                            onPlayParts = onPlayParts,
+                            offlineMode = offlineMode
                         )
                     }
                 }

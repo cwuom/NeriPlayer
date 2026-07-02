@@ -40,12 +40,14 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.graphics.drawable.toBitmap
 import coil.Coil
 import androidx.palette.graphics.Palette
+import coil.request.CachePolicy
 import coil.request.ImageRequest
 import coil.request.SuccessResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.util.isRemoteImageSource
 import kotlin.math.max
 
 /**
@@ -58,7 +60,8 @@ fun HyperBackground(
     modifier: Modifier = Modifier,
     isDark: Boolean,
     coverUrl: String?,
-    refreshKey: Int = 0
+    refreshKey: Int = 0,
+    offlineMode: Boolean = false
 ) {
     val context = LocalContext.current
     val currentIsDark by rememberUpdatedState(isDark)
@@ -101,7 +104,7 @@ fun HyperBackground(
     val level by PlayerManager.audioLevelFlow.collectAsState(0f)
     val beat  by PlayerManager.beatImpulseFlow.collectAsState(0f)
 
-    LaunchedEffect(painter, hostView, currentIsDark, coverUrl, refreshKey) {
+    LaunchedEffect(painter, hostView, currentIsDark, coverUrl, refreshKey, offlineMode) {
         if (painter == null || hostView == null) return@LaunchedEffect
         val v = hostView!!
 
@@ -118,6 +121,13 @@ fun HyperBackground(
                 val req = ImageRequest.Builder(context)
                     .data(coverUrl)
                     .allowHardware(false) // Palette 需要 software bitmap
+                    .networkCachePolicy(
+                        if (offlineMode && isRemoteImageSource(coverUrl)) {
+                            CachePolicy.DISABLED
+                        } else {
+                            CachePolicy.ENABLED
+                        }
+                    )
                     .build()
                 val result = withContext(Dispatchers.IO) { loader.execute(req) }
                 val bmp = (result as? SuccessResult)?.drawable?.toBitmap()

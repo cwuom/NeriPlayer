@@ -807,6 +807,13 @@ internal object ManagedDownloadStorage {
 
     fun peekCoverReference(audio: StoredEntry): String? {
         val snapshot = snapshotCache?.snapshot ?: return null
+        snapshot.metadataByAudioName[audio.name]?.let { metadata ->
+            resolveMetadataCoverReference(
+                snapshot = snapshot,
+                audioName = audio.name,
+                metadata = metadata
+            )?.let { return it }
+        }
         return findIndexedEntryByNames(
             names = buildSidecarCandidateNames(candidateManagedDownloadBaseNames(audio.nameWithoutExtension)),
             entriesByName = snapshot.coverEntriesByName
@@ -1538,6 +1545,13 @@ internal object ManagedDownloadStorage {
     suspend fun findCoverReference(context: Context, audio: StoredEntry): String? = withContext(Dispatchers.IO) {
         val snapshot = resolveSnapshotForIndexedLookup(context)
             ?: buildDownloadLibrarySnapshotBlocking(context)
+        snapshot.metadataByAudioName[audio.name]?.let { metadata ->
+            resolveMetadataCoverReference(
+                snapshot = snapshot,
+                audioName = audio.name,
+                metadata = metadata
+            )?.let { return@withContext it }
+        }
         findIndexedEntryByNames(
             names = buildSidecarCandidateNames(candidateManagedDownloadBaseNames(audio.nameWithoutExtension)),
             entriesByName = snapshot.coverEntriesByName
@@ -1608,10 +1622,24 @@ internal object ManagedDownloadStorage {
             ?.takeIf(snapshot.knownReferences::contains)
             ?.let { return it }
         val baseName = audioName.substringBeforeLast('.', audioName)
+        metadata.stableKey
+            ?.takeIf(String::isNotBlank)
+            ?.let { stableKey ->
+                findIndexedEntryByNames(
+                    names = buildStableCoverCandidateNames(baseName, stableKey),
+                    entriesByName = snapshot.coverEntriesByName
+                )?.reference
+            }
+            ?.let { return it }
         return findIndexedEntryByNames(
             names = buildSidecarCandidateNames(candidateManagedDownloadBaseNames(baseName)),
             entriesByName = snapshot.coverEntriesByName
         )?.reference
+    }
+
+    private fun buildStableCoverCandidateNames(baseName: String, stableKey: String): List<String> {
+        val suffix = java.lang.Long.toHexString(stableKey.hashCode().toLong() and 0xffffffffL)
+        return imageExtensions.map { extension -> "$baseName-$suffix.$extension" }
     }
 
     private suspend fun resolveRoot(context: Context, directoryUriString: String?): RootHandle? = withContext(Dispatchers.IO) {

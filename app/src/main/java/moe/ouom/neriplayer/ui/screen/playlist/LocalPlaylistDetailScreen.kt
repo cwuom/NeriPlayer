@@ -147,13 +147,15 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
+import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
-import kotlinx.coroutines.DelicateCoroutinesApi
 import moe.ouom.neriplayer.core.download.countPendingDownloadTasks
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.hasPendingDownloadTasks
@@ -179,6 +181,7 @@ import moe.ouom.neriplayer.ui.component.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.component.LocalSongDetailsDialog
 import moe.ouom.neriplayer.ui.component.LocalSongSyncConfirmDialog
+import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.viewmodel.playlist.LocalPlaylistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.HapticFloatingActionButton
@@ -228,7 +231,8 @@ fun LocalPlaylistDetailScreen(
     playlistId: Long,
     onBack: () -> Unit,
     onDeleted: () -> Unit = onBack,
-    onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> }
+    onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
+    offlineMode: Boolean = false
 ) {
     val context = LocalContext.current
     val vm: LocalPlaylistDetailViewModel = viewModel()
@@ -690,11 +694,25 @@ fun LocalPlaylistDetailScreen(
                     }
                 }
             }
-            val headerCover by remember(context) {
-                derivedStateOf {
+            val appContext = remember(context) { context.applicationContext }
+            var headerCover by remember(baseQueue, downloadPresenceVersion) {
+                mutableStateOf(
                     baseQueue.firstNotNullOfOrNull { song ->
                         song.displayCoverUrl(context)?.takeIf(String::isNotBlank)
                     }
+                )
+            }
+            LaunchedEffect(baseQueue, appContext, downloadPresenceVersion) {
+                val immediateCover = baseQueue.firstNotNullOfOrNull { song ->
+                    song.displayCoverUrl(context)?.takeIf(String::isNotBlank)
+                }
+                headerCover = immediateCover
+                withContext(Dispatchers.IO) {
+                    baseQueue.firstNotNullOfOrNull { song ->
+                        song.displayCoverUrl(appContext)?.takeIf(String::isNotBlank)
+                    }
+                }?.let { resolvedCover ->
+                    headerCover = resolvedCover
                 }
             }
             val displayedSongs by remember {
@@ -1054,7 +1072,8 @@ fun LocalPlaylistDetailScreen(
                                             context = context,
                                             data = headerCover,
                                             sizePx = 768,
-                                            allowHardware = false
+                                            allowHardware = false,
+                                            offlineMode = offlineMode
                                         ),
                                         contentDescription = playlist.name,
                                         contentScale = ContentScale.Crop,
@@ -1186,14 +1205,15 @@ fun LocalPlaylistDetailScreen(
 
                                             // 封面
                                             val itemContext = LocalContext.current
-                                            val displayCoverUrl = song.displayCoverUrl(itemContext)
+                                            val displayCoverUrl = rememberSongDisplayCoverUrl(song)
                                             if (!displayCoverUrl.isNullOrBlank()) {
                                                 AsyncImage(
                                                     model = offlineCachedImageRequest(
                                                         context = itemContext,
                                                         data = displayCoverUrl,
                                                         sizePx = 192,
-                                                        allowHardware = false
+                                                        allowHardware = false,
+                                                        offlineMode = offlineMode
                                                     ),
                                                     contentDescription = null,
                                                     contentScale = ContentScale.Crop,

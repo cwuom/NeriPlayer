@@ -138,14 +138,16 @@ fun ExploreHostScreen(
                         NeteasePlaylistDetailScreen(
                             playlist = current.playlist,
                             onBack = { selected = null },
-                            onSongClick = onSongClick
+                            onSongClick = onSongClick,
+                            offlineMode = offlineMode
                         )
                     }
                     is ExploreSelectedItem.YouTubeMusic -> {
                         YouTubeMusicPlaylistDetailScreen(
                             playlist = current.playlist,
                             onBack = { selected = null },
-                            onSongClick = onSongClick
+                            onSongClick = onSongClick,
+                            offlineMode = offlineMode
                         )
                     }
                 }

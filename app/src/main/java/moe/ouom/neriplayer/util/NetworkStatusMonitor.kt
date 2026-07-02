@@ -82,10 +82,12 @@ fun rememberOfflineModeState(): State<Boolean> {
     return offlineState
 }
 
-private fun Context.hasValidatedInternet(): Boolean {
+fun Context.hasValidatedInternet(): Boolean {
     val connectivityManager = getSystemService(ConnectivityManager::class.java) ?: return false
     return connectivityManager.hasValidatedInternet()
 }
+
+fun Context.isOfflineModeNow(): Boolean = !hasValidatedInternet()
 
 private fun ConnectivityManager.hasValidatedInternet(): Boolean = runCatching {
     val activeNetwork = activeNetwork ?: return@runCatching false

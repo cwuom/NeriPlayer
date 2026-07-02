@@ -39,9 +39,11 @@ fun offlineCachedImageRequest(
     data: Any?,
     sizePx: Int? = null,
     allowHardware: Boolean = true,
-    crossfade: Boolean = false
+    crossfade: Boolean = false,
+    offlineMode: Boolean = context.isOfflineModeNow()
 ): ImageRequest {
     val localSource = isLocalImageSource(data)
+    val remoteSource = isRemoteImageSource(data)
     val resolvedSizePx = sizePx ?: if (localSource) DEFAULT_LOCAL_IMAGE_REQUEST_SIZE_PX else null
     val resolvedAllowHardware = if (localSource && sizePx == null) false else allowHardware
     val builder = ImageRequest.Builder(context)
@@ -50,7 +52,7 @@ fun offlineCachedImageRequest(
         .crossfade(crossfade)
         .diskCachePolicy(CachePolicy.ENABLED)
         .memoryCachePolicy(CachePolicy.ENABLED)
-        .networkCachePolicy(CachePolicy.ENABLED)
+        .networkCachePolicy(if (offlineMode && remoteSource) CachePolicy.DISABLED else CachePolicy.ENABLED)
     if (localSource && !resolvedAllowHardware) {
         builder.bitmapConfig(Bitmap.Config.RGB_565)
     }
@@ -66,8 +68,10 @@ fun fastScrollableImageRequest(
     context: Context,
     data: Any?,
     sizePx: Int = 512,
-    crossfade: Boolean = true
+    crossfade: Boolean = true,
+    offlineMode: Boolean = context.isOfflineModeNow()
 ): ImageRequest {
+    val remoteSource = isRemoteImageSource(data)
     val builder = ImageRequest.Builder(context)
         .data(data)
         .size(sizePx)
@@ -75,7 +79,7 @@ fun fastScrollableImageRequest(
         .crossfade(crossfade)
         .diskCachePolicy(CachePolicy.ENABLED)
         .memoryCachePolicy(CachePolicy.ENABLED)
-        .networkCachePolicy(CachePolicy.ENABLED)
+        .networkCachePolicy(if (offlineMode && remoteSource) CachePolicy.DISABLED else CachePolicy.ENABLED)
     if (isLocalImageSource(data)) {
         builder
             .allowHardware(false)

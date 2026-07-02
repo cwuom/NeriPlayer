@@ -7,9 +7,7 @@ import android.util.LruCache
 import androidx.core.graphics.ColorUtils
 import androidx.palette.graphics.Palette
 import coil.Coil
-import coil.request.ImageRequest
 import coil.request.SuccessResult
-import coil.size.Precision
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -33,12 +31,20 @@ object CoverArtColorCache {
         }
     }
 
-    suspend fun preload(context: Context, coverUrl: String?): CoverArtColorSample? {
+    suspend fun preload(
+        context: Context,
+        coverUrl: String?,
+        offlineMode: Boolean = context.isOfflineModeNow()
+    ): CoverArtColorSample? {
         val normalized = coverUrl?.trim()?.takeIf { it.isNotEmpty() } ?: return null
-        return getOrLoad(context, normalized)
+        return getOrLoad(context, normalized, offlineMode)
     }
 
-    suspend fun getOrLoad(context: Context, coverUrl: String): CoverArtColorSample? {
+    suspend fun getOrLoad(
+        context: Context,
+        coverUrl: String,
+        offlineMode: Boolean = context.isOfflineModeNow()
+    ): CoverArtColorSample? {
         peek(coverUrl)?.let { return it }
 
         var pendingLoad: CompletableDeferred<CoverArtColorSample?>? = null
@@ -61,7 +67,7 @@ object CoverArtColorCache {
         }
 
         val sample = runCatching {
-            loadSample(context, coverUrl)
+            loadSample(context, coverUrl, offlineMode)
         }.getOrNull()
 
         synchronized(cacheLock) {
@@ -74,15 +80,19 @@ object CoverArtColorCache {
         return sample
     }
 
-    private suspend fun loadSample(context: Context, coverUrl: String): CoverArtColorSample? {
+    private suspend fun loadSample(
+        context: Context,
+        coverUrl: String,
+        offlineMode: Boolean
+    ): CoverArtColorSample? {
         val loader = Coil.imageLoader(context)
-        val request = ImageRequest.Builder(context)
-            .data(coverUrl)
-            .allowHardware(false)
-            .bitmapConfig(Bitmap.Config.RGB_565)
-            .size(COVER_ART_COLOR_SAMPLE_SIZE_PX)
-            .precision(Precision.INEXACT)
-            .build()
+        val request = offlineCachedImageRequest(
+            context = context,
+            data = coverUrl,
+            sizePx = COVER_ART_COLOR_SAMPLE_SIZE_PX,
+            allowHardware = false,
+            offlineMode = offlineMode
+        )
         val result = withContext(Dispatchers.IO) { loader.execute(request) }
         val bitmap = ((result as? SuccessResult)?.drawable as? BitmapDrawable)?.bitmap ?: return null
         return withContext(Dispatchers.Default) { extract(bitmap) }

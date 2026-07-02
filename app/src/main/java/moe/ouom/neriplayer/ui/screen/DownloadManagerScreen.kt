@@ -69,7 +69,8 @@ import java.io.File
 @Suppress("AssignedValueIsNeverRead")
 fun DownloadManagerScreen(
     onBack: () -> Unit,
-    onOpenDownloadProgress: () -> Unit
+    onOpenDownloadProgress: () -> Unit,
+    offlineMode: Boolean = false
 ) {
     val context = LocalContext.current
     val viewModel: DownloadManagerViewModel = viewModel(
@@ -341,7 +342,8 @@ fun DownloadManagerScreen(
             onDeleteRequest = { song ->
                 songToDelete = song
                 showSingleDeleteDialog = true
-            }
+            },
+            offlineMode = offlineMode
         )
     }
 
@@ -431,7 +433,8 @@ private fun DownloadedSongsList(
     onSelectionChanged: (Set<String>) -> Unit,
     onSelectionToggle: (String, Boolean) -> Unit,
     onSelectionModeChanged: (Boolean) -> Unit,
-    onDeleteRequest: (DownloadedSong) -> Unit
+    onDeleteRequest: (DownloadedSong) -> Unit,
+    offlineMode: Boolean
 ) {
     val downloadedSongs by viewModel.downloadedSongs.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
@@ -507,7 +510,8 @@ private fun DownloadedSongsList(
                                 onSelectionModeChanged(true)
                                 onSelectionChanged(setOf(song.deletionIdentity()))
                             }
-                        }
+                        },
+                        offlineMode = offlineMode
                     )
                 }
             }
@@ -535,7 +539,8 @@ private fun DownloadedSongItem(
     onPlay: () -> Unit,
     onDelete: () -> Unit,
     onSelectionChanged: (Boolean) -> Unit,
-    onLongClick: () -> Unit
+    onLongClick: () -> Unit,
+    offlineMode: Boolean
 ) {
     val context = LocalContext.current
     val resolvedCover = remember(song.coverPath, song.customCoverUrl, song.coverUrl) {
@@ -587,12 +592,13 @@ private fun DownloadedSongItem(
             // 封面或音乐图标
             if (!resolvedCover.isNullOrBlank()) {
                 AsyncImage(
-                    model = remember(context, resolvedCover) {
+                    model = remember(context, resolvedCover, offlineMode) {
                         offlineCachedImageRequest(
                             context = context,
                             data = resolvedCover,
                             sizePx = 128,
-                            allowHardware = false
+                            allowHardware = false,
+                            offlineMode = offlineMode
                         )
                     },
                     contentDescription = null,

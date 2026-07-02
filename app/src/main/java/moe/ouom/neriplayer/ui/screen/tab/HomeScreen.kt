@@ -102,7 +102,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -117,7 +116,6 @@ import moe.ouom.neriplayer.data.playlist.usage.usageKey
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeMusicMediaUri
 import moe.ouom.neriplayer.data.local.media.displayAlbum
 import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
@@ -127,6 +125,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.HomeViewModel
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.favoriteId
+import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeShelf
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeItem
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicParser
@@ -322,7 +321,8 @@ fun HomeScreen(
                         item(span = { GridItemSpan(maxLineSpan) }) {
                             ContinueSection(
                                 items = usage.take(12),
-                                onClick = { entry -> onOpenRecent(entry) }
+                                onClick = { entry -> onOpenRecent(entry) },
+                                offlineMode = offlineMode
                             )
                         }
                     }
@@ -334,7 +334,8 @@ fun HomeScreen(
                                     shelf = ytmSections.guessYouLike,
                                     icon = Icons.Outlined.Bolt,
                                     title = guessYouLikeTitle,
-                                    onSongClick = onSongClick
+                                    onSongClick = onSongClick,
+                                    offlineMode = offlineMode
                                 )
                             }
 
@@ -343,7 +344,8 @@ fun HomeScreen(
                                     shelf = ytmSections.dailyDiscover,
                                     icon = Icons.Outlined.Explore,
                                     title = dailyDiscoverTitle,
-                                    onSongClick = onSongClick
+                                    onSongClick = onSongClick,
+                                    offlineMode = offlineMode
                                 )
                             }
 
@@ -369,7 +371,8 @@ fun HomeScreen(
                                                     scope.launch {
                                                         snackbarHostState.showSnackbar(message)
                                                     }
-                                                }
+                                                },
+                                                offlineMode = offlineMode
                                             )
                                         }
                                     }
@@ -395,7 +398,8 @@ fun HomeScreen(
                                                     shelf = shelf,
                                                     icon = Icons.Outlined.Explore,
                                                     title = shelf.title,
-                                                    onSongClick = onSongClick
+                                                    onSongClick = onSongClick,
+                                                    offlineMode = offlineMode
                                                 )
                                             } else {
                                                 val playlistItems = shelf.items.filter { it.isPlaylistItem() }
@@ -434,7 +438,8 @@ fun HomeScreen(
                                                             scope.launch {
                                                                 snackbarHostState.showSnackbar(message)
                                                             }
-                                                        }
+                                                        },
+                                                        offlineMode = offlineMode
                                                     )
                                                 }
                                             }
@@ -483,7 +488,8 @@ fun HomeScreen(
                                     item(span = { GridItemSpan(maxLineSpan) }) {
                                         ResponsiveSongPagerList(
                                             songs = ui.hotSongs.items,
-                                            onSongClick = onSongClick
+                                            onSongClick = onSongClick,
+                                            offlineMode = offlineMode
                                         )
                                     }
                                 }
@@ -504,7 +510,8 @@ fun HomeScreen(
                                     item(span = { GridItemSpan(maxLineSpan) }) {
                                         ResponsiveSongPagerList(
                                             songs = ui.radarSongs.items,
-                                            onSongClick = onSongClick
+                                            onSongClick = onSongClick,
+                                            offlineMode = offlineMode
                                         )
                                     }
                                 }
@@ -528,7 +535,8 @@ fun HomeScreen(
                                                     scope.launch {
                                                         snackbarHostState.showSnackbar(message)
                                                     }
-                                                }
+                                                },
+                                                offlineMode = offlineMode
                                             )
                                         }
                                     }
@@ -641,10 +649,11 @@ private fun SectionErrorState(detail: String) {
 private fun SongRowMini(
     index: Int,
     song: SongItem,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    offlineMode: Boolean
 ) {
     val context = LocalContext.current
-    val coverUrl = song.displayCoverUrl(context)
+    val coverUrl = rememberSongDisplayCoverUrl(song)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -664,7 +673,12 @@ private fun SongRowMini(
 
         if (!coverUrl.isNullOrBlank()) {
             AsyncImage(
-                model = fastScrollableImageRequest(context, coverUrl, sizePx = 128),
+                model = fastScrollableImageRequest(
+                    context = context,
+                    data = coverUrl,
+                    sizePx = 128,
+                    offlineMode = offlineMode
+                ),
                 contentDescription = song.displayName(),
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
@@ -705,7 +719,8 @@ fun PlaylistCard(
     playlist: PlaylistSummary,
     isFavorite: Boolean,
     onClick: () -> Unit,
-    onShowSnackbar: (String) -> Unit = {}
+    onShowSnackbar: (String) -> Unit = {},
+    offlineMode: Boolean = false
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -724,7 +739,12 @@ fun PlaylistCard(
             )
     ) {
         AsyncImage(
-            model = fastScrollableImageRequest(context, playlist.picUrl, sizePx = 384),
+            model = fastScrollableImageRequest(
+                context = context,
+                data = playlist.picUrl,
+                sizePx = 384,
+                offlineMode = offlineMode
+            ),
             contentDescription = playlist.name,
             contentScale = ContentScale.Crop,
             modifier = Modifier
@@ -795,7 +815,8 @@ private fun YtMusicPlaylistCard(
     playlist: YouTubeMusicPlaylist,
     isFavorite: Boolean,
     onClick: () -> Unit,
-    onShowSnackbar: (String) -> Unit
+    onShowSnackbar: (String) -> Unit,
+    offlineMode: Boolean
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -816,7 +837,12 @@ private fun YtMusicPlaylistCard(
             )
     ) {
         AsyncImage(
-            model = fastScrollableImageRequest(context, playlist.coverUrl, sizePx = 384),
+            model = fastScrollableImageRequest(
+                context = context,
+                data = playlist.coverUrl,
+                sizePx = 384,
+                offlineMode = offlineMode
+            ),
             contentDescription = playlist.title,
             contentScale = ContentScale.Crop,
             modifier = Modifier
@@ -888,7 +914,8 @@ private fun YtMusicHomeItemCard(
     item: YouTubeMusicHomeItem,
     isFavorite: Boolean,
     onClick: () -> Unit,
-    onShowSnackbar: (String) -> Unit
+    onShowSnackbar: (String) -> Unit,
+    offlineMode: Boolean
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -914,7 +941,12 @@ private fun YtMusicHomeItemCard(
             )
     ) {
         AsyncImage(
-            model = fastScrollableImageRequest(context, item.coverUrl, sizePx = 384),
+            model = fastScrollableImageRequest(
+                context = context,
+                data = item.coverUrl,
+                sizePx = 384,
+                offlineMode = offlineMode
+            ),
             contentDescription = item.title,
             contentScale = ContentScale.Crop,
             modifier = Modifier
@@ -1118,7 +1150,8 @@ private fun LazyGridScope.addYouTubeMusicSongShelfSection(
     shelf: YouTubeMusicHomeShelf,
     icon: ImageVector,
     title: String,
-    onSongClick: (List<SongItem>, Int) -> Unit
+    onSongClick: (List<SongItem>, Int) -> Unit,
+    offlineMode: Boolean
 ) {
     val songs = shelf.items.mapNotNull { it.toPlayableSongItem(shelf.title) }
     if (songs.isEmpty()) {
@@ -1133,13 +1166,18 @@ private fun LazyGridScope.addYouTubeMusicSongShelfSection(
     item(span = { GridItemSpan(maxLineSpan) }) {
         ResponsiveSongPagerList(
             songs = songs,
-            onSongClick = onSongClick
+            onSongClick = onSongClick,
+            offlineMode = offlineMode
         )
     }
 }
 
 @Composable
-private fun ContinueSection(items: List<UsageEntry>, onClick: (UsageEntry) -> Unit) {
+private fun ContinueSection(
+    items: List<UsageEntry>,
+    onClick: (UsageEntry) -> Unit,
+    offlineMode: Boolean
+) {
     Column(Modifier.fillMaxWidth()) {
         LazyRow(
             contentPadding = PaddingValues(horizontal = 8.dp),
@@ -1151,7 +1189,8 @@ private fun ContinueSection(items: List<UsageEntry>, onClick: (UsageEntry) -> Un
                     onClick = { onClick(entry) },
                     onRemove = {
                         AppContainer.playlistUsageRepo.removeEntry(entry.id, entry.source, entry.subtype)
-                    }
+                    },
+                    offlineMode = offlineMode
                 )
             }
         }
@@ -1160,7 +1199,12 @@ private fun ContinueSection(items: List<UsageEntry>, onClick: (UsageEntry) -> Un
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ContinueCard(entry: UsageEntry, onClick: () -> Unit, onRemove: () -> Unit) {
+private fun ContinueCard(
+    entry: UsageEntry,
+    onClick: () -> Unit,
+    onRemove: () -> Unit,
+    offlineMode: Boolean
+) {
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
     val view = androidx.compose.ui.platform.LocalView.current
@@ -1182,7 +1226,12 @@ private fun ContinueCard(entry: UsageEntry, onClick: () -> Unit, onRemove: () ->
             .width(150.dp)
     ) {
         AsyncImage(
-            model = ImageRequest.Builder(context).data(entry.picUrl).build(),
+            model = fastScrollableImageRequest(
+                context = context,
+                data = entry.picUrl,
+                sizePx = 384,
+                offlineMode = offlineMode
+            ),
             contentDescription = displayName,
             contentScale = ContentScale.Crop,
             modifier = Modifier
@@ -1228,7 +1277,8 @@ private fun ContinueCard(entry: UsageEntry, onClick: () -> Unit, onRemove: () ->
 @Composable
 private fun ResponsiveSongPagerList(
     songs: List<SongItem>,
-    onSongClick: (List<SongItem>, Int) -> Unit
+    onSongClick: (List<SongItem>, Int) -> Unit,
+    offlineMode: Boolean
 ) {
     val widthDp = LocalConfiguration.current.screenWidthDp
     val columns = when {
@@ -1267,7 +1317,8 @@ private fun ResponsiveSongPagerList(
                             SongRowMini(
                                 index = absoluteIndex + 1,
                                 song = song,
-                                onClick = { onSongClick(songs, absoluteIndex) }
+                                onClick = { onSongClick(songs, absoluteIndex) },
+                                offlineMode = offlineMode
                             )
                         } else {
                             Spacer(Modifier.height(0.dp))

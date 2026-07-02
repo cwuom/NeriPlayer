@@ -33,18 +33,23 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.local.media.displayAlbum
-import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.util.formatDuration
 import moe.ouom.neriplayer.util.offlineCachedImageRequest
 
 @Composable
-internal fun ArtistSongRow(index: Int, song: SongItem, onClick: () -> Unit) {
+internal fun ArtistSongRow(
+    index: Int,
+    song: SongItem,
+    onClick: () -> Unit,
+    offlineMode: Boolean = false
+) {
     val context = LocalContext.current
-    val coverUrl = song.displayCoverUrl(context)
+    val coverUrl = rememberSongDisplayCoverUrl(song)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -63,7 +68,11 @@ internal fun ArtistSongRow(index: Int, song: SongItem, onClick: () -> Unit) {
             )
         }
         AsyncImage(
-            model = offlineCachedImageRequest(context, coverUrl),
+            model = offlineCachedImageRequest(
+                context = context,
+                data = coverUrl,
+                offlineMode = offlineMode
+            ),
             contentDescription = song.displayName(),
             contentScale = ContentScale.Crop,
             modifier = Modifier
@@ -101,7 +110,11 @@ internal fun ArtistSongRow(index: Int, song: SongItem, onClick: () -> Unit) {
 }
 
 @Composable
-internal fun ArtistAlbumRow(album: AlbumSummary, onClick: () -> Unit) {
+internal fun ArtistAlbumRow(
+    album: AlbumSummary,
+    onClick: () -> Unit,
+    offlineMode: Boolean = false
+) {
     val context = LocalContext.current
     Column {
         Row(
@@ -112,7 +125,11 @@ internal fun ArtistAlbumRow(album: AlbumSummary, onClick: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             AsyncImage(
-                model = offlineCachedImageRequest(context, album.picUrl),
+                model = offlineCachedImageRequest(
+                    context = context,
+                    data = album.picUrl,
+                    offlineMode = offlineMode
+                ),
                 contentDescription = album.name,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier

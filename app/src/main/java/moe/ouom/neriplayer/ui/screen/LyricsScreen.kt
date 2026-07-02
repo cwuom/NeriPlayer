@@ -107,6 +107,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
@@ -155,6 +156,7 @@ fun LyricsScreen(
     showLyricTranslation: Boolean = true,
     sharedTransitionScope: androidx.compose.animation.SharedTransitionScope? = null,
     animatedContentScope: androidx.compose.animation.AnimatedContentScope? = null,
+    offlineMode: Boolean = false,
 ) {
     // 处理返回键
     androidx.activity.compose.BackHandler(onBack = onNavigateBack)
@@ -172,7 +174,8 @@ fun LyricsScreen(
     val playlistAddActionLabel = stringResource(R.string.playlist_add_to)
 
     val context = LocalContext.current
-    val currentCoverUrl = remember(currentSong, context) {
+    val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsState()
+    val currentCoverUrl = remember(currentSong, context, downloadPresenceVersion) {
         currentSong?.displayCoverUrl(context)
     }
     val clipboard = LocalClipboard.current
@@ -271,12 +274,13 @@ fun LyricsScreen(
             ) {
                 currentCoverUrl?.let { cover ->
                     AsyncImage(
-                        model = remember(context, cover) {
+                        model = remember(context, cover, offlineMode) {
                             offlineCachedImageRequest(
                                 context = context,
                                 data = cover,
                                 sizePx = 192,
-                                allowHardware = false
+                                allowHardware = false,
+                                offlineMode = offlineMode
                             )
                         },
                         contentDescription = currentSong?.displayName() ?: "",

@@ -61,7 +61,6 @@ import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.media.session.MediaButtonReceiver
-import coil.request.ImageRequest
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -73,6 +72,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.MainActivity
+import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager.externalBluetoothLyricLineFlow
 import moe.ouom.neriplayer.core.player.PlayerManager.statusBarLyricsEnable
 import moe.ouom.neriplayer.core.player.metadata.resolveExternalBluetoothMetadataText
@@ -80,12 +80,15 @@ import moe.ouom.neriplayer.core.player.metadata.shouldUseExternalBluetoothLyrics
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.model.displayArtist
+import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.SafeModeManager
+import moe.ouom.neriplayer.util.isOfflineModeNow
+import moe.ouom.neriplayer.util.offlineCachedImageRequest
 import java.io.File
 
 private data class PlaybackNotificationSnapshot(
@@ -461,6 +464,13 @@ class AudioPlayerService : Service() {
                 updatePlaybackState(force = true)
                 updateNotification()
             }
+        }
+        serviceScope.launch {
+            GlobalDownloadManager.downloadPresenceVersion
+                .collect {
+                    updateMetadata()
+                    updateNotification()
+                }
         }
         serviceScope.launch {
             PlayerManager.externalBluetoothLyricLineFlow.collect {
@@ -1024,11 +1034,13 @@ class AudioPlayerService : Service() {
         serviceScope.launch(Dispatchers.IO) {
             try {
                 val loader = coil.Coil.imageLoader(appCtx)
-                val request = ImageRequest.Builder(appCtx)
-                    .data(url)
-                    .allowHardware(false)
-                    .size(MEDIA_ARTWORK_SIZE_PX)
-                    .build()
+                val request = offlineCachedImageRequest(
+                    context = appCtx,
+                    data = url,
+                    sizePx = MEDIA_ARTWORK_SIZE_PX,
+                    allowHardware = false,
+                    offlineMode = appCtx.isOfflineModeNow()
+                )
                 val result = loader.execute(request)
                 val drawable = result.drawable ?: return@launch
                 val bmp = drawable.toBitmap()
@@ -1066,8 +1078,7 @@ class AudioPlayerService : Service() {
 
     private fun SongItem?.effectiveCoverSource(): String? {
         val song = this ?: return null
-        return song.customCoverUrl?.takeIf { it.isNotBlank() }
-            ?: song.coverUrl?.takeIf { it.isNotBlank() }
+        return song.displayCoverUrl(this@AudioPlayerService)?.takeIf { it.isNotBlank() }
     }
 
     private fun normalizeArtworkUri(source: String?): String? {

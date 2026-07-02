@@ -132,8 +132,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
-import coil.request.CachePolicy
-import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -145,9 +143,9 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.sameIdentityAs
+import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.BatchDownloadManagerSheet
@@ -158,6 +156,7 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.NeteaseCollectionHeader
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
+import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.util.HapticFloatingActionButton
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
@@ -172,7 +171,8 @@ import moe.ouom.neriplayer.util.performHapticFeedback
 fun NeteasePlaylistDetailScreen(
     playlist: PlaylistSummary,
     onBack: () -> Unit = {},
-    onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> }
+    onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
+    offlineMode: Boolean = false
 ) {
     val context = LocalContext.current
     val vm: NeteaseCollectionDetailViewModel = viewModel(
@@ -215,7 +215,8 @@ fun NeteasePlaylistDetailScreen(
         playlistSource = "netease",
         onRetry = vm::retry,
         onBack = onBack,
-        onSongClick = onSongClick
+        onSongClick = onSongClick,
+        offlineMode = offlineMode
     )
 }
 
@@ -224,7 +225,8 @@ fun NeteasePlaylistDetailScreen(
 fun NeteaseAlbumDetailScreen(
     album: AlbumSummary,
     onBack: () -> Unit = {},
-    onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> }
+    onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
+    offlineMode: Boolean = false
 ) {
     val context = LocalContext.current
     val vm: NeteaseCollectionDetailViewModel = viewModel(
@@ -267,7 +269,8 @@ fun NeteaseAlbumDetailScreen(
         playlistSource = "neteaseAlbum",
         onRetry = vm::retry,
         onBack = onBack,
-        onSongClick = onSongClick
+        onSongClick = onSongClick,
+        offlineMode = offlineMode
     )
 }
 
@@ -280,7 +283,8 @@ fun DetailScreen(
     playlistSource: String,
     onRetry: () -> Unit,
     onBack: () -> Unit = {},
-    onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> }
+    onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
+    offlineMode: Boolean = false
 ) {
 
     val context = LocalContext.current
@@ -509,7 +513,7 @@ fun DetailScreen(
                             ) || it.artist.contains(searchQuery, true)
                         }
                     }
-                    val currentIndex = displayedTracks.indexOfFirst { it.id == currentSong?.id }
+                    val currentIndex = displayedTracks.indexOfFirst { it.sameIdentityAs(currentSong) }
 
                     Box(
                         modifier = Modifier
@@ -530,14 +534,15 @@ fun DetailScreen(
                                         .height(headerHeight)
                                 ) {
                                     AsyncImage(
-                                        model = ImageRequest.Builder(LocalContext.current)
-                                            .data(ui.header?.coverUrl.takeUnless { it.isNullOrBlank() }
-                                                ?: "about:blank")
-                                            .crossfade(true)
-                                            .memoryCachePolicy(CachePolicy.ENABLED)
-                                            .diskCachePolicy(CachePolicy.ENABLED)
-                                            .networkCachePolicy(CachePolicy.ENABLED)
-                                            .build(),
+                                        model = offlineCachedImageRequest(
+                                            context = context,
+                                            data = ui.header?.coverUrl.takeUnless { it.isNullOrBlank() }
+                                                ?: "about:blank",
+                                            sizePx = 768,
+                                            allowHardware = false,
+                                            crossfade = true,
+                                            offlineMode = offlineMode
+                                        ),
                                         contentDescription = ui.header?.name
                                             ?: stringResource(R.string.playlist_title),
                                         contentScale = ContentScale.Crop,
@@ -635,7 +640,7 @@ fun DetailScreen(
                                 else -> {
                                     itemsIndexed(
                                         displayedTracks,
-                                        key = { _, it -> it.id }) { index, item ->
+                                        key = { _, it -> it.stableKey() }) { index, item ->
                                         SongRow(
                                             index = index + 1,
                                             song = item,
@@ -657,10 +662,12 @@ fun DetailScreen(
                                                     "tap song index=$index id=${item.id}"
                                                 )
                                                 val full = ui.tracks
-                                                val pos = full.indexOfFirst { it.id == item.id }
+                                                val itemKey = item.stableKey()
+                                                val pos = full.indexOfFirst { it.stableKey() == itemKey }
                                                 if (pos >= 0) onSongClick(full, pos)
                                             },
-                                            snackbarHostState = snackbarHostState
+                                            snackbarHostState = snackbarHostState,
+                                            offlineMode = offlineMode
                                         )
                                     }
                                 }
@@ -847,7 +854,8 @@ private fun SongRow(
     onLongPress: () -> Unit,
     onClick: () -> Unit,
     indexWidth: Dp = 48.dp,
-    snackbarHostState: SnackbarHostState
+    snackbarHostState: SnackbarHostState,
+    offlineMode: Boolean
 ) {
     val current by PlayerManager.currentSongFlow.collectAsState()
     val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
@@ -892,7 +900,7 @@ private fun SongRow(
         }
 
         val itemContext = LocalContext.current
-        val displayCoverUrl = song.displayCoverUrl(itemContext)
+        val displayCoverUrl = rememberSongDisplayCoverUrl(song)
         if (showCover && !displayCoverUrl.isNullOrBlank()) {
             Box(
                 modifier = Modifier
@@ -904,7 +912,11 @@ private fun SongRow(
                     )
             ) {
                 AsyncImage(
-                    model = offlineCachedImageRequest(itemContext, displayCoverUrl),
+                    model = offlineCachedImageRequest(
+                        context = itemContext,
+                        data = displayCoverUrl,
+                        offlineMode = offlineMode
+                    ),
                     contentDescription = song.displayName(),
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.matchParentSize()

@@ -53,7 +53,8 @@ internal enum class StatsSortMode {
 @Composable
 fun PlaybackStatsScreen(
     onBack: () -> Unit = {},
-    onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> }
+    onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
+    offlineMode: Boolean = false
 ) {
     val stats by AppContainer.playbackStatsRepo.statsFlow.collectAsState()
     val dailyStats by AppContainer.playbackStatsRepo.dailyStatsFlow.collectAsState()
@@ -220,6 +221,7 @@ fun PlaybackStatsScreen(
                         StatTrackRow(
                             rank = index + 1,
                             stat = stat,
+                            offlineMode = offlineMode,
                             onClick = {
                                 val songItem = stat.toSongItem()
                                 onSongClick(listOf(songItem), 0)

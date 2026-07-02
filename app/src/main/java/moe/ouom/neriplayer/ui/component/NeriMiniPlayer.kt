@@ -82,7 +82,8 @@ fun NeriMiniPlayer(
     onPlayPause: () -> Unit,
     onExpand: () -> Unit,
     hazeState: HazeState,
-    enableHaze: Boolean = true
+    enableHaze: Boolean = true,
+    offlineMode: Boolean = false
 ) {
     val shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
     val supportsBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
@@ -125,7 +126,8 @@ fun NeriMiniPlayer(
                             context = context,
                             data = coverUrl,
                             sizePx = 128,
-                            crossfade = false
+                            crossfade = false,
+                            offlineMode = offlineMode
                         ),
                         contentDescription = null,
                         contentScale = ContentScale.Crop,

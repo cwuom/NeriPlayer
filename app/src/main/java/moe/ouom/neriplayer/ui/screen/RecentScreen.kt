@@ -102,11 +102,11 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.local.media.displayAlbum
 import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
@@ -120,7 +120,8 @@ import kotlin.random.Random
 @Suppress("AssignedValueIsNeverRead")
 fun RecentScreen(
     onBack: () -> Unit = {},
-    onSongClick: (List<SongItem>, Int) -> Unit
+    onSongClick: (List<SongItem>, Int) -> Unit,
+    offlineMode: Boolean = false
 ) {
     val repo = AppContainer.playHistoryRepo
     val history by repo.historyFlow.collectAsState()
@@ -395,7 +396,8 @@ fun RecentScreen(
                                     )
                                 }
                             }
-                        }
+                        },
+                        offlineMode = offlineMode
                     )
                 }
             }
@@ -473,10 +475,11 @@ private fun RecentRowRich(
     onToggleSelect: () -> Unit,
     onLongPress: () -> Unit,
     onClick: () -> Unit,
-    moreMenu: @Composable () -> Unit
+    moreMenu: @Composable () -> Unit,
+    offlineMode: Boolean
 ) {
     val ctx = LocalContext.current
-    val coverUrl = song.displayCoverUrl(ctx)
+    val coverUrl = rememberSongDisplayCoverUrl(song)
     val primaryTitle = remember(song) {
         if (song.isLocalSong()) {
             song.localFileName?.takeIf { it.isNotBlank() } ?: song.displayName()
@@ -554,7 +557,8 @@ private fun RecentRowRich(
                     context = ctx,
                     data = coverUrl,
                     sizePx = 192,
-                    allowHardware = false
+                    allowHardware = false,
+                    offlineMode = offlineMode
                 ),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
@@ -678,4 +682,3 @@ private fun PlayingIndicator(color: Color, animate: Boolean) {
         )
     }
 }
-

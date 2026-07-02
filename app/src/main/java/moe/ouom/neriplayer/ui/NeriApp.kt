@@ -145,6 +145,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.AudioPlayerService
 import moe.ouom.neriplayer.core.player.AudioReactive
@@ -207,6 +208,7 @@ import moe.ouom.neriplayer.util.NativeCrashHandler
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.adjustedAccentColorArgb
 import moe.ouom.neriplayer.util.isRemoteImageSource
+import moe.ouom.neriplayer.util.offlineCachedImageRequest
 import moe.ouom.neriplayer.util.rememberOfflineModeState
 import moe.ouom.neriplayer.util.syncHapticFeedbackSetting
 import kotlin.coroutines.resume
@@ -426,13 +428,14 @@ private fun NowPlayingAccentBackdrop(
     isDark: Boolean,
     refreshKey: Int = 0,
     modifier: Modifier = Modifier,
+    offlineMode: Boolean = false,
     onAccentChanged: (String?) -> Unit = {}
 ) {
     val context = LocalContext.current
     val fallback = if (isDark) Color(0xFF121212) else Color(0xFFF5F5F5)
     var target by remember { mutableStateOf<Color?>(null) }
 
-    LaunchedEffect(coverUrl, isDark, refreshKey) {
+    LaunchedEffect(coverUrl, isDark, refreshKey, offlineMode) {
         if (coverUrl.isNullOrEmpty()) {
             target = null
             onAccentChanged(null)
@@ -443,7 +446,7 @@ private fun NowPlayingAccentBackdrop(
             target = Color(adjustedAccentColorArgb(cached.baseColorArgb, isDark))
             onAccentChanged(cached.seedHex)
         }
-        val sample = CoverArtColorCache.getOrLoad(context, coverUrl)
+        val sample = CoverArtColorCache.getOrLoad(context, coverUrl, offlineMode)
         if (sample != null) {
             target = Color(adjustedAccentColorArgb(sample.baseColorArgb, isDark))
             onAccentChanged(sample.seedHex)
@@ -680,7 +683,8 @@ private fun NeriAppContent(
     // 缓存当前封面的取色结果，避免开关动态取色时先闪到默认种子色
     var coverSeedHex by remember { mutableStateOf<String?>(null) }
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
-    val displayCoverUrl = remember(currentSong, context) {
+    val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsState()
+    val displayCoverUrl = remember(currentSong, context, downloadPresenceVersion, coverArtRefreshToken) {
         currentSong.resolveUiCoverSource(context)
     }
     val scope = rememberCoroutineScope()
@@ -814,7 +818,7 @@ private fun NeriAppContent(
         }
     }
 
-    LaunchedEffect(displayCoverUrl, coverArtRefreshToken, showNowPlaying, dynamicColorEnabled) {
+    LaunchedEffect(displayCoverUrl, coverArtRefreshToken, showNowPlaying, dynamicColorEnabled, offlineMode) {
         if (displayCoverUrl.isNullOrBlank() || !dynamicColorEnabled) {
             coverSeedHex = null
             return@LaunchedEffect
@@ -824,11 +828,13 @@ private fun NeriAppContent(
 
         if (showNowPlaying && isRemoteImageSource(displayCoverUrl)) {
             coverArtImageLoader.enqueue(
-                ImageRequest.Builder(context)
-                    .data(displayCoverUrl)
-                    .allowHardware(false)
-                    .size(256)
-                    .build()
+                offlineCachedImageRequest(
+                    context = context,
+                    data = displayCoverUrl,
+                    sizePx = 256,
+                    allowHardware = false,
+                    offlineMode = offlineMode
+                )
             )
         }
 
@@ -841,7 +847,7 @@ private fun NeriAppContent(
             delay(warmupDelayMillis)
         }
 
-        coverSeedHex = CoverArtColorCache.preload(context, displayCoverUrl)?.seedHex ?: coverSeedHex
+        coverSeedHex = CoverArtColorCache.preload(context, displayCoverUrl, offlineMode)?.seedHex ?: coverSeedHex
     }
 
     // 同步触感反馈设置
@@ -1318,7 +1324,8 @@ private fun NeriAppContent(
                                     NeteasePlaylistDetailScreen(
                                         playlist = playlist,
                                         onBack = { navController.popBackStack() },
-                                        onSongClick = ::playSongsAndOpenNowPlaying
+                                        onSongClick = ::playSongsAndOpenNowPlaying,
+                                        offlineMode = offlineMode
                                     )
                                 }
 
@@ -1343,7 +1350,8 @@ private fun NeriAppContent(
                                     NeteaseAlbumDetailScreen(
                                         album = album,
                                         onBack = { navController.popBackStack() },
-                                        onSongClick = ::playSongsAndOpenNowPlaying
+                                        onSongClick = ::playSongsAndOpenNowPlaying,
+                                        offlineMode = offlineMode
                                     )
                                 }
 
@@ -1369,6 +1377,7 @@ private fun NeriAppContent(
                                         artist = artist,
                                         onBack = { navController.popBackStack() },
                                         onSongClick = ::playSongsAndOpenNowPlaying,
+                                        offlineMode = offlineMode,
                                         onAlbumClick = { album ->
                                             val json = Uri.encode(Gson().toJson(album))
                                             navController.navigate("netease_album_detail/$json")
@@ -1398,7 +1407,8 @@ private fun NeriAppContent(
                                         playlist = playlist,
                                         onBack = { navController.popBackStack() },
                                         onPlayAudio = ::playBiliAudioAndOpenNowPlaying,
-                                        onPlayParts = ::playBiliPartsAndOpenNowPlaying
+                                        onPlayParts = ::playBiliPartsAndOpenNowPlaying,
+                                        offlineMode = offlineMode
                                     )
                                 }
 
@@ -1482,7 +1492,8 @@ private fun NeriAppContent(
                                         onSongClick = ::playSongsAndOpenNowPlaying,
                                         onPlayParts = ::playBiliPartsAndOpenNowPlaying,
                                         onOpenRecent = { navController.navigate(Destinations.Recent.route) },
-                                        onOpenStats = { navController.navigate(Destinations.PlaybackStats.route) }
+                                        onOpenStats = { navController.navigate(Destinations.PlaybackStats.route) },
+                                        offlineMode = offlineMode
                                     )
                                 }
 
@@ -1505,7 +1516,8 @@ private fun NeriAppContent(
                                         playlistId = id,
                                         onBack = { navController.popBackStack() },
                                         onDeleted = { navController.popBackStack() },
-                                        onSongClick = ::playSongsAndOpenNowPlaying
+                                        onSongClick = ::playSongsAndOpenNowPlaying,
+                                        offlineMode = offlineMode
                                     )
                                 }
 
@@ -1518,7 +1530,8 @@ private fun NeriAppContent(
                                 ) {
                                     RecentScreen(
                                         onBack = { navController.popBackStack() },
-                                        onSongClick = ::playSongsAndOpenNowPlaying
+                                        onSongClick = ::playSongsAndOpenNowPlaying,
+                                        offlineMode = offlineMode
                                     )
                                 }
 
@@ -1531,7 +1544,8 @@ private fun NeriAppContent(
                                 ) {
                                     PlaybackStatsScreen(
                                         onBack = { navController.popBackStack() },
-                                        onSongClick = ::playSongsAndOpenNowPlaying
+                                        onSongClick = ::playSongsAndOpenNowPlaying,
+                                        offlineMode = offlineMode
                                     )
                                 }
 
@@ -1817,7 +1831,8 @@ private fun NeriAppContent(
                                 ) {
                                     DownloadManagerScreen(
                                         onBack = { navController.popBackStack() },
-                                        onOpenDownloadProgress = { navController.navigate(Destinations.DownloadProgress.route) }
+                                        onOpenDownloadProgress = { navController.navigate(Destinations.DownloadProgress.route) },
+                                        offlineMode = offlineMode
                                     )
                                 }
 
@@ -1992,7 +2007,8 @@ private fun NeriAppContent(
                                     onPlayPause = { PlayerManager.togglePlayPause() },
                                     onExpand = { showNowPlaying = true },
                                     hazeState = hazeState,
-                                    enableHaze = effectiveAdvancedBlurEnabled
+                                    enableHaze = effectiveAdvancedBlurEnabled,
+                                    offlineMode = offlineMode
                                 )
                             }
 
@@ -2093,7 +2109,13 @@ private fun NeriAppContent(
                                 }
                             }
 
-                            LaunchedEffect(hasCoverBlur, effectiveBlurStrength, blurImageSizePx, preloadCoverUrls) {
+                            LaunchedEffect(
+                                hasCoverBlur,
+                                effectiveBlurStrength,
+                                blurImageSizePx,
+                                preloadCoverUrls,
+                                offlineMode
+                            ) {
                                 if (!hasCoverBlur || preloadCoverUrls.isEmpty()) return@LaunchedEffect
                                 preloadCoverUrls.forEach { url ->
                                     imageLoader.enqueue(
@@ -2107,6 +2129,13 @@ private fun NeriAppContent(
                                             .diskCacheKey("nowplaying-blur:$url:$effectiveBlurStrength")
                                             .memoryCachePolicy(CachePolicy.ENABLED)
                                             .diskCachePolicy(CachePolicy.ENABLED)
+                                            .networkCachePolicy(
+                                                if (offlineMode && isRemoteImageSource(url)) {
+                                                    CachePolicy.DISABLED
+                                                } else {
+                                                    CachePolicy.ENABLED
+                                                }
+                                            )
                                             .transformations(
                                                 if (effectiveBlurStrength > 0f) {
                                                     listOf(BlurTransformation(context, effectiveBlurStrength))
@@ -2138,7 +2167,8 @@ private fun NeriAppContent(
                                     coverUrl = nowPlayingCoverUrl,
                                     isDark = true,
                                     refreshKey = coverArtRefreshToken,
-                                    modifier = Modifier.fillMaxSize()
+                                    modifier = Modifier.fillMaxSize(),
+                                    offlineMode = offlineMode
                                 )
                             }
 
@@ -2148,7 +2178,8 @@ private fun NeriAppContent(
                                     coverUrl = blurBackdropCoverUrl,
                                     isDark = true,
                                     refreshKey = coverArtRefreshToken,
-                                    modifier = Modifier.fillMaxSize()
+                                    modifier = Modifier.fillMaxSize(),
+                                    offlineMode = offlineMode
                                 )
                                 val shouldShowStable =
                                     stableCoverUrl != null &&
@@ -2166,6 +2197,13 @@ private fun NeriAppContent(
                                             .precision(Precision.INEXACT)
                                             .memoryCacheKey("nowplaying-blur:$stableCoverUrl:$stableBlurStrength")
                                             .diskCacheKey("nowplaying-blur:$stableCoverUrl:$stableBlurStrength")
+                                            .networkCachePolicy(
+                                                if (offlineMode && isRemoteImageSource(stableCoverUrl)) {
+                                                    CachePolicy.DISABLED
+                                                } else {
+                                                    CachePolicy.ENABLED
+                                                }
+                                            )
                                             .transformations(
                                                 if ((stableBlurStrength ?: 0f) > 0f) {
                                                     listOf(BlurTransformation(context, stableBlurStrength ?: 0f))
@@ -2188,6 +2226,13 @@ private fun NeriAppContent(
                                         .precision(Precision.INEXACT)
                                         .memoryCacheKey("nowplaying-blur:$nowPlayingCoverUrl:$effectiveBlurStrength")
                                         .diskCacheKey("nowplaying-blur:$nowPlayingCoverUrl:$effectiveBlurStrength")
+                                        .networkCachePolicy(
+                                            if (offlineMode && isRemoteImageSource(nowPlayingCoverUrl)) {
+                                                CachePolicy.DISABLED
+                                            } else {
+                                                CachePolicy.ENABLED
+                                            }
+                                        )
                                         .transformations(
                                             if (effectiveBlurStrength > 0f) {
                                                 listOf(BlurTransformation(context, effectiveBlurStrength))
@@ -2228,7 +2273,8 @@ private fun NeriAppContent(
                                         .graphicsLayer { alpha = 0.80f },
                                     isDark = true,
                                     coverUrl = nowPlayingCoverUrl,
-                                    refreshKey = coverArtRefreshToken
+                                    refreshKey = coverArtRefreshToken,
+                                    offlineMode = offlineMode
                                 )
                             }
 
@@ -2276,7 +2322,8 @@ private fun NeriAppContent(
                                     advancedLyricsEnabled = advancedLyricsEnabled,
                                     showCoverSourceBadge = showCoverSourceBadge,
                                     showLyricTranslation = showLyricTranslation,
-                                    showNowPlayingTitle = showNowPlayingTitle
+                                    showNowPlayingTitle = showNowPlayingTitle,
+                                    offlineMode = offlineMode
                                 )
                             }
                         }

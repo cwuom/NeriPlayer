@@ -103,7 +103,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -201,7 +200,8 @@ fun LibraryScreen(
     onYouTubeMusicPlaylistClick: (YouTubeMusicPlaylist) -> Unit = {},
     onBiliPlaylistClick: (BiliPlaylist) -> Unit = {},
     onOpenRecent: () -> Unit = {},
-    onOpenStats: () -> Unit = {}
+    onOpenStats: () -> Unit = {},
+    offlineMode: Boolean = false
 ) {
     val vm: LibraryViewModel = viewModel()
     val ui by vm.uiState.collectAsState()
@@ -342,7 +342,8 @@ fun LibraryScreen(
                             },
                             onReorder = { order ->
                                 vm.reorderLocalPlaylists(order)
-                            }
+                            },
+                            offlineMode = offlineMode
                         )
 
                         LibraryTab.FAVORITE -> FavoritePlaylistList(
@@ -351,19 +352,22 @@ fun LibraryScreen(
                             onNeteaseAlbumClick = onNeteaseAlbumClick,
                             onNeteaseArtistClick = onNeteaseArtistClick,
                             onBiliPlaylistClick = onBiliPlaylistClick,
-                            onYouTubeMusicPlaylistClick = onYouTubeMusicPlaylistClick
+                            onYouTubeMusicPlaylistClick = onYouTubeMusicPlaylistClick,
+                            offlineMode = offlineMode
                         )
 
                         LibraryTab.NETEASE -> NeteasePlaylistList(
                             playlists = ui.neteasePlaylists,
                             listState = neteaseListState,
-                            onClick = onNeteasePlaylistClick
+                            onClick = onNeteasePlaylistClick,
+                            offlineMode = offlineMode
                         )
 
                         LibraryTab.NETEASEALBUM -> NeteaseAlbumList(
                             playlists = ui.neteaseAlbums,
                             listState = neteaseAlbumState,
-                            onClick = onNeteaseAlbumClick
+                            onClick = onNeteaseAlbumClick,
+                            offlineMode = offlineMode
                         )
 
                         LibraryTab.YTMUSIC -> YouTubeMusicPlaylistList(
@@ -371,14 +375,16 @@ fun LibraryScreen(
                             error = ui.youtubeMusicError,
                             listState = youtubeMusicListState,
                             onClick = onYouTubeMusicPlaylistClick,
-                            onRetry = { vm.refreshYouTubeMusicPlaylists() }
+                            onRetry = { vm.refreshYouTubeMusicPlaylists() },
+                            offlineMode = offlineMode
                         )
 
                         LibraryTab.BILI -> BiliPlaylistList(
                             playlists = ui.biliPlaylists,
                             error = ui.biliError,
                             listState = biliListState,
-                            onClick = onBiliPlaylistClick
+                            onClick = onBiliPlaylistClick,
+                            offlineMode = offlineMode
                         )
 
                         LibraryTab.QQMUSIC -> QqMusicPlaylistList(
@@ -397,7 +403,8 @@ private fun YouTubeMusicPlaylistList(
     error: String?,
     listState: LazyListState,
     onClick: (YouTubeMusicPlaylist) -> Unit,
-    onRetry: () -> Unit
+    onRetry: () -> Unit,
+    offlineMode: Boolean
 ) {
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     val context = LocalContext.current
@@ -526,9 +533,13 @@ private fun YouTubeMusicPlaylistList(
                     leadingContent = {
                         if (playlist.coverUrl.isNotEmpty()) {
                             AsyncImage(
-                                model = ImageRequest.Builder(LocalContext.current)
-                                    .data(playlist.coverUrl)
-                                    .build(),
+                                model = offlineCachedImageRequest(
+                                    context = context,
+                                    data = playlist.coverUrl,
+                                    sizePx = 192,
+                                    allowHardware = false,
+                                    offlineMode = offlineMode
+                                ),
                                 contentDescription = null,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier
@@ -621,8 +632,10 @@ private fun BiliPlaylistList(
     playlists: List<BiliPlaylist>,
     error: String?,
     listState: LazyListState,
-    onClick: (BiliPlaylist) -> Unit
+    onClick: (BiliPlaylist) -> Unit,
+    offlineMode: Boolean
 ) {
+    val context = LocalContext.current
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     val createdLabel = stringResource(R.string.library_bili_created_favorite)
     val collectedLabel = stringResource(R.string.library_bili_collected_favorite)
@@ -775,7 +788,13 @@ private fun BiliPlaylistList(
                     leadingContent = {
                         if (pl.coverUrl.isNotEmpty()) {
                             AsyncImage(
-                                model = ImageRequest.Builder(LocalContext.current).data(pl.coverUrl).build(),
+                                model = offlineCachedImageRequest(
+                                    context = context,
+                                    data = pl.coverUrl,
+                                    sizePx = 192,
+                                    allowHardware = false,
+                                    offlineMode = offlineMode
+                                ),
                                 contentDescription = null,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier
@@ -805,7 +824,8 @@ private fun LocalPlaylistList(
     onClick: (LocalPlaylist) -> Unit,
     onRename: (Long, String) -> Unit = { _, _ -> },
     onDelete: (Long) -> Unit = {},
-    onReorder: (List<Long>) -> Unit = {}
+    onReorder: (List<Long>) -> Unit = {},
+    offlineMode: Boolean
 ) {
     var showDialog by rememberSaveable { mutableStateOf(false) }
     var newName by rememberSaveable { mutableStateOf("") }
@@ -1130,7 +1150,8 @@ private fun LocalPlaylistList(
                                             context = context,
                                             data = cover,
                                             sizePx = 192,
-                                            allowHardware = false
+                                            allowHardware = false,
+                                            offlineMode = offlineMode
                                         ),
                                         contentDescription = null,
                                         contentScale = ContentScale.Crop,
@@ -1237,7 +1258,8 @@ private fun LocalPlaylistList(
                                             context = context,
                                             data = cover,
                                             sizePx = 192,
-                                            allowHardware = false
+                                            allowHardware = false,
+                                            offlineMode = offlineMode
                                         ),
                                         contentDescription = null,
                                         contentScale = ContentScale.Crop,
@@ -1406,7 +1428,8 @@ private fun LocalPlaylistList(
                                             context = context,
                                             data = cover,
                                             sizePx = 192,
-                                            allowHardware = false
+                                            allowHardware = false,
+                                            offlineMode = offlineMode
                                         ),
                                         contentDescription = null,
                                         contentScale = ContentScale.Crop,
@@ -1435,7 +1458,8 @@ private fun LocalPlaylistList(
 private fun NeteasePlaylistList(
     playlists: List<PlaylistSummary>,
     listState: LazyListState,
-    onClick: (PlaylistSummary) -> Unit
+    onClick: (PlaylistSummary) -> Unit,
+    offlineMode: Boolean
 ) {
     val context = LocalContext.current
     val miniPlayerHeight = LocalMiniPlayerHeight.current
@@ -1560,7 +1584,13 @@ private fun NeteasePlaylistList(
                     ),
                     leadingContent = {
                         AsyncImage(
-                            model = ImageRequest.Builder(LocalContext.current).data(pl.picUrl).build(),
+                            model = offlineCachedImageRequest(
+                                context = context,
+                                data = pl.picUrl,
+                                sizePx = 192,
+                                allowHardware = false,
+                                offlineMode = offlineMode
+                            ),
                             contentDescription = null,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier
@@ -1578,8 +1608,10 @@ private fun NeteasePlaylistList(
 private fun NeteaseAlbumList(
     playlists: List<AlbumSummary>,
     listState: LazyListState,
-    onClick: (AlbumSummary) -> Unit
+    onClick: (AlbumSummary) -> Unit,
+    offlineMode: Boolean
 ) {
+    val context = LocalContext.current
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     var searchQuery by rememberSaveable { mutableStateOf("") }
     val filteredAlbums = remember(playlists, searchQuery) {
@@ -1698,7 +1730,13 @@ private fun NeteaseAlbumList(
                     ),
                     leadingContent = {
                         AsyncImage(
-                            model = ImageRequest.Builder(LocalContext.current).data(pl.picUrl).build(),
+                            model = offlineCachedImageRequest(
+                                context = context,
+                                data = pl.picUrl,
+                                sizePx = 192,
+                                allowHardware = false,
+                                offlineMode = offlineMode
+                            ),
                             contentDescription = null,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier
@@ -1720,7 +1758,8 @@ private fun FavoritePlaylistList(
     onNeteaseAlbumClick: (AlbumSummary) -> Unit,
     onNeteaseArtistClick: (NeteaseArtistSummary) -> Unit,
     onBiliPlaylistClick: (BiliPlaylist) -> Unit,
-    onYouTubeMusicPlaylistClick: (YouTubeMusicPlaylist) -> Unit
+    onYouTubeMusicPlaylistClick: (YouTubeMusicPlaylist) -> Unit,
+    offlineMode: Boolean
 ) {
     val context = LocalContext.current
     val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
@@ -2115,7 +2154,8 @@ private fun FavoritePlaylistList(
                                             context = context,
                                             data = favorite.coverUrl,
                                             sizePx = 192,
-                                            allowHardware = false
+                                            allowHardware = false,
+                                            offlineMode = offlineMode
                                         ),
                                         contentDescription = null,
                                         contentScale = ContentScale.Crop,

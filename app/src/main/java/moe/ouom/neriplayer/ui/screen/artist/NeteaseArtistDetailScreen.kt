@@ -81,7 +81,8 @@ fun NeteaseArtistDetailScreen(
     artist: NeteaseArtistSummary,
     onBack: () -> Unit = {},
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
-    onAlbumClick: (AlbumSummary) -> Unit = {}
+    onAlbumClick: (AlbumSummary) -> Unit = {},
+    offlineMode: Boolean = false
 ) {
     val context = LocalContext.current
     val viewModel: NeteaseArtistDetailViewModel = viewModel(
@@ -133,7 +134,8 @@ fun NeteaseArtistDetailScreen(
                 onLoadMoreSongs = viewModel::loadMoreSongs,
                 onLoadMoreAlbums = viewModel::loadMoreAlbums,
                 onSongClick = onSongClick,
-                onAlbumClick = onAlbumClick
+                onAlbumClick = onAlbumClick,
+                offlineMode = offlineMode
             )
         }
     }
@@ -151,7 +153,8 @@ private fun ArtistContent(
     onLoadMoreSongs: () -> Unit,
     onLoadMoreAlbums: () -> Unit,
     onSongClick: (List<SongItem>, Int) -> Unit,
-    onAlbumClick: (AlbumSummary) -> Unit
+    onAlbumClick: (AlbumSummary) -> Unit,
+    offlineMode: Boolean
 ) {
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     LazyColumn(
@@ -171,6 +174,7 @@ private fun ArtistContent(
             ArtistHeaderCard(
                 header = ui.header,
                 followUpdating = ui.followUpdating,
+                offlineMode = offlineMode,
                 onToggleFollow = onToggleFollow
             )
         }
@@ -237,7 +241,8 @@ private fun ArtistContent(
                     ArtistSongRow(
                         index = index + 1,
                         song = song,
-                        onClick = { onSongClick(ui.songs, index) }
+                        onClick = { onSongClick(ui.songs, index) },
+                        offlineMode = offlineMode
                     )
                 }
             }
@@ -254,7 +259,11 @@ private fun ArtistContent(
                 item { EmptyBlock(text = stringResource(R.string.artist_albums_empty)) }
             } else {
                 itemsIndexed(ui.albums, key = { _, item -> item.id }) { _, album ->
-                    ArtistAlbumRow(album = album, onClick = { onAlbumClick(album) })
+                    ArtistAlbumRow(
+                        album = album,
+                        onClick = { onAlbumClick(album) },
+                        offlineMode = offlineMode
+                    )
                 }
             }
             if (ui.albumsHasMore) {
@@ -273,6 +282,7 @@ private fun ArtistContent(
 private fun ArtistHeaderCard(
     header: NeteaseArtistHeader?,
     followUpdating: Boolean,
+    offlineMode: Boolean,
     onToggleFollow: () -> Unit
 ) {
     val context = LocalContext.current
@@ -285,7 +295,11 @@ private fun ArtistHeaderCard(
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
             AsyncImage(
-                model = offlineCachedImageRequest(context, coverUrl),
+                model = offlineCachedImageRequest(
+                    context = context,
+                    data = coverUrl,
+                    offlineMode = offlineMode
+                ),
                 contentDescription = header?.name,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
@@ -312,7 +326,11 @@ private fun ArtistHeaderCard(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     AsyncImage(
-                        model = offlineCachedImageRequest(context, header?.avatarUrl ?: coverUrl),
+                        model = offlineCachedImageRequest(
+                            context = context,
+                            data = header?.avatarUrl ?: coverUrl,
+                            offlineMode = offlineMode
+                        ),
                         contentDescription = header?.name,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier

@@ -385,6 +385,7 @@ fun NowPlayingScreen(
     showCoverSourceBadge: Boolean = true,
     showLyricTranslation: Boolean = true,
     showNowPlayingTitle: Boolean = true,
+    offlineMode: Boolean = false,
 ) {
     val currentSong by PlayerManager.currentSongFlow.collectAsState()
     val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
@@ -436,7 +437,8 @@ fun NowPlayingScreen(
 
     val playlists by PlayerManager.playlistsFlow.collectAsState()
     val context = LocalContext.current
-    val currentCoverUrl = remember(currentSong, context) {
+    val coverDownloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsState()
+    val currentCoverUrl = remember(currentSong, context, coverDownloadPresenceVersion) {
         currentSong?.displayCoverUrl(context)
     }
 
@@ -823,7 +825,8 @@ fun NowPlayingScreen(
                             lyricOffsetMs = totalOffset,
                             showLyricTranslation = showLyricTranslation,
                             sharedTransitionScope = this@SharedTransitionLayout,
-                            animatedContentScope = this@AnimatedContent
+                            animatedContentScope = this@AnimatedContent,
+                            offlineMode = offlineMode
                         )
                     } else {
                 // 播放页面
@@ -948,7 +951,8 @@ fun NowPlayingScreen(
                                     lyricFontScale = lyricFontScale,
                                     onLyricFontScaleChange = onLyricFontScaleChange,
                                     currentPlaybackAudioInfo = currentPlaybackAudioInfo,
-                                    onShowQualitySwitch = { showQualitySwitchDialog = true }
+                                    onShowQualitySwitch = { showQualitySwitchDialog = true },
+                                    offlineMode = offlineMode
                                 )
                             }
                         }
@@ -1015,12 +1019,13 @@ fun NowPlayingScreen(
                             ) {
                                 currentCoverUrl?.let { cover ->
                                     AsyncImage(
-                                        model = remember(context, cover, coverRequestSizePx) {
+                                        model = remember(context, cover, coverRequestSizePx, offlineMode) {
                                             offlineCachedImageRequest(
                                                 context = context,
                                                 data = cover,
                                                 sizePx = coverRequestSizePx,
-                                                allowHardware = false
+                                                allowHardware = false,
+                                                offlineMode = offlineMode
                                             )
                                         },
                                         contentDescription = currentSong?.customName ?: currentSong?.name ?: "",
@@ -1842,7 +1847,8 @@ fun MoreOptionsSheet(
     lyricFontScale: Float,
     onLyricFontScaleChange: (Float) -> Unit,
     currentPlaybackAudioInfo: PlaybackAudioInfo? = null,
-    onShowQualitySwitch: () -> Unit = {}
+    onShowQualitySwitch: () -> Unit = {},
+    offlineMode: Boolean = false
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var showSearchView by remember { mutableStateOf(false) }
@@ -2326,11 +2332,12 @@ fun MoreOptionsSheet(
                                                 val context = LocalContext.current
                                                 AsyncImage(
                                                     model = offlineCachedImageRequest(
-                                                        context,
-                                                        songResult.coverUrl?.replaceFirst(
+                                                        context = context,
+                                                        data = songResult.coverUrl?.replaceFirst(
                                                             "http://",
                                                             "https://"
-                                                        )
+                                                        ),
+                                                        offlineMode = offlineMode
                                                     ),
                                                     contentDescription = songResult.songName,
                                                     modifier = Modifier
@@ -2388,7 +2395,8 @@ fun MoreOptionsSheet(
                         displayedLyrics = displayedLyrics,
                         displayedTranslatedLyrics = displayedTranslatedLyrics,
                         onDismiss = { showEditInfoSheet = false },
-                        snackbarHostState = snackbarHostState
+                        snackbarHostState = snackbarHostState,
+                        offlineMode = offlineMode
                     )
                 }
 
@@ -2688,7 +2696,8 @@ fun EditSongInfoSheet(
     displayedLyrics: List<LyricEntry>,
     displayedTranslatedLyrics: List<LyricEntry>,
     onDismiss: () -> Unit,
-    snackbarHostState: SnackbarHostState
+    snackbarHostState: SnackbarHostState,
+    offlineMode: Boolean = false
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -2844,7 +2853,8 @@ fun EditSongInfoSheet(
                             context = context,
                             data = coverUrl,
                             sizePx = 384,
-                            allowHardware = false
+                            allowHardware = false,
+                            offlineMode = offlineMode
                         ),
                         contentDescription = stringResource(R.string.music_edit_cover),
                         modifier = Modifier
@@ -3278,8 +3288,9 @@ fun EditSongInfoSheet(
                                         leadingContent = {
                                             AsyncImage(
                                                 model = offlineCachedImageRequest(
-                                                    context,
-                                                    songResult.coverUrl?.replaceFirst("http://", "https://")
+                                                    context = context,
+                                                    data = songResult.coverUrl?.replaceFirst("http://", "https://"),
+                                                    offlineMode = offlineMode
                                                 ),
                                                 contentDescription = songResult.songName,
                                                 modifier = Modifier

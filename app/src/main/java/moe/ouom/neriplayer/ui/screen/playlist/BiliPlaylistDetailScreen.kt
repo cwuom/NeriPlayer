@@ -75,8 +75,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
-import coil.request.CachePolicy
-import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
@@ -96,6 +94,7 @@ import moe.ouom.neriplayer.util.HapticFloatingActionButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.NPLogger
 import moe.ouom.neriplayer.util.formatDurationSec
+import moe.ouom.neriplayer.util.offlineCachedImageRequest
 import moe.ouom.neriplayer.util.performHapticFeedback
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
@@ -113,7 +112,8 @@ fun BiliPlaylistDetailScreen(
     playlist: BiliPlaylist,
     onBack: () -> Unit = {},
     onPlayAudio: (List<BiliVideoItem>, Int) -> Unit = { _, _ -> },
-    onPlayParts: (BiliClient.VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> }
+    onPlayParts: (BiliClient.VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> },
+    offlineMode: Boolean = false
 ) {
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -393,7 +393,11 @@ fun BiliPlaylistDetailScreen(
                         modifier = Modifier.fillMaxSize()
                     ) {
                         item {
-                            Header(playlist = playlist, headerData = ui.header)
+                            Header(
+                                playlist = playlist,
+                                headerData = ui.header,
+                                offlineMode = offlineMode
+                            )
                         }
 
                         when {
@@ -463,7 +467,7 @@ fun BiliPlaylistDetailScreen(
                                                     if (info.pages.size <= 1) {
                                                         val fullList = ui.videos
                                                         val originalIndex =
-                                                            fullList.indexOfFirst { it.id == item.id }
+                                                            fullList.indexOfFirst { it.bvid == item.bvid }
                                                         onPlayAudio(fullList, originalIndex)
                                                     } else {
                                                         partsInfo = info
@@ -474,7 +478,8 @@ fun BiliPlaylistDetailScreen(
                                                 }
                                             }
                                         },
-                                        snackbarHostState = snackbarHostState
+                                        snackbarHostState = snackbarHostState,
+                                        offlineMode = offlineMode
                                     )
                                 }
                             }
@@ -789,21 +794,27 @@ private fun BiliVideoItem.toSongItem(): SongItem {
 }
 
 @Composable
-private fun Header(playlist: BiliPlaylist, headerData: BiliPlaylist?) {
+private fun Header(
+    playlist: BiliPlaylist,
+    headerData: BiliPlaylist?,
+    offlineMode: Boolean
+) {
     val displayData = headerData ?: playlist
+    val context = LocalContext.current
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(280.dp)
     ) {
         AsyncImage(
-            model = ImageRequest.Builder(LocalContext.current)
-                .data(displayData.coverUrl)
-                .crossfade(true)
-                .memoryCachePolicy(CachePolicy.ENABLED)
-                .diskCachePolicy(CachePolicy.ENABLED)
-                .networkCachePolicy(CachePolicy.ENABLED)
-                .build(),
+            model = offlineCachedImageRequest(
+                context = context,
+                data = displayData.coverUrl,
+                sizePx = 768,
+                allowHardware = false,
+                crossfade = true,
+                offlineMode = offlineMode
+            ),
             contentDescription = displayData.title,
             contentScale = ContentScale.Crop,
             modifier = Modifier
@@ -865,7 +876,8 @@ private fun VideoRow(
     onToggleSelect: () -> Unit,
     onLongPress: () -> Unit,
     onClick: () -> Unit,
-    snackbarHostState: SnackbarHostState
+    snackbarHostState: SnackbarHostState,
+    offlineMode: Boolean
 ) {
     val context = LocalContext.current
     val clipboard = LocalClipboard.current
@@ -903,7 +915,13 @@ private fun VideoRow(
         }
 
         AsyncImage(
-            model = ImageRequest.Builder(LocalContext.current).data(video.coverUrl).build(),
+            model = offlineCachedImageRequest(
+                context = context,
+                data = video.coverUrl,
+                sizePx = 192,
+                allowHardware = false,
+                offlineMode = offlineMode
+            ),
             contentDescription = video.title,
             contentScale = ContentScale.Crop,
             modifier = Modifier

@@ -262,6 +262,7 @@ internal fun TopTracksBarChart(
 internal fun StatTrackRow(
     rank: Int,
     stat: TrackStat,
+    offlineMode: Boolean = false,
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
@@ -287,7 +288,11 @@ internal fun StatTrackRow(
                     val coverUrl = stat.customCoverUrl ?: stat.coverUrl
                     if (coverUrl != null) {
                         AsyncImage(
-                            model = offlineCachedImageRequest(context, coverUrl),
+                            model = offlineCachedImageRequest(
+                                context = context,
+                                data = coverUrl,
+                                offlineMode = offlineMode
+                            ),
                             contentDescription = null,
                             modifier = Modifier
                                 .size(48.dp)

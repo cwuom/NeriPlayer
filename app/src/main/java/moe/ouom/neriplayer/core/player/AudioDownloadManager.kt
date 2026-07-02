@@ -995,6 +995,7 @@ object AudioDownloadManager {
 
         try {
             val coverCandidates = buildCoverDownloadCandidateUrls(song)
+            val coverFileName = buildCoverSidecarFileName(baseName, songKey)
             coverCandidates.forEachIndexed { candidateIndex, coverUrl ->
                 repeat(COVER_DOWNLOAD_MAX_ATTEMPTS) { retryIndex ->
                     ensureSongDownloadNotCancelled(songKey, "cover_request", batchSessionId, attemptId)
@@ -1003,7 +1004,7 @@ object AudioDownloadManager {
                             context = context,
                             songKey = songKey,
                             coverUrl = coverUrl,
-                            baseName = baseName,
+                            coverFileName = coverFileName,
                             batchSessionId = batchSessionId,
                             attemptId = attemptId
                         )
@@ -1047,11 +1048,16 @@ object AudioDownloadManager {
         return null
     }
 
+    private fun buildCoverSidecarFileName(baseName: String, songKey: String): String {
+        val suffix = java.lang.Long.toHexString(songKey.hashCode().toLong() and 0xffffffffL)
+        return "$baseName-$suffix.jpg"
+    }
+
     private fun downloadCoverCandidate(
         context: Context,
         songKey: String,
         coverUrl: String,
-        baseName: String,
+        coverFileName: String,
         batchSessionId: Long? = null,
         attemptId: Long? = null
     ): String? {
@@ -1086,7 +1092,7 @@ object AudioDownloadManager {
             ManagedDownloadStorage.commitCoverBytes(
                 context = context,
                 bytes = bytes,
-                fileName = "$baseName.jpg",
+                fileName = coverFileName,
                 mimeType = contentType.takeIf { it.isNotBlank() }
             )?.reference
         }
@@ -2417,5 +2423,4 @@ internal fun resolveVisibleDownloadFileName(
         ?.takeIf(String::isNotBlank)
         ?: fallbackTempFileName
 }
-
 

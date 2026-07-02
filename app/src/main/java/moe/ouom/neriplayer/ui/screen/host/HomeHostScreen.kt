@@ -149,14 +149,16 @@ fun HomeHostScreen(
                         NeteaseAlbumDetailScreen(
                             album = current.album,
                             onBack = { selected = null },
-                            onSongClick = onSongClick
+                            onSongClick = onSongClick,
+                            offlineMode = offlineMode
                         )
                     }
                     is HomeSelectedItem.Netease -> {
                         NeteasePlaylistDetailScreen(
                             playlist = current.playlist,
                             onBack = { selected = null },
-                            onSongClick = onSongClick
+                            onSongClick = onSongClick,
+                            offlineMode = offlineMode
                         )
                     }
                     is HomeSelectedItem.Local -> {
@@ -164,7 +166,8 @@ fun HomeHostScreen(
                             playlistId = current.playlistId,
                             onBack = { selected = null },
                             onDeleted = { selected = null },
-                            onSongClick = onSongClick
+                            onSongClick = onSongClick,
+                            offlineMode = offlineMode
                         )
                     }
                     is HomeSelectedItem.Bili -> {
@@ -176,14 +179,16 @@ fun HomeHostScreen(
                             },
                             onPlayParts = { videoInfo, index, coverUrl ->
                                 PlayerManager.playBiliVideoParts(videoInfo, index, coverUrl)
-                            }
+                            },
+                            offlineMode = offlineMode
                         )
                     }
                     is HomeSelectedItem.YouTubeMusic -> {
                         YouTubeMusicPlaylistDetailScreen(
                             playlist = current.playlist,
                             onBack = { selected = null },
-                            onSongClick = onSongClick
+                            onSongClick = onSongClick,
+                            offlineMode = offlineMode
                         )
                     }
                 }

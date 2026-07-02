@@ -123,7 +123,6 @@ import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.media.displayAlbum
 import moe.ouom.neriplayer.data.model.displayArtist
-import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
@@ -135,6 +134,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.ExploreViewModel
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.SearchSource
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
+import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.util.HapticIconButton
 import moe.ouom.neriplayer.util.HapticTextButton
 import moe.ouom.neriplayer.util.NPLogger
@@ -421,6 +421,7 @@ fun ExploreScreen(
                                         index = index + 1,
                                         song = song,
                                         isFavorite = isFavoriteSong,
+                                        offlineMode = offlineMode,
                                         onClick = {
                                             if (song.album == PlayerManager.BILI_SOURCE_TAG) {
                                                 scope.launch {
@@ -483,7 +484,8 @@ fun ExploreScreen(
                             YouTubeMusicExploreContent(
                                 ui = ui,
                                 vm = vm,
-                                onClick = onYouTubeMusicPlaylistClick
+                                onClick = onYouTubeMusicPlaylistClick,
+                                offlineMode = offlineMode
                             )
                         }
                     }
@@ -916,6 +918,7 @@ private fun SongRow(
     index: Int,
     song: SongItem,
     isFavorite: Boolean,
+    offlineMode: Boolean,
     onClick: () -> Unit,
     onPlayNow: () -> Unit,
     onPlayNext: () -> Unit,
@@ -923,7 +926,7 @@ private fun SongRow(
     onToggleFavorite: () -> Unit
 ) {
     val context = LocalContext.current
-    val coverUrl = song.displayCoverUrl(context)
+    val coverUrl = rememberSongDisplayCoverUrl(song)
     var showMoreMenu by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
@@ -948,7 +951,12 @@ private fun SongRow(
 
         if (!coverUrl.isNullOrBlank()) {
             AsyncImage(
-                model = fastScrollableImageRequest(context, coverUrl, sizePx = 128),
+                model = fastScrollableImageRequest(
+                    context = context,
+                    data = coverUrl,
+                    sizePx = 128,
+                    offlineMode = offlineMode
+                ),
                 contentDescription = song.displayName(),
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
@@ -1049,7 +1057,8 @@ private fun SongRow(
 private fun YouTubeMusicExploreContent(
     ui: ExploreUiState,
     vm: ExploreViewModel,
-    onClick: (YouTubeMusicPlaylist) -> Unit
+    onClick: (YouTubeMusicPlaylist) -> Unit,
+    offlineMode: Boolean
 ) {
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     when {
@@ -1110,7 +1119,11 @@ private fun YouTubeMusicExploreContent(
                     items = ui.ytMusicPlaylists,
                     key = { it.browseId }
                 ) { playlist ->
-                    YtMusicExploreCard(playlist = playlist, onClick = { onClick(playlist) })
+                    YtMusicExploreCard(
+                        playlist = playlist,
+                        onClick = { onClick(playlist) },
+                        offlineMode = offlineMode
+                    )
                 }
             }
         }
@@ -1120,7 +1133,8 @@ private fun YouTubeMusicExploreContent(
 @Composable
 private fun YtMusicExploreCard(
     playlist: YouTubeMusicPlaylist,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    offlineMode: Boolean
 ) {
     val context = LocalContext.current
     Column(
@@ -1129,7 +1143,12 @@ private fun YtMusicExploreCard(
             .clickable(onClick = onClick)
     ) {
         AsyncImage(
-            model = fastScrollableImageRequest(context, playlist.coverUrl, sizePx = 384),
+            model = fastScrollableImageRequest(
+                context = context,
+                data = playlist.coverUrl,
+                sizePx = 384,
+                offlineMode = offlineMode
+            ),
             contentDescription = playlist.title,
             contentScale = ContentScale.Crop,
             modifier = Modifier
