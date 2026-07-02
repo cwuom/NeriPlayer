@@ -17,6 +17,12 @@ import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
 import moe.ouom.neriplayer.data.settings.SettingsKeys
 import moe.ouom.neriplayer.data.settings.ThemeDefaults
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsBackupKeys
+import moe.ouom.neriplayer.data.settings.normalizeFloatingLyricsAlignment
+import moe.ouom.neriplayer.data.settings.normalizeFloatingLyricsColorHex
+import moe.ouom.neriplayer.data.settings.normalizeFloatingLyricsFontSizeSp
+import moe.ouom.neriplayer.data.settings.normalizeFloatingLyricsMaxWidthDp
+import moe.ouom.neriplayer.data.settings.normalizeFloatingLyricsOutlineWidthDp
+import moe.ouom.neriplayer.data.settings.normalizeFloatingLyricsPosition
 import moe.ouom.neriplayer.data.settings.normalizeLyricDefaultOffsetMs
 import moe.ouom.neriplayer.data.settings.normalizeLyricFontScale
 import java.util.Locale
@@ -75,6 +81,12 @@ internal class ConfigSettingsSanitizer(private val context: Context) {
             }
             val normalized = when (name) {
                 SettingsKeys.LYRIC_FONT_SCALE.name -> normalizeLyricFontScale(value)
+                SettingsKeys.FLOATING_LYRICS_FONT_SIZE_SP.name -> normalizeFloatingLyricsFontSizeSp(value)
+                SettingsKeys.FLOATING_LYRICS_OUTLINE_WIDTH_DP.name ->
+                    normalizeFloatingLyricsOutlineWidthDp(value)
+                SettingsKeys.FLOATING_LYRICS_MAX_WIDTH_DP.name -> normalizeFloatingLyricsMaxWidthDp(value)
+                SettingsKeys.FLOATING_LYRICS_POSITION_X.name,
+                SettingsKeys.FLOATING_LYRICS_POSITION_Y.name -> normalizeFloatingLyricsPosition(value)
                 SettingsKeys.UI_DENSITY_SCALE.name -> value.coerceIn(UI_DENSITY_SCALE_RANGE)
                 SettingsKeys.BACKGROUND_IMAGE_BLUR.name -> value.coerceIn(BACKGROUND_IMAGE_BLUR_RANGE)
                 SettingsKeys.BACKGROUND_IMAGE_ALPHA.name -> value.coerceIn(BACKGROUND_IMAGE_ALPHA_RANGE)
@@ -161,6 +173,7 @@ internal class ConfigSettingsSanitizer(private val context: Context) {
         sanitizeQualityStrings(strings, onAdjusted)
         sanitizePlaybackStrings(strings, onAdjusted)
         sanitizeThemeStrings(strings, onAdjusted)
+        sanitizeFloatingLyricsStrings(strings, onAdjusted)
         sanitizeBackgroundImageUri(strings, warnings, onAdjusted)
         sanitizeDownloadDirectory(strings, warnings, onAdjusted)
         return strings
@@ -220,6 +233,21 @@ internal class ConfigSettingsSanitizer(private val context: Context) {
         }
         sanitizeStringValue(strings, SettingsKeys.THEME_COLOR_SPEC.name, onAdjusted) {
             ThemeDefaults.normalizeColorSpec(it)
+        }
+    }
+
+    private fun sanitizeFloatingLyricsStrings(
+        strings: MutableMap<String, String>,
+        onAdjusted: () -> Unit
+    ) {
+        sanitizeStringValue(strings, SettingsKeys.FLOATING_LYRICS_TEXT_COLOR.name, onAdjusted) {
+            normalizeFloatingLyricsColorHex(it)
+        }
+        sanitizeStringValue(strings, SettingsKeys.FLOATING_LYRICS_OUTLINE_COLOR.name, onAdjusted) {
+            normalizeFloatingLyricsColorHex(it)
+        }
+        sanitizeStringValue(strings, SettingsKeys.FLOATING_LYRICS_ALIGNMENT.name, onAdjusted) {
+            normalizeFloatingLyricsAlignment(it)
         }
     }
 

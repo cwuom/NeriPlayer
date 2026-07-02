@@ -12,6 +12,7 @@ internal fun PlayerManager.syncExternalBluetoothLyrics(song: SongItem?) {
     externalBluetoothLyricsLoadJob?.cancel()
     externalBluetoothLyricsLoadJob = null
     externalBluetoothLyrics = emptyList()
+    floatingTranslatedLyrics = emptyList()
     externalBluetoothLyricsSongKey = song?.stableKey()
     clearExternalBluetoothLyricLine()
 
@@ -30,6 +31,19 @@ internal fun PlayerManager.syncExternalBluetoothLyrics(song: SongItem?) {
                 )
             }
             .getOrDefault(emptyList())
+        val translatedLyrics = if (floatingLyricsShowTranslation) {
+            runCatching { getTranslatedLyrics(song) }
+                .onFailure { error ->
+                    NPLogger.w(
+                        "NERI-PlayerManager",
+                        "floating lyrics translation load failed: song=${song.name}/${song.id}",
+                        error
+                    )
+                }
+                .getOrDefault(emptyList())
+        } else {
+            emptyList()
+        }
 
         val currentSong = _currentSongFlow.value
         if (!shouldProvideExternalLyricLine() || currentSong?.sameIdentityAs(song) != true) {
@@ -38,6 +52,7 @@ internal fun PlayerManager.syncExternalBluetoothLyrics(song: SongItem?) {
 
         externalBluetoothLyricsSongKey = songKey
         externalBluetoothLyrics = lyrics
+        floatingTranslatedLyrics = translatedLyrics
         updateExternalBluetoothLyricLine(_playbackPositionMs.value)
     }
 }
@@ -65,9 +80,17 @@ internal fun PlayerManager.updateExternalBluetoothLyricLine(positionMs: Long) {
         positionMs = positionMs,
         lyricOffsetMs = lyricOffsetMs
     )
+    val translatedLine = findExternalBluetoothLyricLine(
+        lyrics = floatingTranslatedLyrics,
+        positionMs = positionMs,
+        lyricOffsetMs = lyricOffsetMs
+    )
 
     if (_externalBluetoothLyricLineFlow.value != line) {
         _externalBluetoothLyricLineFlow.value = line
+    }
+    if (_floatingTranslatedLyricLineFlow.value != translatedLine) {
+        _floatingTranslatedLyricLineFlow.value = translatedLine
     }
 }
 
@@ -75,8 +98,11 @@ internal fun PlayerManager.clearExternalBluetoothLyricLine() {
     if (_externalBluetoothLyricLineFlow.value != null) {
         _externalBluetoothLyricLineFlow.value = null
     }
+    if (_floatingTranslatedLyricLineFlow.value != null) {
+        _floatingTranslatedLyricLineFlow.value = null
+    }
 }
 
 private fun PlayerManager.shouldProvideExternalLyricLine(): Boolean {
-    return externalBluetoothLyricsEnabled || statusBarLyricsEnable
+    return externalBluetoothLyricsEnabled || statusBarLyricsEnable || floatingLyricsEnabled
 }

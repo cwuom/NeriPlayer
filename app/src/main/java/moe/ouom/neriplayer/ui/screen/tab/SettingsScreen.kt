@@ -109,6 +109,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
+import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
 import moe.ouom.neriplayer.data.settings.ThemeDefaults
 import moe.ouom.neriplayer.data.settings.MAX_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.data.settings.MIN_LYRIC_FONT_SCALE
@@ -216,6 +217,8 @@ fun SettingsScreen(
     onCloudMusicLyricDefaultOffsetMsChange: (Long) -> Unit,
     qqMusicLyricDefaultOffsetMs: Long,
     onQqMusicLyricDefaultOffsetMsChange: (Long) -> Unit,
+    floatingLyricsPreferences: FloatingLyricsPreferences,
+    onFloatingLyricsPreferencesChange: (FloatingLyricsPreferences) -> Unit,
     advancedBlurEnabled: Boolean,
     onAdvancedBlurEnabledChange: (Boolean) -> Unit,
     nowPlayingAudioReactiveEnabled: Boolean,
@@ -1128,6 +1131,8 @@ fun SettingsScreen(
                             showHeader = false,
                             autoSettingsRepository = autoSettingsRepository,
                             scope = scope,
+                            floatingLyricsPreferences = floatingLyricsPreferences,
+                            onFloatingLyricsPreferencesChange = onFloatingLyricsPreferencesChange,
                             cloudMusicLyricDefaultOffsetMs = cloudMusicLyricDefaultOffsetMs,
                             onCloudMusicLyricDefaultOffsetMsChange = onCloudMusicLyricDefaultOffsetMsChange,
                             qqMusicLyricDefaultOffsetMs = qqMusicLyricDefaultOffsetMs,

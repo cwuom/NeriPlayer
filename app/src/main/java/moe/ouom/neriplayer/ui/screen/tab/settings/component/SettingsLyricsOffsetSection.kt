@@ -46,6 +46,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
 import moe.ouom.neriplayer.data.settings.LYRIC_DEFAULT_OFFSET_STEP_MS
 import moe.ouom.neriplayer.data.settings.MAX_LYRIC_DEFAULT_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.MIN_LYRIC_DEFAULT_OFFSET_MS
@@ -68,6 +69,8 @@ internal fun SettingsLyricsSection(
     showHeader: Boolean = true,
     autoSettingsRepository: AutoSettingsRepository,
     scope: CoroutineScope,
+    floatingLyricsPreferences: FloatingLyricsPreferences,
+    onFloatingLyricsPreferencesChange: (FloatingLyricsPreferences) -> Unit,
     cloudMusicLyricDefaultOffsetMs: Long,
     onCloudMusicLyricDefaultOffsetMsChange: (Long) -> Unit,
     qqMusicLyricDefaultOffsetMs: Long,
@@ -95,6 +98,11 @@ internal fun SettingsLyricsSection(
                     bottom = if (showHeader) 8.dp else 0.dp
                 )
         ) {
+            SettingsFloatingLyricsSection(
+                preferences = floatingLyricsPreferences,
+                onPreferencesChange = onFloatingLyricsPreferencesChange
+            )
+            Spacer(Modifier.height(4.dp))
             AutoSettingsSwitchItems(
                 repository = autoSettingsRepository,
                 scope = scope,

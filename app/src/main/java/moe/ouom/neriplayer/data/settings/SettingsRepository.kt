@@ -144,6 +144,24 @@ class SettingsRepository(private val context: Context) {
     val externalBluetoothLyricsEnabledFlow: Flow<Boolean> =
         autoSettingsRepository.externalBluetoothLyricsEnabledFlow
 
+    val floatingLyricsPreferencesFlow: Flow<FloatingLyricsPreferences> =
+        context.dataStore.data.map { prefs ->
+            FloatingLyricsPreferences(
+                enabled = prefs[SettingsKeys.FLOATING_LYRICS_ENABLED] ?: false,
+                hideInApp = prefs[SettingsKeys.FLOATING_LYRICS_HIDE_IN_APP] ?: false,
+                textColorHex = prefs[SettingsKeys.FLOATING_LYRICS_TEXT_COLOR] ?: "FFFFFF",
+                outlineColorHex = prefs[SettingsKeys.FLOATING_LYRICS_OUTLINE_COLOR] ?: "121212",
+                fontSizeSp = prefs[SettingsKeys.FLOATING_LYRICS_FONT_SIZE_SP] ?: 22f,
+                outlineWidthDp = prefs[SettingsKeys.FLOATING_LYRICS_OUTLINE_WIDTH_DP] ?: 1.6f,
+                maxWidthDp = prefs[SettingsKeys.FLOATING_LYRICS_MAX_WIDTH_DP] ?: 280f,
+                positionX = prefs[SettingsKeys.FLOATING_LYRICS_POSITION_X] ?: 0.1f,
+                positionY = prefs[SettingsKeys.FLOATING_LYRICS_POSITION_Y] ?: 0.7f,
+                alignment = prefs[SettingsKeys.FLOATING_LYRICS_ALIGNMENT]
+                    ?: FLOATING_LYRICS_ALIGNMENT_CENTER,
+                showTranslation = prefs[SettingsKeys.FLOATING_LYRICS_SHOW_TRANSLATION] ?: true
+            ).normalized()
+        }
+
     val advancedBlurEnabledFlow: Flow<Boolean> =
         autoSettingsRepository.advancedBlurEnabledFlow
 
@@ -484,6 +502,23 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setExternalBluetoothLyricsEnabled(enabled: Boolean) {
         autoSettingsRepository.setExternalBluetoothLyricsEnabled(enabled)
+    }
+
+    suspend fun setFloatingLyricsPreferences(preferences: FloatingLyricsPreferences) {
+        val normalized = preferences.normalized()
+        context.dataStore.edit { prefs ->
+            prefs[SettingsKeys.FLOATING_LYRICS_ENABLED] = normalized.enabled
+            prefs[SettingsKeys.FLOATING_LYRICS_HIDE_IN_APP] = normalized.hideInApp
+            prefs[SettingsKeys.FLOATING_LYRICS_TEXT_COLOR] = normalized.textColorHex
+            prefs[SettingsKeys.FLOATING_LYRICS_OUTLINE_COLOR] = normalized.outlineColorHex
+            prefs[SettingsKeys.FLOATING_LYRICS_FONT_SIZE_SP] = normalized.fontSizeSp
+            prefs[SettingsKeys.FLOATING_LYRICS_OUTLINE_WIDTH_DP] = normalized.outlineWidthDp
+            prefs[SettingsKeys.FLOATING_LYRICS_MAX_WIDTH_DP] = normalized.maxWidthDp
+            prefs[SettingsKeys.FLOATING_LYRICS_POSITION_X] = normalized.positionX
+            prefs[SettingsKeys.FLOATING_LYRICS_POSITION_Y] = normalized.positionY
+            prefs[SettingsKeys.FLOATING_LYRICS_ALIGNMENT] = normalized.alignment
+            prefs[SettingsKeys.FLOATING_LYRICS_SHOW_TRANSLATION] = normalized.showTranslation
+        }
     }
 
     suspend fun setAdvancedBlurEnabled(enabled: Boolean) {

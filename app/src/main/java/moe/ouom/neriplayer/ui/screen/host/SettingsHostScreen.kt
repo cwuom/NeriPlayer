@@ -45,6 +45,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.CancellationException
+import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
 import moe.ouom.neriplayer.ui.screen.DownloadManagerScreen
 import moe.ouom.neriplayer.ui.screen.DownloadProgressScreen
 import moe.ouom.neriplayer.ui.screen.tab.SettingsScreen
@@ -88,6 +89,8 @@ fun SettingsHostScreen(
     onCloudMusicLyricDefaultOffsetMsChange: (Long) -> Unit,
     qqMusicLyricDefaultOffsetMs: Long,
     onQqMusicLyricDefaultOffsetMsChange: (Long) -> Unit,
+    floatingLyricsPreferences: FloatingLyricsPreferences,
+    onFloatingLyricsPreferencesChange: (FloatingLyricsPreferences) -> Unit,
     advancedBlurEnabled: Boolean,
     onAdvancedBlurEnabledChange: (Boolean) -> Unit,
     nowPlayingAudioReactiveEnabled: Boolean,
@@ -234,6 +237,8 @@ fun SettingsHostScreen(
                             onCloudMusicLyricDefaultOffsetMsChange = onCloudMusicLyricDefaultOffsetMsChange,
                             qqMusicLyricDefaultOffsetMs = qqMusicLyricDefaultOffsetMs,
                             onQqMusicLyricDefaultOffsetMsChange = onQqMusicLyricDefaultOffsetMsChange,
+                            floatingLyricsPreferences = floatingLyricsPreferences,
+                            onFloatingLyricsPreferencesChange = onFloatingLyricsPreferencesChange,
                             advancedBlurEnabled = advancedBlurEnabled,
                             onAdvancedBlurEnabledChange = onAdvancedBlurEnabledChange,
                             nowPlayingAudioReactiveEnabled = nowPlayingAudioReactiveEnabled,

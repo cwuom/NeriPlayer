@@ -160,6 +160,7 @@ import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
 import moe.ouom.neriplayer.data.settings.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.ThemeDefaults
 import moe.ouom.neriplayer.data.settings.ThemePreferenceSnapshot
@@ -596,6 +597,9 @@ private fun NeriAppContent(
         .collectAsState(initial = startupPlaybackPreferences.cloudMusicLyricDefaultOffsetMs)
     val qqMusicLyricDefaultOffsetMs by repo.qqMusicLyricDefaultOffsetMsFlow
         .collectAsState(initial = startupPlaybackPreferences.qqMusicLyricDefaultOffsetMs)
+    val floatingLyricsPreferences by repo.floatingLyricsPreferencesFlow.collectAsState(
+        initial = FloatingLyricsPreferences()
+    )
     val advancedLyricsEnabled by repo.advancedLyricsEnabledFlow.collectAsState(initial = true)
     val advancedBlurEnabled by repo.advancedBlurEnabledFlow.collectAsState(initial = true)
     val advancedBlurAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
@@ -1663,6 +1667,10 @@ private fun NeriAppContent(
                                                     )
                                                 }.getOrThrow()
                                             }
+                                        },
+                                        floatingLyricsPreferences = floatingLyricsPreferences,
+                                        onFloatingLyricsPreferencesChange = { preferences ->
+                                            scope.launch { repo.setFloatingLyricsPreferences(preferences) }
                                         },
                                         advancedBlurEnabled = advancedBlurEnabled,
                                         onAdvancedBlurEnabledChange = { enabled ->

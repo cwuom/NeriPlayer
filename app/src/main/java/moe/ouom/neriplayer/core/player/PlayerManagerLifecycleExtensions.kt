@@ -30,6 +30,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -70,6 +71,7 @@ internal fun PlayerManager.initializeImpl(
         "initialize(): maxCacheSize=$maxCacheSize, app=${app.packageName}, stack=[${debugStackHint()}]"
     )
     application = app
+    FloatingLyricsOverlayManager.initialize(app)
     currentCacheSize = maxCacheSize
 
     ioScope = newIoScope()
@@ -462,6 +464,33 @@ internal fun PlayerManager.initializeImpl(
             settingsRepo.externalBluetoothLyricsEnabledFlow.collect { enabled ->
                 externalBluetoothLyricsEnabled = enabled
                 syncExternalBluetoothLyrics(_currentSongFlow.value)
+            }
+        }
+        ioScope.launch {
+            settingsRepo.floatingLyricsPreferencesFlow.collect { preferences ->
+                val normalized = preferences.normalized()
+                val shouldReloadLyrics = floatingLyricsEnabled != normalized.enabled ||
+                    floatingLyricsShowTranslation != normalized.showTranslation
+                floatingLyricsEnabled = normalized.enabled
+                floatingLyricsShowTranslation = normalized.showTranslation
+                FloatingLyricsOverlayManager.updatePreferences(normalized)
+                if (shouldReloadLyrics) {
+                    syncExternalBluetoothLyrics(_currentSongFlow.value)
+                }
+            }
+        }
+        mainScope.launch {
+            combine(
+                externalBluetoothLyricLineFlow,
+                floatingTranslatedLyricLineFlow,
+                currentSongFlow
+            ) { lyricLine, translatedLine, currentSong ->
+                Triple(lyricLine, translatedLine, currentSong)
+            }.collect { (lyricLine, translatedLine, currentSong) ->
+                FloatingLyricsOverlayManager.updateContent(
+                    line = lyricLine.takeIf { currentSong != null },
+                    translation = translatedLine.takeIf { currentSong != null }
+                )
             }
         }
         ioScope.launch {
@@ -1004,10 +1033,14 @@ internal fun PlayerManager.releaseImpl() {
     externalBluetoothLyricsLoadJob?.cancel()
     externalBluetoothLyricsLoadJob = null
     externalBluetoothLyrics = emptyList()
+    floatingTranslatedLyrics = emptyList()
     externalBluetoothLyricsSongKey = null
     externalBluetoothLyricsEnabled = false
+    floatingLyricsEnabled = false
+    floatingLyricsShowTranslation = true
     statusBarLyricsEnable = false
     clearExternalBluetoothLyricLine()
+    FloatingLyricsOverlayManager.release()
     LyriconManager.setPlaybackState(false)
 
     if (isPlayerInitialized()) {

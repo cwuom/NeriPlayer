@@ -189,6 +189,8 @@ object PlayerManager {
     internal var lyriconEnabled = false
     internal var statusBarLyricsEnable = false
     internal var externalBluetoothLyricsEnabled = false
+    internal var floatingLyricsEnabled = false
+    internal var floatingLyricsShowTranslation = true
     internal var cloudMusicLyricDefaultOffsetMs = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
     internal var qqMusicLyricDefaultOffsetMs = DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
     internal var keepLastPlaybackProgressEnabled = true
@@ -293,8 +295,11 @@ object PlayerManager {
 
     internal var externalBluetoothLyricsSongKey: String? = null
     internal var externalBluetoothLyrics: List<LyricEntry> = emptyList()
+    internal var floatingTranslatedLyrics: List<LyricEntry> = emptyList()
     internal val _externalBluetoothLyricLineFlow = MutableStateFlow<String?>(null)
     val externalBluetoothLyricLineFlow: StateFlow<String?> = _externalBluetoothLyricLineFlow
+    internal val _floatingTranslatedLyricLineFlow = MutableStateFlow<String?>(null)
+    val floatingTranslatedLyricLineFlow: StateFlow<String?> = _floatingTranslatedLyricLineFlow
 
     internal val _playerEventFlow = MutableSharedFlow<PlayerEvent>()
     val playerEventFlow: SharedFlow<PlayerEvent> = _playerEventFlow.asSharedFlow()

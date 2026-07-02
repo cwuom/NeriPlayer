@@ -674,10 +674,124 @@ object AutoSettingsSchema {
         )
 
         @AutoSetting(
-            key = "external_bluetooth_lyrics_enabled",
+            key = "floating_lyrics_enabled",
+            type = SettingValueType.Boolean,
+            defaultBoolean = false,
+            order = 14,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val floatingLyricsEnabled = autoSetting(
+            titleRes = R.string.settings_floating_lyrics_title,
+            descriptionRes = R.string.settings_floating_lyrics_desc,
+            icon = AutoSettingIcon.Subtitles
+        )
+
+        @AutoSetting(
+            key = "floating_lyrics_hide_in_app",
             type = SettingValueType.Boolean,
             defaultBoolean = false,
             order = 15,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val floatingLyricsHideInApp = Unit
+
+        @AutoSetting(
+            key = "floating_lyrics_text_color",
+            type = SettingValueType.String,
+            defaultString = "FFFFFF",
+            order = 16,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val floatingLyricsTextColor = Unit
+
+        @AutoSetting(
+            key = "floating_lyrics_outline_color",
+            type = SettingValueType.String,
+            defaultString = "121212",
+            order = 17,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val floatingLyricsOutlineColor = Unit
+
+        @AutoSetting(
+            key = "floating_lyrics_font_size_sp",
+            type = SettingValueType.Float,
+            defaultFloat = 22f,
+            order = 18,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val floatingLyricsFontSizeSp = Unit
+
+        @AutoSetting(
+            key = "floating_lyrics_outline_width_dp",
+            type = SettingValueType.Float,
+            defaultFloat = 1.6f,
+            order = 19,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val floatingLyricsOutlineWidthDp = Unit
+
+        @AutoSetting(
+            key = "floating_lyrics_max_width_dp",
+            type = SettingValueType.Float,
+            defaultFloat = 280f,
+            order = 20,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val floatingLyricsMaxWidthDp = Unit
+
+        @AutoSetting(
+            key = "floating_lyrics_position_x",
+            type = SettingValueType.Float,
+            defaultFloat = 0.1f,
+            order = 21,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val floatingLyricsPositionX = Unit
+
+        @AutoSetting(
+            key = "floating_lyrics_position_y",
+            type = SettingValueType.Float,
+            defaultFloat = 0.7f,
+            order = 22,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val floatingLyricsPositionY = Unit
+
+        @AutoSetting(
+            key = "floating_lyrics_alignment",
+            type = SettingValueType.String,
+            defaultString = FLOATING_LYRICS_ALIGNMENT_CENTER,
+            order = 23,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val floatingLyricsAlignment = Unit
+
+        @AutoSetting(
+            key = "floating_lyrics_show_translation",
+            type = SettingValueType.Boolean,
+            defaultBoolean = true,
+            order = 24,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val floatingLyricsShowTranslation = Unit
+
+        @AutoSetting(
+            key = "external_bluetooth_lyrics_enabled",
+            type = SettingValueType.Boolean,
+            defaultBoolean = false,
+            order = 25,
             ui = SettingUiType.Switch
         )
         val externalBluetoothLyricsEnabled = autoSetting(
