@@ -12,8 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ColorLens
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -24,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -51,6 +50,7 @@ private val FloatingLyricsColorOptions = listOf(
 @Composable
 internal fun FloatingLyricsColorPicker(
     titleRes: Int,
+    icon: ImageVector,
     selectedColorHex: String,
     onColorSelected: (String) -> Unit
 ) {
@@ -58,7 +58,7 @@ internal fun FloatingLyricsColorPicker(
     ListItem(
         leadingContent = {
             Icon(
-                imageVector = Icons.Outlined.ColorLens,
+                imageVector = icon,
                 contentDescription = title,
                 tint = MaterialTheme.colorScheme.onSurface
             )

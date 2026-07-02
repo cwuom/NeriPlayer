@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.player
 
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.player.metadata.findExternalBluetoothLyricLine
+import moe.ouom.neriplayer.core.player.metadata.findFloatingTranslatedLyricLine
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.resolveLyricDefaultOffsetMs
@@ -80,8 +81,9 @@ internal fun PlayerManager.updateExternalBluetoothLyricLine(positionMs: Long) {
         positionMs = positionMs,
         lyricOffsetMs = lyricOffsetMs
     )
-    val translatedLine = findExternalBluetoothLyricLine(
-        lyrics = floatingTranslatedLyrics,
+    val translatedLine = findFloatingTranslatedLyricLine(
+        lyrics = externalBluetoothLyrics,
+        translations = floatingTranslatedLyrics,
         positionMs = positionMs,
         lyricOffsetMs = lyricOffsetMs
     )

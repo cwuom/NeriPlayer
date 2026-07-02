@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.player.metadata
 
 import moe.ouom.neriplayer.core.player.audio.isBluetoothOutputType
 import moe.ouom.neriplayer.ui.component.LyricEntry
+import moe.ouom.neriplayer.ui.component.matchTranslationsToLineIndices
 
 internal data class ExternalBluetoothMetadataText(
     val title: String,
@@ -19,6 +20,25 @@ internal fun findExternalBluetoothLyricLine(
     val targetTimeMs = (positionMs + lyricOffsetMs).coerceAtLeast(0L)
     val index = findCurrentExternalBluetoothLyricIndex(lyrics, targetTimeMs)
     return lyrics.getOrNull(index)
+        ?.text
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+}
+
+internal fun findFloatingTranslatedLyricLine(
+    lyrics: List<LyricEntry>,
+    translations: List<LyricEntry>,
+    positionMs: Long,
+    lyricOffsetMs: Long = 0L
+): String? {
+    if (lyrics.isEmpty() || translations.isEmpty()) return null
+    val targetTimeMs = (positionMs + lyricOffsetMs).coerceAtLeast(0L)
+    val lyricIndex = findCurrentExternalBluetoothLyricIndex(lyrics, targetTimeMs)
+    val lyric = lyrics.getOrNull(lyricIndex)
+        ?.takeIf { it.text.isNotBlank() }
+        ?: return null
+    val nonBlankTranslations = translations.filter { it.text.isNotBlank() }
+    return matchTranslationsToLineIndices(lyrics, nonBlankTranslations)[lyricIndex]
         ?.text
         ?.trim()
         ?.takeIf { it.isNotEmpty() }

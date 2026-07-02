@@ -7,9 +7,17 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.FormatSize
-import androidx.compose.material.icons.outlined.Subtitles
-import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.BorderColor
+import androidx.compose.material.icons.outlined.FormatAlignCenter
+import androidx.compose.material.icons.outlined.FormatColorText
+import androidx.compose.material.icons.outlined.LineWeight
+import androidx.compose.material.icons.outlined.PictureInPictureAlt
+import androidx.compose.material.icons.outlined.SwapHoriz
+import androidx.compose.material.icons.outlined.SwapVert
+import androidx.compose.material.icons.outlined.TextFields
+import androidx.compose.material.icons.outlined.Translate
+import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material.icons.outlined.WidthFull
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -26,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -134,6 +143,7 @@ internal fun SettingsFloatingLyricsSection(
             } else {
                 stringResource(R.string.settings_floating_lyrics_permission_required)
             },
+            icon = Icons.Outlined.PictureInPictureAlt,
             checked = normalizedPreferences.enabled,
             onCheckedChange = { enabled ->
                 if (enabled && !overlayPermissionGranted) {
@@ -145,6 +155,7 @@ internal fun SettingsFloatingLyricsSection(
         FloatingLyricsSwitchListItem(
             title = stringResource(R.string.settings_floating_lyrics_hide_in_app),
             description = stringResource(R.string.settings_floating_lyrics_hide_in_app_desc),
+            icon = Icons.Outlined.VisibilityOff,
             checked = normalizedPreferences.hideInApp,
             onCheckedChange = { hideInApp ->
                 updatePreferences { it.copy(hideInApp = hideInApp) }
@@ -152,6 +163,7 @@ internal fun SettingsFloatingLyricsSection(
         )
         FloatingLyricsColorPicker(
             titleRes = R.string.settings_floating_lyrics_text_color,
+            icon = Icons.Outlined.FormatColorText,
             selectedColorHex = normalizedPreferences.textColorHex,
             onColorSelected = { colorHex ->
                 updatePreferences { it.copy(textColorHex = colorHex) }
@@ -159,6 +171,7 @@ internal fun SettingsFloatingLyricsSection(
         )
         FloatingLyricsColorPicker(
             titleRes = R.string.settings_floating_lyrics_outline_color,
+            icon = Icons.Outlined.BorderColor,
             selectedColorHex = normalizedPreferences.outlineColorHex,
             onColorSelected = { colorHex ->
                 updatePreferences { it.copy(outlineColorHex = colorHex) }
@@ -170,6 +183,7 @@ internal fun SettingsFloatingLyricsSection(
                 R.string.settings_floating_lyrics_font_size_value,
                 pendingFontSizeSp.roundToInt()
             ),
+            icon = Icons.Outlined.TextFields,
             value = pendingFontSizeSp,
             valueRange = MIN_FLOATING_LYRICS_FONT_SIZE_SP..MAX_FLOATING_LYRICS_FONT_SIZE_SP,
             steps = 23,
@@ -188,6 +202,7 @@ internal fun SettingsFloatingLyricsSection(
                 R.string.settings_floating_lyrics_outline_width_value,
                 pendingOutlineWidthDp
             ),
+            icon = Icons.Outlined.LineWeight,
             value = pendingOutlineWidthDp,
             valueRange = MIN_FLOATING_LYRICS_OUTLINE_WIDTH_DP..MAX_FLOATING_LYRICS_OUTLINE_WIDTH_DP,
             steps = 0,
@@ -206,6 +221,7 @@ internal fun SettingsFloatingLyricsSection(
                 R.string.settings_floating_lyrics_max_width_value,
                 pendingMaxWidthDp
             ),
+            icon = Icons.Outlined.WidthFull,
             value = pendingMaxWidthDp,
             valueRange = MIN_FLOATING_LYRICS_MAX_WIDTH_DP..MAX_FLOATING_LYRICS_MAX_WIDTH_DP,
             steps = 0,
@@ -224,6 +240,7 @@ internal fun SettingsFloatingLyricsSection(
                 R.string.settings_floating_lyrics_position_value,
                 pendingPositionX * 100f
             ),
+            icon = Icons.Outlined.SwapHoriz,
             value = pendingPositionX,
             valueRange = 0f..1f,
             steps = 0,
@@ -242,6 +259,7 @@ internal fun SettingsFloatingLyricsSection(
                 R.string.settings_floating_lyrics_position_value,
                 pendingPositionY * 100f
             ),
+            icon = Icons.Outlined.SwapVert,
             value = pendingPositionY,
             valueRange = 0f..1f,
             steps = 0,
@@ -263,6 +281,7 @@ internal fun SettingsFloatingLyricsSection(
         FloatingLyricsSwitchListItem(
             title = stringResource(R.string.settings_floating_lyrics_show_translation),
             description = stringResource(R.string.settings_floating_lyrics_show_translation_desc),
+            icon = Icons.Outlined.Translate,
             checked = normalizedPreferences.showTranslation,
             onCheckedChange = { showTranslation ->
                 updatePreferences { it.copy(showTranslation = showTranslation) }
@@ -275,6 +294,7 @@ internal fun SettingsFloatingLyricsSection(
 private fun FloatingLyricsSwitchListItem(
     title: String,
     description: String,
+    icon: ImageVector,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
@@ -282,7 +302,7 @@ private fun FloatingLyricsSwitchListItem(
         modifier = Modifier.settingsItemClickable { onCheckedChange(!checked) },
         leadingContent = {
             Icon(
-                imageVector = Icons.Outlined.Subtitles,
+                imageVector = icon,
                 contentDescription = title,
                 tint = MaterialTheme.colorScheme.onSurface
             )
@@ -300,6 +320,7 @@ private fun FloatingLyricsSwitchListItem(
 private fun FloatingLyricsSliderListItem(
     title: String,
     valueText: String,
+    icon: ImageVector,
     value: Float,
     valueRange: ClosedFloatingPointRange<Float>,
     steps: Int,
@@ -309,7 +330,7 @@ private fun FloatingLyricsSliderListItem(
     ListItem(
         leadingContent = {
             Icon(
-                imageVector = Icons.Outlined.FormatSize,
+                imageVector = icon,
                 contentDescription = title,
                 tint = MaterialTheme.colorScheme.onSurface
             )
@@ -356,7 +377,7 @@ private fun FloatingLyricsAlignmentSelector(
     ListItem(
         leadingContent = {
             Icon(
-                imageVector = Icons.Outlined.Tune,
+                imageVector = Icons.Outlined.FormatAlignCenter,
                 contentDescription = stringResource(R.string.settings_floating_lyrics_alignment),
                 tint = MaterialTheme.colorScheme.onSurface
             )
