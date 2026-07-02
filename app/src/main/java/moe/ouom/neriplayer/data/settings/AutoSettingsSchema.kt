@@ -670,7 +670,7 @@ object AutoSettingsSchema {
         val statusBarLyrics = autoSetting(
             titleRes = R.string.settings_status_bar_lyrics_title,
             descriptionRes = R.string.settings_status_bar_lyrics_summary,
-            iconRes = R.drawable.ic_lyricon
+            iconRes = R.drawable.ic_statusbar
         )
 
         @AutoSetting(
