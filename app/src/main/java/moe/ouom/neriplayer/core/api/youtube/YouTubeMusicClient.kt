@@ -549,9 +549,9 @@ internal object YouTubeMusicParser {
             return null
         }
         return Regex(
-            pattern = "([0-9][0-9,]*)\\s*(?:首歌|首歌曲?|首|曲|集|songs?|tracks?|videos?|episodes?)",
+            pattern = "(\\d+)\\s*(?:首歌|首歌曲?|首|曲|集|songs?|tracks?|videos?|episodes?)",
             option = RegexOption.IGNORE_CASE
-        ).find(normalized)?.groupValues?.getOrNull(1)?.replace(",", "")?.toIntOrNull()
+        ).find(normalized)?.groupValues?.getOrNull(1)?.toIntOrNull()
     }
 
     private fun findLibraryGridRenderer(root: JSONObject): JSONObject? {
