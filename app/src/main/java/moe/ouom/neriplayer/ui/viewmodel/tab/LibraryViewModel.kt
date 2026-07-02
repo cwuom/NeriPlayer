@@ -146,7 +146,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    private fun refreshBilibili() {
+    fun refreshBilibili() {
         viewModelScope.launch {
             try {
                 val mid = biliCookieRepo.getCookiesOnce()["DedeUserID"]?.toLongOrNull() ?: 0L

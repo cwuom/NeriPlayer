@@ -56,6 +56,7 @@ import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -163,6 +164,16 @@ private fun libraryTabDisplayOrder(isInternational: Boolean): List<LibraryTab> {
     }
 }
 
+private fun LibraryTab?.isRefreshable(): Boolean {
+    return when (this) {
+        LibraryTab.BILI,
+        LibraryTab.YTMUSIC,
+        LibraryTab.NETEASE,
+        LibraryTab.NETEASEALBUM -> true
+        else -> false
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun LibraryScreen(
@@ -257,23 +268,45 @@ fun LibraryScreen(
                 .fillMaxSize()
         ) {
             Column(Modifier.fillMaxSize()) {
-                PrimaryScrollableTabRow(
-                    selectedTabIndex = pagerState.currentPage,
-                    edgePadding = 8.dp,
-                    containerColor = Color.Transparent,
-                    contentColor = MaterialTheme.colorScheme.primary
-                ) {
-                    orderedTabs.forEachIndexed { index, tab ->
-                        Tab(
-                            selected = pagerState.currentPage == index,
-                            onClick = {
-                                scope.launch {
-                                    pagerState.animateScrollToPage(index)
-                                }
-                            },
-                            selectedContentColor = MaterialTheme.colorScheme.primary,
-                            unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            text = { Text(stringResource(tab.labelResId)) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    PrimaryScrollableTabRow(
+                        selectedTabIndex = pagerState.currentPage,
+                        edgePadding = 8.dp,
+                        containerColor = Color.Transparent,
+                        contentColor = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        orderedTabs.forEachIndexed { index, tab ->
+                            Tab(
+                                selected = pagerState.currentPage == index,
+                                onClick = {
+                                    scope.launch {
+                                        pagerState.animateScrollToPage(index)
+                                    }
+                                },
+                                selectedContentColor = MaterialTheme.colorScheme.primary,
+                                unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                text = { Text(stringResource(tab.labelResId)) }
+                            )
+                        }
+                    }
+
+                    val currentTab = orderedTabs.getOrNull(pagerState.currentPage)
+                    HapticIconButton(
+                        onClick = {
+                            when (currentTab) {
+                                LibraryTab.BILI -> vm.refreshBilibili()
+                                LibraryTab.YTMUSIC -> vm.refreshYouTubeMusicPlaylists()
+                                LibraryTab.NETEASE -> vm.refreshNeteasePlaylists()
+                                LibraryTab.NETEASEALBUM -> vm.refreshNeteaseAlbums()
+                                else -> Unit
+                            }
+                        },
+                        enabled = currentTab.isRefreshable()
+                    ) {
+                        Icon(
+                            Icons.Filled.Refresh,
+                            contentDescription = stringResource(R.string.action_refresh)
                         )
                     }
                 }

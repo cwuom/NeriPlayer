@@ -730,9 +730,23 @@ class BiliClient(
      */
     suspend fun getAllFavFolderItems(mediaId: Long): List<FavResourceItem> = withContext(Dispatchers.IO) {
         val firstPage = getFavFolderContents(mediaId, page = 1, pageSize = FAV_CONTENT_PAGE_SIZE)
+        collectAllFavFolderItems(mediaId, firstPage)
+    }
+
+    suspend fun getAllFavFolderItems(
+        mediaId: Long,
+        firstPage: FavResourcePage
+    ): List<FavResourceItem> = withContext(Dispatchers.IO) {
+        collectAllFavFolderItems(mediaId, firstPage)
+    }
+
+    private suspend fun collectAllFavFolderItems(
+        mediaId: Long,
+        firstPage: FavResourcePage
+    ): List<FavResourceItem> {
         val totalCount = firstPage.info.count
         if (!firstPage.hasMore || totalCount <= firstPage.items.size) {
-            return@withContext firstPage.items
+            return firstPage.items
         }
 
         val totalPages = (totalCount + FAV_CONTENT_PAGE_SIZE - 1) / FAV_CONTENT_PAGE_SIZE
@@ -740,7 +754,7 @@ class BiliClient(
             getFavFolderContents(mediaId, page = page, pageSize = FAV_CONTENT_PAGE_SIZE).items
         }
 
-        (firstPage.items + restPages.flatten())
+        return (firstPage.items + restPages.flatten())
             .distinctBy { "${it.type}:${it.id}:${it.bvid.orEmpty()}" }
     }
 

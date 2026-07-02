@@ -48,6 +48,8 @@ import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthAutoRefreshManager
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRepository
 import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.history.PlayHistoryRepository
+import moe.ouom.neriplayer.data.platform.bili.BiliFavoriteFolderCacheRepository
+import moe.ouom.neriplayer.data.platform.youtube.YouTubeMusicPlaylistCacheRepository
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
 import moe.ouom.neriplayer.listentogether.ListenTogetherApi
@@ -160,6 +162,12 @@ object AppContainer {
     }
     val playlistUsageRepo by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         PlaylistUsageRepository(application)
+    }
+    val biliFavoriteFolderCacheRepo by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        BiliFavoriteFolderCacheRepository(application)
+    }
+    val youtubeMusicPlaylistCacheRepo by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        YouTubeMusicPlaylistCacheRepository(application)
     }
 
 

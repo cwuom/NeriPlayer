@@ -54,7 +54,7 @@ private const val YOUTUBE_MUSIC_MUSIC_ORIGIN = "https://music.youtube.com"
 private const val YOUTUBE_MUSIC_BOOTSTRAP_TTL_MS = 10L * 60L * 1000L
 private const val YOUTUBE_MUSIC_CLIENT_NAME_NUM_WEB_REMIX = "67"
 private const val YOUTUBE_MUSIC_CLIENT_NAME_WEB_REMIX = "WEB_REMIX"
-private const val YOUTUBE_MUSIC_CONTINUATION_PAGE_LIMIT = 20
+private const val YOUTUBE_MUSIC_CONTINUATION_PAGE_LIMIT = 80
 private const val YOUTUBE_MUSIC_MAX_REQUEST_ATTEMPTS = 2
 private const val YOUTUBE_MUSIC_SAFE_FALLBACK_HL = "zh-CN"
 private const val YOUTUBE_MUSIC_SAFE_FALLBACK_GL = "JP"
@@ -96,7 +96,8 @@ data class YouTubeMusicPlaylistDetail(
     val subtitle: String,
     val coverUrl: String,
     val trackCount: Int? = null,
-    val tracks: List<YouTubeMusicPlaylistTrack>
+    val tracks: List<YouTubeMusicPlaylistTrack>,
+    val fullyLoaded: Boolean = true
 )
 
 internal data class YouTubeMusicPlaylistPage(
@@ -1454,6 +1455,8 @@ internal suspend fun collectYouTubeMusicPlaylistDetail(
     val tracks = mutableListOf<YouTubeMusicPlaylistTrack>()
     var continuation: String? = null
     var page = 0
+    var reachedEnd = false
+    var interruptedAfterPartialLoad = false
 
     while (page < pageLimit) {
         val payload = if (continuation.isNullOrBlank()) {
@@ -1467,6 +1470,7 @@ internal suspend fun collectYouTubeMusicPlaylistDetail(
             if (page == 0) {
                 throw error
             }
+            interruptedAfterPartialLoad = true
             break
         }
         if (detail == null) {
@@ -1482,6 +1486,7 @@ internal suspend fun collectYouTubeMusicPlaylistDetail(
         tracks += playlistPage.tracks
         continuation = playlistPage.continuation
         if (continuation.isNullOrBlank()) {
+            reachedEnd = true
             break
         }
         page++
@@ -1505,7 +1510,8 @@ internal suspend fun collectYouTubeMusicPlaylistDetail(
     }
     return baseDetail.copy(
         trackCount = resolvedTrackCount,
-        tracks = distinctTracks
+        tracks = distinctTracks,
+        fullyLoaded = reachedEnd && !interruptedAfterPartialLoad
     )
 }
 
@@ -2007,6 +2013,33 @@ class YouTubeMusicClient(
         fallbackTitle: String = "",
         fallbackSubtitle: String = "",
         fallbackCoverUrl: String = ""
+    ): YouTubeMusicPlaylistDetail = fetchPlaylistDetail(
+        browseId = browseId,
+        fallbackTitle = fallbackTitle,
+        fallbackSubtitle = fallbackSubtitle,
+        fallbackCoverUrl = fallbackCoverUrl,
+        pageLimit = YOUTUBE_MUSIC_CONTINUATION_PAGE_LIMIT
+    )
+
+    suspend fun getPlaylistDetailPreview(
+        browseId: String,
+        fallbackTitle: String = "",
+        fallbackSubtitle: String = "",
+        fallbackCoverUrl: String = ""
+    ): YouTubeMusicPlaylistDetail = fetchPlaylistDetail(
+        browseId = browseId,
+        fallbackTitle = fallbackTitle,
+        fallbackSubtitle = fallbackSubtitle,
+        fallbackCoverUrl = fallbackCoverUrl,
+        pageLimit = 1
+    )
+
+    private suspend fun fetchPlaylistDetail(
+        browseId: String,
+        fallbackTitle: String,
+        fallbackSubtitle: String,
+        fallbackCoverUrl: String,
+        pageLimit: Int
     ): YouTubeMusicPlaylistDetail = withContext(Dispatchers.IO) {
         authAutoRefreshManager?.refreshIfNeeded(reason = "playlist_detail", force = false)
         var bootstrap = bootstrap()
@@ -2015,7 +2048,8 @@ class YouTubeMusicClient(
             browseId = browseId,
             fallbackTitle = fallbackTitle,
             fallbackSubtitle = fallbackSubtitle,
-            fallbackCoverUrl = fallbackCoverUrl
+            fallbackCoverUrl = fallbackCoverUrl,
+            pageLimit = pageLimit
         ) { payload ->
                 val response = postMusicBrowseWithRetry(bootstrap, payload, requestLocale)
                 bootstrap = response.bootstrap

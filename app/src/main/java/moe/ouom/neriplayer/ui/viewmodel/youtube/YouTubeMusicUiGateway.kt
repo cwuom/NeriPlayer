@@ -31,7 +31,8 @@ data class YouTubeMusicPlaylistDetail(
     val subtitle: String = "",
     val coverUrl: String,
     val trackCount: Int,
-    val tracks: List<YouTubeMusicTrack>
+    val tracks: List<YouTubeMusicTrack>,
+    val fullyLoaded: Boolean = true
 )
 
 data class YouTubeMusicTrack(
@@ -47,6 +48,8 @@ interface YouTubeMusicLibraryGateway {
     suspend fun getLibraryPlaylists(): List<YouTubeMusicPlaylist>
 
     suspend fun getPlaylistDetail(browseId: String): YouTubeMusicPlaylistDetail
+
+    suspend fun getPlaylistDetailPreview(browseId: String): YouTubeMusicPlaylistDetail
 }
 
 /**

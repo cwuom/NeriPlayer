@@ -48,6 +48,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.*
@@ -249,6 +250,13 @@ fun BiliPlaylistDetailScreen(
                                 showSearch = !showSearch
                                 if (!showSearch) searchQuery = ""
                             }) { Icon(Icons.Filled.Search, contentDescription = stringResource(R.string.search_video)) }
+
+                            HapticIconButton(onClick = { vm.refresh() }) {
+                                Icon(
+                                    Icons.Filled.Refresh,
+                                    contentDescription = stringResource(R.string.action_refresh)
+                                )
+                            }
 
                             // 收藏按钮
                             HapticIconButton(onClick = {

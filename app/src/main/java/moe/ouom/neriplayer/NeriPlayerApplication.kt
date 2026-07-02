@@ -94,6 +94,29 @@ class NeriPlayerApplication : Application() {
                         subtitle = detail.subtitle,
                         coverUrl = detail.coverUrl,
                         trackCount = detail.trackCount ?: detail.tracks.size,
+                        fullyLoaded = detail.fullyLoaded,
+                        tracks = detail.tracks.map { track ->
+                            YouTubeMusicTrack(
+                                videoId = track.videoId,
+                                name = track.title,
+                                artist = track.artist,
+                                albumName = track.album,
+                                durationMs = track.durationMs,
+                                coverUrl = track.coverUrl
+                            )
+                        }
+                    )
+                }
+
+                override suspend fun getPlaylistDetailPreview(browseId: String): YouTubeMusicPlaylistDetail {
+                    val detail = AppContainer.youtubeMusicClient.getPlaylistDetailPreview(browseId)
+                    return YouTubeMusicPlaylistDetail(
+                        playlistId = detail.playlistId,
+                        title = detail.title,
+                        subtitle = detail.subtitle,
+                        coverUrl = detail.coverUrl,
+                        trackCount = detail.trackCount ?: detail.tracks.size,
+                        fullyLoaded = detail.fullyLoaded,
                         tracks = detail.tracks.map { track ->
                             YouTubeMusicTrack(
                                 videoId = track.videoId,

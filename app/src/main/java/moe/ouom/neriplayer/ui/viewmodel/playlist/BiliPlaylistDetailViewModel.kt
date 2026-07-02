@@ -36,12 +36,15 @@ import kotlinx.parcelize.Parcelize
 import moe.ouom.neriplayer.core.api.bili.buildBiliPartSong
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.data.platform.bili.BiliFavoriteFolderContentCache
+import moe.ouom.neriplayer.data.platform.bili.CachedBiliFavoriteVideo
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylistKind
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import java.io.IOException
 
 private const val BILI_RESOURCE_TYPE_VIDEO = 2
 private const val BILI_RESOURCE_TYPE_COLLECTION = 21
+private const val BILI_FAVORITE_LATEST_PAGE_SIZE = 20
 
 /** Bilibili 视频条目数据模型 */
 @Parcelize
@@ -64,26 +67,37 @@ data class BiliPlaylistDetailUiState(
 
 class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(application) {
     private val client = AppContainer.biliClient
+    private val favoriteCacheRepo = AppContainer.biliFavoriteFolderCacheRepo
 
     private val _uiState = MutableStateFlow(BiliPlaylistDetailUiState())
     val uiState: StateFlow<BiliPlaylistDetailUiState> = _uiState
 
     private var mediaId: Long = 0L
+    private var currentPlaylist: BiliPlaylist? = null
 
-    fun start(playlist: BiliPlaylist) {
-        // 移除缓存检查，确保每次进入都能获取最新数据
+    fun start(playlist: BiliPlaylist, forceRefresh: Boolean = false) {
+        currentPlaylist = playlist
         mediaId = playlist.mediaId
+        val cachedVideos = if (!forceRefresh && playlist.isFavoriteFolder()) {
+            favoriteCacheRepo.read(playlist.mediaId)?.videos.orEmpty().map { it.toVideoItem() }
+        } else {
+            emptyList()
+        }
 
         _uiState.value = BiliPlaylistDetailUiState(
             loading = true,
-            header = playlist,
-            videos = emptyList()
+            header = playlist.copy(count = cachedVideos.size.takeIf { it > 0 } ?: playlist.count),
+            videos = cachedVideos
         )
-        loadContent()
+        loadContent(forceRefresh = forceRefresh)
     }
 
     fun retry() {
-        uiState.value.header?.let { start(it) }
+        (uiState.value.header ?: currentPlaylist)?.let { start(it, forceRefresh = true) }
+    }
+
+    fun refresh() {
+        (uiState.value.header ?: currentPlaylist)?.let { start(it, forceRefresh = true) }
     }
 
 
@@ -98,7 +112,7 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
         }
     }
 
-    private fun loadContent() {
+    private fun loadContent(forceRefresh: Boolean = false) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(loading = true, error = null)
             try {
@@ -107,7 +121,10 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
                     when (header.kind) {
                         BiliPlaylistKind.COLLECTION -> loadCollectionVideos(header)
                         BiliPlaylistKind.CREATED_FAVORITE,
-                        BiliPlaylistKind.COLLECTED_FAVORITE -> loadFavoriteFolderVideos(header)
+                        BiliPlaylistKind.COLLECTED_FAVORITE -> loadFavoriteFolderVideos(
+                            playlist = header,
+                            forceRefresh = forceRefresh
+                        )
                     }
                 }
 
@@ -118,21 +135,57 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
                 )
 
             } catch (e: IOException) {
+                val hasCachedVideos = uiState.value.videos.isNotEmpty()
                 _uiState.value = _uiState.value.copy(
                     loading = false,
-                    error = "Network error: ${e.message}"  // Localized in UI
+                    error = if (hasCachedVideos) null else "Network error: ${e.message}"
                 )
             } catch (e: Exception) {
+                val hasCachedVideos = uiState.value.videos.isNotEmpty()
                 _uiState.value = _uiState.value.copy(
                     loading = false,
-                    error = "Load failed: ${e.message}"  // Localized in UI
+                    error = if (hasCachedVideos) null else "Load failed: ${e.message}"
                 )
             }
         }
     }
 
-    private suspend fun loadFavoriteFolderVideos(playlist: BiliPlaylist): List<BiliVideoItem> {
-        val items = client.getAllFavFolderItems(playlist.mediaId)
+    private suspend fun loadFavoriteFolderVideos(
+        playlist: BiliPlaylist,
+        forceRefresh: Boolean
+    ): List<BiliVideoItem> {
+        val cached = favoriteCacheRepo.read(playlist.mediaId)
+        val latestPageResult = runCatching {
+            client.getFavFolderContents(
+                mediaId = playlist.mediaId,
+                page = 1,
+                pageSize = BILI_FAVORITE_LATEST_PAGE_SIZE
+            )
+        }
+        if (latestPageResult.isFailure && cached != null && !forceRefresh) {
+            return cached.videos.map { it.toVideoItem() }
+        }
+
+        val latestPage = latestPageResult.getOrThrow()
+        val latestSignature = latestPage.latestPageSignature()
+        if (!forceRefresh && cached?.latestPageSignature == latestSignature) {
+            return cached.videos.map { it.toVideoItem() }
+        }
+
+        val items = client.getAllFavFolderItems(playlist.mediaId, latestPage)
+        val videos = mapFavoriteItemsToVideos(items)
+        favoriteCacheRepo.save(
+            BiliFavoriteFolderContentCache(
+                mediaId = playlist.mediaId,
+                latestPageSignature = latestSignature,
+                totalCount = latestPage.info.count,
+                videos = videos.map { it.toCachedVideo() }
+            )
+        )
+        return videos
+    }
+
+    private suspend fun mapFavoriteItemsToVideos(items: List<BiliClient.FavResourceItem>): List<BiliVideoItem> {
         val videos = ArrayList<BiliVideoItem>(items.size)
         for (item in items) {
             when (item.type) {
@@ -148,6 +201,31 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
             }
         }
         return videos.distinctBy { it.bvid.ifBlank { it.id.toString() } }
+    }
+
+    private fun BiliClient.FavResourcePage.latestPageSignature(): String {
+        return buildString {
+            append(info.count)
+            append('#')
+            items.forEach { item ->
+                append(item.type)
+                append(':')
+                append(item.id)
+                append(':')
+                append(item.bvid.orEmpty())
+                append(':')
+                append(item.favTime ?: 0L)
+                append(':')
+                append(item.durationSec)
+                append(':')
+                append(item.title)
+                append('|')
+            }
+        }
+    }
+
+    private fun BiliPlaylist.isFavoriteFolder(): Boolean {
+        return kind == BiliPlaylistKind.CREATED_FAVORITE || kind == BiliPlaylistKind.COLLECTED_FAVORITE
     }
 
     private suspend fun loadCollectionVideos(playlist: BiliPlaylist): List<BiliVideoItem> {
@@ -177,6 +255,28 @@ class BiliPlaylistDetailViewModel(application: Application) : AndroidViewModel(a
             title = title,
             uploader = uploader,
             coverUrl = coverUrl.replaceFirst("http://", "https://"),
+            durationSec = durationSec
+        )
+    }
+
+    private fun CachedBiliFavoriteVideo.toVideoItem(): BiliVideoItem {
+        return BiliVideoItem(
+            id = id,
+            bvid = bvid,
+            title = title,
+            uploader = uploader,
+            coverUrl = coverUrl,
+            durationSec = durationSec
+        )
+    }
+
+    private fun BiliVideoItem.toCachedVideo(): CachedBiliFavoriteVideo {
+        return CachedBiliFavoriteVideo(
+            id = id,
+            bvid = bvid,
+            title = title,
+            uploader = uploader,
+            coverUrl = coverUrl,
             durationSec = durationSec
         )
     }

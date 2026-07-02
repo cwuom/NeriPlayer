@@ -53,6 +53,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
@@ -179,8 +180,19 @@ fun YouTubeMusicPlaylistDetailScreen(
         selectedKeys = if (selectedKeys.contains(key)) selectedKeys - key else selectedKeys + key
     }
     fun clearSelection() { selectedKeys = emptySet() }
-    fun selectAll() { selectedKeys = ui.tracks.map { it.stableKey() }.toSet() }
+    fun selectAll() {
+        if (ui.allTracksLoaded) {
+            selectedKeys = ui.tracks.map { it.stableKey() }.toSet()
+        }
+    }
     fun exitSelection() { selectionMode = false; clearSelection() }
+    fun showWaitForFullLoadMessage() {
+        scope.launch {
+            snackbarHostState.showSnackbar(
+                context.getString(R.string.youtube_music_playlist_wait_full_load)
+            )
+        }
+    }
 
     var showDownloadManager by remember { mutableStateOf(false) }
     val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
@@ -242,8 +254,9 @@ fun YouTubeMusicPlaylistDetailScreen(
     }
     val currentIndex = displayedTracks.indexOfFirst { it.sameIdentityAs(currentSong) }
 
-    LaunchedEffect(isFavorite, resolvedPlaylist, ui.tracks) {
+    LaunchedEffect(isFavorite, resolvedPlaylist, ui.tracks, ui.allTracksLoaded) {
         if (!isFavorite) return@LaunchedEffect
+        if (!ui.allTracksLoaded) return@LaunchedEffect
         favoriteRepo.updateFavoriteMeta(
             id = playlistFavoriteId,
             name = resolvedPlaylist.title,
@@ -292,12 +305,22 @@ fun YouTubeMusicPlaylistDetailScreen(
                                 contentDescription = stringResource(R.string.cd_search_songs)
                             )
                         }
+                        HapticIconButton(onClick = viewModel::retry) {
+                            Icon(
+                                imageVector = Icons.Filled.Refresh,
+                                contentDescription = stringResource(R.string.action_refresh)
+                            )
+                        }
                         HapticIconButton(
                             onClick = {
                                 scope.launch {
                                     if (isFavorite) {
                                         favoriteRepo.removeFavorite(playlistFavoriteId, "youtubeMusic")
                                     } else {
+                                        if (!ui.allTracksLoaded) {
+                                            showWaitForFullLoadMessage()
+                                            return@launch
+                                        }
                                         favoriteRepo.addFavorite(
                                             id = playlistFavoriteId,
                                             name = resolvedPlaylist.title,
@@ -332,7 +355,15 @@ fun YouTubeMusicPlaylistDetailScreen(
                             )
                         }
                         if (ui.tracks.isNotEmpty()) {
-                            HapticIconButton(onClick = { onSongClick(ui.tracks, 0) }) {
+                            HapticIconButton(
+                                onClick = {
+                                    if (ui.allTracksLoaded) {
+                                        onSongClick(ui.tracks, 0)
+                                    } else {
+                                        showWaitForFullLoadMessage()
+                                    }
+                                }
+                            ) {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Outlined.PlaylistPlay,
                                     contentDescription = stringResource(R.string.player_play_all)
@@ -356,7 +387,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                     )
                 )
             } else {
-                val allSelected = selectedKeys.size == ui.tracks.size && ui.tracks.isNotEmpty()
+                val allSelected = ui.allTracksLoaded && selectedKeys.size == ui.tracks.size && ui.tracks.isNotEmpty()
                 TopAppBar(
                     title = {
                         Text(
@@ -373,7 +404,15 @@ fun YouTubeMusicPlaylistDetailScreen(
                         }
                     },
                     actions = {
-                        HapticIconButton(onClick = { if (allSelected) clearSelection() else selectAll() }) {
+                        HapticIconButton(onClick = {
+                            if (allSelected) {
+                                clearSelection()
+                            } else if (ui.allTracksLoaded) {
+                                selectAll()
+                            } else {
+                                showWaitForFullLoadMessage()
+                            }
+                        }) {
                             Icon(
                                 imageVector = if (allSelected) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
                                 contentDescription = if (allSelected) {
@@ -454,6 +493,12 @@ fun YouTubeMusicPlaylistDetailScreen(
                         )
                     }
 
+                    if (!ui.allTracksLoaded && ui.tracks.isNotEmpty()) {
+                        item {
+                            PartialPlaylistBlock(onRetry = viewModel::retry)
+                        }
+                    }
+
                     when {
                         ui.loading && ui.tracks.isEmpty() -> {
                             item {
@@ -506,6 +551,8 @@ fun YouTubeMusicPlaylistDetailScreen(
                                     onClick = {
                                         if (selectionMode) {
                                             toggleSelect(song.stableKey())
+                                        } else if (!ui.allTracksLoaded) {
+                                            showWaitForFullLoadMessage()
                                         } else {
                                             val targetIndex = ui.tracks.indexOfFirst {
                                                 it.sameIdentityAs(song)
@@ -755,6 +802,32 @@ private fun YouTubeMusicHeroHeader(
                 ),
                 color = Color.White.copy(alpha = 0.88f)
             )
+        }
+    }
+}
+
+@Composable
+private fun PartialPlaylistBlock(onRetry: () -> Unit) {
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.youtube_music_playlist_partial_loaded),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            HapticTextButton(onClick = onRetry) {
+                Text(stringResource(R.string.action_refresh))
+            }
         }
     }
 }

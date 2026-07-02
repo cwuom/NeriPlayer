@@ -1372,6 +1372,8 @@
     <!-- Playlist / Info -->
     <string name="playlist_play_count_format" formatted="false">%1$s plays · %2$d tracks</string>
     <string name="playlist_loading_content">Loading playlist content…</string>
+    <string name="youtube_music_playlist_partial_loaded">Some playlist items are still missing. Showing the tracks loaded so far.</string>
+    <string name="youtube_music_playlist_wait_full_load">The playlist is not fully loaded yet. Try again later or tap refresh.</string>
     <string name="playlist_load_failed_format">Load failed: %s</string>
 
     <!-- Playlist / Count Format -->

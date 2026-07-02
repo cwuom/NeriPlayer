@@ -1570,6 +1570,8 @@
     <!-- Playlist / Info -->
     <string name="playlist_play_count_format" formatted="false">播放量 %1$s · %2$d 首</string>
     <string name="playlist_loading_content">正在加载歌单内容…</string>
+    <string name="youtube_music_playlist_partial_loaded">歌单还有内容没加载完，已先显示当前已获取的歌曲</string>
+    <string name="youtube_music_playlist_wait_full_load">歌单还没完整加载，稍后再试或点刷新重试</string>
     <string name="playlist_load_failed_format">加载失败：%s</string>
 
     <!-- Playlist / Count Format -->
