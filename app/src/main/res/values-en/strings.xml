@@ -1472,11 +1472,17 @@
     <!-- Playback Stats -->
     <string name="stats_title">Playback Stats</string>
     <string name="stats_empty">No playback data yet\nStart listening to see your stats here</string>
+    <string name="stats_period_empty">No playback stats in this period yet</string>
     <string name="stats_total_plays">Plays</string>
     <string name="stats_total_time">Listen Time</string>
     <string name="stats_track_count">Tracks</string>
     <string name="stats_top_tracks">Most Played</string>
     <string name="stats_play_count_value">%d plays</string>
+    <string name="stats_period_day">Day</string>
+    <string name="stats_period_week">Week</string>
+    <string name="stats_period_month">Month</string>
+    <string name="stats_period_year">Year</string>
+    <string name="stats_period_all">All</string>
     <string name="stats_sort_play_count">By play count</string>
     <string name="stats_sort_listen_time">By listen time</string>
     <string name="stats_sort_recent">By recent</string>

@@ -52,11 +52,14 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val gson = Gson()
     private val file: File by lazy { File(app.filesDir, "playback_stats.json") }
+    private val dailyFile: File by lazy { File(app.filesDir, "playback_stats_daily.json") }
     private val metadataFile: File by lazy { File(app.filesDir, "playback_stats_meta.json") }
     private val mutex = Mutex()
     private val _stats = MutableStateFlow(loadFromDisk())
     private val _statsClearedAt = MutableStateFlow(loadMetadata().clearedAt)
+    private val _dailyStats = MutableStateFlow(loadDailyStatsFromDisk())
     val statsFlow: StateFlow<List<TrackStat>> = _stats
+    val dailyStatsFlow: StateFlow<List<PlaybackStatBucket>> = _dailyStats
     val statsClearedAtFlow: StateFlow<Long> = _statsClearedAt
 
     private fun loadFromDisk(): List<TrackStat> {
@@ -80,11 +83,39 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
         }
     }
 
+    private fun loadDailyStatsFromDisk(): List<PlaybackStatBucket> {
+        return try {
+            if (!dailyFile.exists()) {
+                val migrated = buildLegacyDailyStats(
+                    stats = _stats.value,
+                    clearedAt = _statsClearedAt.value
+                )
+                if (migrated.isNotEmpty()) {
+                    persistDailyStatsToDisk(migrated)
+                }
+                return migrated
+            }
+            val raw = dailyFile.readText()
+            val type = object : TypeToken<List<PlaybackStatBucket>>() {}.type
+            gson.fromJson<List<PlaybackStatBucket>>(raw, type).orEmpty()
+        } catch (_: Throwable) {
+            emptyList()
+        }
+    }
+
     private fun persistToDisk(list: List<TrackStat>) {
         runCatching {
             file.writeText(gson.toJson(list))
         }.onFailure { error ->
             NPLogger.e("PlaybackStatsRepo", "Failed to persist stats", error)
+        }
+    }
+
+    private fun persistDailyStatsToDisk(list: List<PlaybackStatBucket>) {
+        runCatching {
+            dailyFile.writeText(gson.toJson(list))
+        }.onFailure { error ->
+            NPLogger.e("PlaybackStatsRepo", "Failed to persist daily stats", error)
         }
     }
 
@@ -154,31 +185,38 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
                 shouldStartNewStatsEpoch(it, _statsClearedAt.value)
             } == true
 
+            val safeListenedMs = listenedMs.coerceAtLeast(0L)
+            val sessionCountIncrement: Int
+            val sessionStat: TrackStat
+
             val updated = if (existing != null && !shouldStartNewStatsEpoch) {
-                val newTotalMs = existing.totalListenMs + listenedMs.coerceAtLeast(0L)
+                val newTotalMs = existing.totalListenMs + safeListenedMs
                 val countIncrement = playCountIncrement ?: calculatePlayCountIncrement(
                     existing = existing,
                     song = song,
                     listenedMs = listenedMs,
                     newTotalMs = newTotalMs
                 )
+                sessionCountIncrement = countIncrement
 
+                val updatedStat = existing.copy(
+                    name = song.name,
+                    artist = song.artist,
+                    coverUrl = song.coverUrl,
+                    durationMs = song.durationMs.takeIf { it > 0 } ?: existing.durationMs,
+                    totalListenMs = newTotalMs,
+                    playCount = existing.playCount + countIncrement,
+                    lastPlayedAt = now,
+                    mediaUri = song.mediaUri,
+                    localFilePath = song.localFilePath,
+                    localFileName = song.localFileName,
+                    customName = song.customName,
+                    customArtist = song.customArtist,
+                    customCoverUrl = song.customCoverUrl
+                )
+                sessionStat = updatedStat
                 current.toMutableList().apply {
-                    this[existingIndex] = existing.copy(
-                        name = song.name,
-                        artist = song.artist,
-                        coverUrl = song.coverUrl,
-                        durationMs = song.durationMs.takeIf { it > 0 } ?: existing.durationMs,
-                        totalListenMs = newTotalMs,
-                        playCount = existing.playCount + countIncrement,
-                        lastPlayedAt = now,
-                        mediaUri = song.mediaUri,
-                        localFilePath = song.localFilePath,
-                        localFileName = song.localFileName,
-                        customName = song.customName,
-                        customArtist = song.customArtist,
-                        customCoverUrl = song.customCoverUrl
-                    )
+                    this[existingIndex] = updatedStat
                 }
             } else {
                 val freshStat = createTrackStat(
@@ -188,6 +226,8 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
                     now = now,
                     key = key
                 )
+                sessionCountIncrement = freshStat.playCount
+                sessionStat = freshStat
                 if (existingIndex >= 0) {
                     current.toMutableList().apply {
                         this[existingIndex] = freshStat
@@ -199,6 +239,15 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
 
             _stats.value = updated
             persistToDisk(updated)
+            val dailyStats = recordPlaybackStatBucket(
+                current = _dailyStats.value,
+                stat = sessionStat,
+                listenedMs = safeListenedMs,
+                playCountIncrement = sessionCountIncrement,
+                playedAt = now
+            )
+            _dailyStats.value = dailyStats
+            persistDailyStatsToDisk(dailyStats)
             if (scheduleSync) {
                 triggerSync()
             }
@@ -257,8 +306,10 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
             mutex.withLock {
                 val clearedAt = System.currentTimeMillis()
                 _stats.value = emptyList()
+                _dailyStats.value = emptyList()
                 _statsClearedAt.value = clearedAt
                 persistToDisk(emptyList())
+                persistDailyStatsToDisk(emptyList())
                 persistMetadata(clearedAt)
                 triggerSync()
             }
@@ -270,8 +321,11 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
         scope.launch {
             mutex.withLock {
                 val updated = _stats.value.filterNot { it.identityKey in keys }
+                val updatedDailyStats = _dailyStats.value.filterNot { it.identityKey in keys }
                 _stats.value = updated
+                _dailyStats.value = updatedDailyStats
                 persistToDisk(updated)
+                persistDailyStatsToDisk(updatedDailyStats)
                 triggerSync()
             }
         }
@@ -344,6 +398,13 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
                     _statsClearedAt.value = effectiveClearedAt
                     persistMetadata(effectiveClearedAt)
                 }
+                val updatedDailyStats = _dailyStats.value.filter {
+                    shouldKeepDailyAfterClear(it, effectiveClearedAt)
+                }
+                if (updatedDailyStats.size != _dailyStats.value.size) {
+                    _dailyStats.value = updatedDailyStats
+                    persistDailyStatsToDisk(updatedDailyStats)
+                }
                 persistToDisk(updated)
             }
         }
@@ -356,6 +417,14 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
     private fun shouldKeepLocalAfterClear(stat: TrackStat, playbackStatsClearedAt: Long): Boolean {
         if (playbackStatsClearedAt <= 0L) return true
         return stat.lastPlayedAt >= playbackStatsClearedAt
+    }
+
+    private fun shouldKeepDailyAfterClear(
+        bucket: PlaybackStatBucket,
+        playbackStatsClearedAt: Long
+    ): Boolean {
+        if (playbackStatsClearedAt <= 0L) return true
+        return bucket.lastPlayedAt >= playbackStatsClearedAt
     }
 
     private fun shouldStartNewStatsEpoch(stat: TrackStat, playbackStatsClearedAt: Long): Boolean {

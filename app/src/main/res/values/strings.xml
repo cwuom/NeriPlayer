@@ -1485,11 +1485,17 @@
     <!-- Playback Stats -->
     <string name="stats_title">播放统计</string>
     <string name="stats_empty">还没有播放记录\n开始听歌后这里会显示统计数据</string>
+    <string name="stats_period_empty">当前时间范围内还没有播放统计</string>
     <string name="stats_total_plays">播放次数</string>
     <string name="stats_total_time">累计时长</string>
     <string name="stats_track_count">曲目数</string>
     <string name="stats_top_tracks">最常播放</string>
     <string name="stats_play_count_value">%d 次</string>
+    <string name="stats_period_day">日</string>
+    <string name="stats_period_week">周</string>
+    <string name="stats_period_month">月</string>
+    <string name="stats_period_year">年</string>
+    <string name="stats_period_all">总</string>
     <string name="stats_sort_play_count">按播放次数</string>
     <string name="stats_sort_listen_time">按累计时长</string>
     <string name="stats_sort_recent">按最近播放</string>
