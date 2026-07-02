@@ -136,10 +136,38 @@ class PlaybackStatsTrackerTest {
     }
 
     @Test
+    fun `auto next starts new segment when false callback is swallowed`() {
+        var now = 0L
+        val tracker = PlaybackStatsTracker(nowElapsedMs = { now })
+        val firstSong = testSong(id = 8L, name = "h")
+        val secondSong = testSong(id = 9L, name = "i")
+
+        tracker.onSongChanged(firstSong)
+        tracker.onPlayingChanged(true)
+
+        now = 60_000L
+        val firstEnd = tracker.onTrackEnded()
+
+        assertEquals(60_000L, firstEnd?.listenedMs)
+        assertEquals(1, firstEnd?.playCountIncrement)
+
+        tracker.onSongChanged(secondSong)
+
+        now = 61_000L
+        assertNull(tracker.onPlayingChanged(true))
+
+        now = 76_000L
+        val secondSnapshot = tracker.flushPeriodic()
+
+        assertEquals(15_000L, secondSnapshot?.listenedMs)
+        assertEquals(0, secondSnapshot?.playCountIncrement)
+    }
+
+    @Test
     fun `manual seek back to beginning does not count as repeat cycle`() {
         var now = 0L
         val tracker = PlaybackStatsTracker(nowElapsedMs = { now })
-        val song = testSong(id = 8L, name = "h")
+        val song = testSong(id = 10L, name = "j")
 
         tracker.onSongChanged(song)
         tracker.onPlayingChanged(true)

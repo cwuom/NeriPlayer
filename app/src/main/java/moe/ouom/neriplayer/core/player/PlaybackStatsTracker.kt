@@ -53,13 +53,16 @@ internal class PlaybackStatsTracker(
     }
 
     fun onPlayingChanged(playing: Boolean): PlaybackStatsSnapshot? {
-        if (playing == isPlaying) return null
+        if (playing == isPlaying) {
+            if (playing) {
+                startActiveSegmentIfNeeded()
+            }
+            return null
+        }
 
         if (playing) {
             isPlaying = true
-            if (trackingSong != null) {
-                segmentStartElapsedMs = nowElapsedMs()
-            }
+            startActiveSegmentIfNeeded()
             return null
         }
 
@@ -138,6 +141,12 @@ internal class PlaybackStatsTracker(
             now
         } else {
             NO_ACTIVE_SEGMENT_START_MS
+        }
+    }
+
+    private fun startActiveSegmentIfNeeded() {
+        if (trackingSong != null && segmentStartElapsedMs == NO_ACTIVE_SEGMENT_START_MS) {
+            segmentStartElapsedMs = nowElapsedMs()
         }
     }
 
