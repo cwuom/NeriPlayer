@@ -145,6 +145,7 @@ fun LyricsScreen(
     lyricFontScale: Float,
     onLyricFontScaleChange: (Float) -> Unit,
     onEnterAlbum: (AlbumSummary) -> Unit,
+    onExitNowPlaying: () -> Unit,
     onOpenCurrentNeteaseArtist: () -> Unit = {},
     onNavigateBack: () -> Unit,
     onSeekTo: (Long) -> Unit,
@@ -462,7 +463,7 @@ fun LyricsScreen(
                     onDismiss = { showMoreOptions = false },
                     onShowSongDetails = { detailSong = it },
                     onEnterAlbum = onEnterAlbum,
-                    onNavigateUp = onNavigateBack,
+                    onNavigateUp = onExitNowPlaying,
                     snackbarHostState = snackbarHostState,
                     lyricFontScale = lyricFontScale,
                     onLyricFontScaleChange = onLyricFontScaleChange

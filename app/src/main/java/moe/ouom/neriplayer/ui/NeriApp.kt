@@ -569,6 +569,9 @@ private fun NeriAppContent(
         initial = initialThemeSnapshot.forceDark
     )
     var showNowPlaying by rememberSaveable { mutableStateOf(false) }
+    var showNowPlayingLyrics by rememberSaveable { mutableStateOf(false) }
+    var restoreLyricsAfterAlbumBack by rememberSaveable { mutableStateOf(false) }
+    var lyricsAlbumRouteObserved by rememberSaveable { mutableStateOf(false) }
     val devModeEnabled by repo.devModeEnabledFlow.collectAsState(initial = false)
     val themeSeedColor by repo.themeSeedColorFlow.collectAsState(initial = ThemeDefaults.DEFAULT_SEED_COLOR_HEX)
     val themeColorPalette by repo.themeColorPaletteFlow.collectAsState(initial = ThemeDefaults.PRESET_COLORS)
@@ -958,6 +961,8 @@ private fun NeriAppContent(
     }
 
     fun playSongsAndOpenNowPlaying(songs: List<SongItem>, index: Int) {
+        restoreLyricsAfterAlbumBack = false
+        lyricsAlbumRouteObserved = false
         showNowPlaying = true
         // 播放队列可能包含歌词等大字段，避免通过 Binder 传整份歌单导致崩溃
         PlayerManager.playPlaylist(songs, index)
@@ -968,6 +973,8 @@ private fun NeriAppContent(
     }
 
     fun playSongPreservingQueueAndOpenNowPlaying(song: SongItem) {
+        restoreLyricsAfterAlbumBack = false
+        lyricsAlbumRouteObserved = false
         showNowPlaying = true
         PlayerManager.replaceCurrentInQueueAndPlay(song)
         scheduleAudioServiceStart(
@@ -995,6 +1002,8 @@ private fun NeriAppContent(
     }
 
     fun playBiliAudioAndOpenNowPlaying(videos: List<BiliVideoItem>, index: Int) {
+        restoreLyricsAfterAlbumBack = false
+        lyricsAlbumRouteObserved = false
         showNowPlaying = true
         NPLogger.d("NERI-App", "Playing audio from Bili video: ${videos[index].title}")
         PlayerManager.playBiliVideoAsAudio(videos, index)
@@ -1006,6 +1015,8 @@ private fun NeriAppContent(
         index: Int,
         coverUrl: String
     ) {
+        restoreLyricsAfterAlbumBack = false
+        lyricsAlbumRouteObserved = false
         showNowPlaying = true
         NPLogger.d("NERI-App", "Playing parts from Bili video: ${videoInfo.title}")
         PlayerManager.playBiliVideoParts(videoInfo, index, coverUrl)
@@ -1033,6 +1044,22 @@ private fun NeriAppContent(
             val navController = rememberNavController()
             val backEntry by navController.currentBackStackEntryAsState()
             val currentRoute = backEntry?.destination?.route
+            LaunchedEffect(currentRoute, restoreLyricsAfterAlbumBack) {
+                if (!restoreLyricsAfterAlbumBack) {
+                    lyricsAlbumRouteObserved = false
+                    return@LaunchedEffect
+                }
+                if (currentRoute == Destinations.NeteaseAlbumDetail.route) {
+                    lyricsAlbumRouteObserved = true
+                    return@LaunchedEffect
+                }
+                if (lyricsAlbumRouteObserved) {
+                    restoreLyricsAfterAlbumBack = false
+                    lyricsAlbumRouteObserved = false
+                    showNowPlayingLyrics = true
+                    showNowPlaying = true
+                }
+            }
             val showHomeTab =
                 (showHomeContinueCard && homeUsageEntries.isNotEmpty()) ||
                     showHomeTrendingCard ||
@@ -2208,9 +2235,14 @@ private fun NeriAppContent(
                             CompositionLocalProvider(LocalMiniPlayerHeight provides 0.dp) {
                                 NowPlayingScreen(
                                     onNavigateUp = { showNowPlaying = false },
+                                    showLyricsScreen = showNowPlayingLyrics,
+                                    onShowLyricsScreenChange = { showNowPlayingLyrics = it },
                                     onEnterAlbum = { album ->
                                         val json = Uri.encode(Gson().toJson(album))
                                         navController.navigate("netease_album_detail/$json")
+                                        if (showNowPlayingLyrics) {
+                                            restoreLyricsAfterAlbumBack = true
+                                        }
                                     },
                                     onEnterArtist = enterArtist@ { artist ->
                                         val json = Uri.encode(Gson().toJson(artist))

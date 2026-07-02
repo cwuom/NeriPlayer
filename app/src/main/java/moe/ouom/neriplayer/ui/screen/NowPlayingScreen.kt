@@ -373,6 +373,8 @@ private data class LoadedLyricsState(
 @Suppress("AssignedValueIsNeverRead")
 fun NowPlayingScreen(
     onNavigateUp: () -> Unit,
+    showLyricsScreen: Boolean,
+    onShowLyricsScreenChange: (Boolean) -> Unit,
     onEnterAlbum: (AlbumSummary) -> Unit,
     onEnterArtist: (NeteaseArtistSummary) -> Unit = {},
     lyricBlurEnabled: Boolean,
@@ -464,7 +466,6 @@ fun NowPlayingScreen(
 
     var showAddSheet by remember { mutableStateOf(false) }
     var showQueueSheet by remember { mutableStateOf(false) }
-    var showLyricsScreen by remember { mutableStateOf(false) }
     var showSleepTimerDialog by remember { mutableStateOf(false) }
     var showCoverPageSourceBadge by remember { mutableStateOf(false) }
     var animateCoverPageSourceBadge by remember { mutableStateOf(false) }
@@ -814,7 +815,8 @@ fun NowPlayingScreen(
                             onEnterAlbum = onEnterAlbum,
                             onOpenCurrentNeteaseArtist = openCurrentNeteaseArtist,
                             onLyricFontScaleChange = onLyricFontScaleChange,
-                            onNavigateBack = { showLyricsScreen = false },
+                            onExitNowPlaying = onNavigateUp,
+                            onNavigateBack = { onShowLyricsScreenChange(false) },
                             onSeekTo = { position -> PlayerManager.seekTo(position) },
                             advancedLyricsEnabled = advancedLyricsEnabled,
                             translatedLyrics = translatedLyrics,
@@ -840,7 +842,7 @@ fun NowPlayingScreen(
                 if (!useWideLandscapeLayout && lyrics.isNotEmpty()) {
                     contentModifier = contentModifier.pointerInput(lyrics) {
                         detectHorizontalDragGestures { _, dragAmount ->
-                            if (dragAmount < -20) showLyricsScreen = true
+                            if (dragAmount < -20) onShowLyricsScreenChange(true)
                         }
                     }
                 }
@@ -1371,7 +1373,7 @@ fun NowPlayingScreen(
 
                                 // 歌词按钮
                                 HapticIconButton(
-                                    onClick = { showLyricsScreen = !showLyricsScreen },
+                                    onClick = { onShowLyricsScreenChange(!showLyricsScreen) },
                                     enabled = lyrics.isNotEmpty(),
                                     modifier = Modifier
                                         .sharedBounds(
