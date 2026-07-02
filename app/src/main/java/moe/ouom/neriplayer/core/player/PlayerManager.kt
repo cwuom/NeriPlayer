@@ -1087,6 +1087,7 @@ object PlayerManager {
         queue: List<SongItem>? = null,
         currentIndex: Int? = null,
         positionMs: Long? = null,
+        shouldPlay: Boolean? = null,
         force: Boolean = false
     ) {
         if (source != PlaybackCommandSource.LOCAL) return
@@ -1097,6 +1098,7 @@ object PlayerManager {
                 queue = queue,
                 currentIndex = currentIndex,
                 positionMs = positionMs,
+                shouldPlay = shouldPlay,
                 force = force
             )
         )

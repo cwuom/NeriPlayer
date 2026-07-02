@@ -185,6 +185,76 @@ internal fun PlayerManager.resolveCurrentPlaybackStartPlan(
     )
 }
 
+private data class ListenTogetherTrackFinishPlan(
+    val shouldAdvance: Boolean,
+    val nextIndex: Int
+)
+
+private fun PlayerManager.handleListenTogetherTrackFinishedIfNeeded(): Boolean {
+    if (!isListenTogetherActive()) return false
+    if (currentPlaylist.isEmpty() || currentIndex !in currentPlaylist.indices) return false
+
+    val finishPositionMs = resolvedTrackFinishPositionMs()
+    val finishPlan = resolveListenTogetherTrackFinishPlan()
+    NPLogger.d(
+        "NERI-PlayerManager",
+        "listen together track finished: currentIndex=$currentIndex, nextIndex=${finishPlan.nextIndex}, shouldAdvance=${finishPlan.shouldAdvance}, finishPositionMs=$finishPositionMs"
+    )
+    pause(commandSource = PlaybackCommandSource.REMOTE_SYNC)
+    _playbackPositionMs.value = finishPositionMs
+    emitPlaybackCommand(
+        type = "TRACK_FINISHED",
+        source = PlaybackCommandSource.LOCAL,
+        currentIndex = finishPlan.nextIndex,
+        positionMs = finishPositionMs,
+        shouldPlay = finishPlan.shouldAdvance
+    )
+    return true
+}
+
+private fun PlayerManager.resolvedTrackFinishPositionMs(): Long {
+    val songDurationMs = _currentSongFlow.value?.durationMs?.takeIf { it > 0L } ?: 0L
+    val playerDurationMs = runCatching { player.duration.takeIf { it > 0L } ?: 0L }.getOrDefault(0L)
+    val playerPositionMs = runCatching { player.currentPosition.coerceAtLeast(0L) }.getOrDefault(0L)
+    return maxOf(songDurationMs, playerDurationMs, playerPositionMs)
+}
+
+private fun PlayerManager.resolveListenTogetherTrackFinishPlan(): ListenTogetherTrackFinishPlan {
+    val fallbackIndex = currentIndex.coerceIn(0, currentPlaylist.lastIndex)
+    return when (repeatModeSetting) {
+        Player.REPEAT_MODE_ONE -> ListenTogetherTrackFinishPlan(
+            shouldAdvance = true,
+            nextIndex = fallbackIndex
+        )
+
+        Player.REPEAT_MODE_ALL -> ListenTogetherTrackFinishPlan(
+            shouldAdvance = true,
+            nextIndex = resolveListenTogetherNextIndex(allowWrap = true) ?: fallbackIndex
+        )
+
+        else -> {
+            val nextIndex = resolveListenTogetherNextIndex(allowWrap = false)
+            ListenTogetherTrackFinishPlan(
+                shouldAdvance = nextIndex != null,
+                nextIndex = nextIndex ?: fallbackIndex
+            )
+        }
+    }
+}
+
+private fun PlayerManager.resolveListenTogetherNextIndex(allowWrap: Boolean): Int? {
+    if (currentPlaylist.isEmpty() || currentIndex !in currentPlaylist.indices) return null
+    if (player.shuffleModeEnabled) {
+        if (shuffleFuture.isNotEmpty()) return shuffleFuture.last()
+        if (shuffleBag.isNotEmpty()) return shuffleBag.random()
+        if (!allowWrap) return null
+        val candidates = currentPlaylist.indices.filter { it != currentIndex }
+        return if (candidates.isEmpty()) currentIndex else candidates.random()
+    }
+    if (currentIndex < currentPlaylist.lastIndex) return currentIndex + 1
+    return if (allowWrap) 0 else null
+}
+
 internal fun PlayerManager.handleTrackEnded() {
     clearPendingSeekPosition()
     _playbackPositionMs.value = 0L
@@ -197,6 +267,10 @@ internal fun PlayerManager.handleTrackEnded() {
         "NERI-PlayerManager",
         "handleTrackEnded: currentIndex=$currentIndex, queueSize=${currentPlaylist.size}, repeatMode=$repeatModeSetting, shuffle=${player.shuffleModeEnabled}, isLastInPlaylist=$isLastInPlaylist"
     )
+
+    if (handleListenTogetherTrackFinishedIfNeeded()) {
+        return
+    }
 
     if (sleepTimerManager.shouldStopOnTrackEnd(isLastInPlaylist)) {
         pause()

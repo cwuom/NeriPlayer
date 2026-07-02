@@ -20,6 +20,7 @@ data class PlaybackCommand(
     val queue: List<SongItem>? = null,
     val currentIndex: Int? = null,
     val positionMs: Long? = null,
+    val shouldPlay: Boolean? = null,
     val force: Boolean = false
 )
 

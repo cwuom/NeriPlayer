@@ -151,12 +151,14 @@ data class ListenTogetherEvent(
     val clientTimeMs: Long? = null,
     val positionMs: Long? = null,
     val currentIndex: Int? = null,
+    val nextIndex: Int? = null,
     val track: ListenTogetherTrack? = null,
     val queue: List<ListenTogetherTrack>? = null,
     val roomSettings: ListenTogetherRoomSettings? = null,
     val shouldPlay: Boolean? = null,
     val state: String? = null,
-    val requestTrackStableKey: String? = null
+    val requestTrackStableKey: String? = null,
+    val finishedTrackStableKey: String? = null
 )
 
 @Serializable

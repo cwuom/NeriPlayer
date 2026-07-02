@@ -56,6 +56,8 @@ class ListenTogetherSessionManager(
     private var lastHandledForwardedRequestSequence: Long = 0L
     @Volatile
     private var pendingStateRefreshAfterReconnect = false
+    @Volatile
+    private var awaitingTrackFinishStableKey: String? = null
 
     private val _sessionState = MutableStateFlow(ListenTogetherSessionState())
     val sessionState: StateFlow<ListenTogetherSessionState> = _sessionState.asStateFlow()
@@ -225,6 +227,10 @@ class ListenTogetherSessionManager(
                                 (
                                             applied.causedBy?.type == "UPDATE_SETTINGS" ||
                                         (
+                                            applied.causedBy?.type == "TRACK_FINISHED" &&
+                                                applied.causedBy.userUuid == _sessionState.value.userUuid
+                                            ) ||
+                                        (
                                             applied.causedBy?.type?.startsWith("REQUEST_") == true &&
                                                 applied.causedBy.userUuid == _sessionState.value.userUuid
                                             )
@@ -234,6 +240,9 @@ class ListenTogetherSessionManager(
                                     TAG,
                                     "websocket.controlResult(): apply committed state locally, type=${applied.causedBy?.type}, version=${applied.version}"
                                 )
+                                if (applied.causedBy?.type == "TRACK_FINISHED") {
+                                    awaitingTrackFinishStableKey = null
+                                }
                                 applyRoomState(applied.state, applied.expectedPositionMs)
                                 if (!isCurrentUserController()) {
                                     applyRoomStateToPlayer(
@@ -331,6 +340,7 @@ class ListenTogetherSessionManager(
         lastAppliedRoomVersion = -1L
         lastControllerLocalControlAtElapsedMs = 0L
         lastHandledForwardedRequestSequence = 0L
+        awaitingTrackFinishStableKey = null
         PlayerManager.resetListenTogetherSyncPlaybackRate()
         NPLogger.d(TAG, "disconnectWebSocket()")
         webSocketClient.disconnect()
@@ -354,6 +364,7 @@ class ListenTogetherSessionManager(
         lastAppliedRoomVersion = -1L
         lastControllerLocalControlAtElapsedMs = 0L
         lastHandledForwardedRequestSequence = 0L
+        awaitingTrackFinishStableKey = null
         PlayerManager.resetListenTogetherSyncPlaybackRate()
         NPLogger.d(TAG, "leaveRoom(): roomId=${_sessionState.value.roomId}, role=${_sessionState.value.role}")
         webSocketClient.disconnect()
@@ -698,6 +709,38 @@ class ListenTogetherSessionManager(
         )
     }
 
+    private fun buildTrackFinishedEvent(
+        command: PlaybackCommand,
+        queue: List<SongItem>,
+        currentSong: SongItem?,
+        positionMs: Long
+    ): ListenTogetherEvent? {
+        if (queue.isEmpty() || currentSong == null) return null
+        val finishedTrack = currentSong.toListenTogetherTrackOrNull() ?: return null
+        val proposedNextIndex = command.currentIndex?.coerceIn(0, queue.lastIndex)
+            ?: queue.indexOfTrack(currentSong).takeIf { it >= 0 }
+            ?: 0
+        val isController = isCurrentUserController()
+        val (shareableQueue, resolvedNextIndex) = queue.toShareableQueueSnapshot(
+            currentIndex = proposedNextIndex,
+            roomSettings = _roomState.value?.settings,
+            includeResolvedStreamUrl = false
+        )
+        val shouldAdvance = command.shouldPlay == true
+        return ListenTogetherEvent(
+            type = "TRACK_FINISHED",
+            eventId = nextEventId(),
+            clientTimeMs = System.currentTimeMillis(),
+            positionMs = positionMs.coerceAtLeast(0L),
+            currentIndex = if (isController) resolvedNextIndex else null,
+            nextIndex = if (isController) resolvedNextIndex else null,
+            track = if (isController && shouldAdvance) shareableQueue.getOrNull(resolvedNextIndex) else null,
+            queue = if (isController) shareableQueue else null,
+            shouldPlay = if (isController) shouldAdvance else null,
+            finishedTrackStableKey = finishedTrack.stableKey
+        )
+    }
+
     private fun updateSession(baseUrl: String, response: ListenTogetherRoomResponse) {
         val normalizedBaseUrl = resolveListenTogetherBaseUrl(baseUrl)
         val resolvedWsUrl = response.wsUrl
@@ -758,6 +801,11 @@ class ListenTogetherSessionManager(
         )
         lastAppliedRoomVersion = maxOf(lastAppliedRoomVersion, state.version)
         _roomState.value = state
+        awaitingTrackFinishStableKey?.let { waitingStableKey ->
+            if (state.currentStableKey() != waitingStableKey) {
+                awaitingTrackFinishStableKey = null
+            }
+        }
         _sessionState.value = _sessionState.value.copy(
             roomId = state.roomId,
             role = resolveSessionRole(
@@ -792,10 +840,25 @@ class ListenTogetherSessionManager(
             )
             return
         }
+        if (shouldDeferIncomingStateForLocalTrackFinish(resolvedState, message.causedBy)) {
+            NPLogger.d(
+                TAG,
+                "handleSocketRoomState(): defer while waiting track finish barrier, causedBy=${message.causedBy?.type}:${message.causedBy?.eventId}"
+            )
+            markInboundEvent(message.causedBy?.eventId)
+            return
+        }
+        if (message.causedBy?.type == "TRACK_FINISHED") {
+            awaitingTrackFinishStableKey = null
+        }
         markInboundEvent(message.causedBy?.eventId)
         applyRoomState(resolvedState, message.expectedPositionMs)
         val currentUserUuid = _sessionState.value.userUuid
-        if (isCurrentUserController() && message.causedBy?.userUuid == currentUserUuid) {
+        if (
+            isCurrentUserController() &&
+            message.causedBy?.userUuid == currentUserUuid &&
+            message.causedBy?.type != "TRACK_FINISHED"
+        ) {
             NPLogger.d(
                 TAG,
                 "handleSocketRoomState(): current controller caused event locally, skip player apply, causedBy=${message.causedBy?.type}:${message.causedBy?.eventId}"
@@ -942,6 +1005,11 @@ class ListenTogetherSessionManager(
             )
             return
         }
+        if (event.type == "TRACK_FINISHED") {
+            awaitingTrackFinishStableKey = event.finishedTrackStableKey
+        } else {
+            awaitingTrackFinishStableKey = null
+        }
         noteControllerLocalControl(command)
         markOutboundEvent(event.eventId)
         noteOutboundSync()
@@ -990,6 +1058,7 @@ class ListenTogetherSessionManager(
 
             "PLAY" -> if (isCurrentUserController()) buildPlayEvent(positionMs) else buildRequestPlayEvent(positionMs)
             "PAUSE" -> if (isCurrentUserController()) buildPauseEvent(positionMs) else buildRequestPauseEvent(positionMs)
+            "TRACK_FINISHED" -> buildTrackFinishedEvent(command, queue, currentSong, positionMs)
             "SEEK" -> {
                 val (shareableQueue, resolvedCurrentIndex) = queue.toShareableQueueSnapshot(
                     currentIndex = currentIndex,
@@ -1089,6 +1158,7 @@ class ListenTogetherSessionManager(
     }
 
     private fun shouldIgnoreIncomingState(cause: ListenTogetherCause?): Boolean {
+        if (cause?.type == "TRACK_FINISHED") return false
         val eventId = cause?.eventId
         if (cause?.type?.startsWith("REQUEST_") == true) return false
         val currentUserId = _sessionState.value.userUuid
@@ -1098,11 +1168,22 @@ class ListenTogetherSessionManager(
         return false
     }
 
+    private fun shouldDeferIncomingStateForLocalTrackFinish(
+        state: ListenTogetherRoomState,
+        cause: ListenTogetherCause?
+    ): Boolean {
+        val waitingStableKey = awaitingTrackFinishStableKey ?: return false
+        if (cause?.type !in PASSIVE_POSITION_UPDATE_TYPES) return false
+        if (state.playback.state != "playing") return false
+        return state.currentStableKey() == waitingStableKey
+    }
+
     private fun shouldIgnoreStaleRoomState(
         state: ListenTogetherRoomState,
         cause: ListenTogetherCause?
     ): Boolean {
         if (state.version <= lastAppliedRoomVersion) return true
+        if (cause?.type == "TRACK_FINISHED") return false
         val currentUserId = _sessionState.value.userUuid
         return currentUserId == (state.controllerUserUuid ?: state.controllerUserId) &&
                 cause?.userUuid == currentUserId &&
@@ -1770,7 +1851,8 @@ class ListenTogetherSessionManager(
         private val PASSIVE_POSITION_UPDATE_TYPES = setOf(
             "HEARTBEAT",
             "LINK_READY",
-            "MEMBER_JOINED"
+            "MEMBER_JOINED",
+            "MEMBER_LEFT"
         )
         private val CONTROLLED_PLAYBACK_COMMAND_TYPES = setOf(
             "PLAY_PLAYLIST",
@@ -1814,6 +1896,10 @@ private fun ListenTogetherPlaybackState.expectedPositionMs(nowMs: Long = System.
     } else {
         basePositionMs.coerceAtLeast(0L)
     }
+}
+
+private fun ListenTogetherRoomState.currentStableKey(): String? {
+    return track?.stableKey ?: queue.getOrNull(currentIndex)?.stableKey
 }
 
 private fun resolveJoinAutoPauseState(
