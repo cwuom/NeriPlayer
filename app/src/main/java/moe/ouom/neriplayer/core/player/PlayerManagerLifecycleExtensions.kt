@@ -469,13 +469,14 @@ internal fun PlayerManager.initializeImpl(
         ioScope.launch {
             settingsRepo.floatingLyricsPreferencesFlow.collect { preferences ->
                 val normalized = preferences.normalized()
-                val shouldReloadLyrics = floatingLyricsEnabled != normalized.enabled ||
-                    floatingLyricsShowTranslation != normalized.showTranslation
+                val floatingLyricsEnabledChanged = floatingLyricsEnabled != normalized.enabled
+                val showTranslationChanged = floatingLyricsShowTranslation != normalized.showTranslation
                 floatingLyricsEnabled = normalized.enabled
                 floatingLyricsShowTranslation = normalized.showTranslation
                 FloatingLyricsOverlayManager.updatePreferences(normalized)
-                if (shouldReloadLyrics) {
-                    syncExternalBluetoothLyrics(_currentSongFlow.value)
+                when {
+                    floatingLyricsEnabledChanged -> syncExternalBluetoothLyrics(_currentSongFlow.value)
+                    showTranslationChanged -> syncFloatingTranslatedLyrics(_currentSongFlow.value)
                 }
             }
         }

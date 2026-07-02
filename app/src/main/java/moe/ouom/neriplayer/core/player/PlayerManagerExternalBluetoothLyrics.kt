@@ -32,7 +32,7 @@ internal fun PlayerManager.syncExternalBluetoothLyrics(song: SongItem?) {
                 )
             }
             .getOrDefault(emptyList())
-        val translatedLyrics = if (floatingLyricsShowTranslation) {
+        val translatedLyrics = if (floatingLyricsEnabled && floatingLyricsShowTranslation) {
             runCatching { getTranslatedLyrics(song) }
                 .onFailure { error ->
                     NPLogger.w(
@@ -53,6 +53,52 @@ internal fun PlayerManager.syncExternalBluetoothLyrics(song: SongItem?) {
 
         externalBluetoothLyricsSongKey = songKey
         externalBluetoothLyrics = lyrics
+        floatingTranslatedLyrics = if (floatingLyricsEnabled && floatingLyricsShowTranslation) {
+            translatedLyrics
+        } else {
+            emptyList()
+        }
+        updateExternalBluetoothLyricLine(_playbackPositionMs.value)
+    }
+}
+
+internal fun PlayerManager.syncFloatingTranslatedLyrics(song: SongItem?) {
+    if (!floatingLyricsEnabled || !floatingLyricsShowTranslation) {
+        clearFloatingTranslatedLyricLine()
+        return
+    }
+    if (!shouldProvideExternalLyricLine() || song == null) {
+        clearFloatingTranslatedLyricLine()
+        return
+    }
+
+    val songKey = song.stableKey()
+    if (externalBluetoothLyricsSongKey != songKey || externalBluetoothLyrics.isEmpty()) {
+        syncExternalBluetoothLyrics(song)
+        return
+    }
+
+    ioScope.launch {
+        val translatedLyrics = runCatching { getTranslatedLyrics(song) }
+            .onFailure { error ->
+                NPLogger.w(
+                    "NERI-PlayerManager",
+                    "floating lyrics translation load failed: song=${song.name}/${song.id}",
+                    error
+                )
+            }
+            .getOrDefault(emptyList())
+
+        val currentSong = _currentSongFlow.value
+        if (
+            !floatingLyricsEnabled ||
+            !floatingLyricsShowTranslation ||
+            currentSong?.sameIdentityAs(song) != true ||
+            externalBluetoothLyricsSongKey != songKey
+        ) {
+            return@launch
+        }
+
         floatingTranslatedLyrics = translatedLyrics
         updateExternalBluetoothLyricLine(_playbackPositionMs.value)
     }
@@ -100,6 +146,11 @@ internal fun PlayerManager.clearExternalBluetoothLyricLine() {
     if (_externalBluetoothLyricLineFlow.value != null) {
         _externalBluetoothLyricLineFlow.value = null
     }
+    clearFloatingTranslatedLyricLine()
+}
+
+private fun PlayerManager.clearFloatingTranslatedLyricLine() {
+    floatingTranslatedLyrics = emptyList()
     if (_floatingTranslatedLyricLineFlow.value != null) {
         _floatingTranslatedLyricLineFlow.value = null
     }
