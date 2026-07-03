@@ -25,6 +25,7 @@ import moe.ouom.neriplayer.core.player.policy.PlaybackStartPlan
 import moe.ouom.neriplayer.core.player.policy.resolvePendingMediaLoadEntryAction
 import moe.ouom.neriplayer.core.player.policy.resolvePendingPauseAction
 import moe.ouom.neriplayer.core.player.policy.resolvePendingPlayAction
+import moe.ouom.neriplayer.core.player.policy.resolvePauseVolumePlan
 import moe.ouom.neriplayer.core.player.policy.resolvePendingSeekAction
 import moe.ouom.neriplayer.core.player.policy.resolvePlaybackContinuationStartPlan
 import moe.ouom.neriplayer.core.player.policy.resolvePlaybackFailureAdvanceAction
@@ -74,6 +75,66 @@ internal fun PlayerManager.cancelPendingPauseRequestImpl(resetVolumeToFull: Bool
             }
         }
     }
+}
+
+internal fun PlayerManager.clearAudioRouteMuteSuppression(reason: String) {
+    val suppressedVolume = audioRouteMuteRestoreVolume ?: return
+    audioRouteMuteRestoreVolume = null
+    NPLogger.d(
+        "NERI-PlayerManager",
+        "clearAudioRouteMuteSuppression(): reason=$reason, suppressedVolume=$suppressedVolume, currentSong=${_currentSongFlow.value?.name}"
+    )
+}
+
+internal fun PlayerManager.suppressPlaybackForAudioRouteLoss(reason: String) {
+    if (!isPlayerInitialized()) return
+    cancelVolumeFade(resetToFull = false)
+    runPlayerActionOnMainThread {
+        if (!isPlayerInitialized()) return@runPlayerActionOnMainThread
+        val currentVolume = runCatching { player.volume.coerceIn(0f, 1f) }.getOrDefault(1f)
+        if (audioRouteMuteRestoreVolume == null) {
+            audioRouteMuteRestoreVolume = currentVolume
+        }
+        player.volume = 0f
+        NPLogger.d(
+            "NERI-PlayerManager",
+            "suppressPlaybackForAudioRouteLoss(): reason=$reason, capturedVolume=${audioRouteMuteRestoreVolume}, currentSong=${_currentSongFlow.value?.name}"
+        )
+    }
+}
+
+internal fun PlayerManager.restorePlaybackAfterTransientAudioRouteLoss(reason: String) {
+    val restoreVolume = audioRouteMuteRestoreVolume ?: return
+    audioRouteMuteRestoreVolume = null
+    if (!isPlayerInitialized()) return
+    val shouldRestore = runCatching {
+        player.playWhenReady || player.isPlaying
+    }.getOrDefault(false) || _isPlayingFlow.value || playJob?.isActive == true
+    if (!shouldRestore) {
+        NPLogger.d(
+            "NERI-PlayerManager",
+            "restorePlaybackAfterTransientAudioRouteLoss(): skipped restore for inactive playback, reason=$reason, currentSong=${_currentSongFlow.value?.name}"
+        )
+        return
+    }
+    runPlayerActionOnMainThread {
+        if (!isPlayerInitialized()) return@runPlayerActionOnMainThread
+        player.volume = restoreVolume.coerceIn(0f, 1f)
+        NPLogger.d(
+            "NERI-PlayerManager",
+            "restorePlaybackAfterTransientAudioRouteLoss(): reason=$reason, restoredVolume=$restoreVolume, currentSong=${_currentSongFlow.value?.name}"
+        )
+    }
+}
+
+internal fun PlayerManager.pauseForAudioRouteLoss(reason: String) {
+    pauseImpl(
+        forcePersist = false,
+        commandSource = PlaybackCommandSource.LOCAL,
+        allowFadeOut = false,
+        preserveMutedVolume = true,
+        debugReason = "audio_route_loss:$reason"
+    )
 }
 
 internal fun PlayerManager.preparePlayerForManagedStart(plan: PlaybackStartPlan) {
@@ -823,7 +884,10 @@ internal fun PlayerManager.handleTrackEndedIfNeededImpl(source: String) {
 
 internal fun PlayerManager.pauseImpl(
     forcePersist: Boolean = false,
-    commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
+    commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL,
+    allowFadeOut: Boolean = true,
+    preserveMutedVolume: Boolean = false,
+    debugReason: String = "pause_internal"
 ) {
     ensureInitialized()
     if (!initialized) return
@@ -843,6 +907,7 @@ internal fun PlayerManager.pauseImpl(
         if (lyriconEnabled) {
             LyriconManager.setPlaybackState(false)
         }
+        clearAudioRouteMuteSuppression(reason = debugReason)
         scheduleStatePersist(
             positionMs = action.persistPositionMs,
             shouldResumePlayback = action.persistShouldResumePlayback
@@ -857,16 +922,21 @@ internal fun PlayerManager.pauseImpl(
     }
     NPLogger.d(
         "NERI-PlayerManager",
-        "pause requested: forcePersist=$forcePersist, source=$commandSource, currentSong=${_currentSongFlow.value?.name}, isPlaying=${player.isPlaying}, playWhenReady=${player.playWhenReady}, stack=[${debugStackHint()}]"
+        "pause requested: forcePersist=$forcePersist, source=$commandSource, allowFadeOut=$allowFadeOut, preserveMutedVolume=$preserveMutedVolume, reason=$debugReason, currentSong=${_currentSongFlow.value?.name}, isPlaying=${player.isPlaying}, playWhenReady=${player.playWhenReady}, stack=[${debugStackHint()}]"
     )
     cancelPendingPauseRequest()
     updateResumePlaybackRequested(false)
     playbackRequestToken += 1
     playJob?.cancel()
     playJob = null
-    val shouldFadeOut =
-        playbackFadeInEnabled && playbackFadeOutDurationMs > 0L && isPlayerInitialized()
-    if (shouldFadeOut) {
+    val pauseVolumePlan = resolvePauseVolumePlan(
+        allowFadeOut = allowFadeOut,
+        preserveMutedVolume = preserveMutedVolume,
+        playbackFadeInEnabled = playbackFadeInEnabled,
+        playbackFadeOutDurationMs = playbackFadeOutDurationMs,
+        isPlayerInitialized = isPlayerInitialized()
+    )
+    if (pauseVolumePlan.shouldFadeOut) {
         val scheduledPauseToken = playbackRequestToken
         lateinit var scheduledPauseJob: Job
         scheduledPauseJob = mainScope.launch {
@@ -882,7 +952,12 @@ internal fun PlayerManager.pauseImpl(
                     )
                     return@launch
                 }
-                pauseInternal(forcePersist, resetVolumeToFull = false)
+                pauseInternal(
+                    forcePersist = forcePersist,
+                    resetVolumeBeforePause = pauseVolumePlan.resetVolumeBeforePause,
+                    restoreVolumeAfterPause = pauseVolumePlan.restoreVolumeAfterPause,
+                    debugReason = debugReason
+                )
             } finally {
                 if (pendingPauseJob === scheduledPauseJob) {
                     pendingPauseJob = null
@@ -891,7 +966,12 @@ internal fun PlayerManager.pauseImpl(
         }
         pendingPauseJob = scheduledPauseJob
     } else {
-        pauseInternal(forcePersist, resetVolumeToFull = true)
+        pauseInternal(
+            forcePersist = forcePersist,
+            resetVolumeBeforePause = pauseVolumePlan.resetVolumeBeforePause,
+            restoreVolumeAfterPause = pauseVolumePlan.restoreVolumeAfterPause,
+            debugReason = debugReason
+        )
     }
     emitPlaybackCommand(
         type = "PAUSE",
@@ -901,7 +981,12 @@ internal fun PlayerManager.pauseImpl(
     )
 }
 
-private fun PlayerManager.pauseInternal(forcePersist: Boolean, resetVolumeToFull: Boolean) {
+private fun PlayerManager.pauseInternal(
+    forcePersist: Boolean,
+    resetVolumeBeforePause: Boolean,
+    restoreVolumeAfterPause: Boolean,
+    debugReason: String
+) {
     pendingPauseJob = null
     updateResumePlaybackRequested(false)
     val currentSong = _currentSongFlow.value
@@ -912,13 +997,13 @@ private fun PlayerManager.pauseInternal(forcePersist: Boolean, resetVolumeToFull
     playbackRequestToken += 1
     playJob?.cancel()
     playJob = null
-    cancelVolumeFade(resetToFull = resetVolumeToFull)
+    cancelVolumeFade(resetToFull = resetVolumeBeforePause)
     val stackHint = Throwable().stackTrace.take(6).joinToString(" <- ") {
         "${it.fileName}:${it.lineNumber}"
     }
     NPLogger.d(
         "NERI-PlayerManager",
-        "pauseInternal: song=${currentSong?.name}, positionMs=$currentPosition, state=${playbackStateName(player.playbackState)}, playWhenReady=${player.playWhenReady}, forcePersist=$forcePersist, stack=[$stackHint]"
+        "pauseInternal: reason=$debugReason, song=${currentSong?.name}, positionMs=$currentPosition, state=${playbackStateName(player.playbackState)}, playWhenReady=${player.playWhenReady}, forcePersist=$forcePersist, resetVolumeBeforePause=$resetVolumeBeforePause, restoreVolumeAfterPause=$restoreVolumeAfterPause, stack=[$stackHint]"
     )
     player.playWhenReady = false
     player.pause()
@@ -927,7 +1012,7 @@ private fun PlayerManager.pauseInternal(forcePersist: Boolean, resetVolumeToFull
     }
     syncPlaybackStatsPlayingState(
         playing = false,
-        reason = "pause_internal"
+        reason = debugReason
     )
     if (shouldForceFlushShortLocalSong) {
         runCatching {
@@ -935,16 +1020,17 @@ private fun PlayerManager.pauseInternal(forcePersist: Boolean, resetVolumeToFull
         }
         _playbackPositionMs.value = currentPosition
     }
-    if (!resetVolumeToFull) {
+    if (restoreVolumeAfterPause) {
         runPlayerActionOnMainThread {
             if (isPlayerInitialized()) {
                 player.volume = 1f
             }
         }
     }
+    clearAudioRouteMuteSuppression(reason = debugReason)
     if (forcePersist) {
         moe.ouom.neriplayer.core.player.state.blockingIo {
-            drainPlaybackStatsPersistJobBlocking("pause_internal")
+            drainPlaybackStatsPersistJobBlocking(debugReason)
             persistState(positionMs = currentPosition, shouldResumePlayback = false)
         }
     } else {
@@ -1283,6 +1369,7 @@ internal fun PlayerManager.stopPlaybackPreservingQueueImpl(clearMediaUrl: Boolea
     lastAutoTrackAdvanceAtMs = 0L
     stopProgressUpdates()
     cancelVolumeFade(resetToFull = true)
+    clearAudioRouteMuteSuppression(reason = "stop_playback_preserving_queue")
     syncPlaybackStatsPlayingState(
         playing = false,
         reason = "stop_playback_preserving_queue"

@@ -161,6 +161,7 @@ object PlayerManager {
             syncPlaybackControlPlayingState()
         }
     internal var bluetoothDisconnectPauseJob: Job? = null
+    internal var audioRouteMuteRestoreVolume: Float? = null
     internal var playbackSoundPersistJob: Job? = null
     internal var playbackSoundApplyJob: Job? = null
     internal var pendingPlaybackSoundConfig: PlaybackSoundConfig? = null

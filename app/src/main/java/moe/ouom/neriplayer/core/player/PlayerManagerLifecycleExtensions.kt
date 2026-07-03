@@ -829,8 +829,9 @@ internal fun PlayerManager.handleAudioBecomingNoisyImpl(): Boolean {
         )
         return true
     }
-    NPLogger.d("NERI-PlayerManager", "Audio becoming noisy, pausing playback immediately.")
-    pause()
+    NPLogger.d("NERI-PlayerManager", "Audio becoming noisy, hard-pausing playback immediately.")
+    suppressPlaybackForAudioRouteLoss(reason = "becoming_noisy_immediate")
+    pauseForAudioRouteLoss(reason = "becoming_noisy_immediate")
     return true
 }
 
@@ -855,10 +856,12 @@ private fun PlayerManager.handleDeviceChange(audioManager: AudioManager) {
             "NERI-PlayerManager",
             "Detected immediate output disconnect (${previousDevice?.type} -> ${newDevice.type}), pausing playback."
         )
-        pause()
+        suppressPlaybackForAudioRouteLoss(reason = "immediate_output_disconnect")
+        pauseForAudioRouteLoss(reason = "immediate_output_disconnect")
     } else if (newDevice.type != AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
         bluetoothDisconnectPauseJob?.cancel()
         bluetoothDisconnectPauseJob = null
+        restorePlaybackAfterTransientAudioRouteLoss(reason = "device_changed_to_${newDevice.type}")
     }
 }
 
@@ -878,6 +881,7 @@ private fun PlayerManager.schedulePauseForBluetoothDisconnect(
 ) {
     if (previousDevice == null || !requiresDisconnectConfirmation(previousDevice.type)) return
     bluetoothDisconnectPauseJob?.cancel()
+    suppressPlaybackForAudioRouteLoss(reason = "bluetooth_disconnect_pending:$reason")
     NPLogger.d(
         "NERI-PlayerManager",
         "schedulePauseForBluetoothDisconnect(): device=${previousDevice.type}:${previousDevice.name}, reason=$reason, delayMs=$BLUETOOTH_DISCONNECT_CONFIRM_DELAY_MS"
@@ -889,6 +893,7 @@ private fun PlayerManager.schedulePauseForBluetoothDisconnect(
                 "NERI-PlayerManager",
                 "schedulePauseForBluetoothDisconnect(): canceled after delay, enabled=$stopOnBluetoothDisconnectEnabled, isPlaying=${_isPlayingFlow.value}, reason=$reason"
             )
+            restorePlaybackAfterTransientAudioRouteLoss(reason = "bluetooth_disconnect_canceled:$reason")
             bluetoothDisconnectPauseJob = null
             return@launch
         }
@@ -901,11 +906,14 @@ private fun PlayerManager.schedulePauseForBluetoothDisconnect(
                 "NERI-PlayerManager",
                 "Confirmed bluetooth disconnect ($reason), pausing playback."
             )
-            pause()
+            pauseForAudioRouteLoss(reason = "bluetooth_disconnect_confirmed:$reason")
         } else {
             NPLogger.d(
                 "NERI-PlayerManager",
                 "Ignored transient bluetooth route change ($reason): ${confirmedDevice.type}"
+            )
+            restorePlaybackAfterTransientAudioRouteLoss(
+                reason = "bluetooth_disconnect_transient:${confirmedDevice.type}"
             )
         }
         bluetoothDisconnectPauseJob = null
@@ -1020,6 +1028,7 @@ internal fun PlayerManager.releaseImpl() {
 
     stopProgressUpdates()
     cancelVolumeFade(resetToFull = true)
+    clearAudioRouteMuteSuppression(reason = "release")
     cancelPendingPauseRequest(resetVolumeToFull = true)
     bluetoothDisconnectPauseJob?.cancel()
     bluetoothDisconnectPauseJob = null

@@ -30,6 +30,12 @@ internal data class PlaybackStartPlan(
     val initialVolume: Float
 )
 
+internal data class PauseVolumePlan(
+    val shouldFadeOut: Boolean,
+    val resetVolumeBeforePause: Boolean,
+    val restoreVolumeAfterPause: Boolean
+)
+
 internal data class ManualResumePlaybackDecision(
     val resumePositionMs: Long,
     val forceStartupProtectionFade: Boolean
@@ -106,6 +112,38 @@ internal fun resolvePlaybackContinuationStartPlan(
         initialVolume = resumedVolume,
         fadeDurationMs = adjustedDurationMs
     )
+}
+
+internal fun resolvePauseVolumePlan(
+    allowFadeOut: Boolean,
+    preserveMutedVolume: Boolean,
+    playbackFadeInEnabled: Boolean,
+    playbackFadeOutDurationMs: Long,
+    isPlayerInitialized: Boolean
+): PauseVolumePlan {
+    val shouldFadeOut = allowFadeOut &&
+        playbackFadeInEnabled &&
+        playbackFadeOutDurationMs > 0L &&
+        isPlayerInitialized
+    return when {
+        shouldFadeOut -> PauseVolumePlan(
+            shouldFadeOut = true,
+            resetVolumeBeforePause = false,
+            restoreVolumeAfterPause = true
+        )
+
+        preserveMutedVolume -> PauseVolumePlan(
+            shouldFadeOut = false,
+            resetVolumeBeforePause = false,
+            restoreVolumeAfterPause = false
+        )
+
+        else -> PauseVolumePlan(
+            shouldFadeOut = false,
+            resetVolumeBeforePause = true,
+            restoreVolumeAfterPause = false
+        )
+    }
 }
 
 internal fun resolveExoRepeatMode(
