@@ -88,6 +88,42 @@ class ManagedDownloadNamingTest {
 
         assertTrue(candidates.contains("叶惠美 - 晴天"))
     }
+
+    @Test
+    fun `renderManagedDownloadBaseName falls back when custom template only yields one character`() {
+        val song = SongItem(
+            id = 1L,
+            name = "A",
+            artist = "Artist",
+            album = "Album",
+            albumId = 2L,
+            durationMs = 1_000L,
+            coverUrl = null
+        )
+
+        val result = renderManagedDownloadBaseName(song, template = "%title%")
+
+        assertEquals("netease - Artist - A", result)
+    }
+
+    @Test
+    fun `candidateManagedDownloadBaseNames keeps legacy short custom template result for lookup`() {
+        val song = SongItem(
+            id = 1L,
+            name = "A",
+            artist = "Artist",
+            album = "Album",
+            albumId = 2L,
+            durationMs = 1_000L,
+            coverUrl = null
+        )
+
+        val candidates = candidateManagedDownloadBaseNames(song, activeTemplate = "%title%")
+
+        assertTrue(candidates.contains("A"))
+        assertTrue(candidates.contains("netease - Artist - A"))
+    }
+
     @Test
     fun `candidateManagedDownloadBaseNames keeps suffixed and raw audio base names`() {
         val candidates = candidateManagedDownloadBaseNames("Artist - Title (1)")

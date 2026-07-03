@@ -6,6 +6,7 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 
 internal const val DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE = "%source% - %artist% - %title%"
 internal const val LEGACY_DOWNLOAD_FILE_NAME_TEMPLATE = "%artist% - %title%"
+private const val MIN_MANAGED_DOWNLOAD_BASE_NAME_CODE_POINTS = 2
 
 internal data class ParsedManagedDownloadFileName(
     val title: String? = null,
@@ -78,7 +79,46 @@ internal fun renderManagedDownloadBaseName(
     template: String? = DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
 ): String {
     val effectiveTemplate = normalizeDownloadFileNameTemplate(template) ?: DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
-    val rendered = effectiveTemplate
+    val rendered = renderManagedDownloadBaseNameExact(
+        title = title,
+        artist = artist,
+        album = album,
+        source = source,
+        songId = songId,
+        audioId = audioId,
+        subAudioId = subAudioId,
+        template = effectiveTemplate
+    )
+    if (
+        rendered.hasEnoughManagedDownloadBaseNameLength() ||
+        effectiveTemplate == DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
+    ) {
+        return rendered
+    }
+    // 某些 ROM / SAF 提供方会拒绝过短文件名，这里回退到稳定的默认模板
+    return renderManagedDownloadBaseNameExact(
+        title = title,
+        artist = artist,
+        album = album,
+        source = source,
+        songId = songId,
+        audioId = audioId,
+        subAudioId = subAudioId,
+        template = DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
+    )
+}
+
+private fun renderManagedDownloadBaseNameExact(
+    title: String,
+    artist: String,
+    album: String,
+    source: String,
+    songId: String,
+    audioId: String,
+    subAudioId: String,
+    template: String
+): String {
+    val rendered = template
         .replace("%title%", title)
         .replace("%artist%", artist)
         .replace("%album%", album)
@@ -140,8 +180,18 @@ internal fun candidateManagedDownloadBaseNames(
     activeTemplate: String? = null
 ): List<String> {
     val baseNames = linkedSetOf<String>()
-    baseNames += renderManagedDownloadBaseName(song, activeTemplate)
-    baseNames += renderManagedDownloadBaseName(
+    val effectiveTemplate = normalizeDownloadFileNameTemplate(activeTemplate)
+    baseNames.addRenderedManagedDownloadBaseNames(
+        title = song.customName ?: song.name,
+        artist = song.customArtist ?: song.artist,
+        album = song.album,
+        source = managedDownloadSource(song),
+        songId = song.id.toString(),
+        audioId = song.audioId.orEmpty(),
+        subAudioId = song.subAudioId.orEmpty(),
+        template = effectiveTemplate
+    )
+    baseNames.addRenderedManagedDownloadBaseNames(
         title = song.name,
         artist = song.artist,
         album = song.album,
@@ -149,12 +199,12 @@ internal fun candidateManagedDownloadBaseNames(
         songId = song.id.toString(),
         audioId = song.audioId.orEmpty(),
         subAudioId = song.subAudioId.orEmpty(),
-        template = activeTemplate
+        template = effectiveTemplate
     )
 
     val originalName = song.originalName?.takeIf { it.isNotBlank() } ?: song.name
     val originalArtist = song.originalArtist?.takeIf { it.isNotBlank() } ?: song.artist
-    baseNames += renderManagedDownloadBaseName(
+    baseNames.addRenderedManagedDownloadBaseNames(
         title = originalName,
         artist = originalArtist,
         album = song.album,
@@ -162,7 +212,7 @@ internal fun candidateManagedDownloadBaseNames(
         songId = song.id.toString(),
         audioId = song.audioId.orEmpty(),
         subAudioId = song.subAudioId.orEmpty(),
-        template = activeTemplate
+        template = effectiveTemplate
     )
 
     // Keep matching historical downloads created before custom templates were introduced.
@@ -172,6 +222,48 @@ internal fun candidateManagedDownloadBaseNames(
     appendLocalFileDerivedBaseNames(baseNames, song)
 
     return baseNames.toList()
+}
+
+private fun MutableSet<String>.addRenderedManagedDownloadBaseNames(
+    title: String,
+    artist: String,
+    album: String,
+    source: String,
+    songId: String,
+    audioId: String,
+    subAudioId: String,
+    template: String?
+) {
+    val normalizedTemplate = normalizeDownloadFileNameTemplate(template)
+    add(
+        renderManagedDownloadBaseName(
+            title = title,
+            artist = artist,
+            album = album,
+            source = source,
+            songId = songId,
+            audioId = audioId,
+            subAudioId = subAudioId,
+            template = normalizedTemplate
+        )
+    )
+    if (
+        normalizedTemplate != null &&
+        normalizedTemplate != DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
+    ) {
+        add(
+            renderManagedDownloadBaseNameExact(
+                title = title,
+                artist = artist,
+                album = album,
+                source = source,
+                songId = songId,
+                audioId = audioId,
+                subAudioId = subAudioId,
+                template = normalizedTemplate
+            )
+        )
+    }
 }
 
 internal fun candidateManagedDownloadBaseNames(fileNameWithoutExtension: String): List<String> {
@@ -228,6 +320,10 @@ private fun extractManagedLocalFileName(location: String): String? {
     return normalized.substringAfterLast('/')
         .substringAfterLast(File.separatorChar)
         .takeIf(String::isNotBlank)
+}
+
+private fun String.hasEnoughManagedDownloadBaseNameLength(): Boolean {
+    return codePointCount(0, length) >= MIN_MANAGED_DOWNLOAD_BASE_NAME_CODE_POINTS
 }
 
 private fun buildManagedDownloadTemplatePattern(template: String): ManagedDownloadTemplatePattern? {
