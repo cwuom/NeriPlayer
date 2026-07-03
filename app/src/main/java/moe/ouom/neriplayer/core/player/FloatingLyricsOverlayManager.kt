@@ -18,8 +18,11 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowInsets
 import android.view.WindowManager
 import android.widget.LinearLayout
+import androidx.core.graphics.toColorInt
+import androidx.core.net.toUri
 import moe.ouom.neriplayer.data.settings.FLOATING_LYRICS_ALIGNMENT_LEFT
 import moe.ouom.neriplayer.data.settings.FLOATING_LYRICS_ALIGNMENT_RIGHT
 import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
@@ -127,11 +130,11 @@ object FloatingLyricsOverlayManager {
     }
 
     fun hasOverlayPermission(context: Context): Boolean {
-        return Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(context)
+        return Settings.canDrawOverlays(context)
     }
 
     fun openOverlayPermissionSettings(context: Context) {
-        val packageUri = Uri.parse("package:${context.packageName}")
+        val packageUri = "package:${context.packageName}".toUri()
         val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, packageUri)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         runCatching { context.startActivity(intent) }.onFailure {
@@ -190,17 +193,11 @@ object FloatingLyricsOverlayManager {
     }
 
     private fun buildLayoutParams(): WindowManager.LayoutParams {
-        val overlayType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        } else {
-            @Suppress("DEPRECATION")
-            WindowManager.LayoutParams.TYPE_PHONE
-        }
         return WindowManager.LayoutParams(
             dp(preferences.maxWidthDp).roundToInt(),
             WindowManager.LayoutParams.WRAP_CONTENT,
-            overlayType,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
@@ -208,10 +205,8 @@ object FloatingLyricsOverlayManager {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.START or Gravity.TOP
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                layoutInDisplayCutoutMode =
-                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-            }
+            layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
     }
 
@@ -237,10 +232,10 @@ object FloatingLyricsOverlayManager {
     }
 
     private fun updateOverlayStyle() {
-        val textColor = AndroidColor.parseColor("#${normalizeFloatingLyricsColorHex(preferences.textColorHex)}")
-        val outlineColor = AndroidColor.parseColor(
+        val textColor = "#${normalizeFloatingLyricsColorHex(preferences.textColorHex)}".toColorInt()
+        val outlineColor = (
             "#${normalizeFloatingLyricsColorHex(preferences.outlineColorHex)}"
-        )
+        ).toColorInt()
         val alignmentFactor = when (preferences.alignment) {
             FLOATING_LYRICS_ALIGNMENT_LEFT -> 0f
             FLOATING_LYRICS_ALIGNMENT_RIGHT -> 1f
@@ -336,7 +331,7 @@ object FloatingLyricsOverlayManager {
     }
 
     private fun resolveVerticalDragRange(screen: Point, viewHeight: Int): IntRange {
-        val minY = -resolveStatusBarHeight()
+        val minY = -resolveStatusBarInsetTop()
         val maxY = (screen.y - viewHeight).coerceAtLeast(minY + 1)
         return minY..maxY
     }
@@ -354,13 +349,15 @@ object FloatingLyricsOverlayManager {
         return view.height.takeIf { it > 0 } ?: dp(48)
     }
 
-    private fun resolveStatusBarHeight(): Int {
-        val resources = application?.resources ?: return 0
-        val resourceId = resources.getIdentifier("status_bar_height", "dimen", "android")
-        return if (resourceId > 0) {
-            resources.getDimensionPixelSize(resourceId)
+    private fun resolveStatusBarInsetTop(): Int {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val manager = windowManager ?: return 0
+            manager.currentWindowMetrics.windowInsets
+                .getInsetsIgnoringVisibility(WindowInsets.Type.statusBars())
+                .top
         } else {
-            0
+            @Suppress("DEPRECATION")
+            rootView?.rootWindowInsets?.systemWindowInsetTop ?: 0
         }
     }
 

@@ -24,6 +24,7 @@ package moe.ouom.neriplayer.data.settings
  */
 
 import android.content.Context
+import androidx.core.content.edit
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 
@@ -69,33 +70,29 @@ internal fun persistThemePreferenceSnapshot(
     context: Context,
     snapshot: ThemePreferenceSnapshot
 ) {
-    context.getSharedPreferences(THEME_SNAPSHOT_PREFS, Context.MODE_PRIVATE)
-        .edit()
-        .putBoolean(THEME_DYNAMIC_COLOR_KEY, snapshot.dynamicColor)
-        .putBoolean(THEME_FORCE_DARK_KEY, snapshot.forceDark)
-        .putBoolean(THEME_FOLLOW_SYSTEM_DARK_KEY, snapshot.followSystemDark)
-        .apply()
+    context.getSharedPreferences(THEME_SNAPSHOT_PREFS, Context.MODE_PRIVATE).edit {
+        putBoolean(THEME_DYNAMIC_COLOR_KEY, snapshot.dynamicColor)
+        putBoolean(THEME_FORCE_DARK_KEY, snapshot.forceDark)
+        putBoolean(THEME_FOLLOW_SYSTEM_DARK_KEY, snapshot.followSystemDark)
+    }
 }
 
 internal fun persistThemeDynamicColor(context: Context, value: Boolean) {
-    context.getSharedPreferences(THEME_SNAPSHOT_PREFS, Context.MODE_PRIVATE)
-        .edit()
-        .putBoolean(THEME_DYNAMIC_COLOR_KEY, value)
-        .apply()
+    context.getSharedPreferences(THEME_SNAPSHOT_PREFS, Context.MODE_PRIVATE).edit {
+        putBoolean(THEME_DYNAMIC_COLOR_KEY, value)
+    }
 }
 
 internal fun persistThemeForceDark(context: Context, value: Boolean) {
-    context.getSharedPreferences(THEME_SNAPSHOT_PREFS, Context.MODE_PRIVATE)
-        .edit()
-        .putBoolean(THEME_FORCE_DARK_KEY, value)
-        .apply()
+    context.getSharedPreferences(THEME_SNAPSHOT_PREFS, Context.MODE_PRIVATE).edit {
+        putBoolean(THEME_FORCE_DARK_KEY, value)
+    }
 }
 
 internal fun persistThemeFollowSystemDark(context: Context, value: Boolean) {
-    context.getSharedPreferences(THEME_SNAPSHOT_PREFS, Context.MODE_PRIVATE)
-        .edit()
-        .putBoolean(THEME_FOLLOW_SYSTEM_DARK_KEY, value)
-        .apply()
+    context.getSharedPreferences(THEME_SNAPSHOT_PREFS, Context.MODE_PRIVATE).edit {
+        putBoolean(THEME_FOLLOW_SYSTEM_DARK_KEY, value)
+    }
 }
 
 private fun readCachedThemePreferenceSnapshot(context: Context): ThemePreferenceSnapshot? {

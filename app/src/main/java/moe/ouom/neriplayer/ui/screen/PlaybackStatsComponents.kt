@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -335,7 +336,11 @@ internal fun StatTrackRow(
             trailingContent = {
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
-                        stringResource(R.string.stats_play_count_value, stat.playCount),
+                        pluralStringResource(
+                            R.plurals.stats_play_count_value,
+                            stat.playCount,
+                            stat.playCount
+                        ),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary
                     )

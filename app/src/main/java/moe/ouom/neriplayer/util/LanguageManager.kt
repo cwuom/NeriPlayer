@@ -22,8 +22,7 @@ package moe.ouom.neriplayer.util
  * File: moe.ouom.neriplayer.util/LanguageManager
  * Updated: 2026/3/23
  */
-
-
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
 import android.content.res.Configuration
@@ -36,6 +35,7 @@ import java.util.Locale
  * 语言管理工具类
  * Language management utility
  */
+@SuppressLint("AppBundleLocaleChanges")
 object LanguageManager {
 
     private const val PREF_NAME = "language_settings"

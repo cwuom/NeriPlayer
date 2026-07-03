@@ -255,7 +255,7 @@ internal object DownloadedAudioTagWriter {
         if (localFile != null && localFile.exists()) {
             return runCatching { localFile.readBytes() }.getOrNull()
         }
-        val uri = runCatching { Uri.parse(reference) }.getOrNull() ?: return null
+        val uri = runCatching { reference.toUri() }.getOrNull() ?: return null
         return runCatching {
             context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
         }.getOrNull()

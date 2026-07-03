@@ -95,10 +95,6 @@
     <string name="settings_config_export_warning_confirm">I understand, export</string>
     <string name="settings_config_import_success">Config import complete</string>
     <string name="settings_config_import_failed">Config import failed</string>
-    <string name="settings_config_import_restored_settings">Restored %1$d app settings</string>
-    <string name="settings_config_import_restored_listen_together">Restored %1$d Listen Together settings</string>
-    <string name="settings_config_import_restored_auth">Restored %1$d sign-in states</string>
-    <string name="settings_config_import_restored_sync">Restored %1$d sync configs</string>
     <string name="settings_config_import_warning_title">The following items could not be fully restored</string>
     <string name="settings_config_import_restart_hint">Language settings changed, so the page will refresh automatically</string>
     <string name="config_import_warning_netease_cookie">NetEase sign-in data did not pass validation and was skipped</string>
@@ -1217,12 +1213,8 @@
     <string name="settings_download_directory_migrating_stage_copying">Copying files</string>
     <string name="settings_download_directory_migrating_stage_rewriting">Updating metadata references</string>
     <string name="settings_download_directory_migrating_stage_cleanup">Cleaning up old files</string>
-    <string name="settings_download_directory_migrating_progress_files">Processed %1$d / %2$d items</string>
     <string name="settings_download_directory_migrating_progress_bytes">Copied %1$s / %2$s</string>
     <string name="settings_download_directory_migrating_current">Current: %1$s</string>
-    <string name="settings_download_directory_migrated">Moved %1$d downloaded files and switched folders</string>
-    <string name="settings_download_directory_migrated_partial">Moved %1$d files, but %2$d old files could not be removed</string>
-    <string name="settings_download_directory_migrate_failed">Failed to move %1$d files, so the original folder was kept</string>
     <string name="settings_download_directory_change_blocked_active_download">Cannot change the download directory while downloads are in progress</string>
     <string name="settings_backup_restore">Backup &amp; Restore</string>
     <string name="settings_backup_expand">Manage config and playlist backups</string>
@@ -1534,7 +1526,6 @@
     <string name="stats_total_time">Listen Time</string>
     <string name="stats_track_count">Tracks</string>
     <string name="stats_top_tracks">Most Played</string>
-    <string name="stats_play_count_value">%d plays</string>
     <string name="stats_period_day">Day</string>
     <string name="stats_period_week">Week</string>
     <string name="stats_period_month">Month</string>
@@ -1720,7 +1711,6 @@
     <string name="listen_together_room_status_controller_offline">Controller Offline</string>
     <string name="listen_together_room_status_closed">Closed</string>
     <string name="listen_together_notice">Notice</string>
-    <string name="listen_together_notice_controller_offline">Controller is offline. Room closes in about %1$d minute(s) if not reconnected.</string>
     <string name="listen_together_notice_controller_reconnected">Controller reconnected. Sync has resumed.</string>
     <string name="listen_together_notice_room_closed">Room closed because the controller did not return in time.</string>
     <string name="listen_together_notice_member_joined">%1$s joined the room.</string>

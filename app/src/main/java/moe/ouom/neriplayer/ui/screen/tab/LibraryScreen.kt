@@ -81,6 +81,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -1767,7 +1768,9 @@ private fun FavoritePlaylistList(
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     val scope = rememberCoroutineScope()
     var sortMode by rememberSaveable { mutableStateOf(false) }
-    var selectedFavoriteCategory by rememberSaveable { mutableStateOf(FAVORITE_CATEGORY_PLAYLIST) }
+    var selectedFavoriteCategory by rememberSaveable {
+        mutableIntStateOf(FAVORITE_CATEGORY_PLAYLIST)
+    }
     var selectedKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showDeleteSelectedConfirm by rememberSaveable { mutableStateOf(false) }
     val reorderableFavorites = remember { mutableStateListOf<FavoritePlaylist>() }

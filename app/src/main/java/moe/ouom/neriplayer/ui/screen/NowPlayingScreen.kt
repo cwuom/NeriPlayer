@@ -2225,7 +2225,15 @@ fun MoreOptionsSheet(
                                         ) {
                                             ListItem(
                                                 headlineContent = { Text(stringResource(R.string.stats_song_play_count_label)) },
-                                                supportingContent = { Text(stringResource(R.string.stats_play_count_value, trackStat.playCount)) }
+                                                supportingContent = {
+                                                    Text(
+                                                        pluralStringResource(
+                                                            R.plurals.stats_play_count_value,
+                                                            trackStat.playCount,
+                                                            trackStat.playCount
+                                                        )
+                                                    )
+                                                }
                                             )
                                         }
                                     }

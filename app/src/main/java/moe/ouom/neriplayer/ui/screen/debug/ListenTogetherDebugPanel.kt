@@ -1281,7 +1281,19 @@ private fun roomStatusLabelResId(status: String?): Int = when (status) {
 
 private fun String.toDisplayNotice(context: Context): String =
     when {
-        startsWith("controller_offline:") -> context.getString(R.string.listen_together_notice_controller_offline, substringAfter(':').toLongOrNull() ?: 10L)
+        startsWith("controller_offline:") -> {
+            val minutes = substringAfter(':')
+                .toLongOrNull()
+                ?.coerceAtLeast(0L)
+                ?.coerceAtMost(Int.MAX_VALUE.toLong())
+                ?.toInt()
+                ?: 10
+            context.resources.getQuantityString(
+                R.plurals.listen_together_notice_controller_offline,
+                minutes,
+                minutes
+            )
+        }
         startsWith("member_joined:") -> context.getString(R.string.listen_together_notice_member_joined, substringAfter(':'))
         startsWith("member_left:") -> context.getString(R.string.listen_together_notice_member_left, substringAfter(':'))
         this == "controller_reconnected" -> context.getString(R.string.listen_together_notice_controller_reconnected)

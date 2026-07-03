@@ -1,0 +1,51 @@
+<resources>
+    <plurals name="settings_config_import_restored_settings">
+        <item quantity="one">Restored %1$d app setting</item>
+        <item quantity="other">Restored %1$d app settings</item>
+    </plurals>
+
+    <plurals name="settings_config_import_restored_listen_together">
+        <item quantity="one">Restored %1$d Listen Together setting</item>
+        <item quantity="other">Restored %1$d Listen Together settings</item>
+    </plurals>
+
+    <plurals name="settings_config_import_restored_auth">
+        <item quantity="one">Restored %1$d sign-in state</item>
+        <item quantity="other">Restored %1$d sign-in states</item>
+    </plurals>
+
+    <plurals name="settings_config_import_restored_sync">
+        <item quantity="one">Restored %1$d sync config</item>
+        <item quantity="other">Restored %1$d sync configs</item>
+    </plurals>
+
+    <plurals name="settings_download_directory_migrating_progress_files">
+        <item quantity="one">Processed %1$d / %2$d item</item>
+        <item quantity="other">Processed %1$d / %2$d items</item>
+    </plurals>
+
+    <plurals name="settings_download_directory_migrated">
+        <item quantity="one">Moved %1$d downloaded file and switched folders</item>
+        <item quantity="other">Moved %1$d downloaded files and switched folders</item>
+    </plurals>
+
+    <plurals name="settings_download_directory_migrated_partial">
+        <item quantity="one">Moved %1$d file, but cleanup left %2$d behind</item>
+        <item quantity="other">Moved %1$d files, but cleanup left %2$d behind</item>
+    </plurals>
+
+    <plurals name="settings_download_directory_migrate_failed">
+        <item quantity="one">Failed to move %1$d file, so the original folder was kept</item>
+        <item quantity="other">Failed to move %1$d files, so the original folder was kept</item>
+    </plurals>
+
+    <plurals name="stats_play_count_value">
+        <item quantity="one">%d play</item>
+        <item quantity="other">%d plays</item>
+    </plurals>
+
+    <plurals name="listen_together_notice_controller_offline">
+        <item quantity="one">Controller is offline. Room closes in about %1$d minute if not reconnected.</item>
+        <item quantity="other">Controller is offline. Room closes in about %1$d minutes if not reconnected.</item>
+    </plurals>
+</resources>

@@ -51,6 +51,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import moe.ouom.neriplayer.util.performHapticFeedback
@@ -174,8 +175,8 @@ internal fun MiuixSettingsTextButton(
 internal fun MiuixSettingsTextField(
     value: String,
     onValueChange: (String) -> Unit,
-    label: @Composable (() -> Unit)? = null,
     modifier: Modifier = Modifier,
+    label: @Composable (() -> Unit)? = null,
     enabled: Boolean = true,
     placeholder: @Composable (() -> Unit)? = null,
     singleLine: Boolean = false,
@@ -286,7 +287,7 @@ internal fun MiuixSettingsSegmentedTabs(
 
         Box(
             modifier = Modifier
-                .offset(x = indicatorOffset)
+                .offset { IntOffset(indicatorOffset.roundToPx(), 0) }
                 .fillMaxHeight()
                 .fillMaxWidth(1f / labels.size)
                 .clip(MiuixInnerShape)
@@ -333,10 +334,10 @@ internal fun MiuixSettingsSegmentedTabs(
 @Composable
 internal fun MiuixSettingsChoiceRow(
     title: String,
-    subtitle: String? = null,
     selected: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    subtitle: String? = null
 ) {
     val context = LocalContext.current
     Row(

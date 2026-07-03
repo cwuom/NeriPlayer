@@ -976,11 +976,19 @@ class MainActivity : ComponentActivity() {
         val normalized = trim()
         val lowered = normalized.lowercase()
         return when {
-            startsWith("controller_offline:") ->
-                getString(
-                    R.string.listen_together_notice_controller_offline,
-                    substringAfter(':').toLongOrNull() ?: 10L
+            startsWith("controller_offline:") -> {
+                val minutes = substringAfter(':')
+                    .toLongOrNull()
+                    ?.coerceAtLeast(0L)
+                    ?.coerceAtMost(Int.MAX_VALUE.toLong())
+                    ?.toInt()
+                    ?: 10
+                resources.getQuantityString(
+                    R.plurals.listen_together_notice_controller_offline,
+                    minutes,
+                    minutes
                 )
+            }
             startsWith("member_joined:") ->
                 getString(R.string.listen_together_notice_member_joined, substringAfter(':'))
             startsWith("member_left:") ->

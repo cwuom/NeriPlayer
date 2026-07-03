@@ -10,6 +10,7 @@ import android.graphics.Typeface
 import android.view.View
 import android.view.animation.LinearInterpolator
 import android.view.animation.PathInterpolator
+import androidx.core.graphics.withSave
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.roundToLong
@@ -138,7 +139,6 @@ internal class AnimatedOutlinedLyricTextView(context: Context) : View(context) {
         val textHeight = fontMetrics.descent - fontMetrics.ascent
         val baseline = paddingTop + (contentHeight - textHeight) / 2f - fontMetrics.ascent
 
-        val saveCount = canvas.save()
         val revealLeft = if (revealProgress >= 1f) {
             contentLeft
         } else {
@@ -151,15 +151,15 @@ internal class AnimatedOutlinedLyricTextView(context: Context) : View(context) {
                 .coerceIn(contentLeft, contentRight)
         }
         if (revealRight <= revealLeft) {
-            canvas.restoreToCount(saveCount)
             return
         }
-        canvas.clipRect(revealLeft, 0f, revealRight, height.toFloat())
-        if (outlinePaint.strokeWidth > 0f) {
-            canvas.drawText(lyricText, baseX, baseline, outlinePaint)
+        canvas.withSave {
+            clipRect(revealLeft, 0f, revealRight, height.toFloat())
+            if (outlinePaint.strokeWidth > 0f) {
+                drawText(lyricText, baseX, baseline, outlinePaint)
+            }
+            drawText(lyricText, baseX, baseline, fillPaint)
         }
-        canvas.drawText(lyricText, baseX, baseline, fillPaint)
-        canvas.restoreToCount(saveCount)
     }
 
     override fun onDetachedFromWindow() {

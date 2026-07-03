@@ -94,6 +94,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -291,6 +292,7 @@ fun SettingsScreen(
     onBeforeLanguageRestart: () -> Unit = {},
 ) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     val scope = rememberCoroutineScope()
     val autoSettingsRepository = remember(context) { AutoSettingsRepository(context) }
     val listenTogetherPreferences = remember { AppContainer.listenTogetherPreferences }
@@ -439,16 +441,18 @@ fun SettingsScreen(
         }
         inlineMsg = when {
             migrationResult != null && migrationResult.cleanupFailedFiles > 0 -> {
-                context.getString(
-                    R.string.settings_download_directory_migrated_partial,
+                resources.getQuantityString(
+                    R.plurals.settings_download_directory_migrated_partial,
+                    migrationResult.movedFiles,
                     migrationResult.movedFiles,
                     migrationResult.cleanupFailedFiles
                 )
             }
 
             migrationResult != null -> {
-                context.getString(
-                    R.string.settings_download_directory_migrated,
+                resources.getQuantityString(
+                    R.plurals.settings_download_directory_migrated,
+                    migrationResult.movedFiles,
                     migrationResult.movedFiles
                 )
             }
@@ -1733,8 +1737,9 @@ fun SettingsScreen(
                                                 pendingChange.targetUri
                                             )
                                         }
-                                        inlineMsg = context.getString(
-                                            R.string.settings_download_directory_migrate_failed,
+                                        inlineMsg = resources.getQuantityString(
+                                            R.plurals.settings_download_directory_migrate_failed,
+                                            migrationResult.skippedFiles,
                                             migrationResult.skippedFiles
                                         )
                                     } else {
@@ -1827,8 +1832,9 @@ fun SettingsScreen(
         }
         val progressFraction = activeMigrationProgress?.fraction?.coerceIn(0f, 1f) ?: 0f
         val processedSummary = activeMigrationProgress?.let { progress ->
-            context.getString(
-                R.string.settings_download_directory_migrating_progress_files,
+            resources.getQuantityString(
+                R.plurals.settings_download_directory_migrating_progress_files,
+                progress.stageTotal.coerceAtLeast(0),
                 progress.stageProcessed.coerceAtLeast(0),
                 progress.stageTotal.coerceAtLeast(0)
             )

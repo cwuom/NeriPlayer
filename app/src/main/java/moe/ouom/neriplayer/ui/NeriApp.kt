@@ -427,8 +427,8 @@ internal fun resolveCoverSeedWarmupDelayMillis(
 private fun NowPlayingAccentBackdrop(
     coverUrl: String?,
     isDark: Boolean,
-    refreshKey: Int = 0,
     modifier: Modifier = Modifier,
+    refreshKey: Int = 0,
     offlineMode: Boolean = false,
     onAccentChanged: (String?) -> Unit = {}
 ) {

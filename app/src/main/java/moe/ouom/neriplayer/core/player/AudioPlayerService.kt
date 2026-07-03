@@ -54,6 +54,7 @@ import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.createBitmap
+import androidx.core.graphics.scale
 import androidx.core.graphics.drawable.DrawableCompat
 import androidx.core.graphics.drawable.IconCompat
 import androidx.core.graphics.drawable.toBitmap
@@ -1073,7 +1074,7 @@ class AudioPlayerService : Service() {
         val scale = maxDimensionPx.toFloat() / longestSide
         val scaledWidth = (width * scale).toInt().coerceAtLeast(1)
         val scaledHeight = (height * scale).toInt().coerceAtLeast(1)
-        return Bitmap.createScaledBitmap(this, scaledWidth, scaledHeight, true)
+        return scale(scaledWidth, scaledHeight, true)
     }
 
     private fun SongItem?.effectiveCoverSource(): String? {

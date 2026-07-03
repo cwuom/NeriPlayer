@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.data.config
 
 import android.content.Context
-import android.net.Uri
+import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
@@ -310,14 +310,14 @@ internal class ConfigSettingsSanitizer(private val context: Context) {
     }
 
     private fun canAccessImportedContentUri(uriString: String): Boolean {
-        val uri = runCatching { Uri.parse(uriString) }.getOrNull() ?: return false
+        val uri = runCatching { uriString.toUri() }.getOrNull() ?: return false
         return runCatching {
             context.contentResolver.openInputStream(uri)?.use { true } ?: false
         }.getOrDefault(false)
     }
 
     private fun hasPersistedTreeAccess(uriString: String): Boolean {
-        val uri = runCatching { Uri.parse(uriString) }.getOrNull() ?: return false
+        val uri = runCatching { uriString.toUri() }.getOrNull() ?: return false
         val hasPersistedPermission = context.contentResolver.persistedUriPermissions.any { permission ->
             permission.uri == uri && (permission.isReadPermission || permission.isWritePermission)
         }

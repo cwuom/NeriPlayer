@@ -145,34 +145,38 @@ class ConfigTransferViewModel : ViewModel() {
 
         fun importFailed(message: String?): String = "$importFailedPrefix: ${message.orEmpty()}"
 
+        private fun quantityText(resId: Int, count: Int): String {
+            return context.resources.getQuantityString(resId, count, count)
+        }
+
         fun importSuccess(result: AppConfigImportResult): String {
             return buildString {
                 append(importSuccessPrefix)
                 append('\n')
                 append(
-                    context.getString(
-                        R.string.settings_config_import_restored_settings,
+                    quantityText(
+                        R.plurals.settings_config_import_restored_settings,
                         result.restoredSettingsCount
                     )
                 )
                 append('\n')
                 append(
-                    context.getString(
-                        R.string.settings_config_import_restored_listen_together,
+                    quantityText(
+                        R.plurals.settings_config_import_restored_listen_together,
                         result.restoredListenTogetherCount
                     )
                 )
                 append('\n')
                 append(
-                    context.getString(
-                        R.string.settings_config_import_restored_auth,
+                    quantityText(
+                        R.plurals.settings_config_import_restored_auth,
                         result.restoredAuthCount
                     )
                 )
                 append('\n')
                 append(
-                    context.getString(
-                        R.string.settings_config_import_restored_sync,
+                    quantityText(
+                        R.plurals.settings_config_import_restored_sync,
                         result.restoredSyncCount
                     )
                 )
