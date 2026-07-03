@@ -4,17 +4,21 @@
 
 <div align="center">
 
-<h3>✨ Native Android Multi-Source Audio Player 🎵</h3>
+<h3>✨ A native Android audio player that combines multi-source streaming, local control, rich lyrics, and self-hosted sync 🎵</h3>
 
 <p>
-  <a href="https://t.me/ouom_pub">
-    <img alt="Join" src="https://img.shields.io/badge/Telegram-@ouom__pub-blue" />
+  <a href="https://github.com/cwuom/NeriPlayer/releases">
+    <img alt="Downloads" src="https://img.shields.io/github/downloads/cwuom/NeriPlayer/total?style=social" />
   </a>
-</p>
-
-<p>
+  <a href="https://github.com/cwuom/NeriPlayer/releases">
+    <img alt="Release" src="https://img.shields.io/github/v/release/cwuom/NeriPlayer?include_prereleases&label=Release" />
+  </a>
+  <img alt="Android 9+" src="https://img.shields.io/badge/Android-9%2B-3DDC84?logo=android&logoColor=white" />
+  <a href="https://t.me/ouom_pub">
+    <img alt="Telegram" src="https://img.shields.io/badge/Telegram-@ouom__pub-blue" />
+  </a>
   <a href="https://t.me/neriplayer_ci">
-    <img alt="ci_builds" src="https://img.shields.io/badge/CI_Builds-@neriplayer__ci-orange" />
+    <img alt="CI Builds" src="https://img.shields.io/badge/CI_Builds-@neriplayer__ci-orange" />
   </a>
 </p>
 
@@ -29,10 +33,11 @@ The project name and icon are inspired by "Kazamata Neri" from
 
 <p>
 NeriPlayer is a native Android app for Android 9 (API 28) and above,
-focused on multi-source exploration, online playback, and local control.
+focused on multi-source exploration, online playback, local control, and
+user-owned data.
 </p>
 
-🚧 <strong>Work in progress</strong>
+🛠️ <strong>Active development</strong>
 
 <a href="https://trendshift.io/repositories/23906" target="_blank"><img src="https://trendshift.io/api/badge/repositories/23906" alt="cwuom%2FNeriPlayer | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 
@@ -73,6 +78,23 @@ Current positioning:
 - **Startup onboarding**: first launch follows
   `Loading -> Disclaimer -> Onboarding -> Main`, covering language, platform
   accounts, sync, and personalization after the disclaimer.
+
+---
+
+## Why it stands out
+
+- **No public cloud lock-in**: third-party login is only used to unlock
+  capabilities you already have on those platforms. Media, cache, playlists,
+  history, and settings stay on-device by default.
+- **Playback plus management**: streaming, cache, downloads, playlists, backup,
+  and GitHub/WebDAV sync form one continuous workflow instead of isolated tools.
+- **Lyrics go deep**: word-timed lyrics, translations, lyric editing, floating
+  lyrics, Lyricon, and external device lyrics all run on the same playback data path.
+- **Problems are easier to diagnose**: developer mode, regular logs, JVM/native
+  crash logs, and startup safe mode are all built in.
+- **Built to evolve**: the app is based on Compose + Media3 + manual DI, with
+  dedicated tests and debug probes around playback, downloads, sync, auth,
+  lyrics, and Listen Together.
 
 ---
 
@@ -181,6 +203,9 @@ For release build and signing details, see
   audio-reactive dynamic background, cover blur background, advanced lyrics,
   word-timed lyrics, translated lyrics, lyric offset, lyric editing, font scaling,
   and a full Lyrics page.
+- 🪟 **Floating lyrics**:
+  system overlay lyrics with customizable color, outline, font size, position,
+  alignment, and translation display, plus auto-hide while the app is foregrounded.
 - 🔌 **External lyrics/device integration**:
   Lyricon integration, external Bluetooth lyrics, pause on Bluetooth disconnect,
   and USB exclusive playback toggles. Lyricon receives the current song,
@@ -189,6 +214,9 @@ For release build and signing details, see
   tap the version number **7 times** to reveal the `Debug` tab, including
   YouTube / Bili / NetEase / Search / Listen Together probes, log viewer, and
   crash log viewer.
+- 🛟 **Safe mode and crash logs**:
+  if the previous startup crashed, the app can boot directly into safe mode so
+  you can inspect or export the crash log and selectively clear settings or auth data.
 
 ---
 
@@ -311,9 +339,11 @@ For implementation details, see [CONTRIBUTING_EN.md](./CONTRIBUTING_EN.md).
 NeriPlayer includes a built-in "Listen Together" feature. You can deploy your
 own server or use a server deployed by others.
 
-Server repository:
-[TheSmallHanCat/NeriPlayer-LTW](https://github.com/TheSmallHanCat/NeriPlayer-LTW)
-or this repository's `np-submodule/NeriPlayer-LTW` submodule.
+Server source and deployment entry points:
+
+- `np-submodule/NeriPlayer-LTW` inside this repository
+- Public deployment template:
+  [TheSmallHanCat/NeriPlayer-LTW](https://github.com/TheSmallHanCat/NeriPlayer-LTW)
 
 The server is based on **Cloudflare Workers** and **Durable Objects**, using
 WebSocket for real-time sync.
@@ -380,10 +410,16 @@ NeriPlayer also supports storing the same sync data in a WebDAV remote file.
 
 ## Roadmap
 
+### In progress
+
 - [ ] Video playback
 - [ ] Comment section
-- [ ] Floating lyrics
-- [ ] Continuous extension for third-party platforms such as KuGou
+- [ ] More third-party platforms such as KuGou
+- [ ] Fuller QQ Music account support, library data, and a more stable auth path
+
+### Shipped recently
+
+- [x] Floating lyrics
 - [x] Clear cache
 - [x] Add to playlist
 - [x] Tablet / landscape Now Playing adaptation
@@ -397,6 +433,7 @@ NeriPlayer also supports storing the same sync data in a WebDAV remote file.
 - [x] Playback sound effects
 - [x] NetEase auto source switch for restricted playback
 - [x] Lyricon integration / external lyrics output
+- [x] Safe mode and startup crash logs
 
 > ⚠️ QQ Music is currently used mainly for playback metadata completion.
 > Full account capabilities, library data, and a more stable auth flow are still in development.
