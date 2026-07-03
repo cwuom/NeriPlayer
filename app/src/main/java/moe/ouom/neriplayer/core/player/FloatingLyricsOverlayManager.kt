@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.player
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.Application
 import android.content.Context
@@ -25,6 +26,7 @@ import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
 import moe.ouom.neriplayer.data.settings.normalizeFloatingLyricsColorHex
 import kotlin.math.roundToInt
 
+@SuppressLint("StaticFieldLeak")
 object FloatingLyricsOverlayManager {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var application: Application? = null

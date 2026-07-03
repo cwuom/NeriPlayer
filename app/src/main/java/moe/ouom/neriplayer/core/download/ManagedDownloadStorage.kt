@@ -20,10 +20,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.ui.viewmodel.artist.NeteaseArtistSummary
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.NPLogger
 import org.json.JSONArray
@@ -44,6 +46,11 @@ internal object ManagedDownloadStorage {
     private const val COVER_SUBDIRECTORY = "Covers"
     private const val LYRIC_SUBDIRECTORY = "Lyrics"
     private const val DOWNLOAD_STAGING_DIR_NAME = "download_staging"
+    private const val DOWNLOAD_STAGING_FILE_PREFIX = "npdl_"
+    private const val DOWNLOAD_STAGING_FILE_SUFFIX = ".download"
+    private const val DOWNLOAD_STAGING_HLS_CHECKPOINT_SUFFIX = ".hls.json"
+    private const val DOWNLOAD_STAGING_RESUME_METADATA_SUFFIX = ".resume.json"
+    private const val DOWNLOAD_STAGING_MAX_AGE_MS = 7L * 24L * 60L * 60L * 1000L
     private const val PENDING_AUDIO_WRITE_MARKER = ".npdl_pending"
     private const val NO_MEDIA_FILE_NAME = ".nomedia"
     private const val SNAPSHOT_CACHE_FILE_NAME = "managed_download_snapshot_v1.json"
@@ -133,6 +140,11 @@ internal object ManagedDownloadStorage {
         val hasRecoveredEntries: Boolean
             get() = cleanedCount > 0 || failedCount > 0
     }
+
+    internal data class PendingResumableDownload(
+        val song: SongItem,
+        val workingFile: File
+    )
 
     data class StoredEntry(
         val name: String,
@@ -740,8 +752,8 @@ internal object ManagedDownloadStorage {
         return renderManagedDownloadBaseName(song, downloadFileNameTemplate)
     }
 
-    fun createWorkingFile(context: Context, fileName: String): File {
-        val stagingDir = File(context.cacheDir, DOWNLOAD_STAGING_DIR_NAME).apply { mkdirs() }
+    internal fun buildWorkingFileName(songKey: String, fileName: String): String {
+        val normalizedKey = java.lang.Long.toHexString(songKey.hashCode().toLong() and 0xffffffffL)
         val normalizedPrefix = fileName.substringBeforeLast('.', fileName)
             .ifBlank { "download" }
             .replace(Regex("[^A-Za-z0-9._-]"), "_")
@@ -749,8 +761,166 @@ internal object ManagedDownloadStorage {
             .ifBlank { "download" }
         val extension = fileName.substringAfterLast('.', "")
             .takeIf { it.isNotBlank() }
-        val suffix = extension?.let { ".$it.download" } ?: ".download"
-        return File.createTempFile("${normalizedPrefix}_", suffix, stagingDir)
+            ?.replace(Regex("[^A-Za-z0-9]"), "")
+            ?.take(8)
+            ?.lowercase()
+        val fileBody = "${DOWNLOAD_STAGING_FILE_PREFIX}${normalizedKey}_$normalizedPrefix"
+        return extension?.let { "$fileBody.$it$DOWNLOAD_STAGING_FILE_SUFFIX" }
+            ?: "$fileBody$DOWNLOAD_STAGING_FILE_SUFFIX"
+    }
+
+    fun createWorkingFile(context: Context, songKey: String, fileName: String): File {
+        val stagingDir = File(context.cacheDir, DOWNLOAD_STAGING_DIR_NAME).apply { mkdirs() }
+        return File(stagingDir, buildWorkingFileName(songKey, fileName))
+    }
+
+    internal fun buildWorkingHlsCheckpointFile(workingFile: File): File {
+        return File(workingFile.parentFile, workingFile.name + DOWNLOAD_STAGING_HLS_CHECKPOINT_SUFFIX)
+    }
+
+    internal fun buildWorkingResumeMetadataFile(workingFile: File): File {
+        return File(workingFile.parentFile, workingFile.name + DOWNLOAD_STAGING_RESUME_METADATA_SUFFIX)
+    }
+
+    internal fun shouldPreserveWorkingFileForResume(
+        entry: File,
+        nowMs: Long = System.currentTimeMillis()
+    ): Boolean {
+        if (!entry.isFile) {
+            return false
+        }
+        if (!entry.name.startsWith(DOWNLOAD_STAGING_FILE_PREFIX)) {
+            return false
+        }
+        if (!entry.name.endsWith(DOWNLOAD_STAGING_FILE_SUFFIX)) {
+            return false
+        }
+        if (entry.length() <= 0L) {
+            return false
+        }
+        val ageMs = (nowMs - entry.lastModified().coerceAtLeast(0L)).coerceAtLeast(0L)
+        return ageMs <= DOWNLOAD_STAGING_MAX_AGE_MS
+    }
+
+    internal fun shouldPreserveWorkingCheckpointForResume(
+        entry: File,
+        nowMs: Long = System.currentTimeMillis()
+    ): Boolean {
+        if (!entry.isFile) {
+            return false
+        }
+        if (!entry.name.endsWith(DOWNLOAD_STAGING_HLS_CHECKPOINT_SUFFIX)) {
+            return false
+        }
+        val workingFileName = entry.name.removeSuffix(DOWNLOAD_STAGING_HLS_CHECKPOINT_SUFFIX)
+        if (workingFileName.isBlank()) {
+            return false
+        }
+        val ageMs = (nowMs - entry.lastModified().coerceAtLeast(0L)).coerceAtLeast(0L)
+        if (ageMs > DOWNLOAD_STAGING_MAX_AGE_MS) {
+            return false
+        }
+        val pairedWorkingFile = File(entry.parentFile, workingFileName)
+        return shouldPreserveWorkingFileForResume(pairedWorkingFile, nowMs)
+    }
+
+    internal fun shouldPreserveWorkingResumeMetadataForResume(
+        entry: File,
+        nowMs: Long = System.currentTimeMillis()
+    ): Boolean {
+        if (!entry.isFile) {
+            return false
+        }
+        if (!entry.name.endsWith(DOWNLOAD_STAGING_RESUME_METADATA_SUFFIX)) {
+            return false
+        }
+        val workingFileName = entry.name.removeSuffix(DOWNLOAD_STAGING_RESUME_METADATA_SUFFIX)
+        if (workingFileName.isBlank()) {
+            return false
+        }
+        val ageMs = (nowMs - entry.lastModified().coerceAtLeast(0L)).coerceAtLeast(0L)
+        if (ageMs > DOWNLOAD_STAGING_MAX_AGE_MS) {
+            return false
+        }
+        val pairedWorkingFile = File(entry.parentFile, workingFileName)
+        return shouldPreserveWorkingFileForResume(pairedWorkingFile, nowMs)
+    }
+
+    internal fun saveWorkingResumeMetadata(
+        workingFile: File,
+        song: SongItem
+    ) {
+        val metadataFile = buildWorkingResumeMetadataFile(workingFile)
+        runCatching {
+            metadataFile.parentFile?.mkdirs()
+            metadataFile.writeText(song.toWorkingResumeMetadataJson().toString(), Charsets.UTF_8)
+        }.onFailure { error ->
+            NPLogger.w(TAG, "写入下载恢复元数据失败: ${metadataFile.name}, ${error.message}")
+        }
+    }
+
+    internal fun deleteWorkingResumeMetadata(workingFile: File?) {
+        workingFile ?: return
+        val metadataFile = buildWorkingResumeMetadataFile(workingFile)
+        if (metadataFile.exists()) {
+            runCatching {
+                metadataFile.delete()
+            }
+        }
+    }
+
+    internal fun deleteWorkingDownloadArtifacts(workingFile: File?) {
+        workingFile ?: return
+        deleteWorkingResumeMetadata(workingFile)
+        val checkpointFile = buildWorkingHlsCheckpointFile(workingFile)
+        if (checkpointFile.exists()) {
+            runCatching {
+                checkpointFile.delete()
+            }
+        }
+        if (workingFile.exists()) {
+            runCatching {
+                workingFile.delete()
+            }
+        }
+    }
+
+    internal fun listPendingResumableDownloads(context: Context): List<PendingResumableDownload> {
+        val stagingDir = File(context.cacheDir, DOWNLOAD_STAGING_DIR_NAME)
+        return listPendingResumableDownloadsInDirectory(stagingDir)
+    }
+
+    internal fun listPendingResumableDownloadsInDirectory(
+        stagingDir: File,
+        nowMs: Long = System.currentTimeMillis()
+    ): List<PendingResumableDownload> {
+        val metadataEntries = stagingDir.listFiles { _, name ->
+            name.endsWith(DOWNLOAD_STAGING_RESUME_METADATA_SUFFIX)
+        }.orEmpty()
+        if (metadataEntries.isEmpty()) {
+            return emptyList()
+        }
+        return metadataEntries
+            .asSequence()
+            .filter { metadataFile ->
+                shouldPreserveWorkingResumeMetadataForResume(metadataFile, nowMs)
+            }
+            .mapNotNull { metadataFile ->
+                val workingFileName = metadataFile.name.removeSuffix(DOWNLOAD_STAGING_RESUME_METADATA_SUFFIX)
+                val workingFile = File(stagingDir, workingFileName)
+                val song = runCatching {
+                    metadataFile.readText(Charsets.UTF_8)
+                }.mapCatching(::parseWorkingResumeMetadataSong)
+                    .getOrNull()
+                    ?: return@mapNotNull null
+                PendingResumableDownload(
+                    song = song,
+                    workingFile = workingFile
+                )
+            }
+            .sortedBy { it.workingFile.lastModified() }
+            .distinctBy { it.song.stableKey() }
+            .toList()
     }
 
     internal fun consumeStartupRecoveryResult(): StartupRecoveryResult {
@@ -761,6 +931,13 @@ internal object ManagedDownloadStorage {
 
     fun cleanupStagingFiles(context: Context): StartupRecoveryResult {
         val stagingDir = File(context.cacheDir, DOWNLOAD_STAGING_DIR_NAME)
+        return cleanupStagingFilesInDirectory(stagingDir)
+    }
+
+    internal fun cleanupStagingFilesInDirectory(
+        stagingDir: File,
+        nowMs: Long = System.currentTimeMillis()
+    ): StartupRecoveryResult {
         val stagingEntries = stagingDir.listFiles().orEmpty()
         if (stagingEntries.isEmpty()) {
             return StartupRecoveryResult()
@@ -768,7 +945,16 @@ internal object ManagedDownloadStorage {
 
         var cleanedCount = 0
         var failedCount = 0
+        var preservedCount = 0
         stagingEntries.forEach { entry ->
+            if (
+                shouldPreserveWorkingFileForResume(entry, nowMs) ||
+                shouldPreserveWorkingCheckpointForResume(entry, nowMs) ||
+                shouldPreserveWorkingResumeMetadataForResume(entry, nowMs)
+            ) {
+                preservedCount++
+                return@forEach
+            }
             val deleted = runCatching {
                 if (entry.isDirectory) {
                     entry.deleteRecursively()
@@ -782,8 +968,11 @@ internal object ManagedDownloadStorage {
                 failedCount++
             }
         }
-        if (cleanedCount > 0 || failedCount > 0) {
-            NPLogger.d(TAG, "清理下载临时区完成: cleaned=$cleanedCount, failed=$failedCount")
+        if (cleanedCount > 0 || failedCount > 0 || preservedCount > 0) {
+            NPLogger.d(
+                TAG,
+                "清理下载临时区完成: cleaned=$cleanedCount, failed=$failedCount, preserved=$preservedCount"
+            )
         }
         return StartupRecoveryResult(
             cleanedCount = cleanedCount,
@@ -3402,6 +3591,100 @@ internal object ManagedDownloadStorage {
         }
     }
 
+    private fun SongItem.toWorkingResumeMetadataJson(): JSONObject {
+        return JSONObject().apply {
+            put("id", id)
+            put("name", name)
+            put("artist", artist)
+            put("album", album)
+            put("albumId", albumId)
+            put("durationMs", durationMs)
+            put("coverUrl", coverUrl)
+            put("mediaUri", mediaUri)
+            put("matchedLyric", matchedLyric)
+            put("matchedTranslatedLyric", matchedTranslatedLyric)
+            put("matchedLyricSource", matchedLyricSource?.name)
+            put("matchedSongId", matchedSongId)
+            put("userLyricOffsetMs", userLyricOffsetMs)
+            put("customCoverUrl", customCoverUrl)
+            put("customName", customName)
+            put("customArtist", customArtist)
+            put("originalName", originalName)
+            put("originalArtist", originalArtist)
+            put("originalCoverUrl", originalCoverUrl)
+            put("originalLyric", originalLyric)
+            put("originalTranslatedLyric", originalTranslatedLyric)
+            put("localFileName", localFileName)
+            put("localFilePath", localFilePath)
+            put("channelId", channelId)
+            put("audioId", audioId)
+            put("subAudioId", subAudioId)
+            put("playlistContextId", playlistContextId)
+            put("streamUrl", streamUrl)
+            put(
+                "neteaseArtists",
+                JSONArray().also { artistsArray ->
+                    neteaseArtists.forEach { artistSummary ->
+                        artistsArray.put(
+                            JSONObject().apply {
+                                put("id", artistSummary.id)
+                                put("name", artistSummary.name)
+                            }
+                        )
+                    }
+                }
+            )
+        }
+    }
+
+    private fun JSONObject.toWorkingResumeMetadataSong(): SongItem? {
+        val id = optLong("id").takeIf { has("id") } ?: return null
+        val name = optString("name").takeIf(String::isNotBlank) ?: return null
+        val artist = optString("artist").takeIf(String::isNotBlank) ?: return null
+        val album = optString("album").takeIf(String::isNotBlank) ?: return null
+        return SongItem(
+            id = id,
+            name = name,
+            artist = artist,
+            album = album,
+            albumId = optLong("albumId"),
+            durationMs = optLong("durationMs"),
+            coverUrl = optString("coverUrl").takeIf { has("coverUrl") && !isNull("coverUrl") },
+            mediaUri = optString("mediaUri").takeIf(String::isNotBlank),
+            matchedLyric = optPresentString("matchedLyric"),
+            matchedTranslatedLyric = optPresentString("matchedTranslatedLyric"),
+            matchedLyricSource = optString("matchedLyricSource")
+                .takeIf(String::isNotBlank)
+                ?.let { value -> runCatching { MusicPlatform.valueOf(value) }.getOrNull() },
+            matchedSongId = optString("matchedSongId").takeIf(String::isNotBlank),
+            userLyricOffsetMs = optLong("userLyricOffsetMs"),
+            customCoverUrl = optString("customCoverUrl").takeIf(String::isNotBlank),
+            customName = optString("customName").takeIf(String::isNotBlank),
+            customArtist = optString("customArtist").takeIf(String::isNotBlank),
+            originalName = optString("originalName").takeIf(String::isNotBlank),
+            originalArtist = optString("originalArtist").takeIf(String::isNotBlank),
+            originalCoverUrl = optString("originalCoverUrl").takeIf(String::isNotBlank),
+            originalLyric = optPresentString("originalLyric"),
+            originalTranslatedLyric = optPresentString("originalTranslatedLyric"),
+            localFileName = optString("localFileName").takeIf(String::isNotBlank),
+            localFilePath = optString("localFilePath").takeIf(String::isNotBlank),
+            channelId = optString("channelId").takeIf(String::isNotBlank),
+            audioId = optString("audioId").takeIf(String::isNotBlank),
+            subAudioId = optString("subAudioId").takeIf(String::isNotBlank),
+            playlistContextId = optString("playlistContextId").takeIf(String::isNotBlank),
+            streamUrl = optString("streamUrl").takeIf(String::isNotBlank),
+            neteaseArtists = optJSONArray("neteaseArtists").toNeteaseArtistSummaries()
+        )
+    }
+
+    internal fun parseWorkingResumeMetadataSong(rawJson: String): SongItem? {
+        return runCatching {
+            JSONObject(rawJson).toWorkingResumeMetadataSong()
+        }.onFailure {
+            NPLogger.w(TAG, "解析下载恢复元数据失败: ${it.message}")
+        }.getOrNull()
+    }
+
     private fun JSONObject.toDownloadedAudioMetadata(): DownloadedAudioMetadata {
         return DownloadedAudioMetadata(
             stableKey = optString("stableKey").takeIf(String::isNotBlank),
@@ -3447,6 +3730,25 @@ internal object ManagedDownloadStorage {
             return null
         }
         return optString(fieldName)
+    }
+
+    private fun JSONArray?.toNeteaseArtistSummaries(): List<NeteaseArtistSummary> {
+        if (this == null) {
+            return emptyList()
+        }
+        return buildList(length()) {
+            for (index in 0 until length()) {
+                val root = optJSONObject(index) ?: continue
+                val artistId = root.optLong("id").takeIf { root.has("id") } ?: continue
+                val artistName = root.optString("name").takeIf(String::isNotBlank) ?: continue
+                add(
+                    NeteaseArtistSummary(
+                        id = artistId,
+                        name = artistName
+                    )
+                )
+            }
+        }
     }
 
     private fun updateSnapshotCacheAfterMetadataWrite(

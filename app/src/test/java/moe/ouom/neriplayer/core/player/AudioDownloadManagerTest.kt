@@ -1,10 +1,12 @@
 package moe.ouom.neriplayer.core.player
 
+import moe.ouom.neriplayer.core.api.youtube.YouTubePlayableStreamType
+import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
+import okhttp3.Request
 import java.io.IOException
 import java.net.SocketException
 import java.net.UnknownHostException
@@ -151,5 +153,116 @@ class AudioDownloadManagerTest {
         assertTrue(AudioDownloadManager.isTransferSizeComplete(256L, 256L))
         assertTrue(AudioDownloadManager.isTransferSizeComplete(256L, 512L))
         assertFalse(AudioDownloadManager.isTransferSizeComplete(256L, 128L))
+    }
+
+    @Test
+    fun `resume range header starts from completed bytes`() {
+        assertEquals(null, AudioDownloadManager.buildResumeRangeHeader(0L))
+        assertEquals("bytes=1024-", AudioDownloadManager.buildResumeRangeHeader(1_024L))
+    }
+
+    @Test
+    fun `response expected bytes keeps full size when resuming partial payload`() {
+        val headers = mapOf("Content-Range" to listOf("bytes 1024-4095/4096"))
+
+        assertEquals(
+            4_096L,
+            AudioDownloadManager.resolveResponseExpectedBytes(
+                requestUrl = "https://example.com/audio.m4a",
+                headers = headers,
+                bodyLength = 3_072L,
+                resumedBytes = 1_024L,
+                isPartialResponse = true
+            )
+        )
+    }
+
+    @Test
+    fun `download transport kind falls back to chunked range only for googlevideo without explicit range`() {
+        val chunkedRequest = Request.Builder()
+            .url("https://rr1---sn-abcd.googlevideo.com/videoplayback?source=youtube")
+            .build()
+        val directRequest = Request.Builder()
+            .url("https://example.com/audio.m4a")
+            .build()
+        val explicitRangeRequest = chunkedRequest.newBuilder()
+            .header("Range", "bytes=0-4095")
+            .build()
+
+        assertEquals(
+            AudioDownloadManager.DownloadTransportKind.CHUNKED_RANGE,
+            AudioDownloadManager.resolveDownloadTransportKind(
+                YouTubePlayableStreamType.DIRECT,
+                chunkedRequest
+            )
+        )
+        assertEquals(
+            AudioDownloadManager.DownloadTransportKind.DIRECT,
+            AudioDownloadManager.resolveDownloadTransportKind(
+                YouTubePlayableStreamType.DIRECT,
+                directRequest
+            )
+        )
+        assertEquals(
+            AudioDownloadManager.DownloadTransportKind.DIRECT,
+            AudioDownloadManager.resolveDownloadTransportKind(
+                YouTubePlayableStreamType.DIRECT,
+                explicitRangeRequest
+            )
+        )
+    }
+
+    @Test
+    fun `partial download preservation requires bytes and hls checkpoint when needed`() {
+        assertTrue(
+            AudioDownloadManager.shouldPreservePartialDownloadForRetry(
+                transportKind = AudioDownloadManager.DownloadTransportKind.DIRECT,
+                existingBytes = 4_096L,
+                hasHlsResumeState = false
+            )
+        )
+        assertTrue(
+            AudioDownloadManager.shouldPreservePartialDownloadForRetry(
+                transportKind = AudioDownloadManager.DownloadTransportKind.CHUNKED_RANGE,
+                existingBytes = 4_096L,
+                hasHlsResumeState = false
+            )
+        )
+        assertFalse(
+            AudioDownloadManager.shouldPreservePartialDownloadForRetry(
+                transportKind = AudioDownloadManager.DownloadTransportKind.HLS,
+                existingBytes = 4_096L,
+                hasHlsResumeState = false
+            )
+        )
+        assertTrue(
+            AudioDownloadManager.shouldPreservePartialDownloadForRetry(
+                transportKind = AudioDownloadManager.DownloadTransportKind.HLS,
+                existingBytes = 4_096L,
+                hasHlsResumeState = true
+            )
+        )
+    }
+
+    @Test
+    fun `hls resume state serialization round trips`() {
+        val state = AudioDownloadManager.HlsResumeState(
+            playlistFingerprint = 77,
+            nextSegmentIndex = 12,
+            downloadedBytes = 34_567L
+        )
+
+        val restored = AudioDownloadManager.deserializeHlsResumeState(
+            AudioDownloadManager.serializeHlsResumeState(state)
+        )
+
+        assertEquals(state, restored)
+        assertEquals(null, AudioDownloadManager.deserializeHlsResumeState("{"))
+    }
+
+    @Test
+    fun `retry wake signal version advances and wraps safely`() {
+        assertEquals(2L, AudioDownloadManager.advanceRetryWakeSignalVersion(1L))
+        assertEquals(0L, AudioDownloadManager.advanceRetryWakeSignalVersion(Long.MAX_VALUE))
     }
 }

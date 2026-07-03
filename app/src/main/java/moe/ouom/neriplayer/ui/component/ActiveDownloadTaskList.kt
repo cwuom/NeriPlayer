@@ -70,6 +70,33 @@ fun ActiveDownloadTaskList(
                         )
                     }
 
+                    progress?.stage == AudioDownloadManager.DownloadStage.WAITING_RETRY -> {
+                        Text(
+                            text = stringResource(R.string.download_waiting_network_recovery),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (progress.totalBytes > 0L) {
+                            LinearProgressIndicator(
+                                progress = {
+                                    (progress.bytesRead.toFloat() / progress.totalBytes.toFloat())
+                                        .coerceIn(0f, 1f)
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(4.dp)
+                                    .clip(RoundedCornerShape(2.dp))
+                            )
+                        } else {
+                            LinearProgressIndicator(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(4.dp)
+                                    .clip(RoundedCornerShape(2.dp))
+                            )
+                        }
+                    }
+
                     progress != null && progress.totalBytes > 0L -> {
                         Text(
                             text = stringResource(

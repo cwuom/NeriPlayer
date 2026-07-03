@@ -170,6 +170,7 @@
     <string name="download_queued_status">等待开始</string>
     <string name="download_waiting_queue_summary">其余任务正在排队，等待空闲下载槽</string>
     <string name="download_finalizing">音频已写入，正在整理歌词和封面</string>
+    <string name="download_waiting_network_recovery">网络切换中，恢复后会自动继续</string>
 
     <!-- Search -->
     <string name="search_keyword">搜索关键词</string>

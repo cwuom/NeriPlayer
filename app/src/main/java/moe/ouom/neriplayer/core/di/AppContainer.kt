@@ -40,6 +40,7 @@ import moe.ouom.neriplayer.core.api.search.QQMusicSearchApi
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicClient
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicPlaybackRepository
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.data.ListenTogetherPreferences
 import moe.ouom.neriplayer.data.auth.bili.BiliCookieRepository
 import moe.ouom.neriplayer.data.auth.netease.NeteaseCookieRepository
@@ -279,6 +280,7 @@ object AppContainer {
 
     fun initialize(app: Application) {
         this.application = app
+        AudioDownloadManager.initialize(app)
         primeProxySetting()
         startCookieObserver()
         startYouTubeAuthObserver()
@@ -341,6 +343,7 @@ object AppContainer {
                 DynamicProxySelector.bypassProxy = enabled
                 sharedOkHttpClient.connectionPool.evictAll()
                 neteaseClient.evictConnections()
+                AudioDownloadManager.notifyRecoveryOpportunity("proxy_changed")
             }
             .launchIn(scope)
 

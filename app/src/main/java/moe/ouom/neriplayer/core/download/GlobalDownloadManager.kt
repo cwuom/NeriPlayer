@@ -145,6 +145,7 @@ object GlobalDownloadManager {
         scope.launch {
             val startupRecovery = ManagedDownloadStorage.consumeStartupRecoveryResult()
             val restoredCatalog = restorePersistedDownloadedSongs(appContext)
+            recoverPendingResumableDownloads(appContext)
             if (
                 !shouldRunInitialDownloadScan(
                     catalogReady = restoredCatalog,
@@ -158,6 +159,40 @@ object GlobalDownloadManager {
                 appContext,
                 forceRefresh = startupRecovery.hasRecoveredEntries
             )
+        }
+    }
+
+    private suspend fun recoverPendingResumableDownloads(context: Context) {
+        runCatching {
+            val pendingDownloads = ManagedDownloadStorage.listPendingResumableDownloads(context)
+            if (pendingDownloads.isEmpty()) {
+                return
+            }
+
+            val resumableSongs = mutableListOf<SongItem>()
+            pendingDownloads.forEach { pendingDownload ->
+                val song = pendingDownload.song
+                when {
+                    shouldSkipDownload(context, song) -> {
+                        ManagedDownloadStorage.deleteWorkingDownloadArtifacts(pendingDownload.workingFile)
+                    }
+                    findExistingDownloadedAudio(context, song) != null -> {
+                        ManagedDownloadStorage.deleteWorkingDownloadArtifacts(pendingDownload.workingFile)
+                    }
+                    else -> {
+                        resumableSongs += song
+                    }
+                }
+            }
+
+            if (resumableSongs.isEmpty()) {
+                return
+            }
+
+            NPLogger.d(TAG, "检测到未完成下载，准备自动恢复: count=${resumableSongs.size}")
+            startBatchDownload(context, resumableSongs)
+        }.onFailure { error ->
+            NPLogger.e(TAG, "自动恢复未完成下载失败: ${error.message}", error)
         }
     }
 

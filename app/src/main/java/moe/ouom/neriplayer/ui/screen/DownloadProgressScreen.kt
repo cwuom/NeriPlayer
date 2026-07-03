@@ -426,6 +426,29 @@ private fun DownloadTaskProgressSection(task: DownloadTask) {
                 DownloadTaskIndeterminateProgress()
                 return
             }
+            if (progress.stage == AudioDownloadManager.DownloadStage.WAITING_RETRY) {
+                Text(
+                    text = stringResource(R.string.download_waiting_network_recovery),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                if (progress.totalBytes > 0L) {
+                    LinearProgressIndicator(
+                        progress = {
+                            (progress.bytesRead.toFloat() / progress.totalBytes.toFloat())
+                                .coerceIn(0f, 1f)
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(4.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                    )
+                } else {
+                    DownloadTaskIndeterminateProgress()
+                }
+                return
+            }
             if (progress.stage == AudioDownloadManager.DownloadStage.FINALIZING) {
                 Text(
                     text = stringResource(R.string.download_finalizing),
