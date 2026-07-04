@@ -3624,7 +3624,7 @@ internal object ManagedDownloadStorage {
             put(
                 "neteaseArtists",
                 JSONArray().also { artistsArray ->
-                    neteaseArtists.forEach { artistSummary ->
+                    neteaseArtists.orEmpty().forEach { artistSummary ->
                         artistsArray.put(
                             JSONObject().apply {
                                 put("id", artistSummary.id)

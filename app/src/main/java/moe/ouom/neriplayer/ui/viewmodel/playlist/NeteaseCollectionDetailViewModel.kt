@@ -102,7 +102,7 @@ data class SongItem(
     val subAudioId: String? = null,
     val playlistContextId: String? = null,
     val streamUrl: String? = null,
-    val neteaseArtists: List<NeteaseArtistSummary> = emptyList()
+    val neteaseArtists: List<NeteaseArtistSummary>? = emptyList()
 ) : Parcelable
 
 data class NeteaseCollectionDetailUiState(
