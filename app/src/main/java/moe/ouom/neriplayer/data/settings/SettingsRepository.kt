@@ -146,13 +146,21 @@ class SettingsRepository(private val context: Context) {
 
     val floatingLyricsPreferencesFlow: Flow<FloatingLyricsPreferences> =
         context.dataStore.data.map { prefs ->
+            val outlineWidthDp = prefs[SettingsKeys.FLOATING_LYRICS_OUTLINE_WIDTH_DP] ?: 1.6f
             FloatingLyricsPreferences(
                 enabled = prefs[SettingsKeys.FLOATING_LYRICS_ENABLED] ?: false,
                 hideInApp = prefs[SettingsKeys.FLOATING_LYRICS_HIDE_IN_APP] ?: false,
                 textColorHex = prefs[SettingsKeys.FLOATING_LYRICS_TEXT_COLOR] ?: "FFFFFF",
                 outlineColorHex = prefs[SettingsKeys.FLOATING_LYRICS_OUTLINE_COLOR] ?: "121212",
                 fontSizeSp = prefs[SettingsKeys.FLOATING_LYRICS_FONT_SIZE_SP] ?: 22f,
-                outlineWidthDp = prefs[SettingsKeys.FLOATING_LYRICS_OUTLINE_WIDTH_DP] ?: 1.6f,
+                outlineWidthDp = outlineWidthDp,
+                translationOutlineWidthDp = resolveFloatingLyricsTranslationOutlineWidthDp(
+                    prefs[SettingsKeys.FLOATING_LYRICS_TRANSLATION_OUTLINE_WIDTH_DP],
+                    outlineWidthDp
+                ),
+                translationAlpha = resolveFloatingLyricsTranslationAlpha(
+                    prefs[SettingsKeys.FLOATING_LYRICS_TRANSLATION_ALPHA]
+                ),
                 maxWidthDp = prefs[SettingsKeys.FLOATING_LYRICS_MAX_WIDTH_DP] ?: 280f,
                 positionX = prefs[SettingsKeys.FLOATING_LYRICS_POSITION_X] ?: 0.1f,
                 positionY = prefs[SettingsKeys.FLOATING_LYRICS_POSITION_Y] ?: 0.7f,
@@ -513,6 +521,10 @@ class SettingsRepository(private val context: Context) {
             prefs[SettingsKeys.FLOATING_LYRICS_OUTLINE_COLOR] = normalized.outlineColorHex
             prefs[SettingsKeys.FLOATING_LYRICS_FONT_SIZE_SP] = normalized.fontSizeSp
             prefs[SettingsKeys.FLOATING_LYRICS_OUTLINE_WIDTH_DP] = normalized.outlineWidthDp
+            prefs[SettingsKeys.FLOATING_LYRICS_TRANSLATION_OUTLINE_WIDTH_DP] =
+                normalized.translationOutlineWidthDp
+            prefs[SettingsKeys.FLOATING_LYRICS_TRANSLATION_ALPHA] =
+                normalized.translationAlpha
             prefs[SettingsKeys.FLOATING_LYRICS_MAX_WIDTH_DP] = normalized.maxWidthDp
             prefs[SettingsKeys.FLOATING_LYRICS_POSITION_X] = normalized.positionX
             prefs[SettingsKeys.FLOATING_LYRICS_POSITION_Y] = normalized.positionY

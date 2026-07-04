@@ -26,6 +26,7 @@ import androidx.core.net.toUri
 import moe.ouom.neriplayer.data.settings.FLOATING_LYRICS_ALIGNMENT_LEFT
 import moe.ouom.neriplayer.data.settings.FLOATING_LYRICS_ALIGNMENT_RIGHT
 import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
+import moe.ouom.neriplayer.data.settings.FLOATING_LYRICS_TRANSLATION_STYLE_SCALE
 import moe.ouom.neriplayer.data.settings.normalizeFloatingLyricsColorHex
 import kotlin.math.roundToInt
 
@@ -256,10 +257,13 @@ object FloatingLyricsOverlayManager {
         translationTextView?.apply {
             setAlignmentFactor(alignmentFactor)
             setLyricStyle(
-                textColor = withAlpha(textColor, 0.72f),
-                outlineColor = withAlpha(outlineColor, 0.72f),
-                textSizePx = sp((preferences.fontSizeSp * 0.72f).coerceAtLeast(7f)),
-                outlineWidthPx = dp((preferences.outlineWidthDp * 0.72f).coerceAtLeast(0.3f)),
+                textColor = withAlpha(textColor, preferences.translationAlpha),
+                outlineColor = withAlpha(outlineColor, preferences.translationAlpha),
+                textSizePx = sp(
+                    (preferences.fontSizeSp * FLOATING_LYRICS_TRANSLATION_STYLE_SCALE)
+                        .coerceAtLeast(7f)
+                ),
+                outlineWidthPx = dp(preferences.translationOutlineWidthDp),
                 bold = false
             )
         }

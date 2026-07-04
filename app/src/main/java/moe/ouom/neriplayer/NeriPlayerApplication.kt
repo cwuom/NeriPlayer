@@ -33,6 +33,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.lyricon.LyriconManager
+import moe.ouom.neriplayer.core.player.FloatingLyricsOverlayManager
 import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshotSync
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicLibraryGateway
@@ -71,6 +72,8 @@ class NeriPlayerApplication : Application() {
 
             NativeCrashHandler.init(this)
             AppContainer.initialize(this)
+            // 提前注册前后台回调，避免等播放器初始化后才开始统计 Activity 状态
+            FloatingLyricsOverlayManager.initialize(this)
             ManagedDownloadStorage.initialize(this)
             YouTubeMusicUiDependencies.libraryGateway = object : YouTubeMusicLibraryGateway {
                 override suspend fun getLibraryPlaylists(): List<YouTubeMusicPlaylist> {

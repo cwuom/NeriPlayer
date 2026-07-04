@@ -37,6 +37,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.settings.FLOATING_LYRICS_ALIGNMENT_LEFT
 import moe.ouom.neriplayer.data.settings.FLOATING_LYRICS_ALIGNMENT_RIGHT
 import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
+import moe.ouom.neriplayer.data.settings.FLOATING_LYRICS_TRANSLATION_STYLE_SCALE
 import moe.ouom.neriplayer.data.settings.MIN_FLOATING_LYRICS_MAX_WIDTH_DP
 import moe.ouom.neriplayer.data.settings.normalizeFloatingLyricsColorHex
 
@@ -136,10 +137,12 @@ internal fun FloatingLyricsPreview(preferences: FloatingLyricsPreferences) {
                     if (preferences.showTranslation) {
                         OutlinedFloatingPreviewText(
                             text = stringResource(R.string.settings_floating_lyrics_preview_translation),
-                            textColor = textColor.copy(alpha = 0.72f),
-                            outlineColor = outlineColor.copy(alpha = 0.72f),
-                            fontSizeSp = (preferences.fontSizeSp * 0.72f).coerceAtLeast(6f),
-                            outlineWidthDp = (preferences.outlineWidthDp * 0.72f).coerceAtLeast(0.3f),
+                            textColor = textColor.copy(alpha = preferences.translationAlpha),
+                            outlineColor = outlineColor.copy(alpha = preferences.translationAlpha),
+                            fontSizeSp = (
+                                preferences.fontSizeSp * FLOATING_LYRICS_TRANSLATION_STYLE_SCALE
+                            ).coerceAtLeast(6f),
+                            outlineWidthDp = preferences.translationOutlineWidthDp,
                             textAlign = preferences.toTextAlign(),
                             modifier = Modifier.fillMaxWidth()
                         )

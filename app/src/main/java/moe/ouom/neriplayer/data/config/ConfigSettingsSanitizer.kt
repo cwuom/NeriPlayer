@@ -18,6 +18,7 @@ import moe.ouom.neriplayer.data.settings.SettingsKeys
 import moe.ouom.neriplayer.data.settings.ThemeDefaults
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsBackupKeys
 import moe.ouom.neriplayer.data.settings.normalizeFloatingLyricsAlignment
+import moe.ouom.neriplayer.data.settings.normalizeFloatingLyricsAlpha
 import moe.ouom.neriplayer.data.settings.normalizeFloatingLyricsColorHex
 import moe.ouom.neriplayer.data.settings.normalizeFloatingLyricsFontSizeSp
 import moe.ouom.neriplayer.data.settings.normalizeFloatingLyricsMaxWidthDp
@@ -84,6 +85,10 @@ internal class ConfigSettingsSanitizer(private val context: Context) {
                 SettingsKeys.FLOATING_LYRICS_FONT_SIZE_SP.name -> normalizeFloatingLyricsFontSizeSp(value)
                 SettingsKeys.FLOATING_LYRICS_OUTLINE_WIDTH_DP.name ->
                     normalizeFloatingLyricsOutlineWidthDp(value)
+                SettingsKeys.FLOATING_LYRICS_TRANSLATION_OUTLINE_WIDTH_DP.name ->
+                    normalizeFloatingLyricsOutlineWidthDp(value)
+                SettingsKeys.FLOATING_LYRICS_TRANSLATION_ALPHA.name ->
+                    normalizeFloatingLyricsAlpha(value)
                 SettingsKeys.FLOATING_LYRICS_MAX_WIDTH_DP.name -> normalizeFloatingLyricsMaxWidthDp(value)
                 SettingsKeys.FLOATING_LYRICS_POSITION_X.name,
                 SettingsKeys.FLOATING_LYRICS_POSITION_Y.name -> normalizeFloatingLyricsPosition(value)

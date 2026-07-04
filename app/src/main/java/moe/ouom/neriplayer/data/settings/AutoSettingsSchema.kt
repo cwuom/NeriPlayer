@@ -738,6 +738,26 @@ object AutoSettingsSchema {
         val floatingLyricsOutlineWidthDp = Unit
 
         @AutoSetting(
+            key = "floating_lyrics_translation_outline_width_dp",
+            type = SettingValueType.Float,
+            defaultFloat = 1.152f,
+            order = 19,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val floatingLyricsTranslationOutlineWidthDp = Unit
+
+        @AutoSetting(
+            key = "floating_lyrics_translation_alpha",
+            type = SettingValueType.Float,
+            defaultFloat = 0.72f,
+            order = 19,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val floatingLyricsTranslationAlpha = Unit
+
+        @AutoSetting(
             key = "floating_lyrics_max_width_dp",
             type = SettingValueType.Float,
             defaultFloat = 280f,

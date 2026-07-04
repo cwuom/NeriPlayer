@@ -1020,8 +1020,11 @@
     <string name="settings_floating_lyrics_color_pink">Pink</string>
     <string name="settings_floating_lyrics_font_size">Font size</string>
     <string name="settings_floating_lyrics_font_size_value">%1$d sp</string>
-    <string name="settings_floating_lyrics_outline_width">Outline width</string>
+    <string name="settings_floating_lyrics_lyric_outline_width">Lyric outline width</string>
+    <string name="settings_floating_lyrics_translation_outline_width">Translation outline width</string>
     <string name="settings_floating_lyrics_outline_width_value">%1$.1f dp</string>
+    <string name="settings_floating_lyrics_translation_alpha">Translation opacity</string>
+    <string name="settings_floating_lyrics_alpha_value">%1$d%%</string>
     <string name="settings_floating_lyrics_max_width">Max width</string>
     <string name="settings_floating_lyrics_max_width_value">%1$.1f dp</string>
     <string name="settings_floating_lyrics_position_x">Horizontal position</string>

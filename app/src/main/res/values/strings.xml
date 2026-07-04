@@ -1020,8 +1020,11 @@
     <string name="settings_floating_lyrics_color_pink">粉色</string>
     <string name="settings_floating_lyrics_font_size">字号</string>
     <string name="settings_floating_lyrics_font_size_value">%1$d sp</string>
-    <string name="settings_floating_lyrics_outline_width">描边宽度</string>
+    <string name="settings_floating_lyrics_lyric_outline_width">歌词描边宽度</string>
+    <string name="settings_floating_lyrics_translation_outline_width">翻译描边宽度</string>
     <string name="settings_floating_lyrics_outline_width_value">%1$.1f dp</string>
+    <string name="settings_floating_lyrics_translation_alpha">翻译透明度</string>
+    <string name="settings_floating_lyrics_alpha_value">%1$d%%</string>
     <string name="settings_floating_lyrics_max_width">最大宽度</string>
     <string name="settings_floating_lyrics_max_width_value">%1$.1f dp</string>
     <string name="settings_floating_lyrics_position_x">水平位置</string>

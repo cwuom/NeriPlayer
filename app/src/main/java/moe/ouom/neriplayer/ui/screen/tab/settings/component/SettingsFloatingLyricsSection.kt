@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Colorize
 import androidx.compose.material.icons.outlined.BorderColor
 import androidx.compose.material.icons.outlined.FormatAlignCenter
 import androidx.compose.material.icons.outlined.FormatColorText
@@ -47,12 +48,15 @@ import moe.ouom.neriplayer.data.settings.FLOATING_LYRICS_ALIGNMENT_CENTER
 import moe.ouom.neriplayer.data.settings.FLOATING_LYRICS_ALIGNMENT_LEFT
 import moe.ouom.neriplayer.data.settings.FLOATING_LYRICS_ALIGNMENT_RIGHT
 import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
+import moe.ouom.neriplayer.data.settings.MAX_FLOATING_LYRICS_ALPHA
 import moe.ouom.neriplayer.data.settings.MAX_FLOATING_LYRICS_FONT_SIZE_SP
 import moe.ouom.neriplayer.data.settings.MAX_FLOATING_LYRICS_MAX_WIDTH_DP
 import moe.ouom.neriplayer.data.settings.MAX_FLOATING_LYRICS_OUTLINE_WIDTH_DP
+import moe.ouom.neriplayer.data.settings.MIN_FLOATING_LYRICS_ALPHA
 import moe.ouom.neriplayer.data.settings.MIN_FLOATING_LYRICS_FONT_SIZE_SP
 import moe.ouom.neriplayer.data.settings.MIN_FLOATING_LYRICS_MAX_WIDTH_DP
 import moe.ouom.neriplayer.data.settings.MIN_FLOATING_LYRICS_OUTLINE_WIDTH_DP
+import moe.ouom.neriplayer.data.settings.normalizeFloatingLyricsAlpha
 import moe.ouom.neriplayer.data.settings.normalizeFloatingLyricsFontSizeSp
 import moe.ouom.neriplayer.data.settings.normalizeFloatingLyricsMaxWidthDp
 import moe.ouom.neriplayer.data.settings.normalizeFloatingLyricsOutlineWidthDp
@@ -70,6 +74,12 @@ internal fun SettingsFloatingLyricsSection(
     val normalizedPreferences = remember(preferences) { preferences.normalized() }
     var pendingFontSizeSp by remember { mutableFloatStateOf(normalizedPreferences.fontSizeSp) }
     var pendingOutlineWidthDp by remember { mutableFloatStateOf(normalizedPreferences.outlineWidthDp) }
+    var pendingTranslationOutlineWidthDp by remember {
+        mutableFloatStateOf(normalizedPreferences.translationOutlineWidthDp)
+    }
+    var pendingTranslationAlpha by remember {
+        mutableFloatStateOf(normalizedPreferences.translationAlpha)
+    }
     var pendingMaxWidthDp by remember { mutableFloatStateOf(normalizedPreferences.maxWidthDp) }
     var pendingPositionX by remember { mutableFloatStateOf(normalizedPreferences.positionX) }
     var pendingPositionY by remember { mutableFloatStateOf(normalizedPreferences.positionY) }
@@ -93,6 +103,12 @@ internal fun SettingsFloatingLyricsSection(
     LaunchedEffect(normalizedPreferences.outlineWidthDp) {
         pendingOutlineWidthDp = normalizedPreferences.outlineWidthDp
     }
+    LaunchedEffect(normalizedPreferences.translationOutlineWidthDp) {
+        pendingTranslationOutlineWidthDp = normalizedPreferences.translationOutlineWidthDp
+    }
+    LaunchedEffect(normalizedPreferences.translationAlpha) {
+        pendingTranslationAlpha = normalizedPreferences.translationAlpha
+    }
     LaunchedEffect(normalizedPreferences.maxWidthDp) {
         pendingMaxWidthDp = normalizedPreferences.maxWidthDp
     }
@@ -108,6 +124,8 @@ internal fun SettingsFloatingLyricsSection(
     fun buildPendingPreferences(
         fontSizeSp: Float = pendingFontSizeSp,
         outlineWidthDp: Float = pendingOutlineWidthDp,
+        translationOutlineWidthDp: Float = pendingTranslationOutlineWidthDp,
+        translationAlpha: Float = pendingTranslationAlpha,
         maxWidthDp: Float = pendingMaxWidthDp,
         positionX: Float = pendingPositionX,
         positionY: Float = pendingPositionY
@@ -115,6 +133,8 @@ internal fun SettingsFloatingLyricsSection(
         return normalizedPreferences.copy(
             fontSizeSp = fontSizeSp,
             outlineWidthDp = outlineWidthDp,
+            translationOutlineWidthDp = translationOutlineWidthDp,
+            translationAlpha = translationAlpha,
             maxWidthDp = maxWidthDp,
             positionX = positionX,
             positionY = positionY
@@ -126,6 +146,8 @@ internal fun SettingsFloatingLyricsSection(
     val previewPreferences = normalizedPreferences.copy(
         fontSizeSp = pendingFontSizeSp,
         outlineWidthDp = pendingOutlineWidthDp,
+        translationOutlineWidthDp = pendingTranslationOutlineWidthDp,
+        translationAlpha = pendingTranslationAlpha,
         maxWidthDp = pendingMaxWidthDp,
         positionX = pendingPositionX,
         positionY = pendingPositionY
@@ -197,7 +219,7 @@ internal fun SettingsFloatingLyricsSection(
             }
         )
         FloatingLyricsSliderListItem(
-            title = stringResource(R.string.settings_floating_lyrics_outline_width),
+            title = stringResource(R.string.settings_floating_lyrics_lyric_outline_width),
             valueText = stringResource(
                 R.string.settings_floating_lyrics_outline_width_value,
                 pendingOutlineWidthDp
@@ -213,6 +235,46 @@ internal fun SettingsFloatingLyricsSection(
             },
             onValueChangeFinished = {
                 updatePreferences { it.copy(outlineWidthDp = pendingOutlineWidthDp) }
+            }
+        )
+        FloatingLyricsSliderListItem(
+            title = stringResource(R.string.settings_floating_lyrics_translation_outline_width),
+            valueText = stringResource(
+                R.string.settings_floating_lyrics_outline_width_value,
+                pendingTranslationOutlineWidthDp
+            ),
+            icon = Icons.Outlined.LineWeight,
+            value = pendingTranslationOutlineWidthDp,
+            valueRange = MIN_FLOATING_LYRICS_OUTLINE_WIDTH_DP..MAX_FLOATING_LYRICS_OUTLINE_WIDTH_DP,
+            steps = 0,
+            onValueChange = { value ->
+                val nextValue = normalizeFloatingLyricsOutlineWidthDp(value)
+                pendingTranslationOutlineWidthDp = nextValue
+                previewOverlay(buildPendingPreferences(translationOutlineWidthDp = nextValue))
+            },
+            onValueChangeFinished = {
+                updatePreferences {
+                    it.copy(translationOutlineWidthDp = pendingTranslationOutlineWidthDp)
+                }
+            }
+        )
+        FloatingLyricsSliderListItem(
+            title = stringResource(R.string.settings_floating_lyrics_translation_alpha),
+            valueText = stringResource(
+                R.string.settings_floating_lyrics_alpha_value,
+                (pendingTranslationAlpha * 100f).roundToInt()
+            ),
+            icon = Icons.Outlined.Colorize,
+            value = pendingTranslationAlpha,
+            valueRange = MIN_FLOATING_LYRICS_ALPHA..MAX_FLOATING_LYRICS_ALPHA,
+            steps = 19,
+            onValueChange = { value ->
+                val nextValue = normalizeFloatingLyricsAlpha(value)
+                pendingTranslationAlpha = nextValue
+                previewOverlay(buildPendingPreferences(translationAlpha = nextValue))
+            },
+            onValueChangeFinished = {
+                updatePreferences { it.copy(translationAlpha = pendingTranslationAlpha) }
             }
         )
         FloatingLyricsSliderListItem(
