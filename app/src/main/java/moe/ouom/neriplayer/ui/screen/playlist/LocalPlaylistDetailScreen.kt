@@ -96,7 +96,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -105,7 +104,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -116,6 +114,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -181,8 +180,7 @@ import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.BatchDownloadManagerSheet
-import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
-import moe.ouom.neriplayer.ui.component.playlistExportListHeight
+import moe.ouom.neriplayer.ui.component.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.component.LocalSongDetailsDialog
 import moe.ouom.neriplayer.ui.component.LocalSongSyncConfirmDialog
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
@@ -395,7 +393,6 @@ fun LocalPlaylistDetailScreen(
             var detailSong by remember { mutableStateOf<SongItem?>(null) }
             var pendingSyncConfirmAction by remember { mutableStateOf<(() -> Unit)?>(null) }
             var pendingSyncConfirmLabel by remember { mutableStateOf("") }
-            val exportSheetState = rememberModalBottomSheetState()
 
             var showSearch by remember { mutableStateOf(false) }
             var searchQuery by remember { mutableStateOf("") }
@@ -1589,104 +1586,42 @@ fun LocalPlaylistDetailScreen(
 
                 // 多选导出
                 if (showExportSheet) {
-                    ModalBottomSheet(
-                        onDismissRequest = { showExportSheet = false },
-                        sheetState = exportSheetState,
-                        sheetGesturesEnabled = false
-                    ) {
-                        Column(
-                            Modifier
-                                .bottomSheetScrollGuard()
-                                .padding(horizontal = 20.dp, vertical = 12.dp)
-                        ) {
-                            Text(stringResource(R.string.local_playlist_export_to), style = MaterialTheme.typography.titleMedium)
-                            Spacer(Modifier.height(8.dp))
-
-                            var newName by remember { mutableStateOf("") }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                OutlinedTextField(
-                                    value = newName,
-                                    onValueChange = { newName = it },
-                                    modifier = Modifier.weight(1f),
-                                    placeholder = { Text(stringResource(R.string.playlist_create_name)) },
-                                    singleLine = true
-                                )
-                                Spacer(Modifier.width(12.dp))
-                                HapticTextButton(
-                                    enabled = newName.isNotBlank() && selectedKeysState.value.isNotEmpty(),
-                                    onClick = {
-                                        val name = newName.trim()
-                                        if (name.isBlank()) return@HapticTextButton
-                                        val songs = selectedStoredLocalSongsForExport(
-                                            storedSongs = localSongs,
-                                            selectedKeys = selectedKeysState.value
-                                        )
-                                        launchWithLocalSyncWarning(
-                                            songs = songs,
-                                            actionLabel = context.getString(R.string.playlist_add_to)
-                                        ) {
-                                            scope.launch {
-                                                repo.createPlaylist(name)
-                                                val target =
-                                                    repo.playlists.value.lastOrNull { it.name == name }
-                                                if (target != null) {
-                                                    repo.addSongsToPlaylist(target.id, songs)
-                                                }
-                                                showExportSheet = false
-                                            }
-                                        }
-                                    }
-                                ) { Text(stringResource(R.string.playlist_create_and_export)) }
-                            }
-
-                            Spacer(Modifier.height(12.dp))
-                            HorizontalDivider()
-                            Spacer(Modifier.height(4.dp))
-
-                            LazyColumn(modifier = Modifier.playlistExportListHeight()) {
-                    itemsIndexed(
-                        allPlaylists.filter {
+                    PlaylistExportSheet(
+                        title = stringResource(R.string.local_playlist_export_to),
+                        playlists = allPlaylists.filter {
                             it.id != playlist.id && !LocalFilesPlaylist.isSystemPlaylist(it, context)
-                        }
-                    ) { _, pl ->
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(vertical = 10.dp)
-                                            .combinedClickable(onClick = {
-                                                context.performHapticFeedback()
-                                                val songs = selectedStoredLocalSongsForExport(
-                                                    storedSongs = localSongs,
-                                                    selectedKeys = selectedKeysState.value
-                                                )
-                                                launchWithLocalSyncWarning(
-                                                    songs = songs,
-                                                    actionLabel = context.getString(R.string.playlist_add_to)
-                                                ) {
-                                                    scope.launch {
-                                                        repo.addSongsToPlaylist(pl.id, songs)
-                                                        showExportSheet = false
-                                                    }
-                                                }
-                                            }),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(pl.name, style = MaterialTheme.typography.bodyLarge)
-                                        Spacer(Modifier.weight(1f))
-                                        Text(
-                                            pluralStringResource(
-                                                R.plurals.explore_song_count,
-                                                pl.songs.size,
-                                                pl.songs.size
-                                            ),
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
+                        },
+                        selectedCount = selectedKeysState.value.size,
+                        onDismissRequest = { showExportSheet = false },
+                        onCreateAndExport = { name ->
+                            val songs = selectedStoredLocalSongsForExport(
+                                storedSongs = localSongs,
+                                selectedKeys = selectedKeysState.value
+                            )
+                            launchWithLocalSyncWarning(
+                                songs = songs,
+                                actionLabel = context.getString(R.string.playlist_add_to)
+                            ) {
+                                scope.launch {
+                                    repo.createPlaylistWithSongs(name, songs)
                                 }
                             }
-                            Spacer(Modifier.height(12.dp))
+                        },
+                        onExportToPlaylist = { target ->
+                            val songs = selectedStoredLocalSongsForExport(
+                                storedSongs = localSongs,
+                                selectedKeys = selectedKeysState.value
+                            )
+                            launchWithLocalSyncWarning(
+                                songs = songs,
+                                actionLabel = context.getString(R.string.playlist_add_to)
+                            ) {
+                                scope.launch {
+                                    repo.addSongsToPlaylist(target.id, songs)
+                                }
+                            }
                         }
-                    }
+                    )
                 }
 
                 // 下载管理器
@@ -1772,7 +1707,8 @@ private data class LocalScanPreviewItem(
     val stableKey: String,
     val fileName: String,
     val filePath: String,
-    val subtitle: String
+    val subtitle: String,
+    val searchText: String
 )
 
 private fun SongItem.toLocalScanPreviewItem(context: Context): LocalScanPreviewItem {
@@ -1800,7 +1736,9 @@ private fun SongItem.toLocalScanPreviewItem(context: Context): LocalScanPreviewI
         stableKey = stableKey(),
         fileName = resolvedFileName,
         filePath = resolvedPath,
-        subtitle = subtitle
+        subtitle = subtitle,
+        searchText = listOf(resolvedFileName, resolvedPath, displayName, displayArtist, displayAlbum)
+            .joinToString("\n")
     )
 }
 
@@ -1823,19 +1761,30 @@ private fun LocalScanPreviewScreen(
     isBusy: Boolean = false
 ) {
     val context = LocalContext.current
-    val previewItems = remember(songs, context) { songs.map { it.toLocalScanPreviewItem(context) } }
+    val appContext = remember(context) { context.applicationContext }
+    val previewItems by produceState<List<LocalScanPreviewItem>>(
+        initialValue = emptyList(),
+        songs,
+        appContext
+    ) {
+        value = withContext(Dispatchers.Default) {
+            songs.map { it.toLocalScanPreviewItem(appContext) }
+        }
+    }
     val listState = rememberLazyListState()
-    val displayedItems = remember(previewItems, query) {
+    val displayedItems by produceState<List<LocalScanPreviewItem>>(
+        initialValue = emptyList(),
+        previewItems,
+        query
+    ) {
         val keyword = query.trim()
-        if (keyword.isBlank()) {
+        value = if (keyword.isBlank()) {
             previewItems
         } else {
-            previewItems.filter { item ->
-                item.fileName.contains(keyword, ignoreCase = true) ||
-                    item.filePath.contains(keyword, ignoreCase = true) ||
-                    item.song.displayName().contains(keyword, ignoreCase = true) ||
-                    item.song.displayArtist().contains(keyword, ignoreCase = true) ||
-                    item.song.displayAlbum(context).contains(keyword, ignoreCase = true)
+            withContext(Dispatchers.Default) {
+                previewItems.filter { item ->
+                    item.searchText.contains(keyword, ignoreCase = true)
+                }
             }
         }
     }

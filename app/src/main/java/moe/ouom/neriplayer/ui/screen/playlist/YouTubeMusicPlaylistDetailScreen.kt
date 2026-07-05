@@ -119,8 +119,7 @@ import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.BatchDownloadManagerSheet
-import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
-import moe.ouom.neriplayer.ui.component.playlistExportListHeight
+import moe.ouom.neriplayer.ui.component.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.playlist.YouTubeMusicPlaylistDetailViewModel
@@ -140,11 +139,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DividerDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.rememberModalBottomSheetState
 import moe.ouom.neriplayer.core.player.AudioDownloadManager
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
@@ -203,7 +198,6 @@ fun YouTubeMusicPlaylistDetailScreen(
     val hasDownloadManagerEntry = remember(downloadTasks) { hasPendingDownloadTasks(downloadTasks) }
 
     var showExportSheet by remember { mutableStateOf(false) }
-    val exportSheetState = rememberModalBottomSheetState()
     val repo = remember(context) { LocalPlaylistRepository.getInstance(context) }
     val allPlaylists by repo.playlists.collectAsState()
     val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
@@ -606,92 +600,30 @@ fun YouTubeMusicPlaylistDetailScreen(
         }
         
         if (showExportSheet) {
-            ModalBottomSheet(
+            PlaylistExportSheet(
+                title = stringResource(R.string.playlist_export_to_local),
+                playlists = allPlaylists.filterNot {
+                    LocalFilesPlaylist.isSystemPlaylist(it, context)
+                },
+                selectedCount = selectedKeys.size,
                 onDismissRequest = { showExportSheet = false },
-                sheetState = exportSheetState,
-                sheetGesturesEnabled = false
-            ) {
-                Column(
-                    Modifier
-                        .bottomSheetScrollGuard()
-                        .padding(horizontal = 20.dp, vertical = 12.dp)
-                ) {
-                    Text(stringResource(R.string.playlist_export_to_local), style = MaterialTheme.typography.titleMedium)
-                    Spacer(Modifier.height(8.dp))
-
-                    var newName by remember { mutableStateOf("") }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedTextField(
-                            value = newName,
-                            onValueChange = { newName = it },
-                            modifier = Modifier.weight(1f),
-                            placeholder = { Text(stringResource(R.string.playlist_create_name)) },
-                            singleLine = true
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        HapticTextButton(
-                            enabled = newName.isNotBlank() && selectedKeys.isNotEmpty(),
-                            onClick = {
-                                val name = newName.trim()
-                                if (name.isBlank()) return@HapticTextButton
-                                val songs = ui.tracks
-                                    .asReversed()
-                                    .filter { selectedKeys.contains(it.stableKey()) }
-                                scope.launch {
-                                    repo.createPlaylist(name)
-                                    val target = repo.playlists.value.lastOrNull { it.name == name }
-                                    if (target != null) {
-                                        repo.addSongsToPlaylist(target.id, songs)
-                                    }
-                                    showExportSheet = false
-                                }
-                            }
-                        ) { Text(stringResource(R.string.playlist_create_and_export)) }
+                onCreateAndExport = { name ->
+                    val songs = ui.tracks
+                        .asReversed()
+                        .filter { selectedKeys.contains(it.stableKey()) }
+                    scope.launch {
+                        repo.createPlaylistWithSongs(name, songs)
                     }
-
-                    Spacer(Modifier.height(12.dp))
-                    HorizontalDivider(
-                        Modifier,
-                        DividerDefaults.Thickness,
-                        DividerDefaults.color
-                    )
-                    Spacer(Modifier.height(4.dp))
-
-                    LazyColumn(modifier = Modifier.playlistExportListHeight()) {
-                        itemsIndexed(
-                            allPlaylists.filterNot { LocalFilesPlaylist.isSystemPlaylist(it, context) }
-                        ) { _, pl ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 10.dp)
-                                    .combinedClickable(onClick = {
-                                        val songs = ui.tracks
-                                            .asReversed()
-                                            .filter { selectedKeys.contains(it.stableKey()) }
-                                        scope.launch {
-                                            repo.addSongsToPlaylist(pl.id, songs)
-                                            showExportSheet = false
-                                        }
-                                    }),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(pl.name, style = MaterialTheme.typography.bodyLarge)
-                                Spacer(Modifier.weight(1f))
-                                Text(
-                                        pluralStringResource(
-                                            R.plurals.count_songs_format,
-                                            pl.songs.size,
-                                            pl.songs.size
-                                        ),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
+                },
+                onExportToPlaylist = { playlist ->
+                    val songs = ui.tracks
+                        .asReversed()
+                        .filter { selectedKeys.contains(it.stableKey()) }
+                    scope.launch {
+                        repo.addSongsToPlaylist(playlist.id, songs)
                     }
-                    Spacer(Modifier.height(12.dp))
                 }
-            }
+            )
         }
         
         BackHandler(enabled = selectionMode) { exitSelection() }

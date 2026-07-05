@@ -61,6 +61,14 @@ class BackupManager(private val context: Context) {
         private const val BACKUP_FILE_EXTENSION = ".json"
         private const val MAX_BACKUP_HISTORY_COUNT = 1000
     }
+
+    private data class PlaylistLookup(
+        val descriptors: MutableList<SystemLocalPlaylists.Descriptor?> = mutableListOf(),
+        val bySystemId: MutableMap<Long, Int> = mutableMapOf(),
+        val byId: MutableMap<Long, MutableList<Int>> = mutableMapOf(),
+        val byName: MutableMap<String, MutableList<Int>> = mutableMapOf(),
+        val usedIds: MutableSet<Long> = mutableSetOf()
+    )
     
     /**
      * 备份数据结构
@@ -147,6 +155,7 @@ class BackupManager(private val context: Context) {
             val historyRepo = PlayHistoryRepository.getInstance(context)
             val playbackStatsRepo = PlaybackStatsRepository.getInstance(context)
             val currentPlaylists = playlistRepo.playlists.value.toMutableList()
+            val playlistLookup = buildPlaylistLookup(currentPlaylists)
 
             var importedCount = 0
             var skippedCount = 0
@@ -158,32 +167,23 @@ class BackupManager(private val context: Context) {
                     syncPlaylist.name,
                     context
                 )
-                // 转换为LocalPlaylist
-                val importedPlaylist = syncPlaylist.toLocalPlaylist().copy(
+                val importedPlaylistName = importedSystemDescriptor?.currentName ?: syncPlaylist.name
+                val importedPlaylistForMatch = LocalPlaylist(
                     id = importedSystemDescriptor?.id ?: syncPlaylist.id,
-                    name = importedSystemDescriptor?.currentName ?: syncPlaylist.name
+                    name = importedPlaylistName
                 )
 
-                val existingIndex = currentPlaylists.indexOfFirst { playlist ->
-                    val existingSystemDescriptor = SystemLocalPlaylists.resolve(
-                        playlist.id,
-                        playlist.name,
-                        context
-                    )
-
-                    when {
-                        existingSystemDescriptor != null && importedSystemDescriptor != null ->
-                            existingSystemDescriptor.id == importedSystemDescriptor.id
-
-                        else ->
-                            playlist.id == importedPlaylist.id || playlist.name == importedPlaylist.name
-                    }
-                }
+                val existingIndex = findMatchingPlaylistIndex(
+                    playlists = currentPlaylists,
+                    lookup = playlistLookup,
+                    importedPlaylist = importedPlaylistForMatch,
+                    importedSystemDescriptor = importedSystemDescriptor
+                )
 
                 if (existingIndex != -1) {
                     // 如果存在同名歌单，进行智能合并
                     val existingPlaylist = currentPlaylists[existingIndex]
-                    val mergeResult = mergePlaylists(existingPlaylist, importedPlaylist)
+                    val mergeResult = mergePlaylists(existingPlaylist, syncPlaylist)
 
                     if (mergeResult.hasChanges) {
                         currentPlaylists[existingIndex] = mergeResult.mergedPlaylist
@@ -193,30 +193,32 @@ class BackupManager(private val context: Context) {
                             context.resources.getQuantityString(
                                 R.plurals.backup_playlist_merged,
                                 mergeResult.addedSongs,
-                                importedPlaylist.name,
+                                importedPlaylistName,
                                 mergeResult.addedSongs
                             )
                         )
                     } else {
                         skippedCount++
-                        NPLogger.d(TAG, context.getString(R.string.backup_playlist_no_update, importedPlaylist.name))
+                        NPLogger.d(TAG, context.getString(R.string.backup_playlist_no_update, importedPlaylistName))
                     }
                 } else {
                     // 创建新的歌单
+                    val newPlaylistId = nextImportedPlaylistId(playlistLookup, importedCount)
                     val newPlaylist = LocalPlaylist(
-                        id = System.currentTimeMillis() + importedCount,
-                        name = importedPlaylist.name,
-                        songs = importedPlaylist.songs.toMutableList()
+                        id = newPlaylistId,
+                        name = importedPlaylistName,
+                        songs = syncPlaylist.songs.map { it.toSongItem() }.toMutableList()
                     )
 
                     currentPlaylists.add(newPlaylist)
+                    registerPlaylist(playlistLookup, newPlaylist, currentPlaylists.lastIndex)
                     importedCount++
                     NPLogger.d(
                         TAG,
                         context.resources.getQuantityString(
                             R.plurals.backup_playlist_created,
                             newPlaylist.songs.size,
-                            importedPlaylist.name,
+                            importedPlaylistName,
                             newPlaylist.songs.size
                         )
                     )
@@ -253,9 +255,11 @@ class BackupManager(private val context: Context) {
     /**
      * 智能合并歌单，只添加缺失的歌曲
      */
-    private fun mergePlaylists(existing: LocalPlaylist, imported: LocalPlaylist): MergeResult {
-        val existingSongIds = existing.songs.map { it.identity() }.toSet()
-        val newSongs = imported.songs.filter { it.identity() !in existingSongIds }
+    private fun mergePlaylists(existing: LocalPlaylist, imported: SyncPlaylist): MergeResult {
+        val existingSongIds = existing.songs.mapTo(HashSet(existing.songs.size)) { it.identity() }
+        val newSongs = imported.songs
+            .filter { it.identity() !in existingSongIds }
+            .map { it.toSongItem() }
         
         if (newSongs.isEmpty()) {
             return MergeResult(
@@ -273,6 +277,72 @@ class BackupManager(private val context: Context) {
             hasChanges = true,
             addedSongs = newSongs.size
         )
+    }
+
+    private fun buildPlaylistLookup(playlists: List<LocalPlaylist>): PlaylistLookup {
+        val lookup = PlaylistLookup()
+        playlists.forEachIndexed { index, playlist ->
+            registerPlaylist(lookup, playlist, index)
+        }
+        return lookup
+    }
+
+    private fun registerPlaylist(
+        lookup: PlaylistLookup,
+        playlist: LocalPlaylist,
+        index: Int
+    ) {
+        val descriptor = SystemLocalPlaylists.resolve(playlist.id, playlist.name, context)
+        while (lookup.descriptors.size <= index) {
+            lookup.descriptors.add(null)
+        }
+        lookup.descriptors[index] = descriptor
+        descriptor?.let { lookup.bySystemId.putIfAbsent(it.id, index) }
+        lookup.byId.getOrPut(playlist.id) { mutableListOf() }.add(index)
+        lookup.byName.getOrPut(playlist.name) { mutableListOf() }.add(index)
+        lookup.usedIds.add(playlist.id)
+    }
+
+    private fun findMatchingPlaylistIndex(
+        playlists: List<LocalPlaylist>,
+        lookup: PlaylistLookup,
+        importedPlaylist: LocalPlaylist,
+        importedSystemDescriptor: SystemLocalPlaylists.Descriptor?
+    ): Int {
+        val candidateIndexes = linkedSetOf<Int>()
+        importedSystemDescriptor?.let { descriptor ->
+            lookup.bySystemId[descriptor.id]?.let(candidateIndexes::add)
+        }
+        lookup.byId[importedPlaylist.id]?.let(candidateIndexes::addAll)
+        lookup.byName[importedPlaylist.name]?.let(candidateIndexes::addAll)
+
+        return candidateIndexes
+            .asSequence()
+            .sorted()
+            .firstOrNull { index ->
+                val existing = playlists.getOrNull(index)
+                if (existing == null) {
+                    false
+                } else {
+                    val existingDescriptor = lookup.descriptors.getOrNull(index)
+                    when {
+                        existingDescriptor != null && importedSystemDescriptor != null ->
+                            existingDescriptor.id == importedSystemDescriptor.id
+
+                        else ->
+                            existing.id == importedPlaylist.id || existing.name == importedPlaylist.name
+                    }
+                }
+            }
+            ?: -1
+    }
+
+    private fun nextImportedPlaylistId(lookup: PlaylistLookup, importedCount: Int): Long {
+        var candidate = System.currentTimeMillis() + importedCount
+        while (!lookup.usedIds.add(candidate)) {
+            candidate++
+        }
+        return candidate
     }
 
     private fun importRecentPlays(
@@ -327,6 +397,7 @@ class BackupManager(private val context: Context) {
 
             val playlistRepo = LocalPlaylistRepository.getInstance(context)
             val currentPlaylists = playlistRepo.playlists.value
+            val playlistLookup = buildPlaylistLookup(currentPlaylists)
 
             val differences = mutableListOf<PlaylistDifference>()
 
@@ -336,21 +407,16 @@ class BackupManager(private val context: Context) {
                     syncPlaylist.name,
                     context
                 )
-                val currentPlaylist = currentPlaylists.find { playlist ->
-                    val currentSystemDescriptor = SystemLocalPlaylists.resolve(
-                        playlist.id,
-                        playlist.name,
-                        context
-                    )
-
-                    when {
-                        currentSystemDescriptor != null && syncSystemDescriptor != null ->
-                            currentSystemDescriptor.id == syncSystemDescriptor.id
-
-                        else ->
-                            playlist.id == syncPlaylist.id || playlist.name == syncPlaylist.name
-                    }
-                }
+                val currentPlaylistIndex = findMatchingPlaylistIndex(
+                    playlists = currentPlaylists,
+                    lookup = playlistLookup,
+                    importedPlaylist = LocalPlaylist(
+                        id = syncSystemDescriptor?.id ?: syncPlaylist.id,
+                        name = syncSystemDescriptor?.currentName ?: syncPlaylist.name
+                    ),
+                    importedSystemDescriptor = syncSystemDescriptor
+                )
+                val currentPlaylist = currentPlaylists.getOrNull(currentPlaylistIndex)
 
                 if (currentPlaylist == null) {
                     // 新歌单
@@ -363,14 +429,16 @@ class BackupManager(private val context: Context) {
                     ))
                 } else {
                     // 现有歌单，分析差异
-                    val currentSongIds = currentPlaylist.songs.map { it.identity() }.toSet()
-                    val missingSongs = syncPlaylist.songs.filter { it.identity() !in currentSongIds }
+                    val currentSongIds = currentPlaylist.songs.mapTo(
+                        HashSet(currentPlaylist.songs.size)
+                    ) { it.identity() }
+                    val missingSongs = syncPlaylist.songs.count { it.identity() !in currentSongIds }
 
-                    if (missingSongs.isNotEmpty()) {
+                    if (missingSongs > 0) {
                         differences.add(PlaylistDifference(
                             playlistName = syncPlaylist.name,
                             type = DifferenceType.MISSING_SONGS,
-                            missingSongs = missingSongs.size,
+                            missingSongs = missingSongs,
                             existingSongs = currentPlaylist.songs.size,
                             totalSongs = syncPlaylist.songs.size
                         ))

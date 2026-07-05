@@ -90,7 +90,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -98,7 +97,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -149,8 +147,7 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.component.BatchDownloadManagerSheet
-import moe.ouom.neriplayer.ui.component.bottomSheetScrollGuard
-import moe.ouom.neriplayer.ui.component.playlistExportListHeight
+import moe.ouom.neriplayer.ui.component.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.viewmodel.playlist.NeteaseCollectionDetailUiState
 import moe.ouom.neriplayer.ui.viewmodel.playlist.NeteaseCollectionDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.NeteaseCollectionHeader
@@ -338,7 +335,6 @@ fun DetailScreen(
     }
 
     var showExportSheet by remember { mutableStateOf(false) }
-    val exportSheetState = rememberModalBottomSheetState()
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -698,95 +694,30 @@ fun DetailScreen(
 
                 // 导出面板 //
                 if (showExportSheet) {
-                    ModalBottomSheet(
+                    PlaylistExportSheet(
+                        title = stringResource(R.string.playlist_export_to_local),
+                        playlists = allPlaylists.filterNot {
+                            LocalFilesPlaylist.isSystemPlaylist(it, context)
+                        },
+                        selectedCount = selectedIds.size,
                         onDismissRequest = { showExportSheet = false },
-                        sheetState = exportSheetState,
-                        sheetGesturesEnabled = false
-                    ) {
-                        Column(
-                            Modifier
-                                .bottomSheetScrollGuard()
-                                .padding(horizontal = 20.dp, vertical = 12.dp)
-                        ) {
-                            Text(stringResource(R.string.playlist_export_to_local), style = MaterialTheme.typography.titleMedium)
-                            Spacer(Modifier.height(8.dp))
-
-                            var newName by remember { mutableStateOf("") }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                OutlinedTextField(
-                                    value = newName,
-                                    onValueChange = { newName = it },
-                                    modifier = Modifier.weight(1f),
-                                    placeholder = { Text(stringResource(R.string.playlist_create_name)) },
-                                    singleLine = true
-                                )
-                                Spacer(Modifier.width(12.dp))
-                                HapticTextButton(
-                                    enabled = newName.isNotBlank() && selectedIds.isNotEmpty(),
-                                    onClick = {
-                                        val name = newName.trim()
-                                        if (name.isBlank()) return@HapticTextButton
-                                        // 倒序导出
-                                        val songs = ui.tracks
-                                            .asReversed()
-                                            .filter { selectedIds.contains(it.id) }
-                                        scope.launch {
-                                            repo.createPlaylist(name)
-                                            val target =
-                                                repo.playlists.value.lastOrNull { it.name == name }
-                                            if (target != null) {
-                                                repo.addSongsToPlaylist(target.id, songs)
-                                            }
-                                            showExportSheet = false
-                                        }
-                                    }
-                                ) { Text(stringResource(R.string.playlist_create_and_export)) }
+                        onCreateAndExport = { name ->
+                            val songs = ui.tracks
+                                .asReversed()
+                                .filter { selectedIds.contains(it.id) }
+                            scope.launch {
+                                repo.createPlaylistWithSongs(name, songs)
                             }
-
-                            Spacer(Modifier.height(12.dp))
-                            HorizontalDivider(
-                                Modifier,
-                                DividerDefaults.Thickness,
-                                DividerDefaults.color
-                            )
-                            Spacer(Modifier.height(4.dp))
-
-                            LazyColumn(modifier = Modifier.playlistExportListHeight()) {
-                                itemsIndexed(
-                                    allPlaylists.filterNot { LocalFilesPlaylist.isSystemPlaylist(it, context) }
-                                ) { _, pl ->
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(vertical = 10.dp)
-                                            .combinedClickable(onClick = {
-                                                // 倒序导出
-                                                val songs = ui.tracks
-                                                    .asReversed()
-                                                    .filter { selectedIds.contains(it.id) }
-                                                scope.launch {
-                                                    repo.addSongsToPlaylist(pl.id, songs)
-                                                    showExportSheet = false
-                                                }
-                                            }),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(pl.name, style = MaterialTheme.typography.bodyLarge)
-                                        Spacer(Modifier.weight(1f))
-                                        Text(
-                                        pluralStringResource(
-                                            R.plurals.count_songs_format,
-                                            pl.songs.size,
-                                            pl.songs.size
-                                        ),
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
+                        },
+                        onExportToPlaylist = { playlist ->
+                            val songs = ui.tracks
+                                .asReversed()
+                                .filter { selectedIds.contains(it.id) }
+                            scope.launch {
+                                repo.addSongsToPlaylist(playlist.id, songs)
                             }
-                            Spacer(Modifier.height(12.dp))
                         }
-                    }
+                    )
                 }
                 // 允许返回键优先退出多选
                 BackHandler(enabled = selectionMode) { exitSelection() }

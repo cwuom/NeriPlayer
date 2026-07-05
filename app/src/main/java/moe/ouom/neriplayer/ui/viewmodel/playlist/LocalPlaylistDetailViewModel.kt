@@ -30,10 +30,12 @@ import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportResult
@@ -147,18 +149,23 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
                 )
                 _scanPreviewState.value = if (result.completed) {
                     val prepareStartedAt = SystemClock.elapsedRealtime()
-                    val preparedSongs = prepareScannedSongs(result.songs)
+                    val preparedState = withContext(Dispatchers.Default) {
+                        val preparedSongs = prepareScannedSongs(result.songs)
+                        LocalScanPreviewState(
+                            visible = true,
+                            isScanning = false,
+                            songs = preparedSongs,
+                            selectedKeys = preparedSongs.mapTo(LinkedHashSet(preparedSongs.size)) {
+                                it.stableKey()
+                            }
+                        )
+                    }
                     val prepareElapsedMs = SystemClock.elapsedRealtime() - prepareStartedAt
                     NPLogger.d(
                         TAG,
-                        "prepareScannedSongs finished: session=$sessionId, input=${result.songs.size}, output=${preparedSongs.size}, elapsed=${prepareElapsedMs}ms"
+                        "prepareScannedSongs finished: session=$sessionId, input=${result.songs.size}, output=${preparedState.songs.size}, elapsed=${prepareElapsedMs}ms"
                     )
-                    LocalScanPreviewState(
-                        visible = true,
-                        isScanning = false,
-                        songs = preparedSongs,
-                        selectedKeys = preparedSongs.map { it.stableKey() }.toSet()
-                    )
+                    preparedState
                 } else {
                     LocalScanPreviewState()
                 }
@@ -211,14 +218,10 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
         onResult: (LocalAudioImportUiResult) -> Unit
     ) {
         viewModelScope.launch {
-            val beforeSongs = repo.playlists.value.firstOrNull { it.id == playlistId }?.songs.orEmpty()
-            val beforeKeys = beforeSongs.map { it.identity() }.toSet()
-            repo.addSongsToLocalFilesPlaylist(songs)
-            val afterSongs = repo.playlists.value.firstOrNull { it.id == playlistId }?.songs.orEmpty()
-            val afterKeys = afterSongs.map { it.identity() }.toSet()
+            val importedCount = repo.addSongsToLocalFilesPlaylistAndCount(songs)
             onResult(
                 LocalAudioImportUiResult(
-                    importedCount = (afterKeys - beforeKeys).size,
+                    importedCount = importedCount,
                     failedCount = 0
                 )
             )

@@ -398,7 +398,7 @@ fun SettingsScreen(
     val configTransferVm: ConfigTransferViewModel = viewModel()
     val configTransferUiState by configTransferVm.uiState.collectAsState()
     val localPlaylistRepo = remember(context) { LocalPlaylistRepository.getInstance(context) }
-    val localPlaylists by localPlaylistRepo.playlists.collectAsState(initial = emptyList())
+    val localPlaylistCount by localPlaylistRepo.playlistCount.collectAsState(initial = 0)
     val defaultDownloadDirectorySummary = context.getString(R.string.settings_download_directory_default_label)
     val downloadDirectoryChangeEnabled = !hasActiveDownloadOperations && !isMigratingDownloadDirectory
 
@@ -1307,7 +1307,7 @@ fun SettingsScreen(
                             arrowRotation = 0f,
                             onExpandedChange = {},
                             showHeader = false,
-                            currentPlaylistCount = localPlaylists.size,
+                            currentPlaylistCount = localPlaylistCount,
                             backupRestoreUiState = backupRestoreUiState,
                             configTransferUiState = configTransferUiState,
                             onExportClick = {

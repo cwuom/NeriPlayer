@@ -105,6 +105,8 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
 
     private val _playlists = MutableStateFlow<List<LocalPlaylist>>(emptyList())
     val playlists: StateFlow<List<LocalPlaylist>> = _playlists
+    private val _playlistCount = MutableStateFlow(0)
+    val playlistCount: StateFlow<Int> = _playlistCount
 
     init {
         loadFromDisk()
@@ -123,13 +125,20 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
             emptyList()
         }
 
-        _playlists.value = SystemLocalPlaylists.normalize(loaded, context)
-        saveToDisk(triggerSync = false)
+        val normalized = SystemLocalPlaylists.normalize(loaded, context)
+        _playlists.value = normalized
+        _playlistCount.value = normalized.size
+        if (normalized != loaded) {
+            saveToDisk(normalized, triggerSync = false)
+        }
     }
 
-    private fun saveToDisk(triggerSync: Boolean = true) {
+    private fun saveToDisk(
+        playlists: List<LocalPlaylist> = _playlists.value,
+        triggerSync: Boolean = true
+    ) {
         runCatching {
-            val json = gson.toJson(SystemLocalPlaylists.normalize(_playlists.value, context))
+            val json = gson.toJson(playlists)
             val parent = file.parentFile ?: context.filesDir
             val tmp = File(parent, "${file.name}.tmp")
             tmp.writeText(json)
@@ -147,8 +156,13 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
     }
 
     private fun publish(playlists: List<LocalPlaylist>, triggerSync: Boolean = true) {
-        _playlists.value = SystemLocalPlaylists.normalize(playlists, context)
-        saveToDisk(triggerSync)
+        val normalized = SystemLocalPlaylists.normalize(playlists, context)
+        if (normalized == _playlists.value) {
+            return
+        }
+        _playlists.value = normalized
+        _playlistCount.value = normalized.size
+        saveToDisk(normalized, triggerSync)
     }
 
     private fun triggerAutoSync() {
@@ -191,6 +205,15 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
 
     private fun songSet(songs: List<SongItem>): Set<SongIdentity> = songs.map { it.identity() }.toSet()
 
+    private fun nextPlaylistId(existing: List<LocalPlaylist>): Long {
+        val usedIds = existing.mapTo(HashSet(existing.size)) { it.id }
+        var candidate = System.currentTimeMillis()
+        while (candidate in usedIds) {
+            candidate++
+        }
+        return candidate
+    }
+
     private fun isLocalFilesPlaylist(playlistId: Long, playlistName: String? = null): Boolean {
         return playlistId == LocalFilesPlaylist.SYSTEM_ID ||
             (playlistId < 0 && playlistName != null && LocalFilesPlaylist.matches(playlistName, context))
@@ -201,12 +224,30 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
             val list = _playlists.value.toMutableList()
             list.add(
                 LocalPlaylist(
-                    id = System.currentTimeMillis(),
+                    id = nextPlaylistId(list),
                     name = sanitizePlaylistName(name),
                     modifiedAt = System.currentTimeMillis()
                 )
             )
             publish(list)
+        }
+    }
+
+    suspend fun createPlaylistWithSongs(name: String, songs: List<SongItem>): LocalPlaylist {
+        return withContext(Dispatchers.IO) {
+            val list = _playlists.value.toMutableList()
+            val distinctSongs = songs
+                .distinctBy { it.identity() }
+                .toMutableList()
+            val playlist = LocalPlaylist(
+                id = nextPlaylistId(list),
+                name = sanitizePlaylistName(name),
+                songs = distinctSongs,
+                modifiedAt = System.currentTimeMillis()
+            )
+            list.add(playlist)
+            publish(list)
+            playlist
         }
     }
 
@@ -423,8 +464,13 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
     }
 
     suspend fun addSongsToLocalFilesPlaylist(songs: List<SongItem>) {
-        withContext(Dispatchers.IO) {
-            if (songs.isEmpty()) return@withContext
+        addSongsToLocalFilesPlaylistAndCount(songs)
+    }
+
+    suspend fun addSongsToLocalFilesPlaylistAndCount(songs: List<SongItem>): Int {
+        return withContext(Dispatchers.IO) {
+            if (songs.isEmpty()) return@withContext 0
+            var addedCount = 0
             val updated = _playlists.value.map { playlist ->
                 if (!isLocalFilesPlaylist(playlist.id, playlist.name)) {
                     return@map playlist
@@ -435,6 +481,7 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
                 if (toAdd.isEmpty()) {
                     playlist
                 } else {
+                    addedCount += toAdd.size
                     playlist.copy(
                         songs = (playlist.songs + toAdd).toMutableList(),
                         modifiedAt = System.currentTimeMillis()
@@ -442,6 +489,7 @@ class LocalPlaylistRepository private constructor(private val context: Context) 
                 }
             }
             publish(updated)
+            addedCount
         }
     }
 
