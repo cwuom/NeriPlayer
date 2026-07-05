@@ -38,14 +38,22 @@ internal class AnimatedOutlinedLyricTextView(context: Context) : View(context) {
         setPadding(dp(3), 0, dp(3), 0)
     }
 
-    fun setLyricText(nextText: String, revealDurationMs: Long? = null) {
+    fun setLyricText(
+        nextText: String,
+        revealDurationMs: Long? = null,
+        revealAnimationEnabled: Boolean = true
+    ) {
         if (lyricText == nextText) {
             return
         }
         lyricText = nextText
         scrollOffset = 0f
         requestLayout()
-        startRevealAnimation(revealDurationMs)
+        if (revealAnimationEnabled) {
+            startRevealAnimation(revealDurationMs)
+        } else {
+            showTextWithoutReveal()
+        }
     }
 
     fun setLyricStyle(
@@ -101,6 +109,19 @@ internal class AnimatedOutlinedLyricTextView(context: Context) : View(context) {
             })
             start()
         }
+    }
+
+    fun setRevealAnimationEnabled(enabled: Boolean) {
+        if (!enabled && revealProgress < 1f) {
+            showTextWithoutReveal()
+        }
+    }
+
+    fun preferredMeasuredHeightPx(): Int {
+        val fontMetrics = fillPaint.fontMetrics
+        val textHeight = fontMetrics.descent - fontMetrics.ascent
+        return ceil(textHeight + outlinePaint.strokeWidth + paddingTop + paddingBottom)
+            .toInt()
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -198,6 +219,15 @@ internal class AnimatedOutlinedLyricTextView(context: Context) : View(context) {
             })
             start()
         }
+    }
+
+    private fun showTextWithoutReveal() {
+        revealAnimator?.cancel()
+        scrollAnimator?.cancel()
+        scrollAnimator = null
+        revealProgress = 1f
+        invalidate()
+        restartScrollAfterLayout()
     }
 
     companion object {

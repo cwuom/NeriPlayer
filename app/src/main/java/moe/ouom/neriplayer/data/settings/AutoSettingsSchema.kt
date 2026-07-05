@@ -746,6 +746,16 @@ object AutoSettingsSchema {
         val floatingLyricsOutlineWidthDp = Unit
 
         @AutoSetting(
+            key = "floating_lyrics_lyric_alpha",
+            type = SettingValueType.Float,
+            defaultFloat = 1f,
+            order = 19,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val floatingLyricsLyricAlpha = Unit
+
+        @AutoSetting(
             key = "floating_lyrics_translation_outline_width_dp",
             type = SettingValueType.Float,
             defaultFloat = 1.152f,
@@ -816,10 +826,20 @@ object AutoSettingsSchema {
         val floatingLyricsShowTranslation = Unit
 
         @AutoSetting(
+            key = "floating_lyrics_reveal_animation_enabled",
+            type = SettingValueType.Boolean,
+            defaultBoolean = true,
+            order = 25,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val floatingLyricsRevealAnimationEnabled = Unit
+
+        @AutoSetting(
             key = "external_bluetooth_lyrics_enabled",
             type = SettingValueType.Boolean,
             defaultBoolean = false,
-            order = 25,
+            order = 26,
             ui = SettingUiType.Switch
         )
         val externalBluetoothLyricsEnabled = autoSetting(

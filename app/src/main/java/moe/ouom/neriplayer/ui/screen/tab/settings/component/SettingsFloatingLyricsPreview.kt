@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -98,7 +99,14 @@ internal fun FloatingLyricsPreview(preferences: FloatingLyricsPreferences) {
                 label = "floating_lyrics_preview_width"
             )
             val horizontalTravel = (maxWidth - animatedWidth).coerceAtLeast(0.dp)
-            val verticalTravel = (maxHeight - 64.dp).coerceAtLeast(0.dp)
+            val translationFontSizeSp = (
+                preferences.fontSizeSp * FLOATING_LYRICS_TRANSLATION_STYLE_SCALE
+            ).coerceAtLeast(6f)
+            val lineBlockHeight = with(density) {
+                (preferences.fontSizeSp + 4f).sp.toDp() +
+                    (translationFontSizeSp + 4f).sp.toDp()
+            } + 2.dp
+            val verticalTravel = (maxHeight - lineBlockHeight - 12.dp).coerceAtLeast(0.dp)
             val offsetX by animateDpAsState(
                 targetValue = horizontalTravel * preferences.positionX,
                 animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing),
@@ -124,11 +132,20 @@ internal fun FloatingLyricsPreview(preferences: FloatingLyricsPreferences) {
                     )
                     .padding(horizontal = 8.dp, vertical = 6.dp)
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = lineBlockHeight),
+                    verticalArrangement = if (preferences.showTranslation) {
+                        Arrangement.spacedBy(2.dp)
+                    } else {
+                        Arrangement.Center
+                    }
+                ) {
                     OutlinedFloatingPreviewText(
                         text = stringResource(R.string.settings_floating_lyrics_preview_line),
-                        textColor = textColor,
-                        outlineColor = outlineColor,
+                        textColor = textColor.copy(alpha = preferences.lyricAlpha),
+                        outlineColor = outlineColor.copy(alpha = preferences.lyricAlpha),
                         fontSizeSp = preferences.fontSizeSp,
                         outlineWidthDp = preferences.outlineWidthDp,
                         textAlign = preferences.toTextAlign(),
@@ -139,9 +156,7 @@ internal fun FloatingLyricsPreview(preferences: FloatingLyricsPreferences) {
                             text = stringResource(R.string.settings_floating_lyrics_preview_translation),
                             textColor = textColor.copy(alpha = preferences.translationAlpha),
                             outlineColor = outlineColor.copy(alpha = preferences.translationAlpha),
-                            fontSizeSp = (
-                                preferences.fontSizeSp * FLOATING_LYRICS_TRANSLATION_STYLE_SCALE
-                            ).coerceAtLeast(6f),
+                            fontSizeSp = translationFontSizeSp,
                             outlineWidthDp = preferences.translationOutlineWidthDp,
                             textAlign = preferences.toTextAlign(),
                             modifier = Modifier.fillMaxWidth()

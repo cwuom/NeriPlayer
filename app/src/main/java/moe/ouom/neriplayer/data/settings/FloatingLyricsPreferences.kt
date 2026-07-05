@@ -23,6 +23,7 @@ private const val DEFAULT_FLOATING_LYRICS_TEXT_COLOR = "FFFFFF"
 private const val DEFAULT_FLOATING_LYRICS_OUTLINE_COLOR = "121212"
 private const val DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP = 22f
 private const val DEFAULT_FLOATING_LYRICS_OUTLINE_WIDTH_DP = 1.6f
+private const val DEFAULT_FLOATING_LYRICS_LYRIC_ALPHA = 1f
 private const val DEFAULT_FLOATING_LYRICS_TRANSLATION_ALPHA = 0.72f
 private const val DEFAULT_FLOATING_LYRICS_MAX_WIDTH_DP = 280f
 private const val DEFAULT_FLOATING_LYRICS_POSITION_X = 0.10f
@@ -38,13 +39,15 @@ data class FloatingLyricsPreferences(
     val outlineColorHex: String = DEFAULT_FLOATING_LYRICS_OUTLINE_COLOR,
     val fontSizeSp: Float = DEFAULT_FLOATING_LYRICS_FONT_SIZE_SP,
     val outlineWidthDp: Float = DEFAULT_FLOATING_LYRICS_OUTLINE_WIDTH_DP,
+    val lyricAlpha: Float = DEFAULT_FLOATING_LYRICS_LYRIC_ALPHA,
     val translationOutlineWidthDp: Float = defaultFloatingLyricsTranslationOutlineWidthDp(),
     val translationAlpha: Float = DEFAULT_FLOATING_LYRICS_TRANSLATION_ALPHA,
     val maxWidthDp: Float = DEFAULT_FLOATING_LYRICS_MAX_WIDTH_DP,
     val positionX: Float = DEFAULT_FLOATING_LYRICS_POSITION_X,
     val positionY: Float = DEFAULT_FLOATING_LYRICS_POSITION_Y,
     val alignment: String = FLOATING_LYRICS_ALIGNMENT_CENTER,
-    val showTranslation: Boolean = true
+    val showTranslation: Boolean = true,
+    val revealAnimationEnabled: Boolean = true
 ) {
     fun normalized(): FloatingLyricsPreferences {
         return copy(
@@ -52,6 +55,10 @@ data class FloatingLyricsPreferences(
             outlineColorHex = normalizeFloatingLyricsColorHex(outlineColorHex),
             fontSizeSp = normalizeFloatingLyricsFontSizeSp(fontSizeSp),
             outlineWidthDp = normalizeFloatingLyricsOutlineWidthDp(outlineWidthDp),
+            lyricAlpha = normalizeFloatingLyricsAlpha(
+                lyricAlpha,
+                DEFAULT_FLOATING_LYRICS_LYRIC_ALPHA
+            ),
             translationOutlineWidthDp = normalizeFloatingLyricsOutlineWidthDp(translationOutlineWidthDp),
             translationAlpha = normalizeFloatingLyricsAlpha(translationAlpha),
             maxWidthDp = normalizeFloatingLyricsMaxWidthDp(maxWidthDp),
@@ -68,9 +75,12 @@ fun normalizeFloatingLyricsFontSizeSp(value: Float): Float =
 fun normalizeFloatingLyricsOutlineWidthDp(value: Float): Float =
     value.coerceIn(MIN_FLOATING_LYRICS_OUTLINE_WIDTH_DP, MAX_FLOATING_LYRICS_OUTLINE_WIDTH_DP)
 
-fun normalizeFloatingLyricsAlpha(value: Float): Float {
+fun normalizeFloatingLyricsAlpha(
+    value: Float,
+    fallback: Float = DEFAULT_FLOATING_LYRICS_TRANSLATION_ALPHA
+): Float {
     return if (value.isNaN() || value.isInfinite()) {
-        DEFAULT_FLOATING_LYRICS_TRANSLATION_ALPHA
+        fallback
     } else {
         value.coerceIn(MIN_FLOATING_LYRICS_ALPHA, MAX_FLOATING_LYRICS_ALPHA)
     }
@@ -92,6 +102,14 @@ fun resolveFloatingLyricsTranslationAlpha(value: Float?): Float {
         DEFAULT_FLOATING_LYRICS_TRANSLATION_ALPHA
     } else {
         normalizeFloatingLyricsAlpha(value)
+    }
+}
+
+fun resolveFloatingLyricsLyricAlpha(value: Float?): Float {
+    return if (value == null || value.isNaN() || value.isInfinite()) {
+        DEFAULT_FLOATING_LYRICS_LYRIC_ALPHA
+    } else {
+        normalizeFloatingLyricsAlpha(value, DEFAULT_FLOATING_LYRICS_LYRIC_ALPHA)
     }
 }
 

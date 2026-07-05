@@ -178,6 +178,7 @@ object FloatingLyricsOverlayManager {
         val translation = AnimatedOutlinedLyricTextView(app)
         val root = LinearLayout(app).apply {
             orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
             clipChildren = false
             clipToPadding = false
             setPadding(0, 0, 0, 0)
@@ -215,12 +216,25 @@ object FloatingLyricsOverlayManager {
         val nextLyric = lyricLine.orEmpty()
         val showTranslation = preferences.showTranslation && !translationLine.isNullOrBlank()
         val nextTranslation = if (showTranslation) translationLine.orEmpty() else ""
-        val revealDurationMs = listOf(nextLyric, nextTranslation)
-            .maxOf { AnimatedOutlinedLyricTextView.resolveRevealDurationMs(it) }
-        lyricTextView?.setLyricText(nextLyric, revealDurationMs)
+        val revealAnimationEnabled = preferences.revealAnimationEnabled
+        val revealDurationMs = if (revealAnimationEnabled) {
+            listOf(nextLyric, nextTranslation)
+                .maxOf { AnimatedOutlinedLyricTextView.resolveRevealDurationMs(it) }
+        } else {
+            null
+        }
+        lyricTextView?.setLyricText(
+            nextText = nextLyric,
+            revealDurationMs = revealDurationMs,
+            revealAnimationEnabled = revealAnimationEnabled
+        )
         translationTextView?.apply {
             visibility = if (showTranslation) View.VISIBLE else View.GONE
-            setLyricText(nextTranslation, revealDurationMs)
+            setLyricText(
+                nextText = nextTranslation,
+                revealDurationMs = revealDurationMs,
+                revealAnimationEnabled = revealAnimationEnabled
+            )
         }
     }
 
@@ -245,16 +259,18 @@ object FloatingLyricsOverlayManager {
         rootView?.background = null
         layoutParams?.width = dp(preferences.maxWidthDp).roundToInt()
         lyricTextView?.apply {
+            setRevealAnimationEnabled(preferences.revealAnimationEnabled)
             setAlignmentFactor(alignmentFactor)
             setLyricStyle(
-                textColor = textColor,
-                outlineColor = outlineColor,
+                textColor = withAlpha(textColor, preferences.lyricAlpha),
+                outlineColor = withAlpha(outlineColor, preferences.lyricAlpha),
                 textSizePx = sp(preferences.fontSizeSp),
                 outlineWidthPx = dp(preferences.outlineWidthDp),
                 bold = true
             )
         }
         translationTextView?.apply {
+            setRevealAnimationEnabled(preferences.revealAnimationEnabled)
             setAlignmentFactor(alignmentFactor)
             setLyricStyle(
                 textColor = withAlpha(textColor, preferences.translationAlpha),
@@ -267,7 +283,14 @@ object FloatingLyricsOverlayManager {
                 bold = false
             )
         }
+        updateOverlayMinimumHeight()
         scheduleLayoutUpdate()
+    }
+
+    private fun updateOverlayMinimumHeight() {
+        val lyricHeight = lyricTextView?.preferredMeasuredHeightPx() ?: 0
+        val translationHeight = translationTextView?.preferredMeasuredHeightPx() ?: 0
+        rootView?.minimumHeight = lyricHeight + translationHeight
     }
 
     private fun scheduleLayoutUpdate() {
@@ -350,7 +373,8 @@ object FloatingLyricsOverlayManager {
     }
 
     private fun resolveViewHeight(view: View): Int {
-        return view.height.takeIf { it > 0 } ?: dp(48)
+        val currentHeight = view.height.coerceAtLeast(view.minimumHeight)
+        return currentHeight.takeIf { it > 0 } ?: dp(48)
     }
 
     private fun resolveStatusBarInsetTop(): Int {

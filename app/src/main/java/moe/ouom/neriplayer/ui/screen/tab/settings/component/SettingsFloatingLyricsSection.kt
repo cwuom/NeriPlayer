@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Colorize
 import androidx.compose.material.icons.outlined.BorderColor
 import androidx.compose.material.icons.outlined.FormatAlignCenter
@@ -74,6 +75,9 @@ internal fun SettingsFloatingLyricsSection(
     val normalizedPreferences = remember(preferences) { preferences.normalized() }
     var pendingFontSizeSp by remember { mutableFloatStateOf(normalizedPreferences.fontSizeSp) }
     var pendingOutlineWidthDp by remember { mutableFloatStateOf(normalizedPreferences.outlineWidthDp) }
+    var pendingLyricAlpha by remember {
+        mutableFloatStateOf(normalizedPreferences.lyricAlpha)
+    }
     var pendingTranslationOutlineWidthDp by remember {
         mutableFloatStateOf(normalizedPreferences.translationOutlineWidthDp)
     }
@@ -103,6 +107,9 @@ internal fun SettingsFloatingLyricsSection(
     LaunchedEffect(normalizedPreferences.outlineWidthDp) {
         pendingOutlineWidthDp = normalizedPreferences.outlineWidthDp
     }
+    LaunchedEffect(normalizedPreferences.lyricAlpha) {
+        pendingLyricAlpha = normalizedPreferences.lyricAlpha
+    }
     LaunchedEffect(normalizedPreferences.translationOutlineWidthDp) {
         pendingTranslationOutlineWidthDp = normalizedPreferences.translationOutlineWidthDp
     }
@@ -124,6 +131,7 @@ internal fun SettingsFloatingLyricsSection(
     fun buildPendingPreferences(
         fontSizeSp: Float = pendingFontSizeSp,
         outlineWidthDp: Float = pendingOutlineWidthDp,
+        lyricAlpha: Float = pendingLyricAlpha,
         translationOutlineWidthDp: Float = pendingTranslationOutlineWidthDp,
         translationAlpha: Float = pendingTranslationAlpha,
         maxWidthDp: Float = pendingMaxWidthDp,
@@ -133,6 +141,7 @@ internal fun SettingsFloatingLyricsSection(
         return normalizedPreferences.copy(
             fontSizeSp = fontSizeSp,
             outlineWidthDp = outlineWidthDp,
+            lyricAlpha = lyricAlpha,
             translationOutlineWidthDp = translationOutlineWidthDp,
             translationAlpha = translationAlpha,
             maxWidthDp = maxWidthDp,
@@ -146,6 +155,7 @@ internal fun SettingsFloatingLyricsSection(
     val previewPreferences = normalizedPreferences.copy(
         fontSizeSp = pendingFontSizeSp,
         outlineWidthDp = pendingOutlineWidthDp,
+        lyricAlpha = pendingLyricAlpha,
         translationOutlineWidthDp = pendingTranslationOutlineWidthDp,
         translationAlpha = pendingTranslationAlpha,
         maxWidthDp = pendingMaxWidthDp,
@@ -259,6 +269,25 @@ internal fun SettingsFloatingLyricsSection(
             }
         )
         FloatingLyricsSliderListItem(
+            title = stringResource(R.string.settings_floating_lyrics_lyric_alpha),
+            valueText = stringResource(
+                R.string.settings_floating_lyrics_alpha_value,
+                (pendingLyricAlpha * 100f).roundToInt()
+            ),
+            icon = Icons.Outlined.Colorize,
+            value = pendingLyricAlpha,
+            valueRange = MIN_FLOATING_LYRICS_ALPHA..MAX_FLOATING_LYRICS_ALPHA,
+            steps = 19,
+            onValueChange = { value ->
+                val nextValue = normalizeFloatingLyricsAlpha(value, fallback = 1f)
+                pendingLyricAlpha = nextValue
+                previewOverlay(buildPendingPreferences(lyricAlpha = nextValue))
+            },
+            onValueChangeFinished = {
+                updatePreferences { it.copy(lyricAlpha = pendingLyricAlpha) }
+            }
+        )
+        FloatingLyricsSliderListItem(
             title = stringResource(R.string.settings_floating_lyrics_translation_alpha),
             valueText = stringResource(
                 R.string.settings_floating_lyrics_alpha_value,
@@ -347,6 +376,17 @@ internal fun SettingsFloatingLyricsSection(
             checked = normalizedPreferences.showTranslation,
             onCheckedChange = { showTranslation ->
                 updatePreferences { it.copy(showTranslation = showTranslation) }
+            }
+        )
+        FloatingLyricsSwitchListItem(
+            title = stringResource(R.string.settings_floating_lyrics_disable_reveal_animation),
+            description = stringResource(
+                R.string.settings_floating_lyrics_disable_reveal_animation_desc
+            ),
+            icon = Icons.Outlined.AutoAwesome,
+            checked = !normalizedPreferences.revealAnimationEnabled,
+            onCheckedChange = { disabled ->
+                updatePreferences { it.copy(revealAnimationEnabled = !disabled) }
             }
         )
     }

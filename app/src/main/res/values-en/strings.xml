@@ -1038,6 +1038,7 @@
     <string name="settings_floating_lyrics_lyric_outline_width">Lyric outline width</string>
     <string name="settings_floating_lyrics_translation_outline_width">Translation outline width</string>
     <string name="settings_floating_lyrics_outline_width_value">%1$.1f dp</string>
+    <string name="settings_floating_lyrics_lyric_alpha">Lyric opacity</string>
     <string name="settings_floating_lyrics_translation_alpha">Translation opacity</string>
     <string name="settings_floating_lyrics_alpha_value">%1$d%%</string>
     <string name="settings_floating_lyrics_max_width">Max width</string>
@@ -1051,6 +1052,8 @@
     <string name="settings_floating_lyrics_align_right">Right</string>
     <string name="settings_floating_lyrics_show_translation">Show translation</string>
     <string name="settings_floating_lyrics_show_translation_desc">Show translated lyrics on the second line when available</string>
+    <string name="settings_floating_lyrics_disable_reveal_animation">Disable reveal animation</string>
+    <string name="settings_floating_lyrics_disable_reveal_animation_desc">When enabled, lyric changes show the full line immediately. Long-line scrolling is not affected.</string>
 
     <!-- Now Playing / Empty State -->
     <string name="nowplaying_no_playback">No Playback</string>

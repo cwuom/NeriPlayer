@@ -85,6 +85,8 @@ internal class ConfigSettingsSanitizer(private val context: Context) {
                 SettingsKeys.FLOATING_LYRICS_FONT_SIZE_SP.name -> normalizeFloatingLyricsFontSizeSp(value)
                 SettingsKeys.FLOATING_LYRICS_OUTLINE_WIDTH_DP.name ->
                     normalizeFloatingLyricsOutlineWidthDp(value)
+                SettingsKeys.FLOATING_LYRICS_LYRIC_ALPHA.name ->
+                    normalizeFloatingLyricsAlpha(value, fallback = 1f)
                 SettingsKeys.FLOATING_LYRICS_TRANSLATION_OUTLINE_WIDTH_DP.name ->
                     normalizeFloatingLyricsOutlineWidthDp(value)
                 SettingsKeys.FLOATING_LYRICS_TRANSLATION_ALPHA.name ->

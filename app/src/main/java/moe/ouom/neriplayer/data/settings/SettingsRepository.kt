@@ -164,6 +164,9 @@ class SettingsRepository(private val context: Context) {
                 outlineColorHex = prefs[SettingsKeys.FLOATING_LYRICS_OUTLINE_COLOR] ?: "121212",
                 fontSizeSp = prefs[SettingsKeys.FLOATING_LYRICS_FONT_SIZE_SP] ?: 22f,
                 outlineWidthDp = outlineWidthDp,
+                lyricAlpha = resolveFloatingLyricsLyricAlpha(
+                    prefs[SettingsKeys.FLOATING_LYRICS_LYRIC_ALPHA]
+                ),
                 translationOutlineWidthDp = resolveFloatingLyricsTranslationOutlineWidthDp(
                     prefs[SettingsKeys.FLOATING_LYRICS_TRANSLATION_OUTLINE_WIDTH_DP],
                     outlineWidthDp
@@ -176,7 +179,9 @@ class SettingsRepository(private val context: Context) {
                 positionY = prefs[SettingsKeys.FLOATING_LYRICS_POSITION_Y] ?: 0.7f,
                 alignment = prefs[SettingsKeys.FLOATING_LYRICS_ALIGNMENT]
                     ?: FLOATING_LYRICS_ALIGNMENT_CENTER,
-                showTranslation = prefs[SettingsKeys.FLOATING_LYRICS_SHOW_TRANSLATION] ?: true
+                showTranslation = prefs[SettingsKeys.FLOATING_LYRICS_SHOW_TRANSLATION] ?: true,
+                revealAnimationEnabled =
+                    prefs[SettingsKeys.FLOATING_LYRICS_REVEAL_ANIMATION_ENABLED] ?: true
             ).normalized()
         }
 
@@ -531,6 +536,7 @@ class SettingsRepository(private val context: Context) {
             prefs[SettingsKeys.FLOATING_LYRICS_OUTLINE_COLOR] = normalized.outlineColorHex
             prefs[SettingsKeys.FLOATING_LYRICS_FONT_SIZE_SP] = normalized.fontSizeSp
             prefs[SettingsKeys.FLOATING_LYRICS_OUTLINE_WIDTH_DP] = normalized.outlineWidthDp
+            prefs[SettingsKeys.FLOATING_LYRICS_LYRIC_ALPHA] = normalized.lyricAlpha
             prefs[SettingsKeys.FLOATING_LYRICS_TRANSLATION_OUTLINE_WIDTH_DP] =
                 normalized.translationOutlineWidthDp
             prefs[SettingsKeys.FLOATING_LYRICS_TRANSLATION_ALPHA] =
@@ -540,6 +546,8 @@ class SettingsRepository(private val context: Context) {
             prefs[SettingsKeys.FLOATING_LYRICS_POSITION_Y] = normalized.positionY
             prefs[SettingsKeys.FLOATING_LYRICS_ALIGNMENT] = normalized.alignment
             prefs[SettingsKeys.FLOATING_LYRICS_SHOW_TRANSLATION] = normalized.showTranslation
+            prefs[SettingsKeys.FLOATING_LYRICS_REVEAL_ANIMATION_ENABLED] =
+                normalized.revealAnimationEnabled
         }
     }
 

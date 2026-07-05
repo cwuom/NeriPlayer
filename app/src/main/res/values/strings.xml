@@ -1038,6 +1038,7 @@
     <string name="settings_floating_lyrics_lyric_outline_width">歌词描边宽度</string>
     <string name="settings_floating_lyrics_translation_outline_width">翻译描边宽度</string>
     <string name="settings_floating_lyrics_outline_width_value">%1$.1f dp</string>
+    <string name="settings_floating_lyrics_lyric_alpha">主歌词透明度</string>
     <string name="settings_floating_lyrics_translation_alpha">翻译透明度</string>
     <string name="settings_floating_lyrics_alpha_value">%1$d%%</string>
     <string name="settings_floating_lyrics_max_width">最大宽度</string>
@@ -1051,6 +1052,8 @@
     <string name="settings_floating_lyrics_align_right">居右</string>
     <string name="settings_floating_lyrics_show_translation">显示翻译</string>
     <string name="settings_floating_lyrics_show_translation_desc">有翻译歌词时一起显示在第二行</string>
+    <string name="settings_floating_lyrics_disable_reveal_animation">关闭逐字切换动画</string>
+    <string name="settings_floating_lyrics_disable_reveal_animation_desc">开启后歌词切换时直接显示整句，超长歌词滚动不受影响</string>
     <!-- Now Playing / Empty State -->
     <string name="nowplaying_no_playback">暂无播放</string>
 
