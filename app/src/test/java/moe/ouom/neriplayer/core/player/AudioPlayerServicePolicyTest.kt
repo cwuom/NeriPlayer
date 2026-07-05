@@ -262,4 +262,70 @@ class AudioPlayerServicePolicyTest {
             )
         )
     }
+
+    @Test
+    fun `metadata cover source keeps deferred result for the same song`() {
+        assertEquals(
+            "content://covers/local.jpg",
+            resolveMetadataCoverSource(
+                songKey = "song-1",
+                immediateCoverSource = null,
+                retainedSongKey = "song-1",
+                retainedCoverSource = "content://covers/local.jpg"
+            )
+        )
+    }
+
+    @Test
+    fun `metadata cover source does not leak deferred result to another song`() {
+        assertEquals(
+            null,
+            resolveMetadataCoverSource(
+                songKey = "song-2",
+                immediateCoverSource = null,
+                retainedSongKey = "song-1",
+                retainedCoverSource = "content://covers/local.jpg"
+            )
+        )
+    }
+
+    @Test
+    fun `artwork load is retried after cooldown for the same cover`() {
+        assertTrue(
+            shouldRequestArtworkLoad(
+                coverSource = "https://example.com/cover.jpg",
+                artworkReady = false,
+                inFlightCoverSource = null,
+                lastFailedCoverSource = "https://example.com/cover.jpg",
+                lastFailureAtElapsedRealtime = 1_000L,
+                nowElapsedRealtime = 4_500L
+            )
+        )
+    }
+
+    @Test
+    fun `artwork load is not retried while retry cooldown is still active`() {
+        assertFalse(
+            shouldRequestArtworkLoad(
+                coverSource = "https://example.com/cover.jpg",
+                artworkReady = false,
+                inFlightCoverSource = null,
+                lastFailedCoverSource = "https://example.com/cover.jpg",
+                lastFailureAtElapsedRealtime = 1_000L,
+                nowElapsedRealtime = 2_500L
+            )
+        )
+    }
+
+    @Test
+    fun `only remote cover uri is exposed to media metadata uri fields`() {
+        assertEquals(
+            "https://example.com/cover.jpg",
+            resolveRemoteMetadataArtworkUri("https://example.com/cover.jpg")
+        )
+        assertEquals(
+            null,
+            resolveRemoteMetadataArtworkUri("content://covers/local.jpg")
+        )
+    }
 }
