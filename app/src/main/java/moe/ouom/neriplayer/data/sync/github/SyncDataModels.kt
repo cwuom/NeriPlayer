@@ -53,7 +53,8 @@ data class SyncData(
     @ProtoNumber(8) val syncLog: List<SyncLogEntry> = emptyList(),
     @ProtoNumber(9) val recentPlayDeletions: List<SyncRecentPlayDeletion> = emptyList(),
     @ProtoNumber(10) val playbackStats: List<SyncTrackStat> = emptyList(),
-    @ProtoNumber(11) val playbackStatsClearedAt: Long = 0L
+    @ProtoNumber(11) val playbackStatsClearedAt: Long = 0L,
+    @ProtoNumber(12) val playbackStatBuckets: List<SyncPlaybackStatBucket> = emptyList()
 )
 
 /**
@@ -406,4 +407,22 @@ data class SyncTrackStat(
     @ProtoNumber(11) val mediaUri: String? = null,
     @ProtoNumber(12) val id: Long = 0L,
     @ProtoNumber(13) val albumId: Long = 0L
+)
+
+@Serializable
+data class SyncPlaybackStatBucket(
+    @ProtoNumber(1) val dayStartAt: Long,
+    @ProtoNumber(2) val identityKey: String,
+    @ProtoNumber(3) val name: String,
+    @ProtoNumber(4) val artist: String,
+    @ProtoNumber(5) val album: String,
+    @ProtoNumber(6) val totalListenMs: Long,
+    @ProtoNumber(7) val playCount: Int,
+    @ProtoNumber(8) val lastPlayedAt: Long,
+    @ProtoNumber(9) val firstPlayedAt: Long,
+    @ProtoNumber(10) val coverUrl: String? = null,
+    @ProtoNumber(11) val durationMs: Long = 0L,
+    @ProtoNumber(12) val mediaUri: String? = null,
+    @ProtoNumber(13) val id: Long = 0L,
+    @ProtoNumber(14) val albumId: Long = 0L
 )

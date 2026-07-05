@@ -36,6 +36,7 @@ import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.sync.github.SyncPlaylist
+import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.sync.github.SyncRecentPlay
 import moe.ouom.neriplayer.data.sync.github.SyncTrackStat
 import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
@@ -70,6 +71,8 @@ class BackupManager(private val context: Context) {
         val playlists: List<SyncPlaylist>? = emptyList(),
         val recentPlays: List<SyncRecentPlay>? = emptyList(),
         val playbackStats: List<SyncTrackStat>? = emptyList(),
+        val playbackStatBuckets: List<SyncPlaybackStatBucket>? = emptyList(),
+        val playbackStatsClearedAt: Long = 0L,
         val exportDate: String? = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.getDefault()).format(Date())
     )
     
@@ -94,12 +97,17 @@ class BackupManager(private val context: Context) {
             val playbackStats = playbackStatsRepo.statsFlow.value
                 .filter { BackupMetadataMapper.shouldExportTrackStat(it, context) }
                 .map(BackupMetadataMapper::toSyncTrackStat)
+            val playbackStatBuckets = playbackStatsRepo.dailyStatsFlow.value
+                .filter { BackupMetadataMapper.shouldExportPlaybackStatBucket(it, context) }
+                .map(BackupMetadataMapper::toSyncPlaybackStatBucket)
 
             val backupData = BackupData(
-                version = "2.1",
+                version = "2.2",
                 playlists = syncPlaylists,
                 recentPlays = recentPlays,
                 playbackStats = playbackStats,
+                playbackStatBuckets = playbackStatBuckets,
+                playbackStatsClearedAt = playbackStatsRepo.statsClearedAtFlow.value,
                 exportDate = dateFormat.format(Date())
             )
 
@@ -218,7 +226,12 @@ class BackupManager(private val context: Context) {
             // 更新仓库
             playlistRepo.updatePlaylists(currentPlaylists)
             importRecentPlays(historyRepo, backupData.recentPlays.orEmpty())
-            importPlaybackStats(playbackStatsRepo, backupData.playbackStats.orEmpty())
+            importPlaybackStats(
+                playbackStatsRepo = playbackStatsRepo,
+                playbackStats = backupData.playbackStats.orEmpty(),
+                playbackStatBuckets = backupData.playbackStatBuckets.orEmpty(),
+                playbackStatsClearedAt = backupData.playbackStatsClearedAt
+            )
 
             val result = ImportResult(
                 importedCount = importedCount,
@@ -280,16 +293,22 @@ class BackupManager(private val context: Context) {
 
     private fun importPlaybackStats(
         playbackStatsRepo: PlaybackStatsRepository,
-        playbackStats: List<SyncTrackStat>
+        playbackStats: List<SyncTrackStat>,
+        playbackStatBuckets: List<SyncPlaybackStatBucket>,
+        playbackStatsClearedAt: Long
     ) {
         val sanitizedStats = playbackStats.mapNotNull {
             BackupMetadataMapper.sanitizeTrackStat(it, context)
         }
-        if (sanitizedStats.isNotEmpty()) {
+        val sanitizedBuckets = playbackStatBuckets.mapNotNull {
+            BackupMetadataMapper.sanitizePlaybackStatBucket(it, context)
+        }
+        if (sanitizedStats.isNotEmpty() || sanitizedBuckets.isNotEmpty()) {
             playbackStatsRepo.applyMergedStats(
                 syncStats = sanitizedStats,
-                playbackStatsClearedAt = 0L,
-                respectLocalClear = false
+                playbackStatsClearedAt = playbackStatsClearedAt.coerceAtLeast(0L),
+                respectLocalClear = false,
+                syncDailyStats = sanitizedBuckets
             )
         }
     }

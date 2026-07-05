@@ -94,6 +94,59 @@ class SyncPlaybackStatsMergePolicyTest {
         assertEquals(300L, merged.single().lastPlayedAt)
     }
 
+    @Test
+    fun `merge buckets keeps per day breakdown for remote sync`() {
+        val local = trackBucket(
+            identityKey = "same",
+            dayStartAt = 86_400_000L,
+            totalListenMs = 1_000L,
+            playCount = 1,
+            firstPlayedAt = 86_401_000L,
+            lastPlayedAt = 86_402_000L
+        )
+        val remote = trackBucket(
+            identityKey = "same",
+            dayStartAt = 86_400_000L,
+            totalListenMs = 2_000L,
+            playCount = 3,
+            firstPlayedAt = 86_400_500L,
+            lastPlayedAt = 86_403_000L,
+            name = "newer"
+        )
+
+        val merged = SyncPlaybackStatsMergePolicy.mergeBuckets(
+            local = listOf(local),
+            remote = listOf(remote),
+            playbackStatsClearedAt = 0L
+        )
+
+        assertEquals(1, merged.size)
+        assertEquals(86_400_000L, merged.single().dayStartAt)
+        assertEquals("newer", merged.single().name)
+        assertEquals(2_000L, merged.single().totalListenMs)
+        assertEquals(3, merged.single().playCount)
+        assertEquals(86_400_500L, merged.single().firstPlayedAt)
+        assertEquals(86_403_000L, merged.single().lastPlayedAt)
+    }
+
+    @Test
+    fun `clear barrier drops stale buckets`() {
+        val merged = SyncPlaybackStatsMergePolicy.mergeBuckets(
+            local = emptyList(),
+            remote = listOf(
+                trackBucket(
+                    identityKey = "old",
+                    dayStartAt = 1_000L,
+                    firstPlayedAt = 1_100L,
+                    lastPlayedAt = 1_900L
+                )
+            ),
+            playbackStatsClearedAt = 2_000L
+        )
+
+        assertTrue(merged.isEmpty())
+    }
+
     private fun trackStat(
         identityKey: String,
         totalListenMs: Long = 1_000L,
@@ -103,6 +156,28 @@ class SyncPlaybackStatsMergePolicyTest {
         name: String = identityKey
     ): SyncTrackStat {
         return SyncTrackStat(
+            identityKey = identityKey,
+            name = name,
+            artist = "artist",
+            album = "album",
+            totalListenMs = totalListenMs,
+            playCount = playCount,
+            lastPlayedAt = lastPlayedAt,
+            firstPlayedAt = firstPlayedAt
+        )
+    }
+
+    private fun trackBucket(
+        identityKey: String,
+        dayStartAt: Long,
+        totalListenMs: Long = 1_000L,
+        playCount: Int = 1,
+        firstPlayedAt: Long,
+        lastPlayedAt: Long,
+        name: String = identityKey
+    ): SyncPlaybackStatBucket {
+        return SyncPlaybackStatBucket(
+            dayStartAt = dayStartAt,
             identityKey = identityKey,
             name = name,
             artist = "artist",

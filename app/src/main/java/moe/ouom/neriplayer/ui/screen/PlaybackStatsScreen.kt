@@ -20,6 +20,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -40,6 +41,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.stats.PlaybackStatsPeriod
 import moe.ouom.neriplayer.data.stats.TrackStat
 import moe.ouom.neriplayer.data.stats.aggregatePlaybackStatBucketsForPeriod
+import moe.ouom.neriplayer.data.stats.aggregatePlaybackStatsCompatForPeriod
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import moe.ouom.neriplayer.util.HapticIconButton
@@ -63,14 +65,22 @@ fun PlaybackStatsScreen(
     var sortMode by remember { mutableStateOf(StatsSortMode.PLAY_COUNT) }
     var showSortMenu by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
+    val periodNeedsCompatBreakdown = remember(stats, dailyStats, selectedPeriod) {
+        selectedPeriod != PlaybackStatsPeriod.ALL &&
+            stats.isNotEmpty() &&
+            dailyStats.isEmpty()
+    }
 
     val periodStats = remember(stats, dailyStats, selectedPeriod) {
         if (selectedPeriod == PlaybackStatsPeriod.ALL) {
             stats
+        } else if (dailyStats.isEmpty()) {
+            aggregatePlaybackStatsCompatForPeriod(stats, selectedPeriod)
         } else {
             aggregatePlaybackStatBucketsForPeriod(dailyStats, selectedPeriod)
         }
     }
+    val usesCompatPeriodStats = periodNeedsCompatBreakdown && periodStats.isNotEmpty()
     val sortedStats = remember(periodStats, sortMode) {
         when (sortMode) {
             StatsSortMode.PLAY_COUNT -> periodStats.sortedByDescending { it.playCount }
@@ -181,6 +191,20 @@ fun PlaybackStatsScreen(
                     Spacer(Modifier.height(12.dp))
                 }
 
+                if (usesCompatPeriodStats) {
+                    item {
+                        Text(
+                            text = stringResource(R.string.stats_period_compat_notice),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp)
+                        )
+                        Spacer(Modifier.height(12.dp))
+                    }
+                }
+
                 if (periodStats.isEmpty()) {
                     item {
                         Box(
@@ -190,7 +214,13 @@ fun PlaybackStatsScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             StatsEmptyContent(
-                                message = stringResource(R.string.stats_period_empty)
+                                message = stringResource(
+                                    if (periodNeedsCompatBreakdown) {
+                                        R.string.stats_period_missing_breakdown
+                                    } else {
+                                        R.string.stats_period_empty
+                                    }
+                                )
                             )
                         }
                     }

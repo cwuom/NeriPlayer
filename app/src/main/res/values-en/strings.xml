@@ -1525,6 +1525,8 @@
     <string name="stats_title">Playback Stats</string>
     <string name="stats_empty">No playback data yet\nStart listening to see your stats here</string>
     <string name="stats_period_empty">No playback stats in this period yet</string>
+    <string name="stats_period_missing_breakdown">This older sync data only has total stats, not daily buckets\nUpdate the old device and sync again</string>
+    <string name="stats_period_compat_notice">This period is shown in legacy compatibility mode and only includes stats that can be restored exactly</string>
     <string name="stats_total_plays">Plays</string>
     <string name="stats_total_time">Listen Time</string>
     <string name="stats_track_count">Tracks</string>

@@ -1538,6 +1538,8 @@
     <string name="stats_title">播放统计</string>
     <string name="stats_empty">还没有播放记录\n开始听歌后这里会显示统计数据</string>
     <string name="stats_period_empty">当前时间范围内还没有播放统计</string>
+    <string name="stats_period_missing_breakdown">这批旧同步数据只有总统计，没有按天分桶\n请在旧设备更新后再同步一次</string>
+    <string name="stats_period_compat_notice">当前时间范围使用旧数据兼容模式，只展示能被精确还原的部分统计</string>
     <string name="stats_total_plays">播放次数</string>
     <string name="stats_total_time">累计时长</string>
     <string name="stats_track_count">曲目数</string>

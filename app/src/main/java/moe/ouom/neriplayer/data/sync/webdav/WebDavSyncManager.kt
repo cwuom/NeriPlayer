@@ -54,6 +54,7 @@ import moe.ouom.neriplayer.data.sync.github.SyncRecentPlayDeletion
 import moe.ouom.neriplayer.data.sync.github.SyncResult
 import moe.ouom.neriplayer.data.sync.github.SyncSong
 import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatMapper
+import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatsMergePolicy
 import moe.ouom.neriplayer.data.sync.github.SyncPlaylistSongMergePolicy
 import moe.ouom.neriplayer.data.sync.github.SyncTrackStat
@@ -317,6 +318,9 @@ class WebDavSyncManager private constructor(context: Context) {
         val syncPlaybackStats = playbackStatsRepo.statsFlow.value
             .filter { SyncPlaybackStatMapper.shouldSync(it, localizedContext) }
             .map(SyncPlaybackStatMapper::fromTrackStat)
+        val syncPlaybackStatBuckets = playbackStatsRepo.dailyStatsFlow.value
+            .filter { SyncPlaybackStatMapper.shouldSync(it, localizedContext) }
+            .map(SyncPlaybackStatMapper::fromPlaybackStatBucket)
 
         return SyncData(
             deviceId = getDeviceId(),
@@ -328,7 +332,8 @@ class WebDavSyncManager private constructor(context: Context) {
             syncLog = emptyList(),
             recentPlayDeletions = syncRecentPlayDeletions,
             playbackStats = syncPlaybackStats,
-            playbackStatsClearedAt = playbackStatsRepo.statsClearedAtFlow.value
+            playbackStatsClearedAt = playbackStatsRepo.statsClearedAtFlow.value,
+            playbackStatBuckets = syncPlaybackStatBuckets
         )
     }
 
@@ -416,6 +421,11 @@ class WebDavSyncManager private constructor(context: Context) {
             remote = remote.playbackStats,
             playbackStatsClearedAt = maxOf(local.playbackStatsClearedAt, remote.playbackStatsClearedAt)
         )
+        val mergedPlaybackStatBuckets = mergePlaybackStatBuckets(
+            local = local.playbackStatBuckets,
+            remote = remote.playbackStatBuckets,
+            playbackStatsClearedAt = maxOf(local.playbackStatsClearedAt, remote.playbackStatsClearedAt)
+        )
         val playbackStatsClearedAt = maxOf(local.playbackStatsClearedAt, remote.playbackStatsClearedAt)
 
         val mergedData = SyncData(
@@ -431,7 +441,8 @@ class WebDavSyncManager private constructor(context: Context) {
                 .take(100),
             recentPlayDeletions = mergedRecentPlayDeletions,
             playbackStats = mergedPlaybackStats,
-            playbackStatsClearedAt = playbackStatsClearedAt
+            playbackStatsClearedAt = playbackStatsClearedAt,
+            playbackStatBuckets = mergedPlaybackStatBuckets
         )
 
         return MergeResult(
@@ -683,6 +694,14 @@ class WebDavSyncManager private constructor(context: Context) {
         return SyncPlaybackStatsMergePolicy.merge(local, remote, playbackStatsClearedAt)
     }
 
+    private fun mergePlaybackStatBuckets(
+        local: List<SyncPlaybackStatBucket>,
+        remote: List<SyncPlaybackStatBucket>,
+        playbackStatsClearedAt: Long
+    ): List<SyncPlaybackStatBucket> {
+        return SyncPlaybackStatsMergePolicy.mergeBuckets(local, remote, playbackStatsClearedAt)
+    }
+
     private suspend fun applyMergedDataToLocal(mergedData: SyncData, remoteHasChanged: Boolean) {
         val localizedContext = LanguageManager.applyLanguage(appContext)
         val sanitizedMergedData = sanitizeSyncData(mergedData)
@@ -760,7 +779,8 @@ class WebDavSyncManager private constructor(context: Context) {
 
         playbackStatsRepo.applyMergedStats(
             syncStats = sanitizedMergedData.playbackStats,
-            playbackStatsClearedAt = sanitizedMergedData.playbackStatsClearedAt
+            playbackStatsClearedAt = sanitizedMergedData.playbackStatsClearedAt,
+            syncDailyStats = sanitizedMergedData.playbackStatBuckets
         )
     }
 
@@ -797,7 +817,10 @@ class WebDavSyncManager private constructor(context: Context) {
             playbackStats = data.playbackStats.mapNotNull {
                 SyncPlaybackStatMapper.sanitize(it, appContext)
             },
-            playbackStatsClearedAt = data.playbackStatsClearedAt.coerceAtLeast(0L)
+            playbackStatsClearedAt = data.playbackStatsClearedAt.coerceAtLeast(0L),
+            playbackStatBuckets = data.playbackStatBuckets.mapNotNull {
+                SyncPlaybackStatMapper.sanitize(it, appContext)
+            }
         )
     }
 
@@ -912,6 +935,14 @@ class WebDavSyncManager private constructor(context: Context) {
         remoteStats.forEach { (key, remoteStat) ->
             val mergedStat = mergedStats[key] ?: return true
             if (!SyncPlaybackStatMapper.sameMetadata(remoteStat, mergedStat)) return true
+        }
+
+        val remoteBuckets = remote.playbackStatBuckets.associateBy { it.dayStartAt to it.identityKey }
+        val mergedBuckets = merged.playbackStatBuckets.associateBy { it.dayStartAt to it.identityKey }
+        if (remoteBuckets.keys != mergedBuckets.keys) return true
+        remoteBuckets.forEach { (key, remoteBucket) ->
+            val mergedBucket = mergedBuckets[key] ?: return true
+            if (!SyncPlaybackStatMapper.sameMetadata(remoteBucket, mergedBucket)) return true
         }
         return false
     }

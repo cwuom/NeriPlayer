@@ -15,6 +15,7 @@ import kotlinx.coroutines.sync.withLock
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatsMergePolicy
+import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.sync.github.SyncTrackStat
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
@@ -334,7 +335,8 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
     fun applyMergedStats(
         syncStats: List<SyncTrackStat>,
         playbackStatsClearedAt: Long,
-        respectLocalClear: Boolean = true
+        respectLocalClear: Boolean = true,
+        syncDailyStats: List<SyncPlaybackStatBucket> = emptyList()
     ) {
         scope.launch {
             mutex.withLock {
@@ -398,13 +400,38 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
                     _statsClearedAt.value = effectiveClearedAt
                     persistMetadata(effectiveClearedAt)
                 }
-                val updatedDailyStats = _dailyStats.value.filter {
-                    shouldKeepDailyAfterClear(it, effectiveClearedAt)
+
+                val currentDailyStats = _dailyStats.value
+                    .filter { shouldKeepDailyAfterClear(it, effectiveClearedAt) }
+                    .associateBy { it.dayStartAt to it.identityKey }
+                    .toMutableMap()
+                val normalizedRemoteDailyStats = SyncPlaybackStatsMergePolicy.mergeBuckets(
+                    local = emptyList(),
+                    remote = syncDailyStats,
+                    playbackStatsClearedAt = effectiveClearedAt
+                )
+                for (remote in normalizedRemoteDailyStats) {
+                    val key = remote.dayStartAt to remote.identityKey
+                    val local = currentDailyStats[key]
+                    currentDailyStats[key] = if (local == null) {
+                        remote.toPlaybackStatBucket()
+                    } else {
+                        mergeDailyBucket(local, remote)
+                    }
                 }
-                if (updatedDailyStats.size != _dailyStats.value.size) {
-                    _dailyStats.value = updatedDailyStats
-                    persistDailyStatsToDisk(updatedDailyStats)
+
+                val updatedDailyStats = if (
+                    currentDailyStats.isEmpty() &&
+                    normalizedRemoteDailyStats.isEmpty() &&
+                    _dailyStats.value.isEmpty() &&
+                    updated.isNotEmpty()
+                ) {
+                    buildLegacyDailyStats(updated, effectiveClearedAt)
+                } else {
+                    currentDailyStats.values.toList()
                 }
+                _dailyStats.value = updatedDailyStats
+                persistDailyStatsToDisk(updatedDailyStats)
                 persistToDisk(updated)
             }
         }
@@ -431,6 +458,60 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
         if (playbackStatsClearedAt <= 0L) return false
         val firstPlayedAt = stat.firstPlayedAt.takeIf { it > 0L } ?: stat.lastPlayedAt
         return firstPlayedAt < playbackStatsClearedAt || stat.lastPlayedAt < playbackStatsClearedAt
+    }
+
+    private fun mergeDailyBucket(
+        local: PlaybackStatBucket,
+        remote: SyncPlaybackStatBucket
+    ): PlaybackStatBucket {
+        val remoteBucket = remote.toPlaybackStatBucket()
+        val useRemoteMetadata = remote.lastPlayedAt > local.lastPlayedAt
+        return local.copy(
+            id = if (useRemoteMetadata) remoteBucket.id else local.id,
+            name = if (useRemoteMetadata) remoteBucket.name else local.name,
+            artist = if (useRemoteMetadata) remoteBucket.artist else local.artist,
+            album = if (useRemoteMetadata) remoteBucket.album else local.album,
+            albumId = if (useRemoteMetadata) remoteBucket.albumId else local.albumId,
+            coverUrl = if (useRemoteMetadata) remoteBucket.coverUrl else local.coverUrl,
+            durationMs = if (useRemoteMetadata) remoteBucket.durationMs else local.durationMs,
+            totalListenMs = maxOf(local.totalListenMs, remoteBucket.totalListenMs),
+            playCount = maxOf(local.playCount, remoteBucket.playCount),
+            lastPlayedAt = maxOf(local.lastPlayedAt, remoteBucket.lastPlayedAt),
+            firstPlayedAt = minPositivePlayedAt(local.firstPlayedAt, remoteBucket.firstPlayedAt),
+            mediaUri = if (useRemoteMetadata) remoteBucket.mediaUri else local.mediaUri
+        )
+    }
+
+    private fun SyncPlaybackStatBucket.toPlaybackStatBucket(): PlaybackStatBucket {
+        return PlaybackStatBucket(
+            dayStartAt = dayStartAt,
+            id = id,
+            name = name,
+            artist = artist,
+            album = album,
+            albumId = albumId,
+            coverUrl = coverUrl,
+            durationMs = durationMs,
+            totalListenMs = totalListenMs,
+            playCount = playCount,
+            lastPlayedAt = lastPlayedAt,
+            firstPlayedAt = firstPlayedAt,
+            mediaUri = mediaUri,
+            localFilePath = null,
+            localFileName = null,
+            customName = null,
+            customArtist = null,
+            customCoverUrl = null,
+            identityKey = identityKey
+        )
+    }
+
+    private fun minPositivePlayedAt(left: Long, right: Long): Long {
+        return when {
+            left <= 0L -> right
+            right <= 0L -> left
+            else -> minOf(left, right)
+        }
     }
 
     companion object {

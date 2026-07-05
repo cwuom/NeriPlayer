@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.data.stats
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Calendar
 import java.util.Locale
@@ -83,6 +84,50 @@ class PlaybackStatsPeriodTest {
         }
     }
 
+    @Test
+    fun `aggregatePlaybackStatsCompatForPeriod keeps only stats fully inside range`() {
+        withCalendarDefaults {
+            val exact = stat(
+                key = "netease:1",
+                firstPlayedAt = utcMillis(2026, Calendar.JULY, 3, 9),
+                lastPlayedAt = utcMillis(2026, Calendar.JULY, 4, 9)
+            )
+            val spanning = stat(
+                key = "netease:2",
+                firstPlayedAt = utcMillis(2026, Calendar.JUNE, 30, 9),
+                lastPlayedAt = utcMillis(2026, Calendar.JULY, 4, 9)
+            )
+
+            val stats = aggregatePlaybackStatsCompatForPeriod(
+                stats = listOf(exact, spanning),
+                period = PlaybackStatsPeriod.MONTH,
+                nowMillis = utcMillis(2026, Calendar.JULY, 10, 10)
+            )
+
+            assertEquals(1, stats.size)
+            assertEquals("netease:1", stats.single().identityKey)
+        }
+    }
+
+    @Test
+    fun `aggregatePlaybackStatsCompatForPeriod returns empty when no exact stats can be proven`() {
+        withCalendarDefaults {
+            val spanning = stat(
+                key = "netease:2",
+                firstPlayedAt = utcMillis(2026, Calendar.JUNE, 30, 9),
+                lastPlayedAt = utcMillis(2026, Calendar.JULY, 4, 9)
+            )
+
+            val stats = aggregatePlaybackStatsCompatForPeriod(
+                stats = listOf(spanning),
+                period = PlaybackStatsPeriod.MONTH,
+                nowMillis = utcMillis(2026, Calendar.JULY, 10, 10)
+            )
+
+            assertTrue(stats.isEmpty())
+        }
+    }
+
     private fun withCalendarDefaults(block: () -> Unit) {
         val originalTimeZone = TimeZone.getDefault()
         val originalLocale = Locale.getDefault()
@@ -127,6 +172,32 @@ class PlaybackStatsPeriodTest {
             durationMs = 180_000L,
             totalListenMs = totalListenMs,
             playCount = playCount,
+            lastPlayedAt = lastPlayedAt,
+            firstPlayedAt = firstPlayedAt,
+            mediaUri = null,
+            localFilePath = null,
+            localFileName = null,
+            customName = null,
+            customArtist = null,
+            customCoverUrl = null,
+            identityKey = key
+        )
+    }
+
+    private fun stat(
+        key: String,
+        firstPlayedAt: Long,
+        lastPlayedAt: Long
+    ): TrackStat {
+        return TrackStat(
+            id = key.substringAfter(':').toLong(),
+            name = key,
+            artist = "artist",
+            album = "album",
+            coverUrl = null,
+            durationMs = 180_000L,
+            totalListenMs = 10_000L,
+            playCount = 1,
             lastPlayedAt = lastPlayedAt,
             firstPlayedAt = firstPlayedAt,
             mediaUri = null,

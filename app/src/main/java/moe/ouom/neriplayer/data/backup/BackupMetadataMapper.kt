@@ -3,7 +3,10 @@ package moe.ouom.neriplayer.data.backup
 import android.content.Context
 import moe.ouom.neriplayer.data.history.PlayedEntry
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.stats.PlaybackStatBucket
 import moe.ouom.neriplayer.data.stats.TrackStat
+import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatMapper
+import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.sync.github.SyncRecentPlay
 import moe.ouom.neriplayer.data.sync.github.SyncSong
 import moe.ouom.neriplayer.data.sync.github.SyncTrackStat
@@ -19,6 +22,11 @@ internal object BackupMetadataMapper {
     fun shouldExportTrackStat(stat: TrackStat, context: Context): Boolean {
         return stat.localFilePath.isNullOrBlank() &&
             !LocalSongSupport.isLocalSong(stat.album, stat.mediaUri, stat.albumId, context)
+    }
+
+    fun shouldExportPlaybackStatBucket(bucket: PlaybackStatBucket, context: Context): Boolean {
+        return bucket.localFilePath.isNullOrBlank() &&
+            !LocalSongSupport.isLocalSong(bucket.album, bucket.mediaUri, bucket.albumId, context)
     }
 
     fun toSyncRecentPlay(entry: PlayedEntry): SyncRecentPlay {
@@ -95,22 +103,18 @@ internal object BackupMetadataMapper {
         )
     }
 
+    fun toSyncPlaybackStatBucket(bucket: PlaybackStatBucket): SyncPlaybackStatBucket {
+        return SyncPlaybackStatMapper.fromPlaybackStatBucket(bucket)
+    }
+
     fun sanitizeTrackStat(stat: SyncTrackStat, context: Context): SyncTrackStat? {
-        if (stat.identityKey.isBlank()) return null
-        if (LocalSongSupport.isLocalSong(stat.album, stat.mediaUri, stat.albumId, context)) {
-            return null
-        }
-        val lastPlayedAt = stat.lastPlayedAt.coerceAtLeast(0L)
-        val firstPlayedAt = stat.firstPlayedAt.coerceAtLeast(0L).let {
-            if (lastPlayedAt > 0L && (it == 0L || it > lastPlayedAt)) lastPlayedAt else it
-        }
-        return stat.copy(
-            totalListenMs = stat.totalListenMs.coerceAtLeast(0L),
-            playCount = stat.playCount.coerceAtLeast(0),
-            lastPlayedAt = lastPlayedAt,
-            firstPlayedAt = firstPlayedAt,
-            durationMs = stat.durationMs.coerceAtLeast(0L),
-            mediaUri = LocalSongSupport.sanitizeMediaUriForSync(stat.mediaUri)
-        )
+        return SyncPlaybackStatMapper.sanitize(stat, context)
+    }
+
+    fun sanitizePlaybackStatBucket(
+        bucket: SyncPlaybackStatBucket,
+        context: Context
+    ): SyncPlaybackStatBucket? {
+        return SyncPlaybackStatMapper.sanitize(bucket, context)
     }
 }

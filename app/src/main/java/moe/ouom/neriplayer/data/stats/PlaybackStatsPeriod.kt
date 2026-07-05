@@ -107,6 +107,21 @@ fun aggregatePlaybackStatBucketsForPeriod(
     )
 }
 
+fun aggregatePlaybackStatsCompatForPeriod(
+    stats: List<TrackStat>,
+    period: PlaybackStatsPeriod,
+    nowMillis: Long = System.currentTimeMillis()
+): List<TrackStat> {
+    if (period == PlaybackStatsPeriod.ALL) return stats
+
+    val range = period.resolvePlaybackStatsTimeRange(nowMillis)
+    val startInclusive = range.startInclusive ?: return stats
+    return stats.filter { stat ->
+        val firstPlayedAt = stat.firstPlayedAt.takeIf { it > 0L } ?: stat.lastPlayedAt
+        firstPlayedAt >= startInclusive && stat.lastPlayedAt < range.endExclusive
+    }
+}
+
 private fun Calendar.moveToDayStart() {
     set(Calendar.HOUR_OF_DAY, 0)
     set(Calendar.MINUTE, 0)
