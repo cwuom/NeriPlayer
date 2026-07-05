@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.playlist
 
+import androidx.compose.runtime.mutableStateListOf
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -63,5 +64,17 @@ class LocalPlaylistDetailSelectionPolicyTest {
                 displayedKeys = setOf("album-a-first")
             )
         )
+    }
+
+    @Test
+    fun `snapshot reversed list survives source mutations`() {
+        val source = mutableStateListOf("first", "second", "third")
+
+        val reversedSnapshot = snapshotReversedList(source)
+        source.clear()
+        source.addAll(listOf("fourth", "fifth"))
+
+        assertEquals(listOf("third", "second", "first"), reversedSnapshot)
+        assertEquals(listOf("fifth", "fourth"), snapshotReversedList(source))
     }
 }

@@ -228,6 +228,10 @@ internal fun toggleDisplayedSongSelection(
     }
 }
 
+internal fun <T> snapshotReversedList(items: List<T>): List<T> {
+    return items.toList().asReversed()
+}
+
 internal fun normalizeLocalPlaylistHeaderCoverModel(headerCover: String?): String {
     return headerCover?.takeIf { it.isNotBlank() } ?: BLANK_COVER_MODEL
 }
@@ -529,7 +533,7 @@ fun LocalPlaylistDetailScreen(
                 )
             }
 
-            // 可变列表：保持存储层顺序（正序），UI 用 asReversed() 倒序展示
+            // 可变列表保持存储层顺序，UI 读取时用快照倒序展示
             val localSongs = remember(playlistId) {
                 mutableStateListOf<SongItem>().also { it.addAll(playlist.songs) }
             }
@@ -761,7 +765,7 @@ fun LocalPlaylistDetailScreen(
             val hasRestoredScroll = rememberSaveable(playlistId) { mutableStateOf(false) }
             val listState = reorderState.listState
             val baseQueue by remember(localSongs) {
-                derivedStateOf { localSongs.asReversed() }
+                derivedStateOf { snapshotReversedList(localSongs) }
             }
             val queueIndexBySongKey by remember(baseQueue) {
                 derivedStateOf {
@@ -1633,7 +1637,7 @@ fun LocalPlaylistDetailScreen(
                                     onClick = {
                                         val name = newName.trim()
                                         if (name.isBlank()) return@HapticTextButton
-                                        val displayedSongs = localSongs.asReversed()
+                                        val displayedSongs = snapshotReversedList(localSongs)
                                         val songs = displayedSongs.filter {
                                             it.stableKey() in selectedKeysState.value
                                         }
