@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.ui.screen.playlist
 
 import androidx.compose.runtime.mutableStateListOf
+import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.ui.viewmodel.playlist.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -76,5 +78,34 @@ class LocalPlaylistDetailSelectionPolicyTest {
 
         assertEquals(listOf("third", "second", "first"), reversedSnapshot)
         assertEquals(listOf("fifth", "fourth"), snapshotReversedList(source))
+    }
+
+    @Test
+    fun `exporting selected local songs keeps target display order`() {
+        val storedSongs = listOf(
+            song(id = 1, name = "oldest"),
+            song(id = 2, name = "middle"),
+            song(id = 3, name = "newest")
+        )
+        val selectedKeys = snapshotReversedList(storedSongs)
+            .take(2)
+            .mapTo(mutableSetOf()) { it.stableKey() }
+
+        val exportedSongs = selectedStoredLocalSongsForExport(storedSongs, selectedKeys)
+
+        assertEquals(listOf("middle", "newest"), exportedSongs.map { it.name })
+        assertEquals(listOf("newest", "middle"), snapshotReversedList(exportedSongs).map { it.name })
+    }
+
+    private fun song(id: Long, name: String): SongItem {
+        return SongItem(
+            id = id,
+            name = name,
+            artist = "artist",
+            album = "album",
+            albumId = 1L,
+            durationMs = 0L,
+            coverUrl = null
+        )
     }
 }

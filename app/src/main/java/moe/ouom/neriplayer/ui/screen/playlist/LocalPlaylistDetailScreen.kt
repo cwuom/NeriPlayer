@@ -233,6 +233,14 @@ internal fun <T> snapshotReversedList(items: List<T>): List<T> {
     return items.toList().asReversed()
 }
 
+internal fun selectedStoredLocalSongsForExport(
+    storedSongs: List<SongItem>,
+    selectedKeys: Set<String>
+): List<SongItem> {
+    // 目标歌单也会倒序展示，所以这里保留存储顺序，避免全选新建后看起来反过来
+    return storedSongs.filter { it.stableKey() in selectedKeys }
+}
+
 internal fun normalizeLocalPlaylistHeaderCoverModel(headerCover: String?): String {
     return headerCover?.takeIf { it.isNotBlank() } ?: BLANK_COVER_MODEL
 }
@@ -1606,10 +1614,10 @@ fun LocalPlaylistDetailScreen(
                                     onClick = {
                                         val name = newName.trim()
                                         if (name.isBlank()) return@HapticTextButton
-                                        val displayedSongs = snapshotReversedList(localSongs)
-                                        val songs = displayedSongs.filter {
-                                            it.stableKey() in selectedKeysState.value
-                                        }
+                                        val songs = selectedStoredLocalSongsForExport(
+                                            storedSongs = localSongs,
+                                            selectedKeys = selectedKeysState.value
+                                        )
                                         launchWithLocalSyncWarning(
                                             songs = songs,
                                             actionLabel = context.getString(R.string.playlist_add_to)
@@ -1644,9 +1652,10 @@ fun LocalPlaylistDetailScreen(
                                             .padding(vertical = 10.dp)
                                             .combinedClickable(onClick = {
                                                 context.performHapticFeedback()
-                                                val songs = localSongs.filter {
-                                                    it.stableKey() in selectedKeysState.value
-                                                }
+                                                val songs = selectedStoredLocalSongsForExport(
+                                                    storedSongs = localSongs,
+                                                    selectedKeys = selectedKeysState.value
+                                                )
                                                 launchWithLocalSyncWarning(
                                                     songs = songs,
                                                     actionLabel = context.getString(R.string.playlist_add_to)
