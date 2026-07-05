@@ -25,10 +25,11 @@ class WebDavApiException(
 ) : IOException(message)
 
 class WebDavApiClient(
-    private val context: Context,
+    context: Context,
     username: String,
     password: String
 ) {
+    private val appContext = context.applicationContext
     private val client: OkHttpClient = AppContainer.sharedOkHttpClient
     private val authorizationHeader = Credentials.basic(username, password)
 
@@ -71,7 +72,7 @@ class WebDavApiClient(
                     response.isSuccessful || response.code == 404 -> Unit
                     response.code == 401 || response.code == 403 -> {
                         throw WebDavAuthException(
-                            context.getString(R.string.webdav_auth_failed)
+                            appContext.getString(R.string.webdav_auth_failed)
                         )
                     }
 
@@ -107,7 +108,7 @@ class WebDavApiClient(
 
                     response.code == 401 || response.code == 403 -> {
                         throw WebDavAuthException(
-                            context.getString(R.string.webdav_auth_failed)
+                            appContext.getString(R.string.webdav_auth_failed)
                         )
                     }
 
@@ -145,7 +146,7 @@ class WebDavApiClient(
                     response.isSuccessful -> calculateFingerprint(content)
                     response.code == 401 || response.code == 403 -> {
                         throw WebDavAuthException(
-                            context.getString(R.string.webdav_auth_failed)
+                            appContext.getString(R.string.webdav_auth_failed)
                         )
                     }
 

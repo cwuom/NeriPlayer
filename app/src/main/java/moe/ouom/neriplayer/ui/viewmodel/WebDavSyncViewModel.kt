@@ -54,12 +54,13 @@ class WebDavSyncViewModel : ViewModel() {
         password: String,
         basePath: String
     ) {
+        val appContext = context.applicationContext
         val normalizedServerUrl = serverUrl.trim()
         val normalizedUsername = username.trim()
         val normalizedBasePath = basePath.trim()
         if (normalizedServerUrl.isBlank() || normalizedUsername.isBlank() || password.isBlank()) {
             _uiState.value = _uiState.value.copy(
-                errorMessage = context.getString(R.string.webdav_required_fields)
+                errorMessage = appContext.getString(R.string.webdav_required_fields)
             )
             return
         }
@@ -68,7 +69,7 @@ class WebDavSyncViewModel : ViewModel() {
 
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
-                WebDavApiClient(context, normalizedUsername, password)
+                WebDavApiClient(appContext, normalizedUsername, password)
                     .validateConnection(normalizedServerUrl, normalizedBasePath)
             }
 
@@ -85,15 +86,15 @@ class WebDavSyncViewModel : ViewModel() {
                     serverUrl = normalizedServerUrl,
                     basePath = normalizedBasePath,
                     username = normalizedUsername,
-                    successMessage = context.getString(R.string.webdav_validate_success)
+                    successMessage = appContext.getString(R.string.webdav_validate_success)
                 )
             } else {
                 _uiState.value = _uiState.value.copy(
                     isValidating = false,
-                    errorMessage = context.getString(
+                    errorMessage = appContext.getString(
                         R.string.webdav_validate_failed,
                         result.exceptionOrNull()?.message
-                            ?: context.getString(R.string.webdav_sync_failed_message)
+                            ?: appContext.getString(R.string.webdav_sync_failed_message)
                     )
                 )
             }
@@ -101,6 +102,7 @@ class WebDavSyncViewModel : ViewModel() {
     }
 
     fun performSync(context: Context) {
+        val appContext = context.applicationContext
         _uiState.value = _uiState.value.copy(isSyncing = true, errorMessage = null, syncResult = null)
 
         viewModelScope.launch {
@@ -116,7 +118,7 @@ class WebDavSyncViewModel : ViewModel() {
                     successMessage = syncResult.message
                 )
                 if (_uiState.value.autoSyncEnabled) {
-                    WebDavSyncWorker.schedulePeriodicSync(context)
+                    WebDavSyncWorker.schedulePeriodicSync(appContext)
                 }
             } else {
                 val error = result.exceptionOrNull()
@@ -130,14 +132,14 @@ class WebDavSyncViewModel : ViewModel() {
                 if (error is WebDavAuthException) {
                     _uiState.value = _uiState.value.copy(
                         isSyncing = false,
-                        errorMessage = context.getString(R.string.webdav_auth_failed)
+                        errorMessage = appContext.getString(R.string.webdav_auth_failed)
                     )
                 } else {
                     _uiState.value = _uiState.value.copy(
                         isSyncing = false,
-                        errorMessage = context.getString(
+                        errorMessage = appContext.getString(
                             R.string.webdav_sync_failed,
-                            error?.message ?: context.getString(R.string.webdav_sync_failed_message)
+                            error?.message ?: appContext.getString(R.string.webdav_sync_failed_message)
                         )
                     )
                 }
@@ -146,18 +148,20 @@ class WebDavSyncViewModel : ViewModel() {
     }
 
     fun toggleAutoSync(context: Context, enabled: Boolean) {
+        val appContext = context.applicationContext
         storage?.setAutoSyncEnabled(enabled)
         _uiState.value = _uiState.value.copy(autoSyncEnabled = enabled)
         if (enabled) {
-            WebDavSyncWorker.schedulePeriodicSync(context)
+            WebDavSyncWorker.schedulePeriodicSync(appContext)
         } else {
-            WebDavSyncWorker.cancelAllSync(context)
+            WebDavSyncWorker.cancelAllSync(appContext)
         }
     }
 
     fun clearConfiguration(context: Context) {
+        val appContext = context.applicationContext
         storage?.clearAll()
-        WebDavSyncWorker.cancelAllSync(context)
+        WebDavSyncWorker.cancelAllSync(appContext)
         _uiState.value = WebDavSyncUiState()
     }
 

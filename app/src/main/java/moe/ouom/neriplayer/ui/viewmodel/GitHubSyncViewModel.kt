@@ -72,10 +72,11 @@ class GitHubSyncViewModel : ViewModel() {
      * 验证Token
      */
     fun validateToken(context: Context, token: String) {
+        val appContext = context.applicationContext
         _uiState.value = _uiState.value.copy(isValidating = true, errorMessage = null)
 
         viewModelScope.launch {
-            val apiClient = GitHubApiClient(context, token)
+            val apiClient = GitHubApiClient(appContext, token)
             val result = apiClient.validateToken()
 
             if (result.isSuccess) {
@@ -85,15 +86,15 @@ class GitHubSyncViewModel : ViewModel() {
                     isValidating = false,
                     tokenValid = true,
                     username = username,
-                    successMessage = context.getString(R.string.github_token_verify_success, username)
+                    successMessage = appContext.getString(R.string.github_token_verify_success, username)
                 )
             } else {
                 _uiState.value = _uiState.value.copy(
                     isValidating = false,
                     tokenValid = false,
-                    errorMessage = context.getString(
+                    errorMessage = appContext.getString(
                         R.string.github_token_verify_failed,
-                        result.exceptionOrNull()?.message ?: context.getString(R.string.github_sync_failed_message)
+                        result.exceptionOrNull()?.message ?: appContext.getString(R.string.github_sync_failed_message)
                     )
                 )
             }
@@ -104,16 +105,17 @@ class GitHubSyncViewModel : ViewModel() {
      * 创建仓库
      */
     fun createRepository(context: Context, repoName: String) {
+        val appContext = context.applicationContext
         val token = storage?.getToken()
         if (token == null) {
-            _uiState.value = _uiState.value.copy(errorMessage = context.getString(R.string.github_token_required))
+            _uiState.value = _uiState.value.copy(errorMessage = appContext.getString(R.string.github_token_required))
             return
         }
 
         _uiState.value = _uiState.value.copy(isCreatingRepo = true, errorMessage = null)
 
         viewModelScope.launch {
-            val apiClient = GitHubApiClient(context, token)
+            val apiClient = GitHubApiClient(appContext, token)
             val result = apiClient.createRepository(repoName)
 
             if (result.isSuccess) {
@@ -124,14 +126,14 @@ class GitHubSyncViewModel : ViewModel() {
                     repoOwner = repo.fullName.split("/")[0],
                     repoName = repo.name,
                     isConfigured = true,
-                    successMessage = context.getString(R.string.github_repo_create_success, repo.fullName)
+                    successMessage = appContext.getString(R.string.github_repo_create_success, repo.fullName)
                 )
             } else {
                 _uiState.value = _uiState.value.copy(
                     isCreatingRepo = false,
-                    errorMessage = context.getString(
+                    errorMessage = appContext.getString(
                         R.string.github_repo_create_failed,
-                        result.exceptionOrNull()?.message ?: context.getString(R.string.github_sync_failed_message)
+                        result.exceptionOrNull()?.message ?: appContext.getString(R.string.github_sync_failed_message)
                     )
                 )
             }
@@ -142,15 +144,16 @@ class GitHubSyncViewModel : ViewModel() {
      * 使用现有仓库
      */
     fun useExistingRepository(context: Context, fullRepoName: String) {
+        val appContext = context.applicationContext
         val token = storage?.getToken()
         if (token == null) {
-            _uiState.value = _uiState.value.copy(errorMessage = context.getString(R.string.github_token_required))
+            _uiState.value = _uiState.value.copy(errorMessage = appContext.getString(R.string.github_token_required))
             return
         }
 
         val parts = fullRepoName.split("/")
         if (parts.size != 2) {
-            _uiState.value = _uiState.value.copy(errorMessage = context.getString(R.string.github_repo_format_error))
+            _uiState.value = _uiState.value.copy(errorMessage = appContext.getString(R.string.github_repo_format_error))
             return
         }
 
@@ -160,7 +163,7 @@ class GitHubSyncViewModel : ViewModel() {
         _uiState.value = _uiState.value.copy(isCheckingRepo = true, errorMessage = null)
 
         viewModelScope.launch {
-            val apiClient = GitHubApiClient(context, token)
+            val apiClient = GitHubApiClient(appContext, token)
             val result = apiClient.checkRepository(owner, repo)
 
             if (result.isSuccess) {
@@ -170,22 +173,22 @@ class GitHubSyncViewModel : ViewModel() {
                     repoOwner = owner,
                     repoName = repo,
                     isConfigured = true,
-                    successMessage = context.getString(R.string.github_repo_config_success, fullRepoName)
+                    successMessage = appContext.getString(R.string.github_repo_config_success, fullRepoName)
                 )
             } else {
                 val error = result.exceptionOrNull()
                 _uiState.value = _uiState.value.copy(
                     isCheckingRepo = false,
                     errorMessage = when (error) {
-                        is TokenExpiredException -> context.getString(R.string.github_token_expired)
-                        is GitHubApiException if error.statusCode == 404 -> context.getString(
+                        is TokenExpiredException -> appContext.getString(R.string.github_token_expired)
+                        is GitHubApiException if error.statusCode == 404 -> appContext.getString(
                             R.string.github_repo_not_found,
                             fullRepoName
                         )
 
-                        else -> context.getString(
+                        else -> appContext.getString(
                             R.string.github_sync_failed,
-                            error?.message ?: context.getString(R.string.github_sync_failed_message)
+                            error?.message ?: appContext.getString(R.string.github_sync_failed_message)
                         )
                     }
                 )
@@ -197,6 +200,7 @@ class GitHubSyncViewModel : ViewModel() {
      * 执行同步
      */
     fun performSync(context: Context) {
+        val appContext = context.applicationContext
         _uiState.value = _uiState.value.copy(isSyncing = true, errorMessage = null, syncResult = null)
 
         viewModelScope.launch {
@@ -215,7 +219,7 @@ class GitHubSyncViewModel : ViewModel() {
                     )
 
                     if (_uiState.value.autoSyncEnabled) {
-                        GitHubSyncWorker.schedulePeriodicSync(context)
+                        GitHubSyncWorker.schedulePeriodicSync(appContext)
                     }
                 } else {
                     _uiState.value = _uiState.value.copy(
@@ -235,17 +239,17 @@ class GitHubSyncViewModel : ViewModel() {
                 // 检查是否是Token过期
                 if (error is TokenExpiredException) {
                     // Token过期，清除配置
-                    clearConfiguration(context)
+                    clearConfiguration(appContext)
                     _uiState.value = _uiState.value.copy(
                         isSyncing = false,
-                        errorMessage = context.getString(R.string.github_token_expired)
+                        errorMessage = appContext.getString(R.string.github_token_expired)
                     )
                 } else {
                     _uiState.value = _uiState.value.copy(
                         isSyncing = false,
-                        errorMessage = context.getString(
+                        errorMessage = appContext.getString(
                             R.string.github_sync_failed,
-                            error?.message ?: context.getString(R.string.github_sync_failed_message)
+                            error?.message ?: appContext.getString(R.string.github_sync_failed_message)
                         )
                     )
                 }
@@ -257,13 +261,14 @@ class GitHubSyncViewModel : ViewModel() {
      * 切换自动同步
      */
     fun toggleAutoSync(context: Context, enabled: Boolean) {
+        val appContext = context.applicationContext
         storage?.setAutoSyncEnabled(enabled)
         _uiState.value = _uiState.value.copy(autoSyncEnabled = enabled)
 
         if (enabled) {
-            GitHubSyncWorker.schedulePeriodicSync(context)
+            GitHubSyncWorker.schedulePeriodicSync(appContext)
         } else {
-            GitHubSyncWorker.cancelAllSync(context)
+            GitHubSyncWorker.cancelAllSync(appContext)
         }
     }
 
@@ -271,8 +276,9 @@ class GitHubSyncViewModel : ViewModel() {
      * 清除配置
      */
     fun clearConfiguration(context: Context) {
+        val appContext = context.applicationContext
         storage?.clearAll()
-        GitHubSyncWorker.cancelAllSync(context)
+        GitHubSyncWorker.cancelAllSync(appContext)
         _uiState.value = GitHubSyncUiState()
     }
 

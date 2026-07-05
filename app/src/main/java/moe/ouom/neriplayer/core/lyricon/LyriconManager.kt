@@ -47,13 +47,28 @@ object LyriconManager {
 
     fun setEnabled(isEnabled: Boolean) {
         enabled = isEnabled
-        if (!isEnabled) {
-            resetSuperLyricState()
-            setPlaybackState(false)
+        if (isEnabled) {
+            ensurePublisherRegistered()
+        } else {
+            release()
         }
     }
 
     fun isInitialized(): Boolean = provider != null
+
+    fun release() {
+        resetSuperLyricState()
+        enabled = false
+        runCatching { provider?.player?.setPlaybackState(false) }
+        runCatching { provider?.unregister() }
+        runCatching { provider?.destroy() }
+        provider = null
+        runCatching {
+            if (SuperLyricHelper.isAvailable() && SuperLyricHelper.isPublisherRegistered()) {
+                SuperLyricHelper.unregisterPublisher()
+            }
+        }
+    }
 
     fun setPlaybackState(isPlaying: Boolean) {
         if (!enabled && isPlaying) return
@@ -206,5 +221,13 @@ object LyriconManager {
         lyrics = null
         translatedLyrics = null
         currentSong = null
+    }
+
+    private fun ensurePublisherRegistered() {
+        runCatching {
+            if (SuperLyricHelper.isAvailable() && !SuperLyricHelper.isPublisherRegistered()) {
+                SuperLyricHelper.registerPublisher()
+            }
+        }
     }
 }

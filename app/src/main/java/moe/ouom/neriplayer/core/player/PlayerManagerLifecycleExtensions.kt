@@ -686,6 +686,12 @@ internal fun PlayerManager.initializeImpl(
         }.onFailure {
             NPLogger.w("NERI-PlayerManager", "initialize(): rollback cancel ioScope failed: ${it.message}")
         }
+        runCatching {
+            LyriconManager.release()
+            NPLogger.d("NERI-PlayerManager", "initialize(): rollback released lyricon")
+        }.onFailure {
+            NPLogger.w("NERI-PlayerManager", "initialize(): rollback release lyricon failed: ${it.message}")
+        }
         initialized = false
     }
 }
@@ -1051,7 +1057,7 @@ internal fun PlayerManager.releaseImpl() {
     statusBarLyricsEnable = false
     clearExternalBluetoothLyricLine()
     FloatingLyricsOverlayManager.release()
-    LyriconManager.setPlaybackState(false)
+    LyriconManager.release()
 
     if (isPlayerInitialized()) {
         runCatching { player.stop() }

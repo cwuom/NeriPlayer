@@ -7,6 +7,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.IOException
 import java.net.URI
 import java.util.Locale
 
@@ -120,7 +121,7 @@ class ListenTogetherApi(
         okHttpClient.newCall(request).execute().use { response ->
             val body = response.body?.string().orEmpty()
             if (!response.isSuccessful) {
-                error("ListenTogether GET failed (${response.code}): $body")
+                throw IOException("ListenTogether GET failed (${response.code}): $body")
             }
             json.decodeFromString(body)
         }
@@ -143,7 +144,7 @@ class ListenTogetherApi(
         okHttpClient.newCall(requestBuilder.build()).execute().use { response ->
             val responseBody = response.body?.string().orEmpty()
             if (!response.isSuccessful) {
-                error("ListenTogether POST failed (${response.code}): $responseBody")
+                throw IOException("ListenTogether POST failed (${response.code}): $responseBody")
             }
             json.decodeFromString(responseBody)
         }

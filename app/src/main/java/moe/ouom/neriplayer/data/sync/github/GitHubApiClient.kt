@@ -57,7 +57,11 @@ class GitHubSyncInProgressException(message: String) : IOException(message)
  * 使用GitHub Contents API进行文件读写
  */
 @Suppress("unused")
-class GitHubApiClient(private val context: Context, private val token: String) {
+class GitHubApiClient(
+    context: Context,
+    private val token: String
+) {
+    private val appContext = context.applicationContext
 
     private val client: OkHttpClient = AppContainer.sharedOkHttpClient
     private val gson = Gson()
@@ -123,7 +127,7 @@ class GitHubApiClient(private val context: Context, private val token: String) {
                 }
                 if (response.code == 401) {
                     return@withContext Result.failure(
-                        TokenExpiredException(context.getString(R.string.github_token_expired_message))
+                        TokenExpiredException(appContext.getString(R.string.github_token_expired_message))
                     )
                 }
                 Result.failure(IOException("Token validation failed: ${response.code}"))
@@ -185,7 +189,7 @@ class GitHubApiClient(private val context: Context, private val token: String) {
 
                 val errorBody = response.body?.string()?.takeIf { it.isNotBlank() }
                 val error = when (response.code) {
-                    401 -> TokenExpiredException(context.getString(R.string.github_token_expired_message))
+                    401 -> TokenExpiredException(appContext.getString(R.string.github_token_expired_message))
                     else -> GitHubApiException(
                         statusCode = response.code,
                         message = "Failed to check repository: ${response.code}${errorBody?.let { " - $it" } ?: ""}"
@@ -254,7 +258,7 @@ class GitHubApiClient(private val context: Context, private val token: String) {
 
                 if (response.code == 401) {
                     return@withContext Result.failure(
-                        TokenExpiredException(context.getString(R.string.github_token_expired_message))
+                        TokenExpiredException(appContext.getString(R.string.github_token_expired_message))
                     )
                 }
 
@@ -334,7 +338,7 @@ class GitHubApiClient(private val context: Context, private val token: String) {
                 }
                 if (response.code == 401) {
                     return@withContext Result.failure(
-                        TokenExpiredException(context.getString(R.string.github_token_expired_message))
+                        TokenExpiredException(appContext.getString(R.string.github_token_expired_message))
                     )
                 }
                 val errorBody = response.body?.string() ?: "Unknown error"

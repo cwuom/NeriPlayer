@@ -25,8 +25,11 @@ package moe.ouom.neriplayer.data.settings
 
 import android.content.Context
 import androidx.datastore.preferences.core.Preferences
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_LOUDNESS_GAIN_MB
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_PITCH
 import moe.ouom.neriplayer.core.player.model.DEFAULT_PLAYBACK_SPEED
@@ -67,6 +70,11 @@ private const val PLAYBACK_CLOUD_MUSIC_LYRIC_OFFSET_KEY = "cloud_music_lyric_def
 private const val PLAYBACK_QQ_MUSIC_LYRIC_OFFSET_KEY = "qq_music_lyric_default_offset_ms"
 private const val PLAYBACK_LYRICON_ENABLED_KEY = "lyricon_enabled"
 private const val DEFAULT_MAX_CACHE_SIZE_BYTES = 1024L * 1024 * 1024
+private val playbackPreferenceSnapshotWarmScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+private val playbackPreferenceSnapshotWarmLock = Any()
+
+@Volatile
+private var playbackPreferenceSnapshotWarmScheduled = false
 
 data class PlaybackPreferenceSnapshot(
     val audioQuality: String = "exhigh",
@@ -141,13 +149,35 @@ suspend fun readPlaybackPreferenceSnapshot(context: Context): PlaybackPreference
 }
 
 fun readPlaybackPreferenceSnapshotSync(context: Context): PlaybackPreferenceSnapshot {
-    return readPlaybackPreferenceSnapshotCached(context) ?: runCatching {
-        runBlocking { readPlaybackPreferenceSnapshot(context) }
-    }.getOrElse { PlaybackPreferenceSnapshot() }
+    readPlaybackPreferenceSnapshotCached(context)?.let { return it }
+    schedulePlaybackPreferenceSnapshotWarm(context.applicationContext)
+    return PlaybackPreferenceSnapshot()
 }
 
 fun readPlaybackPreferenceSnapshotCached(context: Context): PlaybackPreferenceSnapshot? {
     return readCachedPlaybackPreferenceSnapshot(context)
+}
+
+private fun schedulePlaybackPreferenceSnapshotWarm(context: Context) {
+    if (readCachedPlaybackPreferenceSnapshot(context) != null) {
+        return
+    }
+    synchronized(playbackPreferenceSnapshotWarmLock) {
+        if (playbackPreferenceSnapshotWarmScheduled) {
+            return
+        }
+        playbackPreferenceSnapshotWarmScheduled = true
+    }
+    playbackPreferenceSnapshotWarmScope.launch {
+        try {
+            val snapshot = context.dataStore.data.first().toPlaybackPreferenceSnapshot()
+            persistPlaybackPreferenceSnapshot(context, snapshot)
+        } catch (_: Exception) {
+            // 这里只做后台补热，失败时继续让调用方走默认值
+        } finally {
+            playbackPreferenceSnapshotWarmScheduled = false
+        }
+    }
 }
 
 internal suspend fun updatePlaybackPreferenceSnapshot(
