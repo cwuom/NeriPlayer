@@ -52,7 +52,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.auth.web.shouldAutoCompleteYouTubeWebLogin
 import moe.ouom.neriplayer.data.auth.youtube.applyYouTubeWebCookies
@@ -61,6 +60,7 @@ import moe.ouom.neriplayer.data.auth.youtube.collectYouTubeWebCookies
 import moe.ouom.neriplayer.data.auth.youtube.hasMeaningfulYouTubeAuthChange
 import moe.ouom.neriplayer.data.auth.youtube.mergeYouTubeAuthBundle
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRepository
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeBootstrapSessionState
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeCookieSupport
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeWebLoginVerifier
@@ -123,7 +123,7 @@ class YouTubeWebLoginActivity : ComponentActivity() {
     }
 
     private lateinit var webView: WebView
-    private val authRepo by lazy { AppContainer.youtubeAuthRepo }
+    private var persistedAuthBaseline: YouTubeAuthBundle = YouTubeAuthBundle()
     private var foregroundWebLoginToken: AutoCloseable? = null
     private var hasReturned = false
     private val loginCompletionWatcher = WebLoginCompletionWatcher(::maybeReturnObservedAuth)
@@ -161,7 +161,7 @@ class YouTubeWebLoginActivity : ComponentActivity() {
         enableEdgeToEdge()
         WindowCompat.setDecorFitsSystemWindows(window, false)
         foregroundWebLoginToken = ForegroundWebLoginGuard.enter("youtube")
-        AppContainer.pauseYouTubeBackgroundWebWorkForForegroundLogin()
+        persistedAuthBaseline = YouTubeAuthRepository(applicationContext).getAuthOnce()
 
         val root = CoordinatorLayout(this).apply {
             fitsSystemWindows = false
@@ -337,7 +337,7 @@ class YouTubeWebLoginActivity : ComponentActivity() {
     }
 
     private fun restorePersistedCookies() {
-        val savedBundle = authRepo.getAuthOnce()
+        val savedBundle = persistedAuthBaseline
         val savedCookies = savedBundle.cookies.ifEmpty {
             YouTubeCookieSupport.parseCookieString(savedBundle.cookieHeader)
         }
@@ -390,7 +390,7 @@ class YouTubeWebLoginActivity : ComponentActivity() {
     ): YouTubeAuthBundle {
         val snapshot = capturedHeaders
         return mergeYouTubeAuthBundle(
-            base = authRepo.getAuthOnce(),
+            base = persistedAuthBaseline,
             observedCookies = collectYouTubeWebCookies(CookieManager.getInstance()),
             authorization = snapshot?.authorization.orEmpty(),
             xGoogAuthUser = snapshot?.xGoogAuthUser.orEmpty()
@@ -420,9 +420,9 @@ class YouTubeWebLoginActivity : ComponentActivity() {
     }
 
     private fun persistBundleIfChanged(bundle: YouTubeAuthBundle) {
-        val existing = authRepo.getAuthOnce()
+        val existing = persistedAuthBaseline
         if (hasMeaningfulYouTubeAuthChange(existing, bundle)) {
-            authRepo.saveAuth(bundle)
+            persistedAuthBaseline = bundle
         }
     }
 

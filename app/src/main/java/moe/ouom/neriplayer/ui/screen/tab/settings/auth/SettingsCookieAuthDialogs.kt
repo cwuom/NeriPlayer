@@ -215,6 +215,7 @@ internal fun SettingsYouTubeAuthDialogs(
             }
             val defaultBrowserLogin: () -> Unit = {
                 onInlineMsgChange(null)
+                AppContainer.pauseYouTubeBackgroundWebWorkForForegroundLogin()
                 webLoginLauncher.launch(Intent(context, YouTubeWebLoginActivity::class.java))
             }
             defaultBrowserLogin

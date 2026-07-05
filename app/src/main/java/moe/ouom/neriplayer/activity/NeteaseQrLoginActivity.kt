@@ -39,7 +39,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.netease.NeteaseQrLoginClient
-import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.auth.web.normalizeNeteaseWebLoginCookies
 import moe.ouom.neriplayer.util.NPLogger
@@ -89,7 +88,6 @@ class NeteaseQrLoginActivity : ComponentActivity() {
         enableEdgeToEdge()
         WindowCompat.setDecorFitsSystemWindows(window, false)
         foregroundWebLoginToken = ForegroundWebLoginGuard.enter("netease")
-        AppContainer.pauseYouTubeBackgroundWebWorkForForegroundLogin()
 
         buildLayout()
         onBackPressedDispatcher.addCallback(

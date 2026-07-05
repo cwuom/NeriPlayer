@@ -52,7 +52,6 @@ import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.snackbar.Snackbar
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.auth.web.normalizeNeteaseWebLoginCookies
 import moe.ouom.neriplayer.data.auth.web.shouldAutoCompleteNeteaseWebLogin
@@ -92,7 +91,6 @@ class NeteaseWebLoginActivity : ComponentActivity() {
         enableEdgeToEdge()
         WindowCompat.setDecorFitsSystemWindows(window, false)
         foregroundWebLoginToken = ForegroundWebLoginGuard.enter("netease")
-        AppContainer.pauseYouTubeBackgroundWebWorkForForegroundLogin()
 
         val root = CoordinatorLayout(this).apply {
             fitsSystemWindows = false

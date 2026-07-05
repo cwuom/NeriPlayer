@@ -44,7 +44,6 @@ import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.core.net.toUri
-import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
 import moe.ouom.neriplayer.data.auth.web.shouldAutoCompleteBiliWebLogin
 import moe.ouom.neriplayer.util.NPLogger
@@ -94,7 +93,6 @@ class BiliWebLoginActivity : ComponentActivity() {
         enableEdgeToEdge()
         NPLogger.d(LOG_TAG, "Bilibili login activity created")
         foregroundWebLoginToken = ForegroundWebLoginGuard.enter("bilibili")
-        AppContainer.pauseYouTubeBackgroundWebWorkForForegroundLogin()
         webView = WebView(this).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,

@@ -68,11 +68,13 @@
         <activity
             android:name=".activity.NeteaseWebLoginActivity"
             android:exported="false"
+            android:process=":netease_login"
             android:theme="@style/Theme.Material3.DayNight.NoActionBar"
         />
         <activity
             android:name=".activity.NeteaseQrLoginActivity"
             android:exported="false"
+            android:process=":netease_login"
             android:theme="@style/Theme.Material3.DayNight.NoActionBar"
         />
         <activity
@@ -84,6 +86,7 @@
         <activity
             android:name=".activity.YouTubeWebLoginActivity"
             android:exported="false"
+            android:process=":youtube_web_login"
             android:theme="@style/Theme.Material3.DayNight.NoActionBar"
             />
         <service
