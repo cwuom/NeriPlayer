@@ -64,8 +64,7 @@ class AuthDialogsTest {
             }
         }
 
-        waitForText(context.getString(R.string.login_browser))
-        composeRule.onNodeWithText(context.getString(R.string.login_browser)).performClick()
+        waitForText(context.getString(R.string.login_qr))
         waitForText(context.getString(R.string.settings_netease_login_browser_hint))
         waitForText(context.getString(R.string.login_start_netease_qr))
 
